@@ -18,7 +18,8 @@ RUN bun run build
 # production stage
 FROM base AS release
 COPY --from=install /usr/src/app/node_modules ./node_modules
-COPY --from=prerelease /usr/src/app/.output ./.output
+COPY --from=prerelease /usr/src/app/dist ./.dist
+COPY --from=prerelease /usr/src/app/server.ts ./server.ts
 COPY package.json ./
 
 # Fix permissions before switching to non-root user
