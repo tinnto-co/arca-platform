@@ -12,8 +12,10 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthedRouteRouteImport } from './routes/_authed/route'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
-import { Route as AuthedUsersIndexRouteImport } from './routes/_authed/users/index'
 import { Route as AuthedProductsIndexRouteImport } from './routes/_authed/products/index'
+import { Route as AuthedNotificationsIndexRouteImport } from './routes/_authed/notifications/index'
+import { Route as AuthedInvoicesIndexRouteImport } from './routes/_authed/invoices/index'
+import { Route as AuthedClientsIndexRouteImport } from './routes/_authed/clients/index'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AuthedProductsIdRouteImport } from './routes/_authed/products/$id'
 
@@ -31,14 +33,25 @@ const AuthedIndexRoute = AuthedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthedRouteRoute,
 } as any)
-const AuthedUsersIndexRoute = AuthedUsersIndexRouteImport.update({
-  id: '/users/',
-  path: '/users/',
-  getParentRoute: () => AuthedRouteRoute,
-} as any)
 const AuthedProductsIndexRoute = AuthedProductsIndexRouteImport.update({
   id: '/products/',
   path: '/products/',
+  getParentRoute: () => AuthedRouteRoute,
+} as any)
+const AuthedNotificationsIndexRoute =
+  AuthedNotificationsIndexRouteImport.update({
+    id: '/notifications/',
+    path: '/notifications/',
+    getParentRoute: () => AuthedRouteRoute,
+  } as any)
+const AuthedInvoicesIndexRoute = AuthedInvoicesIndexRouteImport.update({
+  id: '/invoices/',
+  path: '/invoices/',
+  getParentRoute: () => AuthedRouteRoute,
+} as any)
+const AuthedClientsIndexRoute = AuthedClientsIndexRouteImport.update({
+  id: '/clients/',
+  path: '/clients/',
   getParentRoute: () => AuthedRouteRoute,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
@@ -57,16 +70,20 @@ export interface FileRoutesByFullPath {
   '/': typeof AuthedIndexRoute
   '/products/$id': typeof AuthedProductsIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/clients': typeof AuthedClientsIndexRoute
+  '/invoices': typeof AuthedInvoicesIndexRoute
+  '/notifications': typeof AuthedNotificationsIndexRoute
   '/products': typeof AuthedProductsIndexRoute
-  '/users': typeof AuthedUsersIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/': typeof AuthedIndexRoute
   '/products/$id': typeof AuthedProductsIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/clients': typeof AuthedClientsIndexRoute
+  '/invoices': typeof AuthedInvoicesIndexRoute
+  '/notifications': typeof AuthedNotificationsIndexRoute
   '/products': typeof AuthedProductsIndexRoute
-  '/users': typeof AuthedUsersIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -75,8 +92,10 @@ export interface FileRoutesById {
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/products/$id': typeof AuthedProductsIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/_authed/clients/': typeof AuthedClientsIndexRoute
+  '/_authed/invoices/': typeof AuthedInvoicesIndexRoute
+  '/_authed/notifications/': typeof AuthedNotificationsIndexRoute
   '/_authed/products/': typeof AuthedProductsIndexRoute
-  '/_authed/users/': typeof AuthedUsersIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -85,10 +104,20 @@ export interface FileRouteTypes {
     | '/'
     | '/products/$id'
     | '/api/auth/$'
+    | '/clients'
+    | '/invoices'
+    | '/notifications'
     | '/products'
-    | '/users'
   fileRoutesByTo: FileRoutesByTo
-  to: '/login' | '/' | '/products/$id' | '/api/auth/$' | '/products' | '/users'
+  to:
+    | '/login'
+    | '/'
+    | '/products/$id'
+    | '/api/auth/$'
+    | '/clients'
+    | '/invoices'
+    | '/notifications'
+    | '/products'
   id:
     | '__root__'
     | '/_authed'
@@ -96,8 +125,10 @@ export interface FileRouteTypes {
     | '/_authed/'
     | '/_authed/products/$id'
     | '/api/auth/$'
+    | '/_authed/clients/'
+    | '/_authed/invoices/'
+    | '/_authed/notifications/'
     | '/_authed/products/'
-    | '/_authed/users/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -129,18 +160,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
-    '/_authed/users/': {
-      id: '/_authed/users/'
-      path: '/users'
-      fullPath: '/users'
-      preLoaderRoute: typeof AuthedUsersIndexRouteImport
-      parentRoute: typeof AuthedRouteRoute
-    }
     '/_authed/products/': {
       id: '/_authed/products/'
       path: '/products'
       fullPath: '/products'
       preLoaderRoute: typeof AuthedProductsIndexRouteImport
+      parentRoute: typeof AuthedRouteRoute
+    }
+    '/_authed/notifications/': {
+      id: '/_authed/notifications/'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof AuthedNotificationsIndexRouteImport
+      parentRoute: typeof AuthedRouteRoute
+    }
+    '/_authed/invoices/': {
+      id: '/_authed/invoices/'
+      path: '/invoices'
+      fullPath: '/invoices'
+      preLoaderRoute: typeof AuthedInvoicesIndexRouteImport
+      parentRoute: typeof AuthedRouteRoute
+    }
+    '/_authed/clients/': {
+      id: '/_authed/clients/'
+      path: '/clients'
+      fullPath: '/clients'
+      preLoaderRoute: typeof AuthedClientsIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
     '/api/auth/$': {
@@ -163,15 +208,19 @@ declare module '@tanstack/react-router' {
 interface AuthedRouteRouteChildren {
   AuthedIndexRoute: typeof AuthedIndexRoute
   AuthedProductsIdRoute: typeof AuthedProductsIdRoute
+  AuthedClientsIndexRoute: typeof AuthedClientsIndexRoute
+  AuthedInvoicesIndexRoute: typeof AuthedInvoicesIndexRoute
+  AuthedNotificationsIndexRoute: typeof AuthedNotificationsIndexRoute
   AuthedProductsIndexRoute: typeof AuthedProductsIndexRoute
-  AuthedUsersIndexRoute: typeof AuthedUsersIndexRoute
 }
 
 const AuthedRouteRouteChildren: AuthedRouteRouteChildren = {
   AuthedIndexRoute: AuthedIndexRoute,
   AuthedProductsIdRoute: AuthedProductsIdRoute,
+  AuthedClientsIndexRoute: AuthedClientsIndexRoute,
+  AuthedInvoicesIndexRoute: AuthedInvoicesIndexRoute,
+  AuthedNotificationsIndexRoute: AuthedNotificationsIndexRoute,
   AuthedProductsIndexRoute: AuthedProductsIndexRoute,
-  AuthedUsersIndexRoute: AuthedUsersIndexRoute,
 }
 
 const AuthedRouteRouteWithChildren = AuthedRouteRoute._addFileChildren(

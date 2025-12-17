@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-router";
 import appCss from "@/styles/app.css?url";
 import { QueryClientProvider, QueryClient } from "@tanstack/react-query";
+import { Toaster } from "@/components/ui/sonner";
 const queryClient = new QueryClient();
 export const Route = createRootRoute({
   head: () => ({
@@ -20,7 +21,7 @@ export const Route = createRootRoute({
         content: "width=device-width, initial-scale=1",
       },
       {
-        title: "Family Capital Funds Platform",
+        title: "Arca",
       },
     ],
     links: [
@@ -51,6 +52,7 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
         <QueryClientProvider client={queryClient}>
           {children}
         </QueryClientProvider>
+        <Toaster />
         <Scripts />
       </body>
     </html>

@@ -24,12 +24,12 @@ export default function LoginPage() {
       </div>
       <div className="bg-muted relative hidden lg:block">
         <div className="absolute inset-0 h-full w-full z-10 bg-black/40"></div>
-        <p className="text-white text-2xl font-bold absolute  tracking-wider top-1/2 uppercase left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 p-4  ">
+        <p className="text-white w-full text-center text-2xl font-bold absolute  tracking-wider top-1/2 uppercase left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 p-4  ">
           <span className="text-sm block font-semibold">Bienvenido a</span>
-          Family Capital Funds
+          Control Integrado de Arca
         </p>
         <img
-          src="/fc-login.jpg"
+          src="/login.jpg"
           alt="Image"
           className="absolute inset-0 h-full w-full object-cover dark:brightness-[0.2] dark:grayscale"
         />

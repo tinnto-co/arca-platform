@@ -22,6 +22,8 @@ import {
   Loader2,
   User,
   ArrowLeftRight,
+  Receipt,
+  Mail,
 } from "lucide-react";
 
 import {
@@ -55,6 +57,7 @@ import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { getUser } from "@/actions/user";
+import { CreateClientDialog } from "./create-client-dialog";
 
 export const userQuery = {
   queryKey: ["user"],
@@ -100,9 +103,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       <Sidebar collapsible="icon" variant="floating" {...props}>
         <SidebarHeader>
           <div className="flex items-center justify-center gap-2">
-            {open && (
-              <p className="text-sm text-black  px-2">FAMILY CAPITAL FUNDS</p>
-            )}
+            {open && <p className="text-sm text-black  px-2">GESTION ARCA</p>}
             <SidebarTrigger onClick={() => setOpen(!open)} className="-ml-1" />
           </div>
         </SidebarHeader>
@@ -117,14 +118,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   </SidebarMenuButton>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className="w-56" align="start">
-                  <DropdownMenuItem onClick={() => {}}>
-                    <User className="mr-2" />
-                    Cliente
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => {}}>
-                    <ArrowLeftRight className="mr-2" />
-                    Movimiento
-                  </DropdownMenuItem>
+                  <CreateClientDialog>
+                    <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                      <User className="mr-2" />
+                      Cliente
+                    </DropdownMenuItem>
+                  </CreateClientDialog>
                 </DropdownMenuContent>
               </DropdownMenu>
 
@@ -148,9 +147,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <SidebarGroupLabel>Platform</SidebarGroupLabel>
             <SidebarMenu>
               <SidebarMenuItem>
-                <Link to="/users">
+                <Link to="/clients">
                   <SidebarMenuButton
-                    isActive={pathname === "/users"}
+                    isActive={pathname === "/clients"}
                     tooltip="Clientes"
                   >
                     <User />
@@ -159,13 +158,24 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 </Link>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <Link to="/products">
+                <Link to="/notifications">
                   <SidebarMenuButton
-                    isActive={pathname === "/products"}
-                    tooltip="Productos"
+                    isActive={pathname === "/notifications"}
+                    tooltip="Notificaciones"
                   >
-                    <Briefcase />
-                    <span>Productos</span>
+                    <Mail />
+                    <span>Notificaciones</span>
+                  </SidebarMenuButton>
+                </Link>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <Link to="/invoices">
+                  <SidebarMenuButton
+                    isActive={pathname === "/invoices"}
+                    tooltip="Comprobantes"
+                  >
+                    <Receipt />
+                    <span>Comprobantes</span>
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>
