@@ -113,8 +113,13 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    font-family: "Poppins", sans-serif;
+  }
+  html {
+    font-family: "Poppins", sans-serif;
   }
   body {
     @apply bg-background text-foreground;
+    font-family: "Poppins", sans-serif;
   }
 }

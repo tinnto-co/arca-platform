@@ -11,11 +11,16 @@ export const createClient = createServerFn({
 })
   .inputValidator(
     z.object({
-      name: z.string().min(1, "El nombre es requerido"),
-      email: z.string().email("Email inválido"),
-      phone: z.string().min(1, "El teléfono es requerido"),
-      address: z.string().min(1, "La dirección es requerida"),
-      type: z.string().min(1, "El tipo es requerido"),
+      firstName: z.string().min(1, "El nombre es requerido"),
+      lastName: z.string().min(1, "El apellido es requerido"),
+      name: z.string().min(1, "El nombre completo es requerido"),
+      cuit: z.string().min(1, "El CUIT es requerido"),
+      identityNumber: z.string().min(1, "El número de identidad es requerido"),
+      identityType: z.string().min(1, "El tipo de identidad es requerido"),
+      password: z.string().min(1, "La contraseña es requerida"),
+      email: z.string().email("Email inválido").optional(),
+      phone: z.string().optional(),
+      address: z.string().optional(),
       image: z.string().optional(),
     })
   )
@@ -23,16 +28,28 @@ export const createClient = createServerFn({
     const session = await auth.api.getSession({ headers: getRequestHeaders() });
     if (!session?.user?.id) throw new Error("Unauthorized");
 
-    const { name, email, phone, address, type, image } = ctx.data;
+    const {
+      name,
+      identityNumber,
+      identityType,
+      password,
+      email,
+      phone,
+      address,
+      image,
+    } = ctx.data;
 
     const [newClient] = await db
       .insert(client)
       .values({
+        userId: session.user.id,
         name,
-        email,
-        phone,
-        address,
-        type,
+        email: email || "",
+        phone: phone || "",
+        address: address || "",
+        identityNumber,
+        identityType,
+        password,
         image: image || null,
         status: "active",
         registeredAt: new Date(),

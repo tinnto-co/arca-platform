@@ -67,9 +67,10 @@ export function LoginForm({ className }: React.ComponentProps<"div">) {
     }
     setLoading(true);
     try {
-      const result = await authClient.signIn.email({
+      const result = await authClient.signUp.email({
         email,
         password,
+        name: "Ignacio Mesa Diaz",
         callbackURL: searchParams.redirect || "/",
       });
       if (result.error) {

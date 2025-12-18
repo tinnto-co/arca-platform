@@ -1,5 +1,5 @@
 import {
-  foreignKey,
+  boolean,
   jsonb,
   numeric,
   pgTable,
@@ -8,15 +8,40 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+// User table must be defined before client to allow references
+export const user = pgTable("user", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  email: text("email").notNull().unique(),
+  emailVerified: boolean("email_verified").default(false).notNull(),
+  image: text("image"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at")
+    .defaultNow()
+    .$onUpdate(() => /* @__PURE__ */ new Date())
+    .notNull(),
+  isAnonymous: boolean("is_anonymous"),
+  role: text("role"),
+  banned: boolean("banned").default(false),
+  banReason: text("ban_reason"),
+  banExpires: timestamp("ban_expires"),
+  changedPassword: boolean("changed_password"),
+});
+
 export const client = pgTable("client", {
   id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
-  email: text("email").notNull(),
-  phone: text("phone").notNull(),
-  address: text("address").notNull(),
-  type: text("type").notNull(),
-  image: text("image"),
-  status: text("status").notNull(),
+  email: text("email").notNull().default(""),
+  phone: text("phone").notNull().default(""),
+  address: text("address").notNull().default(""),
+  identityNumber: text("identity_number").notNull().default(""),
+  identityType: text("identity_type").notNull().default("cuit"),
+  password: text("password").notNull().default(""),
+  image: text("image").default(""),
+  status: text("status").notNull().default("active"),
   registeredAt: timestamp("registered_at").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -24,7 +49,9 @@ export const client = pgTable("client", {
 
 export const profile = pgTable("profile", {
   id: uuid("id").primaryKey().defaultRandom(),
-  client: uuid("client_id").references(() => client.id),
+  client: uuid("client_id").references(() => client.id, {
+    onDelete: "cascade",
+  }),
   name: text("name").notNull(),
   identityNumber: text("identity_number").notNull(),
   identityType: text("identity_type").notNull(),
@@ -38,7 +65,9 @@ export const profile = pgTable("profile", {
 
 export const credential = pgTable("credential", {
   id: uuid("id").primaryKey().defaultRandom(),
-  client: uuid("client_id").references(() => client.id),
+  client: uuid("client_id").references(() => client.id, {
+    onDelete: "cascade",
+  }),
   provider: text("provider").notNull(),
   data: jsonb("data").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -47,7 +76,9 @@ export const credential = pgTable("credential", {
 
 export const document = pgTable("document", {
   id: uuid("id").primaryKey().defaultRandom(),
-  client: uuid("client_id").references(() => client.id),
+  client: uuid("client_id").references(() => client.id, {
+    onDelete: "cascade",
+  }),
   type: text("type").notNull(),
   name: text("name").notNull(),
   url: text("url").notNull(),
@@ -67,8 +98,12 @@ export const invoiceAttachment = pgTable("invoice_attachment", {
 export const notification = pgTable("notification", {
   id: uuid("id").primaryKey().defaultRandom(),
   externalId: text("external_id").notNull(),
-  client: uuid("client_id").references(() => client.id),
-  profile: uuid("profile_id").references(() => profile.id),
+  client: uuid("client_id").references(() => client.id, {
+    onDelete: "cascade",
+  }),
+  profile: uuid("profile_id").references(() => profile.id, {
+    onDelete: "cascade",
+  }),
   message: text("message").notNull(),
   expirationDate: timestamp("expiration_date").notNull(),
   publicationDate: timestamp("publication_date").notNull(),
@@ -90,8 +125,12 @@ export const invoice = pgTable("invoice", {
   currency: text("currency").notNull(),
   cureencyRate: numeric("currency_rate").notNull(),
   salePoint: text("sale_point").notNull(),
-  client: uuid("client_id").references(() => client.id),
-  profile: uuid("profile_id").references(() => profile.id),
+  client: uuid("client_id").references(() => client.id, {
+    onDelete: "cascade",
+  }),
+  profile: uuid("profile_id").references(() => profile.id, {
+    onDelete: "cascade",
+  }),
   authorizationNumber: text("authorization_number").notNull(),
   idFrom: numeric("id_from").notNull(),
   idTo: numeric("id_to").notNull(),
@@ -114,4 +153,75 @@ export const invoice = pgTable("invoice", {
   other_taxes: numeric("other_taxes").notNull(),
   totalIVA: numeric("total_iva").notNull(),
   amount: numeric("amount").notNull(),
+});
+
+export const dueDate = pgTable("due_date", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  client: uuid("client_id").references(() => client.id, {
+    onDelete: "cascade",
+  }),
+  tax: text("tax").notNull().default(""),
+  concept: text("concept").notNull().default(""),
+  subConcept: text("sub_concept").notNull().default(""),
+  period: text("period").notNull().default(""),
+  quotaNumber: numeric("quota_number").notNull().default("0"),
+  dueDate: timestamp("due_date").notNull().default(new Date()),
+  detail: text("detail").notNull().default(""),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const debt = pgTable("debt", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  client: uuid("client_id").references(() => client.id, {
+    onDelete: "cascade",
+  }),
+  establishment: text("establishment").notNull().default(""),
+  tax: text("tax").notNull().default(""),
+  concept: text("concept").notNull().default(""),
+  subConcept: text("sub_concept").notNull().default(""),
+  period: text("period").notNull().default(""),
+  quotaNumber: numeric("quota_number").notNull().default("0"),
+  dueDate: timestamp("due_date").notNull().default(new Date()),
+  balance: numeric("balance").notNull().default("0"),
+  compensatoryInterest: numeric("compensatory_interest").notNull().default("0"),
+  punitiveInterest: numeric("punitive_interest").notNull().default("0"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const session = pgTable("session", {
+  id: text("id").primaryKey(),
+  expiresAt: timestamp("expires_at").notNull(),
+  token: text("token").notNull().unique(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at")
+    .$onUpdate(() => /* @__PURE__ */ new Date())
+    .notNull(),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  impersonatedBy: text("impersonated_by"),
+});
+
+export const account = pgTable("account", {
+  id: text("id").primaryKey(),
+  accountId: text("account_id").notNull(),
+  providerId: text("provider_id").notNull(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  accessToken: text("access_token"),
+  refreshToken: text("refresh_token"),
+  idToken: text("id_token"),
+  accessTokenExpiresAt: timestamp("access_token_expires_at"),
+  refreshTokenExpiresAt: timestamp("refresh_token_expires_at"),
+  scope: text("scope"),
+  password: text("password"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at")
+    .$onUpdate(() => /* @__PURE__ */ new Date())
+    .notNull(),
 });

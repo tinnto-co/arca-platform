@@ -2,14 +2,9 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeaders } from "@tanstack/react-start/server";
 import z from "zod";
 import { db } from "@/lib/db";
-import {
-  invoice,
-  client,
-  invoiceAttachment,
-  document,
-} from "@/drizzle/schema";
+import { invoice, client, invoiceAttachment, document } from "@/drizzle/schema";
 import { auth } from "@/lib/auth";
-import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
+import { eq, desc, asc, and, gte, lte, sql, inArray } from "drizzle-orm";
 
 export const getInvoices = createServerFn({
   method: "GET",
@@ -23,21 +18,56 @@ export const getInvoices = createServerFn({
       dateTo: z.string().optional(),
       typeFilter: z.string().optional(),
       directionFilter: z.string().optional(),
+      search: z.string().optional(),
+      sortBy: z.enum(["amount", "emitionDate"]).optional(),
+      sortOrder: z.enum(["asc", "desc"]).optional(),
     })
   )
   .handler(async (ctx) => {
-    console.log(ctx.data);
     const session = await auth.api.getSession({ headers: getRequestHeaders() });
     if (!session?.user?.id) throw new Error("Unauthorized");
 
-    const { page, limit, clientFilter, dateFrom, dateTo, typeFilter, directionFilter } = ctx.data;
+    const {
+      page,
+      limit,
+      clientFilter,
+      dateFrom,
+      dateTo,
+      typeFilter,
+      directionFilter,
+      search,
+      sortBy,
+      sortOrder,
+    } = ctx.data;
     const offset = (page - 1) * limit;
 
+    // Get clients associated with the current user
+    const userClients = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(eq(client.userId, session.user.id));
+
+    const userClientIds = userClients.map((c) => c.id);
+
+    if (userClientIds.length === 0) {
+      return {
+        invoices: [],
+        totalCount: 0,
+        totalPages: 0,
+        currentPage: page,
+      };
+    }
+
     // Build where conditions
-    const conditions = [];
+    const conditions = [
+      inArray(invoice.client, userClientIds), // Filter by user's clients
+    ];
 
     if (clientFilter && clientFilter !== "all") {
-      conditions.push(eq(invoice.client, clientFilter));
+      // Verify the client belongs to the user
+      if (userClientIds.includes(clientFilter)) {
+        conditions.push(eq(invoice.client, clientFilter));
+      }
     }
 
     if (dateFrom) {
@@ -56,8 +86,16 @@ export const getInvoices = createServerFn({
       conditions.push(eq(invoice.direction, directionFilter));
     }
 
-    const whereCondition =
-      conditions.length > 0 ? and(...conditions) : undefined;
+    if (search) {
+      conditions.push(
+        sql`(
+          ${invoice.emitterName} ILIKE ${`%${search}%`} OR
+          ${invoice.recipientName} ILIKE ${`%${search}%`}
+        )`
+      );
+    }
+
+    const whereCondition = and(...conditions);
 
     // Get total count for pagination
     const [{ count }] = await db
@@ -95,10 +133,20 @@ export const getInvoices = createServerFn({
       .from(invoice)
       .leftJoin(client, eq(invoice.client, client.id))
       .where(whereCondition)
-      .orderBy(desc(invoice.emitionDate))
+      .orderBy(
+        sortBy === "amount"
+          ? sortOrder === "asc"
+            ? asc(invoice.amount)
+            : desc(invoice.amount)
+          : sortBy === "emitionDate"
+            ? sortOrder === "asc"
+              ? asc(invoice.emitionDate)
+              : desc(invoice.emitionDate)
+            : desc(invoice.emitionDate)
+      )
       .limit(limit)
       .offset(offset);
-    console.log(invoices);
+
     return {
       invoices,
       totalCount: count,
@@ -115,7 +163,19 @@ export const getInvoice = createServerFn({
     const session = await auth.api.getSession({ headers: getRequestHeaders() });
     if (!session?.user?.id) throw new Error("Unauthorized");
 
-    // Get invoice with client data
+    // Get clients associated with the current user
+    const userClients = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(eq(client.userId, session.user.id));
+
+    const userClientIds = userClients.map((c) => c.id);
+
+    if (userClientIds.length === 0) {
+      throw new Error("Factura no encontrada");
+    }
+
+    // Get invoice with client data, ensuring it belongs to user's clients
     const [invoiceData] = await db
       .select({
         id: invoice.id,
@@ -147,7 +207,7 @@ export const getInvoice = createServerFn({
         IVA27: invoice.IVA27,
         amountIVA27: invoice.amountIVA27,
         amountTaxed: invoice.amountTaxed,
-        amountNoTaxed: invoice.imp_neto_no_gravado,
+        amountNoTaxed: invoice.amountNoTaxed,
         amountExempt: invoice.amountExempt,
         other_taxes: invoice.other_taxes,
         totalIVA: invoice.totalIVA,
@@ -159,13 +219,16 @@ export const getInvoice = createServerFn({
       })
       .from(invoice)
       .leftJoin(client, eq(invoice.client, client.id))
-      .where(eq(invoice.id, ctx.data.id))
+      .where(
+        and(eq(invoice.id, ctx.data.id), inArray(invoice.client, userClientIds))
+      )
       .limit(1);
 
     if (!invoiceData) throw new Error("Factura no encontrada");
 
     // Get attachments for this invoice (using notification table as reference)
-    // Note: You might need to create a separate invoice_attachment table
+    // Note: invoiceAttachment references notification, not invoice directly
+    // This might need to be adjusted based on your actual schema relationships
     const attachments = await db
       .select({
         id: invoiceAttachment.id,
@@ -219,17 +282,29 @@ export const createInvoice = createServerFn({
       direction: z.string().min(1, "La dirección es requerida"),
       emitionDate: z.string().transform((str) => new Date(str)),
       type: z.string().min(1, "El tipo es requerido"),
-      recipientName: z.string().min(1, "El nombre del destinatario es requerido"),
-      recipientIdentityNumber: z.string().min(1, "El número de identidad del destinatario es requerido"),
-      recipientIdentityType: z.string().min(1, "El tipo de identidad del destinatario es requerido"),
+      recipientName: z
+        .string()
+        .min(1, "El nombre del destinatario es requerido"),
+      recipientIdentityNumber: z
+        .string()
+        .min(1, "El número de identidad del destinatario es requerido"),
+      recipientIdentityType: z
+        .string()
+        .min(1, "El tipo de identidad del destinatario es requerido"),
       emitterName: z.string().min(1, "El nombre del emisor es requerido"),
-      emitterIdentityNumber: z.string().min(1, "El número de identidad del emisor es requerido"),
-      emitterIdentityType: z.string().min(1, "El tipo de identidad del emisor es requerido"),
+      emitterIdentityNumber: z
+        .string()
+        .min(1, "El número de identidad del emisor es requerido"),
+      emitterIdentityType: z
+        .string()
+        .min(1, "El tipo de identidad del emisor es requerido"),
       currency: z.string().min(1, "La moneda es requerida"),
       currencyRate: z.number().min(0, "La tasa de cambio debe ser positiva"),
       salePoint: z.string().min(1, "El punto de venta es requerido"),
       clientId: z.string().uuid("ID de cliente inválido"),
-      authorizationNumber: z.string().min(1, "El número de autorización es requerido"),
+      authorizationNumber: z
+        .string()
+        .min(1, "El número de autorización es requerido"),
       idFrom: z.number().min(1, "El ID desde debe ser mayor a 0"),
       idTo: z.number().min(1, "El ID hasta debe ser mayor a 0"),
       amountIVA0: z.number().min(0, "El monto IVA 0 debe ser positivo"),
@@ -304,29 +379,29 @@ export const createInvoice = createServerFn({
         emitterIdentityNumber,
         emitterIdentityType,
         currency,
-        cureencyRate: currencyRate,
+        cureencyRate: currencyRate.toString(),
         salePoint,
         client: clientId,
         authorizationNumber,
-        idFrom,
-        idTo,
-        amountIVA0,
-        IVA25,
-        amountIVA25,
-        IVA5,
-        amountIVA5,
-        IVA105,
-        amountIVA105,
-        IVA21,
-        amountIVA21,
-        IVA27,
-        amountIVA27,
-        amountTaxed,
-        imp_neto_no_gravado: amountNoTaxed,
-        amountExempt,
-        other_taxes,
-        totalIVA,
-        amount,
+        idFrom: idFrom.toString(),
+        idTo: idTo.toString(),
+        amountIVA0: amountIVA0.toString(),
+        IVA25: IVA25.toString(),
+        amountIVA25: amountIVA25.toString(),
+        IVA5: IVA5.toString(),
+        amountIVA5: amountIVA5.toString(),
+        IVA105: IVA105.toString(),
+        amountIVA105: amountIVA105.toString(),
+        IVA21: IVA21.toString(),
+        amountIVA21: amountIVA21.toString(),
+        IVA27: IVA27.toString(),
+        amountIVA27: amountIVA27.toString(),
+        amountTaxed: amountTaxed.toString(),
+        amountNoTaxed: amountNoTaxed.toString(),
+        amountExempt: amountExempt.toString(),
+        other_taxes: other_taxes.toString(),
+        totalIVA: totalIVA.toString(),
+        amount: amount.toString(),
       })
       .returning();
 
@@ -344,17 +419,29 @@ export const updateInvoice = createServerFn({
       direction: z.string().min(1, "La dirección es requerida"),
       emitionDate: z.string().transform((str) => new Date(str)),
       type: z.string().min(1, "El tipo es requerido"),
-      recipientName: z.string().min(1, "El nombre del destinatario es requerido"),
-      recipientIdentityNumber: z.string().min(1, "El número de identidad del destinatario es requerido"),
-      recipientIdentityType: z.string().min(1, "El tipo de identidad del destinatario es requerido"),
+      recipientName: z
+        .string()
+        .min(1, "El nombre del destinatario es requerido"),
+      recipientIdentityNumber: z
+        .string()
+        .min(1, "El número de identidad del destinatario es requerido"),
+      recipientIdentityType: z
+        .string()
+        .min(1, "El tipo de identidad del destinatario es requerido"),
       emitterName: z.string().min(1, "El nombre del emisor es requerido"),
-      emitterIdentityNumber: z.string().min(1, "El número de identidad del emisor es requerido"),
-      emitterIdentityType: z.string().min(1, "El tipo de identidad del emisor es requerido"),
+      emitterIdentityNumber: z
+        .string()
+        .min(1, "El número de identidad del emisor es requerido"),
+      emitterIdentityType: z
+        .string()
+        .min(1, "El tipo de identidad del emisor es requerido"),
       currency: z.string().min(1, "La moneda es requerida"),
       currencyRate: z.number().min(0, "La tasa de cambio debe ser positiva"),
       salePoint: z.string().min(1, "El punto de venta es requerido"),
       clientId: z.string().uuid("ID de cliente inválido"),
-      authorizationNumber: z.string().min(1, "El número de autorización es requerido"),
+      authorizationNumber: z
+        .string()
+        .min(1, "El número de autorización es requerido"),
       idFrom: z.number().min(1, "El ID desde debe ser mayor a 0"),
       idTo: z.number().min(1, "El ID hasta debe ser mayor a 0"),
       amountIVA0: z.number().min(0, "El monto IVA 0 debe ser positivo"),
@@ -430,36 +517,35 @@ export const updateInvoice = createServerFn({
         emitterIdentityNumber,
         emitterIdentityType,
         currency,
-        cureencyRate: currencyRate,
+        cureencyRate: currencyRate.toString(),
         salePoint,
         client: clientId,
         authorizationNumber,
-        idFrom,
-        idTo,
-        amountIVA0,
-        IVA25,
-        amountIVA25,
-        IVA5,
-        amountIVA5,
-        IVA105,
-        amountIVA105,
-        IVA21,
-        amountIVA21,
-        IVA27,
-        amountIVA27,
-        amountTaxed,
-        imp_neto_no_gravado: amountNoTaxed,
-        amountExempt,
-        other_taxes,
-        totalIVA,
-        amount,
+        idFrom: idFrom.toString(),
+        idTo: idTo.toString(),
+        amountIVA0: amountIVA0.toString(),
+        IVA25: IVA25.toString(),
+        amountIVA25: amountIVA25.toString(),
+        IVA5: IVA5.toString(),
+        amountIVA5: amountIVA5.toString(),
+        IVA105: IVA105.toString(),
+        amountIVA105: amountIVA105.toString(),
+        IVA21: IVA21.toString(),
+        amountIVA21: amountIVA21.toString(),
+        IVA27: IVA27.toString(),
+        amountIVA27: amountIVA27.toString(),
+        amountTaxed: amountTaxed.toString(),
+        amountNoTaxed: amountNoTaxed.toString(),
+        amountExempt: amountExempt.toString(),
+        other_taxes: other_taxes.toString(),
+        totalIVA: totalIVA.toString(),
+        amount: amount.toString(),
         updatedAt: new Date(),
       })
       .where(eq(invoice.id, id))
       .returning();
 
-    if (!updatedInvoice)
-      throw new Error("Error al actualizar la factura");
+    if (!updatedInvoice) throw new Error("Error al actualizar la factura");
 
     return updatedInvoice;
   });
@@ -472,18 +558,89 @@ export const deleteInvoice = createServerFn({
     const session = await auth.api.getSession({ headers: getRequestHeaders() });
     if (!session?.user?.id) throw new Error("Unauthorized");
 
+    // Get clients associated with the current user
+    const userClients = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(eq(client.userId, session.user.id));
+
+    const userClientIds = userClients.map((c) => c.id);
+
+    if (userClientIds.length === 0) {
+      throw new Error("Error al eliminar la factura");
+    }
+
+    // Delete invoice only if it belongs to user's clients
     const [deletedInvoice] = await db
       .delete(invoice)
-      .where(eq(invoice.id, ctx.data.id))
+      .where(
+        and(eq(invoice.id, ctx.data.id), inArray(invoice.client, userClientIds))
+      )
       .returning();
 
-    if (!deletedInvoice)
-      throw new Error("Error al eliminar la factura");
+    if (!deletedInvoice) throw new Error("Error al eliminar la factura");
 
     return { success: true };
   });
 
+export const getInvoiceTotalsByClient = createServerFn({
+  method: "GET",
+}).handler(async () => {
+  const session = await auth.api.getSession({ headers: getRequestHeaders() });
+  if (!session?.user?.id) throw new Error("Unauthorized");
 
+  // Get clients associated with the current user
+  const userClients = await db
+    .select({ id: client.id })
+    .from(client)
+    .where(eq(client.userId, session.user.id));
 
+  const userClientIds = userClients.map((c) => c.id);
 
+  if (userClientIds.length === 0) {
+    return {};
+  }
 
+  // Get all invoices for user's clients
+  const invoices = await db
+    .select({
+      clientId: invoice.client,
+      direction: invoice.direction,
+      amount: invoice.amount,
+      currency: invoice.currency,
+      currencyRate: invoice.cureencyRate,
+    })
+    .from(invoice)
+    .where(inArray(invoice.client, userClientIds));
+
+  // Calculate totals by client
+  const totalsByClient: Record<string, { outbound: number; inbound: number }> =
+    {};
+
+  invoices.forEach((inv) => {
+    if (!inv.clientId) return;
+
+    if (!totalsByClient[inv.clientId]) {
+      totalsByClient[inv.clientId] = { outbound: 0, inbound: 0 };
+    }
+
+    // Convert amount to number (it's stored as string in numeric type)
+    let amount = parseFloat(inv.amount || "0");
+
+    // If currency is USD, convert to ARS using the currency rate
+    if (inv.currency?.toUpperCase() === "USD") {
+      const rate = parseFloat(inv.currencyRate || "1");
+      amount = amount * rate;
+    }
+
+    // Add to the appropriate direction
+    const direction = inv.direction?.toLowerCase();
+    if (direction === "outbound") {
+      totalsByClient[inv.clientId].outbound += amount;
+    } else if (direction === "inbound") {
+      totalsByClient[inv.clientId].inbound += amount;
+    }
+  });
+
+  return totalsByClient;
+});

@@ -172,10 +172,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 <Link to="/invoices">
                   <SidebarMenuButton
                     isActive={pathname === "/invoices"}
-                    tooltip="Comprobantes"
+                    tooltip="Facturas"
                   >
                     <Receipt />
-                    <span>Comprobantes</span>
+                    <span>Facturas</span>
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>

@@ -28,7 +28,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import {
@@ -39,6 +38,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getClients, deleteClient } from "@/actions/client";
+import { getInvoiceTotalsByClient } from "@/actions/invoice";
 import { EditClientDialog } from "@/components/edit-client-dialog";
 import { ViewClientDialog } from "@/components/view-client-dialog";
 
@@ -46,13 +46,17 @@ export function ClientsTable() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [clientToDelete, setClientToDelete] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [typeFilter, setTypeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const queryClient = useQueryClient();
 
   const { data: clients = [], isLoading } = useQuery({
     queryKey: ["clients"],
     queryFn: () => getClients(),
+  });
+
+  const { data: invoiceTotals = {} } = useQuery({
+    queryKey: ["invoiceTotalsByClient"],
+    queryFn: () => getInvoiceTotalsByClient(),
   });
 
   // Filter clients based on search term and filters
@@ -62,19 +66,18 @@ export function ClientsTable() {
       const matchesSearch =
         searchTerm === "" ||
         client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        client.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        client.identityNumber
+          .toLowerCase()
+          .includes(searchTerm.toLowerCase()) ||
         client.phone.toLowerCase().includes(searchTerm.toLowerCase());
-
-      // Type filter
-      const matchesType = typeFilter === "all" || client.type === typeFilter;
 
       // Status filter
       const matchesStatus =
         statusFilter === "all" || client.status === statusFilter;
 
-      return matchesSearch && matchesType && matchesStatus;
+      return matchesSearch && matchesStatus;
     });
-  }, [clients, searchTerm, typeFilter, statusFilter]);
+  }, [clients, searchTerm, statusFilter]);
 
   const deleteMutation = useMutation({
     mutationFn: (data: { id: string }) => deleteClient({ data }),
@@ -98,30 +101,6 @@ export function ClientsTable() {
   const confirmDelete = () => {
     if (clientToDelete) {
       deleteMutation.mutate({ id: clientToDelete });
-    }
-  };
-
-  const getTypeLabel = (type: string) => {
-    switch (type) {
-      case "individual":
-        return "Individual";
-      case "company":
-        return "Empresa";
-      default:
-        return type;
-    }
-  };
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "active":
-        return <Badge variant="default">Activo</Badge>;
-      case "inactive":
-        return <Badge variant="secondary">Inactivo</Badge>;
-      case "pending":
-        return <Badge variant="outline">Pendiente</Badge>;
-      default:
-        return <Badge variant="outline">{status}</Badge>;
     }
   };
 
@@ -149,23 +128,13 @@ export function ClientsTable() {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
             <Input
-              placeholder="Buscar por nombre, email o teléfono..."
+              placeholder="Buscar por nombre, cuit o teléfono..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10"
             />
           </div>
           <div className="flex gap-2">
-            <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="Tipo" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos los tipos</SelectItem>
-                <SelectItem value="individual">Individual</SelectItem>
-                <SelectItem value="company">Empresa</SelectItem>
-              </SelectContent>
-            </Select>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-[140px]">
                 <SelectValue placeholder="Estado" />
@@ -195,23 +164,13 @@ export function ClientsTable() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
           <Input
-            placeholder="Buscar por nombre, email o teléfono..."
+            placeholder="Buscar por nombre, cuit o teléfono..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10"
           />
         </div>
         <div className="flex gap-2">
-          <Select value={typeFilter} onValueChange={setTypeFilter}>
-            <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder="Tipo" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos los tipos</SelectItem>
-              <SelectItem value="individual">Individual</SelectItem>
-              <SelectItem value="company">Empresa</SelectItem>
-            </SelectContent>
-          </Select>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-[200px]">
               <SelectValue placeholder="Estado" />
@@ -231,13 +190,12 @@ export function ClientsTable() {
         <span>
           Mostrando {filteredClients.length} de {clients.length} clientes
         </span>
-        {(searchTerm || typeFilter !== "all" || statusFilter !== "all") && (
+        {(searchTerm || statusFilter !== "all") && (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => {
               setSearchTerm("");
-              setTypeFilter("all");
               setStatusFilter("all");
             }}
           >
@@ -251,10 +209,9 @@ export function ClientsTable() {
           <TableHeader>
             <TableRow>
               <TableHead>Cliente</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Teléfono</TableHead>
-              <TableHead>Tipo</TableHead>
-              <TableHead>Estado</TableHead>
+              <TableHead>CUIT</TableHead>
+              <TableHead>Fact. Emitidas</TableHead>
+              <TableHead>Fact. Pagadas</TableHead>
               <TableHead>Registrado</TableHead>
               <TableHead className="w-[50px]"></TableHead>
             </TableRow>
@@ -280,12 +237,27 @@ export function ClientsTable() {
                     </div>
                   </div>
                 </TableCell>
-                <TableCell>{client.email}</TableCell>
-                <TableCell>{client.phone}</TableCell>
-                <TableCell>{getTypeLabel(client.type)}</TableCell>
-                <TableCell>{getStatusBadge(client.status)}</TableCell>
+                <TableCell>{client.identityNumber}</TableCell>
+                <TableCell className="text-green-500">
+                  +{" "}
+                  {new Intl.NumberFormat("es-AR", {
+                    style: "currency",
+                    currency: "ARS",
+                    minimumFractionDigits: 2,
+                  }).format(invoiceTotals[client.id]?.outbound || 0)}{" "}
+                  ARS
+                </TableCell>
+                <TableCell className="text-red-500">
+                  -{" "}
+                  {new Intl.NumberFormat("es-AR", {
+                    style: "currency",
+                    currency: "ARS",
+                    minimumFractionDigits: 2,
+                  }).format(invoiceTotals[client.id]?.inbound || 0)}{" "}
+                  ARS
+                </TableCell>
                 <TableCell>
-                  {new Date(client.registeredAt).toLocaleDateString()}
+                  {new Date(client.createdAt).toLocaleDateString()}
                 </TableCell>
                 <TableCell>
                   <DropdownMenu>

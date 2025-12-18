@@ -1,15 +1,18 @@
-import { useState, useMemo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
-  Eye,
-  Trash2,
-  MoreHorizontal,
   Search,
   Download,
   FileText,
-  Receipt,
+  Calendar as CalendarIcon,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import { toast } from "sonner";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
+import { DateRange } from "react-day-picker";
 
 import {
   Table,
@@ -19,22 +22,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -52,6 +39,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import {
   Pagination,
   PaginationContent,
   PaginationItem,
@@ -59,17 +52,14 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import {
-  getInvoices,
-  deleteInvoice,
-  getInvoice,
-} from "@/actions/invoice";
+import { getInvoices, getInvoice } from "@/actions/invoice";
 import { getClients } from "@/actions/client";
+import { cn } from "@/lib/utils";
 
 interface InvoiceData {
   id: string;
   direction: string;
-  emitionDate: string;
+  emitionDate: Date | string;
   type: string;
   recipientName: string;
   recipientIdentityNumber: string;
@@ -87,29 +77,44 @@ interface InvoiceData {
   clientId: string | null;
   clientName: string | null;
   clientEmail: string | null;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: Date | string;
+  updatedAt: Date | string;
 }
 
 export function InvoicesTable() {
-  const queryClient = useQueryClient();
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [invoiceToDelete, setInvoiceToDelete] = useState<
-    string | null
-  >(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
   const [clientFilter, setClientFilter] = useState<string>("all");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [directionFilter, setDirectionFilter] = useState<string>("all");
+  const [sortBy, setSortBy] = useState<"amount" | "emitionDate" | undefined>(
+    undefined
+  );
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc" | undefined>(
+    undefined
+  );
   const [currentPage, setCurrentPage] = useState(1);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
-  const [selectedInvoice, setSelectedInvoice] =
-    useState<InvoiceData | null>(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<InvoiceData | null>(
+    null
+  );
   const [invoiceDetails, setInvoiceDetails] = useState<any>(null);
 
   const pageSize = 10;
+
+  // Debounce para la búsqueda (esperar 500ms después de que el usuario deje de escribir)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+      // Resetear a la primera página cuando se busca
+      if (searchTerm !== debouncedSearchTerm) {
+        setCurrentPage(1);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm, debouncedSearchTerm]);
 
   // Get clients for filter dropdown
   const { data: clients = [] } = useQuery({
@@ -118,6 +123,9 @@ export function InvoicesTable() {
   });
 
   // Get invoices
+  const dateFrom = dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : "";
+  const dateTo = dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : "";
+
   const { data: invoicesData, isLoading } = useQuery({
     queryKey: [
       "invoices",
@@ -127,6 +135,9 @@ export function InvoicesTable() {
       dateTo,
       typeFilter,
       directionFilter,
+      debouncedSearchTerm,
+      sortBy,
+      sortOrder,
     ],
     queryFn: () =>
       getInvoices({
@@ -137,24 +148,13 @@ export function InvoicesTable() {
           dateFrom: dateFrom || undefined,
           dateTo: dateTo || undefined,
           typeFilter: typeFilter === "all" ? undefined : typeFilter,
-          directionFilter: directionFilter === "all" ? undefined : directionFilter,
+          directionFilter:
+            directionFilter === "all" ? undefined : directionFilter,
+          search: debouncedSearchTerm || undefined,
+          sortBy: sortBy,
+          sortOrder: sortBy ? sortOrder : undefined,
         },
       }),
-  });
-
-  // Delete mutation
-  const deleteMutation = useMutation({
-    mutationFn: deleteInvoice,
-    onSuccess: () => {
-      toast.success("Factura eliminada correctamente");
-      queryClient.invalidateQueries({ queryKey: ["invoices"] });
-      setDeleteDialogOpen(false);
-      setInvoiceToDelete(null);
-    },
-    onError: (error) => {
-      toast.error("Error al eliminar la factura");
-      console.error(error);
-    },
   });
 
   // View invoice details
@@ -163,22 +163,11 @@ export function InvoicesTable() {
     setViewDialogOpen(true);
 
     try {
-      const details = await getInvoice({ id: invoice.id });
+      const details = await getInvoice({ data: { id: invoice.id } });
       setInvoiceDetails(details);
     } catch (error) {
       toast.error("Error al cargar los detalles de la factura");
       console.error(error);
-    }
-  };
-
-  const handleDeleteClick = (id: string) => {
-    setInvoiceToDelete(id);
-    setDeleteDialogOpen(true);
-  };
-
-  const handleDeleteConfirm = () => {
-    if (invoiceToDelete) {
-      deleteMutation.mutate({ id: invoiceToDelete });
     }
   };
 
@@ -192,13 +181,12 @@ export function InvoicesTable() {
     document.body.removeChild(link);
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("es-ES", {
+  const formatDate = (date: Date | string) => {
+    const dateObj = typeof date === "string" ? new Date(date) : date;
+    return dateObj.toLocaleDateString("es-ES", {
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
     });
   };
 
@@ -211,24 +199,149 @@ export function InvoicesTable() {
   };
 
   const getTypeBadge = (type: string) => {
-    const typeMap: { [key: string]: { variant: "default" | "secondary" | "destructive" | "outline"; label: string } } = {
-      "A": { variant: "default", label: "Factura A" },
-      "B": { variant: "secondary", label: "Factura B" },
-      "C": { variant: "outline", label: "Factura C" },
-      "E": { variant: "destructive", label: "Factura E" },
+    const typeMap: {
+      [key: string]: {
+        variant: "default" | "secondary" | "destructive" | "outline";
+        label: string;
+      };
+    } = {
+      "1": { variant: "default", label: "Factura A" },
+      "2": { variant: "default", label: "Nota de Débito A" },
+      "3": { variant: "default", label: "Nota de Crédito A" },
+      "4": { variant: "default", label: "Recibo A" },
+      "5": { variant: "default", label: "Nota de Venta al Contado A" },
+      "6": { variant: "secondary", label: "Factura B" },
+      "7": { variant: "secondary", label: "Nota de Débito B" },
+      "8": { variant: "secondary", label: "Nota de Crédito B" },
+      "9": { variant: "secondary", label: "Recibo B" },
+      "10": { variant: "secondary", label: "Nota de Venta al Contado B" },
+      "11": { variant: "outline", label: "Factura C" },
+      "12": { variant: "outline", label: "Nota de Débito C" },
+      "13": { variant: "outline", label: "Nota de Crédito C" },
+      "15": { variant: "outline", label: "Recibo C" },
+      "16": { variant: "outline", label: "Nota de Venta al Contado C" },
+      "17": { variant: "default", label: "Liquidación" },
+      "18": { variant: "default", label: "Liquidación A" },
+      "19": { variant: "destructive", label: "Factura E" },
+      "20": { variant: "destructive", label: "Nota de Débito E" },
+      "21": { variant: "destructive", label: "Nota de Crédito E" },
+      "22": { variant: "default", label: "Factura – Crédito Fiscal" },
+      "34": { variant: "default", label: "Comprobante A del Sector Público" },
+      "35": {
+        variant: "default",
+        label: "Nota de Débito A del Sector Público",
+      },
+      "36": {
+        variant: "default",
+        label: "Nota de Crédito A del Sector Público",
+      },
+      "37": { variant: "default", label: "Recibo A del Sector Público" },
+      "38": { variant: "secondary", label: "Comprobante B del Sector Público" },
+      "39": {
+        variant: "secondary",
+        label: "Nota de Débito B del Sector Público",
+      },
+      "40": {
+        variant: "secondary",
+        label: "Nota de Crédito B del Sector Público",
+      },
+      "41": { variant: "secondary", label: "Recibo B del Sector Público" },
+      "51": { variant: "default", label: "Factura M" },
+      "52": { variant: "default", label: "Nota de Débito M" },
+      "53": { variant: "default", label: "Nota de Crédito M" },
+      "54": { variant: "default", label: "Recibo M" },
+      "81": { variant: "outline", label: "Ticket Factura A" },
+      "82": { variant: "outline", label: "Ticket Factura B" },
+      "83": { variant: "outline", label: "Ticket" },
+      "110": { variant: "outline", label: "Ticket Nota de Crédito" },
+      "201": {
+        variant: "default",
+        label: "Factura de Crédito Electrónica MiPyME A",
+      },
+      "202": {
+        variant: "default",
+        label: "Nota de Débito Electrónica MiPyME A",
+      },
+      "203": {
+        variant: "default",
+        label: "Nota de Crédito Electrónica MiPyME A",
+      },
+      "206": {
+        variant: "secondary",
+        label: "Factura de Crédito Electrónica MiPyME B",
+      },
+      "207": {
+        variant: "secondary",
+        label: "Nota de Débito Electrónica MiPyME B",
+      },
+      "208": {
+        variant: "secondary",
+        label: "Nota de Crédito Electrónica MiPyME B",
+      },
+      "211": {
+        variant: "outline",
+        label: "Factura de Crédito Electrónica MiPyME C",
+      },
+      "212": {
+        variant: "outline",
+        label: "Nota de Débito Electrónica MiPyME C",
+      },
+      "213": {
+        variant: "outline",
+        label: "Nota de Crédito Electrónica MiPyME C",
+      },
     };
-    
-    const typeInfo = typeMap[type] || { variant: "outline" as const, label: type };
-    return <Badge variant={typeInfo.variant}>{typeInfo.label}</Badge>;
+
+    const typeInfo = typeMap[type] || {
+      variant: "outline" as const,
+      label: `Tipo ${type}`,
+    };
+    return (
+      <Badge
+        variant={typeInfo.variant}
+        className="!whitespace-normal break-words text-xs px-2 py-1 inline-block max-w-full"
+      >
+        {typeInfo.label}
+      </Badge>
+    );
+  };
+
+  const handleSortByAmount = () => {
+    if (sortBy === "amount") {
+      // Si ya está ordenando por monto, cambiar el orden
+      if (sortOrder === "desc") {
+        // De descendente a ascendente
+        setSortOrder("asc");
+      } else if (sortOrder === "asc") {
+        // De ascendente a neutro (sin ordenamiento)
+        setSortBy(undefined);
+        setSortOrder(undefined);
+      }
+    } else {
+      // Si no está ordenando por monto, empezar con descendente
+      setSortBy("amount");
+      setSortOrder("desc");
+    }
   };
 
   const getDirectionBadge = (direction: string) => {
-    const directionMap: { [key: string]: { variant: "default" | "secondary" | "destructive" | "outline"; label: string } } = {
-      "input": { variant: "default", label: "Entrada" },
-      "output": { variant: "secondary", label: "Salida" },
+    const directionMap: {
+      [key: string]: {
+        variant: "default" | "secondary" | "destructive" | "outline";
+        label: string;
+      };
+    } = {
+      outbound: { variant: "secondary", label: "Emitida" },
+      inbound: { variant: "secondary", label: "Recibida" },
     };
-    
-    const directionInfo = directionMap[direction] || { variant: "outline" as const, label: direction };
+
+    // Buscar en el map con el valor original y también en minúsculas para compatibilidad
+    const directionKey = direction || "";
+    const directionInfo = directionMap[directionKey] ||
+      directionMap[directionKey.toLowerCase()] || {
+        variant: "outline" as const,
+        label: direction || "Desconocida",
+      };
     return <Badge variant={directionInfo.variant}>{directionInfo.label}</Badge>;
   };
 
@@ -242,10 +355,10 @@ export function InvoicesTable() {
           <div className="relative">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Buscar facturas..."
+              placeholder="Buscar mediante emisor o receptor..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-8 w-full md:w-64"
+              className="pl-8 w-full md:w-80"
             />
           </div>
 
@@ -264,45 +377,138 @@ export function InvoicesTable() {
           </Select>
 
           <Select value={typeFilter} onValueChange={setTypeFilter}>
-            <SelectTrigger className="w-full md:w-32">
+            <SelectTrigger className="w-full md:w-64">
               <SelectValue placeholder="Tipo" />
             </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos</SelectItem>
-              <SelectItem value="A">Factura A</SelectItem>
-              <SelectItem value="B">Factura B</SelectItem>
-              <SelectItem value="C">Factura C</SelectItem>
-              <SelectItem value="E">Factura E</SelectItem>
+            <SelectContent className="max-h-[300px]">
+              <SelectItem value="all">Todas las facturas</SelectItem>
+              <SelectItem value="1">Factura A</SelectItem>
+              <SelectItem value="2">Nota de Débito A</SelectItem>
+              <SelectItem value="3">Nota de Crédito A</SelectItem>
+              <SelectItem value="4">Recibo A</SelectItem>
+              <SelectItem value="5">Nota de Venta al Contado A</SelectItem>
+              <SelectItem value="6">Factura B</SelectItem>
+              <SelectItem value="7">Nota de Débito B</SelectItem>
+              <SelectItem value="8">Nota de Crédito B</SelectItem>
+              <SelectItem value="9">Recibo B</SelectItem>
+              <SelectItem value="10">Nota de Venta al Contado B</SelectItem>
+              <SelectItem value="11">Factura C</SelectItem>
+              <SelectItem value="12">Nota de Débito C</SelectItem>
+              <SelectItem value="13">Nota de Crédito C</SelectItem>
+              <SelectItem value="15">Recibo C</SelectItem>
+              <SelectItem value="16">Nota de Venta al Contado C</SelectItem>
+              <SelectItem value="17">Liquidación</SelectItem>
+              <SelectItem value="18">Liquidación A</SelectItem>
+              <SelectItem value="19">Factura E</SelectItem>
+              <SelectItem value="20">Nota de Débito E</SelectItem>
+              <SelectItem value="21">Nota de Crédito E</SelectItem>
+              <SelectItem value="22">Factura – Crédito Fiscal</SelectItem>
+              <SelectItem value="34">
+                Comprobante A del Sector Público
+              </SelectItem>
+              <SelectItem value="35">
+                Nota de Débito A del Sector Público
+              </SelectItem>
+              <SelectItem value="36">
+                Nota de Crédito A del Sector Público
+              </SelectItem>
+              <SelectItem value="37">Recibo A del Sector Público</SelectItem>
+              <SelectItem value="38">
+                Comprobante B del Sector Público
+              </SelectItem>
+              <SelectItem value="39">
+                Nota de Débito B del Sector Público
+              </SelectItem>
+              <SelectItem value="40">
+                Nota de Crédito B del Sector Público
+              </SelectItem>
+              <SelectItem value="41">Recibo B del Sector Público</SelectItem>
+              <SelectItem value="51">Factura M</SelectItem>
+              <SelectItem value="52">Nota de Débito M</SelectItem>
+              <SelectItem value="53">Nota de Crédito M</SelectItem>
+              <SelectItem value="54">Recibo M</SelectItem>
+              <SelectItem value="81">Ticket Factura A</SelectItem>
+              <SelectItem value="82">Ticket Factura B</SelectItem>
+              <SelectItem value="83">Ticket</SelectItem>
+              <SelectItem value="110">Ticket Nota de Crédito</SelectItem>
+              <SelectItem value="201">
+                Factura de Crédito Electrónica MiPyME A
+              </SelectItem>
+              <SelectItem value="202">
+                Nota de Débito Electrónica MiPyME A
+              </SelectItem>
+              <SelectItem value="203">
+                Nota de Crédito Electrónica MiPyME A
+              </SelectItem>
+              <SelectItem value="206">
+                Factura de Crédito Electrónica MiPyME B
+              </SelectItem>
+              <SelectItem value="207">
+                Nota de Débito Electrónica MiPyME B
+              </SelectItem>
+              <SelectItem value="208">
+                Nota de Crédito Electrónica MiPyME B
+              </SelectItem>
+              <SelectItem value="211">
+                Factura de Crédito Electrónica MiPyME C
+              </SelectItem>
+              <SelectItem value="212">
+                Nota de Débito Electrónica MiPyME C
+              </SelectItem>
+              <SelectItem value="213">
+                Nota de Crédito Electrónica MiPyME C
+              </SelectItem>
             </SelectContent>
           </Select>
 
           <Select value={directionFilter} onValueChange={setDirectionFilter}>
-            <SelectTrigger className="w-full md:w-32">
+            <SelectTrigger className="w-full md:w-56">
               <SelectValue placeholder="Dirección" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Todas</SelectItem>
-              <SelectItem value="input">Entrada</SelectItem>
-              <SelectItem value="output">Salida</SelectItem>
+              <SelectItem value="all">Todas las direcciones</SelectItem>
+              <SelectItem value="Outbound">Emitida</SelectItem>
+              <SelectItem value="Inbound">Recibida</SelectItem>
             </SelectContent>
           </Select>
 
-          <div className="flex gap-2">
-            <Input
-              type="date"
-              placeholder="Fecha desde"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="w-full md:w-40"
-            />
-            <Input
-              type="date"
-              placeholder="Fecha hasta"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="w-full md:w-40"
-            />
-          </div>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                id="date"
+                variant="outline"
+                className={cn(
+                  "w-full md:w-[300px] justify-start text-left font-normal",
+                  !dateRange && "text-muted-foreground"
+                )}
+              >
+                <CalendarIcon className="mr-2 h-4 w-4" />
+                {dateRange?.from ? (
+                  dateRange.to ? (
+                    <>
+                      {format(dateRange.from, "dd/MM/yyyy", { locale: es })} -{" "}
+                      {format(dateRange.to, "dd/MM/yyyy", { locale: es })}
+                    </>
+                  ) : (
+                    format(dateRange.from, "dd/MM/yyyy", { locale: es })
+                  )
+                ) : (
+                  <span>Seleccionar rango de fechas</span>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar
+                initialFocus
+                mode="range"
+                defaultMonth={dateRange?.from}
+                selected={dateRange}
+                onSelect={setDateRange}
+                numberOfMonths={2}
+                locale={es}
+              />
+            </PopoverContent>
+          </Popover>
         </div>
       </div>
 
@@ -316,34 +522,55 @@ export function InvoicesTable() {
               <TableHead>Emisor</TableHead>
               <TableHead>Destinatario</TableHead>
               <TableHead>Fecha Emisión</TableHead>
-              <TableHead>Monto</TableHead>
+              <TableHead>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="-ml-3 h-8 data-[state=open]:bg-accent"
+                  onClick={handleSortByAmount}
+                >
+                  Monto
+                  {sortBy === "amount" && sortOrder === "asc" ? (
+                    <ArrowUp className="ml-2 h-4 w-4" />
+                  ) : sortBy === "amount" && sortOrder === "desc" ? (
+                    <ArrowDown className="ml-2 h-4 w-4" />
+                  ) : (
+                    <ArrowUpDown className="ml-2 h-4 w-4" />
+                  )}
+                </Button>
+              </TableHead>
               <TableHead>Dirección</TableHead>
-              <TableHead className="text-right">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center">
+                <TableCell colSpan={7} className="h-24 text-center">
                   Cargando facturas...
                 </TableCell>
               </TableRow>
             ) : invoicesData?.invoices.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center">
+                <TableCell colSpan={7} className="h-24 text-center">
                   No se encontraron facturas.
                 </TableCell>
               </TableRow>
             ) : (
               invoicesData?.invoices.map((invoice) => (
-                <TableRow key={invoice.id}>
-                  <TableCell>{getTypeBadge(invoice.type)}</TableCell>
+                <TableRow
+                  key={invoice.id}
+                  onClick={() => handleViewInvoice(invoice)}
+                  className="cursor-pointer hover:bg-muted/50 transition-colors"
+                >
+                  <TableCell>
+                    <div className="max-w-[200px]">
+                      {getTypeBadge(invoice.type)}
+                    </div>
+                  </TableCell>
                   <TableCell>
                     {invoice.clientName ? (
                       <div>
-                        <div className="font-medium">
-                          {invoice.clientName}
-                        </div>
+                        <div className="font-medium">{invoice.clientName}</div>
                         <div className="text-sm text-muted-foreground">
                           {invoice.clientEmail}
                         </div>
@@ -356,7 +583,8 @@ export function InvoicesTable() {
                     <div>
                       <div className="font-medium">{invoice.emitterName}</div>
                       <div className="text-sm text-muted-foreground">
-                        {invoice.emitterIdentityType}: {invoice.emitterIdentityNumber}
+                        {invoice.emitterIdentityType}:{" "}
+                        {invoice.emitterIdentityNumber}
                       </div>
                     </div>
                   </TableCell>
@@ -364,42 +592,17 @@ export function InvoicesTable() {
                     <div>
                       <div className="font-medium">{invoice.recipientName}</div>
                       <div className="text-sm text-muted-foreground">
-                        {invoice.recipientIdentityType}: {invoice.recipientIdentityNumber}
+                        {invoice.recipientIdentityType}:{" "}
+                        {invoice.recipientIdentityNumber}
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell>
-                    {formatDate(invoice.emitionDate)}
-                  </TableCell>
+                  <TableCell>{formatDate(invoice.emitionDate)}</TableCell>
                   <TableCell className="font-medium">
                     {formatCurrency(invoice.amount, invoice.currency)}
                   </TableCell>
                   <TableCell>
-                    {getDirectionBadge(invoice.direction)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" className="h-8 w-8 p-0">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() => handleViewInvoice(invoice)}
-                        >
-                          <Eye className="mr-2 h-4 w-4" />
-                          Ver detalles
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => handleDeleteClick(invoice.id)}
-                          className="text-destructive"
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Eliminar
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    {getDirectionBadge(invoice.direction.toLowerCase())}
                   </TableCell>
                 </TableRow>
               ))
@@ -457,74 +660,101 @@ export function InvoicesTable() {
 
       {/* View Invoice Dialog */}
       <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Detalles de la Factura</DialogTitle>
+            <DialogTitle className="text-2xl">
+              Detalles de la Factura
+            </DialogTitle>
           </DialogHeader>
 
           {selectedInvoice && (
             <div className="space-y-6">
               {/* Basic Info */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium">Tipo</label>
-                  <p className="text-sm text-muted-foreground">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-muted/30 rounded-lg">
+                <div className="min-w-0 overflow-hidden">
+                  <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                    Tipo
+                  </label>
+                  <div className="mt-1 w-full overflow-hidden">
                     {getTypeBadge(selectedInvoice.type)}
-                  </p>
+                  </div>
                 </div>
-                <div>
-                  <label className="text-sm font-medium">Dirección</label>
-                  <p className="text-sm text-muted-foreground">
-                    {getDirectionBadge(selectedInvoice.direction)}
-                  </p>
+                <div className="min-w-0">
+                  <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                    Dirección
+                  </label>
+                  <div className="mt-1">
+                    {getDirectionBadge(selectedInvoice.direction.toLowerCase())}
+                  </div>
                 </div>
-                <div>
-                  <label className="text-sm font-medium">Fecha de Emisión</label>
-                  <p className="text-sm text-muted-foreground">
+                <div className="min-w-0">
+                  <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                    Fecha de Emisión
+                  </label>
+                  <p className="text-sm font-medium">
                     {formatDate(selectedInvoice.emitionDate)}
                   </p>
                 </div>
-                <div>
-                  <label className="text-sm font-medium">Monto Total</label>
-                  <p className="text-sm font-medium">
-                    {formatCurrency(selectedInvoice.amount, selectedInvoice.currency)}
+                <div className="min-w-0">
+                  <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                    Monto Total
+                  </label>
+                  <p className="text-lg font-bold break-words">
+                    {formatCurrency(
+                      selectedInvoice.amount,
+                      selectedInvoice.currency
+                    )}
                   </p>
                 </div>
               </div>
 
               {/* Emitter Info */}
-              <div>
-                <h3 className="text-lg font-medium mb-3">Información del Emisor</h3>
-                <div className="grid grid-cols-2 gap-4">
+              <div className="p-4 border rounded-lg">
+                <h3 className="text-lg font-semibold mb-4">
+                  Información del Emisor
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-sm font-medium">Nombre</label>
-                    <p className="text-sm text-muted-foreground">
+                    <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                      Nombre
+                    </label>
+                    <p className="text-sm font-medium">
                       {selectedInvoice.emitterName}
                     </p>
                   </div>
                   <div>
-                    <label className="text-sm font-medium">Identificación</label>
-                    <p className="text-sm text-muted-foreground">
-                      {selectedInvoice.emitterIdentityType}: {selectedInvoice.emitterIdentityNumber}
+                    <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                      Identificación
+                    </label>
+                    <p className="text-sm font-medium">
+                      {selectedInvoice.emitterIdentityType}:{" "}
+                      {selectedInvoice.emitterIdentityNumber}
                     </p>
                   </div>
                 </div>
               </div>
 
               {/* Recipient Info */}
-              <div>
-                <h3 className="text-lg font-medium mb-3">Información del Destinatario</h3>
-                <div className="grid grid-cols-2 gap-4">
+              <div className="p-4 border rounded-lg">
+                <h3 className="text-lg font-semibold mb-4">
+                  Información del Destinatario
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-sm font-medium">Nombre</label>
-                    <p className="text-sm text-muted-foreground">
+                    <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                      Nombre
+                    </label>
+                    <p className="text-sm font-medium">
                       {selectedInvoice.recipientName}
                     </p>
                   </div>
                   <div>
-                    <label className="text-sm font-medium">Identificación</label>
-                    <p className="text-sm text-muted-foreground">
-                      {selectedInvoice.recipientIdentityType}: {selectedInvoice.recipientIdentityNumber}
+                    <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                      Identificación
+                    </label>
+                    <p className="text-sm font-medium">
+                      {selectedInvoice.recipientIdentityType}:{" "}
+                      {selectedInvoice.recipientIdentityNumber}
                     </p>
                   </div>
                 </div>
@@ -532,18 +762,24 @@ export function InvoicesTable() {
 
               {/* Client Info */}
               {selectedInvoice.clientName && (
-                <div>
-                  <h3 className="text-lg font-medium mb-3">Cliente Asociado</h3>
-                  <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 border rounded-lg">
+                  <h3 className="text-lg font-semibold mb-4">
+                    Cliente Asociado
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="text-sm font-medium">Nombre</label>
-                      <p className="text-sm text-muted-foreground">
+                      <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                        Nombre
+                      </label>
+                      <p className="text-sm font-medium">
                         {selectedInvoice.clientName}
                       </p>
                     </div>
                     <div>
-                      <label className="text-sm font-medium">Email</label>
-                      <p className="text-sm text-muted-foreground">
+                      <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                        Email
+                      </label>
+                      <p className="text-sm font-medium">
                         {selectedInvoice.clientEmail}
                       </p>
                     </div>
@@ -553,54 +789,207 @@ export function InvoicesTable() {
 
               {/* Invoice Details */}
               {invoiceDetails && (
-                <div>
-                  <h3 className="text-lg font-medium mb-3">Detalles de la Factura</h3>
-                  <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 border rounded-lg">
+                  <h3 className="text-lg font-semibold mb-4">
+                    Detalles de la Factura
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="text-sm font-medium">Número de Autorización</label>
-                      <p className="text-sm text-muted-foreground">
+                      <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                        Número de Autorización
+                      </label>
+                      <p className="text-sm font-medium">
                         {invoiceDetails.authorizationNumber}
                       </p>
                     </div>
                     <div>
-                      <label className="text-sm font-medium">Punto de Venta</label>
-                      <p className="text-sm text-muted-foreground">
+                      <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                        Punto de Venta
+                      </label>
+                      <p className="text-sm font-medium">
                         {invoiceDetails.salePoint}
                       </p>
                     </div>
                     <div>
-                      <label className="text-sm font-medium">Rango de IDs</label>
-                      <p className="text-sm text-muted-foreground">
+                      <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                        Rango de IDs
+                      </label>
+                      <p className="text-sm font-medium">
                         {invoiceDetails.idFrom} - {invoiceDetails.idTo}
                       </p>
                     </div>
                     <div>
-                      <label className="text-sm font-medium">Moneda</label>
-                      <p className="text-sm text-muted-foreground">
-                        {invoiceDetails.currency} (Tasa: {invoiceDetails.currencyRate})
+                      <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                        Moneda
+                      </label>
+                      <p className="text-sm font-medium">
+                        {invoiceDetails.currency} (Tasa:{" "}
+                        {invoiceDetails.currencyRate})
                       </p>
                     </div>
                   </div>
 
                   {/* Tax Breakdown */}
-                  <div className="mt-4">
-                    <h4 className="text-md font-medium mb-2">Desglose de Impuestos</h4>
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>Monto IVA 0%: {formatCurrency(invoiceDetails.amountIVA0, invoiceDetails.currency)}</div>
-                      <div>IVA 2.5%: {formatCurrency(invoiceDetails.IVA25, invoiceDetails.currency)}</div>
-                      <div>Monto IVA 2.5%: {formatCurrency(invoiceDetails.amountIVA25, invoiceDetails.currency)}</div>
-                      <div>IVA 5%: {formatCurrency(invoiceDetails.IVA5, invoiceDetails.currency)}</div>
-                      <div>Monto IVA 5%: {formatCurrency(invoiceDetails.amountIVA5, invoiceDetails.currency)}</div>
-                      <div>IVA 10.5%: {formatCurrency(invoiceDetails.IVA105, invoiceDetails.currency)}</div>
-                      <div>Monto IVA 10.5%: {formatCurrency(invoiceDetails.amountIVA105, invoiceDetails.currency)}</div>
-                      <div>IVA 21%: {formatCurrency(invoiceDetails.IVA21, invoiceDetails.currency)}</div>
-                      <div>Monto IVA 21%: {formatCurrency(invoiceDetails.amountIVA21, invoiceDetails.currency)}</div>
-                      <div>IVA 27%: {formatCurrency(invoiceDetails.IVA27, invoiceDetails.currency)}</div>
-                      <div>Monto IVA 27%: {formatCurrency(invoiceDetails.amountIVA27, invoiceDetails.currency)}</div>
-                      <div>Total IVA: {formatCurrency(invoiceDetails.totalIVA, invoiceDetails.currency)}</div>
-                      <div>Monto Gravado: {formatCurrency(invoiceDetails.amountTaxed, invoiceDetails.currency)}</div>
-                      <div>Monto No Gravado: {formatCurrency(invoiceDetails.amountNoTaxed, invoiceDetails.currency)}</div>
-                      <div>Monto Exento: {formatCurrency(invoiceDetails.amountExempt, invoiceDetails.currency)}</div>
+                  <div className="mt-4 pt-4 border-t">
+                    <h4 className="text-md font-semibold mb-3">
+                      Desglose de Impuestos
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-muted-foreground">
+                          Monto IVA 0%:
+                        </span>
+                        <span className="font-medium">
+                          {formatCurrency(
+                            invoiceDetails.amountIVA0,
+                            invoiceDetails.currency
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-muted-foreground">IVA 2.5%:</span>
+                        <span className="font-medium">
+                          {formatCurrency(
+                            invoiceDetails.IVA25,
+                            invoiceDetails.currency
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-muted-foreground">
+                          Monto IVA 2.5%:
+                        </span>
+                        <span className="font-medium">
+                          {formatCurrency(
+                            invoiceDetails.amountIVA25,
+                            invoiceDetails.currency
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-muted-foreground">IVA 5%:</span>
+                        <span className="font-medium">
+                          {formatCurrency(
+                            invoiceDetails.IVA5,
+                            invoiceDetails.currency
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-muted-foreground">
+                          Monto IVA 5%:
+                        </span>
+                        <span className="font-medium">
+                          {formatCurrency(
+                            invoiceDetails.amountIVA5,
+                            invoiceDetails.currency
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-muted-foreground">
+                          IVA 10.5%:
+                        </span>
+                        <span className="font-medium">
+                          {formatCurrency(
+                            invoiceDetails.IVA105,
+                            invoiceDetails.currency
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-muted-foreground">
+                          Monto IVA 10.5%:
+                        </span>
+                        <span className="font-medium">
+                          {formatCurrency(
+                            invoiceDetails.amountIVA105,
+                            invoiceDetails.currency
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-muted-foreground">IVA 21%:</span>
+                        <span className="font-medium">
+                          {formatCurrency(
+                            invoiceDetails.IVA21,
+                            invoiceDetails.currency
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-muted-foreground">
+                          Monto IVA 21%:
+                        </span>
+                        <span className="font-medium">
+                          {formatCurrency(
+                            invoiceDetails.amountIVA21,
+                            invoiceDetails.currency
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-muted-foreground">IVA 27%:</span>
+                        <span className="font-medium">
+                          {formatCurrency(
+                            invoiceDetails.IVA27,
+                            invoiceDetails.currency
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-muted-foreground">
+                          Monto IVA 27%:
+                        </span>
+                        <span className="font-medium">
+                          {formatCurrency(
+                            invoiceDetails.amountIVA27,
+                            invoiceDetails.currency
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b font-semibold">
+                        <span>Total IVA:</span>
+                        <span>
+                          {formatCurrency(
+                            invoiceDetails.totalIVA,
+                            invoiceDetails.currency
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-muted-foreground">
+                          Monto Gravado:
+                        </span>
+                        <span className="font-medium">
+                          {formatCurrency(
+                            invoiceDetails.amountTaxed,
+                            invoiceDetails.currency
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-muted-foreground">
+                          Monto No Gravado:
+                        </span>
+                        <span className="font-medium">
+                          {formatCurrency(
+                            invoiceDetails.amountNoTaxed,
+                            invoiceDetails.currency
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-2">
+                        <span className="text-muted-foreground">
+                          Monto Exento:
+                        </span>
+                        <span className="font-medium">
+                          {formatCurrency(
+                            invoiceDetails.amountExempt,
+                            invoiceDetails.currency
+                          )}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -609,44 +998,42 @@ export function InvoicesTable() {
               {/* Attachments */}
               {invoiceDetails?.attachments &&
                 invoiceDetails.attachments.length > 0 && (
-                  <div>
-                    <label className="text-sm font-medium">
+                  <div className="p-4 border rounded-lg">
+                    <h3 className="text-lg font-semibold mb-4">
                       Archivos Adjuntos
-                    </label>
-                    <div className="space-y-2 mt-2">
-                      {invoiceDetails.attachments.map(
-                        (attachment: any) => (
-                          <div
-                            key={attachment.id}
-                            className="flex items-center justify-between p-3 border rounded-md"
-                          >
-                            <div className="flex items-center gap-2">
-                              <FileText className="h-4 w-4 text-muted-foreground" />
-                              <div>
-                                <p className="text-sm font-medium">
-                                  {attachment.documentName}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  {attachment.documentType}
-                                </p>
-                              </div>
+                    </h3>
+                    <div className="space-y-2">
+                      {invoiceDetails.attachments.map((attachment: any) => (
+                        <div
+                          key={attachment.id}
+                          className="flex items-center justify-between p-3 border rounded-md"
+                        >
+                          <div className="flex items-center gap-2">
+                            <FileText className="h-4 w-4 text-muted-foreground" />
+                            <div>
+                              <p className="text-sm font-medium">
+                                {attachment.documentName}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {attachment.documentType}
+                              </p>
                             </div>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() =>
-                                handleDownloadAttachment(
-                                  attachment.documentUrl,
-                                  attachment.documentName
-                                )
-                              }
-                            >
-                              <Download className="h-4 w-4 mr-2" />
-                              Descargar
-                            </Button>
                           </div>
-                        )
-                      )}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              handleDownloadAttachment(
+                                attachment.documentUrl,
+                                attachment.documentName
+                              )
+                            }
+                          >
+                            <Download className="h-4 w-4 mr-2" />
+                            Descargar
+                          </Button>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -654,33 +1041,6 @@ export function InvoicesTable() {
           )}
         </DialogContent>
       </Dialog>
-
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Esta acción no se puede deshacer. Se eliminará permanentemente la
-              factura.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteConfirm}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Eliminar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
-
-
-
-
-
