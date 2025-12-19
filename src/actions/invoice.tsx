@@ -919,4 +919,4 @@ export const getInvoiceStatsByProfile = createServerFn({
       monthlyData,
       typeDistribution,
     };
-  });
+});
