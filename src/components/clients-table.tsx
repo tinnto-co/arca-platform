@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { Eye, Edit, Trash2, MoreHorizontal, Search } from "lucide-react";
 import { toast } from "sonner";
 
@@ -40,9 +41,9 @@ import {
 import { getClients, deleteClient } from "@/actions/client";
 import { getInvoiceTotalsByClient } from "@/actions/invoice";
 import { EditClientDialog } from "@/components/edit-client-dialog";
-import { ViewClientDialog } from "@/components/view-client-dialog";
 
 export function ClientsTable() {
+  const navigate = useNavigate();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [clientToDelete, setClientToDelete] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -267,12 +268,15 @@ export function ClientsTable() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <ViewClientDialog clientId={client.id}>
-                        <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                          <Eye className="mr-2 h-4 w-4" />
-                          Ver
-                        </DropdownMenuItem>
-                      </ViewClientDialog>
+                      <DropdownMenuItem
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          navigate({ to: `/clients/${client.id}` });
+                        }}
+                      >
+                        <Eye className="mr-2 h-4 w-4" />
+                        Ver
+                      </DropdownMenuItem>
                       <EditClientDialog clientId={client.id}>
                         <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
                           <Edit className="mr-2 h-4 w-4" />

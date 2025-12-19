@@ -175,7 +175,7 @@ export function NotificationsTable() {
   };
 
   const formatDate = (date: Date | string) => {
-    const dateObj = typeof date === 'string' ? new Date(date) : date;
+    const dateObj = typeof date === "string" ? new Date(date) : date;
     return dateObj.toLocaleDateString("es-ES", {
       year: "numeric",
       month: "2-digit",
@@ -184,7 +184,6 @@ export function NotificationsTable() {
       minute: "2-digit",
     });
   };
-
 
   const totalPages = notificationsData?.totalPages || 1;
 
@@ -370,7 +369,7 @@ export function NotificationsTable() {
 
       {/* View Notification Dialog */}
       <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[80vh]">
           <DialogHeader>
             <DialogTitle>Detalles de la Notificación</DialogTitle>
           </DialogHeader>

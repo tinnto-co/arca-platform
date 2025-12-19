@@ -18,6 +18,8 @@ import { Route as AuthedInvoicesIndexRouteImport } from './routes/_authed/invoic
 import { Route as AuthedClientsIndexRouteImport } from './routes/_authed/clients/index'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AuthedProductsIdRouteImport } from './routes/_authed/products/$id'
+import { Route as AuthedClientsClientIdIndexRouteImport } from './routes/_authed/clients/$clientId/index'
+import { Route as AuthedClientsClientIdProfileIdIndexRouteImport } from './routes/_authed/clients/$clientId/$profileId/index'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -64,6 +66,18 @@ const AuthedProductsIdRoute = AuthedProductsIdRouteImport.update({
   path: '/products/$id',
   getParentRoute: () => AuthedRouteRoute,
 } as any)
+const AuthedClientsClientIdIndexRoute =
+  AuthedClientsClientIdIndexRouteImport.update({
+    id: '/clients/$clientId/',
+    path: '/clients/$clientId/',
+    getParentRoute: () => AuthedRouteRoute,
+  } as any)
+const AuthedClientsClientIdProfileIdIndexRoute =
+  AuthedClientsClientIdProfileIdIndexRouteImport.update({
+    id: '/clients/$clientId/$profileId/',
+    path: '/clients/$clientId/$profileId/',
+    getParentRoute: () => AuthedRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
@@ -74,6 +88,8 @@ export interface FileRoutesByFullPath {
   '/invoices': typeof AuthedInvoicesIndexRoute
   '/notifications': typeof AuthedNotificationsIndexRoute
   '/products': typeof AuthedProductsIndexRoute
+  '/clients/$clientId': typeof AuthedClientsClientIdIndexRoute
+  '/clients/$clientId/$profileId': typeof AuthedClientsClientIdProfileIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -84,6 +100,8 @@ export interface FileRoutesByTo {
   '/invoices': typeof AuthedInvoicesIndexRoute
   '/notifications': typeof AuthedNotificationsIndexRoute
   '/products': typeof AuthedProductsIndexRoute
+  '/clients/$clientId': typeof AuthedClientsClientIdIndexRoute
+  '/clients/$clientId/$profileId': typeof AuthedClientsClientIdProfileIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -96,6 +114,8 @@ export interface FileRoutesById {
   '/_authed/invoices/': typeof AuthedInvoicesIndexRoute
   '/_authed/notifications/': typeof AuthedNotificationsIndexRoute
   '/_authed/products/': typeof AuthedProductsIndexRoute
+  '/_authed/clients/$clientId/': typeof AuthedClientsClientIdIndexRoute
+  '/_authed/clients/$clientId/$profileId/': typeof AuthedClientsClientIdProfileIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -108,6 +128,8 @@ export interface FileRouteTypes {
     | '/invoices'
     | '/notifications'
     | '/products'
+    | '/clients/$clientId'
+    | '/clients/$clientId/$profileId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -118,6 +140,8 @@ export interface FileRouteTypes {
     | '/invoices'
     | '/notifications'
     | '/products'
+    | '/clients/$clientId'
+    | '/clients/$clientId/$profileId'
   id:
     | '__root__'
     | '/_authed'
@@ -129,6 +153,8 @@ export interface FileRouteTypes {
     | '/_authed/invoices/'
     | '/_authed/notifications/'
     | '/_authed/products/'
+    | '/_authed/clients/$clientId/'
+    | '/_authed/clients/$clientId/$profileId/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -202,6 +228,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedProductsIdRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
+    '/_authed/clients/$clientId/': {
+      id: '/_authed/clients/$clientId/'
+      path: '/clients/$clientId'
+      fullPath: '/clients/$clientId'
+      preLoaderRoute: typeof AuthedClientsClientIdIndexRouteImport
+      parentRoute: typeof AuthedRouteRoute
+    }
+    '/_authed/clients/$clientId/$profileId/': {
+      id: '/_authed/clients/$clientId/$profileId/'
+      path: '/clients/$clientId/$profileId'
+      fullPath: '/clients/$clientId/$profileId'
+      preLoaderRoute: typeof AuthedClientsClientIdProfileIdIndexRouteImport
+      parentRoute: typeof AuthedRouteRoute
+    }
   }
 }
 
@@ -212,6 +252,8 @@ interface AuthedRouteRouteChildren {
   AuthedInvoicesIndexRoute: typeof AuthedInvoicesIndexRoute
   AuthedNotificationsIndexRoute: typeof AuthedNotificationsIndexRoute
   AuthedProductsIndexRoute: typeof AuthedProductsIndexRoute
+  AuthedClientsClientIdIndexRoute: typeof AuthedClientsClientIdIndexRoute
+  AuthedClientsClientIdProfileIdIndexRoute: typeof AuthedClientsClientIdProfileIdIndexRoute
 }
 
 const AuthedRouteRouteChildren: AuthedRouteRouteChildren = {
@@ -221,6 +263,9 @@ const AuthedRouteRouteChildren: AuthedRouteRouteChildren = {
   AuthedInvoicesIndexRoute: AuthedInvoicesIndexRoute,
   AuthedNotificationsIndexRoute: AuthedNotificationsIndexRoute,
   AuthedProductsIndexRoute: AuthedProductsIndexRoute,
+  AuthedClientsClientIdIndexRoute: AuthedClientsClientIdIndexRoute,
+  AuthedClientsClientIdProfileIdIndexRoute:
+    AuthedClientsClientIdProfileIdIndexRoute,
 }
 
 const AuthedRouteRouteWithChildren = AuthedRouteRoute._addFileChildren(

@@ -11,6 +11,14 @@ import { QueryClientProvider, QueryClient } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/sonner";
 const queryClient = new QueryClient();
 export const Route = createRootRoute({
+  notFoundComponent: () => (
+    <div className="flex items-center justify-center h-screen">
+      <div className="text-center">
+        <h1 className="text-2xl font-bold mb-2">404 - Página no encontrada</h1>
+        <p className="text-muted-foreground">La ruta que buscas no existe.</p>
+      </div>
+    </div>
+  ),
   head: () => ({
     meta: [
       {

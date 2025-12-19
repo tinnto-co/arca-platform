@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeaders } from "@tanstack/react-start/server";
 import z from "zod";
 import { db } from "@/lib/db";
-import { client } from "@/drizzle/schema";
+import { client, profile, debt, dueDate } from "@/drizzle/schema";
 import { auth } from "@/lib/auth";
 import { eq } from "drizzle-orm";
 
@@ -98,10 +98,9 @@ export const updateClient = createServerFn({
     z.object({
       id: z.string(),
       name: z.string().min(1, "El nombre es requerido"),
-      email: z.string().email("Email inválido"),
-      phone: z.string().min(1, "El teléfono es requerido"),
-      address: z.string().min(1, "La dirección es requerida"),
-      type: z.string().min(1, "El tipo es requerido"),
+      email: z.string().email("Email inválido").optional().or(z.literal("")),
+      phone: z.string().optional().or(z.literal("")),
+      address: z.string().optional().or(z.literal("")),
       image: z.string().optional(),
     })
   )
@@ -114,7 +113,10 @@ export const updateClient = createServerFn({
     const [updatedClient] = await db
       .update(client)
       .set({
-        ...updateData,
+        name: updateData.name,
+        email: updateData.email || "",
+        phone: updateData.phone || "",
+        address: updateData.address || "",
         image: updateData.image || null,
         updatedAt: new Date(),
       })
@@ -142,4 +144,55 @@ export const deleteClient = createServerFn({
     if (!deletedClient) throw new Error("Error al eliminar el cliente");
 
     return { success: true };
+  });
+
+export const getClientProfiles = createServerFn({
+  method: "GET",
+})
+  .inputValidator(z.object({ clientId: z.string() }))
+  .handler(async (ctx) => {
+    const session = await auth.api.getSession({ headers: getRequestHeaders() });
+    if (!session?.user?.id) throw new Error("Unauthorized");
+
+    const profiles = await db
+      .select()
+      .from(profile)
+      .where(eq(profile.client, ctx.data.clientId))
+      .orderBy(profile.createdAt);
+
+    return profiles;
+  });
+
+export const getClientDebts = createServerFn({
+  method: "GET",
+})
+  .inputValidator(z.object({ clientId: z.string() }))
+  .handler(async (ctx) => {
+    const session = await auth.api.getSession({ headers: getRequestHeaders() });
+    if (!session?.user?.id) throw new Error("Unauthorized");
+
+    const debts = await db
+      .select()
+      .from(debt)
+      .where(eq(debt.client, ctx.data.clientId))
+      .orderBy(debt.dueDate);
+
+    return debts;
+  });
+
+export const getClientDueDates = createServerFn({
+  method: "GET",
+})
+  .inputValidator(z.object({ clientId: z.string() }))
+  .handler(async (ctx) => {
+    const session = await auth.api.getSession({ headers: getRequestHeaders() });
+    if (!session?.user?.id) throw new Error("Unauthorized");
+
+    const dueDates = await db
+      .select()
+      .from(dueDate)
+      .where(eq(dueDate.client, ctx.data.clientId))
+      .orderBy(dueDate.dueDate);
+
+    return dueDates;
   });

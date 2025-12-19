@@ -26,21 +26,20 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { getClient, updateClient } from "@/actions/client";
 
 const clientSchema = z.object({
   name: z.string().min(1, "El nombre es requerido"),
-  email: z.string().email("Email inválido"),
-  phone: z.string().min(1, "El teléfono es requerido"),
-  address: z.string().min(1, "La dirección es requerida"),
-  type: z.string().min(1, "El tipo es requerido"),
+  email: z
+    .string()
+    .optional()
+    .refine(
+      (val) => !val || val === "" || z.string().email().safeParse(val).success,
+      { message: "Email inválido" }
+    )
+    .or(z.literal("")),
+  phone: z.string().optional().or(z.literal("")),
+  address: z.string().optional().or(z.literal("")),
   image: z.string().optional(),
 });
 
@@ -82,10 +81,9 @@ export function EditClientDialog({
     if (client) {
       form.reset({
         name: client.name,
-        email: client.email,
-        phone: client.phone,
-        address: client.address,
-        type: client.type,
+        email: client.email || "",
+        phone: client.phone || "",
+        address: client.address || "",
         image: client.image || "",
       });
     }
@@ -157,12 +155,13 @@ export function EditClientDialog({
                   name="email"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Email</FormLabel>
+                      <FormLabel>Email (opcional)</FormLabel>
                       <FormControl>
                         <Input
                           type="email"
                           placeholder="cliente@ejemplo.com"
                           {...field}
+                          value={field.value || ""}
                         />
                       </FormControl>
                       <FormMessage />
@@ -171,54 +170,36 @@ export function EditClientDialog({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="phone"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Teléfono</FormLabel>
-                      <FormControl>
-                        <Input placeholder="+54 9 11 1234-5678" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="type"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Tipo</FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        value={field.value}
-                      >
-                        <FormControl>
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Seleccionar tipo" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="individual">Individual</SelectItem>
-                          <SelectItem value="company">Empresa</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
+              <FormField
+                control={form.control}
+                name="phone"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Teléfono (opcional)</FormLabel>
+                    <FormControl>
+                      <Input 
+                        placeholder="+54 9 11 1234-5678" 
+                        {...field}
+                        value={field.value || ""}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
               <FormField
                 control={form.control}
                 name="address"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Dirección</FormLabel>
+                    <FormLabel>Dirección (opcional)</FormLabel>
                     <FormControl>
-                      <Input placeholder="Dirección completa" {...field} />
+                      <Input 
+                        placeholder="Dirección completa" 
+                        {...field}
+                        value={field.value || ""}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

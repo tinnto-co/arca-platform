@@ -2,7 +2,13 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeaders } from "@tanstack/react-start/server";
 import z from "zod";
 import { db } from "@/lib/db";
-import { invoice, client, invoiceAttachment, document } from "@/drizzle/schema";
+import {
+  invoice,
+  client,
+  invoiceAttachment,
+  document,
+  profile,
+} from "@/drizzle/schema";
 import { auth } from "@/lib/auth";
 import { eq, desc, asc, and, gte, lte, sql, inArray } from "drizzle-orm";
 
@@ -252,11 +258,40 @@ export const getInvoice = createServerFn({
 export const getInvoiceAttachments = createServerFn({
   method: "GET",
 })
-  .inputValidator(z.object({ id: z.string() }))
+  .inputValidator(z.object({ invoiceId: z.string() }))
   .handler(async (ctx) => {
     const session = await auth.api.getSession({ headers: getRequestHeaders() });
     if (!session?.user?.id) throw new Error("Unauthorized");
 
+    // Get clients associated with the current user
+    const userClients = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(eq(client.userId, session.user.id));
+
+    const userClientIds = userClients.map((c) => c.id);
+
+    if (userClientIds.length === 0) {
+      return [];
+    }
+
+    // Verify invoice belongs to user's clients
+    const [invoiceData] = await db
+      .select({ clientId: invoice.client })
+      .from(invoice)
+      .where(
+        and(
+          eq(invoice.id, ctx.data.invoiceId),
+          inArray(invoice.client, userClientIds)
+        )
+      )
+      .limit(1);
+
+    if (!invoiceData) {
+      throw new Error("Factura no encontrada");
+    }
+
+    // Get attachments for this invoice
     const attachments = await db
       .select({
         id: invoiceAttachment.id,
@@ -269,7 +304,7 @@ export const getInvoiceAttachments = createServerFn({
       })
       .from(invoiceAttachment)
       .leftJoin(document, eq(invoiceAttachment.document, document.id))
-      .where(eq(invoiceAttachment.notification, ctx.data.id));
+      .where(eq(invoiceAttachment.notification, ctx.data.invoiceId));
 
     return attachments;
   });
@@ -279,279 +314,279 @@ export const createInvoice = createServerFn({
 })
   .inputValidator(
     z.object({
-      direction: z.string().min(1, "La dirección es requerida"),
-      emitionDate: z.string().transform((str) => new Date(str)),
-      type: z.string().min(1, "El tipo es requerido"),
-      recipientName: z
-        .string()
-        .min(1, "El nombre del destinatario es requerido"),
-      recipientIdentityNumber: z
-        .string()
-        .min(1, "El número de identidad del destinatario es requerido"),
-      recipientIdentityType: z
-        .string()
-        .min(1, "El tipo de identidad del destinatario es requerido"),
-      emitterName: z.string().min(1, "El nombre del emisor es requerido"),
-      emitterIdentityNumber: z
-        .string()
-        .min(1, "El número de identidad del emisor es requerido"),
-      emitterIdentityType: z
-        .string()
-        .min(1, "El tipo de identidad del emisor es requerido"),
-      currency: z.string().min(1, "La moneda es requerida"),
-      currencyRate: z.number().min(0, "La tasa de cambio debe ser positiva"),
-      salePoint: z.string().min(1, "El punto de venta es requerido"),
-      clientId: z.string().uuid("ID de cliente inválido"),
-      authorizationNumber: z
-        .string()
-        .min(1, "El número de autorización es requerido"),
-      idFrom: z.number().min(1, "El ID desde debe ser mayor a 0"),
-      idTo: z.number().min(1, "El ID hasta debe ser mayor a 0"),
-      amountIVA0: z.number().min(0, "El monto IVA 0 debe ser positivo"),
-      IVA25: z.number().min(0, "El IVA 2.5% debe ser positivo"),
-      amountIVA25: z.number().min(0, "El monto IVA 2.5% debe ser positivo"),
-      IVA5: z.number().min(0, "El IVA 5% debe ser positivo"),
-      amountIVA5: z.number().min(0, "El monto IVA 5% debe ser positivo"),
-      IVA105: z.number().min(0, "El IVA 10.5% debe ser positivo"),
-      amountIVA105: z.number().min(0, "El monto IVA 10.5% debe ser positivo"),
-      IVA21: z.number().min(0, "El IVA 21% debe ser positivo"),
-      amountIVA21: z.number().min(0, "El monto IVA 21% debe ser positivo"),
-      IVA27: z.number().min(0, "El IVA 27% debe ser positivo"),
-      amountIVA27: z.number().min(0, "El monto IVA 27% debe ser positivo"),
-      amountTaxed: z.number().min(0, "El monto gravado debe ser positivo"),
-      amountNoTaxed: z.number().min(0, "El monto no gravado debe ser positivo"),
-      amountExempt: z.number().min(0, "El monto exento debe ser positivo"),
-      other_taxes: z.number().min(0, "Otros impuestos deben ser positivos"),
-      totalIVA: z.number().min(0, "El total IVA debe ser positivo"),
-      amount: z.number().min(0, "El monto total debe ser positivo"),
+      direction: z.string(),
+      emitionDate: z.string(),
+      type: z.string(),
+      recipientName: z.string(),
+      recipientIdentityNumber: z.string(),
+      recipientIdentityType: z.string(),
+      emitterName: z.string(),
+      emitterIdentityNumber: z.string(),
+      emitterIdentityType: z.string(),
+      currency: z.string(),
+      currencyRate: z.string(),
+      salePoint: z.string(),
+      authorizationNumber: z.string(),
+      idFrom: z.string(),
+      idTo: z.string(),
+      amount: z.string(),
+      clientId: z.string(),
+      profileId: z.string().optional(),
+      amountIVA0: z.string().optional(),
+      IVA25: z.string().optional(),
+      amountIVA25: z.string().optional(),
+      IVA5: z.string().optional(),
+      amountIVA5: z.string().optional(),
+      IVA105: z.string().optional(),
+      amountIVA105: z.string().optional(),
+      IVA21: z.string().optional(),
+      amountIVA21: z.string().optional(),
+      IVA27: z.string().optional(),
+      amountIVA27: z.string().optional(),
+      amountTaxed: z.string().optional(),
+      amountNoTaxed: z.string().optional(),
+      amountExempt: z.string().optional(),
+      other_taxes: z.string().optional(),
+      totalIVA: z.string().optional(),
     })
   )
   .handler(async (ctx) => {
     const session = await auth.api.getSession({ headers: getRequestHeaders() });
     if (!session?.user?.id) throw new Error("Unauthorized");
 
-    const {
-      direction,
-      emitionDate,
-      type,
-      recipientName,
-      recipientIdentityNumber,
-      recipientIdentityType,
-      emitterName,
-      emitterIdentityNumber,
-      emitterIdentityType,
-      currency,
-      currencyRate,
-      salePoint,
-      clientId,
-      authorizationNumber,
-      idFrom,
-      idTo,
-      amountIVA0,
-      IVA25,
-      amountIVA25,
-      IVA5,
-      amountIVA5,
-      IVA105,
-      amountIVA105,
-      IVA21,
-      amountIVA21,
-      IVA27,
-      amountIVA27,
-      amountTaxed,
-      amountNoTaxed,
-      amountExempt,
-      other_taxes,
-      totalIVA,
-      amount,
-    } = ctx.data;
+    // Verify client belongs to user
+    const [clientData] = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(
+        and(
+          eq(client.id, ctx.data.clientId),
+          eq(client.userId, session.user.id)
+        )
+      )
+      .limit(1);
+
+    if (!clientData) {
+      throw new Error("Cliente no encontrado o no autorizado");
+    }
+
+    // Verify profile belongs to client if provided
+    if (ctx.data.profileId) {
+      const [profileData] = await db
+        .select({ id: profile.id })
+        .from(profile)
+        .where(
+          and(
+            eq(profile.id, ctx.data.profileId),
+            eq(profile.client, ctx.data.clientId)
+          )
+        )
+        .limit(1);
+
+      if (!profileData) {
+        throw new Error("Perfil no encontrado o no pertenece al cliente");
+      }
+    }
 
     const [newInvoice] = await db
       .insert(invoice)
       .values({
-        direction,
-        emitionDate,
-        type,
-        recipientName,
-        recipientIdentityNumber,
-        recipientIdentityType,
-        emitterName,
-        emitterIdentityNumber,
-        emitterIdentityType,
-        currency,
-        cureencyRate: currencyRate.toString(),
-        salePoint,
-        client: clientId,
-        authorizationNumber,
-        idFrom: idFrom.toString(),
-        idTo: idTo.toString(),
-        amountIVA0: amountIVA0.toString(),
-        IVA25: IVA25.toString(),
-        amountIVA25: amountIVA25.toString(),
-        IVA5: IVA5.toString(),
-        amountIVA5: amountIVA5.toString(),
-        IVA105: IVA105.toString(),
-        amountIVA105: amountIVA105.toString(),
-        IVA21: IVA21.toString(),
-        amountIVA21: amountIVA21.toString(),
-        IVA27: IVA27.toString(),
-        amountIVA27: amountIVA27.toString(),
-        amountTaxed: amountTaxed.toString(),
-        amountNoTaxed: amountNoTaxed.toString(),
-        amountExempt: amountExempt.toString(),
-        other_taxes: other_taxes.toString(),
-        totalIVA: totalIVA.toString(),
-        amount: amount.toString(),
+        direction: ctx.data.direction,
+        emitionDate: new Date(ctx.data.emitionDate),
+        type: ctx.data.type,
+        recipientName: ctx.data.recipientName,
+        recipientIdentityNumber: ctx.data.recipientIdentityNumber,
+        recipientIdentityType: ctx.data.recipientIdentityType,
+        emitterName: ctx.data.emitterName,
+        emitterIdentityNumber: ctx.data.emitterIdentityNumber,
+        emitterIdentityType: ctx.data.emitterIdentityType,
+        currency: ctx.data.currency,
+        cureencyRate: ctx.data.currencyRate,
+        salePoint: ctx.data.salePoint,
+        authorizationNumber: ctx.data.authorizationNumber,
+        idFrom: ctx.data.idFrom,
+        idTo: ctx.data.idTo,
+        amount: ctx.data.amount,
+        client: ctx.data.clientId,
+        profile: ctx.data.profileId || null,
+        amountIVA0: ctx.data.amountIVA0 || "0",
+        IVA25: ctx.data.IVA25 || "0",
+        amountIVA25: ctx.data.amountIVA25 || "0",
+        IVA5: ctx.data.IVA5 || "0",
+        amountIVA5: ctx.data.amountIVA5 || "0",
+        IVA105: ctx.data.IVA105 || "0",
+        amountIVA105: ctx.data.amountIVA105 || "0",
+        IVA21: ctx.data.IVA21 || "0",
+        amountIVA21: ctx.data.amountIVA21 || "0",
+        IVA27: ctx.data.IVA27 || "0",
+        amountIVA27: ctx.data.amountIVA27 || "0",
+        amountTaxed: ctx.data.amountTaxed || "0",
+        amountNoTaxed: ctx.data.amountNoTaxed || "0",
+        amountExempt: ctx.data.amountExempt || "0",
+        other_taxes: ctx.data.other_taxes || "0",
+        totalIVA: ctx.data.totalIVA || "0",
       })
       .returning();
-
-    if (!newInvoice) throw new Error("Error al crear la factura");
 
     return newInvoice;
   });
 
 export const updateInvoice = createServerFn({
-  method: "POST",
+  method: "PUT",
 })
   .inputValidator(
     z.object({
       id: z.string(),
-      direction: z.string().min(1, "La dirección es requerida"),
-      emitionDate: z.string().transform((str) => new Date(str)),
-      type: z.string().min(1, "El tipo es requerido"),
-      recipientName: z
-        .string()
-        .min(1, "El nombre del destinatario es requerido"),
-      recipientIdentityNumber: z
-        .string()
-        .min(1, "El número de identidad del destinatario es requerido"),
-      recipientIdentityType: z
-        .string()
-        .min(1, "El tipo de identidad del destinatario es requerido"),
-      emitterName: z.string().min(1, "El nombre del emisor es requerido"),
-      emitterIdentityNumber: z
-        .string()
-        .min(1, "El número de identidad del emisor es requerido"),
-      emitterIdentityType: z
-        .string()
-        .min(1, "El tipo de identidad del emisor es requerido"),
-      currency: z.string().min(1, "La moneda es requerida"),
-      currencyRate: z.number().min(0, "La tasa de cambio debe ser positiva"),
-      salePoint: z.string().min(1, "El punto de venta es requerido"),
-      clientId: z.string().uuid("ID de cliente inválido"),
-      authorizationNumber: z
-        .string()
-        .min(1, "El número de autorización es requerido"),
-      idFrom: z.number().min(1, "El ID desde debe ser mayor a 0"),
-      idTo: z.number().min(1, "El ID hasta debe ser mayor a 0"),
-      amountIVA0: z.number().min(0, "El monto IVA 0 debe ser positivo"),
-      IVA25: z.number().min(0, "El IVA 2.5% debe ser positivo"),
-      amountIVA25: z.number().min(0, "El monto IVA 2.5% debe ser positivo"),
-      IVA5: z.number().min(0, "El IVA 5% debe ser positivo"),
-      amountIVA5: z.number().min(0, "El monto IVA 5% debe ser positivo"),
-      IVA105: z.number().min(0, "El IVA 10.5% debe ser positivo"),
-      amountIVA105: z.number().min(0, "El monto IVA 10.5% debe ser positivo"),
-      IVA21: z.number().min(0, "El IVA 21% debe ser positivo"),
-      amountIVA21: z.number().min(0, "El monto IVA 21% debe ser positivo"),
-      IVA27: z.number().min(0, "El IVA 27% debe ser positivo"),
-      amountIVA27: z.number().min(0, "El monto IVA 27% debe ser positivo"),
-      amountTaxed: z.number().min(0, "El monto gravado debe ser positivo"),
-      amountNoTaxed: z.number().min(0, "El monto no gravado debe ser positivo"),
-      amountExempt: z.number().min(0, "El monto exento debe ser positivo"),
-      other_taxes: z.number().min(0, "Otros impuestos deben ser positivos"),
-      totalIVA: z.number().min(0, "El total IVA debe ser positivo"),
-      amount: z.number().min(0, "El monto total debe ser positivo"),
+      direction: z.string().optional(),
+      emitionDate: z.string().optional(),
+      type: z.string().optional(),
+      recipientName: z.string().optional(),
+      recipientIdentityNumber: z.string().optional(),
+      recipientIdentityType: z.string().optional(),
+      emitterName: z.string().optional(),
+      emitterIdentityNumber: z.string().optional(),
+      emitterIdentityType: z.string().optional(),
+      currency: z.string().optional(),
+      currencyRate: z.string().optional(),
+      salePoint: z.string().optional(),
+      authorizationNumber: z.string().optional(),
+      idFrom: z.string().optional(),
+      idTo: z.string().optional(),
+      amount: z.string().optional(),
+      clientId: z.string().optional(),
+      profileId: z.string().optional(),
+      amountIVA0: z.string().optional(),
+      IVA25: z.string().optional(),
+      amountIVA25: z.string().optional(),
+      IVA5: z.string().optional(),
+      amountIVA5: z.string().optional(),
+      IVA105: z.string().optional(),
+      amountIVA105: z.string().optional(),
+      IVA21: z.string().optional(),
+      amountIVA21: z.string().optional(),
+      IVA27: z.string().optional(),
+      amountIVA27: z.string().optional(),
+      amountTaxed: z.string().optional(),
+      amountNoTaxed: z.string().optional(),
+      amountExempt: z.string().optional(),
+      other_taxes: z.string().optional(),
+      totalIVA: z.string().optional(),
     })
   )
   .handler(async (ctx) => {
     const session = await auth.api.getSession({ headers: getRequestHeaders() });
     if (!session?.user?.id) throw new Error("Unauthorized");
 
-    const {
-      id,
-      direction,
-      emitionDate,
-      type,
-      recipientName,
-      recipientIdentityNumber,
-      recipientIdentityType,
-      emitterName,
-      emitterIdentityNumber,
-      emitterIdentityType,
-      currency,
-      currencyRate,
-      salePoint,
-      clientId,
-      authorizationNumber,
-      idFrom,
-      idTo,
-      amountIVA0,
-      IVA25,
-      amountIVA25,
-      IVA5,
-      amountIVA5,
-      IVA105,
-      amountIVA105,
-      IVA21,
-      amountIVA21,
-      IVA27,
-      amountIVA27,
-      amountTaxed,
-      amountNoTaxed,
-      amountExempt,
-      other_taxes,
-      totalIVA,
-      amount,
-    } = ctx.data;
+    // Get clients associated with the current user
+    const userClients = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(eq(client.userId, session.user.id));
+
+    const userClientIds = userClients.map((c) => c.id);
+
+    if (userClientIds.length === 0) {
+      throw new Error("Factura no encontrada");
+    }
+
+    // Verify invoice belongs to user's clients
+    const [existingInvoice] = await db
+      .select({ id: invoice.id, clientId: invoice.client })
+      .from(invoice)
+      .where(
+        and(eq(invoice.id, ctx.data.id), inArray(invoice.client, userClientIds))
+      )
+      .limit(1);
+
+    if (!existingInvoice) {
+      throw new Error("Factura no encontrada o no autorizada");
+    }
+
+    // Verify new client belongs to user if provided
+    if (ctx.data.clientId && ctx.data.clientId !== existingInvoice.clientId) {
+      if (!userClientIds.includes(ctx.data.clientId)) {
+        throw new Error("Cliente no autorizado");
+      }
+    }
+
+    // Verify profile belongs to client if provided
+    if (ctx.data.profileId) {
+      const clientIdToCheck = ctx.data.clientId || existingInvoice.clientId;
+      if (clientIdToCheck) {
+        const [profileData] = await db
+          .select({ id: profile.id })
+          .from(profile)
+          .where(
+            and(
+              eq(profile.id, ctx.data.profileId),
+              eq(profile.client, clientIdToCheck)
+            )
+          )
+          .limit(1);
+
+        if (!profileData) {
+          throw new Error("Perfil no encontrado o no pertenece al cliente");
+        }
+      }
+    }
+
+    // Build update object
+    const updateData: any = {};
+    if (ctx.data.direction) updateData.direction = ctx.data.direction;
+    if (ctx.data.emitionDate)
+      updateData.emitionDate = new Date(ctx.data.emitionDate);
+    if (ctx.data.type) updateData.type = ctx.data.type;
+    if (ctx.data.recipientName)
+      updateData.recipientName = ctx.data.recipientName;
+    if (ctx.data.recipientIdentityNumber)
+      updateData.recipientIdentityNumber = ctx.data.recipientIdentityNumber;
+    if (ctx.data.recipientIdentityType)
+      updateData.recipientIdentityType = ctx.data.recipientIdentityType;
+    if (ctx.data.emitterName) updateData.emitterName = ctx.data.emitterName;
+    if (ctx.data.emitterIdentityNumber)
+      updateData.emitterIdentityNumber = ctx.data.emitterIdentityNumber;
+    if (ctx.data.emitterIdentityType)
+      updateData.emitterIdentityType = ctx.data.emitterIdentityType;
+    if (ctx.data.currency) updateData.currency = ctx.data.currency;
+    if (ctx.data.currencyRate) updateData.cureencyRate = ctx.data.currencyRate;
+    if (ctx.data.salePoint) updateData.salePoint = ctx.data.salePoint;
+    if (ctx.data.authorizationNumber)
+      updateData.authorizationNumber = ctx.data.authorizationNumber;
+    if (ctx.data.idFrom) updateData.idFrom = ctx.data.idFrom;
+    if (ctx.data.idTo) updateData.idTo = ctx.data.idTo;
+    if (ctx.data.amount) updateData.amount = ctx.data.amount;
+    if (ctx.data.clientId) updateData.client = ctx.data.clientId;
+    if (ctx.data.profileId !== undefined)
+      updateData.profile = ctx.data.profileId || null;
+    if (ctx.data.amountIVA0) updateData.amountIVA0 = ctx.data.amountIVA0;
+    if (ctx.data.IVA25) updateData.IVA25 = ctx.data.IVA25;
+    if (ctx.data.amountIVA25) updateData.amountIVA25 = ctx.data.amountIVA25;
+    if (ctx.data.IVA5) updateData.IVA5 = ctx.data.IVA5;
+    if (ctx.data.amountIVA5) updateData.amountIVA5 = ctx.data.amountIVA5;
+    if (ctx.data.IVA105) updateData.IVA105 = ctx.data.IVA105;
+    if (ctx.data.amountIVA105) updateData.amountIVA105 = ctx.data.amountIVA105;
+    if (ctx.data.IVA21) updateData.IVA21 = ctx.data.IVA21;
+    if (ctx.data.amountIVA21) updateData.amountIVA21 = ctx.data.amountIVA21;
+    if (ctx.data.IVA27) updateData.IVA27 = ctx.data.IVA27;
+    if (ctx.data.amountIVA27) updateData.amountIVA27 = ctx.data.amountIVA27;
+    if (ctx.data.amountTaxed) updateData.amountTaxed = ctx.data.amountTaxed;
+    if (ctx.data.amountNoTaxed)
+      updateData.amountNoTaxed = ctx.data.amountNoTaxed;
+    if (ctx.data.amountExempt) updateData.amountExempt = ctx.data.amountExempt;
+    if (ctx.data.other_taxes) updateData.other_taxes = ctx.data.other_taxes;
+    if (ctx.data.totalIVA) updateData.totalIVA = ctx.data.totalIVA;
 
     const [updatedInvoice] = await db
       .update(invoice)
-      .set({
-        direction,
-        emitionDate,
-        type,
-        recipientName,
-        recipientIdentityNumber,
-        recipientIdentityType,
-        emitterName,
-        emitterIdentityNumber,
-        emitterIdentityType,
-        currency,
-        cureencyRate: currencyRate.toString(),
-        salePoint,
-        client: clientId,
-        authorizationNumber,
-        idFrom: idFrom.toString(),
-        idTo: idTo.toString(),
-        amountIVA0: amountIVA0.toString(),
-        IVA25: IVA25.toString(),
-        amountIVA25: amountIVA25.toString(),
-        IVA5: IVA5.toString(),
-        amountIVA5: amountIVA5.toString(),
-        IVA105: IVA105.toString(),
-        amountIVA105: amountIVA105.toString(),
-        IVA21: IVA21.toString(),
-        amountIVA21: amountIVA21.toString(),
-        IVA27: IVA27.toString(),
-        amountIVA27: amountIVA27.toString(),
-        amountTaxed: amountTaxed.toString(),
-        amountNoTaxed: amountNoTaxed.toString(),
-        amountExempt: amountExempt.toString(),
-        other_taxes: other_taxes.toString(),
-        totalIVA: totalIVA.toString(),
-        amount: amount.toString(),
-        updatedAt: new Date(),
-      })
-      .where(eq(invoice.id, id))
+      .set(updateData)
+      .where(eq(invoice.id, ctx.data.id))
       .returning();
-
-    if (!updatedInvoice) throw new Error("Error al actualizar la factura");
 
     return updatedInvoice;
   });
 
 export const deleteInvoice = createServerFn({
-  method: "POST",
+  method: "DELETE",
 })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async (ctx) => {
@@ -567,18 +602,23 @@ export const deleteInvoice = createServerFn({
     const userClientIds = userClients.map((c) => c.id);
 
     if (userClientIds.length === 0) {
-      throw new Error("Error al eliminar la factura");
+      throw new Error("Factura no encontrada");
     }
 
-    // Delete invoice only if it belongs to user's clients
-    const [deletedInvoice] = await db
-      .delete(invoice)
+    // Verify invoice belongs to user's clients
+    const [existingInvoice] = await db
+      .select({ id: invoice.id })
+      .from(invoice)
       .where(
         and(eq(invoice.id, ctx.data.id), inArray(invoice.client, userClientIds))
       )
-      .returning();
+      .limit(1);
 
-    if (!deletedInvoice) throw new Error("Error al eliminar la factura");
+    if (!existingInvoice) {
+      throw new Error("Factura no encontrada o no autorizada");
+    }
+
+    await db.delete(invoice).where(eq(invoice.id, ctx.data.id));
 
     return { success: true };
   });
@@ -644,3 +684,239 @@ export const getInvoiceTotalsByClient = createServerFn({
 
   return totalsByClient;
 });
+
+export const getInvoicesByProfile = createServerFn({
+  method: "GET",
+})
+  .inputValidator(
+    z.object({
+      profileId: z.string(),
+      page: z.number().default(1),
+      limit: z.number().default(10),
+    })
+  )
+  .handler(async (ctx) => {
+    const session = await auth.api.getSession({ headers: getRequestHeaders() });
+    if (!session?.user?.id) throw new Error("Unauthorized");
+
+    const { profileId, page, limit } = ctx.data;
+    const offset = (page - 1) * limit;
+
+    // Get clients associated with the current user
+    const userClients = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(eq(client.userId, session.user.id));
+
+    const userClientIds = userClients.map((c) => c.id);
+
+    if (userClientIds.length === 0) {
+      return {
+        invoices: [],
+        totalCount: 0,
+        totalPages: 0,
+        currentPage: page,
+      };
+    }
+
+    // Verify profile belongs to one of user's clients
+    const [profileData] = await db
+      .select({ id: profile.id, clientId: profile.client })
+      .from(profile)
+      .where(
+        and(eq(profile.id, profileId), inArray(profile.client, userClientIds))
+      )
+      .limit(1);
+
+    if (!profileData) {
+      throw new Error("Perfil no encontrado o no autorizado");
+    }
+
+    // Build where conditions
+    const conditions = [
+      eq(invoice.profile, profileId),
+      inArray(invoice.client, userClientIds),
+    ];
+
+    const whereCondition = and(...conditions);
+
+    // Get total count for pagination
+    const [{ count }] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(invoice)
+      .where(whereCondition);
+
+    // Get invoices with client data
+    const invoices = await db
+      .select({
+        id: invoice.id,
+        direction: invoice.direction,
+        emitionDate: invoice.emitionDate,
+        type: invoice.type,
+        recipientName: invoice.recipientName,
+        recipientIdentityNumber: invoice.recipientIdentityNumber,
+        recipientIdentityType: invoice.recipientIdentityType,
+        emitterName: invoice.emitterName,
+        emitterIdentityNumber: invoice.emitterIdentityNumber,
+        emitterIdentityType: invoice.emitterIdentityType,
+        currency: invoice.currency,
+        currencyRate: invoice.cureencyRate,
+        salePoint: invoice.salePoint,
+        authorizationNumber: invoice.authorizationNumber,
+        idFrom: invoice.idFrom,
+        idTo: invoice.idTo,
+        amount: invoice.amount,
+        clientId: invoice.client,
+        clientName: client.name,
+        clientEmail: client.email,
+        createdAt: invoice.createdAt,
+        updatedAt: invoice.updatedAt,
+      })
+      .from(invoice)
+      .leftJoin(client, eq(invoice.client, client.id))
+      .where(whereCondition)
+      .orderBy(desc(invoice.emitionDate))
+      .limit(limit)
+      .offset(offset);
+
+    return {
+      invoices,
+      totalCount: count,
+      totalPages: Math.ceil(count / limit),
+      currentPage: page,
+    };
+  });
+
+export const getInvoiceStatsByProfile = createServerFn({
+  method: "GET",
+})
+  .inputValidator(z.object({ profileId: z.string() }))
+  .handler(async (ctx) => {
+    const session = await auth.api.getSession({ headers: getRequestHeaders() });
+    if (!session?.user?.id) throw new Error("Unauthorized");
+
+    const { profileId } = ctx.data;
+
+    // Get clients associated with the current user
+    const userClients = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(eq(client.userId, session.user.id));
+
+    const userClientIds = userClients.map((c) => c.id);
+
+    if (userClientIds.length === 0) {
+      return {
+        totalInvoices: 0,
+        totalOutbound: 0,
+        totalInbound: 0,
+        monthlyData: [],
+        typeDistribution: [],
+      };
+    }
+
+    // Verify profile belongs to one of user's clients
+    const [profileData] = await db
+      .select({ id: profile.id, clientId: profile.client })
+      .from(profile)
+      .where(
+        and(eq(profile.id, profileId), inArray(profile.client, userClientIds))
+      )
+      .limit(1);
+
+    if (!profileData) {
+      throw new Error("Perfil no encontrado o no autorizado");
+    }
+
+    // Get all invoices for this profile
+    const invoices = await db
+      .select({
+        id: invoice.id,
+        direction: invoice.direction,
+        emitionDate: invoice.emitionDate,
+        type: invoice.type,
+        amount: invoice.amount,
+        currency: invoice.currency,
+        currencyRate: invoice.cureencyRate,
+      })
+      .from(invoice)
+      .where(
+        and(
+          eq(invoice.profile, profileId),
+          inArray(invoice.client, userClientIds)
+        )
+      );
+
+    // Calculate totals
+    let totalOutbound = 0;
+    let totalInbound = 0;
+    const monthlyDataMap: Record<
+      string,
+      { outbound: number; inbound: number }
+    > = {};
+    const typeDistributionMap: Record<string, number> = {};
+
+    invoices.forEach((inv) => {
+      // Convert amount to number
+      let amount = parseFloat(inv.amount || "0");
+
+      // If currency is USD, convert to ARS using the currency rate
+      if (inv.currency?.toUpperCase() === "USD") {
+        const rate = parseFloat(inv.currencyRate || "1");
+        amount = amount * rate;
+      }
+
+      const direction = inv.direction?.toLowerCase();
+      const date = new Date(inv.emitionDate);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+
+      // Calculate totals
+      if (direction === "outbound") {
+        totalOutbound += amount;
+      } else if (direction === "inbound") {
+        totalInbound += amount;
+      }
+
+      // Monthly data
+      if (!monthlyDataMap[monthKey]) {
+        monthlyDataMap[monthKey] = { outbound: 0, inbound: 0 };
+      }
+      if (direction === "outbound") {
+        monthlyDataMap[monthKey].outbound += amount;
+      } else if (direction === "inbound") {
+        monthlyDataMap[monthKey].inbound += amount;
+      }
+
+      // Type distribution
+      const type = inv.type || "unknown";
+      if (!typeDistributionMap[type]) {
+        typeDistributionMap[type] = 0;
+      }
+      typeDistributionMap[type] += amount;
+    });
+
+    // Convert monthly data map to array
+    const monthlyData = Object.entries(monthlyDataMap)
+      .map(([month, data]) => ({
+        month,
+        outbound: data.outbound,
+        inbound: data.inbound,
+      }))
+      .sort((a, b) => a.month.localeCompare(b.month));
+
+    // Convert type distribution map to array
+    const typeDistribution = Object.entries(typeDistributionMap).map(
+      ([type, amount]) => ({
+        type,
+        amount,
+      })
+    );
+
+    return {
+      totalInvoices: invoices.length,
+      totalOutbound,
+      totalInbound,
+      monthlyData,
+      typeDistribution,
+    };
+  });

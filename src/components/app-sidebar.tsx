@@ -103,7 +103,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       <Sidebar collapsible="icon" variant="floating" {...props}>
         <SidebarHeader>
           <div className="flex items-center justify-center gap-2">
-            {open && <p className="text-sm text-black  px-2">GESTION ARCA</p>}
+            {open && (
+              <p className="text-lg font-bold text-black  px-2">GESTION ARCA</p>
+            )}
             <SidebarTrigger onClick={() => setOpen(!open)} className="-ml-1" />
           </div>
         </SidebarHeader>

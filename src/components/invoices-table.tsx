@@ -52,7 +52,11 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { getInvoices, getInvoice } from "@/actions/invoice";
+import {
+  getInvoices,
+  getInvoice,
+  getInvoicesByProfile,
+} from "@/actions/invoice";
 import { getClients } from "@/actions/client";
 import { cn } from "@/lib/utils";
 
@@ -81,10 +85,18 @@ interface InvoiceData {
   updatedAt: Date | string;
 }
 
-export function InvoicesTable() {
+interface InvoicesTableProps {
+  clientId?: string;
+  profileId?: string;
+}
+
+export function InvoicesTable({
+  clientId,
+  profileId,
+}: InvoicesTableProps = {}) {
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
-  const [clientFilter, setClientFilter] = useState<string>("all");
+  const [clientFilter, setClientFilter] = useState<string>(clientId || "all");
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [directionFilter, setDirectionFilter] = useState<string>("all");
@@ -102,6 +114,21 @@ export function InvoicesTable() {
   const [invoiceDetails, setInvoiceDetails] = useState<any>(null);
 
   const pageSize = 10;
+
+  // Update clientFilter when clientId changes
+  useEffect(() => {
+    if (clientId) {
+      setClientFilter(clientId);
+      setCurrentPage(1); // Reset to first page when client changes
+    }
+  }, [clientId]);
+
+  // Reset to first page when profileId changes
+  useEffect(() => {
+    if (profileId) {
+      setCurrentPage(1);
+    }
+  }, [profileId]);
 
   // Debounce para la búsqueda (esperar 500ms después de que el usuario deje de escribir)
   useEffect(() => {
@@ -126,35 +153,58 @@ export function InvoicesTable() {
   const dateFrom = dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : "";
   const dateTo = dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : "";
 
+  // Use getInvoicesByProfile if profileId is provided, otherwise use getInvoices
   const { data: invoicesData, isLoading } = useQuery({
-    queryKey: [
-      "invoices",
-      currentPage,
-      clientFilter,
-      dateFrom,
-      dateTo,
-      typeFilter,
-      directionFilter,
-      debouncedSearchTerm,
-      sortBy,
-      sortOrder,
-    ],
+    queryKey: profileId
+      ? [
+          "profileInvoices",
+          profileId,
+          currentPage,
+          dateFrom,
+          dateTo,
+          typeFilter,
+          directionFilter,
+          debouncedSearchTerm,
+          sortBy,
+          sortOrder,
+        ]
+      : [
+          "invoices",
+          currentPage,
+          clientFilter,
+          dateFrom,
+          dateTo,
+          typeFilter,
+          directionFilter,
+          debouncedSearchTerm,
+          sortBy,
+          sortOrder,
+        ],
     queryFn: () =>
-      getInvoices({
-        data: {
-          page: currentPage,
-          limit: pageSize,
-          clientFilter: clientFilter === "all" ? undefined : clientFilter,
-          dateFrom: dateFrom || undefined,
-          dateTo: dateTo || undefined,
-          typeFilter: typeFilter === "all" ? undefined : typeFilter,
-          directionFilter:
-            directionFilter === "all" ? undefined : directionFilter,
-          search: debouncedSearchTerm || undefined,
-          sortBy: sortBy,
-          sortOrder: sortBy ? sortOrder : undefined,
-        },
-      }),
+      profileId
+        ? getInvoicesByProfile({
+            data: {
+              profileId,
+              page: currentPage,
+              limit: pageSize,
+            },
+          })
+        : getInvoices({
+            data: {
+              page: currentPage,
+              limit: pageSize,
+              clientFilter: clientFilter === "all" ? undefined : clientFilter,
+              dateFrom: dateFrom || undefined,
+              dateTo: dateTo || undefined,
+              typeFilter: typeFilter === "all" ? undefined : typeFilter,
+              directionFilter:
+                directionFilter === "all" ? undefined : directionFilter,
+              search: debouncedSearchTerm || undefined,
+              sortBy: sortBy,
+              sortOrder: sortBy ? sortOrder : undefined,
+            },
+          }),
+    enabled: !profileId || !!profileId, // Always enabled
   });
 
   // View invoice details
@@ -362,19 +412,21 @@ export function InvoicesTable() {
             />
           </div>
 
-          <Select value={clientFilter} onValueChange={setClientFilter}>
-            <SelectTrigger className="w-full md:w-48">
-              <SelectValue placeholder="Filtrar por cliente" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos los clientes</SelectItem>
-              {clients.map((client) => (
-                <SelectItem key={client.id} value={client.id}>
-                  {client.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {!clientId && !profileId && (
+            <Select value={clientFilter} onValueChange={setClientFilter}>
+              <SelectTrigger className="w-full md:w-48">
+                <SelectValue placeholder="Filtrar por cliente" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos los clientes</SelectItem>
+                {clients.map((client) => (
+                  <SelectItem key={client.id} value={client.id}>
+                    {client.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
 
           <Select value={typeFilter} onValueChange={setTypeFilter}>
             <SelectTrigger className="w-full md:w-64">
@@ -660,7 +712,7 @@ export function InvoicesTable() {
 
       {/* View Invoice Dialog */}
       <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-5xl max-h-[90vh]">
           <DialogHeader>
             <DialogTitle className="text-2xl">
               Detalles de la Factura
