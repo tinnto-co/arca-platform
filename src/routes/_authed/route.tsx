@@ -24,8 +24,8 @@ function RouteComponent() {
           <AppSidebar />
         </Suspense>
         <SidebarInset>
-          <div className="p-2 h-[100svh] ">
-            <div className="rounded-lg h-full w-full">
+          <div className="p-2 h-[100svh] overflow-x-hidden">
+            <div className="rounded-lg h-full w-full max-w-full min-w-0 overflow-x-hidden">
               <Outlet />
             </div>
           </div>

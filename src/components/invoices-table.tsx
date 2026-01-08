@@ -15,7 +15,6 @@ import { es } from "date-fns/locale";
 import { DateRange } from "react-day-picker";
 
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -115,45 +114,37 @@ export function InvoicesTable({
 
   const pageSize = 10;
 
-  // Update clientFilter when clientId changes
   useEffect(() => {
     if (clientId) {
       setClientFilter(clientId);
-      setCurrentPage(1); // Reset to first page when client changes
+      setCurrentPage(1);
     }
   }, [clientId]);
 
-  // Reset to first page when profileId changes
   useEffect(() => {
     if (profileId) {
       setCurrentPage(1);
     }
   }, [profileId]);
 
-  // Debounce para la búsqueda (esperar 500ms después de que el usuario deje de escribir)
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm);
-      // Resetear a la primera página cuando se busca
       if (searchTerm !== debouncedSearchTerm) {
         setCurrentPage(1);
       }
     }, 500);
-
     return () => clearTimeout(timer);
   }, [searchTerm, debouncedSearchTerm]);
 
-  // Get clients for filter dropdown
   const { data: clients = [] } = useQuery({
     queryKey: ["clients"],
     queryFn: () => getClients(),
   });
 
-  // Get invoices
   const dateFrom = dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : "";
   const dateTo = dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : "";
 
-  // Use getInvoicesByProfile if profileId is provided, otherwise use getInvoices
   const { data: invoicesData, isLoading } = useQuery({
     queryKey: profileId
       ? [
@@ -204,14 +195,12 @@ export function InvoicesTable({
               sortOrder: sortBy ? sortOrder : undefined,
             },
           }),
-    enabled: !profileId || !!profileId, // Always enabled
+    enabled: !profileId || !!profileId,
   });
 
-  // View invoice details
   const handleViewInvoice = async (invoice: InvoiceData) => {
     setSelectedInvoice(invoice);
     setViewDialogOpen(true);
-
     try {
       const details = await getInvoice({ data: { id: invoice.id } });
       setInvoiceDetails(details);
@@ -349,7 +338,7 @@ export function InvoicesTable({
     return (
       <Badge
         variant={typeInfo.variant}
-        className="!whitespace-normal break-words text-xs px-2 py-1 inline-block max-w-full"
+        className="!whitespace-normal break-words text-[10px] px-1.5 py-0.5 inline-block max-w-full leading-tight"
       >
         {typeInfo.label}
       </Badge>
@@ -358,17 +347,13 @@ export function InvoicesTable({
 
   const handleSortByAmount = () => {
     if (sortBy === "amount") {
-      // Si ya está ordenando por monto, cambiar el orden
       if (sortOrder === "desc") {
-        // De descendente a ascendente
         setSortOrder("asc");
       } else if (sortOrder === "asc") {
-        // De ascendente a neutro (sin ordenamiento)
         setSortBy(undefined);
         setSortOrder(undefined);
       }
     } else {
-      // Si no está ordenando por monto, empezar con descendente
       setSortBy("amount");
       setSortOrder("desc");
     }
@@ -385,7 +370,6 @@ export function InvoicesTable({
       inbound: { variant: "secondary", label: "Recibida" },
     };
 
-    // Buscar en el map con el valor original y también en minúsculas para compatibilidad
     const directionKey = direction || "";
     const directionInfo = directionMap[directionKey] ||
       directionMap[directionKey.toLowerCase()] || {
@@ -397,11 +381,42 @@ export function InvoicesTable({
 
   const totalPages = invoicesData?.totalPages || 1;
 
+  // Calculate pagination pages to display (max 7)
+  const getPaginationPages = () => {
+    const maxVisiblePages = 7;
+    if (totalPages <= maxVisiblePages) {
+      return { startPage: 1, endPage: totalPages };
+    }
+
+    const halfVisible = Math.floor(maxVisiblePages / 2);
+    let startPage: number;
+    let endPage: number;
+
+    if (currentPage <= halfVisible) {
+      startPage = 1;
+      endPage = maxVisiblePages;
+    } else if (currentPage + halfVisible >= totalPages) {
+      startPage = totalPages - maxVisiblePages + 1;
+      endPage = totalPages;
+    } else {
+      startPage = currentPage - halfVisible;
+      endPage = currentPage + halfVisible;
+    }
+
+    return { startPage, endPage };
+  };
+
+  const { startPage, endPage } = getPaginationPages();
+  const visiblePages = Array.from(
+    { length: endPage - startPage + 1 },
+    (_, i) => startPage + i
+  );
+
   return (
-    <div className="space-y-4">
+    <div className="w-full min-w-0 space-y-4">
       {/* Filters */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div className="flex flex-col gap-2 md:flex-row md:items-center">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center flex-wrap">
           <div className="relative">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
@@ -566,108 +581,116 @@ export function InvoicesTable({
 
       {/* Table */}
       <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Tipo</TableHead>
-              <TableHead>Cliente</TableHead>
-              <TableHead>Emisor</TableHead>
-              <TableHead>Destinatario</TableHead>
-              <TableHead>Fecha Emisión</TableHead>
-              <TableHead>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="-ml-3 h-8 data-[state=open]:bg-accent"
-                  onClick={handleSortByAmount}
-                >
-                  Monto
-                  {sortBy === "amount" && sortOrder === "asc" ? (
-                    <ArrowUp className="ml-2 h-4 w-4" />
-                  ) : sortBy === "amount" && sortOrder === "desc" ? (
-                    <ArrowDown className="ml-2 h-4 w-4" />
-                  ) : (
-                    <ArrowUpDown className="ml-2 h-4 w-4" />
-                  )}
-                </Button>
-              </TableHead>
-              <TableHead>Dirección</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
+        <div className="w-full overflow-hidden">
+          <table className="w-full table-fixed border-collapse text-xs">
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center">
-                  Cargando facturas...
-                </TableCell>
-              </TableRow>
-            ) : invoicesData?.invoices.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center">
-                  No se encontraron facturas.
-                </TableCell>
-              </TableRow>
-            ) : (
-              invoicesData?.invoices.map((invoice) => (
-                <TableRow
-                  key={invoice.id}
-                  onClick={() => handleViewInvoice(invoice)}
-                  className="cursor-pointer hover:bg-muted/50 transition-colors"
-                >
-                  <TableCell>
-                    <div className="max-w-[200px]">
-                      {getTypeBadge(invoice.type)}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {invoice.clientName ? (
-                      <div>
-                        <div className="font-medium">{invoice.clientName}</div>
-                        <div className="text-sm text-muted-foreground">
-                          {invoice.clientEmail}
-                        </div>
-                      </div>
+                <TableHead className="w-[10%] px-2 py-2 align-top">Tipo</TableHead>
+                <TableHead className="w-[15%] px-2 py-2 align-top">Cliente</TableHead>
+                <TableHead className="w-[18%] px-2 py-2 align-top">Emisor</TableHead>
+                <TableHead className="w-[18%] px-2 py-2 align-top">Destinatario</TableHead>
+                <TableHead className="w-[9%] px-2 py-2 align-middle">Fecha</TableHead>
+                <TableHead className="w-[15%] px-2 py-2 align-middle">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="-ml-2 h-7 data-[state=open]:bg-accent whitespace-nowrap text-xs"
+                    onClick={handleSortByAmount}
+                  >
+                    Monto
+                    {sortBy === "amount" && sortOrder === "asc" ? (
+                      <ArrowUp className="ml-1 h-3 w-3" />
+                    ) : sortBy === "amount" && sortOrder === "desc" ? (
+                      <ArrowDown className="ml-1 h-3 w-3" />
                     ) : (
-                      <span className="text-muted-foreground">Sin cliente</span>
+                      <ArrowUpDown className="ml-1 h-3 w-3" />
                     )}
-                  </TableCell>
-                  <TableCell>
-                    <div>
-                      <div className="font-medium">{invoice.emitterName}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {invoice.emitterIdentityType}:{" "}
-                        {invoice.emitterIdentityNumber}
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div>
-                      <div className="font-medium">{invoice.recipientName}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {invoice.recipientIdentityType}:{" "}
-                        {invoice.recipientIdentityNumber}
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>{formatDate(invoice.emitionDate)}</TableCell>
-                  <TableCell className="font-medium">
-                    {formatCurrency(invoice.amount, invoice.currency)}
-                  </TableCell>
-                  <TableCell>
-                    {getDirectionBadge(invoice.direction.toLowerCase())}
+                  </Button>
+                </TableHead>
+                <TableHead className="w-[15%] px-2 py-2 align-middle">Dirección</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="h-24 text-center">
+                    Cargando facturas...
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+              ) : invoicesData?.invoices.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="h-24 text-center">
+                    No se encontraron facturas.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                invoicesData?.invoices.map((invoice) => (
+                  <TableRow
+                    key={invoice.id}
+                    onClick={() => handleViewInvoice(invoice)}
+                    className="cursor-pointer hover:bg-muted/50 transition-colors"
+                  >
+                    <TableCell className="w-[10%] px-2 py-2 align-top">
+                      <div className="truncate">
+                        {getTypeBadge(invoice.type)}
+                      </div>
+                    </TableCell>
+                    <TableCell className="w-[15%] px-2 py-2 align-top">
+                      {invoice.clientName ? (
+                        <div className="space-y-0.5">
+                          <div className="font-medium truncate text-xs" title={invoice.clientName}>
+                            {invoice.clientName}
+                          </div>
+                          <div className="text-xs text-muted-foreground truncate" title={invoice.clientEmail || ""}>
+                            {invoice.clientEmail}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">Sin cliente</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="w-[18%] px-2 py-2 align-top">
+                      <div className="space-y-0.5">
+                        <div className="font-medium truncate text-xs" title={invoice.emitterName}>
+                          {invoice.emitterName}
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate" title={`${invoice.emitterIdentityType}: ${invoice.emitterIdentityNumber}`}>
+                          {invoice.emitterIdentityType}: {invoice.emitterIdentityNumber}
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="w-[18%] px-2 py-2 align-top">
+                      <div className="space-y-0.5">
+                        <div className="font-medium truncate text-xs" title={invoice.recipientName}>
+                          {invoice.recipientName}
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate" title={`${invoice.recipientIdentityType}: ${invoice.recipientIdentityNumber}`}>
+                          {invoice.recipientIdentityType}: {invoice.recipientIdentityNumber}
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="w-[9%] px-2 py-2 align-middle whitespace-nowrap">
+                      {formatDate(invoice.emitionDate)}
+                    </TableCell>
+                    <TableCell className="w-[15%] px-2 py-2 align-middle whitespace-nowrap font-medium">
+                      {formatCurrency(invoice.amount, invoice.currency)}
+                    </TableCell>
+                    <TableCell className="w-[15%] px-2 py-2 align-middle whitespace-nowrap">
+                      {getDirectionBadge(invoice.direction.toLowerCase())}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </table>
+        </div>
       </div>
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex justify-center">
+        <div className="flex justify-center w-full min-w-0">
           <Pagination>
-            <PaginationContent>
+            <PaginationContent className="flex-wrap justify-center">
               <PaginationItem>
                 <PaginationPrevious
                   onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
@@ -679,18 +702,52 @@ export function InvoicesTable({
                 />
               </PaginationItem>
 
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(
-                (page) => (
-                  <PaginationItem key={page}>
+              {startPage > 1 && (
+                <>
+                  <PaginationItem>
                     <PaginationLink
-                      onClick={() => setCurrentPage(page)}
-                      isActive={currentPage === page}
+                      onClick={() => setCurrentPage(1)}
                       className="cursor-pointer"
                     >
-                      {page}
+                      1
                     </PaginationLink>
                   </PaginationItem>
-                )
+                  {startPage > 2 && (
+                    <PaginationItem>
+                      <span className="px-2">...</span>
+                    </PaginationItem>
+                  )}
+                </>
+              )}
+
+              {visiblePages.map((page) => (
+                <PaginationItem key={page}>
+                  <PaginationLink
+                    onClick={() => setCurrentPage(page)}
+                    isActive={currentPage === page}
+                    className="cursor-pointer"
+                  >
+                    {page}
+                  </PaginationLink>
+                </PaginationItem>
+              ))}
+
+              {endPage < totalPages && (
+                <>
+                  {endPage < totalPages - 1 && (
+                    <PaginationItem>
+                      <span className="px-2">...</span>
+                    </PaginationItem>
+                  )}
+                  <PaginationItem>
+                    <PaginationLink
+                      onClick={() => setCurrentPage(totalPages)}
+                      className="cursor-pointer"
+                    >
+                      {totalPages}
+                    </PaginationLink>
+                  </PaginationItem>
+                </>
               )}
 
               <PaginationItem>
@@ -712,7 +769,7 @@ export function InvoicesTable({
 
       {/* View Invoice Dialog */}
       <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-        <DialogContent className="max-w-5xl max-h-[90vh]">
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-2xl">
               Detalles de la Factura

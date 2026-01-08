@@ -1,10 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeaders } from "@tanstack/react-start/server";
 import z from "zod";
+import axios from "axios";
 import { db } from "@/lib/db";
 import { client, profile, debt, dueDate } from "@/drizzle/schema";
 import { auth } from "@/lib/auth";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 export const createClient = createServerFn({
   method: "POST",
@@ -59,6 +60,79 @@ export const createClient = createServerFn({
     if (!newClient) throw new Error("Error al crear el cliente");
 
     return newClient;
+  });
+
+export const notifyBackendNewClient = createServerFn({
+  method: "POST",
+})
+  .inputValidator(z.object({ clientId: z.string() }))
+  .handler(async (ctx) => {
+    const session = await auth.api.getSession({ headers: getRequestHeaders() });
+    if (!session?.user?.id) throw new Error("Unauthorized");
+
+    // Verify client belongs to user
+    const [clientData] = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(
+        and(eq(client.id, ctx.data.clientId), eq(client.userId, session.user.id))
+      )
+      .limit(1);
+
+    if (!clientData) {
+      throw new Error("Cliente no encontrado o no autorizado");
+    }
+
+    // Notify backend about new client
+    const backendUrl = process.env.BACKEND_API_URL || "http://localhost:3001";
+    try {
+      await axios.post(`${backendUrl}/api/scrap/new-client`, {
+        clientId: ctx.data.clientId,
+      });
+      return { success: true };
+    } catch (error) {
+      throw new Error("Error al notificar al backend sobre el nuevo cliente");
+    }
+  });
+
+export const updateOldClient = createServerFn({
+  method: "POST",
+})
+  .inputValidator(z.object({ clientId: z.string() }))
+  .handler(async (ctx) => {
+    const session = await auth.api.getSession({ headers: getRequestHeaders() });
+    if (!session?.user?.id) throw new Error("Unauthorized");
+
+    // Verify client belongs to user
+    const [clientData] = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(
+        and(eq(client.id, ctx.data.clientId), eq(client.userId, session.user.id))
+      )
+      .limit(1);
+
+    if (!clientData) {
+      throw new Error("Cliente no encontrado o no autorizado");
+    }
+
+    // Initiate scraping for old client
+    const backendUrl = process.env.BACKEND_API_URL || "http://localhost:3001";
+    try {
+      const response = await axios.post(`${backendUrl}/api/scrap/old-client`, {
+        clientId: ctx.data.clientId,
+      });
+      return {
+        success: true,
+        message: response.data.message || "Scraping iniciado",
+        clientId: ctx.data.clientId,
+      };
+    } catch (error: any) {
+      throw new Error(
+        error.response?.data?.error ||
+          "Error al iniciar el scraping para el cliente"
+      );
+    }
   });
 
 export const getClients = createServerFn({

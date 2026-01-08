@@ -23,7 +23,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { createClient } from "@/actions/client";
+import { createClient, notifyBackendNewClient } from "@/actions/client";
 
 const clientSchema = z
   .object({
@@ -70,7 +70,7 @@ export function CreateClientDialog({ children }: CreateClientDialogProps) {
   const onSubmit = async (values: ClientFormValues) => {
     setLoading(true);
     try {
-      await createClient({
+      const newClient = await createClient({
         data: {
           firstName: values.firstName,
           lastName: values.lastName,
@@ -84,6 +84,17 @@ export function CreateClientDialog({ children }: CreateClientDialogProps) {
           password: values.password,
         },
       });
+      
+      // Enviar el clientId al endpoint del backend
+      if (newClient?.id) {
+        try {
+          await notifyBackendNewClient({ data: { clientId: newClient.id } });
+        } catch (error) {
+          console.error("Error al notificar al backend sobre el nuevo cliente:", error);
+          // No mostramos error al usuario ya que el cliente se creó exitosamente
+        }
+      }
+      
       toast.success("Cliente creado exitosamente");
       form.reset();
       setOpen(false);
