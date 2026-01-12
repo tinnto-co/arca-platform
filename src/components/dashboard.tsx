@@ -86,7 +86,7 @@ export function Dashboard() {
   };
 
   return (
-    <div className="h-[calc(100vh-1rem)] overflow-hidden flex flex-col p-3 md:p-4">
+    <div className="h-[calc(100vh-1rem)] overflow-hidden overflow-y-auto hide-scrollbar flex flex-col p-3 md:p-4">
       {/* Header */}
       <div className="mb-3 md:mb-4 flex-shrink-0">
         <h1 className="text-xl md:text-2xl font-semibold mb-1">
@@ -213,8 +213,8 @@ export function Dashboard() {
           <Card className="flex flex-col">
             <CardHeader className="pb-1 flex-shrink-0">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-[11px] md:text-xs font-semibold flex items-center gap-0.5">
-                  <Calendar className="h-2.5 w-2.5 text-black" />
+                <CardTitle className="text-sm font-semibold flex flex-row items-center gap-0.5">
+                  <Calendar className="w-4 h-4 text-black" />
                   Vencimientos Próximos
                 </CardTitle>
               </div>
@@ -259,8 +259,8 @@ export function Dashboard() {
           <Card className="flex flex-col">
             <CardHeader className="pb-1.5 md:pb-2 flex-shrink-0">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-xs md:text-sm font-semibold flex items-center gap-1">
-                  <AlertCircle className="h-3 w-3 md:h-4 md:w-4 text-black" />
+                <CardTitle className="text-sm font-semibold flex flex-row items-center gap-1">
+                  <AlertCircle className="w-4 h-4 text-black" />
                   Deudas Vencidas
                 </CardTitle>
               </div>
@@ -308,8 +308,8 @@ export function Dashboard() {
           <Card className="flex flex-col">
             <CardHeader className="pb-1.5 md:pb-2 flex-shrink-0">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-xs md:text-sm font-semibold flex items-center gap-1">
-                  <FileText className="h-3 w-3 md:h-4 md:w-4 text-black" />
+                <CardTitle className="text-sm font-semibold flex flex-row items-center gap-1">
+                  <FileText className="w-4 h-4 text-black" />
                   Últimas Facturas
                 </CardTitle>
                 <Link to="/invoices">
