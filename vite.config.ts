@@ -11,10 +11,15 @@ export default defineConfig({
       "app.familycapitalfunds.com",
       "localhost",
     ],
+    watch: {
+      usePolling: true,
+      interval: 100,
+    },
   },
   optimizeDeps: {
     include: ["gridstack"],
   },
+
 
   ssr: {
     noExternal: [

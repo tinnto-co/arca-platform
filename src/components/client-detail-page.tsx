@@ -14,6 +14,9 @@ import {
   Calendar,
   Bell,
   Receipt,
+  BanknoteArrowUp,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -24,12 +27,21 @@ import {
   getClientProfiles,
   getClientDebts,
   getClientDueDates,
+  getClientIvaCredit,
 } from "@/actions/client";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { getNotifications } from "@/actions/notification";
 import { EditClientDialog } from "@/components/edit-client-dialog";
 import { InvoicesTable } from "@/components/invoices-table";
 import { getInvoices } from "@/actions/invoice";
-import { useState, useMemo } from "react";
+import { scrapOldClient } from "@/actions/client";
+import { useState, useMemo, useEffect } from "react";
 import { toast } from "sonner";
 import { Clock, CalendarCheck, CalendarX } from "lucide-react";
 import {
@@ -40,24 +52,107 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { RenderIvaResume } from "./render-iva-resume";
 
 interface ClientDetailPageProps {
   clientId: string;
 }
 
+const formatIvaCurrency = (
+  value: string | number | null | undefined
+): string => {
+  if (value == null || value === "") return "—";
+  const n = Number(value);
+  if (Number.isNaN(n)) return "—";
+  return new Intl.NumberFormat("es-AR", {
+    style: "currency",
+    currency: "ARS",
+    minimumFractionDigits: 2,
+  }).format(n);
+};
+
+/** Período "MM/YYYY" del scrape que alimenta el resumen (mes anterior al elegido). Ej: usuario elige dic/25 → "11/2025". */
+function getPeriodUsedForResumen(from: Date | undefined): string | null {
+  if (!from) return null;
+  const d = new Date(from.getFullYear(), from.getMonth(), 1);
+  const prev = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+  const mm = String(prev.getMonth() + 1).padStart(2, "0");
+  const yyyy = prev.getFullYear();
+  return `${mm}/${yyyy}`;
+}
+
+/** Período "MM/YYYY" del mes que representa la fecha (ej. 1 feb 2026 → "02/2026"). Es el período del resumen que ve el usuario. */
+function getResumenPeriodMMYYYY(from: Date | undefined): string | null {
+  if (!from) return null;
+  const mm = from.getMonth() + 1;
+  const yyyy = from.getFullYear();
+  return `${String(mm).padStart(2, "0")}/${yyyy}`;
+}
+
 export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   const navigate = useNavigate();
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [ivaExpanded, setIvaExpanded] = useState(false);
+  const [ivaProfileId, setIvaProfileId] = useState<string | undefined>(
+    undefined
+  );
+  /** Rango de fechas elegido en el resumen IVA (para resaltar el scrape del período usado). */
+  const [ivaResumenDateRange, setIvaResumenDateRange] = useState<{
+    from?: Date;
+    to?: Date;
+  } | null>(null);
+
+  /** Período fiscal del scrape que alimenta el resumen (mes anterior al elegido en el calendario). */
+  const periodUsedForResumen = useMemo(
+    () => getPeriodUsedForResumen(ivaResumenDateRange?.from),
+    [ivaResumenDateRange?.from]
+  );
 
   const { data: client, isLoading: loadingClient } = useQuery({
     queryKey: ["client", clientId],
-    queryFn: () => getClient({ data: { id: clientId } }),
+    queryFn: async () => {
+      const result = await getClient({ data: { id: clientId } });
+      console.log("getClient result", result);
+      return result;
+    },
+  });
+
+  const periodoFiscalResumen = getResumenPeriodMMYYYY(ivaResumenDateRange?.from);
+
+  const {
+    data: clientIva,
+    isLoading: loadingClientIva,
+    error: clientIvaError,
+  } = useQuery({
+    queryKey: ["clientIva", clientId, ivaProfileId, periodoFiscalResumen],
+    queryFn: () =>
+      getClientIvaCredit({
+        data: {
+          clientId,
+          profileId: ivaProfileId ?? undefined,
+          periodoFiscalResumen: periodoFiscalResumen ?? undefined,
+        },
+      }),
+    enabled: !!ivaProfileId,
+    staleTime: Infinity,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
   });
 
   const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
     queryKey: ["clientProfiles", clientId],
     queryFn: () => getClientProfiles({ data: { clientId } }),
   });
+
+  useEffect(() => {
+    if (profiles.length > 0 && !ivaProfileId) {
+      setIvaProfileId(profiles[0].id);
+    }
+  }, [profiles, ivaProfileId]);
+
+  useEffect(() => {
+    console.log("clientIva", clientIva);
+  }, [clientIva]);
 
   const { data: debts = [], isLoading: loadingDebts } = useQuery({
     queryKey: ["clientDebts", clientId],
@@ -292,6 +387,12 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
             Editar Cliente
           </Button>
         </EditClientDialog>
+        <Button
+          variant="default"
+          onClick={() => scrapOldClient({ data: { clientId } })}
+        >
+          Scrapear Cliente
+        </Button>
       </div>
 
       {/* Navigation Tabs */}
@@ -316,6 +417,10 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
           <TabsTrigger value="facturas">
             <Receipt className="mr-2 h-4 w-4" />
             Facturas
+          </TabsTrigger>
+          <TabsTrigger value="iva">
+            <BanknoteArrowUp className="mr-2 h-4 w-4" />
+            Iva
           </TabsTrigger>
         </TabsList>
 
@@ -570,7 +675,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                       minimumFractionDigits: 2,
                     }).format(
                       debtStats.totalCompensatoryInterest +
-                        debtStats.totalPunitiveInterest
+                      debtStats.totalPunitiveInterest
                     )}{" "}
                     intereses
                   </p>
@@ -958,6 +1063,309 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
           </div>
 
           <InvoicesTable clientId={clientId} />
+        </TabsContent>
+
+        {/* IVA Tab */}
+        <TabsContent value="iva" className="mt-6">
+          <div className="space-y-4">
+            {/* Selector de perfil: define qué perfil ver en IVA y Resumen */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm text-muted-foreground">
+                Perfil para IVA:
+              </span>
+              <Select
+                value={ivaProfileId ?? ""}
+                onValueChange={(value) => setIvaProfileId(value || undefined)}
+                disabled={loadingProfiles || profiles.length <= 1}
+              >
+                <SelectTrigger className="min-w-[200px] w-auto">
+                  <SelectValue
+                    placeholder={
+                      loadingProfiles
+                        ? "Cargando perfiles..."
+                        : profiles.length === 0
+                          ? "Sin perfiles"
+                          : "Seleccionar perfil"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {profiles.map((profile: { id: string; name?: string; identityNumber?: string }) => (
+                    <SelectItem key={profile.id} value={profile.id}>
+                      {profile.name || profile.identityNumber || profile.id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex flex-col lg:flex-row gap-6">
+              <div className="flex-1 min-w-0">
+                <RenderIvaResume
+                  clientId={clientId}
+                  clientName={client?.name}
+                  clientIva={clientIva ?? undefined}
+                  selectedProfileId={ivaProfileId ?? undefined}
+                  onDateRangeChange={(range) => setIvaResumenDateRange(range)}
+                />
+              </div>
+              <div className="flex-1 min-w-0">
+                {!ivaProfileId ? (
+                  <div className="text-sm text-muted-foreground p-6 rounded-lg border bg-muted/30">
+                    Seleccioná un perfil para ver la información de IVA.
+                  </div>
+                ) : loadingClientIva ? (
+                  <div className="flex items-center justify-center h-32 p-6">
+                    <div className="text-muted-foreground">
+                      Calculando IVA del cliente...
+                    </div>
+                  </div>
+                ) : clientIvaError ? (
+                  <div className="flex flex-col gap-2 p-6">
+                    <div className="text-sm font-medium text-red-600">
+                      No se pudo obtener la información de IVA.
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Verificá las credenciales del cliente o intentá nuevamente
+                      más tarde.
+                    </div>
+                  </div>
+                ) : !clientIva || !clientIva.data ? (
+                  <Card className="border-dashed">
+                    <CardContent className="flex items-center justify-center py-10">
+                      <p className="text-sm text-muted-foreground text-center">
+                        No hay información de IVA para este perfil.
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div
+                    className={
+                      periodUsedForResumen &&
+                        clientIva?.data?.periodoFiscal === periodUsedForResumen
+                        ? "rounded-lg border-2 border-emerald-500 transition-colors"
+                        : ""
+                    }
+                  >
+                    {/* Vista compacta: siempre visible, clickeable para desplegar */}
+                    <button
+                      type="button"
+                      onClick={() => setIvaExpanded((e) => !e)}
+                      className="w-full flex items-center justify-between gap-4 p-4 text-left hover:bg-muted/50 transition-colors rounded-lg border-b"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="h-10 w-10 shrink-0 rounded-full bg-muted flex items-center justify-center">
+                          <BanknoteArrowUp className="h-5 w-5 text-muted-foreground" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs text-muted-foreground uppercase tracking-wide">
+                            CUIT
+                          </div>
+                          <div className="font-semibold truncate">
+                            {clientIva.cuit || client.identityNumber}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <div className="text-right">
+                          <div className="text-xs text-muted-foreground">
+                            Período fiscal
+                          </div>
+                          <div className="font-semibold">
+                            {clientIva.data.periodoFiscal}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            Presentado {clientIva.data.fechaPresentacion ?? "—"}
+                          </div>
+                        </div>
+                        {ivaExpanded ? (
+                          <ChevronUp className="h-5 w-5 text-muted-foreground" />
+                        ) : (
+                          <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                        )}
+                      </div>
+                    </button>
+
+                    {/* Contenido desplegable */}
+                    {ivaExpanded && (
+                      <div className="space-y-6 p-4 pt-2">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <Card className="border border-gray-200 shadow-none">
+                            <CardHeader className="pb-2">
+                              <CardTitle className="text-sm font-medium text-muted-foreground">
+                                Débito Fiscal
+                              </CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                              <div className="text-2xl font-bold">
+                                {formatIvaCurrency(clientIva.data.debitoFiscal)}
+                              </div>
+                            </CardContent>
+                          </Card>
+
+                          <Card className="border border-gray-200 shadow-none">
+                            <CardHeader className="pb-2">
+                              <CardTitle className="text-sm font-medium text-muted-foreground">
+                                Crédito Fiscal
+                              </CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                              <div className="text-2xl font-bold">
+                                {formatIvaCurrency(clientIva.data.creditoFiscal)}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <Card className="border border-dashed border-gray-200 shadow-none">
+                            <CardHeader className="pb-1">
+                              <CardTitle className="text-xs font-medium text-muted-foreground">
+                                Saldo a favor del contribuyente del período anterior
+                              </CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                              <div className="text-lg font-semibold">
+                                {formatIvaCurrency(clientIva.data.saldoMesPasado)}
+                              </div>
+                            </CardContent>
+                          </Card>
+
+                          <Card className="border border-dashed border-gray-200 shadow-none">
+                            <CardHeader className="pb-1">
+                              <CardTitle className="text-xs font-medium text-muted-foreground">
+                                Saldo a favor de ARCA este mes
+                              </CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                              <div className="text-lg font-semibold">
+                                {formatIvaCurrency(clientIva.data.saldoArcaMes)}
+                              </div>
+                            </CardContent>
+                          </Card>
+
+                          <Card className="border border-dashed border-gray-200 shadow-none">
+                            <CardHeader className="pb-1">
+                              <CardTitle className="text-xs font-medium text-muted-foreground">
+                                Estado
+                              </CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                              <div className="text-sm font-medium">
+                                {clientIva.data.ok
+                                  ? "Scraping completado correctamente"
+                                  : "Hubo un problema al obtener los datos"}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {clientIva.message}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </div>
+
+                        {/* Determinación del impuesto (panel 1) - campos adicionales */}
+                        <div className="space-y-2">
+                          <h4 className="text-sm font-medium text-muted-foreground">
+                            Determinación del impuesto
+                          </h4>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            <Card className="border border-dashed border-gray-200 shadow-none">
+                              <CardHeader className="pb-1">
+                                <CardTitle className="text-xs font-medium text-muted-foreground">
+                                  Saldo técnico a favor del contribuyente
+                                </CardTitle>
+                              </CardHeader>
+                              <CardContent>
+                                <div className="text-lg font-semibold">
+                                  {formatIvaCurrency(
+                                    clientIva.data.saldoTecnicoFavorContribuyente
+                                  )}
+                                </div>
+                              </CardContent>
+                            </Card>
+                          </div>
+                        </div>
+
+                        {/* Determinación de la posición mensual (panel 2) */}
+                        <div className="space-y-2">
+                          <h4 className="text-sm font-medium text-muted-foreground">
+                            Determinación de la posición mensual
+                          </h4>
+                          <div className="flex flex-wrap gap-4">
+                            <Card className="border border-dashed border-gray-200 shadow-none min-w-[12rem] flex-1 basis-48 overflow-hidden">
+                              <CardHeader className="pb-1">
+                                <CardTitle className="text-xs font-medium text-muted-foreground">
+                                  Saldo técnico a favor del contribuyente (posición
+                                  mensual)
+                                </CardTitle>
+                              </CardHeader>
+                              <CardContent>
+                                <div className="text-lg font-semibold break-words min-w-0">
+                                  {formatIvaCurrency(
+                                    clientIva.data
+                                      .saldoTecnicoFavorContribuyentePosicionMensual
+                                  )}
+                                </div>
+                              </CardContent>
+                            </Card>
+
+                            <Card className="border border-dashed border-gray-200 shadow-none min-w-[12rem] flex-1 basis-48 overflow-hidden">
+                              <CardHeader className="pb-1">
+                                <CardTitle className="text-xs font-medium text-muted-foreground">
+                                  Saldo libre disponibilidad período anterior (neto)
+                                </CardTitle>
+                              </CardHeader>
+                              <CardContent>
+                                <div className="text-lg font-semibold break-words min-w-0">
+                                  {formatIvaCurrency(
+                                    clientIva.data
+                                      .saldoLibreDisponibilidadPeriodoAnteriorNeto
+                                  )}
+                                </div>
+                              </CardContent>
+                            </Card>
+
+                            <Card className="border border-dashed border-gray-200 shadow-none min-w-[12rem] flex-1 basis-48 overflow-hidden">
+                              <CardHeader className="pb-1">
+                                <CardTitle className="text-xs font-medium text-muted-foreground">
+                                  Total retenciones y percepciones del período
+                                </CardTitle>
+                              </CardHeader>
+                              <CardContent>
+                                <div className="text-lg font-semibold break-words min-w-0">
+                                  {formatIvaCurrency(
+                                    clientIva.data
+                                      .totalRetencionesPercepcionesPeriodo
+                                  )}
+                                </div>
+                              </CardContent>
+                            </Card>
+
+                            <Card className="border border-dashed border-gray-200 shadow-none min-w-[12rem] flex-1 basis-48 overflow-hidden">
+                              <CardHeader className="pb-1">
+                                <CardTitle className="text-xs font-medium text-muted-foreground">
+                                  Saldo libre disponibilidad a favor del contribuyente
+                                  (período)
+                                </CardTitle>
+                              </CardHeader>
+                              <CardContent>
+                                <div className="text-lg font-semibold break-words min-w-0">
+                                  {formatIvaCurrency(
+                                    clientIva.data
+                                      .saldoLibreDisponibilidadFavorContribuyentePeriodo
+                                  )}
+                                </div>
+                              </CardContent>
+                            </Card>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </TabsContent>
       </Tabs>
     </div>

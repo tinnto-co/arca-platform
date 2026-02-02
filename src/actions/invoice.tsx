@@ -432,7 +432,7 @@ export const createInvoice = createServerFn({
   });
 
 export const updateInvoice = createServerFn({
-  method: "PUT",
+  method: "POST",
 })
   .inputValidator(
     z.object({
@@ -586,7 +586,7 @@ export const updateInvoice = createServerFn({
   });
 
 export const deleteInvoice = createServerFn({
-  method: "DELETE",
+  method: "POST",
 })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async (ctx) => {
@@ -787,15 +787,101 @@ export const getInvoicesByProfile = createServerFn({
     };
   });
 
+export const getInvoicesByProfileInRange = createServerFn({
+  method: "GET",
+})
+  .inputValidator(
+    z.object({
+      profileId: z.string(),
+      dateFrom: z.string(),
+      dateTo: z.string(),
+    })
+  )
+  .handler(async (ctx) => {
+    try {
+      const session = await auth.api.getSession({ headers: getRequestHeaders() });
+      if (!session?.user?.id) throw new Error("Unauthorized");
+
+      const { profileId, dateFrom, dateTo } = ctx.data;
+
+      // Get clients associated with the current user
+      const userClients = await db
+        .select({ id: client.id })
+        .from(client)
+        .where(eq(client.userId, session.user.id));
+
+      const userClientIds = userClients.map((c) => c.id);
+
+      if (userClientIds.length === 0) {
+        return [];
+      }
+
+      // Verify profile belongs to one of user's clients
+      const [profileData] = await db
+        .select({ id: profile.id, clientId: profile.client })
+        .from(profile)
+        .where(
+          and(eq(profile.id, profileId), inArray(profile.client, userClientIds))
+        )
+        .limit(1);
+
+      if (!profileData) {
+        throw new Error("Perfil no encontrado o no autorizado");
+      }
+
+      const whereCondition = and(
+        eq(invoice.profile, profileId),
+        inArray(invoice.client, userClientIds),
+        gte(invoice.emitionDate, new Date(dateFrom)),
+        lte(invoice.emitionDate, new Date(dateTo))
+      );
+
+      const invoicesInRange = await db
+        .select()
+        .from(invoice)
+        .where(whereCondition)
+        .orderBy(desc(invoice.emitionDate));
+
+      return invoicesInRange;
+    } catch (error: any) {
+      console.error("[getInvoicesByProfileInRange] error:", error);
+      throw new Error(
+        error?.message ||
+          "No se pudieron obtener las facturas para el perfil y rango seleccionados"
+      );
+    }
+  });
+
+// Tipos A según AFIP (Factura A, Nota Débito/Crédito A, Recibo A, etc.)
+const INVOICE_TYPES_A = [
+  "1", "2", "3", "4",
+  "51", "52", "53", "54",
+  "201", "202", "203",
+];
+
+// Tipos B según AFIP (Factura B, Nota Débito B, Nota Crédito B)
+const INVOICE_TYPES_B = ["6", "7", "8"];
+
+// Tipos Nota de Crédito (AFIP): restan del total (no suman)
+const CREDIT_NOTE_TYPES = [
+  "3", "8", "13", "21", "53", "114", "197", "203", "208", "213",
+];
+
 export const getInvoiceStatsByProfile = createServerFn({
   method: "GET",
 })
-  .inputValidator(z.object({ profileId: z.string() }))
+  .inputValidator(
+    z.object({
+      profileId: z.string(),
+      dateFrom: z.string().optional(),
+      dateTo: z.string().optional(),
+    })
+  )
   .handler(async (ctx) => {
     const session = await auth.api.getSession({ headers: getRequestHeaders() });
     if (!session?.user?.id) throw new Error("Unauthorized");
 
-    const { profileId } = ctx.data;
+    const { profileId, dateFrom, dateTo } = ctx.data;
 
     // Get clients associated with the current user
     const userClients = await db
@@ -812,6 +898,18 @@ export const getInvoiceStatsByProfile = createServerFn({
         totalInbound: 0,
         monthlyData: [],
         typeDistribution: [],
+        netoA21: 0,
+        netoA105: 0,
+        totalAmountB21: 0,
+        totalAmountB105: 0,
+        totalAmountB27: 0,
+        netoInbound27: 0,
+        netoInbound21: 0,
+        netoInbound105: 0,
+        netoInbound5: 0,
+        netoInbound25: 0,
+        netoGravadoCompras: 0,
+        creditoFiscalCompras: 0,
       };
     }
 
@@ -828,7 +926,14 @@ export const getInvoiceStatsByProfile = createServerFn({
       throw new Error("Perfil no encontrado o no autorizado");
     }
 
-    // Get all invoices for this profile
+    const conditions = [
+      eq(invoice.profile, profileId),
+      inArray(invoice.client, userClientIds),
+    ];
+    if (dateFrom) conditions.push(gte(invoice.emitionDate, new Date(dateFrom)));
+    if (dateTo) conditions.push(lte(invoice.emitionDate, new Date(dateTo)));
+
+    // Get all invoices for this profile (and date range if provided)
     const invoices = await db
       .select({
         id: invoice.id,
@@ -838,14 +943,106 @@ export const getInvoiceStatsByProfile = createServerFn({
         amount: invoice.amount,
         currency: invoice.currency,
         currencyRate: invoice.cureencyRate,
+        amountIVA21: invoice.amountIVA21,
+        amountIVA105: invoice.amountIVA105,
+        amountIVA27: invoice.amountIVA27,
+        amountIVA5: invoice.amountIVA5,
+        amountIVA25: invoice.amountIVA25,
+        IVA21: invoice.IVA21,
+        IVA105: invoice.IVA105,
+        IVA27: invoice.IVA27,
       })
       .from(invoice)
-      .where(
-        and(
-          eq(invoice.profile, profileId),
-          inArray(invoice.client, userClientIds)
-        )
-      );
+      .where(and(...conditions));
+
+    // Ventas Outbound tipo A: Neto A 21% = amountIVA21, Neto A 10,5% = amountIVA105
+    const invoicesForIvaA = invoices.filter((inv) => {
+      const direction = inv.direction?.toLowerCase();
+      const type = inv.type ?? "";
+      return direction === "outbound" && INVOICE_TYPES_A.includes(type);
+    });
+    console.log(
+      "[getInvoiceStatsByProfile] invoices usados para IVA 21% e IVA 10,5% (ventas tipo A):",
+      JSON.stringify(
+        invoicesForIvaA.map((inv) => ({
+          id: inv.id,
+          direction: inv.direction,
+          type: inv.type,
+          emitionDate: inv.emitionDate,
+          amountIVA21: inv.amountIVA21,
+          amountIVA105: inv.amountIVA105,
+        })),
+        null,
+        2
+      )
+    );
+
+    let netoA21 = 0;
+    let netoA105 = 0;
+    invoicesForIvaA.forEach((inv) => {
+      const rate =
+        inv.currency?.toUpperCase() === "USD"
+          ? parseFloat(inv.currencyRate || "1")
+          : 1;
+      const sign = CREDIT_NOTE_TYPES.includes(inv.type ?? "") ? -1 : 1;
+      netoA21 += sign * parseFloat(inv.amountIVA21 || "0") * rate;
+      netoA105 += sign * parseFloat(inv.amountIVA105 || "0") * rate;
+    });
+
+    // Ventas Outbound tipo B: totalAmountB = suma de (base + impuesto) por alícuota. NC restan, Factura/ND suman. USD con rate.
+    const invoicesForIvaB = invoices.filter((inv) => {
+      const direction = inv.direction?.toLowerCase();
+      const type = inv.type ?? "";
+      return direction === "outbound" && INVOICE_TYPES_B.includes(type);
+    });
+    let totalAmountB21 = 0;
+    let totalAmountB105 = 0;
+    let totalAmountB27 = 0;
+    invoicesForIvaB.forEach((inv) => {
+      const rate =
+        inv.currency?.toUpperCase() === "USD"
+          ? parseFloat(inv.currencyRate || "1")
+          : 1;
+      const sign = CREDIT_NOTE_TYPES.includes(inv.type ?? "") ? -1 : 1;
+      const base21 = parseFloat(inv.amountIVA21 || "0") + parseFloat(inv.IVA21 || "0");
+      const base105 = parseFloat(inv.amountIVA105 || "0") + parseFloat(inv.IVA105 || "0");
+      const base27 = parseFloat(inv.amountIVA27 || "0") + parseFloat(inv.IVA27 || "0");
+      totalAmountB21 += sign * base21 * rate;
+      totalAmountB105 += sign * base105 * rate;
+      totalAmountB27 += sign * base27 * rate;
+    });
+
+    // Compras (inbound): netos gravados por alícuota 27%, 21%, 10,5%, 5%, 2,5%. A y B juntos. NC restan, ND y facturas suman.
+    const invoicesInbound = invoices.filter((inv) => inv.direction?.toLowerCase() === "inbound");
+    let netoInbound27 = 0;
+    let netoInbound21 = 0;
+    let netoInbound105 = 0;
+    let netoInbound5 = 0;
+    let netoInbound25 = 0;
+    invoicesInbound.forEach((inv) => {
+      const rate =
+        inv.currency?.toUpperCase() === "USD"
+          ? parseFloat(inv.currencyRate || "1")
+          : 1;
+      const sign = CREDIT_NOTE_TYPES.includes(inv.type ?? "") ? -1 : 1;
+      netoInbound27 += sign * parseFloat(inv.amountIVA27 || "0") * rate;
+      netoInbound21 += sign * parseFloat(inv.amountIVA21 || "0") * rate;
+      netoInbound105 += sign * parseFloat(inv.amountIVA105 || "0") * rate;
+      netoInbound5 += sign * parseFloat(inv.amountIVA5 || "0") * rate;
+      netoInbound25 += sign * parseFloat(inv.amountIVA25 || "0") * rate;
+    });
+
+    const netoGravadoCompras =
+      netoInbound27 + netoInbound21 + netoInbound105 + netoInbound5 + netoInbound25;
+
+    // Crédito Fiscal Compras = (neto21 * 0.21) + (neto105 * 0.105) + (neto27 * 0.27) + (neto5 * 0.05) + (neto25 * 0.025)
+    // Nota: El Ajuste se suma en el frontend (viene de mock por ahora)
+    const creditoFiscalCompras =
+      netoInbound21 * 0.21 +
+      netoInbound105 * 0.105 +
+      netoInbound27 * 0.27 +
+      netoInbound5 * 0.05 +
+      netoInbound25 * 0.025;
 
     // Calculate totals
     let totalOutbound = 0;
@@ -866,15 +1063,19 @@ export const getInvoiceStatsByProfile = createServerFn({
         amount = amount * rate;
       }
 
+      // Notas de crédito restan del total (no suman)
+      const isCreditNote = CREDIT_NOTE_TYPES.includes(inv.type ?? "");
+      const signedAmount = isCreditNote ? -amount : amount;
+
       const direction = inv.direction?.toLowerCase();
       const date = new Date(inv.emitionDate);
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 
       // Calculate totals
       if (direction === "outbound") {
-        totalOutbound += amount;
+        totalOutbound += signedAmount;
       } else if (direction === "inbound") {
-        totalInbound += amount;
+        totalInbound += signedAmount;
       }
 
       // Monthly data
@@ -882,17 +1083,17 @@ export const getInvoiceStatsByProfile = createServerFn({
         monthlyDataMap[monthKey] = { outbound: 0, inbound: 0 };
       }
       if (direction === "outbound") {
-        monthlyDataMap[monthKey].outbound += amount;
+        monthlyDataMap[monthKey].outbound += signedAmount;
       } else if (direction === "inbound") {
-        monthlyDataMap[monthKey].inbound += amount;
+        monthlyDataMap[monthKey].inbound += signedAmount;
       }
 
-      // Type distribution
+      // Type distribution (notas de crédito restan)
       const type = inv.type || "unknown";
       if (!typeDistributionMap[type]) {
         typeDistributionMap[type] = 0;
       }
-      typeDistributionMap[type] += amount;
+      typeDistributionMap[type] += signedAmount;
     });
 
     // Convert monthly data map to array
@@ -918,5 +1119,17 @@ export const getInvoiceStatsByProfile = createServerFn({
       totalInbound,
       monthlyData,
       typeDistribution,
+      netoA21,
+      netoA105,
+      totalAmountB21,
+      totalAmountB105,
+      totalAmountB27,
+      netoInbound27,
+      netoInbound21,
+      netoInbound105,
+      netoInbound5,
+      netoInbound25,
+      netoGravadoCompras,
+      creditoFiscalCompras,
     };
-});
+  });

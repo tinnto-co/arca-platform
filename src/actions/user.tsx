@@ -22,11 +22,17 @@ export const getSessionAndUser = createServerFn({
   const session = await auth.api.getSession({
     headers: getRequestHeaders(),
   });
+
+  if (!session?.user?.id) {
+    throw new Error("Unauthorized");
+  }
+
   const [user] = await db
     .select()
     .from(userTable)
     .where(eq(userTable.id, session.user.id));
-  return user;
+
+  return user ?? null;
 });
 
 export const getUser = createServerFn({

@@ -24,6 +24,7 @@ import {
   ArrowLeftRight,
   Receipt,
   Mail,
+  FileText,
 } from "lucide-react";
 
 import {
@@ -178,6 +179,17 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   >
                     <Receipt />
                     <span>Facturas</span>
+                  </SidebarMenuButton>
+                </Link>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <Link to="/scan_pdf">
+                  <SidebarMenuButton
+                    isActive={pathname === "/scan_pdf"}
+                    tooltip="Escanear PDF"
+                  >
+                    <FileText />
+                    <span>Escanear PDF</span>
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>

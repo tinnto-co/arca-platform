@@ -5,6 +5,7 @@ import {
   pgTable,
   text,
   timestamp,
+  unique,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -59,6 +60,7 @@ export const profile = pgTable("profile", {
   phone: text("phone").notNull(),
   email: text("email").notNull(),
   status: text("status").notNull(),
+  scrapedAt: timestamp("scraped_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -225,3 +227,69 @@ export const account = pgTable("account", {
     .$onUpdate(() => /* @__PURE__ */ new Date())
     .notNull(),
 });
+
+export const movements = pgTable("movements", {
+  id: text("id").primaryKey(),
+
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+
+  tipo: text("tipo").notNull(),
+  // "ingreso" | "egreso"
+
+  fecha: timestamp("fecha", { mode: "date" }).notNull(),
+
+  descripcion: text("descripcion").notNull(),
+
+  monto: numeric("monto", { precision: 12, scale: 2 }).notNull(),
+
+  tipoGasto: text("tipo_gasto")
+    .default("Sin especificar"),
+
+  createdAt: timestamp("created_at")
+    .defaultNow()
+    .notNull(),
+
+  updatedAt: timestamp("updated_at")
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+});
+
+/**
+ * Resultado del scrape mensual de IVA (AFIP). Un registro por perfil por período.
+ * El scrape se ejecuta una vez al mes, no cada vez que se abre la pestaña IVA.
+ */
+export const ivaScrape = pgTable(
+  "iva_scrape",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profile.id, { onDelete: "cascade" }),
+    periodoFiscal: text("periodo_fiscal").notNull(), // ej. "12/2025"
+    fechaPresentacion: text("fecha_presentacion"), // ej. "15/01/2026"
+    ok: boolean("ok").notNull(),
+    // Determinación del impuesto (panel 1)
+    debitoFiscal: numeric("debito_fiscal", { precision: 18, scale: 2 }),
+    creditoFiscal: numeric("credito_fiscal", { precision: 18, scale: 2 }),
+    saldoMesPasado: numeric("saldo_mes_pasado", { precision: 18, scale: 2 }), // Saldo técnico a favor del contribuyente del período anterior
+    saldoArcaMes: numeric("saldo_arca_mes", { precision: 18, scale: 2 }), // Valor bruto cuando el label es ARCA
+    saldoTecnicoFavorContribuyente: numeric("saldo_tecnico_favor_contribuyente", { precision: 18, scale: 2 }), // 0 cuando en AFIP dice "Saldo a favor de ARCA"
+    // Determinación de la posición mensual (panel 2)
+    saldoTecnicoFavorContribuyentePosicionMensual: numeric("saldo_tecnico_favor_contribuyente_posicion_mensual", { precision: 18, scale: 2 }),
+    saldoLibreDisponibilidadPeriodoAnteriorNeto: numeric("saldo_libre_disponibilidad_periodo_anterior_neto", { precision: 18, scale: 2 }),
+    totalRetencionesPercepcionesPeriodo: numeric("total_retenciones_percepciones_periodo", { precision: 18, scale: 2 }),
+    saldoLibreDisponibilidadFavorContribuyentePeriodo: numeric("saldo_libre_disponibilidad_favor_contribuyente_periodo", { precision: 18, scale: 2 }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    // Un solo registro por perfil por período (upsert mensual)
+    unique("iva_scrape_profile_periodo_unique").on(table.profileId, table.periodoFiscal),
+  ]
+);
