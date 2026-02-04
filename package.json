@@ -72,6 +72,7 @@
     "drizzle-kit": "^0.31.5",
     "drizzle-orm": "^0.44.5",
     "embla-carousel-react": "^8.6.0",
+    "exceljs": "^4.4.0",
     "h3": "1.13.0",
     "i": "^0.3.7",
     "input-otp": "^1.4.2",
@@ -95,9 +96,8 @@
     "typescript": "^5.9.2",
     "vaul": "^1.1.2",
     "vite": "^7.1.7",
-    "exceljs": "^4.4.0",
-    "xlsx": "^0.18.5",
     "vite-tsconfig-paths": "^5.1.4",
+    "xlsx": "^0.18.5",
     "zod": "^4.1.11",
     "zod-to-json-schema": "^3.25.1"
   },

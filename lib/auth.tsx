@@ -1,12 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { betterAuth } from "better-auth";
-import { admin, createAuthMiddleware } from "better-auth/plugins";
+import { admin } from "better-auth/plugins";
 import { reactStartCookies } from "better-auth/react-start";
-import {
-  organization as organizationPlugin,
-  magicLink,
-} from "better-auth/plugins";
-import { jwt } from "better-auth/plugins";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "@/lib/db";
 import { anonymous } from "better-auth/plugins";
@@ -16,7 +11,7 @@ import "dotenv/config";
 export const auth = betterAuth({
   trustedOrigins: [
     "http://localhost:3000",
-    "https://app.familycapitalfunds.com",
+    "https://blakg.tinnto.co",
   ],
   session: {
     cookieCache: {
