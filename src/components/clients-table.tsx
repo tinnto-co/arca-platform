@@ -38,7 +38,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { getClients, deleteClient } from "@/actions/client";
+import { getClientsWithProfiles, deleteClient } from "@/actions/client";
 import { getInvoiceTotalsByClient } from "@/actions/invoice";
 import { EditClientDialog } from "@/components/edit-client-dialog";
 
@@ -51,8 +51,8 @@ export function ClientsTable() {
   const queryClient = useQueryClient();
 
   const { data: clients = [], isLoading } = useQuery({
-    queryKey: ["clients"],
-    queryFn: () => getClients(),
+    queryKey: ["clientsWithProfiles"],
+    queryFn: () => getClientsWithProfiles(),
   });
 
   const { data: invoiceTotals = {} } = useQuery({
@@ -63,14 +63,17 @@ export function ClientsTable() {
   // Filter clients based on search term and filters
   const filteredClients = useMemo(() => {
     return clients.filter((client) => {
-      // Search filter
+      // Search filter (name, profile name, identity number, phone)
       const matchesSearch =
         searchTerm === "" ||
         client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         client.identityNumber
           .toLowerCase()
           .includes(searchTerm.toLowerCase()) ||
-        client.phone.toLowerCase().includes(searchTerm.toLowerCase());
+        client.phone.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        client.profiles?.some((p) =>
+          p.name.toLowerCase().includes(searchTerm.toLowerCase())
+        );
 
       // Status filter
       const matchesStatus =
@@ -83,7 +86,7 @@ export function ClientsTable() {
   const deleteMutation = useMutation({
     mutationFn: (data: { id: string }) => deleteClient({ data }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["clients"] });
+      queryClient.invalidateQueries({ queryKey: ["clientsWithProfiles"] });
       toast.success("Cliente eliminado exitosamente");
       setDeleteDialogOpen(false);
       setClientToDelete(null);
@@ -129,7 +132,7 @@ export function ClientsTable() {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
             <Input
-              placeholder="Buscar por nombre, cuit o teléfono..."
+              placeholder="Buscar por nombre, perfil, CUIT o teléfono..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10"
@@ -165,7 +168,7 @@ export function ClientsTable() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
           <Input
-            placeholder="Buscar por nombre, cuit o teléfono..."
+            placeholder="Buscar por nombre, perfil, CUIT o teléfono..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10"

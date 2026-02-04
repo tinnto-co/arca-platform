@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Calendar as CalendarIcon, ChevronDown, ChevronUp, Download, Pencil, Plus, X } from "lucide-react"
+import { ChevronDown, ChevronUp, Pencil, Plus, X } from "lucide-react"
 import ExcelJSRaw from "exceljs"
 const ExcelJS = ExcelJSRaw as unknown as {
   Workbook: new () => {
@@ -13,21 +13,12 @@ const ExcelJS = ExcelJSRaw as unknown as {
   }
 }
 
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
-import { Separator } from "@/components/ui/separator"
-import { Calendar } from "@/components/ui/calendar"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useQuery } from "@tanstack/react-query"
@@ -44,41 +35,41 @@ const currencyFormatter = new Intl.NumberFormat("es-AR", {
 
 const mockData = {
   debito: {
-    "Neto A 21%": 125000.5,
-    "Neto A 10,5%": 34000.75,
+    "Neto A 21%": 0,
+    "Neto A 10,5%": 0,
     "Total B 10,50%": 0,
     "Total B 21%": 0,
     "Total B 27%": 0,
   },
   resumenDebito: {
-    "Neto Gravado": 251751.5,
-    "Débito Fiscal": 52867.82,
+    "Neto Gravado": 0,
+    "Débito Fiscal": 0,
   },
   credito: {
-    "Compras 21%": 82000.0,
-    "Compras 10,50%": 23000.5,
-    "Compras 27%": 15500.0,
-    "Compras 5% (4,93%)": 4200.0,
-    "Compras 2,5%": 3100.0,
+    "Compras 21%": 0,
+    "Compras 10,50%": 0,
+    "Compras 27%": 0,
+    "Compras 5% (4,93%)": 0,
+    "Compras 2,5%": 0,
     Ajuste: 0,
   },
   resumenCredito: {
-    "Neto Gravado Compras": 127800.5,
-    "Crédito Fiscal": 26890.32,
+    "Neto Gravado Compras": 0,
+    "Crédito Fiscal": 0,
   },
   saldosYRetenciones: {
-    "Saldo a Favor Per. Ant.": 15000.0,
+    "Saldo a Favor Per. Ant.": 0,
     "Saldo Técnico": 0, // Se calcula: Débito Fiscal - Crédito Fiscal - Saldo a Favor Per. Ant.
     "Saldo Libre Disp.": 0,
     Compensaciones: 0,
     Retenciones: 0,
     Percepciones: 0,
     "Percepciones Aduaneras": 0,
-    "Saldo 2° Párrafo": 6500.0,
+    "Saldo 2° Párrafo": 0,
     Ajuste: 0,
   },
   resultado: {
-    "Saldo Final": 36500.75,
+    "Saldo Final": 0,
   },
 }
 
@@ -88,6 +79,12 @@ function sumValues(record: Record<string, number>) {
 
 function formatCurrency(value: number) {
   return currencyFormatter.format(value)
+}
+
+function formatIvaValue(value: string | number | null | undefined): string {
+  if (value == null || value === "") return "—"
+  const n = Number(value)
+  return Number.isNaN(n) ? "—" : currencyFormatter.format(n)
 }
 
 function SectionRow({
@@ -324,6 +321,22 @@ type DateRange = {
   to?: Date
 }
 
+export const MONTH_NAMES = [
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+] as const
+
+export const MONTH_NAMES_SHORT = [
+  "Ene", "Feb", "Mar", "Abr", "May", "Jun",
+  "Jul", "Ago", "Sep", "Oct", "Nov", "Dic",
+] as const
+
+export function getMonthBounds(year: number, monthIndex: number): { from: Date; to: Date } {
+  const from = new Date(year, monthIndex, 1)
+  const to = new Date(year, monthIndex + 1, 0)
+  return { from, to }
+}
+
 /** Datos de IVA del cliente (mes anterior) devueltos por getClientIvaCredit */
 export interface ClientIvaCreditData {
   cuit: string
@@ -344,6 +357,10 @@ export interface ClientIvaCreditData {
   message?: string
 }
 
+export interface RenderIvaResumeRef {
+  downloadExcel: () => Promise<void>
+}
+
 interface RenderIvaResumeProps {
   clientId: string
   /** Nombre del cliente para el nombre del archivo Excel. */
@@ -352,8 +369,14 @@ interface RenderIvaResumeProps {
   clientIva?: ClientIvaCreditData | undefined
   /** Perfil seleccionado en la pestaña IVA (definido en client-detail-page). */
   selectedProfileId?: string | undefined
-  /** Se llama cuando cambia el rango de fechas del resumen (para resaltar el scrape del período usado). */
-  onDateRangeChange?: (range: { from?: Date; to?: Date }) => void
+  /** Rango de fechas del período (controlado desde el padre). */
+  dateRange: { from: Date; to: Date }
+  /** Si la info de IVA ARCA está cargando. */
+  clientIvaLoading?: boolean
+  /** Si hubo error al cargar la info de IVA ARCA. */
+  clientIvaError?: unknown
+  /** Período fiscal del scrape (mes anterior) para resaltar coincidencia con ARCA. */
+  periodUsedForResumen?: string | null
 }
 
 function parseNumeric(value: string | null | undefined): number | null {
@@ -366,23 +389,24 @@ function sanitizeFilename(name: string): string {
   return name.replace(/[/\\:*?"<>|]/g, "-").replace(/\s+/g, " ").trim() || "cliente"
 }
 
-export function RenderIvaResume({
-  clientId: _clientId,
-  clientName,
-  clientIva: clientIvaCredit,
-  selectedProfileId,
-  onDateRangeChange,
-}: RenderIvaResumeProps) {
-  const [openDebito, setOpenDebito] = React.useState(true)
+export const RenderIvaResume = React.forwardRef<RenderIvaResumeRef, RenderIvaResumeProps>(
+  function RenderIvaResume(
+    {
+      clientId: _clientId,
+      clientName,
+      clientIva: clientIvaCredit,
+      selectedProfileId,
+      dateRange,
+      clientIvaLoading = false,
+      clientIvaError,
+      periodUsedForResumen,
+    },
+    ref
+  ) {
+  const [openDebito, setOpenDebito] = React.useState(false)
   const [openCredito, setOpenCredito] = React.useState(false)
-  const [dateRange, setDateRange] = React.useState<DateRange>({
-    from: new Date(),
-    to: new Date(),
-  })
-
-  React.useEffect(() => {
-    onDateRangeChange?.(dateRange)
-  }, [dateRange.from, dateRange.to, onDateRangeChange])
+  const [openSaldos, setOpenSaldos] = React.useState(false)
+  const [openIvaArca, setOpenIvaArca] = React.useState(false)
   const [ajusteVentas, setAjusteVentas] = React.useState(0)
   const [ajusteCompras, setAjusteCompras] = React.useState(0)
   const [ajusteSaldos, setAjusteSaldos] = React.useState(0)
@@ -394,6 +418,9 @@ export function RenderIvaResume({
   )
   const [percepcionesAduaneras, setPercepcionesAduaneras] = React.useState(
     mockData.saldosYRetenciones["Percepciones Aduaneras"]
+  )
+  const [compensaciones, setCompensaciones] = React.useState(
+    mockData.saldosYRetenciones.Compensaciones
   )
 
   const {
@@ -528,66 +555,65 @@ export function RenderIvaResume({
     }
     base["Saldo Técnico"] =
       debitoFiscalTotal - creditoFiscalTotal - base["Saldo a Favor Per. Ant."]
-    const saldoLibreDisp = base["Saldo Libre Disp."] ?? 0
-    const compensaciones = base["Compensaciones"] ?? 0
+    // Para el 2° párrafo se suman las magnitudes (todas como positivas) y se niega el total.
+    // Saldo Libre Disp, Retenciones, etc. pueden estar almacenados como positivos o negativos.
+    const saldoLibreDisp = Math.abs(base["Saldo Libre Disp."] ?? 0)
     const sumaSegundoParrafo =
-      saldoLibreDisp + compensaciones + retenciones + percepciones + percepcionesAduaneras
-    base["Saldo 2° Párrafo"] = -Math.abs(sumaSegundoParrafo)
+      saldoLibreDisp + Math.abs(compensaciones) + Math.abs(retenciones) + Math.abs(percepciones) + Math.abs(percepcionesAduaneras)
+    base["Saldo 2° Párrafo"] = -sumaSegundoParrafo
     return base
   }, [
     clientIvaCredit?.data?.saldoTecnicoFavorContribuyente,
     clientIvaCredit?.data?.saldoLibreDisponibilidadFavorContribuyentePeriodo,
     debitoFiscalTotal,
     creditoFiscalTotal,
+    compensaciones,
     retenciones,
     percepciones,
     percepcionesAduaneras,
   ])
 
   const totalDebito = sumValues(debitoRows)
+  // Neto Gravado Ventas = (B6+B7) + (B8/1.105) + (B9/1.21) + (B10/1.27) + B11
+  const netoGravadoVentas = React.useMemo(() => {
+    const B6 = debitoRows["Neto A 21%"]
+    const B7 = debitoRows["Neto A 10,5%"]
+    const B8 = debitoRows["Total B 10,50%"]
+    const B9 = debitoRows["Total B 21%"]
+    const B10 = debitoRows["Total B 27%"]
+    const B11 = ajusteVentas
+    return (B6 + B7) + (B8 / 1.105) + (B9 / 1.21) + (B10 / 1.27) + B11
+  }, [debitoRows, ajusteVentas])
   const totalCredito = sumValues(creditoRows) - Math.abs(ajusteCompras)
   // Saldos mostrados: base + valores editables (Retenciones, Percepciones, Percepciones Aduaneras)
   const saldosParaTotal = React.useMemo(
     () => ({
       ...saldosYRetenciones,
+      Compensaciones: compensaciones,
       Retenciones: retenciones,
       Percepciones: percepciones,
       "Percepciones Aduaneras": percepcionesAduaneras,
     }),
-    [saldosYRetenciones, retenciones, percepciones, percepcionesAduaneras]
+    [saldosYRetenciones, compensaciones, retenciones, percepciones, percepcionesAduaneras]
   )
-  // Total saldos: Saldo a Favor + Saldo Técnico + (los del 2° párrafo como negativos) + Ajuste. Excluimos "Saldo 2° Párrafo" del sumatorio (es solo subtotal).
-  const SEGUNDO_PARRAFO_KEYS = [
-    "Saldo Libre Disp.",
-    "Compensaciones",
-    "Retenciones",
-    "Percepciones",
-    "Percepciones Aduaneras",
-  ]
-  const totalSaldosYRetenciones = React.useMemo(() => {
-    let sum = 0
-    for (const [key, value] of Object.entries(saldosParaTotal)) {
-      if (key === "Saldo 2° Párrafo") continue
-      if (key === "Ajuste") continue
-      const num = Number(value)
-      if (Number.isNaN(num)) continue
-      sum += SEGUNDO_PARRAFO_KEYS.includes(key) ? -Math.abs(num) : num
-    }
-    return sum - saldosParaTotal.Ajuste + ajusteSaldos
+  // Saldo Final = Saldo Técnico + Saldo 2° Párrafo + Ajuste
+  const saldoFinal = React.useMemo(() => {
+    const saldoTecnico = Number(saldosParaTotal["Saldo Técnico"]) || 0
+    const saldo2doParrafo = Number(saldosParaTotal["Saldo 2° Párrafo"]) || 0
+    return saldoTecnico + saldo2doParrafo + ajusteSaldos
   }, [saldosParaTotal, ajusteSaldos])
 
   const netoGravadoTotal =
-    invoiceStats != null ? totalDebito : mockData.resumenDebito["Neto Gravado"]
+    invoiceStats != null ? netoGravadoVentas : mockData.resumenDebito["Neto Gravado"]
   const netoGravadoComprasTotal =
     invoiceStats != null
       ? (invoiceStats?.netoGravadoCompras ?? mockData.resumenCredito["Neto Gravado Compras"])
       : mockData.resumenCredito["Neto Gravado Compras"]
 
-  // Saldo Final = Débito - Crédito + Saldos/Retenciones (simplificado)
-  const saldoFinal = debitoFiscalTotal - creditoFiscalTotal + totalSaldosYRetenciones
-
   const SaldoIconDebito = openDebito ? ChevronUp : ChevronDown
   const SaldoIconCredito = openCredito ? ChevronUp : ChevronDown
+  const SaldoIconSaldos = openSaldos ? ChevronUp : ChevronDown
+  const SaldoIconIvaArca = openIvaArca ? ChevronUp : ChevronDown
 
   const handleDownloadExcel = React.useCallback(async () => {
     const fromStr =
@@ -690,6 +716,8 @@ export function RenderIvaResume({
     saldoFinal,
   ])
 
+  React.useImperativeHandle(ref, () => ({ downloadExcel: handleDownloadExcel }), [handleDownloadExcel])
+
   if (!selectedProfileId) {
     return (
       <Card className="space-y-4">
@@ -703,204 +731,191 @@ export function RenderIvaResume({
   }
 
   return (
-    <Card className="space-y-4">
-      <CardHeader className="pb-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <CardTitle className="text-base">Resumen de IVA</CardTitle>
-          <CardDescription className="text-xs">
-            Detalle de débitos, créditos y saldos del período
-          </CardDescription>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleDownloadExcel}
-            className="gap-2"
-          >
-            <Download className="h-4 w-4" />
-            <span className="hidden sm:inline text-xs">Descargar Excel</span>
-          </Button>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className="justify-start text-left font-normal min-w-[220px]"
-              >
-                <CalendarIcon className="mr-2 h-4 w-4" />
-                <span className="text-xs">
-                  {dateRange.from && dateRange.to
-                    ? `${dateRange.from.toLocaleDateString("es-AR", {
-                      year: "2-digit",
-                      month: "2-digit",
-                      day: "2-digit",
-                    })} - ${dateRange.to.toLocaleDateString("es-AR", {
-                      year: "2-digit",
-                      month: "2-digit",
-                      day: "2-digit",
-                    })}`
-                    : "Seleccionar rango de fechas"}
-                </span>
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="end">
-              <Calendar
-                mode="range"
-                selected={dateRange as any}
-                onSelect={(range) => {
-                  if (!range) return
-                  setDateRange({
-                    from: range.from ?? dateRange.from,
-                    to: range.to ?? range.from ?? dateRange.to,
-                  })
-                }}
-                numberOfMonths={1}
-                initialFocus
-              />
-            </PopoverContent>
-          </Popover>
-        </div>
-      </CardHeader>
-
-      <CardContent className="space-y-4">
-        {/* Débito Fiscal / Ventas */}
-        <Collapsible open={openDebito} onOpenChange={setOpenDebito}>
-          <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border bg-muted/60 px-3 py-2 text-sm">
-            <div className="flex flex-col gap-0.5 text-left">
-              <span className="font-medium">
-                Ventas
-                <span className="block font-normal">
-                  Neto Gravado: {formatCurrency(netoGravadoTotal)}
-                </span>
-                <span className="block font-normal">
-                  Débito Fiscal: {formatCurrency(debitoFiscalTotal)}
-                </span>
-              </span>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="tabular-nums text-sm font-semibold">
-                {formatCurrency(totalDebito)}
-              </span>
-              <SaldoIconDebito className="h-4 w-4 text-muted-foreground" />
-            </div>
-          </CollapsibleTrigger>
-
-          <CollapsibleContent className="mt-2 rounded-lg bg-muted/40 px-3 py-2">
-            {Object.entries(debitoRows).map(([label, value]) => (
-              <SectionRow key={label} label={label} value={value} />
-            ))}
-            <AjusteRow
-              value={ajusteVentas}
-              onChange={setAjusteVentas}
-            />
-          </CollapsibleContent>
-        </Collapsible>
-
-        {/* Crédito Fiscal / Compras */}
-        <Collapsible open={openCredito} onOpenChange={setOpenCredito}>
-          <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border bg-muted/60 px-3 py-2 text-sm">
-            <div className="flex flex-col gap-0.5 text-left">
-              <span className="font-medium">
-                Compras
-                <span className="block font-normal">
-                  Neto Gravado: {formatCurrency(netoGravadoComprasTotal)}
-                </span>
-                <span className="block font-normal">
-                  Crédito Fiscal: {formatCurrency(creditoFiscalTotal)}
-                </span>
-              </span>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="tabular-nums text-sm font-semibold text-destructive">
-                {formatCurrency(-Math.abs(totalCredito))}
-              </span>
-              <SaldoIconCredito className="h-4 w-4 text-muted-foreground" />
-            </div>
-          </CollapsibleTrigger>
-
-          <CollapsibleContent className="mt-2 rounded-lg bg-muted/40 px-3 py-2">
-            {Object.entries(creditoRows).map(([label, value]) => (
-              <SectionRow
-                key={label}
-                label={label}
-                value={-Math.abs(value)}
-                valueClassName="text-destructive"
-              />
-            ))}
-            <AjusteRow
-              value={ajusteCompras}
-              onChange={setAjusteCompras}
-              isNegative
-            />
-          </CollapsibleContent>
-        </Collapsible>
-
-        <Separator className="my-1" />
-
-        {/* Saldos y Retenciones */}
-        <div className="space-y-1.5">
-          <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Saldos y retenciones
+    <div className="space-y-4">
+      {/* Resumen en cajas: Ventas, Compras, Saldo Final */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="rounded-lg border-2 border-border bg-card p-5 shadow-sm">
+          <div className="text-sm font-bold uppercase tracking-wide text-foreground mb-3">
+            Ventas
           </div>
+          <div className="space-y-2.5 text-base">
+            <div className="flex justify-between items-baseline gap-2">
+              <span className="text-muted-foreground font-medium">Neto Gravado</span>
+              <span className="tabular-nums font-bold text-foreground">{formatCurrency(netoGravadoTotal)}</span>
+            </div>
+            <div className="flex justify-between items-baseline gap-2">
+              <span className="text-muted-foreground font-medium">Débito Fiscal</span>
+              <span className="tabular-nums font-bold text-foreground">{formatCurrency(debitoFiscalTotal)}</span>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-lg border-2 border-border bg-card p-5 shadow-sm">
+          <div className="text-sm font-bold uppercase tracking-wide text-foreground mb-3">
+            Compras
+          </div>
+          <div className="space-y-2.5 text-base">
+            <div className="flex justify-between items-baseline gap-2">
+              <span className="text-muted-foreground font-medium">Neto Gravado</span>
+              <span className="tabular-nums font-bold text-foreground">{formatCurrency(netoGravadoComprasTotal)}</span>
+            </div>
+            <div className="flex justify-between items-baseline gap-2">
+              <span className="text-muted-foreground font-medium">Crédito Fiscal</span>
+              <span className="tabular-nums font-bold text-foreground">{formatCurrency(creditoFiscalTotal)}</span>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-lg border-2 border-border bg-card p-5 shadow-sm">
+          <div className="text-sm font-bold uppercase tracking-wide text-foreground mb-3">
+            Saldo Final
+          </div>
+          <div className={`text-2xl font-bold tabular-nums ${saldoFinal < 0 ? "text-destructive" : "text-emerald-600"}`}>
+            {formatCurrency(saldoFinal)}
+          </div>
+        </div>
+      </div>
+
+      {/* Desglose desplegable: Ventas */}
+      <Collapsible open={openDebito} onOpenChange={setOpenDebito}>
+        <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border bg-muted/60 px-5 py-4 text-base hover:bg-muted/80 transition-colors">
+          <span className="font-medium">Ventas — desglose</span>
+          <SaldoIconDebito className="h-5 w-5 text-muted-foreground shrink-0" />
+        </CollapsibleTrigger>
+        <CollapsibleContent className="mt-2 rounded-lg border bg-muted/30 px-5 py-4">
+          {Object.entries(debitoRows).map(([label, value]) => (
+            <SectionRow key={label} label={label} value={value} />
+          ))}
+          <AjusteRow value={ajusteVentas} onChange={setAjusteVentas} />
+        </CollapsibleContent>
+      </Collapsible>
+
+      {/* Desglose desplegable: Compras */}
+      <Collapsible open={openCredito} onOpenChange={setOpenCredito}>
+        <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border bg-muted/60 px-5 py-4 text-base hover:bg-muted/80 transition-colors">
+          <span className="font-medium">Compras — desglose</span>
+          <SaldoIconCredito className="h-5 w-5 text-muted-foreground shrink-0" />
+        </CollapsibleTrigger>
+        <CollapsibleContent className="mt-2 rounded-lg border bg-muted/30 px-5 py-4">
+          {Object.entries(creditoRows).map(([label, value]) => (
+            <SectionRow
+              key={label}
+              label={label}
+              value={-Math.abs(value)}
+              valueClassName="text-destructive"
+            />
+          ))}
+          <AjusteRow value={ajusteCompras} onChange={setAjusteCompras} isNegative />
+        </CollapsibleContent>
+      </Collapsible>
+
+      {/* Desglose desplegable: Saldos y retenciones */}
+      <Collapsible open={openSaldos} onOpenChange={setOpenSaldos}>
+        <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border bg-muted/60 px-5 py-4 text-base hover:bg-muted/80 transition-colors">
+          <span className="font-medium">Saldos y retenciones</span>
+          <SaldoIconSaldos className="h-5 w-5 text-muted-foreground shrink-0" />
+        </CollapsibleTrigger>
+        <CollapsibleContent className="mt-2 rounded-lg border bg-muted/30 px-5 py-4 space-y-2">
           {Object.entries(saldosParaTotal)
             .filter(([label]) => label !== "Ajuste")
             .map(([label, value]) =>
-              label === "Retenciones" ? (
-                <EditableSaldoRow
-                  key={label}
-                  label={label}
-                  value={retenciones}
-                  onChange={setRetenciones}
-                  isNegative
-                />
+              label === "Compensaciones" ? (
+                <EditableSaldoRow key={label} label={label} value={compensaciones} onChange={setCompensaciones} />
+              ) : label === "Retenciones" ? (
+                <EditableSaldoRow key={label} label={label} value={retenciones} onChange={setRetenciones} isNegative />
               ) : label === "Percepciones" ? (
-                <EditableSaldoRow
-                  key={label}
-                  label={label}
-                  value={percepciones}
-                  onChange={setPercepciones}
-                  isNegative
-                />
+                <EditableSaldoRow key={label} label={label} value={percepciones} onChange={setPercepciones} isNegative />
               ) : label === "Percepciones Aduaneras" ? (
-                <EditableSaldoRow
-                  key={label}
-                  label={label}
-                  value={percepcionesAduaneras}
-                  onChange={setPercepcionesAduaneras}
-                  isNegative
-                />
+                <EditableSaldoRow key={label} label={label} value={percepcionesAduaneras} onChange={setPercepcionesAduaneras} isNegative />
               ) : (
                 <SectionRow
                   key={label}
                   label={label}
                   value={value}
-                  valueClassName={
-                    value < 0 ? "text-destructive" : "text-foreground"
-                  }
+                  valueClassName={value < 0 ? "text-destructive" : "text-foreground"}
                 />
               )
             )}
-          <AjusteRow
-            value={ajusteSaldos}
-            onChange={setAjusteSaldos}
-          />
-        </div>
+          <AjusteRow value={ajusteSaldos} onChange={setAjusteSaldos} />
+        </CollapsibleContent>
+      </Collapsible>
 
-        <Separator className="my-1" />
-
-        {/* Saldo Final */}
-        <div className="rounded-lg border bg-muted/40 px-3 py-3">
-          <SectionRow
-            label="Saldo Final"
-            value={saldoFinal}
-            emphasize
-            valueClassName={
-              saldoFinal < 0 ? "text-destructive" : "text-emerald-600"
-            }
-          />
-        </div>
-      </CardContent>
-    </Card>
+      {/* Info IVA ARCA (compacta) - se muestra si hay perfil (loading, error o data) */}
+      {selectedProfileId && (
+        <Collapsible open={openIvaArca} onOpenChange={setOpenIvaArca}>
+          <CollapsibleTrigger
+            className={`flex w-full items-center justify-between rounded-lg border px-5 py-4 text-base hover:bg-muted/80 transition-colors ${
+              clientIvaCredit?.data && periodUsedForResumen && clientIvaCredit.data.periodoFiscal === periodUsedForResumen
+                ? "bg-emerald-500/10 border-emerald-500"
+                : "bg-muted/60"
+            }`}
+          >
+            <span className="font-medium">
+              Información IVA ARCA
+              {clientIvaCredit?.cuit ? ` — ${clientIvaCredit.cuit}` : ""}
+              {clientIvaLoading ? " (cargando…)" : ""}
+            </span>
+            <SaldoIconIvaArca className="h-5 w-5 text-muted-foreground shrink-0" />
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-2 rounded-lg border bg-muted/30 px-5 py-4">
+            {clientIvaLoading ? (
+              <p className="text-sm text-muted-foreground py-4">Calculando IVA del cliente…</p>
+            ) : clientIvaError ? (
+              <p className="text-sm text-destructive py-4">No se pudo obtener la información de IVA. Verificá las credenciales o intentá más tarde.</p>
+            ) : !clientIvaCredit?.data ? (
+              <p className="text-sm text-muted-foreground py-4">No hay información de IVA para este perfil.</p>
+            ) : (
+            <>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-x-6 gap-y-3 text-sm">
+              <div>
+                <div className="text-xs text-muted-foreground">Período fiscal</div>
+                <div className="font-medium">{clientIvaCredit.data.periodoFiscal ?? "—"}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Débito Fiscal</div>
+                <div className="font-medium">{formatIvaValue(clientIvaCredit.data.debitoFiscal)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Crédito Fiscal</div>
+                <div className="font-medium">{formatIvaValue(clientIvaCredit.data.creditoFiscal)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Saldo mes pasado</div>
+                <div className="font-medium">{formatIvaValue(clientIvaCredit.data.saldoMesPasado)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Saldo ARCA mes</div>
+                <div className="font-medium">{formatIvaValue(clientIvaCredit.data.saldoArcaMes)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Saldo técnico favor contrib.</div>
+                <div className="font-medium">{formatIvaValue(clientIvaCredit.data.saldoTecnicoFavorContribuyente)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Saldo técnico (pos. mensual)</div>
+                <div className="font-medium">{formatIvaValue(clientIvaCredit.data.saldoTecnicoFavorContribuyentePosicionMensual)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Saldo libre disp. ant. (neto)</div>
+                <div className="font-medium">{formatIvaValue(clientIvaCredit.data.saldoLibreDisponibilidadPeriodoAnteriorNeto)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Total ret. y perc. período</div>
+                <div className="font-medium">{formatIvaValue(clientIvaCredit.data.totalRetencionesPercepcionesPeriodo)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Saldo libre disp. (período)</div>
+                <div className="font-medium">{formatIvaValue(clientIvaCredit.data.saldoLibreDisponibilidadFavorContribuyentePeriodo)}</div>
+              </div>
+            </div>
+            {clientIvaCredit.data.fechaPresentacion && (
+              <div className="mt-2 text-xs text-muted-foreground">
+                Presentado {clientIvaCredit.data.fechaPresentacion}
+              </div>
+            )}
+            </>
+            )}
+          </CollapsibleContent>
+        </Collapsible>
+      )}
+    </div>
   )
-}
+})
