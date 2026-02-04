@@ -400,12 +400,12 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
           </Button>
           <h1 className="text-2xl font-bold">{client.name}</h1>
         </div>
-        <EditClientDialog clientId={clientId}>
+        {/* <EditClientDialog clientId={clientId}>
           <Button variant="default">
             <Edit className="mr-2 h-4 w-4" />
             Editar Cliente
           </Button>
-        </EditClientDialog>
+        </EditClientDialog> */}
         <Button
           variant="default"
           onClick={() => scrapOldClient({ data: { clientId } })}
