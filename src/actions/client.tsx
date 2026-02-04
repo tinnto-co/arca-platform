@@ -5,7 +5,7 @@ import axios from "axios";
 import { db } from "@/lib/db";
 import { client, profile, debt, dueDate, ivaScrape } from "@/drizzle/schema";
 import { auth } from "@/lib/auth";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 
 export const createClient = createServerFn({
   method: "POST",
@@ -144,6 +144,38 @@ export const getClients = createServerFn({
   const clients = await db.select().from(client).orderBy(client.createdAt);
 
   return clients;
+});
+
+export const getClientsWithProfiles = createServerFn({
+  method: "GET",
+}).handler(async () => {
+  const session = await auth.api.getSession({ headers: getRequestHeaders() });
+  if (!session?.user?.id) throw new Error("Unauthorized");
+
+  const clients = await db.select().from(client).orderBy(client.createdAt);
+  const clientIds = clients.map((c) => c.id);
+  if (clientIds.length === 0) {
+    return clients.map((c) => ({ ...c, profiles: [] as { id: string; name: string }[] }));
+  }
+
+  const profiles = await db
+    .select({ clientId: profile.client, id: profile.id, name: profile.name })
+    .from(profile)
+    .where(inArray(profile.client, clientIds));
+
+  const profilesByClientId = new Map<string, { id: string; name: string }[]>();
+  for (const p of profiles) {
+    if (p.clientId) {
+      const list = profilesByClientId.get(p.clientId) ?? [];
+      list.push({ id: p.id, name: p.name });
+      profilesByClientId.set(p.clientId, list);
+    }
+  }
+
+  return clients.map((c) => ({
+    ...c,
+    profiles: profilesByClientId.get(c.id) ?? [],
+  }));
 });
 
 export const getClient = createServerFn({
