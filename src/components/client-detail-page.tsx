@@ -509,38 +509,6 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <User className="h-5 w-5" />
-                  Estado del Cliente
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                    <div className="flex items-center gap-2">
-                      <div className="h-3 w-3 rounded-full bg-black"></div>
-                      <div className="font-semibold">
-                        {getStatusBadge(client.status)}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    Registrado el{" "}
-                    {new Date(client.registeredAt).toLocaleDateString("es-AR", {
-                      year: "numeric",
-                      month: "long",
-                      day: "numeric",
-                    })}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Profiles Section */}
-          <div className="mt-8">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <User className="h-5 w-5" />
                   Perfiles Asociados
                 </CardTitle>
               </CardHeader>
@@ -644,6 +612,8 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
               </CardContent>
             </Card>
           </div>
+
+
         </TabsContent>
 
         {/* Deudas Tab */}
@@ -1090,98 +1060,98 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
             {/* Perfil, Período y Descargar Excel (botón a la derecha) */}
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm text-muted-foreground">
-                Perfil para IVA:
-              </span>
-              <Select
-                value={ivaProfileId ?? ""}
-                onValueChange={(value) => setIvaProfileId(value || undefined)}
-                disabled={loadingProfiles || profiles.length <= 1}
-              >
-                <SelectTrigger className="min-w-[200px] w-auto">
-                  <SelectValue
-                    placeholder={
-                      loadingProfiles
-                        ? "Cargando perfiles..."
-                        : profiles.length === 0
-                          ? "Sin perfiles"
-                          : "Seleccionar perfil"
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {profiles.map((profile: { id: string; name?: string; identityNumber?: string }) => (
-                    <SelectItem key={profile.id} value={profile.id}>
-                      {profile.name || profile.identityNumber || profile.id}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Popover
-                open={ivaPeriodPickerOpen}
-                onOpenChange={setIvaPeriodPickerOpen}
-              >
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="default"
-                    className="h-9 min-w-[200px] w-auto justify-start text-left font-normal px-3 py-2"
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
-                    <span className="text-sm">
-                      {`${MONTH_NAMES[ivaSelectedMonth]} ${ivaSelectedYear}`}
-                    </span>
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-4" align="end">
-                  <div className="space-y-3">
-                    <Select
-                      value={String(ivaSelectedYear)}
-                      onValueChange={(v) => {
-                        const y = Number(v);
-                        const newMax =
-                          y === now.getFullYear() ? now.getMonth() : 11;
-                        const m = Math.min(ivaSelectedMonth, newMax);
-                        setIvaResumenDateRange(getMonthBounds(y, m));
-                      }}
+                <span className="text-sm text-muted-foreground">
+                  Perfil para IVA:
+                </span>
+                <Select
+                  value={ivaProfileId ?? ""}
+                  onValueChange={(value) => setIvaProfileId(value || undefined)}
+                  disabled={loadingProfiles || profiles.length <= 1}
+                >
+                  <SelectTrigger className="min-w-[200px] w-auto">
+                    <SelectValue
+                      placeholder={
+                        loadingProfiles
+                          ? "Cargando perfiles..."
+                          : profiles.length === 0
+                            ? "Sin perfiles"
+                            : "Seleccionar perfil"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {profiles.map((profile: { id: string; name?: string; identityNumber?: string }) => (
+                      <SelectItem key={profile.id} value={profile.id}>
+                        {profile.name || profile.identityNumber || profile.id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Popover
+                  open={ivaPeriodPickerOpen}
+                  onOpenChange={setIvaPeriodPickerOpen}
+                >
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="default"
+                      className="h-9 min-w-[200px] w-auto justify-start text-left font-normal px-3 py-2"
                     >
-                      <SelectTrigger className="w-full h-9">
-                        <SelectValue placeholder="Año" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Array.from(
-                          { length: 8 },
-                          (_, i) => now.getFullYear() - i
-                        ).map((y) => (
-                          <SelectItem key={y} value={String(y)}>
-                            {y}
-                          </SelectItem>
+                      <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                      <span className="text-sm">
+                        {`${MONTH_NAMES[ivaSelectedMonth]} ${ivaSelectedYear}`}
+                      </span>
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-4" align="end">
+                    <div className="space-y-3">
+                      <Select
+                        value={String(ivaSelectedYear)}
+                        onValueChange={(v) => {
+                          const y = Number(v);
+                          const newMax =
+                            y === now.getFullYear() ? now.getMonth() : 11;
+                          const m = Math.min(ivaSelectedMonth, newMax);
+                          setIvaResumenDateRange(getMonthBounds(y, m));
+                        }}
+                      >
+                        <SelectTrigger className="w-full h-9">
+                          <SelectValue placeholder="Año" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Array.from(
+                            { length: 8 },
+                            (_, i) => now.getFullYear() - i
+                          ).map((y) => (
+                            <SelectItem key={y} value={String(y)}>
+                              {y}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {ivaAvailableMonthIndices.map((i) => (
+                          <Button
+                            key={i}
+                            variant={
+                              ivaSelectedMonth === i ? "default" : "outline"
+                            }
+                            size="sm"
+                            className="text-xs h-8"
+                            onClick={() => {
+                              setIvaResumenDateRange(
+                                getMonthBounds(ivaSelectedYear, i)
+                              );
+                              setIvaPeriodPickerOpen(false);
+                            }}
+                          >
+                            {MONTH_NAMES_SHORT[i]}
+                          </Button>
                         ))}
-                      </SelectContent>
-                    </Select>
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {ivaAvailableMonthIndices.map((i) => (
-                        <Button
-                          key={i}
-                          variant={
-                            ivaSelectedMonth === i ? "default" : "outline"
-                          }
-                          size="sm"
-                          className="text-xs h-8"
-                          onClick={() => {
-                            setIvaResumenDateRange(
-                              getMonthBounds(ivaSelectedYear, i)
-                            );
-                            setIvaPeriodPickerOpen(false);
-                          }}
-                        >
-                          {MONTH_NAMES_SHORT[i]}
-                        </Button>
-                      ))}
+                      </div>
                     </div>
-                  </div>
-                </PopoverContent>
-              </Popover>
+                  </PopoverContent>
+                </Popover>
               </div>
               <Button
                 variant="outline"

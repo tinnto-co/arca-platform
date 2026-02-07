@@ -214,55 +214,18 @@ export function ClientsTable() {
             <TableRow>
               <TableHead>Cliente</TableHead>
               <TableHead>CUIT</TableHead>
-              <TableHead>Fact. Emitidas</TableHead>
-              <TableHead>Fact. Pagadas</TableHead>
+
               <TableHead>Registrado</TableHead>
               <TableHead className="w-[50px]"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredClients.map((client) => (
-              <TableRow key={client.id} onClick={() => navigate({ to: `/clients/${client.id}` })} className="cursor-pointer hover:bg-muted/50">
+              <TableRow key={client.id} onClick={() => navigate({ to: `/clients/${client.id}` })} className="cursor-pointer hover:bg-gray-600/10">
                 <TableCell>
-                  <div className="flex items-center gap-3">
-                    <Avatar className="h-8 w-8">
-                      {client.image && (
-                        <AvatarImage src={client.image} alt={client.name} />
-                      )}
-                      <AvatarFallback>
-                        {client.name.slice(0, 2).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <div className="font-medium">{client.name}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {client.address}
-                      </div>
-                    </div>
-                  </div>
+                  {client.name}
                 </TableCell>
                 <TableCell>{client.identityNumber}</TableCell>
-                <TableCell className="text-green-500">
-                  +{" "}
-                  {new Intl.NumberFormat("es-AR", {
-                    style: "currency",
-                    currency: "ARS",
-                    minimumFractionDigits: 2,
-                  }).format(invoiceTotals[client.id]?.outbound || 0)}{" "}
-                  ARS
-                </TableCell>
-                <TableCell className="text-red-500">
-                  -{" "}
-                  {new Intl.NumberFormat("es-AR", {
-                    style: "currency",
-                    currency: "ARS",
-                    minimumFractionDigits: 2,
-                  }).format(invoiceTotals[client.id]?.inbound || 0)}{" "}
-                  ARS
-                </TableCell>
-                <TableCell>
-                  {new Date(client.createdAt).toLocaleDateString()}
-                </TableCell>
                 <TableCell>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
