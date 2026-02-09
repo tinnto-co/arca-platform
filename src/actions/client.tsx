@@ -148,7 +148,7 @@ export const getClients = createServerFn({
   const session = await auth.api.getSession({ headers: getRequestHeaders() });
   if (!session?.user?.id) throw new Error("Unauthorized");
 
-  const clients = await db.select().from(client).orderBy(client.createdAt);
+  const clients = await db.select().from(client).where(eq(client.userId, session.user.id)).orderBy(client.createdAt);
 
   return clients;
 });
@@ -159,7 +159,7 @@ export const getClientsWithProfiles = createServerFn({
   const session = await auth.api.getSession({ headers: getRequestHeaders() });
   if (!session?.user?.id) throw new Error("Unauthorized");
 
-  const clients = await db.select().from(client).orderBy(client.createdAt);
+  const clients = await db.select().from(client).where(eq(client.userId, session.user.id)).orderBy(client.createdAt);
   const clientIds = clients.map((c) => c.id);
   if (clientIds.length === 0) {
     return clients.map((c) => ({ ...c, profiles: [] as { id: string; name: string }[] }));

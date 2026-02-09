@@ -20,6 +20,10 @@ FROM base AS release
 COPY --from=install /usr/src/app/node_modules ./node_modules
 COPY --from=prerelease /usr/src/app/dist ./dist
 COPY --from=prerelease /usr/src/app/server.ts ./server.ts
+COPY --from=prerelease /usr/src/app/lib ./lib
+COPY --from=prerelease /usr/src/app/src ./src
+COPY --from=prerelease /usr/src/app/drizzle ./drizzle
+COPY --from=prerelease /usr/src/app/tsconfig.json ./tsconfig.json
 COPY package.json ./
 
 # Fix permissions before switching to non-root user

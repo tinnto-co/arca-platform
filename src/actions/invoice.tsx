@@ -639,7 +639,7 @@ export const getInvoiceTotalsByClient = createServerFn({
   const userClients = await db
     .select({ id: client.id })
     .from(client)
-    .where(eq(client.userId, session.user.id));
+    // .where(eq(client.userId, session.user.id));
 
   const userClientIds = userClients.map((c) => c.id);
 
