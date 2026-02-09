@@ -38,7 +38,9 @@ export default defineConfig({
       projects: ["./tsconfig.json"],
     }),
     tailwindcss(),
-    tanstackStart(),
+    tanstackStart({
+      server: { entry: "entry-server" },
+    }),
     viteReact(),
   ],
 });

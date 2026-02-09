@@ -55,10 +55,29 @@ export function ClientsTable() {
     queryFn: () => getClientsWithProfiles(),
   });
 
-  const { data: invoiceTotals = {} } = useQuery({
+  const {
+    data: invoiceTotals = {},
+    isLoading: isInvoiceTotalsLoading,
+    isError: isInvoiceTotalsError,
+    error: invoiceTotalsError,
+  } = useQuery({
     queryKey: ["invoiceTotalsByClient"],
     queryFn: () => getInvoiceTotalsByClient(),
   });
+
+  if (process.env.NODE_ENV === "development") {
+    // Log básico para entender qué está devolviendo getInvoiceTotalsByClient
+    console.log("[ClientsTable] invoiceTotalsByClient query", {
+      isInvoiceTotalsLoading,
+      isInvoiceTotalsError,
+      invoiceTotalsError,
+      clientsCount: clients.length,
+      invoiceTotalsKeys: Object.keys(invoiceTotals),
+      sampleTotals: Object.entries(invoiceTotals)
+        .slice(0, 5)
+        .map(([clientId, totals]) => ({ clientId, ...totals })),
+    });
+  }
 
   // Filter clients based on search term and filters
   const filteredClients = useMemo(() => {

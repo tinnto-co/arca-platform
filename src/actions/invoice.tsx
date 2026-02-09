@@ -629,6 +629,12 @@ export const getInvoiceTotalsByClient = createServerFn({
   const session = await auth.api.getSession({ headers: getRequestHeaders() });
   if (!session?.user?.id) throw new Error("Unauthorized");
 
+  if (process.env.NODE_ENV === "development") {
+    console.log("[getInvoiceTotalsByClient] called", {
+      userId: session.user.id,
+    });
+  }
+
   // Get clients associated with the current user
   const userClients = await db
     .select({ id: client.id })
@@ -636,6 +642,13 @@ export const getInvoiceTotalsByClient = createServerFn({
     .where(eq(client.userId, session.user.id));
 
   const userClientIds = userClients.map((c) => c.id);
+
+  if (process.env.NODE_ENV === "development") {
+    console.log("[getInvoiceTotalsByClient] user clients", {
+      count: userClientIds.length,
+      sampleIds: userClientIds.slice(0, 5),
+    });
+  }
 
   if (userClientIds.length === 0) {
     return {};
@@ -652,6 +665,13 @@ export const getInvoiceTotalsByClient = createServerFn({
     })
     .from(invoice)
     .where(inArray(invoice.client, userClientIds));
+
+  if (process.env.NODE_ENV === "development") {
+    console.log("[getInvoiceTotalsByClient] raw invoices", {
+      count: invoices.length,
+      sample: invoices.slice(0, 5),
+    });
+  }
 
   // Calculate totals by client
   const totalsByClient: Record<string, { outbound: number; inbound: number }> =
@@ -681,6 +701,15 @@ export const getInvoiceTotalsByClient = createServerFn({
       totalsByClient[inv.clientId].inbound += amount;
     }
   });
+
+  if (process.env.NODE_ENV === "development") {
+    console.log("[getInvoiceTotalsByClient] totalsByClient summary", {
+      clientsWithTotals: Object.keys(totalsByClient).length,
+      sample: Object.entries(totalsByClient)
+        .slice(0, 5)
+        .map(([clientId, totals]) => ({ clientId, ...totals })),
+    });
+  }
 
   return totalsByClient;
 });

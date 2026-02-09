@@ -42,10 +42,10 @@ import { getNotifications } from "@/actions/notification";
 import { EditClientDialog } from "@/components/edit-client-dialog";
 import { InvoicesTable } from "@/components/invoices-table";
 import { getInvoices } from "@/actions/invoice";
-import { scrapOldClient } from "@/actions/client";
+import { scrapOldClient, scrapUpdateClient } from "@/actions/client";
 import { useState, useMemo, useEffect, useRef } from "react";
 import { toast } from "sonner";
-import { Clock, CalendarCheck, CalendarX } from "lucide-react";
+import { Clock, CalendarCheck, CalendarX, Loader2 } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -98,6 +98,41 @@ function getResumenPeriodMMYYYY(from: Date | undefined): string | null {
   return `${String(mm).padStart(2, "0")}/${yyyy}`;
 }
 
+/** Mínimo de caracteres del nombre del perfil para considerarlo un match (evita "S", "A", etc.). */
+const MIN_PROFILE_NAME_LENGTH = 3;
+
+/**
+ * Elige el id del perfil que mejor coincide con el nombre del cliente (case-insensitive, por contiene).
+ * Ej: cliente "Smart Solutions SRL" → perfil "Smart Solutions" (el nombre del perfil está contenido en el del cliente).
+ */
+function findBestMatchingProfileId(
+  clientName: string | undefined,
+  profiles: Array<{ id: string; name?: string }>
+): string | undefined {
+  if (!profiles.length) return undefined;
+  const normalizedClient = (clientName ?? "").trim().toLowerCase();
+  if (normalizedClient.length < 2) return profiles[0].id;
+
+  const withName = profiles.filter(
+    (p) => ((p.name ?? "").trim().length >= MIN_PROFILE_NAME_LENGTH)
+  );
+  if (withName.length === 0) return profiles[0].id;
+
+  const containedInClient = withName
+    .filter((p) =>
+      normalizedClient.includes((p.name ?? "").trim().toLowerCase())
+    )
+    .sort((a, b) => (b.name ?? "").length - (a.name ?? "").length);
+  if (containedInClient.length > 0) return containedInClient[0].id;
+
+  const clientInProfile = withName.find((p) =>
+    (p.name ?? "").trim().toLowerCase().includes(normalizedClient)
+  );
+  if (clientInProfile) return clientInProfile.id;
+
+  return profiles[0].id;
+}
+
 export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   const navigate = useNavigate();
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -111,6 +146,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     to: Date;
   }>(() => getMonthBounds(now.getFullYear(), now.getMonth()));
   const [ivaPeriodPickerOpen, setIvaPeriodPickerOpen] = useState(false);
+  const [isScraping, setIsScraping] = useState(false);
   const ivaResumeRef = useRef<RenderIvaResumeRef>(null);
   const ivaSelectedYear = ivaResumenDateRange.from.getFullYear();
   const ivaSelectedMonth = ivaResumenDateRange.from.getMonth();
@@ -131,10 +167,24 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     queryKey: ["client", clientId],
     queryFn: async () => {
       const result = await getClient({ data: { id: clientId } });
-      console.log("getClient result", result);
       return result;
     },
   });
+
+  const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
+    queryKey: ["clientProfiles", clientId],
+    queryFn: () => getClientProfiles({ data: { clientId } }),
+  });
+
+  /** Perfil IVA por defecto (según nombre del cliente). Se calcula cuando hay client + profiles. */
+  const defaultIvaProfileId = useMemo(() => {
+    if (!client || profiles.length === 0) return undefined;
+    return findBestMatchingProfileId(client.name, profiles) ?? profiles[0].id;
+  }, [client, profiles]);
+
+  /** Perfil efectivo: selección del usuario o el default. Solo hay valor cuando hay perfiles. */
+  const effectiveIvaProfileId =
+    ivaProfileId ?? defaultIvaProfileId ?? profiles[0]?.id;
 
   const periodoFiscalResumen = getResumenPeriodMMYYYY(ivaResumenDateRange.from);
 
@@ -143,35 +193,24 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     isLoading: loadingClientIva,
     error: clientIvaError,
   } = useQuery({
-    queryKey: ["clientIva", clientId, ivaProfileId, periodoFiscalResumen],
+    queryKey: ["clientIva", clientId, effectiveIvaProfileId, periodoFiscalResumen],
     queryFn: () =>
       getClientIvaCredit({
         data: {
           clientId,
-          profileId: ivaProfileId ?? undefined,
+          profileId: effectiveIvaProfileId ?? undefined,
           periodoFiscalResumen: periodoFiscalResumen ?? undefined,
         },
       }),
-    enabled: !!ivaProfileId,
+    enabled: !!effectiveIvaProfileId,
     staleTime: Infinity,
     refetchOnMount: false,
     refetchOnWindowFocus: false,
   });
 
-  const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
-    queryKey: ["clientProfiles", clientId],
-    queryFn: () => getClientProfiles({ data: { clientId } }),
-  });
-
   useEffect(() => {
-    if (profiles.length > 0 && !ivaProfileId) {
-      setIvaProfileId(profiles[0].id);
-    }
-  }, [profiles, ivaProfileId]);
-
-  useEffect(() => {
-    console.log("clientIva", clientIva);
-  }, [clientIva]);
+    setIvaProfileId(undefined);
+  }, [clientId]);
 
   const { data: debts = [], isLoading: loadingDebts } = useQuery({
     queryKey: ["clientDebts", clientId],
@@ -408,9 +447,29 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
         </EditClientDialog>
         <Button
           variant="default"
-          onClick={() => scrapOldClient({ data: { clientId } })}
+          disabled={isScraping}
+          onClick={async () => {
+            setIsScraping(true);
+            try {
+              await scrapUpdateClient({ data: { clientId } });
+              toast.success("Actualización del cliente iniciada correctamente");
+            } catch (err) {
+              toast.error(
+                err instanceof Error ? err.message : "Error al actualizar cliente"
+              );
+            } finally {
+              setIsScraping(false);
+            }
+          }}
         >
-          Actualizar Cliente
+          {isScraping ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Actualizando…
+            </>
+          ) : (
+            "Actualizar Cliente"
+          )}
         </Button>
       </div>
 
@@ -1090,105 +1149,104 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
             {/* Perfil, Período y Descargar Excel (botón a la derecha) */}
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm text-muted-foreground">
-                Perfil para IVA:
-              </span>
-              <Select
-                value={ivaProfileId ?? ""}
-                onValueChange={(value) => setIvaProfileId(value || undefined)}
-                disabled={loadingProfiles || profiles.length <= 1}
-              >
-                <SelectTrigger className="min-w-[200px] w-auto">
-                  <SelectValue
-                    placeholder={
-                      loadingProfiles
-                        ? "Cargando perfiles..."
-                        : profiles.length === 0
-                          ? "Sin perfiles"
-                          : "Seleccionar perfil"
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {profiles.map((profile: { id: string; name?: string; identityNumber?: string }) => (
-                    <SelectItem key={profile.id} value={profile.id}>
-                      {profile.name || profile.identityNumber || profile.id}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Popover
-                open={ivaPeriodPickerOpen}
-                onOpenChange={setIvaPeriodPickerOpen}
-              >
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="default"
-                    className="h-9 min-w-[200px] w-auto justify-start text-left font-normal px-3 py-2"
+                <span className="text-sm text-muted-foreground">
+                  Perfil para IVA:
+                </span>
+                {effectiveIvaProfileId ? (
+                  <Select
+                    key={`iva-${clientId}`}
+                    defaultValue={effectiveIvaProfileId}
+                    onValueChange={(value) => setIvaProfileId(value || undefined)}
+                    disabled={loadingProfiles || profiles.length <= 1}
                   >
-                    <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
-                    <span className="text-sm">
-                      {`${MONTH_NAMES[ivaSelectedMonth]} ${ivaSelectedYear}`}
-                    </span>
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-4" align="end">
-                  <div className="space-y-3">
-                    <Select
-                      value={String(ivaSelectedYear)}
-                      onValueChange={(v) => {
-                        const y = Number(v);
-                        const newMax =
-                          y === now.getFullYear() ? now.getMonth() : 11;
-                        const m = Math.min(ivaSelectedMonth, newMax);
-                        setIvaResumenDateRange(getMonthBounds(y, m));
-                      }}
-                    >
-                      <SelectTrigger className="w-full h-9">
-                        <SelectValue placeholder="Año" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Array.from(
-                          { length: 8 },
-                          (_, i) => now.getFullYear() - i
-                        ).map((y) => (
-                          <SelectItem key={y} value={String(y)}>
-                            {y}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {ivaAvailableMonthIndices.map((i) => (
-                        <Button
-                          key={i}
-                          variant={
-                            ivaSelectedMonth === i ? "default" : "outline"
-                          }
-                          size="sm"
-                          className="text-xs h-8"
-                          onClick={() => {
-                            setIvaResumenDateRange(
-                              getMonthBounds(ivaSelectedYear, i)
-                            );
-                            setIvaPeriodPickerOpen(false);
-                          }}
-                        >
-                          {MONTH_NAMES_SHORT[i]}
-                        </Button>
+                    <SelectTrigger className="min-w-[200px] w-auto">
+                      <SelectValue placeholder="Seleccionar perfil" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {profiles.map((profile: { id: string; name?: string; identityNumber?: string }) => (
+                        <SelectItem key={profile.id} value={profile.id}>
+                          {profile.name || profile.identityNumber || profile.id}
+                        </SelectItem>
                       ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <span className="min-w-[200px] text-sm text-muted-foreground">
+                    {loadingProfiles ? "Cargando perfiles..." : profiles.length === 0 ? "Sin perfiles" : "Seleccionar perfil"}
+                  </span>
+                )}
+                <Popover
+                  open={ivaPeriodPickerOpen}
+                  onOpenChange={setIvaPeriodPickerOpen}
+                >
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="default"
+                      className="h-9 min-w-[200px] w-auto justify-start text-left font-normal px-3 py-2"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                      <span className="text-sm">
+                        {`${MONTH_NAMES[ivaSelectedMonth]} ${ivaSelectedYear}`}
+                      </span>
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-4" align="end">
+                    <div className="space-y-3">
+                      <Select
+                        value={String(ivaSelectedYear)}
+                        onValueChange={(v) => {
+                          const y = Number(v);
+                          const newMax =
+                            y === now.getFullYear() ? now.getMonth() : 11;
+                          const m = Math.min(ivaSelectedMonth, newMax);
+                          setIvaResumenDateRange(getMonthBounds(y, m));
+                        }}
+                      >
+                        <SelectTrigger className="w-full h-9">
+                          <SelectValue placeholder="Año" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Array.from(
+                            { length: 8 },
+                            (_, i) => now.getFullYear() - i
+                          ).map((y) => (
+                            <SelectItem key={y} value={String(y)}>
+                              {y}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {ivaAvailableMonthIndices.map((i) => (
+                          <Button
+                            key={i}
+                            variant={
+                              ivaSelectedMonth === i ? "default" : "outline"
+                            }
+                            size="sm"
+                            className="text-xs h-8"
+                            onClick={() => {
+                              setIvaResumenDateRange(
+                                getMonthBounds(ivaSelectedYear, i)
+                              );
+                              setIvaPeriodPickerOpen(false);
+                            }}
+                          >
+                            {MONTH_NAMES_SHORT[i]}
+                          </Button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                </PopoverContent>
-              </Popover>
+                  </PopoverContent>
+                </Popover>
               </div>
               <Button
                 variant="outline"
                 size="default"
                 onClick={() => ivaResumeRef.current?.downloadExcel()}
                 className="gap-2 font-semibold shrink-0"
-                disabled={!ivaProfileId}
+                disabled={!effectiveIvaProfileId}
               >
                 <Download className="h-4 w-4" />
                 <span className="hidden sm:inline">Descargar Excel</span>
@@ -1201,7 +1259,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 clientId={clientId}
                 clientName={client?.name}
                 clientIva={clientIva ?? undefined}
-                selectedProfileId={ivaProfileId ?? undefined}
+                selectedProfileId={effectiveIvaProfileId ?? undefined}
                 dateRange={ivaResumenDateRange}
                 clientIvaLoading={loadingClientIva}
                 clientIvaError={clientIvaError}

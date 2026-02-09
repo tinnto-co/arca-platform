@@ -6,6 +6,13 @@ import { db } from "@/lib/db";
 import { client, profile, debt, dueDate, ivaScrape } from "@/drizzle/schema";
 import { auth } from "@/lib/auth";
 import { eq, and, inArray } from "drizzle-orm";
+const JOBS_API_URL =
+  process.env.SCRAPPER_JOBS_URL ||
+  process.env.BACKEND_API_URL ||
+  "http://localhost:3003";
+
+const POLL_INTERVAL_MS = 3000;
+const MAX_POLL_ATTEMPTS = 300; // ~15 min max per job
 
 export const createClient = createServerFn({
   method: "POST",
@@ -448,5 +455,75 @@ export const scrapOldClient = createServerFn({
       };
     } catch (error: any) {
       throw new Error(error.response?.data?.error || "Error al scrapear el cliente");
+    }
+  });
+
+/** Espera a que un job termine (finished o failed) haciendo polling */
+async function waitForJob(
+  baseUrl: string,
+  jobId: string
+): Promise<{ status: string; result?: unknown; failedReason?: string | null }> {
+  for (let i = 0; i < MAX_POLL_ATTEMPTS; i++) {
+    const { data } = await axios.get(`${baseUrl}/api/jobs/${jobId}`);
+    if (data.status === "finished" || data.status === "failed") {
+      return data;
+    }
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+  }
+  throw new Error("Tiempo de espera agotado esperando el job");
+}
+
+export const scrapUpdateClient = createServerFn({
+  method: "POST",
+})
+  .inputValidator(z.object({ clientId: z.string() }))
+  .handler(async (ctx) => {
+    const session = await auth.api.getSession({ headers: getRequestHeaders() });
+    if (!session?.user?.id) throw new Error("Unauthorized");
+
+    const baseUrl = JOBS_API_URL;
+    const { clientId } = ctx.data;
+
+    try {
+      // 1. Crear job comprobantes_full y esperar a que termine
+      const { data: compJob } = await axios.post(`${baseUrl}/api/jobs`, {
+        type: "comprobantes_full",
+        clientId,
+      });
+
+      const compResult = await waitForJob(baseUrl, compJob.id);
+      if (compResult.status === "failed") {
+        throw new Error(
+          compResult.failedReason || "Error en el scrape de comprobantes"
+        );
+      }
+
+      // 2. Crear job iva y esperar a que termine
+      const { data: ivaJob } = await axios.post(`${baseUrl}/api/jobs`, {
+        type: "iva",
+        clientId,
+      });
+
+      const ivaResult = await waitForJob(baseUrl, ivaJob.id);
+      if (ivaResult.status === "failed") {
+        throw new Error(
+          ivaResult.failedReason || "Error en el scrape de IVA"
+        );
+      }
+
+      return {
+        success: true,
+        message: "Cliente actualizado correctamente (comprobantes e IVA)",
+        clientId,
+        comprobantes: compResult.result ?? {},
+        iva: ivaResult.result ?? {},
+      };
+    } catch (error: any) {
+      console.error("[scrapUpdateClient]", error?.response?.data ?? error);
+      const msg =
+        error.response?.data?.error ||
+        error.message ||
+        "Error al actualizar el cliente";
+      throw new Error(msg);
     }
   });
