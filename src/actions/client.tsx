@@ -9,7 +9,7 @@ import { eq, and, inArray } from "drizzle-orm";
 const JOBS_API_URL =
   process.env.SCRAPPER_JOBS_URL ||
   process.env.BACKEND_API_URL ||
-  "http://localhost:3003";
+  "http://localhost:3002";
 
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLL_ATTEMPTS = 300; // ~15 min max per job
@@ -511,12 +511,26 @@ export const scrapUpdateClient = createServerFn({
         );
       }
 
+      // 3. Crear job deuda y esperar a que termine
+      const { data: deudaJob } = await axios.post(`${baseUrl}/api/jobs`, {
+        type: "deuda",
+        clientId,
+      });
+
+      const deudaResult = await waitForJob(baseUrl, deudaJob.id);
+      if (deudaResult.status === "failed") {
+        throw new Error(
+          deudaResult.failedReason || "Error en el scrape de deudas"
+        );
+      }
+
       return {
         success: true,
-        message: "Cliente actualizado correctamente (comprobantes e IVA)",
+        message: "Cliente actualizado correctamente (comprobantes, IVA y deudas)",
         clientId,
         comprobantes: compResult.result ?? {},
         iva: ivaResult.result ?? {},
+        deuda: deudaResult.result ?? {},
       };
     } catch (error: any) {
       console.error("[scrapUpdateClient]", error?.response?.data ?? error);
@@ -524,6 +538,50 @@ export const scrapUpdateClient = createServerFn({
         error.response?.data?.error ||
         error.message ||
         "Error al actualizar el cliente";
+      throw new Error(msg);
+    }
+  });
+
+/** [DEBUG] Ejecuta un solo job por tipo - temporal para debugear */
+export const scrapSingleJob = createServerFn({
+  method: "POST",
+})
+  .inputValidator(
+    z.object({
+      clientId: z.string(),
+      jobType: z.enum(["comprobantes_full", "iva", "deuda"]),
+    })
+  )
+  .handler(async (ctx) => {
+    const session = await auth.api.getSession({ headers: getRequestHeaders() });
+    if (!session?.user?.id) throw new Error("Unauthorized");
+
+    const baseUrl = JOBS_API_URL;
+    const { clientId, jobType } = ctx.data;
+
+    try {
+      const { data: job } = await axios.post(`${baseUrl}/api/jobs`, {
+        type: jobType,
+        clientId,
+      });
+
+      const result = await waitForJob(baseUrl, job.id);
+      if (result.status === "failed") {
+        throw new Error(result.failedReason || `Error en el scrape de ${jobType}`);
+      }
+
+      return {
+        success: true,
+        jobType,
+        clientId,
+        result: result.result ?? {},
+      };
+    } catch (error: any) {
+      console.error("[scrapSingleJob]", error?.response?.data ?? error);
+      const msg =
+        error.response?.data?.error ||
+        error.message ||
+        `Error al ejecutar job ${jobType}`;
       throw new Error(msg);
     }
   });

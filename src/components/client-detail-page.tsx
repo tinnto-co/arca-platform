@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, Link } from "@tanstack/react-router";
 import {
   ArrowLeft,
@@ -42,7 +42,7 @@ import { getNotifications } from "@/actions/notification";
 import { EditClientDialog } from "@/components/edit-client-dialog";
 import { InvoicesTable } from "@/components/invoices-table";
 import { getInvoices } from "@/actions/invoice";
-import { scrapOldClient, scrapUpdateClient } from "@/actions/client";
+import { scrapSingleJob } from "@/actions/client";
 import { useState, useMemo, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { Clock, CalendarCheck, CalendarX, Loader2 } from "lucide-react";
@@ -146,7 +146,9 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     to: Date;
   }>(() => getMonthBounds(now.getFullYear(), now.getMonth()));
   const [ivaPeriodPickerOpen, setIvaPeriodPickerOpen] = useState(false);
-  const [isScraping, setIsScraping] = useState(false);
+  /** Sección que está ejecutando un job (iva = comprobantes_full + iva, deudas = deuda, facturas = comprobantes_full). */
+  const [scrapingSection, setScrapingSection] = useState<"iva" | "deudas" | "facturas" | null>(null);
+  const queryClient = useQueryClient();
   const ivaResumeRef = useRef<RenderIvaResumeRef>(null);
   const ivaSelectedYear = ivaResumenDateRange.from.getFullYear();
   const ivaSelectedMonth = ivaResumenDateRange.from.getMonth();
@@ -445,32 +447,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
             Editar Cliente
           </Button>
         </EditClientDialog> */}
-        <Button
-          variant="default"
-          disabled={isScraping}
-          onClick={async () => {
-            setIsScraping(true);
-            try {
-              await scrapUpdateClient({ data: { clientId } });
-              toast.success("Actualización del cliente iniciada correctamente");
-            } catch (err) {
-              toast.error(
-                err instanceof Error ? err.message : "Error al actualizar cliente"
-              );
-            } finally {
-              setIsScraping(false);
-            }
-          }}
-        >
-          {isScraping ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Actualizando…
-            </>
-          ) : (
-            "Actualizar Cliente"
-          )}
-        </Button>
+        <div className="flex items-center gap-2" />
       </div>
 
       {/* Navigation Tabs */}
@@ -797,11 +774,41 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
           )}
 
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <CardTitle className="flex items-center gap-2">
                 <DollarSign className="h-5 w-5" />
                 Deudas del Cliente
               </CardTitle>
+              <Button
+                variant="default"
+                size="sm"
+                disabled={!!scrapingSection}
+                onClick={async () => {
+                  setScrapingSection("deudas");
+                  try {
+                    await scrapSingleJob({
+                      data: { clientId, jobType: "deuda" },
+                    });
+                    await queryClient.invalidateQueries({ queryKey: ["clientDebts", clientId] });
+                    toast.success("Deudas actualizadas correctamente");
+                  } catch (err) {
+                    toast.error(
+                      err instanceof Error ? err.message : "Error al actualizar deudas"
+                    );
+                  } finally {
+                    setScrapingSection(null);
+                  }
+                }}
+              >
+                {scrapingSection === "deudas" ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Actualizando…
+                  </>
+                ) : (
+                  "Actualizar Deudas"
+                )}
+              </Button>
             </CardHeader>
             <CardContent>
               {loadingDebts ? (
@@ -1091,6 +1098,41 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
 
         {/* Facturas Tab */}
         <TabsContent value="facturas" className="space-y-6 mt-6">
+          <div className="flex justify-end">
+            <Button
+              variant="default"
+              size="sm"
+              disabled={!!scrapingSection}
+              onClick={async () => {
+                setScrapingSection("facturas");
+                try {
+                  await scrapSingleJob({
+                    data: { clientId, jobType: "comprobantes_full" },
+                  });
+                  await Promise.all([
+                    queryClient.invalidateQueries({ queryKey: ["clientAllInvoices", clientId] }),
+                    queryClient.invalidateQueries({ queryKey: ["invoices"] }),
+                  ]);
+                  toast.success("Facturas (comprobantes) actualizadas correctamente");
+                } catch (err) {
+                  toast.error(
+                    err instanceof Error ? err.message : "Error al actualizar facturas"
+                  );
+                } finally {
+                  setScrapingSection(null);
+                }
+              }}
+            >
+              {scrapingSection === "facturas" ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Actualizando…
+                </>
+              ) : (
+                "Actualizar Facturas"
+              )}
+            </Button>
+          </div>
           {/* Invoice Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Card>
@@ -1241,16 +1283,55 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                   </PopoverContent>
                 </Popover>
               </div>
-              <Button
-                variant="outline"
-                size="default"
-                onClick={() => ivaResumeRef.current?.downloadExcel()}
-                className="gap-2 font-semibold shrink-0"
-                disabled={!effectiveIvaProfileId}
-              >
-                <Download className="h-4 w-4" />
-                <span className="hidden sm:inline">Descargar Excel</span>
-              </Button>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button
+                  variant="default"
+                  size="default"
+                  disabled={!!scrapingSection}
+                  onClick={async () => {
+                    setScrapingSection("iva");
+                    try {
+                      await scrapSingleJob({
+                        data: { clientId, jobType: "comprobantes_full" },
+                      });
+                      await scrapSingleJob({
+                        data: { clientId, jobType: "iva" },
+                      });
+                      await Promise.all([
+                        queryClient.invalidateQueries({ queryKey: ["clientIva", clientId] }),
+                        queryClient.invalidateQueries({ queryKey: ["clientAllInvoices", clientId] }),
+                        queryClient.invalidateQueries({ queryKey: ["invoices"] }),
+                      ]);
+                      toast.success("IVA y comprobantes actualizados correctamente");
+                    } catch (err) {
+                      toast.error(
+                        err instanceof Error ? err.message : "Error al actualizar IVA"
+                      );
+                    } finally {
+                      setScrapingSection(null);
+                    }
+                  }}
+                >
+                  {scrapingSection === "iva" ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Actualizando…
+                    </>
+                  ) : (
+                    "Actualizar IVA"
+                  )}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="default"
+                  onClick={() => ivaResumeRef.current?.downloadExcel()}
+                  className="gap-2 font-semibold shrink-0"
+                  disabled={!effectiveIvaProfileId}
+                >
+                  <Download className="h-4 w-4" />
+                  <span className="hidden sm:inline">Descargar Excel</span>
+                </Button>
+              </div>
             </div>
 
             <div className="w-full">
