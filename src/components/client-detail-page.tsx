@@ -30,6 +30,7 @@ import {
   getClientDebts,
   getClientDueDates,
   getClientIvaCredit,
+  getLastJobByType,
 } from "@/actions/client";
 import {
   Select,
@@ -38,8 +39,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { getNotifications } from "@/actions/notification";
 import { EditClientDialog } from "@/components/edit-client-dialog";
+import { NotificationsView } from "@/components/notifications-view";
 import { InvoicesTable } from "@/components/invoices-table";
 import { getInvoices } from "@/actions/invoice";
 import { scrapSingleJob } from "@/actions/client";
@@ -136,6 +137,7 @@ function findBestMatchingProfileId(
 export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   const navigate = useNavigate();
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [editClientDialogOpen, setEditClientDialogOpen] = useState(false);
   const [ivaProfileId, setIvaProfileId] = useState<string | undefined>(
     undefined
   );
@@ -146,8 +148,8 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     to: Date;
   }>(() => getMonthBounds(now.getFullYear(), now.getMonth()));
   const [ivaPeriodPickerOpen, setIvaPeriodPickerOpen] = useState(false);
-  /** Sección que está ejecutando un job (iva = comprobantes_full + iva, deudas = deuda, facturas = comprobantes_full). */
-  const [scrapingSection, setScrapingSection] = useState<"iva" | "deudas" | "facturas" | null>(null);
+  /** Sección que está ejecutando un job (iva = comprobantes_full + iva, deudas = deuda, facturas = comprobantes_full, notificaciones = notificaciones). */
+  const [scrapingSection, setScrapingSection] = useState<"iva" | "deudas" | "facturas" | "notificaciones" | null>(null);
   const queryClient = useQueryClient();
   const ivaResumeRef = useRef<RenderIvaResumeRef>(null);
   const ivaSelectedYear = ivaResumenDateRange.from.getFullYear();
@@ -224,18 +226,12 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     queryFn: () => getClientDueDates({ data: { clientId } }),
   });
 
-  const { data: notifications = [], isLoading: loadingNotifications } =
-    useQuery({
-      queryKey: ["clientNotifications", clientId],
-      queryFn: () =>
-        getNotifications({
-          data: {
-            clientFilter: clientId,
-            page: 1,
-            limit: 100,
-          },
-        }),
-    });
+  const { data: lastNotificacionesJob } = useQuery({
+    queryKey: ["lastNotificacionesJob", clientId],
+    queryFn: () =>
+      getLastJobByType({ data: { clientId, jobType: "notificaciones" } }),
+    enabled: !!clientId,
+  });
 
   // Get all invoices for the client to calculate totals
   const { data: allInvoicesData } = useQuery({
@@ -440,14 +436,21 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <h1 className="text-2xl font-bold">{client.name}</h1>
-        </div>
-        {/* <EditClientDialog clientId={clientId}>
-          <Button variant="default">
-            <Edit className="mr-2 h-4 w-4" />
-            Editar Cliente
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setEditClientDialogOpen(true)}
+            className="gap-2"
+          >
+            <Edit className="h-4 w-4" />
+            Editar
           </Button>
-        </EditClientDialog> */}
-        <div className="flex items-center gap-2" />
+          <EditClientDialog
+            clientId={clientId}
+            open={editClientDialogOpen}
+            onOpenChange={setEditClientDialogOpen}
+          />
+        </div>
       </div>
 
       {/* Navigation Tabs */}
@@ -457,11 +460,11 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
             <FileText className="mr-2 h-4 w-4" />
             Resumen
           </TabsTrigger>
-          <TabsTrigger value="deudas">
+          <TabsTrigger value="deudas" disabled>
             <DollarSign className="mr-2 h-4 w-4" />
             Deudas
           </TabsTrigger>
-          <TabsTrigger value="vencimientos">
+          <TabsTrigger value="vencimientos" disabled>
             <Calendar className="mr-2 h-4 w-4" />
             Vencimientos
           </TabsTrigger>
@@ -519,22 +522,64 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 <div className="space-y-2">
                   <div className="text-sm text-muted-foreground">Teléfono</div>
                   <div className="flex items-center gap-2">
-                    <Phone className="h-4 w-4 text-muted-foreground" />
+                    <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
                     <span>{client.phone || "-"}</span>
+                    {client.phone && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 shrink-0"
+                        onClick={() => copyToClipboard(client.phone!, "phone")}
+                      >
+                        {copiedField === "phone" ? (
+                          <Check className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                      </Button>
+                    )}
                   </div>
                 </div>
                 <div className="space-y-2">
                   <div className="text-sm text-muted-foreground">Email</div>
                   <div className="flex items-center gap-2">
-                    <Mail className="h-4 w-4 text-muted-foreground" />
+                    <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
                     <span>{client.email || "-"}</span>
+                    {client.email && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 shrink-0"
+                        onClick={() => copyToClipboard(client.email!, "email")}
+                      >
+                        {copiedField === "email" ? (
+                          <Check className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                      </Button>
+                    )}
                   </div>
                 </div>
                 <div className="space-y-2">
                   <div className="text-sm text-muted-foreground">Dirección</div>
                   <div className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4 text-muted-foreground" />
+                    <MapPin className="h-4 w-4 text-muted-foreground shrink-0" />
                     <span>{client.address || "-"}</span>
+                    {client.address && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 shrink-0"
+                        onClick={() => copyToClipboard(client.address!, "address")}
+                      >
+                        {copiedField === "address" ? (
+                          <Check className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                      </Button>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -1021,79 +1066,74 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
           </Card>
         </TabsContent>
 
-        {/* Notificaciones Tab */}
+        {/* Notificaciones Tab - mismo formato que la vista del navbar */}
         <TabsContent value="notificaciones" className="space-y-6 mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Bell className="h-5 w-5" />
-                Notificaciones del Cliente
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loadingNotifications ? (
-                <div className="flex items-center justify-center h-32">
-                  <div className="text-muted-foreground">
-                    Cargando notificaciones...
-                  </div>
-                </div>
-              ) : !notifications ||
-                !("notifications" in notifications) ||
-                notifications.notifications.length === 0 ? (
-                <div className="flex items-center justify-center h-32">
-                  <div className="text-muted-foreground">
-                    No hay notificaciones registradas para este cliente
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Fecha de Publicación</TableHead>
-                        <TableHead>Mensaje</TableHead>
-                        <TableHead>Fecha de Vencimiento</TableHead>
-                        <TableHead>ID Externo</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {("notifications" in notifications
-                        ? notifications.notifications
-                        : []
-                      ).map((notification: any) => (
-                        <TableRow key={notification.id}>
-                          <TableCell>
-                            {new Date(
-                              notification.publicationDate
-                            ).toLocaleDateString("es-AR", {
-                              year: "numeric",
-                              month: "long",
-                              day: "numeric",
-                            })}
-                          </TableCell>
-                          <TableCell className="max-w-md truncate">
-                            {notification.message || "-"}
-                          </TableCell>
-                          <TableCell>
-                            {new Date(
-                              notification.expirationDate
-                            ).toLocaleDateString("es-AR", {
-                              year: "numeric",
-                              month: "long",
-                              day: "numeric",
-                            })}
-                          </TableCell>
-                          <TableCell className="font-mono text-sm">
-                            {notification.externalId || "-"}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <NotificationsView
+            clientId={clientId}
+            className="min-h-[500px]"
+            toolbar={
+              <>
+                <p className="text-xs text-muted-foreground">
+                  Ult. actualización{" "}
+                  {lastNotificacionesJob?.createdAt ? (
+                    <span
+                      className={
+                        lastNotificacionesJob.success
+                          ? "text-emerald-600 dark:text-emerald-400 font-medium"
+                          : "text-destructive"
+                      }
+                      title={lastNotificacionesJob.failedReason ?? undefined}
+                    >
+                      {new Date(lastNotificacionesJob.createdAt).toLocaleDateString("es-AR", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </span>
+                  ) : (
+                    "—"
+                  )}
+                </p>
+                <Button
+                  variant="default"
+                  size="sm"
+                  disabled={!!scrapingSection}
+                  onClick={async () => {
+                    setScrapingSection("notificaciones");
+                    try {
+                      await scrapSingleJob({
+                        data: { clientId, jobType: "notificaciones" },
+                      });
+                      await queryClient.invalidateQueries({
+                        queryKey: ["clientNotifications", clientId],
+                      });
+                      await queryClient.invalidateQueries({
+                        queryKey: ["lastNotificacionesJob", clientId],
+                      });
+                      toast.success("Notificaciones actualizadas correctamente");
+                    } catch (err) {
+                      toast.error(
+                        err instanceof Error
+                          ? err.message
+                          : "Error al actualizar notificaciones"
+                      );
+                    } finally {
+                      setScrapingSection(null);
+                    }
+                  }}
+                >
+                  {scrapingSection === "notificaciones" ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Actualizando…
+                    </>
+                  ) : (
+                    "Actualizar Notificaciones"
+                  )}
+                </Button>
+              </>
+            }
+          />
         </TabsContent>
 
         {/* Facturas Tab */}
@@ -1112,6 +1152,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                   await Promise.all([
                     queryClient.invalidateQueries({ queryKey: ["clientAllInvoices", clientId] }),
                     queryClient.invalidateQueries({ queryKey: ["invoices"] }),
+                    queryClient.invalidateQueries({ queryKey: ["lastComprobantesFullJob", clientId] }),
                   ]);
                   toast.success("Facturas (comprobantes) actualizadas correctamente");
                 } catch (err) {
@@ -1301,6 +1342,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                         queryClient.invalidateQueries({ queryKey: ["clientIva", clientId] }),
                         queryClient.invalidateQueries({ queryKey: ["clientAllInvoices", clientId] }),
                         queryClient.invalidateQueries({ queryKey: ["invoices"] }),
+                        queryClient.invalidateQueries({ queryKey: ["lastComprobantesFullJob", clientId] }),
                       ]);
                       toast.success("IVA y comprobantes actualizados correctamente");
                     } catch (err) {

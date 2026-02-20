@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Eye, Edit, Trash2, MoreHorizontal, Search } from "lucide-react";
+import { Eye, Edit, Trash2, MoreHorizontal, Search, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -46,6 +46,8 @@ export function ClientsTable() {
   const navigate = useNavigate();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [clientToDelete, setClientToDelete] = useState<string | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [clientToEditId, setClientToEditId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const queryClient = useQueryClient();
@@ -262,22 +264,40 @@ export function ClientsTable() {
                 </TableCell>
                 <TableCell>{client.identityNumber}</TableCell>
                 <TableCell className="text-green-500">
-                  +{" "}
-                  {new Intl.NumberFormat("es-AR", {
-                    style: "currency",
-                    currency: "ARS",
-                    minimumFractionDigits: 2,
-                  }).format(invoiceTotals[client.id]?.outbound || 0)}{" "}
-                  ARS
+                  {isInvoiceTotalsLoading ? (
+                    <span className="inline-flex items-center text-xs text-muted-foreground">
+                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                      Cargando…
+                    </span>
+                  ) : (
+                    <>
+                      +{" "}
+                      {new Intl.NumberFormat("es-AR", {
+                        style: "currency",
+                        currency: "ARS",
+                        minimumFractionDigits: 2,
+                      }).format(invoiceTotals[client.id]?.outbound || 0)}{" "}
+                      ARS
+                    </>
+                  )}
                 </TableCell>
                 <TableCell className="text-red-500">
-                  -{" "}
-                  {new Intl.NumberFormat("es-AR", {
-                    style: "currency",
-                    currency: "ARS",
-                    minimumFractionDigits: 2,
-                  }).format(invoiceTotals[client.id]?.inbound || 0)}{" "}
-                  ARS
+                  {isInvoiceTotalsLoading ? (
+                    <span className="inline-flex items-center text-xs text-muted-foreground">
+                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                      Cargando…
+                    </span>
+                  ) : (
+                    <>
+                      -{" "}
+                      {new Intl.NumberFormat("es-AR", {
+                        style: "currency",
+                        currency: "ARS",
+                        minimumFractionDigits: 2,
+                      }).format(invoiceTotals[client.id]?.inbound || 0)}{" "}
+                      ARS
+                    </>
+                  )}
                 </TableCell>
                 <TableCell>
                   {new Date(client.createdAt).toLocaleDateString()}
@@ -299,12 +319,16 @@ export function ClientsTable() {
                         <Eye className="mr-2 h-4 w-4" />
                         Ver
                       </DropdownMenuItem>
-                      <EditClientDialog clientId={client.id}>
-                        <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                          <Edit className="mr-2 h-4 w-4" />
-                          Editar
-                        </DropdownMenuItem>
-                      </EditClientDialog>
+                      <DropdownMenuItem
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          setClientToEditId(client.id);
+                          setEditDialogOpen(true);
+                        }}
+                      >
+                        <Edit className="mr-2 h-4 w-4" />
+                        Editar
+                      </DropdownMenuItem>
                       <DropdownMenuItem
                         onSelect={(e) => {
                           e.preventDefault();
@@ -323,6 +347,17 @@ export function ClientsTable() {
           </TableBody>
         </Table>
       </div>
+
+      {clientToEditId && (
+        <EditClientDialog
+          clientId={clientToEditId}
+          open={editDialogOpen}
+          onOpenChange={(open) => {
+            setEditDialogOpen(open);
+            if (!open) setClientToEditId(null);
+          }}
+        />
+      )}
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>

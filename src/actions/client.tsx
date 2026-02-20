@@ -3,9 +3,9 @@ import { getRequestHeaders } from "@tanstack/react-start/server";
 import z from "zod";
 import axios from "axios";
 import { db } from "@/lib/db";
-import { client, profile, debt, dueDate, ivaScrape } from "@/drizzle/schema";
+import { client, profile, debt, dueDate, ivaScrape, job } from "@/drizzle/schema";
 import { auth } from "@/lib/auth";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, desc } from "drizzle-orm";
 const JOBS_API_URL =
   process.env.SCRAPPER_JOBS_URL ||
   process.env.BACKEND_API_URL ||
@@ -549,7 +549,7 @@ export const scrapSingleJob = createServerFn({
   .inputValidator(
     z.object({
       clientId: z.string(),
-      jobType: z.enum(["comprobantes_full", "iva", "deuda"]),
+      jobType: z.enum(["comprobantes_full", "iva", "deuda", "notificaciones"]),
     })
   )
   .handler(async (ctx) => {
@@ -584,4 +584,93 @@ export const scrapSingleJob = createServerFn({
         `Error al ejecutar job ${jobType}`;
       throw new Error(msg);
     }
+  });
+
+/** Último job comprobantes_full para un cliente (por created_at), con estado success/error. */
+export const getLastComprobantesFullJob = createServerFn({
+  method: "GET",
+})
+  .inputValidator(z.object({ clientId: z.string() }))
+  .handler(async (ctx) => {
+    const session = await auth.api.getSession({ headers: getRequestHeaders() });
+    if (!session?.user?.id) throw new Error("Unauthorized");
+
+    const { clientId } = ctx.data;
+
+    const userClients = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(eq(client.userId, session.user.id));
+    const canAccess = userClients.some((c) => c.id === clientId);
+    if (!canAccess) return null;
+
+    const [lastJob] = await db
+      .select({
+        createdAt: job.createdAt,
+        failedReason: job.failedReason,
+      })
+      .from(job)
+      .where(
+        and(
+          eq(job.clientId, clientId),
+          eq(job.type, "comprobantes_full")
+        )
+      )
+      .orderBy(desc(job.createdAt))
+      .limit(1);
+
+    if (!lastJob?.createdAt) return null;
+    const success = lastJob.failedReason == null;
+    return {
+      createdAt: lastJob.createdAt.toISOString(),
+      success,
+      failedReason: lastJob.failedReason ?? undefined,
+    };
+  });
+
+/** Último job de un tipo dado para un cliente (por created_at), con estado success/error. */
+export const getLastJobByType = createServerFn({
+  method: "GET",
+})
+  .inputValidator(
+    z.object({
+      clientId: z.string(),
+      jobType: z.enum(["iva", "comprobantes", "comprobantes_full", "notificaciones", "deuda"]),
+    })
+  )
+  .handler(async (ctx) => {
+    const session = await auth.api.getSession({ headers: getRequestHeaders() });
+    if (!session?.user?.id) throw new Error("Unauthorized");
+
+    const { clientId, jobType } = ctx.data;
+
+    const userClients = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(eq(client.userId, session.user.id));
+    const canAccess = userClients.some((c) => c.id === clientId);
+    if (!canAccess) return null;
+
+    const [lastJob] = await db
+      .select({
+        createdAt: job.createdAt,
+        failedReason: job.failedReason,
+      })
+      .from(job)
+      .where(
+        and(
+          eq(job.clientId, clientId),
+          eq(job.type, jobType)
+        )
+      )
+      .orderBy(desc(job.createdAt))
+      .limit(1);
+
+    if (!lastJob?.createdAt) return null;
+    const success = lastJob.failedReason == null;
+    return {
+      createdAt: lastJob.createdAt.toISOString(),
+      success,
+      failedReason: lastJob.failedReason ?? undefined,
+    };
   });

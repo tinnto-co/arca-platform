@@ -9,7 +9,7 @@ import {
   document,
 } from "@/drizzle/schema";
 import { auth } from "@/lib/auth";
-import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
+import { eq, desc, and, gte, lte, sql, inArray } from "drizzle-orm";
 
 export const getNotifications = createServerFn({
   method: "GET",
@@ -65,6 +65,7 @@ export const getNotifications = createServerFn({
         message: notification.message,
         expirationDate: notification.expirationDate,
         publicationDate: notification.publicationDate,
+        opened: notification.opened,
         clientId: notification.client,
         clientName: client.name,
         clientEmail: client.email,
@@ -102,6 +103,7 @@ export const getNotification = createServerFn({
         message: notification.message,
         expirationDate: notification.expirationDate,
         publicationDate: notification.publicationDate,
+        opened: notification.opened,
         clientId: notification.client,
         clientName: client.name,
         clientEmail: client.email,
@@ -250,6 +252,36 @@ export const updateNotification = createServerFn({
       throw new Error("Error al actualizar la notificación");
 
     return updatedNotification;
+  });
+
+export const markNotificationOpened = createServerFn({
+  method: "POST",
+})
+  .inputValidator(z.object({ id: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const session = await auth.api.getSession({ headers: getRequestHeaders() });
+    if (!session?.user?.id) throw new Error("Unauthorized");
+
+    const userClients = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(eq(client.userId, session.user.id));
+    const userClientIds = userClients.map((c) => c.id);
+    if (userClientIds.length === 0) throw new Error("Unauthorized");
+
+    const [updated] = await db
+      .update(notification)
+      .set({ opened: true, updatedAt: new Date() })
+      .where(
+        and(
+          eq(notification.id, ctx.data.id),
+          inArray(notification.client, userClientIds)
+        )
+      )
+      .returning();
+
+    if (!updated) throw new Error("Notificación no encontrada o sin acceso");
+    return { opened: true };
   });
 
 export const deleteNotification = createServerFn({

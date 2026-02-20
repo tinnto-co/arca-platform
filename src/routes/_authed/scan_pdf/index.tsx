@@ -20,7 +20,7 @@ import {
     CommandInput,
     CommandItem,
 } from "@/components/ui/command"
-import { Check, ChevronsUpDown } from "lucide-react"
+import { Check, ChevronsUpDown, FileUp } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 
@@ -34,7 +34,7 @@ function RouteComponent() {
     const [result, setResult] = useState<any>(null);
     const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
 
-    const { data: clients = [], isLoading } = useQuery({
+    const { data: clients = [] } = useQuery({
         queryKey: ["clients"],
         queryFn: () => getClients(),
     });
@@ -72,8 +72,13 @@ function RouteComponent() {
         }
     };
 
+    const handleNuevoEscaneo = () => {
+        setResult(null);
+        setFile(null);
+    };
+
     return (
-        <div className="flex flex-col h-full space-y-6 m-[3rem]">
+        <div className="flex flex-col h-full space-y-6 m-[3rem] max-w-4xl">
             {/* Header */}
             <div>
                 <div className="flex items-center gap-2 mb-2">
@@ -85,24 +90,28 @@ function RouteComponent() {
                 </p>
             </div>
 
-            {/* Drag & Drop */}
-            <DragDrop onFileSelected={setFile} />
+            {/* Flujo pre-escaneo: Drag & Drop + Botón */}
+            {!result && (
+                <div className="space-y-4">
+                    <DragDrop onFileSelected={setFile} />
+                    <Button
+                        onClick={handleScan}
+                        disabled={!file || isScanning}
+                        size="lg"
+                    >
+                        {isScanning ? "Escaneando..." : "Escanear PDF"}
+                    </Button>
+                </div>
+            )}
 
-            {/* Action */}
-            <div>
-                <Button onClick={handleScan} disabled={result || isScanning}>
-                    {isScanning ? "Escaneando..." : "Escanear PDF"}
-                </Button>
-            </div>
-
-            {/* Cliente + Preview */}
+            {/* Post-escaneo: Cliente + Resultado */}
             {result && (
                 <div className="space-y-6">
-                    {/* Select Cliente */}
-                    <div className="max-w-md space-y-2">
-                        <Label>Cliente</Label>
-
-                        <Popover>
+                    {/* Barra: Cliente + Escanear otro */}
+                    <div className="flex flex-col sm:flex-row sm:items-end gap-4">
+                        <div className="flex-1 max-w-sm space-y-2">
+                            <Label>Cliente</Label>
+                            <Popover>
                             <PopoverTrigger asChild>
                                 <Button
                                     variant="outline"
@@ -147,6 +156,16 @@ function RouteComponent() {
                         </Popover>
                     </div>
 
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleNuevoEscaneo}
+                            className="shrink-0"
+                        >
+                            <FileUp className="h-4 w-4 mr-2" />
+                            Escanear otro PDF
+                        </Button>
+                    </div>
 
                     {/* Preview PDF */}
                     <RenderPdfInfo

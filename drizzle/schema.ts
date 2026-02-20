@@ -7,8 +7,20 @@ import {
   timestamp,
   unique,
   uuid,
+  integer,
+  pgEnum,
 } from "drizzle-orm/pg-core";
 
+
+// Job enums
+export const jobStatusEnum = pgEnum("job_status", ["pending", "running", "failed", "finished"]);
+export const jobTypeEnum = pgEnum("job_type", [
+  "iva",
+  "comprobantes",
+  "comprobantes_full",
+  "notificaciones",
+  "deuda",
+]);
 // User table must be defined before client to allow references
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -109,6 +121,7 @@ export const notification = pgTable("notification", {
   message: text("message").notNull(),
   expirationDate: timestamp("expiration_date").notNull(),
   publicationDate: timestamp("publication_date").notNull(),
+  opened: boolean("opened").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -130,6 +143,8 @@ export const invoice = pgTable("invoice", {
   client: uuid("client_id").references(() => client.id, {
     onDelete: "cascade",
   }),
+  receiptProvince: text("receipt_province"),
+
   profile: uuid("profile_id").references(() => profile.id, {
     onDelete: "cascade",
   }),
@@ -293,3 +308,31 @@ export const ivaScrape = pgTable(
     unique("iva_scrape_profile_periodo_unique").on(table.profileId, table.periodoFiscal),
   ]
 );
+
+// Job table for tracking scraping tasks
+export const job = pgTable("job", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  status: jobStatusEnum("status").notNull().default("pending"),
+  type: jobTypeEnum("type").notNull(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => client.id, { onDelete: "cascade" }),
+  params: jsonb("params").default({}),
+  result: jsonb("result"),
+  failedReason: text("failed_reason"),
+
+  // Timestamps
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at")
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+  startedAt: timestamp("started_at"),
+  finishedAt: timestamp("finished_at"),
+  failedAt: timestamp("failed_at"),
+
+  // BullMQ correlation
+  bullJobId: text("bull_job_id"),
+  attempts: integer("attempts").default(0),
+  progress: integer("progress").default(0),
+});
