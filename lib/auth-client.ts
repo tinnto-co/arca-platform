@@ -14,6 +14,6 @@ export const authClient = createAuthClient({
   (typeof process !== "undefined"
     ? process.env.BETTER_AUTH_URL
     : import.meta.env.VITE_BETTER_AUTH_URL) ||
-  "http://localhost:3000/api/auth", // the base url of your auth server
+  "https://blakg.tinnto.co/api/auth", // the base url of your auth server
   plugins: [adminClient(), jwtClient()],
 });
