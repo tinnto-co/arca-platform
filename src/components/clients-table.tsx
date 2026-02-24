@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Eye, Edit, Trash2, MoreHorizontal, Search, Loader2 } from "lucide-react";
+import { Eye, Edit, Trash2, MoreHorizontal, Search } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -39,7 +39,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getClientsWithProfiles, deleteClient } from "@/actions/client";
-import { getInvoiceTotalsByClient } from "@/actions/invoice";
 import { EditClientDialog } from "@/components/edit-client-dialog";
 
 export function ClientsTable() {
@@ -56,30 +55,6 @@ export function ClientsTable() {
     queryKey: ["clientsWithProfiles"],
     queryFn: () => getClientsWithProfiles(),
   });
-
-  const {
-    data: invoiceTotals = {},
-    isLoading: isInvoiceTotalsLoading,
-    isError: isInvoiceTotalsError,
-    error: invoiceTotalsError,
-  } = useQuery({
-    queryKey: ["invoiceTotalsByClient"],
-    queryFn: () => getInvoiceTotalsByClient(),
-  });
-
-  if (process.env.NODE_ENV === "development") {
-    // Log básico para entender qué está devolviendo getInvoiceTotalsByClient
-    console.log("[ClientsTable] invoiceTotalsByClient query", {
-      isInvoiceTotalsLoading,
-      isInvoiceTotalsError,
-      invoiceTotalsError,
-      clientsCount: clients.length,
-      invoiceTotalsKeys: Object.keys(invoiceTotals),
-      sampleTotals: Object.entries(invoiceTotals)
-        .slice(0, 5)
-        .map(([clientId, totals]) => ({ clientId, ...totals })),
-    });
-  }
 
   // Filter clients based on search term and filters
   const filteredClients = useMemo(() => {
@@ -145,46 +120,11 @@ export function ClientsTable() {
     );
   }
 
-  if (filteredClients.length === 0) {
-    return (
-      <div className="space-y-4">
-        {/* Search and Filters */}
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-            <Input
-              placeholder="Buscar por nombre, perfil, CUIT o teléfono..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-          <div className="flex gap-2">
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="Estado" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos los estados</SelectItem>
-                <SelectItem value="active">Activo</SelectItem>
-                <SelectItem value="inactive">Inactivo</SelectItem>
-                <SelectItem value="pending">Pendiente</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <div className="flex items-center justify-center h-32">
-          <div className="text-muted-foreground">
-            No se encontraron clientes con los filtros aplicados
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const hasResults = filteredClients.length > 0;
 
   return (
-    <>
-      {/* Search and Filters */}
+    <div className="space-y-4">
+      {/* Search and Filters - siempre el mismo árbol para no perder foco al cambiar resultados */}
       <div className="flex flex-col sm:flex-row gap-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
@@ -210,33 +150,39 @@ export function ClientsTable() {
         </div>
       </div>
 
-      {/* Results counter */}
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span>
-          Mostrando {filteredClients.length} de {clients.length} clientes
-        </span>
-        {(searchTerm || statusFilter !== "all") && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setSearchTerm("");
-              setStatusFilter("all");
-            }}
-          >
-            Limpiar filtros
-          </Button>
-        )}
-      </div>
+      {!hasResults ? (
+        <div className="flex items-center justify-center h-32">
+          <div className="text-muted-foreground">
+            No se encontraron clientes con los filtros aplicados
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Results counter */}
+          <div className="flex items-center justify-between text-sm text-muted-foreground">
+            <span>
+              Mostrando {filteredClients.length} de {clients.length} clientes
+            </span>
+            {(searchTerm || statusFilter !== "all") && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSearchTerm("");
+                  setStatusFilter("all");
+                }}
+              >
+                Limpiar filtros
+              </Button>
+            )}
+          </div>
 
-      <div className="rounded-md border">
+          <div className="rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Cliente</TableHead>
               <TableHead>CUIT</TableHead>
-              <TableHead>Fact. Emitidas</TableHead>
-              <TableHead>Fact. Pagadas</TableHead>
               <TableHead>Registrado</TableHead>
               <TableHead className="w-[50px]"></TableHead>
             </TableRow>
@@ -263,42 +209,6 @@ export function ClientsTable() {
                   </div>
                 </TableCell>
                 <TableCell>{client.identityNumber}</TableCell>
-                <TableCell className="text-green-500">
-                  {isInvoiceTotalsLoading ? (
-                    <span className="inline-flex items-center text-xs text-muted-foreground">
-                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                      Cargando…
-                    </span>
-                  ) : (
-                    <>
-                      +{" "}
-                      {new Intl.NumberFormat("es-AR", {
-                        style: "currency",
-                        currency: "ARS",
-                        minimumFractionDigits: 2,
-                      }).format(invoiceTotals[client.id]?.outbound || 0)}{" "}
-                      ARS
-                    </>
-                  )}
-                </TableCell>
-                <TableCell className="text-red-500">
-                  {isInvoiceTotalsLoading ? (
-                    <span className="inline-flex items-center text-xs text-muted-foreground">
-                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                      Cargando…
-                    </span>
-                  ) : (
-                    <>
-                      -{" "}
-                      {new Intl.NumberFormat("es-AR", {
-                        style: "currency",
-                        currency: "ARS",
-                        minimumFractionDigits: 2,
-                      }).format(invoiceTotals[client.id]?.inbound || 0)}{" "}
-                      ARS
-                    </>
-                  )}
-                </TableCell>
                 <TableCell>
                   {new Date(client.createdAt).toLocaleDateString()}
                 </TableCell>
@@ -346,7 +256,9 @@ export function ClientsTable() {
             ))}
           </TableBody>
         </Table>
-      </div>
+          </div>
+        </>
+      )}
 
       {clientToEditId && (
         <EditClientDialog
@@ -379,6 +291,6 @@ export function ClientsTable() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </div>
   );
 }

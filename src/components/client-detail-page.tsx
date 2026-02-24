@@ -42,7 +42,7 @@ import {
 import { EditClientDialog } from "@/components/edit-client-dialog";
 import { NotificationsView } from "@/components/notifications-view";
 import { InvoicesTable } from "@/components/invoices-table";
-import { getInvoices } from "@/actions/invoice";
+import { getInvoices, getClientMultilateralSummary } from "@/actions/invoice";
 import { scrapSingleJob } from "@/actions/client";
 import { useState, useMemo, useEffect, useRef } from "react";
 import { toast } from "sonner";
@@ -63,6 +63,7 @@ import {
   type RenderIvaResumeRef,
 } from "./render-iva-resume";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Input } from "@/components/ui/input";
 
 interface ClientDetailPageProps {
   clientId: string;
@@ -138,9 +139,14 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   const navigate = useNavigate();
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [editClientDialogOpen, setEditClientDialogOpen] = useState(false);
-  const [ivaProfileId, setIvaProfileId] = useState<string | undefined>(
-    undefined
-  );
+  const [ivaProfileId, setIvaProfileId] = useState<string | undefined>(undefined);
+  const [multilateralProfileId, setMultilateralProfileId] = useState<string | undefined>(undefined);
+  const [multilateralDateFrom, setMultilateralDateFrom] = useState<string>("");
+  const [multilateralDateTo, setMultilateralDateTo] = useState<string>("");
+  const [multilateralPeriod, setMultilateralPeriod] = useState<{
+    from: Date;
+    to: Date;
+  } | null>(null);
   const now = new Date();
   /** Rango de fechas elegido en el resumen IVA (para resaltar el scrape del período usado). */
   const [ivaResumenDateRange, setIvaResumenDateRange] = useState<{
@@ -158,6 +164,18 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     ivaSelectedYear === now.getFullYear() ? now.getMonth() : 11;
   const ivaAvailableMonthIndices = Array.from(
     { length: ivaMaxMonthForYear + 1 },
+    (_, i) => i
+  );
+
+  // Periodo para Convenio Multilateral (mismo patrón: año + meses)
+  const multilateralSelectedYear =
+    multilateralPeriod?.from.getFullYear() ?? now.getFullYear();
+  const multilateralSelectedMonth =
+    multilateralPeriod?.from.getMonth() ?? now.getMonth();
+  const multilateralMaxMonthForYear =
+    multilateralSelectedYear === now.getFullYear() ? now.getMonth() : 11;
+  const multilateralAvailableMonthIndices = Array.from(
+    { length: multilateralMaxMonthForYear + 1 },
     (_, i) => i
   );
 
@@ -190,6 +208,10 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   const effectiveIvaProfileId =
     ivaProfileId ?? defaultIvaProfileId ?? profiles[0]?.id;
 
+  /** Perfil efectivo para Convenio Multilateral (usa mismo default). */
+  const effectiveMultilateralProfileId =
+    multilateralProfileId ?? defaultIvaProfileId ?? profiles[0]?.id;
+
   const periodoFiscalResumen = getResumenPeriodMMYYYY(ivaResumenDateRange.from);
 
   const {
@@ -214,6 +236,10 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
 
   useEffect(() => {
     setIvaProfileId(undefined);
+    setMultilateralProfileId(undefined);
+    setMultilateralDateFrom("");
+    setMultilateralDateTo("");
+    setMultilateralPeriod(null);
   }, [clientId]);
 
   const { data: debts = [], isLoading: loadingDebts } = useQuery({
@@ -244,6 +270,26 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
           clientFilter: clientId,
         },
       }),
+  });
+
+  const { data: multilateralSummary = [] } = useQuery({
+    queryKey: [
+      "clientMultilateralSummary",
+      clientId,
+      effectiveMultilateralProfileId,
+      multilateralDateFrom,
+      multilateralDateTo,
+    ],
+    queryFn: () =>
+      getClientMultilateralSummary({
+        data: {
+          clientId,
+          profileId: effectiveMultilateralProfileId ?? undefined,
+          dateFrom: multilateralDateFrom || undefined,
+          dateTo: multilateralDateTo || undefined,
+        },
+      }),
+    enabled: !!clientId,
   });
 
   const copyToClipboard = (text: string, field: string) => {
@@ -479,6 +525,10 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
           <TabsTrigger value="iva">
             <BanknoteArrowUp className="mr-2 h-4 w-4" />
             Iva
+          </TabsTrigger>
+          <TabsTrigger value="convenio-multilateral">
+            <MapPin className="mr-2 h-4 w-4" />
+            Convenio Multilateral
           </TabsTrigger>
         </TabsList>
 
@@ -1147,7 +1197,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 setScrapingSection("facturas");
                 try {
                   await scrapSingleJob({
-                    data: { clientId, jobType: "comprobantes_full" },
+                    data: { clientId, jobType: "comprobantes" },
                   });
                   await Promise.all([
                     queryClient.invalidateQueries({ queryKey: ["clientAllInvoices", clientId] }),
@@ -1224,6 +1274,196 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
           </div>
 
           <InvoicesTable clientId={clientId} />
+        </TabsContent>
+
+        {/* Convenio Multilateral Tab */}
+        <TabsContent value="convenio-multilateral" className="space-y-6 mt-6">
+          <Card>
+            <CardHeader className="flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <CardTitle className="flex items-center gap-2">
+                  <Receipt className="h-5 w-5" />
+                  Convenio Multilateral (ventas por provincia)
+                </CardTitle>
+                <div className="flex items-center gap-4 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">
+                      Perfil:
+                    </span>
+                    {effectiveMultilateralProfileId ? (
+                      <Select
+                        key={`multilateral-${clientId}`}
+                        defaultValue={effectiveMultilateralProfileId}
+                        onValueChange={(value) =>
+                          setMultilateralProfileId(value || undefined)
+                        }
+                        disabled={loadingProfiles || profiles.length <= 1}
+                      >
+                        <SelectTrigger className="min-w-[220px] w-auto">
+                          <SelectValue placeholder="Seleccionar perfil" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {profiles.map(
+                            (profile: {
+                              id: string;
+                              name?: string;
+                              identityNumber?: string;
+                            }) => (
+                              <SelectItem key={profile.id} value={profile.id}>
+                                {profile.name ||
+                                  profile.identityNumber ||
+                                  profile.id}
+                              </SelectItem>
+                            )
+                          )}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <span className="min-w-[220px] text-sm text-muted-foreground">
+                        {loadingProfiles
+                          ? "Cargando perfiles..."
+                          : profiles.length === 0
+                          ? "Sin perfiles"
+                          : "Seleccionar perfil"}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Selector de período (año + meses), igual que IVA pero aplicado al filtro de Convenio Multilateral */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">
+                      Período:
+                    </span>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className="h-9 px-3 text-xs font-normal"
+                        >
+                          {multilateralPeriod
+                            ? `${MONTH_NAMES_SHORT[multilateralSelectedMonth]} ${multilateralSelectedYear}`
+                            : "Sin filtro"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-4" align="end">
+                        <div className="space-y-3">
+                          <Select
+                            value={String(multilateralSelectedYear)}
+                            onValueChange={(v) => {
+                              const y = Number(v);
+                              const newMax =
+                                y === now.getFullYear() ? now.getMonth() : 11;
+                              const m = Math.min(
+                                multilateralSelectedMonth,
+                                newMax
+                              );
+                              const range = getMonthBounds(y, m);
+                              setMultilateralPeriod(range);
+                              setMultilateralDateFrom(
+                                range.from.toISOString().slice(0, 10)
+                              );
+                              setMultilateralDateTo(
+                                range.to.toISOString().slice(0, 10)
+                              );
+                            }}
+                          >
+                            <SelectTrigger className="w-full h-9">
+                              <SelectValue placeholder="Año" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Array.from(
+                                { length: 8 },
+                                (_, i) => now.getFullYear() - i
+                              ).map((y) => (
+                                <SelectItem key={y} value={String(y)}>
+                                  {y}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {multilateralAvailableMonthIndices.map((i) => (
+                              <Button
+                                key={i}
+                                variant={
+                                  multilateralSelectedMonth === i
+                                    ? "default"
+                                    : "outline"
+                                }
+                                size="sm"
+                                className="text-xs h-8"
+                                onClick={() => {
+                                  const range = getMonthBounds(
+                                    multilateralSelectedYear,
+                                    i
+                                  );
+                                  setMultilateralPeriod(range);
+                                  setMultilateralDateFrom(
+                                    range.from.toISOString().slice(0, 10)
+                                  );
+                                  setMultilateralDateTo(
+                                    range.to.toISOString().slice(0, 10)
+                                  );
+                                }}
+                              >
+                                {MONTH_NAMES_SHORT[i]}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {multilateralSummary.length === 0 ? (
+                <div className="flex items-center justify-center h-32">
+                  <div className="text-muted-foreground">
+                    No hay facturas outbound registradas para este cliente
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Provincia</TableHead>
+                        <TableHead className="text-right">
+                          Cant. comprobantes
+                        </TableHead>
+                        <TableHead className="text-right">
+                          Total IVA
+                        </TableHead>
+                        <TableHead className="text-right">
+                          Base imponible (amount_taxed)
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {multilateralSummary.map((row: any) => (
+                        <TableRow key={row.receiptProvince ?? "sin-datos"}>
+                          <TableCell className="font-medium">
+                            {row.receiptProvince || "Sin datos"}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {row.invoiceCount}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {formatIvaCurrency(row.totalIVA)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {formatIvaCurrency(row.totalTaxed)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* IVA Tab */}
@@ -1333,7 +1573,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                     setScrapingSection("iva");
                     try {
                       await scrapSingleJob({
-                        data: { clientId, jobType: "comprobantes_full" },
+                        data: { clientId, jobType: "comprobantes" },
                       });
                       await scrapSingleJob({
                         data: { clientId, jobType: "iva" },

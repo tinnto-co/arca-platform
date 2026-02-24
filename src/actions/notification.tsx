@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import {
   notification,
   client,
+  profile,
   invoiceAttachment,
   document,
 } from "@/drizzle/schema";
@@ -21,6 +22,7 @@ export const getNotifications = createServerFn({
       clientFilter: z.string().optional(),
       dateFrom: z.string().optional(),
       dateTo: z.string().optional(),
+      profileId: z.string().optional(),
       search: z.string().optional(),
     })
   )
@@ -29,7 +31,7 @@ export const getNotifications = createServerFn({
     const session = await auth.api.getSession({ headers: getRequestHeaders() });
     if (!session?.user?.id) throw new Error("Unauthorized");
 
-    const { page, limit, clientFilter, dateFrom, dateTo } = ctx.data;
+    const { page, limit, clientFilter, dateFrom, dateTo, profileId } = ctx.data;
     const offset = (page - 1) * limit;
 
     // Build where conditions
@@ -37,6 +39,10 @@ export const getNotifications = createServerFn({
 
     if (clientFilter && clientFilter !== "all") {
       conditions.push(eq(notification.client, clientFilter));
+    }
+
+    if (profileId && profileId !== "all") {
+      conditions.push(eq(notification.profile, profileId));
     }
 
     if (dateFrom) {
@@ -57,7 +63,7 @@ export const getNotifications = createServerFn({
       .leftJoin(client, eq(notification.client, client.id))
       .where(whereCondition);
 
-    // Get notifications with client data
+    // Get notifications with client + profile data
     const notifications = await db
       .select({
         id: notification.id,
@@ -69,11 +75,15 @@ export const getNotifications = createServerFn({
         clientId: notification.client,
         clientName: client.name,
         clientEmail: client.email,
+        profileId: notification.profile,
+        profileName: profile.name,
+        profileIdentityNumber: profile.identityNumber,
         createdAt: notification.createdAt,
         updatedAt: notification.updatedAt,
       })
       .from(notification)
       .leftJoin(client, eq(notification.client, client.id))
+      .leftJoin(profile, eq(notification.profile, profile.id))
       .where(whereCondition)
       .orderBy(desc(notification.publicationDate))
       .limit(limit)

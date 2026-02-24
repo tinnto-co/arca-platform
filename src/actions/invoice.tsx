@@ -182,6 +182,82 @@ export const getInvoices = createServerFn({
     };
   });
 
+export const getClientMultilateralSummary = createServerFn({
+  method: "GET",
+})
+  .inputValidator(
+    z.object({
+      clientId: z.string(),
+      profileId: z.string().optional(),
+      dateFrom: z.string().optional(),
+      dateTo: z.string().optional(),
+    })
+  )
+  .handler(async (ctx) => {
+    const session = await auth.api.getSession({ headers: getRequestHeaders() });
+    if (!session?.user?.id) throw new Error("Unauthorized");
+
+    const { clientId, profileId, dateFrom, dateTo } = ctx.data;
+
+    // Verificar que el cliente pertenece al usuario
+    const [clientRow] = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(and(eq(client.id, clientId), eq(client.userId, session.user.id)))
+      .limit(1);
+
+    if (!clientRow) {
+      throw new Error("Cliente no encontrado o no autorizado");
+    }
+
+    // Si se pasa profileId, verificar que pertenezca a este cliente
+    let profileFilter: string | undefined;
+    if (profileId && profileId !== "all") {
+      const [profileRow] = await db
+        .select({ id: profile.id })
+        .from(profile)
+        .where(and(eq(profile.id, profileId), eq(profile.client, clientId)))
+        .limit(1);
+      if (profileRow) {
+        profileFilter = profileId;
+      }
+    }
+
+    const conditions = [
+      eq(invoice.client, clientId),
+      eq(invoice.direction, "Outbound"),
+      profileFilter ? eq(invoice.profile, profileFilter) : sql`true`,
+    ];
+    if (dateFrom) {
+      conditions.push(gte(invoice.emitionDate, new Date(dateFrom)));
+    }
+    if (dateTo) {
+      const toDate = new Date(dateTo);
+      toDate.setHours(23, 59, 59, 999);
+      conditions.push(lte(invoice.emitionDate, toDate));
+    }
+
+    // Tipos AFIP que son Nota de Crédito: restan del total (3=N.Crédito A, 8=N.Crédito B, 13=N.Crédito C).
+    // También consideramos tipo que contenga "Crédito" por si viene con texto desde el CSV.
+    const isCreditNote =
+      sql`(${invoice.type} in ('3', '8', '13') or ${invoice.type}::text ilike '%Crédito%')`;
+
+    // Agrupar invoices outbound por provincia: total IVA y base imponible son NETOS
+    // (facturas y notas de débito suman; notas de crédito restan).
+    const rows = await db
+      .select({
+        receiptProvince: invoice.receiptProvince,
+        invoiceCount: sql<number>`count(*)::int`,
+        totalIVA: sql<string>`(coalesce(sum(case when ${isCreditNote} then -(${invoice.totalIVA}::numeric) else (${invoice.totalIVA}::numeric) end), 0))::text`,
+        totalTaxed: sql<string>`(coalesce(sum(case when ${isCreditNote} then -(${invoice.amountTaxed}::numeric) else (${invoice.amountTaxed}::numeric) end), 0))::text`,
+      })
+      .from(invoice)
+      .where(and(...conditions))
+      .groupBy(invoice.receiptProvince);
+
+    return rows;
+  });
+
 export const getInvoice = createServerFn({
   method: "GET",
 })

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Mail,
@@ -35,7 +35,7 @@ import {
   getNotification,
   markNotificationOpened,
 } from "@/actions/notification";
-import { getClients } from "@/actions/client";
+import { getClients, getClientProfiles } from "@/actions/client";
 import { cn } from "@/lib/utils";
 
 interface NotificationData {
@@ -48,6 +48,9 @@ interface NotificationData {
   clientId: string | null;
   clientName: string | null;
   clientEmail: string | null;
+   profileId?: string | null;
+   profileName?: string | null;
+   profileIdentityNumber?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -73,6 +76,7 @@ export function NotificationsView({
   >(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [clientFilter, setClientFilter] = useState<string>(clientIdProp ?? "all");
+  const [profileFilter, setProfileFilter] = useState<string>("all");
   const [selectedNotificationId, setSelectedNotificationId] = useState<
     string | null
   >(null);
@@ -85,12 +89,31 @@ export function NotificationsView({
     enabled: !clientIdProp,
   });
 
+  // Perfiles del cliente (solo cuando estamos en el detalle de un cliente)
+  const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
+    queryKey: ["clientProfiles", clientIdProp],
+    queryFn: () =>
+      getClientProfiles({
+        data: { clientId: clientIdProp! },
+      }),
+    enabled: !!clientIdProp,
+  });
+
   const effectiveClientFilter = clientIdProp ?? clientFilter;
+  const effectiveProfileFilter =
+    clientIdProp && profileFilter !== "all" ? profileFilter : undefined;
+
+  // Reset filtros cuando cambia el cliente (por si se reusa el componente)
+  useEffect(() => {
+    if (clientIdProp) {
+      setProfileFilter("all");
+    }
+  }, [clientIdProp]);
 
   // Get notifications
   const { data: notificationsData, isLoading } = useQuery({
     queryKey: clientIdProp
-      ? ["clientNotifications", clientIdProp, searchTerm]
+      ? ["clientNotifications", clientIdProp, effectiveProfileFilter, searchTerm]
       : ["notifications", 1, clientFilter, "", "", searchTerm],
     queryFn: () =>
       getNotifications({
@@ -99,6 +122,7 @@ export function NotificationsView({
           limit: 100,
           clientFilter:
             effectiveClientFilter === "all" ? undefined : effectiveClientFilter,
+          profileId: effectiveProfileFilter,
           search: searchTerm || undefined,
         },
       }),
@@ -216,11 +240,19 @@ export function NotificationsView({
       return notificationDate.toLocaleDateString("es-ES", {
         day: "2-digit",
         month: "2-digit",
+        year: "numeric",
       });
     }
   };
 
-  const notifications = notificationsData?.notifications || [];
+  const rawNotifications = notificationsData?.notifications || [];
+  const notifications = clientIdProp
+    // En el detalle de cliente: solo mostrar notificaciones con perfil asociado
+    ? rawNotifications.filter(
+        (n: any) => n.profileName || n.profileIdentityNumber
+      )
+    // En la vista global: solo mostrar notificaciones con cliente asociado
+    : rawNotifications.filter((n: any) => n.clientName || n.clientId);
 
   return (
     <div
@@ -250,7 +282,7 @@ export function NotificationsView({
                 className="pl-10"
               />
             </div>
-            {!clientIdProp && (
+            {!clientIdProp ? (
               <Select value={clientFilter} onValueChange={setClientFilter}>
                 <SelectTrigger>
                   <SelectValue placeholder="Filtrar por cliente" />
@@ -264,11 +296,29 @@ export function NotificationsView({
                   ))}
                 </SelectContent>
               </Select>
+            ) : (
+              <Select
+                value={profileFilter}
+                onValueChange={setProfileFilter}
+                disabled={loadingProfiles || profiles.length === 0}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Filtrar por perfil" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los perfiles</SelectItem>
+                  {profiles.map((profile: any) => (
+                    <SelectItem key={profile.id} value={profile.id}>
+                      {profile.name || profile.identityNumber || profile.id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
           </div>
 
         {/* Notifications List */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1">
           {isLoading ? (
             <div className="flex items-center justify-center h-32">
               <div className="text-muted-foreground">Cargando...</div>
@@ -280,47 +330,53 @@ export function NotificationsView({
               </div>
             </div>
           ) : (
-            <div className="divide-y">
-              {notifications.map((notification) => (
-                <div
-                  key={notification.id}
-                  onClick={() => handleNotificationClick(notification)}
-                  className={cn(
-                    "p-4 cursor-pointer hover:bg-muted/50 transition-colors",
-                    selectedNotificationId === notification.id &&
-                      "bg-muted border-l-4 border-l-primary",
-                    notification.opened === false && "bg-primary/5"
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        {notification.opened === false && (
-                          <span className="h-2 w-2 rounded-full bg-primary flex-shrink-0 mt-1.5" aria-hidden />
-                        )}
-                        <Mail className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                        <p
-                          className={cn(
-                            "text-sm truncate",
-                            notification.opened === false ? "font-semibold" : "font-medium"
+            <div className="max-h-[400px] overflow-y-auto">
+              <div className="divide-y">
+                {notifications.map((notification) => (
+                  <div
+                    key={notification.id}
+                    onClick={() => handleNotificationClick(notification)}
+                    className={cn(
+                      "p-4 cursor-pointer hover:bg-muted/50 transition-colors",
+                      selectedNotificationId === notification.id &&
+                        "bg-muted border-l-4 border-l-primary",
+                      notification.opened === false && "bg-primary/5"
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          {notification.opened === false && (
+                            <span className="h-2 w-2 rounded-full bg-primary flex-shrink-0 mt-1.5" aria-hidden />
                           )}
-                        >
-                          {notification.clientName || "Sin cliente"}
+                          <Mail className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                          <p
+                            className={cn(
+                              "text-sm truncate",
+                              notification.opened === false ? "font-semibold" : "font-medium"
+                            )}
+                          >
+                         {clientIdProp
+                            ? notification.profileName ||
+                              notification.profileIdentityNumber ||
+                              "Sin perfil"
+                            : notification.clientName || "Sin cliente"}
+                          </p>
+                        </div>
+                        <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
+                          {notification.message}
                         </p>
-                      </div>
-                      <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
-                        {notification.message}
-                      </p>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Calendar className="h-3 w-3" />
-                        <span>
-                          {formatDateShort(notification.publicationDate)}
-                        </span>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Calendar className="h-3 w-3" />
+                          <span>
+                            {formatDateShort(notification.publicationDate)}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           )}
         </div>

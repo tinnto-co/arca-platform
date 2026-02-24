@@ -549,7 +549,7 @@ export const scrapSingleJob = createServerFn({
   .inputValidator(
     z.object({
       clientId: z.string(),
-      jobType: z.enum(["comprobantes_full", "iva", "deuda", "notificaciones"]),
+      jobType: z.enum(["comprobantes_full", "comprobantes", "iva", "deuda", "notificaciones"]),
     })
   )
   .handler(async (ctx) => {

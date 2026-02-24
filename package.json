@@ -9,7 +9,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "start": "bun run server.ts",
-    "fix-inbound-recipient": "bun run src/scripts/fix-inbound-recipient-last-2-months.ts"
+    "fix-inbound-recipient": "bun run src/scripts/fix-inbound-recipient-last-2-months.ts",
+    "rebuild-client-invoices": "bun run src/scripts/rebuild-client-invoices.ts"
   },
   "keywords": [],
   "author": "",
