@@ -20,6 +20,7 @@ export const getInvoices = createServerFn({
       page: z.number().default(1),
       limit: z.number().default(10),
       clientFilter: z.string().optional(),
+      profileFilter: z.string().optional(),
       dateFrom: z.string().optional(),
       dateTo: z.string().optional(),
       typeFilter: z.string().optional(),
@@ -37,6 +38,7 @@ export const getInvoices = createServerFn({
       page,
       limit,
       clientFilter,
+      profileFilter,
       dateFrom,
       dateTo,
       typeFilter,
@@ -76,6 +78,23 @@ export const getInvoices = createServerFn({
       }
     }
 
+    if (profileFilter && profileFilter !== "all") {
+      // Verify profile belongs to one of user's clients
+      const [profileRow] = await db
+        .select({ id: profile.id })
+        .from(profile)
+        .where(
+          and(
+            eq(profile.id, profileFilter),
+            inArray(profile.client, userClientIds)
+          )
+        )
+        .limit(1);
+      if (profileRow) {
+        conditions.push(eq(invoice.profile, profileFilter));
+      }
+    }
+
     if (dateFrom) {
       conditions.push(gte(invoice.emitionDate, new Date(dateFrom)));
     }
@@ -110,7 +129,7 @@ export const getInvoices = createServerFn({
       .leftJoin(client, eq(invoice.client, client.id))
       .where(whereCondition);
 
-    // Get invoices with client data
+    // Get invoices with client and profile data
     const invoices = await db
       .select({
         id: invoice.id,
@@ -133,11 +152,13 @@ export const getInvoices = createServerFn({
         clientId: invoice.client,
         clientName: client.name,
         clientEmail: client.email,
+        profileName: profile.name,
         createdAt: invoice.createdAt,
         updatedAt: invoice.updatedAt,
       })
       .from(invoice)
       .leftJoin(client, eq(invoice.client, client.id))
+      .leftJoin(profile, eq(invoice.profile, profile.id))
       .where(whereCondition)
       .orderBy(
         sortBy === "amount"
@@ -159,6 +180,82 @@ export const getInvoices = createServerFn({
       totalPages: Math.ceil(count / limit),
       currentPage: page,
     };
+  });
+
+export const getClientMultilateralSummary = createServerFn({
+  method: "GET",
+})
+  .inputValidator(
+    z.object({
+      clientId: z.string(),
+      profileId: z.string().optional(),
+      dateFrom: z.string().optional(),
+      dateTo: z.string().optional(),
+    })
+  )
+  .handler(async (ctx) => {
+    const session = await auth.api.getSession({ headers: getRequestHeaders() });
+    if (!session?.user?.id) throw new Error("Unauthorized");
+
+    const { clientId, profileId, dateFrom, dateTo } = ctx.data;
+
+    // Verificar que el cliente pertenece al usuario
+    const [clientRow] = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(and(eq(client.id, clientId), eq(client.userId, session.user.id)))
+      .limit(1);
+
+    if (!clientRow) {
+      throw new Error("Cliente no encontrado o no autorizado");
+    }
+
+    // Si se pasa profileId, verificar que pertenezca a este cliente
+    let profileFilter: string | undefined;
+    if (profileId && profileId !== "all") {
+      const [profileRow] = await db
+        .select({ id: profile.id })
+        .from(profile)
+        .where(and(eq(profile.id, profileId), eq(profile.client, clientId)))
+        .limit(1);
+      if (profileRow) {
+        profileFilter = profileId;
+      }
+    }
+
+    const conditions = [
+      eq(invoice.client, clientId),
+      eq(invoice.direction, "Outbound"),
+      profileFilter ? eq(invoice.profile, profileFilter) : sql`true`,
+    ];
+    if (dateFrom) {
+      conditions.push(gte(invoice.emitionDate, new Date(dateFrom)));
+    }
+    if (dateTo) {
+      const toDate = new Date(dateTo);
+      toDate.setHours(23, 59, 59, 999);
+      conditions.push(lte(invoice.emitionDate, toDate));
+    }
+
+    // Tipos AFIP que son Nota de Crédito: restan del total (3=N.Crédito A, 8=N.Crédito B, 13=N.Crédito C).
+    // También consideramos tipo que contenga "Crédito" por si viene con texto desde el CSV.
+    const isCreditNote =
+      sql`(${invoice.type} in ('3', '8', '13') or ${invoice.type}::text ilike '%Crédito%')`;
+
+    // Agrupar invoices outbound por provincia: total IVA y base imponible son NETOS
+    // (facturas y notas de débito suman; notas de crédito restan).
+    const rows = await db
+      .select({
+        receiptProvince: invoice.receiptProvince,
+        invoiceCount: sql<number>`count(*)::int`,
+        totalIVA: sql<string>`(coalesce(sum(case when ${isCreditNote} then -(${invoice.totalIVA}::numeric) else (${invoice.totalIVA}::numeric) end), 0))::text`,
+        totalTaxed: sql<string>`(coalesce(sum(case when ${isCreditNote} then -(${invoice.amountTaxed}::numeric) else (${invoice.amountTaxed}::numeric) end), 0))::text`,
+      })
+      .from(invoice)
+      .where(and(...conditions))
+      .groupBy(invoice.receiptProvince);
+
+    return rows;
   });
 
 export const getInvoice = createServerFn({
@@ -629,6 +726,12 @@ export const getInvoiceTotalsByClient = createServerFn({
   const session = await auth.api.getSession({ headers: getRequestHeaders() });
   if (!session?.user?.id) throw new Error("Unauthorized");
 
+  if (process.env.NODE_ENV === "development") {
+    console.log("[getInvoiceTotalsByClient] called", {
+      userId: session.user.id,
+    });
+  }
+
   // Get clients associated with the current user
   const userClients = await db
     .select({ id: client.id })
@@ -636,6 +739,13 @@ export const getInvoiceTotalsByClient = createServerFn({
     // .where(eq(client.userId, session.user.id));
 
   const userClientIds = userClients.map((c) => c.id);
+
+  if (process.env.NODE_ENV === "development") {
+    console.log("[getInvoiceTotalsByClient] user clients", {
+      count: userClientIds.length,
+      sampleIds: userClientIds.slice(0, 5),
+    });
+  }
 
   if (userClientIds.length === 0) {
     return {};
@@ -652,6 +762,13 @@ export const getInvoiceTotalsByClient = createServerFn({
     })
     .from(invoice)
     .where(inArray(invoice.client, userClientIds));
+
+  if (process.env.NODE_ENV === "development") {
+    console.log("[getInvoiceTotalsByClient] raw invoices", {
+      count: invoices.length,
+      sample: invoices.slice(0, 5),
+    });
+  }
 
   // Calculate totals by client
   const totalsByClient: Record<string, { outbound: number; inbound: number }> =
@@ -681,6 +798,15 @@ export const getInvoiceTotalsByClient = createServerFn({
       totalsByClient[inv.clientId].inbound += amount;
     }
   });
+
+  if (process.env.NODE_ENV === "development") {
+    console.log("[getInvoiceTotalsByClient] totalsByClient summary", {
+      clientsWithTotals: Object.keys(totalsByClient).length,
+      sample: Object.entries(totalsByClient)
+        .slice(0, 5)
+        .map(([clientId, totals]) => ({ clientId, ...totals })),
+    });
+  }
 
   return totalsByClient;
 });
@@ -746,7 +872,7 @@ export const getInvoicesByProfile = createServerFn({
       .from(invoice)
       .where(whereCondition);
 
-    // Get invoices with client data
+    // Get invoices with client and profile data
     const invoices = await db
       .select({
         id: invoice.id,
@@ -769,11 +895,13 @@ export const getInvoicesByProfile = createServerFn({
         clientId: invoice.client,
         clientName: client.name,
         clientEmail: client.email,
+        profileName: profile.name,
         createdAt: invoice.createdAt,
         updatedAt: invoice.updatedAt,
       })
       .from(invoice)
       .leftJoin(client, eq(invoice.client, client.id))
+      .leftJoin(profile, eq(invoice.profile, profile.id))
       .where(whereCondition)
       .orderBy(desc(invoice.emitionDate))
       .limit(limit)
@@ -910,6 +1038,9 @@ export const getInvoiceStatsByProfile = createServerFn({
         netoInbound25: 0,
         netoGravadoCompras: 0,
         creditoFiscalCompras: 0,
+        totalAmountExempt: 0,
+        totalAmountIVA0: 0,
+        totalAmountNoTaxed: 0,
       };
     }
 
@@ -951,6 +1082,9 @@ export const getInvoiceStatsByProfile = createServerFn({
         IVA21: invoice.IVA21,
         IVA105: invoice.IVA105,
         IVA27: invoice.IVA27,
+        amountIVA0: invoice.amountIVA0,
+        amountExempt: invoice.amountExempt,
+        amountNoTaxed: invoice.amountNoTaxed,
       })
       .from(invoice)
       .where(and(...conditions));
@@ -1034,6 +1168,21 @@ export const getInvoiceStatsByProfile = createServerFn({
 
     const netoGravadoCompras =
       netoInbound27 + netoInbound21 + netoInbound105 + netoInbound5 + netoInbound25;
+
+    // Exento, IVA 0%, No gravado: suma en todos los comprobantes (nota de crédito resta)
+    let totalAmountExempt = 0;
+    let totalAmountIVA0 = 0;
+    let totalAmountNoTaxed = 0;
+    invoices.forEach((inv) => {
+      const rate =
+        inv.currency?.toUpperCase() === "USD"
+          ? parseFloat(inv.currencyRate || "1")
+          : 1;
+      const sign = CREDIT_NOTE_TYPES.includes(inv.type ?? "") ? -1 : 1;
+      totalAmountExempt += sign * parseFloat(inv.amountExempt || "0") * rate;
+      totalAmountIVA0 += sign * parseFloat(inv.amountIVA0 || "0") * rate;
+      totalAmountNoTaxed += sign * parseFloat(inv.amountNoTaxed || "0") * rate;
+    });
 
     // Crédito Fiscal Compras = (neto21 * 0.21) + (neto105 * 0.105) + (neto27 * 0.27) + (neto5 * 0.05) + (neto25 * 0.025)
     // Nota: El Ajuste se suma en el frontend (viene de mock por ahora)
@@ -1131,5 +1280,8 @@ export const getInvoiceStatsByProfile = createServerFn({
       netoInbound25,
       netoGravadoCompras,
       creditoFiscalCompras,
+      totalAmountExempt,
+      totalAmountIVA0,
+      totalAmountNoTaxed,
     };
   });

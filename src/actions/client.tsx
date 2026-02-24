@@ -3,9 +3,16 @@ import { getRequestHeaders } from "@tanstack/react-start/server";
 import z from "zod";
 import axios from "axios";
 import { db } from "@/lib/db";
-import { client, profile, debt, dueDate, ivaScrape } from "@/drizzle/schema";
+import { client, profile, debt, dueDate, ivaScrape, job } from "@/drizzle/schema";
 import { auth } from "@/lib/auth";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, desc } from "drizzle-orm";
+const JOBS_API_URL =
+  process.env.SCRAPPER_JOBS_URL ||
+  process.env.BACKEND_API_URL ||
+  "http://localhost:3002";
+
+const POLL_INTERVAL_MS = 3000;
+const MAX_POLL_ATTEMPTS = 300; // ~15 min max per job
 
 export const createClient = createServerFn({
   method: "POST",
@@ -449,4 +456,221 @@ export const scrapOldClient = createServerFn({
     } catch (error: any) {
       throw new Error(error.response?.data?.error || "Error al scrapear el cliente");
     }
+  });
+
+/** Espera a que un job termine (finished o failed) haciendo polling */
+async function waitForJob(
+  baseUrl: string,
+  jobId: string
+): Promise<{ status: string; result?: unknown; failedReason?: string | null }> {
+  for (let i = 0; i < MAX_POLL_ATTEMPTS; i++) {
+    const { data } = await axios.get(`${baseUrl}/api/jobs/${jobId}`);
+    if (data.status === "finished" || data.status === "failed") {
+      return data;
+    }
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+  }
+  throw new Error("Tiempo de espera agotado esperando el job");
+}
+
+export const scrapUpdateClient = createServerFn({
+  method: "POST",
+})
+  .inputValidator(z.object({ clientId: z.string() }))
+  .handler(async (ctx) => {
+    const session = await auth.api.getSession({ headers: getRequestHeaders() });
+    if (!session?.user?.id) throw new Error("Unauthorized");
+
+    const baseUrl = JOBS_API_URL;
+    const { clientId } = ctx.data;
+
+    try {
+      // 1. Crear job comprobantes_full y esperar a que termine
+      const { data: compJob } = await axios.post(`${baseUrl}/api/jobs`, {
+        type: "comprobantes_full",
+        clientId,
+      });
+
+      const compResult = await waitForJob(baseUrl, compJob.id);
+      if (compResult.status === "failed") {
+        throw new Error(
+          compResult.failedReason || "Error en el scrape de comprobantes"
+        );
+      }
+
+      // 2. Crear job iva y esperar a que termine
+      const { data: ivaJob } = await axios.post(`${baseUrl}/api/jobs`, {
+        type: "iva",
+        clientId,
+      });
+
+      const ivaResult = await waitForJob(baseUrl, ivaJob.id);
+      if (ivaResult.status === "failed") {
+        throw new Error(
+          ivaResult.failedReason || "Error en el scrape de IVA"
+        );
+      }
+
+      // 3. Crear job deuda y esperar a que termine
+      const { data: deudaJob } = await axios.post(`${baseUrl}/api/jobs`, {
+        type: "deuda",
+        clientId,
+      });
+
+      const deudaResult = await waitForJob(baseUrl, deudaJob.id);
+      if (deudaResult.status === "failed") {
+        throw new Error(
+          deudaResult.failedReason || "Error en el scrape de deudas"
+        );
+      }
+
+      return {
+        success: true,
+        message: "Cliente actualizado correctamente (comprobantes, IVA y deudas)",
+        clientId,
+        comprobantes: compResult.result ?? {},
+        iva: ivaResult.result ?? {},
+        deuda: deudaResult.result ?? {},
+      };
+    } catch (error: any) {
+      console.error("[scrapUpdateClient]", error?.response?.data ?? error);
+      const msg =
+        error.response?.data?.error ||
+        error.message ||
+        "Error al actualizar el cliente";
+      throw new Error(msg);
+    }
+  });
+
+/** [DEBUG] Ejecuta un solo job por tipo - temporal para debugear */
+export const scrapSingleJob = createServerFn({
+  method: "POST",
+})
+  .inputValidator(
+    z.object({
+      clientId: z.string(),
+      jobType: z.enum(["comprobantes_full", "comprobantes", "iva", "deuda", "notificaciones"]),
+    })
+  )
+  .handler(async (ctx) => {
+    const session = await auth.api.getSession({ headers: getRequestHeaders() });
+    if (!session?.user?.id) throw new Error("Unauthorized");
+
+    const baseUrl = JOBS_API_URL;
+    const { clientId, jobType } = ctx.data;
+
+    try {
+      const { data: job } = await axios.post(`${baseUrl}/api/jobs`, {
+        type: jobType,
+        clientId,
+      });
+
+      const result = await waitForJob(baseUrl, job.id);
+      if (result.status === "failed") {
+        throw new Error(result.failedReason || `Error en el scrape de ${jobType}`);
+      }
+
+      return {
+        success: true,
+        jobType,
+        clientId,
+        result: result.result ?? {},
+      };
+    } catch (error: any) {
+      console.error("[scrapSingleJob]", error?.response?.data ?? error);
+      const msg =
+        error.response?.data?.error ||
+        error.message ||
+        `Error al ejecutar job ${jobType}`;
+      throw new Error(msg);
+    }
+  });
+
+/** Último job comprobantes_full para un cliente (por created_at), con estado success/error. */
+export const getLastComprobantesFullJob = createServerFn({
+  method: "GET",
+})
+  .inputValidator(z.object({ clientId: z.string() }))
+  .handler(async (ctx) => {
+    const session = await auth.api.getSession({ headers: getRequestHeaders() });
+    if (!session?.user?.id) throw new Error("Unauthorized");
+
+    const { clientId } = ctx.data;
+
+    const userClients = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(eq(client.userId, session.user.id));
+    const canAccess = userClients.some((c) => c.id === clientId);
+    if (!canAccess) return null;
+
+    const [lastJob] = await db
+      .select({
+        createdAt: job.createdAt,
+        failedReason: job.failedReason,
+      })
+      .from(job)
+      .where(
+        and(
+          eq(job.clientId, clientId),
+          eq(job.type, "comprobantes_full")
+        )
+      )
+      .orderBy(desc(job.createdAt))
+      .limit(1);
+
+    if (!lastJob?.createdAt) return null;
+    const success = lastJob.failedReason == null;
+    return {
+      createdAt: lastJob.createdAt.toISOString(),
+      success,
+      failedReason: lastJob.failedReason ?? undefined,
+    };
+  });
+
+/** Último job de un tipo dado para un cliente (por created_at), con estado success/error. */
+export const getLastJobByType = createServerFn({
+  method: "GET",
+})
+  .inputValidator(
+    z.object({
+      clientId: z.string(),
+      jobType: z.enum(["iva", "comprobantes", "comprobantes_full", "notificaciones", "deuda"]),
+    })
+  )
+  .handler(async (ctx) => {
+    const session = await auth.api.getSession({ headers: getRequestHeaders() });
+    if (!session?.user?.id) throw new Error("Unauthorized");
+
+    const { clientId, jobType } = ctx.data;
+
+    const userClients = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(eq(client.userId, session.user.id));
+    const canAccess = userClients.some((c) => c.id === clientId);
+    if (!canAccess) return null;
+
+    const [lastJob] = await db
+      .select({
+        createdAt: job.createdAt,
+        failedReason: job.failedReason,
+      })
+      .from(job)
+      .where(
+        and(
+          eq(job.clientId, clientId),
+          eq(job.type, jobType)
+        )
+      )
+      .orderBy(desc(job.createdAt))
+      .limit(1);
+
+    if (!lastJob?.createdAt) return null;
+    const success = lastJob.failedReason == null;
+    return {
+      createdAt: lastJob.createdAt.toISOString(),
+      success,
+      failedReason: lastJob.failedReason ?? undefined,
+    };
   });

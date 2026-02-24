@@ -39,13 +39,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getClientsWithProfiles, deleteClient } from "@/actions/client";
-import { getInvoiceTotalsByClient } from "@/actions/invoice";
 import { EditClientDialog } from "@/components/edit-client-dialog";
 
 export function ClientsTable() {
   const navigate = useNavigate();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [clientToDelete, setClientToDelete] = useState<string | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [clientToEditId, setClientToEditId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const queryClient = useQueryClient();
@@ -53,11 +54,6 @@ export function ClientsTable() {
   const { data: clients = [], isLoading } = useQuery({
     queryKey: ["clientsWithProfiles"],
     queryFn: () => getClientsWithProfiles(),
-  });
-
-  const { data: invoiceTotals = {} } = useQuery({
-    queryKey: ["invoiceTotalsByClient"],
-    queryFn: () => getInvoiceTotalsByClient(),
   });
 
   // Filter clients based on search term and filters
@@ -124,46 +120,11 @@ export function ClientsTable() {
     );
   }
 
-  if (filteredClients.length === 0) {
-    return (
-      <div className="space-y-4">
-        {/* Search and Filters */}
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-            <Input
-              placeholder="Buscar por nombre, perfil, CUIT o teléfono..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-          <div className="flex gap-2">
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="Estado" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos los estados</SelectItem>
-                <SelectItem value="active">Activo</SelectItem>
-                <SelectItem value="inactive">Inactivo</SelectItem>
-                <SelectItem value="pending">Pendiente</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <div className="flex items-center justify-center h-32">
-          <div className="text-muted-foreground">
-            No se encontraron clientes con los filtros aplicados
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const hasResults = filteredClients.length > 0;
 
   return (
-    <>
-      {/* Search and Filters */}
+    <div className="space-y-4">
+      {/* Search and Filters - siempre el mismo árbol para no perder foco al cambiar resultados */}
       <div className="flex flex-col sm:flex-row gap-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
@@ -189,84 +150,111 @@ export function ClientsTable() {
         </div>
       </div>
 
-      {/* Results counter */}
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span>
-          Mostrando {filteredClients.length} de {clients.length} clientes
-        </span>
-        {(searchTerm || statusFilter !== "all") && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setSearchTerm("");
-              setStatusFilter("all");
-            }}
-          >
-            Limpiar filtros
-          </Button>
-        )}
-      </div>
+      {!hasResults ? (
+        <div className="flex items-center justify-center h-32">
+          <div className="text-muted-foreground">
+            No se encontraron clientes con los filtros aplicados
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Results counter */}
+          <div className="flex items-center justify-between text-sm text-muted-foreground">
+            <span>
+              Mostrando {filteredClients.length} de {clients.length} clientes
+            </span>
+            {(searchTerm || statusFilter !== "all") && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSearchTerm("");
+                  setStatusFilter("all");
+                }}
+              >
+                Limpiar filtros
+              </Button>
+            )}
+          </div>
 
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Cliente</TableHead>
-              <TableHead>CUIT</TableHead>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead>CUIT</TableHead>
+                  <TableHead>Registrado</TableHead>
+                  <TableHead className="w-[50px]"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredClients.map((client) => (
+                  <TableRow key={client.id} onClick={() => navigate({ to: `/clients/${client.id}` })} className="cursor-pointer hover:bg-gray-600/10">
+                    <TableCell>
+                      {client.name}
+                    </TableCell>
+                    <TableCell>{client.identityNumber}</TableCell>
+                    <TableCell>
+                      {new Date(client.createdAt).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" className="h-8 w-8 p-0">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              navigate({ to: `/clients/${client.id}` });
+                            }}
+                          >
+                            <Eye className="mr-2 h-4 w-4" />
+                            Ver
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              setClientToEditId(client.id);
+                              setEditDialogOpen(true);
+                            }}
+                          >
+                            <Edit className="mr-2 h-4 w-4" />
+                            Editar
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              handleDelete(client.id);
+                            }}
+                            className="text-destructive"
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Eliminar
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </>
+      )}
 
-              <TableHead>Registrado</TableHead>
-              <TableHead className="w-[50px]"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredClients.map((client) => (
-              <TableRow key={client.id} onClick={() => navigate({ to: `/clients/${client.id}` })} className="cursor-pointer hover:bg-gray-600/10">
-                <TableCell>
-                  {client.name}
-                </TableCell>
-                <TableCell>{client.identityNumber}</TableCell>
-                <TableCell>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" className="h-8 w-8 p-0">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem
-                        onSelect={(e) => {
-                          e.preventDefault();
-                          navigate({ to: `/clients/${client.id}` });
-                        }}
-                      >
-                        <Eye className="mr-2 h-4 w-4" />
-                        Ver
-                      </DropdownMenuItem>
-                      <EditClientDialog clientId={client.id}>
-                        <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                          <Edit className="mr-2 h-4 w-4" />
-                          Editar
-                        </DropdownMenuItem>
-                      </EditClientDialog>
-                      <DropdownMenuItem
-                        onSelect={(e) => {
-                          e.preventDefault();
-                          handleDelete(client.id);
-                        }}
-                        className="text-destructive"
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Eliminar
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+      {clientToEditId && (
+        <EditClientDialog
+          clientId={clientToEditId}
+          open={editDialogOpen}
+          onOpenChange={(open) => {
+            setEditDialogOpen(open);
+            if (!open) setClientToEditId(null);
+          }}
+        />
+      )}
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
@@ -288,6 +276,6 @@ export function ClientsTable() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </div>
   );
 }

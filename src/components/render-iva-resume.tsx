@@ -26,6 +26,7 @@ import {
   getInvoicesByProfileInRange,
   getInvoiceStatsByProfile,
 } from "@/actions/invoice"
+import { getLastComprobantesFullJob } from "@/actions/client"
 
 const currencyFormatter = new Intl.NumberFormat("es-AR", {
   style: "currency",
@@ -66,6 +67,9 @@ const mockData = {
     Percepciones: 0,
     "Percepciones Aduaneras": 0,
     "Saldo 2° Párrafo": 0,
+    Exento: 0,
+    "IVA 0%": 0,
+    "No gravado": 0,
     Ajuste: 0,
   },
   resultado: {
@@ -392,7 +396,7 @@ function sanitizeFilename(name: string): string {
 export const RenderIvaResume = React.forwardRef<RenderIvaResumeRef, RenderIvaResumeProps>(
   function RenderIvaResume(
     {
-      clientId: _clientId,
+      clientId,
       clientName,
       clientIva: clientIvaCredit,
       selectedProfileId,
@@ -463,6 +467,15 @@ export const RenderIvaResume = React.forwardRef<RenderIvaResumeRef, RenderIvaRes
       }),
     enabled:
       !!selectedProfileId && !!dateRange.from && !!dateRange.to,
+  })
+
+  const { data: lastScrapeJob } = useQuery({
+    queryKey: ["lastComprobantesFullJob", clientId],
+    queryFn: () =>
+      getLastComprobantesFullJob({
+        data: { clientId },
+      }),
+    enabled: !!clientId,
   })
 
   React.useEffect(() => {
@@ -555,6 +568,11 @@ export const RenderIvaResume = React.forwardRef<RenderIvaResumeRef, RenderIvaRes
     }
     base["Saldo Técnico"] =
       debitoFiscalTotal - creditoFiscalTotal - base["Saldo a Favor Per. Ant."]
+    if (invoiceStats != null) {
+      base["Exento"] = invoiceStats.totalAmountExempt ?? 0
+      base["IVA 0%"] = invoiceStats.totalAmountIVA0 ?? 0
+      base["No gravado"] = invoiceStats.totalAmountNoTaxed ?? 0
+    }
     // Para el 2° párrafo se suman las magnitudes (todas como positivas) y se niega el total.
     // Saldo Libre Disp, Retenciones, etc. pueden estar almacenados como positivos o negativos.
     const saldoLibreDisp = Math.abs(base["Saldo Libre Disp."] ?? 0)
@@ -571,6 +589,9 @@ export const RenderIvaResume = React.forwardRef<RenderIvaResumeRef, RenderIvaRes
     retenciones,
     percepciones,
     percepcionesAduaneras,
+    invoiceStats?.totalAmountExempt,
+    invoiceStats?.totalAmountIVA0,
+    invoiceStats?.totalAmountNoTaxed,
   ])
 
   const totalDebito = sumValues(debitoRows)
@@ -733,43 +754,64 @@ export const RenderIvaResume = React.forwardRef<RenderIvaResumeRef, RenderIvaRes
   return (
     <div className="space-y-4">
       {/* Resumen en cajas: Ventas, Compras, Saldo Final */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="rounded-lg border-2 border-border bg-card p-5 shadow-sm">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-4">
+        <div className="min-w-0 rounded-lg border-2 border-border bg-card p-5 shadow-sm">
           <div className="text-sm font-bold uppercase tracking-wide text-foreground mb-3">
             Ventas
           </div>
           <div className="space-y-2.5 text-base">
             <div className="flex justify-between items-baseline gap-2">
-              <span className="text-muted-foreground font-medium">Neto Gravado</span>
-              <span className="tabular-nums font-bold text-foreground">{formatCurrency(netoGravadoTotal)}</span>
+              <span className="text-muted-foreground font-medium shrink-0">Neto Gravado</span>
+              <span className="tabular-nums font-bold text-foreground truncate">{formatCurrency(netoGravadoTotal)}</span>
             </div>
             <div className="flex justify-between items-baseline gap-2">
-              <span className="text-muted-foreground font-medium">Débito Fiscal</span>
-              <span className="tabular-nums font-bold text-foreground">{formatCurrency(debitoFiscalTotal)}</span>
+              <span className="text-muted-foreground font-medium shrink-0">Débito Fiscal</span>
+              <span className="tabular-nums font-bold text-foreground truncate">{formatCurrency(debitoFiscalTotal)}</span>
             </div>
           </div>
         </div>
-        <div className="rounded-lg border-2 border-border bg-card p-5 shadow-sm">
+        <div className="min-w-0 rounded-lg border-2 border-border bg-card p-5 shadow-sm">
           <div className="text-sm font-bold uppercase tracking-wide text-foreground mb-3">
             Compras
           </div>
           <div className="space-y-2.5 text-base">
             <div className="flex justify-between items-baseline gap-2">
-              <span className="text-muted-foreground font-medium">Neto Gravado</span>
-              <span className="tabular-nums font-bold text-foreground">{formatCurrency(netoGravadoComprasTotal)}</span>
+              <span className="text-muted-foreground font-medium shrink-0">Neto Gravado</span>
+              <span className="tabular-nums font-bold text-foreground truncate">{formatCurrency(netoGravadoComprasTotal)}</span>
             </div>
             <div className="flex justify-between items-baseline gap-2">
-              <span className="text-muted-foreground font-medium">Crédito Fiscal</span>
-              <span className="tabular-nums font-bold text-foreground">{formatCurrency(creditoFiscalTotal)}</span>
+              <span className="text-muted-foreground font-medium shrink-0">Crédito Fiscal</span>
+              <span className="tabular-nums font-bold text-foreground truncate">{formatCurrency(creditoFiscalTotal)}</span>
             </div>
           </div>
         </div>
-        <div className="rounded-lg border-2 border-border bg-card p-5 shadow-sm">
+        <div className="min-w-0 rounded-lg border-2 border-border bg-card p-5 shadow-sm">
           <div className="text-sm font-bold uppercase tracking-wide text-foreground mb-3">
             Saldo Final
           </div>
-          <div className={`text-2xl font-bold tabular-nums ${saldoFinal < 0 ? "text-destructive" : "text-emerald-600"}`}>
+          <div className={`text-2xl font-bold tabular-nums truncate ${saldoFinal < 0 ? "text-destructive" : "text-emerald-600"}`}>
             {formatCurrency(saldoFinal)}
+          </div>
+          <div className="mt-3 pt-3 border-t border-border text-xs text-muted-foreground truncate">
+            Ult. actualización{" "}
+            {lastScrapeJob?.createdAt ? (
+              <span
+                className={
+                  lastScrapeJob.success
+                    ? "text-emerald-600 dark:text-emerald-400 font-medium"
+                    : "text-destructive"
+                }
+                title={lastScrapeJob.failedReason ?? undefined}
+              >
+                {new Date(lastScrapeJob.createdAt).toLocaleDateString("es-AR", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                })}
+              </span>
+            ) : (
+              "—"
+            )}
           </div>
         </div>
       </div>

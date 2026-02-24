@@ -5,11 +5,12 @@ import { db } from "@/lib/db";
 import {
   notification,
   client,
+  profile,
   invoiceAttachment,
   document,
 } from "@/drizzle/schema";
 import { auth } from "@/lib/auth";
-import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
+import { eq, desc, and, gte, lte, sql, inArray } from "drizzle-orm";
 
 export const getNotifications = createServerFn({
   method: "GET",
@@ -21,6 +22,7 @@ export const getNotifications = createServerFn({
       clientFilter: z.string().optional(),
       dateFrom: z.string().optional(),
       dateTo: z.string().optional(),
+      profileId: z.string().optional(),
       search: z.string().optional(),
     })
   )
@@ -29,7 +31,7 @@ export const getNotifications = createServerFn({
     const session = await auth.api.getSession({ headers: getRequestHeaders() });
     if (!session?.user?.id) throw new Error("Unauthorized");
 
-    const { page, limit, clientFilter, dateFrom, dateTo } = ctx.data;
+    const { page, limit, clientFilter, dateFrom, dateTo, profileId } = ctx.data;
     const offset = (page - 1) * limit;
 
     // Build where conditions
@@ -37,6 +39,10 @@ export const getNotifications = createServerFn({
 
     if (clientFilter && clientFilter !== "all") {
       conditions.push(eq(notification.client, clientFilter));
+    }
+
+    if (profileId && profileId !== "all") {
+      conditions.push(eq(notification.profile, profileId));
     }
 
     if (dateFrom) {
@@ -57,7 +63,7 @@ export const getNotifications = createServerFn({
       .leftJoin(client, eq(notification.client, client.id))
       .where(whereCondition);
 
-    // Get notifications with client data
+    // Get notifications with client + profile data
     const notifications = await db
       .select({
         id: notification.id,
@@ -65,14 +71,19 @@ export const getNotifications = createServerFn({
         message: notification.message,
         expirationDate: notification.expirationDate,
         publicationDate: notification.publicationDate,
+        opened: notification.opened,
         clientId: notification.client,
         clientName: client.name,
         clientEmail: client.email,
+        profileId: notification.profile,
+        profileName: profile.name,
+        profileIdentityNumber: profile.identityNumber,
         createdAt: notification.createdAt,
         updatedAt: notification.updatedAt,
       })
       .from(notification)
       .leftJoin(client, eq(notification.client, client.id))
+      .leftJoin(profile, eq(notification.profile, profile.id))
       .where(whereCondition)
       .orderBy(desc(notification.publicationDate))
       .limit(limit)
@@ -102,6 +113,7 @@ export const getNotification = createServerFn({
         message: notification.message,
         expirationDate: notification.expirationDate,
         publicationDate: notification.publicationDate,
+        opened: notification.opened,
         clientId: notification.client,
         clientName: client.name,
         clientEmail: client.email,
@@ -250,6 +262,36 @@ export const updateNotification = createServerFn({
       throw new Error("Error al actualizar la notificación");
 
     return updatedNotification;
+  });
+
+export const markNotificationOpened = createServerFn({
+  method: "POST",
+})
+  .inputValidator(z.object({ id: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const session = await auth.api.getSession({ headers: getRequestHeaders() });
+    if (!session?.user?.id) throw new Error("Unauthorized");
+
+    const userClients = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(eq(client.userId, session.user.id));
+    const userClientIds = userClients.map((c) => c.id);
+    if (userClientIds.length === 0) throw new Error("Unauthorized");
+
+    const [updated] = await db
+      .update(notification)
+      .set({ opened: true, updatedAt: new Date() })
+      .where(
+        and(
+          eq(notification.id, ctx.data.id),
+          inArray(notification.client, userClientIds)
+        )
+      )
+      .returning();
+
+    if (!updated) throw new Error("Notificación no encontrada o sin acceso");
+    return { opened: true };
   });
 
 export const deleteNotification = createServerFn({

@@ -8,11 +8,13 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { DateRange } from "react-day-picker";
+import ExcelJSRaw from "exceljs";
 
 import {
   TableBody,
@@ -56,8 +58,59 @@ import {
   getInvoice,
   getInvoicesByProfile,
 } from "@/actions/invoice";
-import { getClients } from "@/actions/client";
+import { getClients, getClientProfiles } from "@/actions/client";
 import { cn } from "@/lib/utils";
+
+const ExcelJS = ExcelJSRaw as unknown as {
+  Workbook: new () => {
+    addWorksheet(name: string, options?: { views?: { showGridLines?: boolean }[] }): {
+      getColumn(col: number): { width?: number };
+      getRow(row: number): {
+        getCell(col: number): {
+          value: unknown;
+          border?: unknown;
+          font?: { bold?: boolean };
+          numFmt?: string;
+        };
+      };
+    };
+    xlsx: { writeBuffer(): Promise<ArrayBuffer | Buffer> };
+  };
+};
+
+function sanitizeFilename(name: string): string {
+  return name.replace(/[/\\:*?"<>|]/g, "-").replace(/\s+/g, " ").trim() || "facturas";
+}
+
+const TYPE_LABELS: Record<string, string> = {
+  "1": "Factura A", "2": "Nota de Débito A", "3": "Nota de Crédito A", "4": "Recibo A",
+  "5": "Nota de Venta al Contado A", "6": "Factura B", "7": "Nota de Débito B", "8": "Nota de Crédito B",
+  "9": "Recibo B", "10": "Nota de Venta al Contado B", "11": "Factura C", "12": "Nota de Débito C",
+  "13": "Nota de Crédito C", "15": "Recibo C", "16": "Nota de Venta al Contado C", "17": "Liquidación",
+  "18": "Liquidación A", "19": "Factura E", "20": "Nota de Débito E", "21": "Nota de Crédito E",
+  "22": "Factura – Crédito Fiscal", "34": "Comprobante A del Sector Público",
+  "35": "Nota de Débito A del Sector Público", "36": "Nota de Crédito A del Sector Público",
+  "37": "Recibo A del Sector Público", "38": "Comprobante B del Sector Público",
+  "39": "Nota de Débito B del Sector Público", "40": "Nota de Crédito B del Sector Público",
+  "41": "Recibo B del Sector Público", "51": "Factura M", "52": "Nota de Débito M",
+  "53": "Nota de Crédito M", "54": "Recibo M", "81": "Ticket Factura A", "82": "Ticket Factura B",
+  "83": "Ticket", "110": "Ticket Nota de Crédito", "201": "Factura de Crédito Electrónica MiPyME A",
+  "202": "Nota de Débito Electrónica MiPyME A", "203": "Nota de Crédito Electrónica MiPyME A",
+  "206": "Factura de Crédito Electrónica MiPyME B", "207": "Nota de Débito Electrónica MiPyME B",
+  "208": "Nota de Crédito Electrónica MiPyME B", "211": "Factura de Crédito Electrónica MiPyME C",
+  "212": "Nota de Débito Electrónica MiPyME C", "213": "Nota de Crédito Electrónica MiPyME C",
+};
+const DIRECTION_LABELS: Record<string, string> = {
+  outbound: "Emitida", inbound: "Recibida",
+  Outbound: "Emitida", Inbound: "Recibida",
+};
+
+function getTypeLabel(type: string): string {
+  return TYPE_LABELS[type] ?? `Tipo ${type}`;
+}
+function getDirectionLabel(direction: string): string {
+  return DIRECTION_LABELS[direction] ?? DIRECTION_LABELS[direction?.toLowerCase()] ?? (direction || "—");
+}
 
 interface InvoiceData {
   id: string;
@@ -80,6 +133,7 @@ interface InvoiceData {
   clientId: string | null;
   clientName: string | null;
   clientEmail: string | null;
+  profileName: string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
 }
@@ -96,6 +150,7 @@ export function InvoicesTable({
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
   const [clientFilter, setClientFilter] = useState<string>(clientId || "all");
+  const [profileFilter, setProfileFilter] = useState<string>("all");
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [directionFilter, setDirectionFilter] = useState<string>("all");
@@ -111,6 +166,7 @@ export function InvoicesTable({
     null
   );
   const [invoiceDetails, setInvoiceDetails] = useState<any>(null);
+  const [exportingExcel, setExportingExcel] = useState(false);
 
   const pageSize = 10;
 
@@ -127,6 +183,12 @@ export function InvoicesTable({
     }
   }, [profileId]);
 
+  // When client changes, reset profile filter
+  useEffect(() => {
+    setProfileFilter("all");
+    setCurrentPage(1);
+  }, [clientFilter, clientId]);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm);
@@ -140,6 +202,13 @@ export function InvoicesTable({
   const { data: clients = [] } = useQuery({
     queryKey: ["clients"],
     queryFn: () => getClients(),
+  });
+
+  const clientForProfiles = clientId ?? (clientFilter !== "all" ? clientFilter : undefined);
+  const { data: profiles = [] } = useQuery({
+    queryKey: ["clientProfiles", clientForProfiles],
+    queryFn: () => getClientProfiles({ data: { clientId: clientForProfiles! } }),
+    enabled: !!clientForProfiles,
   });
 
   const dateFrom = dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : "";
@@ -163,6 +232,7 @@ export function InvoicesTable({
           "invoices",
           currentPage,
           clientFilter,
+          profileFilter,
           dateFrom,
           dateTo,
           typeFilter,
@@ -185,6 +255,7 @@ export function InvoicesTable({
               page: currentPage,
               limit: pageSize,
               clientFilter: clientFilter === "all" ? undefined : clientFilter,
+              profileFilter: profileFilter === "all" ? undefined : profileFilter,
               dateFrom: dateFrom || undefined,
               dateTo: dateTo || undefined,
               typeFilter: typeFilter === "all" ? undefined : typeFilter,
@@ -218,6 +289,106 @@ export function InvoicesTable({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleExportExcel = async () => {
+    setExportingExcel(true);
+    try {
+      const exportLimit = 50000;
+      const data = profileId
+        ? await getInvoicesByProfile({
+            data: { profileId, page: 1, limit: exportLimit },
+          })
+        : await getInvoices({
+            data: {
+              page: 1,
+              limit: exportLimit,
+              clientFilter: clientFilter === "all" ? undefined : clientFilter,
+              profileFilter: profileFilter === "all" ? undefined : profileFilter,
+              dateFrom: dateFrom || undefined,
+              dateTo: dateTo || undefined,
+              typeFilter: typeFilter === "all" ? undefined : typeFilter,
+              directionFilter: directionFilter === "all" ? undefined : directionFilter,
+              search: debouncedSearchTerm || undefined,
+              sortBy: sortBy ?? undefined,
+              sortOrder: sortBy ? (sortOrder ?? undefined) : undefined,
+            },
+          });
+      const invoices: InvoiceData[] = data.invoices ?? [];
+      if (invoices.length === 0) {
+        toast.info("No hay facturas para exportar con los filtros actuales.");
+        return;
+      }
+      const blackBorder = {
+        top: { style: "thin" as const, color: { argb: "FF000000" } },
+        left: { style: "thin" as const, color: { argb: "FF000000" } },
+        bottom: { style: "thin" as const, color: { argb: "FF000000" } },
+        right: { style: "thin" as const, color: { argb: "FF000000" } },
+      };
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet("Facturas", { views: [{ showGridLines: true }] });
+      const headers = [
+        "Tipo", "Tipo (código)", "Dirección", "Fecha", "Pto.Vta", "Número desde", "Número hasta",
+        "Cliente", "Email cliente", "Perfil", "Emisor", "CUIT/DNI emisor", "Destinatario", "CUIT/DNI destinatario",
+        "Moneda", "Cotización", "Monto", "Nº autorización",
+      ];
+      const widths = [28, 12, 12, 12, 10, 14, 14, 22, 22, 22, 28, 16, 28, 16, 8, 12, 16, 18];
+      headers.forEach((h, i) => {
+        const col = i + 1;
+        ws.getColumn(col).width = widths[i] ?? 14;
+        const cell = ws.getRow(1).getCell(col);
+        cell.value = h;
+        cell.border = blackBorder;
+        cell.font = { bold: true };
+      });
+      invoices.forEach((inv, idx) => {
+        const row = ws.getRow(idx + 2);
+        const cells = [
+          getTypeLabel(inv.type),
+          inv.type,
+          getDirectionLabel(inv.direction),
+          formatDate(inv.emitionDate),
+          inv.salePoint ?? "—",
+          inv.idFrom ?? "—",
+          inv.idTo ?? "—",
+          inv.clientName ?? "—",
+          inv.clientEmail ?? "—",
+          inv.profileName ?? "—",
+          inv.emitterName ?? "—",
+          inv.emitterIdentityNumber ? `${inv.emitterIdentityType ?? ""} ${inv.emitterIdentityNumber}`.trim() : "—",
+          inv.recipientName ?? "—",
+          inv.recipientIdentityNumber ? `${inv.recipientIdentityType ?? ""} ${inv.recipientIdentityNumber}`.trim() : "—",
+          inv.currency ?? "—",
+          inv.currencyRate ?? "—",
+          formatCurrency(inv.amount, inv.currency),
+          inv.authorizationNumber ?? "—",
+        ];
+        cells.forEach((val, i) => {
+          const cell = row.getCell(i + 1);
+          cell.value = val;
+          cell.border = blackBorder;
+        });
+      });
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer as BlobPart], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const dateStr = dateFrom && dateTo
+        ? `${dateFrom}_${dateTo}`
+        : new Date().toISOString().slice(0, 10);
+      a.download = `facturas_${sanitizeFilename(profileId ? "perfil" : clientFilter === "all" ? "todas" : clientFilter)}_${dateStr}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`Exportadas ${invoices.length} factura(s).`);
+    } catch (e) {
+      console.error(e);
+      toast.error("Error al exportar Excel.");
+    } finally {
+      setExportingExcel(false);
+    }
   };
 
   const formatDate = (date: Date | string) => {
@@ -443,6 +614,22 @@ export function InvoicesTable({
             </Select>
           )}
 
+          {!profileId && clientForProfiles && (
+            <Select value={profileFilter} onValueChange={(v) => { setProfileFilter(v); setCurrentPage(1); }}>
+              <SelectTrigger className="w-full md:w-48">
+                <SelectValue placeholder="Perfil" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos los perfiles</SelectItem>
+                {profiles.map((p: { id: string; name?: string; identityNumber?: string }) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name || p.identityNumber || p.id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
           <Select value={typeFilter} onValueChange={setTypeFilter}>
             <SelectTrigger className="w-full md:w-64">
               <SelectValue placeholder="Tipo" />
@@ -576,7 +763,22 @@ export function InvoicesTable({
               />
             </PopoverContent>
           </Popover>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleExportExcel}
+          disabled={exportingExcel}
+          className="h-9 gap-1.5 w-full md:w-auto shrink-0 font-normal"
+        >
+          {exportingExcel ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Download className="h-4 w-4" />
+          )}
+          <span>Excel</span>
+        </Button>
         </div>
+
       </div>
 
       {/* Table */}
@@ -636,14 +838,21 @@ export function InvoicesTable({
                       </div>
                     </TableCell>
                     <TableCell className="w-[15%] px-2 py-2 align-top">
-                      {invoice.clientName ? (
+                      {invoice.clientName || invoice.profileName ? (
                         <div className="space-y-0.5">
-                          <div className="font-medium truncate text-xs" title={invoice.clientName}>
-                            {invoice.clientName}
+                          <div className="font-medium truncate text-xs" title={invoice.clientName ?? undefined}>
+                            {invoice.clientName ?? "—"}
                           </div>
-                          <div className="text-xs text-muted-foreground truncate" title={invoice.clientEmail || ""}>
-                            {invoice.clientEmail}
-                          </div>
+                          {invoice.profileName && (
+                            <div className="text-xs text-muted-foreground truncate" title={invoice.profileName}>
+                              {invoice.profileName}
+                            </div>
+                          )}
+                          {invoice.clientEmail && (
+                            <div className="text-xs text-muted-foreground truncate" title={invoice.clientEmail}>
+                              {invoice.clientEmail}
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <span className="text-muted-foreground text-xs">Sin cliente</span>
@@ -870,28 +1079,42 @@ export function InvoicesTable({
               </div>
 
               {/* Client Info */}
-              {selectedInvoice.clientName && (
+              {(selectedInvoice.clientName || selectedInvoice.profileName) && (
                 <div className="p-4 border rounded-lg">
                   <h3 className="text-lg font-semibold mb-4">
-                    Cliente Asociado
+                    Cliente / Perfil
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-sm font-semibold text-muted-foreground mb-1 block">
-                        Nombre
-                      </label>
-                      <p className="text-sm font-medium">
-                        {selectedInvoice.clientName}
-                      </p>
-                    </div>
-                    <div>
-                      <label className="text-sm font-semibold text-muted-foreground mb-1 block">
-                        Email
-                      </label>
-                      <p className="text-sm font-medium">
-                        {selectedInvoice.clientEmail}
-                      </p>
-                    </div>
+                    {selectedInvoice.clientName && (
+                      <div>
+                        <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                          Cliente
+                        </label>
+                        <p className="text-sm font-medium">
+                          {selectedInvoice.clientName}
+                        </p>
+                      </div>
+                    )}
+                    {selectedInvoice.profileName && (
+                      <div>
+                        <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                          Perfil
+                        </label>
+                        <p className="text-sm font-medium">
+                          {selectedInvoice.profileName}
+                        </p>
+                      </div>
+                    )}
+                    {selectedInvoice.clientEmail && (
+                      <div>
+                        <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                          Email
+                        </label>
+                        <p className="text-sm font-medium">
+                          {selectedInvoice.clientEmail}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Mail,
@@ -33,8 +33,9 @@ import {
   getNotifications,
   deleteNotification,
   getNotification,
+  markNotificationOpened,
 } from "@/actions/notification";
-import { getClients } from "@/actions/client";
+import { getClients, getClientProfiles } from "@/actions/client";
 import { cn } from "@/lib/utils";
 
 interface NotificationData {
@@ -43,48 +44,85 @@ interface NotificationData {
   message: string;
   expirationDate: Date;
   publicationDate: Date;
+  opened: boolean;
   clientId: string | null;
   clientName: string | null;
   clientEmail: string | null;
+   profileId?: string | null;
+   profileName?: string | null;
+   profileIdentityNumber?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
 
-export function NotificationsView() {
+interface NotificationsViewProps {
+  /** When set, only show notifications for this client and hide client filter */
+  clientId?: string;
+  /** Optional toolbar (e.g. "Actualizar" button + last update) rendered above the list/detail */
+  toolbar?: React.ReactNode;
+  /** Optional class for the container (e.g. min-h for embedded tab) */
+  className?: string;
+}
+
+export function NotificationsView({
+  clientId: clientIdProp,
+  toolbar,
+  className,
+}: NotificationsViewProps = {}) {
   const queryClient = useQueryClient();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [notificationToDelete, setNotificationToDelete] = useState<
     string | null
   >(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [clientFilter, setClientFilter] = useState<string>("all");
+  const [clientFilter, setClientFilter] = useState<string>(clientIdProp ?? "all");
+  const [profileFilter, setProfileFilter] = useState<string>("all");
   const [selectedNotificationId, setSelectedNotificationId] = useState<
     string | null
   >(null);
   const [notificationDetails, setNotificationDetails] = useState<any>(null);
 
-  // Get clients for filter dropdown
+  // Get clients for filter dropdown (only when not scoped to a single client)
   const { data: clients = [] } = useQuery({
     queryKey: ["clients"],
     queryFn: () => getClients(),
+    enabled: !clientIdProp,
   });
+
+  // Perfiles del cliente (solo cuando estamos en el detalle de un cliente)
+  const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
+    queryKey: ["clientProfiles", clientIdProp],
+    queryFn: () =>
+      getClientProfiles({
+        data: { clientId: clientIdProp! },
+      }),
+    enabled: !!clientIdProp,
+  });
+
+  const effectiveClientFilter = clientIdProp ?? clientFilter;
+  const effectiveProfileFilter =
+    clientIdProp && profileFilter !== "all" ? profileFilter : undefined;
+
+  // Reset filtros cuando cambia el cliente (por si se reusa el componente)
+  useEffect(() => {
+    if (clientIdProp) {
+      setProfileFilter("all");
+    }
+  }, [clientIdProp]);
 
   // Get notifications
   const { data: notificationsData, isLoading } = useQuery({
-    queryKey: [
-      "notifications",
-      1,
-      clientFilter,
-      "",
-      "",
-      searchTerm,
-    ],
+    queryKey: clientIdProp
+      ? ["clientNotifications", clientIdProp, effectiveProfileFilter, searchTerm]
+      : ["notifications", 1, clientFilter, "", "", searchTerm],
     queryFn: () =>
       getNotifications({
         data: {
           page: 1,
-          limit: 100, // Get more notifications for the list
-          clientFilter: clientFilter === "all" ? undefined : clientFilter,
+          limit: 100,
+          clientFilter:
+            effectiveClientFilter === "all" ? undefined : effectiveClientFilter,
+          profileId: effectiveProfileFilter,
           search: searchTerm || undefined,
         },
       }),
@@ -98,12 +136,26 @@ export function NotificationsView() {
     enabled: !!selectedNotificationId,
   });
 
+  const invalidateNotificationQueries = () => {
+    queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    if (clientIdProp) {
+      queryClient.invalidateQueries({
+        queryKey: ["clientNotifications", clientIdProp],
+      });
+    }
+    if (selectedNotificationId) {
+      queryClient.invalidateQueries({
+        queryKey: ["notification", selectedNotificationId],
+      });
+    }
+  };
+
   // Delete mutation
   const deleteMutation = useMutation({
     mutationFn: deleteNotification,
     onSuccess: () => {
       toast.success("Notificación eliminada correctamente");
-      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      invalidateNotificationQueries();
       setDeleteDialogOpen(false);
       setNotificationToDelete(null);
       if (selectedNotificationId === notificationToDelete) {
@@ -117,8 +169,21 @@ export function NotificationsView() {
     },
   });
 
-  const handleNotificationClick = (notificationId: string) => {
-    setSelectedNotificationId(notificationId);
+  const markOpenedMutation = useMutation({
+    mutationFn: (id: string) => markNotificationOpened({ data: { id } }),
+    onSuccess: () => {
+      invalidateNotificationQueries();
+    },
+  });
+
+  const handleNotificationClick = (notification: {
+    id: string;
+    opened?: boolean;
+  }) => {
+    setSelectedNotificationId(notification.id);
+    if (notification.opened === false) {
+      markOpenedMutation.mutate(notification.id);
+    }
   };
 
   const handleDeleteClick = (id: string) => {
@@ -175,44 +240,85 @@ export function NotificationsView() {
       return notificationDate.toLocaleDateString("es-ES", {
         day: "2-digit",
         month: "2-digit",
+        year: "numeric",
       });
     }
   };
 
-  const notifications = notificationsData?.notifications || [];
+  const rawNotifications = notificationsData?.notifications || [];
+  const notifications = clientIdProp
+    // En el detalle de cliente: solo mostrar notificaciones con perfil asociado
+    ? rawNotifications.filter(
+        (n: any) => n.profileName || n.profileIdentityNumber
+      )
+    // En la vista global: solo mostrar notificaciones con cliente asociado
+    : rawNotifications.filter((n: any) => n.clientName || n.clientId);
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] border rounded-lg overflow-hidden">
-      {/* Left Panel - Notifications List */}
-      <div className="w-1/3 border-r flex flex-col bg-muted/30">
-        {/* Search and Filters */}
-        <div className="p-4 border-b space-y-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar notificaciones..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-          <Select value={clientFilter} onValueChange={setClientFilter}>
-            <SelectTrigger>
-              <SelectValue placeholder="Filtrar por cliente" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos los clientes</SelectItem>
-              {clients.map((client) => (
-                <SelectItem key={client.id} value={client.id}>
-                  {client.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+    <div
+      className={cn(
+        "border rounded-lg overflow-hidden",
+        toolbar ? "flex flex-col" : "flex",
+        clientIdProp ? "min-h-[400px] flex-1" : "h-[calc(100vh-8rem)]",
+        className
+      )}
+    >
+      {toolbar ? (
+        <div className="w-full border-b bg-muted/30 px-4 py-2 flex items-center justify-between gap-2 flex-wrap shrink-0">
+          {toolbar}
         </div>
+      ) : null}
+      <div className={cn("flex flex-1 min-w-0", toolbar && "min-h-0")}>
+        {/* Left Panel - Notifications List */}
+        <div className="w-1/3 border-r flex flex-col bg-muted/30 min-w-0">
+          {/* Search and Filters */}
+          <div className="p-4 border-b space-y-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar notificaciones..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            {!clientIdProp ? (
+              <Select value={clientFilter} onValueChange={setClientFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Filtrar por cliente" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los clientes</SelectItem>
+                  {clients.map((client) => (
+                    <SelectItem key={client.id} value={client.id}>
+                      {client.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Select
+                value={profileFilter}
+                onValueChange={setProfileFilter}
+                disabled={loadingProfiles || profiles.length === 0}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Filtrar por perfil" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los perfiles</SelectItem>
+                  {profiles.map((profile: any) => (
+                    <SelectItem key={profile.id} value={profile.id}>
+                      {profile.name || profile.identityNumber || profile.id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
 
         {/* Notifications List */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1">
           {isLoading ? (
             <div className="flex items-center justify-center h-32">
               <div className="text-muted-foreground">Cargando...</div>
@@ -224,38 +330,53 @@ export function NotificationsView() {
               </div>
             </div>
           ) : (
-            <div className="divide-y">
-              {notifications.map((notification) => (
-                <div
-                  key={notification.id}
-                  onClick={() => handleNotificationClick(notification.id)}
-                  className={cn(
-                    "p-4 cursor-pointer hover:bg-muted/50 transition-colors",
-                    selectedNotificationId === notification.id &&
-                      "bg-muted border-l-4 border-l-primary"
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Mail className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                        <p className="font-semibold text-sm truncate">
-                          {notification.clientName || "Sin cliente"}
+            <div className="max-h-[400px] overflow-y-auto">
+              <div className="divide-y">
+                {notifications.map((notification) => (
+                  <div
+                    key={notification.id}
+                    onClick={() => handleNotificationClick(notification)}
+                    className={cn(
+                      "p-4 cursor-pointer hover:bg-muted/50 transition-colors",
+                      selectedNotificationId === notification.id &&
+                        "bg-muted border-l-4 border-l-primary",
+                      notification.opened === false && "bg-primary/5"
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          {notification.opened === false && (
+                            <span className="h-2 w-2 rounded-full bg-primary flex-shrink-0 mt-1.5" aria-hidden />
+                          )}
+                          <Mail className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                          <p
+                            className={cn(
+                              "text-sm truncate",
+                              notification.opened === false ? "font-semibold" : "font-medium"
+                            )}
+                          >
+                         {clientIdProp
+                            ? notification.profileName ||
+                              notification.profileIdentityNumber ||
+                              "Sin perfil"
+                            : notification.clientName || "Sin cliente"}
+                          </p>
+                        </div>
+                        <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
+                          {notification.message}
                         </p>
-                      </div>
-                      <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
-                        {notification.message}
-                      </p>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Calendar className="h-3 w-3" />
-                        <span>
-                          {formatDateShort(notification.publicationDate)}
-                        </span>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Calendar className="h-3 w-3" />
+                          <span>
+                            {formatDateShort(notification.publicationDate)}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -384,6 +505,7 @@ export function NotificationsView() {
             </div>
           </div>
         )}
+      </div>
       </div>
 
       {/* Delete Confirmation Dialog */}

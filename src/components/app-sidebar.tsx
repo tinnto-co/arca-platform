@@ -183,15 +183,15 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 </Link>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <Link to="/scan_pdf">
+                <span className="cursor-not-allowed opacity-50 pointer-events-none flex w-full items-center gap-2">
                   <SidebarMenuButton
-                    isActive={pathname === "/scan_pdf"}
-                    tooltip="Escanear PDF"
+                    isActive={false}
+                    tooltip="Escanear PDF (deshabilitado)"
                   >
                     <FileText />
                     <span>Escanear PDF</span>
                   </SidebarMenuButton>
-                </Link>
+                </span>
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroup>

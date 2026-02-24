@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, Link } from "@tanstack/react-router";
 import {
   ArrowLeft,
@@ -30,6 +30,7 @@ import {
   getClientDebts,
   getClientDueDates,
   getClientIvaCredit,
+  getLastJobByType,
 } from "@/actions/client";
 import {
   Select,
@@ -38,14 +39,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { getNotifications } from "@/actions/notification";
 import { EditClientDialog } from "@/components/edit-client-dialog";
+import { NotificationsView } from "@/components/notifications-view";
 import { InvoicesTable } from "@/components/invoices-table";
-import { getInvoices } from "@/actions/invoice";
-import { scrapOldClient } from "@/actions/client";
+import { getInvoices, getClientMultilateralSummary } from "@/actions/invoice";
+import { scrapSingleJob } from "@/actions/client";
 import { useState, useMemo, useEffect, useRef } from "react";
 import { toast } from "sonner";
-import { Clock, CalendarCheck, CalendarX } from "lucide-react";
+import { Clock, CalendarCheck, CalendarX, Loader2 } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -62,6 +63,7 @@ import {
   type RenderIvaResumeRef,
 } from "./render-iva-resume";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Input } from "@/components/ui/input";
 
 interface ClientDetailPageProps {
   clientId: string;
@@ -98,12 +100,53 @@ function getResumenPeriodMMYYYY(from: Date | undefined): string | null {
   return `${String(mm).padStart(2, "0")}/${yyyy}`;
 }
 
+/** Mínimo de caracteres del nombre del perfil para considerarlo un match (evita "S", "A", etc.). */
+const MIN_PROFILE_NAME_LENGTH = 3;
+
+/**
+ * Elige el id del perfil que mejor coincide con el nombre del cliente (case-insensitive, por contiene).
+ * Ej: cliente "Smart Solutions SRL" → perfil "Smart Solutions" (el nombre del perfil está contenido en el del cliente).
+ */
+function findBestMatchingProfileId(
+  clientName: string | undefined,
+  profiles: Array<{ id: string; name?: string }>
+): string | undefined {
+  if (!profiles.length) return undefined;
+  const normalizedClient = (clientName ?? "").trim().toLowerCase();
+  if (normalizedClient.length < 2) return profiles[0].id;
+
+  const withName = profiles.filter(
+    (p) => ((p.name ?? "").trim().length >= MIN_PROFILE_NAME_LENGTH)
+  );
+  if (withName.length === 0) return profiles[0].id;
+
+  const containedInClient = withName
+    .filter((p) =>
+      normalizedClient.includes((p.name ?? "").trim().toLowerCase())
+    )
+    .sort((a, b) => (b.name ?? "").length - (a.name ?? "").length);
+  if (containedInClient.length > 0) return containedInClient[0].id;
+
+  const clientInProfile = withName.find((p) =>
+    (p.name ?? "").trim().toLowerCase().includes(normalizedClient)
+  );
+  if (clientInProfile) return clientInProfile.id;
+
+  return profiles[0].id;
+}
+
 export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   const navigate = useNavigate();
   const [copiedField, setCopiedField] = useState<string | null>(null);
-  const [ivaProfileId, setIvaProfileId] = useState<string | undefined>(
-    undefined
-  );
+  const [editClientDialogOpen, setEditClientDialogOpen] = useState(false);
+  const [ivaProfileId, setIvaProfileId] = useState<string | undefined>(undefined);
+  const [multilateralProfileId, setMultilateralProfileId] = useState<string | undefined>(undefined);
+  const [multilateralDateFrom, setMultilateralDateFrom] = useState<string>("");
+  const [multilateralDateTo, setMultilateralDateTo] = useState<string>("");
+  const [multilateralPeriod, setMultilateralPeriod] = useState<{
+    from: Date;
+    to: Date;
+  } | null>(null);
   const now = new Date();
   /** Rango de fechas elegido en el resumen IVA (para resaltar el scrape del período usado). */
   const [ivaResumenDateRange, setIvaResumenDateRange] = useState<{
@@ -111,6 +154,9 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     to: Date;
   }>(() => getMonthBounds(now.getFullYear(), now.getMonth()));
   const [ivaPeriodPickerOpen, setIvaPeriodPickerOpen] = useState(false);
+  /** Sección que está ejecutando un job (iva = comprobantes_full + iva, deudas = deuda, facturas = comprobantes_full, notificaciones = notificaciones). */
+  const [scrapingSection, setScrapingSection] = useState<"iva" | "deudas" | "facturas" | "notificaciones" | null>(null);
+  const queryClient = useQueryClient();
   const ivaResumeRef = useRef<RenderIvaResumeRef>(null);
   const ivaSelectedYear = ivaResumenDateRange.from.getFullYear();
   const ivaSelectedMonth = ivaResumenDateRange.from.getMonth();
@@ -118,6 +164,18 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     ivaSelectedYear === now.getFullYear() ? now.getMonth() : 11;
   const ivaAvailableMonthIndices = Array.from(
     { length: ivaMaxMonthForYear + 1 },
+    (_, i) => i
+  );
+
+  // Periodo para Convenio Multilateral (mismo patrón: año + meses)
+  const multilateralSelectedYear =
+    multilateralPeriod?.from.getFullYear() ?? now.getFullYear();
+  const multilateralSelectedMonth =
+    multilateralPeriod?.from.getMonth() ?? now.getMonth();
+  const multilateralMaxMonthForYear =
+    multilateralSelectedYear === now.getFullYear() ? now.getMonth() : 11;
+  const multilateralAvailableMonthIndices = Array.from(
+    { length: multilateralMaxMonthForYear + 1 },
     (_, i) => i
   );
 
@@ -131,10 +189,28 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     queryKey: ["client", clientId],
     queryFn: async () => {
       const result = await getClient({ data: { id: clientId } });
-      console.log("getClient result", result);
       return result;
     },
   });
+
+  const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
+    queryKey: ["clientProfiles", clientId],
+    queryFn: () => getClientProfiles({ data: { clientId } }),
+  });
+
+  /** Perfil IVA por defecto (según nombre del cliente). Se calcula cuando hay client + profiles. */
+  const defaultIvaProfileId = useMemo(() => {
+    if (!client || profiles.length === 0) return undefined;
+    return findBestMatchingProfileId(client.name, profiles) ?? profiles[0].id;
+  }, [client, profiles]);
+
+  /** Perfil efectivo: selección del usuario o el default. Solo hay valor cuando hay perfiles. */
+  const effectiveIvaProfileId =
+    ivaProfileId ?? defaultIvaProfileId ?? profiles[0]?.id;
+
+  /** Perfil efectivo para Convenio Multilateral (usa mismo default). */
+  const effectiveMultilateralProfileId =
+    multilateralProfileId ?? defaultIvaProfileId ?? profiles[0]?.id;
 
   const periodoFiscalResumen = getResumenPeriodMMYYYY(ivaResumenDateRange.from);
 
@@ -143,35 +219,28 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     isLoading: loadingClientIva,
     error: clientIvaError,
   } = useQuery({
-    queryKey: ["clientIva", clientId, ivaProfileId, periodoFiscalResumen],
+    queryKey: ["clientIva", clientId, effectiveIvaProfileId, periodoFiscalResumen],
     queryFn: () =>
       getClientIvaCredit({
         data: {
           clientId,
-          profileId: ivaProfileId ?? undefined,
+          profileId: effectiveIvaProfileId ?? undefined,
           periodoFiscalResumen: periodoFiscalResumen ?? undefined,
         },
       }),
-    enabled: !!ivaProfileId,
+    enabled: !!effectiveIvaProfileId,
     staleTime: Infinity,
     refetchOnMount: false,
     refetchOnWindowFocus: false,
   });
 
-  const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
-    queryKey: ["clientProfiles", clientId],
-    queryFn: () => getClientProfiles({ data: { clientId } }),
-  });
-
   useEffect(() => {
-    if (profiles.length > 0 && !ivaProfileId) {
-      setIvaProfileId(profiles[0].id);
-    }
-  }, [profiles, ivaProfileId]);
-
-  useEffect(() => {
-    console.log("clientIva", clientIva);
-  }, [clientIva]);
+    setIvaProfileId(undefined);
+    setMultilateralProfileId(undefined);
+    setMultilateralDateFrom("");
+    setMultilateralDateTo("");
+    setMultilateralPeriod(null);
+  }, [clientId]);
 
   const { data: debts = [], isLoading: loadingDebts } = useQuery({
     queryKey: ["clientDebts", clientId],
@@ -183,18 +252,12 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     queryFn: () => getClientDueDates({ data: { clientId } }),
   });
 
-  const { data: notifications = [], isLoading: loadingNotifications } =
-    useQuery({
-      queryKey: ["clientNotifications", clientId],
-      queryFn: () =>
-        getNotifications({
-          data: {
-            clientFilter: clientId,
-            page: 1,
-            limit: 100,
-          },
-        }),
-    });
+  const { data: lastNotificacionesJob } = useQuery({
+    queryKey: ["lastNotificacionesJob", clientId],
+    queryFn: () =>
+      getLastJobByType({ data: { clientId, jobType: "notificaciones" } }),
+    enabled: !!clientId,
+  });
 
   // Get all invoices for the client to calculate totals
   const { data: allInvoicesData } = useQuery({
@@ -207,6 +270,26 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
           clientFilter: clientId,
         },
       }),
+  });
+
+  const { data: multilateralSummary = [] } = useQuery({
+    queryKey: [
+      "clientMultilateralSummary",
+      clientId,
+      effectiveMultilateralProfileId,
+      multilateralDateFrom,
+      multilateralDateTo,
+    ],
+    queryFn: () =>
+      getClientMultilateralSummary({
+        data: {
+          clientId,
+          profileId: effectiveMultilateralProfileId ?? undefined,
+          dateFrom: multilateralDateFrom || undefined,
+          dateTo: multilateralDateTo || undefined,
+        },
+      }),
+    enabled: !!clientId,
   });
 
   const copyToClipboard = (text: string, field: string) => {
@@ -399,19 +482,21 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <h1 className="text-2xl font-bold">{client.name}</h1>
-        </div>
-        {/* <EditClientDialog clientId={clientId}>
-          <Button variant="default">
-            <Edit className="mr-2 h-4 w-4" />
-            Editar Cliente
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setEditClientDialogOpen(true)}
+            className="gap-2"
+          >
+            <Edit className="h-4 w-4" />
+            Editar
           </Button>
-        </EditClientDialog> */}
-        <Button
-          variant="default"
-          onClick={() => scrapOldClient({ data: { clientId } })}
-        >
-          Actualizar Cliente
-        </Button>
+          <EditClientDialog
+            clientId={clientId}
+            open={editClientDialogOpen}
+            onOpenChange={setEditClientDialogOpen}
+          />
+        </div>
       </div>
 
       {/* Navigation Tabs */}
@@ -421,11 +506,11 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
             <FileText className="mr-2 h-4 w-4" />
             Resumen
           </TabsTrigger>
-          <TabsTrigger value="deudas">
+          <TabsTrigger value="deudas" disabled>
             <DollarSign className="mr-2 h-4 w-4" />
             Deudas
           </TabsTrigger>
-          <TabsTrigger value="vencimientos">
+          <TabsTrigger value="vencimientos" disabled>
             <Calendar className="mr-2 h-4 w-4" />
             Vencimientos
           </TabsTrigger>
@@ -440,6 +525,10 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
           <TabsTrigger value="iva">
             <BanknoteArrowUp className="mr-2 h-4 w-4" />
             Iva
+          </TabsTrigger>
+          <TabsTrigger value="convenio-multilateral">
+            <MapPin className="mr-2 h-4 w-4" />
+            Convenio Multilateral
           </TabsTrigger>
         </TabsList>
 
@@ -483,22 +572,64 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 <div className="space-y-2">
                   <div className="text-sm text-muted-foreground">Teléfono</div>
                   <div className="flex items-center gap-2">
-                    <Phone className="h-4 w-4 text-muted-foreground" />
+                    <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
                     <span>{client.phone || "-"}</span>
+                    {client.phone && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 shrink-0"
+                        onClick={() => copyToClipboard(client.phone!, "phone")}
+                      >
+                        {copiedField === "phone" ? (
+                          <Check className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                      </Button>
+                    )}
                   </div>
                 </div>
                 <div className="space-y-2">
                   <div className="text-sm text-muted-foreground">Email</div>
                   <div className="flex items-center gap-2">
-                    <Mail className="h-4 w-4 text-muted-foreground" />
+                    <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
                     <span>{client.email || "-"}</span>
+                    {client.email && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 shrink-0"
+                        onClick={() => copyToClipboard(client.email!, "email")}
+                      >
+                        {copiedField === "email" ? (
+                          <Check className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                      </Button>
+                    )}
                   </div>
                 </div>
                 <div className="space-y-2">
                   <div className="text-sm text-muted-foreground">Dirección</div>
                   <div className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4 text-muted-foreground" />
+                    <MapPin className="h-4 w-4 text-muted-foreground shrink-0" />
                     <span>{client.address || "-"}</span>
+                    {client.address && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 shrink-0"
+                        onClick={() => copyToClipboard(client.address!, "address")}
+                      >
+                        {copiedField === "address" ? (
+                          <Check className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                      </Button>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -708,11 +839,41 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
           )}
 
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <CardTitle className="flex items-center gap-2">
                 <DollarSign className="h-5 w-5" />
                 Deudas del Cliente
               </CardTitle>
+              <Button
+                variant="default"
+                size="sm"
+                disabled={!!scrapingSection}
+                onClick={async () => {
+                  setScrapingSection("deudas");
+                  try {
+                    await scrapSingleJob({
+                      data: { clientId, jobType: "deuda" },
+                    });
+                    await queryClient.invalidateQueries({ queryKey: ["clientDebts", clientId] });
+                    toast.success("Deudas actualizadas correctamente");
+                  } catch (err) {
+                    toast.error(
+                      err instanceof Error ? err.message : "Error al actualizar deudas"
+                    );
+                  } finally {
+                    setScrapingSection(null);
+                  }
+                }}
+              >
+                {scrapingSection === "deudas" ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Actualizando…
+                  </>
+                ) : (
+                  "Actualizar Deudas"
+                )}
+              </Button>
             </CardHeader>
             <CardContent>
               {loadingDebts ? (
@@ -925,83 +1086,114 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
           </Card>
         </TabsContent>
 
-        {/* Notificaciones Tab */}
+        {/* Notificaciones Tab - mismo formato que la vista del navbar */}
         <TabsContent value="notificaciones" className="space-y-6 mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Bell className="h-5 w-5" />
-                Notificaciones del Cliente
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loadingNotifications ? (
-                <div className="flex items-center justify-center h-32">
-                  <div className="text-muted-foreground">
-                    Cargando notificaciones...
-                  </div>
-                </div>
-              ) : !notifications ||
-                !("notifications" in notifications) ||
-                notifications.notifications.length === 0 ? (
-                <div className="flex items-center justify-center h-32">
-                  <div className="text-muted-foreground">
-                    No hay notificaciones registradas para este cliente
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Fecha de Publicación</TableHead>
-                        <TableHead>Mensaje</TableHead>
-                        <TableHead>Fecha de Vencimiento</TableHead>
-                        <TableHead>ID Externo</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {("notifications" in notifications
-                        ? notifications.notifications
-                        : []
-                      ).map((notification: any) => (
-                        <TableRow key={notification.id}>
-                          <TableCell>
-                            {new Date(
-                              notification.publicationDate
-                            ).toLocaleDateString("es-AR", {
-                              year: "numeric",
-                              month: "long",
-                              day: "numeric",
-                            })}
-                          </TableCell>
-                          <TableCell className="max-w-md truncate">
-                            {notification.message || "-"}
-                          </TableCell>
-                          <TableCell>
-                            {new Date(
-                              notification.expirationDate
-                            ).toLocaleDateString("es-AR", {
-                              year: "numeric",
-                              month: "long",
-                              day: "numeric",
-                            })}
-                          </TableCell>
-                          <TableCell className="font-mono text-sm">
-                            {notification.externalId || "-"}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <NotificationsView
+            clientId={clientId}
+            className="min-h-[500px]"
+            toolbar={
+              <>
+                <p className="text-xs text-muted-foreground">
+                  Ult. actualización{" "}
+                  {lastNotificacionesJob?.createdAt ? (
+                    <span
+                      className={
+                        lastNotificacionesJob.success
+                          ? "text-emerald-600 dark:text-emerald-400 font-medium"
+                          : "text-destructive"
+                      }
+                      title={lastNotificacionesJob.failedReason ?? undefined}
+                    >
+                      {new Date(lastNotificacionesJob.createdAt).toLocaleDateString("es-AR", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </span>
+                  ) : (
+                    "—"
+                  )}
+                </p>
+                <Button
+                  variant="default"
+                  size="sm"
+                  disabled={!!scrapingSection}
+                  onClick={async () => {
+                    setScrapingSection("notificaciones");
+                    try {
+                      await scrapSingleJob({
+                        data: { clientId, jobType: "notificaciones" },
+                      });
+                      await queryClient.invalidateQueries({
+                        queryKey: ["clientNotifications", clientId],
+                      });
+                      await queryClient.invalidateQueries({
+                        queryKey: ["lastNotificacionesJob", clientId],
+                      });
+                      toast.success("Notificaciones actualizadas correctamente");
+                    } catch (err) {
+                      toast.error(
+                        err instanceof Error
+                          ? err.message
+                          : "Error al actualizar notificaciones"
+                      );
+                    } finally {
+                      setScrapingSection(null);
+                    }
+                  }}
+                >
+                  {scrapingSection === "notificaciones" ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Actualizando…
+                    </>
+                  ) : (
+                    "Actualizar Notificaciones"
+                  )}
+                </Button>
+              </>
+            }
+          />
         </TabsContent>
 
         {/* Facturas Tab */}
         <TabsContent value="facturas" className="space-y-6 mt-6">
+          <div className="flex justify-end">
+            <Button
+              variant="default"
+              size="sm"
+              disabled={!!scrapingSection}
+              onClick={async () => {
+                setScrapingSection("facturas");
+                try {
+                  await scrapSingleJob({
+                    data: { clientId, jobType: "comprobantes" },
+                  });
+                  await Promise.all([
+                    queryClient.invalidateQueries({ queryKey: ["clientAllInvoices", clientId] }),
+                    queryClient.invalidateQueries({ queryKey: ["invoices"] }),
+                    queryClient.invalidateQueries({ queryKey: ["lastComprobantesFullJob", clientId] }),
+                  ]);
+                  toast.success("Facturas (comprobantes) actualizadas correctamente");
+                } catch (err) {
+                  toast.error(
+                    err instanceof Error ? err.message : "Error al actualizar facturas"
+                  );
+                } finally {
+                  setScrapingSection(null);
+                }
+              }}
+            >
+              {scrapingSection === "facturas" ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Actualizando…
+                </>
+              ) : (
+                "Actualizar Facturas"
+              )}
+            </Button>
+          </div>
           {/* Invoice Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Card>
@@ -1054,6 +1246,196 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
           <InvoicesTable clientId={clientId} />
         </TabsContent>
 
+        {/* Convenio Multilateral Tab */}
+        <TabsContent value="convenio-multilateral" className="space-y-6 mt-6">
+          <Card>
+            <CardHeader className="flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <CardTitle className="flex items-center gap-2">
+                  <Receipt className="h-5 w-5" />
+                  Convenio Multilateral (ventas por provincia)
+                </CardTitle>
+                <div className="flex items-center gap-4 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">
+                      Perfil:
+                    </span>
+                    {effectiveMultilateralProfileId ? (
+                      <Select
+                        key={`multilateral-${clientId}`}
+                        defaultValue={effectiveMultilateralProfileId}
+                        onValueChange={(value) =>
+                          setMultilateralProfileId(value || undefined)
+                        }
+                        disabled={loadingProfiles || profiles.length <= 1}
+                      >
+                        <SelectTrigger className="min-w-[220px] w-auto">
+                          <SelectValue placeholder="Seleccionar perfil" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {profiles.map(
+                            (profile: {
+                              id: string;
+                              name?: string;
+                              identityNumber?: string;
+                            }) => (
+                              <SelectItem key={profile.id} value={profile.id}>
+                                {profile.name ||
+                                  profile.identityNumber ||
+                                  profile.id}
+                              </SelectItem>
+                            )
+                          )}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <span className="min-w-[220px] text-sm text-muted-foreground">
+                        {loadingProfiles
+                          ? "Cargando perfiles..."
+                          : profiles.length === 0
+                            ? "Sin perfiles"
+                            : "Seleccionar perfil"}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Selector de período (año + meses), igual que IVA pero aplicado al filtro de Convenio Multilateral */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">
+                      Período:
+                    </span>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className="h-9 px-3 text-xs font-normal"
+                        >
+                          {multilateralPeriod
+                            ? `${MONTH_NAMES_SHORT[multilateralSelectedMonth]} ${multilateralSelectedYear}`
+                            : "Sin filtro"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-4" align="end">
+                        <div className="space-y-3">
+                          <Select
+                            value={String(multilateralSelectedYear)}
+                            onValueChange={(v) => {
+                              const y = Number(v);
+                              const newMax =
+                                y === now.getFullYear() ? now.getMonth() : 11;
+                              const m = Math.min(
+                                multilateralSelectedMonth,
+                                newMax
+                              );
+                              const range = getMonthBounds(y, m);
+                              setMultilateralPeriod(range);
+                              setMultilateralDateFrom(
+                                range.from.toISOString().slice(0, 10)
+                              );
+                              setMultilateralDateTo(
+                                range.to.toISOString().slice(0, 10)
+                              );
+                            }}
+                          >
+                            <SelectTrigger className="w-full h-9">
+                              <SelectValue placeholder="Año" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Array.from(
+                                { length: 8 },
+                                (_, i) => now.getFullYear() - i
+                              ).map((y) => (
+                                <SelectItem key={y} value={String(y)}>
+                                  {y}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {multilateralAvailableMonthIndices.map((i) => (
+                              <Button
+                                key={i}
+                                variant={
+                                  multilateralSelectedMonth === i
+                                    ? "default"
+                                    : "outline"
+                                }
+                                size="sm"
+                                className="text-xs h-8"
+                                onClick={() => {
+                                  const range = getMonthBounds(
+                                    multilateralSelectedYear,
+                                    i
+                                  );
+                                  setMultilateralPeriod(range);
+                                  setMultilateralDateFrom(
+                                    range.from.toISOString().slice(0, 10)
+                                  );
+                                  setMultilateralDateTo(
+                                    range.to.toISOString().slice(0, 10)
+                                  );
+                                }}
+                              >
+                                {MONTH_NAMES_SHORT[i]}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {multilateralSummary.length === 0 ? (
+                <div className="flex items-center justify-center h-32">
+                  <div className="text-muted-foreground">
+                    No hay facturas outbound registradas para este cliente
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Provincia</TableHead>
+                        <TableHead className="text-right">
+                          Cant. comprobantes
+                        </TableHead>
+                        <TableHead className="text-right">
+                          Total IVA
+                        </TableHead>
+                        <TableHead className="text-right">
+                          Base imponible (amount_taxed)
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {multilateralSummary.map((row: any) => (
+                        <TableRow key={row.receiptProvince ?? "sin-datos"}>
+                          <TableCell className="font-medium">
+                            {row.receiptProvince || "Sin datos"}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {row.invoiceCount}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {formatIvaCurrency(row.totalIVA)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {formatIvaCurrency(row.totalTaxed)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         {/* IVA Tab */}
         <TabsContent value="iva" className="mt-6">
           <div className="space-y-4">
@@ -1063,30 +1445,29 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 <span className="text-sm text-muted-foreground">
                   Perfil para IVA:
                 </span>
-                <Select
-                  value={ivaProfileId ?? ""}
-                  onValueChange={(value) => setIvaProfileId(value || undefined)}
-                  disabled={loadingProfiles || profiles.length <= 1}
-                >
-                  <SelectTrigger className="min-w-[200px] w-auto">
-                    <SelectValue
-                      placeholder={
-                        loadingProfiles
-                          ? "Cargando perfiles..."
-                          : profiles.length === 0
-                            ? "Sin perfiles"
-                            : "Seleccionar perfil"
-                      }
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {profiles.map((profile: { id: string; name?: string; identityNumber?: string }) => (
-                      <SelectItem key={profile.id} value={profile.id}>
-                        {profile.name || profile.identityNumber || profile.id}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {effectiveIvaProfileId ? (
+                  <Select
+                    key={`iva-${clientId}`}
+                    defaultValue={effectiveIvaProfileId}
+                    onValueChange={(value) => setIvaProfileId(value || undefined)}
+                    disabled={loadingProfiles || profiles.length <= 1}
+                  >
+                    <SelectTrigger className="min-w-[200px] w-auto">
+                      <SelectValue placeholder="Seleccionar perfil" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {profiles.map((profile: { id: string; name?: string; identityNumber?: string }) => (
+                        <SelectItem key={profile.id} value={profile.id}>
+                          {profile.name || profile.identityNumber || profile.id}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <span className="min-w-[200px] text-sm text-muted-foreground">
+                    {loadingProfiles ? "Cargando perfiles..." : profiles.length === 0 ? "Sin perfiles" : "Seleccionar perfil"}
+                  </span>
+                )}
                 <Popover
                   open={ivaPeriodPickerOpen}
                   onOpenChange={setIvaPeriodPickerOpen}
@@ -1153,16 +1534,56 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                   </PopoverContent>
                 </Popover>
               </div>
-              <Button
-                variant="outline"
-                size="default"
-                onClick={() => ivaResumeRef.current?.downloadExcel()}
-                className="gap-2 font-semibold shrink-0"
-                disabled={!ivaProfileId}
-              >
-                <Download className="h-4 w-4" />
-                <span className="hidden sm:inline">Descargar Excel</span>
-              </Button>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button
+                  variant="default"
+                  size="default"
+                  disabled={!!scrapingSection}
+                  onClick={async () => {
+                    setScrapingSection("iva");
+                    try {
+                      await scrapSingleJob({
+                        data: { clientId, jobType: "comprobantes" },
+                      });
+                      await scrapSingleJob({
+                        data: { clientId, jobType: "iva" },
+                      });
+                      await Promise.all([
+                        queryClient.invalidateQueries({ queryKey: ["clientIva", clientId] }),
+                        queryClient.invalidateQueries({ queryKey: ["clientAllInvoices", clientId] }),
+                        queryClient.invalidateQueries({ queryKey: ["invoices"] }),
+                        queryClient.invalidateQueries({ queryKey: ["lastComprobantesFullJob", clientId] }),
+                      ]);
+                      toast.success("IVA y comprobantes actualizados correctamente");
+                    } catch (err) {
+                      toast.error(
+                        err instanceof Error ? err.message : "Error al actualizar IVA"
+                      );
+                    } finally {
+                      setScrapingSection(null);
+                    }
+                  }}
+                >
+                  {scrapingSection === "iva" ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Actualizando…
+                    </>
+                  ) : (
+                    "Actualizar IVA"
+                  )}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="default"
+                  onClick={() => ivaResumeRef.current?.downloadExcel()}
+                  className="gap-2 font-semibold shrink-0"
+                  disabled={!effectiveIvaProfileId}
+                >
+                  <Download className="h-4 w-4" />
+                  <span className="hidden sm:inline">Descargar Excel</span>
+                </Button>
+              </div>
             </div>
 
             <div className="w-full">
@@ -1171,7 +1592,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 clientId={clientId}
                 clientName={client?.name}
                 clientIva={clientIva ?? undefined}
-                selectedProfileId={ivaProfileId ?? undefined}
+                selectedProfileId={effectiveIvaProfileId ?? undefined}
                 dateRange={ivaResumenDateRange}
                 clientIvaLoading={loadingClientIva}
                 clientIvaError={clientIvaError}

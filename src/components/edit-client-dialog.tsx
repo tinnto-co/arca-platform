@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -47,31 +47,39 @@ type ClientFormValues = z.infer<typeof clientSchema>;
 
 interface EditClientDialogProps {
   clientId: string;
-  children: React.ReactNode;
+  children?: React.ReactNode;
+  /** Controlled mode: when provided, dialog open state is controlled and no trigger is rendered */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export function EditClientDialog({
   clientId,
   children,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
 }: EditClientDialogProps) {
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const queryClient = useQueryClient();
+
+  const isControlled = controlledOpen !== undefined && controlledOnOpenChange !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = isControlled ? (v: boolean) => controlledOnOpenChange?.(v) : setInternalOpen;
 
   const { data: client, isLoading: loadingClient } = useQuery({
     queryKey: ["client", clientId],
     queryFn: () => getClient({ data: { id: clientId } }),
-    enabled: open,
+    enabled: open && !!clientId,
   });
 
   const form = useForm<ClientFormValues>({
-    resolver: zodResolver(clientSchema),
+    resolver: zodResolver(clientSchema) as Resolver<ClientFormValues>,
     defaultValues: {
       name: "",
       email: "",
       phone: "",
       address: "",
-      type: "",
       image: "",
     },
   });
@@ -93,6 +101,7 @@ export function EditClientDialog({
     mutationFn: (data: any) => updateClient({ data }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["clients"] });
+      queryClient.invalidateQueries({ queryKey: ["clientsWithProfiles"] });
       queryClient.invalidateQueries({ queryKey: ["client", clientId] });
       toast.success("Cliente actualizado exitosamente");
       setOpen(false);
@@ -117,7 +126,9 @@ export function EditClientDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{children}</DialogTrigger>
+      {!isControlled && children != null ? (
+        <DialogTrigger asChild>{children}</DialogTrigger>
+      ) : null}
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

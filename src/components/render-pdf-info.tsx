@@ -7,7 +7,13 @@ import {
     TableHead,
     TableCell,
 } from "@/components/ui/table"
+import {
+    Collapsible,
+    CollapsibleContent,
+    CollapsibleTrigger,
+} from "@/components/ui/collapsible"
 import { Button } from "@/components/ui/button"
+import { TrendingUp, TrendingDown } from "lucide-react"
 import {
     Dialog,
     DialogContent,
@@ -24,7 +30,13 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"
-import { Pencil, Trash2 } from "lucide-react"
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Pencil, Trash2, MoreHorizontal } from "lucide-react"
 
 const GASTO_OPTIONS = [
     "Sin especificar",
@@ -87,6 +99,9 @@ export function RenderPdfInfo({ data }: RenderPdfInfoProps) {
         movement: Movement
     } | null>(null)
 
+    const [openIngresos, setOpenIngresos] = useState(true)
+    const [openEgresos, setOpenEgresos] = useState(true)
+
     const totalIngresos = ingresos.reduce(
         (acc, m) => acc + parseMonto(m.monto),
         0
@@ -111,94 +126,93 @@ export function RenderPdfInfo({ data }: RenderPdfInfoProps) {
     }
 
     return (
-        <div className="space-y-8 mt-8">
-            {/* HEADER CARDS */}
-            <div className="flex flex-col gap-4 md:flex-row">
-                {/* Banco */}
-                <div className="rounded-lg border p-4 space-y-2 flex-1">
-                    <h2 className="text-lg font-semibold">{data.banco}</h2>
-
-                    <div className="flex gap-6 text-sm">
-                        <div>
-                            <span className="text-muted-foreground">
-                                Saldo inicial:
-                            </span>{" "}
-                            <strong>{data.saldo_inicial}</strong>
-                        </div>
-                        <div>
-                            <span className="text-muted-foreground">
-                                Saldo final:
-                            </span>{" "}
-                            <strong>{data.saldo_final}</strong>
-                        </div>
+        <div className="space-y-6">
+            {/* HEADER: Resumen compacto */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="rounded-xl border bg-card p-4">
+                    <p className="text-sm text-muted-foreground mb-1">Banco</p>
+                    <p className="font-semibold">{data.banco}</p>
+                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                        <span>Inicial: <strong className="text-foreground">{data.saldo_inicial}</strong></span>
+                        <span>Final: <strong className="text-foreground">{data.saldo_final}</strong></span>
                     </div>
                 </div>
-
-                {/* Total Ingresos */}
-                <div className="rounded-lg border p-4 flex-1 flex flex-col justify-center">
-                    <span className="text-sm text-muted-foreground">
-                        Total Ingresos
-                    </span>
-                    <span className="text-2xl font-bold text-emerald-600">
+                <div className="rounded-xl border bg-card p-4 flex flex-col justify-center">
+                    <p className="text-sm text-muted-foreground">Total Ingresos</p>
+                    <p className="text-xl font-bold text-emerald-600">
                         {totalIngresos.toLocaleString("es-AR", {
                             style: "currency",
                             currency: "ARS",
                         })}
-                    </span>
+                    </p>
                 </div>
-
-                {/* Total Egresos */}
-                <div className="rounded-lg border p-4 flex-1 flex flex-col justify-center">
-                    <span className="text-sm text-muted-foreground">
-                        Total Egresos
-                    </span>
-                    <span className="text-2xl font-bold text-red-600">
+                <div className="rounded-xl border bg-card p-4 flex flex-col justify-center">
+                    <p className="text-sm text-muted-foreground">Total Egresos</p>
+                    <p className="text-xl font-bold text-red-600">
                         {totalEgresos.toLocaleString("es-AR", {
                             style: "currency",
                             currency: "ARS",
                         })}
-                    </span>
+                    </p>
                 </div>
             </div>
 
             {/* TABLAS */}
-            <MovementsTable
-                title="Ingresos"
-                data={ingresos}
-                showTipoGasto
-                onDelete={(i) =>
-                    setIngresos((prev) => prev.filter((_, idx) => idx !== i))
-                }
-                onEdit={(m, i) =>
-                    setEditing({ tipo: "ingreso", index: i, movement: m })
-                }
-                onTipoGastoChange={(index, value) =>
-                    setIngresos((prev) =>
-                        prev.map((m, i) =>
-                            i === index ? { ...m, tipoGasto: value } : m
-                        )
-                    )
-                }
-            />
+            <Collapsible open={openIngresos} onOpenChange={setOpenIngresos}>
+                <CollapsibleTrigger className="flex w-full items-center justify-between rounded-xl border bg-muted/50 px-4 py-3 text-base hover:bg-muted/70 transition-colors">
+                    <span className="font-medium">Ingresos</span>
+                    <TrendingUp className="h-5 w-5 text-emerald-600 shrink-0" />
+                </CollapsibleTrigger>
+                <CollapsibleContent forceMount className="mt-2 rounded-xl border bg-muted/20 px-4 py-3 data-[state=closed]:hidden overflow-x-auto">
+                    <MovementsTable
+                        title="Ingresos"
+                        data={ingresos}
+                        showTipoGasto
+                        embedded
+                        onDelete={(i) =>
+                            setIngresos((prev) => prev.filter((_, idx) => idx !== i))
+                        }
+                        onEdit={(m, i) =>
+                            setEditing({ tipo: "ingreso", index: i, movement: m })
+                        }
+                        onTipoGastoChange={(index, value) =>
+                            setIngresos((prev) =>
+                                prev.map((m, i) =>
+                                    i === index ? { ...m, tipoGasto: value } : m
+                                )
+                            )
+                        }
+                    />
+                </CollapsibleContent>
+            </Collapsible>
 
-            <MovementsTable
-                title="Egresos"
-                data={egresos}
-                showTipoGasto
-                onDelete={(i) =>
-                    setEgresos((prev) => prev.filter((_, idx) => idx !== i))
-                }
-                onEdit={(m, i) =>
-                    setEditing({ tipo: "egreso", index: i, movement: m })
-                }
-                onTipoGastoChange={(index, value) =>
-                    setEgresos((prev) =>
-                        prev.map((m, i) =>
-                            i === index ? { ...m, tipoGasto: value } : m
-                        )
-                    )
-                }
-            />
+            <Collapsible open={openEgresos} onOpenChange={setOpenEgresos}>
+                <CollapsibleTrigger className="flex w-full items-center justify-between rounded-xl border bg-muted/50 px-4 py-3 text-base hover:bg-muted/70 transition-colors">
+                    <span className="font-medium">Egresos</span>
+                    <TrendingDown className="h-5 w-5 text-red-600 shrink-0" />
+                </CollapsibleTrigger>
+                <CollapsibleContent forceMount className="mt-2 rounded-xl border bg-muted/20 px-4 py-3 data-[state=closed]:hidden overflow-x-auto">
+                    <MovementsTable
+                        title="Egresos"
+                        data={egresos}
+                        showTipoGasto
+                        embedded
+                        onDelete={(i) =>
+                            setEgresos((prev) => prev.filter((_, idx) => idx !== i))
+                        }
+                        onEdit={(m, i) =>
+                            setEditing({ tipo: "egreso", index: i, movement: m })
+                        }
+                        onTipoGastoChange={(index, value) =>
+                            setEgresos((prev) =>
+                                prev.map((m, i) =>
+                                    i === index ? { ...m, tipoGasto: value } : m
+                                )
+                            )
+                        }
+                    />
+                </CollapsibleContent>
+            </Collapsible>
 
             {/* MODAL EDITAR */}
             <Dialog open={!!editing} onOpenChange={() => setEditing(null)}>
@@ -309,6 +323,7 @@ function MovementsTable({
     title,
     data,
     showTipoGasto = false,
+    embedded = false,
     onDelete,
     onEdit,
     onTipoGastoChange,
@@ -316,21 +331,22 @@ function MovementsTable({
     title: string
     data: Movement[]
     showTipoGasto?: boolean
+    embedded?: boolean
     onDelete: (index: number) => void
     onEdit: (movement: Movement, index: number) => void
     onTipoGastoChange?: (index: number, value: string) => void
 }) {
     if (!data.length) {
         return (
-            <div className="rounded-lg border p-4 text-sm text-muted-foreground">
+            <div className={embedded ? "text-sm text-muted-foreground" : "rounded-lg border p-4 text-sm text-muted-foreground"}>
                 {title}: sin movimientos
             </div>
         )
     }
 
     return (
-        <div className="rounded-lg border p-4 space-y-2">
-            <h3 className="text-md font-semibold">{title}</h3>
+        <div className={embedded ? "space-y-2" : "rounded-lg border p-4 space-y-2"}>
+            {!embedded && <h3 className="text-md font-semibold">{title}</h3>}
 
             <Table>
                 <TableHeader>
@@ -341,9 +357,7 @@ function MovementsTable({
                             <TableHead>Tipo de gasto</TableHead>
                         )}
                         <TableHead className="text-right">Monto</TableHead>
-                        <TableHead className="text-center">
-                            Acciones
-                        </TableHead>
+                        <TableHead className="text-right w-14" />
                     </TableRow>
                 </TableHeader>
 
@@ -389,15 +403,31 @@ function MovementsTable({
                                 {m.monto}
                             </TableCell>
 
-                            <TableCell className="text-center">
-                                <div className="flex justify-center gap-2">
-                                    <button onClick={() => onEdit(m, i)}>
-                                        <Pencil className="h-4 w-4" />
-                                    </button>
-                                    <button onClick={() => onDelete(i)}>
-                                        <Trash2 className="h-4 w-4 text-destructive" />
-                                    </button>
-                                </div>
+                            <TableCell className="text-right w-14">
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-8 w-8"
+                                        >
+                                            <MoreHorizontal className="h-4 w-4" />
+                                        </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                        <DropdownMenuItem onClick={() => onEdit(m, i)}>
+                                            <Pencil className="h-4 w-4 mr-2" />
+                                            Editar
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                            onClick={() => onDelete(i)}
+                                            className="text-destructive focus:text-destructive"
+                                        >
+                                            <Trash2 className="h-4 w-4 mr-2" />
+                                            Eliminar
+                                        </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
                             </TableCell>
                         </TableRow>
                     ))}
