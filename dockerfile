@@ -10,6 +10,8 @@ RUN bun install --frozen-lockfile
 
 # build stage
 FROM base AS prerelease
+ARG VITE_BETTER_AUTH_URL
+ENV VITE_BETTER_AUTH_URL=$VITE_BETTER_AUTH_URL
 COPY --from=install /usr/src/app/node_modules ./node_modules
 COPY . .
 ENV NODE_ENV=production
