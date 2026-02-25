@@ -10,7 +10,7 @@ import {
   profile,
 } from "@/drizzle/schema";
 import { auth } from "@/lib/auth";
-import { eq, desc, asc, and, gte, lte, sql, inArray } from "drizzle-orm";
+import { eq, desc, asc, and, gte, lte, sql, inArray, isNull } from "drizzle-orm";
 
 export const getInvoices = createServerFn({
   method: "GET",
@@ -136,6 +136,7 @@ export const getInvoices = createServerFn({
         direction: invoice.direction,
         emitionDate: invoice.emitionDate,
         type: invoice.type,
+        receiptProvince: invoice.receiptProvince,
         recipientName: invoice.recipientName,
         recipientIdentityNumber: invoice.recipientIdentityNumber,
         recipientIdentityType: invoice.recipientIdentityType,
@@ -254,6 +255,91 @@ export const getClientMultilateralSummary = createServerFn({
       .from(invoice)
       .where(and(...conditions))
       .groupBy(invoice.receiptProvince);
+
+    return rows;
+  });
+
+export const getClientMultilateralInvoices = createServerFn({
+  method: "GET",
+})
+  .inputValidator(
+    z.object({
+      clientId: z.string(),
+      receiptProvince: z.string().nullable().optional(),
+      profileId: z.string().optional(),
+      dateFrom: z.string().optional(),
+      dateTo: z.string().optional(),
+    })
+  )
+  .handler(async (ctx) => {
+    const session = await auth.api.getSession({ headers: getRequestHeaders() });
+    if (!session?.user?.id) throw new Error("Unauthorized");
+
+    const { clientId, receiptProvince, profileId, dateFrom, dateTo } = ctx.data;
+
+    // Verificar que el cliente pertenece al usuario
+    const [clientRow] = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(and(eq(client.id, clientId), eq(client.userId, session.user.id)))
+      .limit(1);
+
+    if (!clientRow) {
+      throw new Error("Cliente no encontrado o no autorizado");
+    }
+
+    // Si se pasa profileId, verificar que pertenezca a este cliente
+    let profileFilter: string | undefined;
+    if (profileId && profileId !== "all") {
+      const [profileRow] = await db
+        .select({ id: profile.id })
+        .from(profile)
+        .where(and(eq(profile.id, profileId), eq(profile.client, clientId)))
+        .limit(1);
+      if (profileRow) {
+        profileFilter = profileId;
+      }
+    }
+
+    const conditions = [
+      eq(invoice.client, clientId),
+      eq(invoice.direction, "Outbound"),
+      profileFilter ? eq(invoice.profile, profileFilter) : sql`true`,
+    ];
+
+    if (receiptProvince !== undefined) {
+      if (receiptProvince === null || receiptProvince === "") {
+        conditions.push(isNull(invoice.receiptProvince));
+      } else {
+        conditions.push(eq(invoice.receiptProvince, receiptProvince));
+      }
+    }
+
+    if (dateFrom) {
+      conditions.push(gte(invoice.emitionDate, new Date(dateFrom)));
+    }
+    if (dateTo) {
+      const toDate = new Date(dateTo);
+      toDate.setHours(23, 59, 59, 999);
+      conditions.push(lte(invoice.emitionDate, toDate));
+    }
+
+    const rows = await db
+      .select({
+        id: invoice.id,
+        emitionDate: invoice.emitionDate,
+        type: invoice.type,
+        salePoint: invoice.salePoint,
+        numberFrom: invoice.idFrom,
+        numberTo: invoice.idTo,
+        receiptProvince: invoice.receiptProvince,
+        amountTaxed: invoice.amountTaxed,
+        totalIVA: invoice.totalIVA,
+        amount: invoice.amount,
+      })
+      .from(invoice)
+      .where(and(...conditions))
+      .orderBy(desc(invoice.emitionDate));
 
     return rows;
   });

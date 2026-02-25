@@ -42,7 +42,11 @@ import {
 import { EditClientDialog } from "@/components/edit-client-dialog";
 import { NotificationsView } from "@/components/notifications-view";
 import { InvoicesTable } from "@/components/invoices-table";
-import { getInvoices, getClientMultilateralSummary } from "@/actions/invoice";
+import {
+  getInvoices,
+  getClientMultilateralSummary,
+  getClientMultilateralInvoices,
+} from "@/actions/invoice";
 import { scrapSingleJob } from "@/actions/client";
 import { useState, useMemo, useEffect, useRef } from "react";
 import { toast } from "sonner";
@@ -63,6 +67,12 @@ import {
   type RenderIvaResumeRef,
 } from "./render-iva-resume";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
 interface ClientDetailPageProps {
@@ -80,6 +90,51 @@ const formatIvaCurrency = (
     currency: "ARS",
     minimumFractionDigits: 2,
   }).format(n);
+};
+
+type MetricDeltaProps = {
+  current: number;
+  previous: number;
+  label?: string;
+};
+
+const MetricDelta = ({
+  current,
+  previous,
+  label = "vs. mes anterior",
+}: MetricDeltaProps) => {
+  if (previous === 0 && current === 0) {
+    return (
+      <p className="text-xs text-muted-foreground mt-1">{label}: sin cambios</p>
+    );
+  }
+
+  if (previous === 0 && current !== 0) {
+    return (
+      <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1">
+        {label}: nuevo período con actividad
+      </p>
+    );
+  }
+
+  const diff = current - previous;
+  const diffPct = (diff / Math.abs(previous)) * 100;
+  const sign = diff > 0 ? "+" : "";
+  const formattedPct = `${sign}${diffPct.toFixed(1)}%`;
+
+  return (
+    <p
+      className={`text-xs mt-1 ${
+        diff > 0
+          ? "text-emerald-600 dark:text-emerald-400"
+          : diff < 0
+            ? "text-red-600 dark:text-red-400"
+            : "text-muted-foreground"
+      }`}
+    >
+      {label}: {formattedPct}
+    </p>
+  );
 };
 
 /** Período "MM/YYYY" del scrape que alimenta el resumen (mes anterior al elegido). Ej: usuario elige dic/25 → "11/2025". */
@@ -139,15 +194,30 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   const navigate = useNavigate();
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [editClientDialogOpen, setEditClientDialogOpen] = useState(false);
+  const now = new Date();
+  const initialMultilateralRange = getMonthBounds(
+    now.getFullYear(),
+    now.getMonth()
+  );
   const [ivaProfileId, setIvaProfileId] = useState<string | undefined>(undefined);
   const [multilateralProfileId, setMultilateralProfileId] = useState<string | undefined>(undefined);
-  const [multilateralDateFrom, setMultilateralDateFrom] = useState<string>("");
-  const [multilateralDateTo, setMultilateralDateTo] = useState<string>("");
+  const [multilateralDateFrom, setMultilateralDateFrom] = useState<string>(
+    initialMultilateralRange.from.toISOString().slice(0, 10)
+  );
+  const [multilateralDateTo, setMultilateralDateTo] = useState<string>(
+    initialMultilateralRange.to.toISOString().slice(0, 10)
+  );
   const [multilateralPeriod, setMultilateralPeriod] = useState<{
     from: Date;
     to: Date;
-  } | null>(null);
-  const now = new Date();
+  } | null>(initialMultilateralRange);
+  const [multilateralDetailOpen, setMultilateralDetailOpen] = useState(false);
+  const [selectedMultilateralProvince, setSelectedMultilateralProvince] = useState<string | null>(null);
+  const [selectedMultilateralProvinceLabel, setSelectedMultilateralProvinceLabel] = useState<string | null>(null);
+  const [multilateralSortKey, setMultilateralSortKey] = useState<
+    "count" | "iva" | "base" | null
+  >(null);
+  const [multilateralSortDir, setMultilateralSortDir] = useState<"asc" | "desc">("desc");
   /** Rango de fechas elegido en el resumen IVA (para resaltar el scrape del período usado). */
   const [ivaResumenDateRange, setIvaResumenDateRange] = useState<{
     from: Date;
@@ -178,6 +248,19 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     { length: multilateralMaxMonthForYear + 1 },
     (_, i) => i
   );
+
+  // Período anterior al seleccionado para Convenio Multilateral (para comparativos)
+  const multilateralPrevPeriod = useMemo(() => {
+    if (!multilateralPeriod) return null;
+    let y = multilateralSelectedYear;
+    let m = multilateralSelectedMonth - 1;
+    if (m < 0) {
+      m = 11;
+      y = y - 1;
+    }
+    // Por simplicidad, permitimos ir un año atrás aunque no haya datos
+    return getMonthBounds(y, m);
+  }, [multilateralPeriod, multilateralSelectedYear, multilateralSelectedMonth]);
 
   /** Período fiscal del scrape que alimenta el resumen (mes anterior al elegido en el calendario). */
   const periodUsedForResumen = useMemo(
@@ -237,9 +320,10 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   useEffect(() => {
     setIvaProfileId(undefined);
     setMultilateralProfileId(undefined);
-    setMultilateralDateFrom("");
-    setMultilateralDateTo("");
-    setMultilateralPeriod(null);
+    const range = getMonthBounds(now.getFullYear(), now.getMonth());
+    setMultilateralPeriod(range);
+    setMultilateralDateFrom(range.from.toISOString().slice(0, 10));
+    setMultilateralDateTo(range.to.toISOString().slice(0, 10));
   }, [clientId]);
 
   const { data: debts = [], isLoading: loadingDebts } = useQuery({
@@ -290,6 +374,133 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
         },
       }),
     enabled: !!clientId,
+  });
+
+  const multilateralPrevDateFrom = multilateralPrevPeriod
+    ? multilateralPrevPeriod.from.toISOString().slice(0, 10)
+    : undefined;
+  const multilateralPrevDateTo = multilateralPrevPeriod
+    ? multilateralPrevPeriod.to.toISOString().slice(0, 10)
+    : undefined;
+
+  const { data: multilateralSummaryPrev = [] } = useQuery({
+    queryKey: [
+      "clientMultilateralSummaryPrev",
+      clientId,
+      effectiveMultilateralProfileId,
+      multilateralPrevDateFrom,
+      multilateralPrevDateTo,
+    ],
+    queryFn: () =>
+      getClientMultilateralSummary({
+        data: {
+          clientId,
+          profileId: effectiveMultilateralProfileId ?? undefined,
+          dateFrom: multilateralPrevDateFrom,
+          dateTo: multilateralPrevDateTo,
+        },
+      }),
+    enabled: !!clientId && !!multilateralPrevDateFrom && !!multilateralPrevDateTo,
+  });
+
+  type MultilateralAgg = {
+    provinces: number;
+    invoices: number;
+    totalIVA: number;
+    totalBase: number;
+  };
+
+  const aggregateMultilateral = (rows: any[]): MultilateralAgg => {
+    if (!rows?.length) {
+      return { provinces: 0, invoices: 0, totalIVA: 0, totalBase: 0 };
+    }
+    const provinces = rows.length;
+    let invoices = 0;
+    let totalIVA = 0;
+    let totalBase = 0;
+    for (const row of rows) {
+      invoices += Number(row.invoiceCount ?? 0);
+      totalIVA += Number(row.totalIVA ?? 0);
+      totalBase += Number(row.totalTaxed ?? 0);
+    }
+    return { provinces, invoices, totalIVA, totalBase };
+  };
+
+  const multilateralAggCurrent = useMemo(
+    () => aggregateMultilateral(multilateralSummary as any[]),
+    [multilateralSummary]
+  );
+  const multilateralAggPrev = useMemo(
+    () => aggregateMultilateral(multilateralSummaryPrev as any[]),
+    [multilateralSummaryPrev]
+  );
+
+  const sortedMultilateralSummary = useMemo(() => {
+    if (!multilateralSortKey) return multilateralSummary;
+    const copy = [...multilateralSummary];
+    copy.sort((a: any, b: any) => {
+      const dir = multilateralSortDir === "asc" ? 1 : -1;
+      let av = 0;
+      let bv = 0;
+      if (multilateralSortKey === "count") {
+        av = Number(a.invoiceCount ?? 0);
+        bv = Number(b.invoiceCount ?? 0);
+      } else if (multilateralSortKey === "iva") {
+        av = Number(a.totalIVA ?? 0);
+        bv = Number(b.totalIVA ?? 0);
+      } else if (multilateralSortKey === "base") {
+        av = Number(a.totalTaxed ?? 0);
+        bv = Number(b.totalTaxed ?? 0);
+      }
+      if (av === bv) return 0;
+      return av > bv ? dir : -dir;
+    });
+    return copy;
+  }, [multilateralSummary, multilateralSortKey, multilateralSortDir]);
+
+  const toggleMultilateralSort = (key: "count" | "iva" | "base") => {
+    setMultilateralSortKey((prevKey) => {
+      // Caso 1: nuevo campo → ordenar ASC
+      if (prevKey !== key) {
+        setMultilateralSortDir("asc");
+        return key;
+      }
+
+      // Caso 2: mismo campo y estaba ASC → pasar a DESC
+      if (multilateralSortDir === "asc") {
+        setMultilateralSortDir("desc");
+        return key;
+      }
+
+      // Caso 3: mismo campo y estaba DESC → limpiar orden (sin ordenar)
+      setMultilateralSortDir("asc");
+      return null;
+    });
+  };
+
+  const {
+    data: multilateralDetailInvoices = [],
+    isLoading: loadingMultilateralDetail,
+  } = useQuery({
+    queryKey: [
+      "clientMultilateralInvoices",
+      clientId,
+      effectiveMultilateralProfileId,
+      multilateralDateFrom,
+      multilateralDateTo,
+      selectedMultilateralProvince,
+    ],
+    queryFn: () =>
+      getClientMultilateralInvoices({
+        data: {
+          clientId,
+          profileId: effectiveMultilateralProfileId ?? undefined,
+          receiptProvince: selectedMultilateralProvince,
+          dateFrom: multilateralDateFrom || undefined,
+          dateTo: multilateralDateTo || undefined,
+        },
+      }),
+    enabled: !!clientId && !!selectedMultilateralProvince && multilateralDetailOpen,
   });
 
   const copyToClipboard = (text: string, field: string) => {
@@ -1388,10 +1599,82 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
               </div>
             </CardHeader>
             <CardContent>
+              {multilateralPeriod && multilateralPrevPeriod && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-xs font-medium text-muted-foreground">
+                        Provincias con actividad
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-semibold">
+                        {multilateralAggCurrent.provinces}
+                      </div>
+                      <MetricDelta
+                        current={multilateralAggCurrent.provinces}
+                        previous={multilateralAggPrev.provinces}
+                      />
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-xs font-medium text-muted-foreground">
+                        Cantidad de comprobantes
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-semibold">
+                        {multilateralAggCurrent.invoices}
+                      </div>
+                      <MetricDelta
+                        current={multilateralAggCurrent.invoices}
+                        previous={multilateralAggPrev.invoices}
+                      />
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-xs font-medium text-muted-foreground">
+                        Total IVA del período
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-semibold">
+                        {formatIvaCurrency(multilateralAggCurrent.totalIVA)}
+                      </div>
+                      <MetricDelta
+                        current={multilateralAggCurrent.totalIVA}
+                        previous={multilateralAggPrev.totalIVA}
+                      />
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-xs font-medium text-muted-foreground">
+                        Base imponible del período
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-semibold">
+                        {formatIvaCurrency(multilateralAggCurrent.totalBase)}
+                      </div>
+                      <MetricDelta
+                        current={multilateralAggCurrent.totalBase}
+                        previous={multilateralAggPrev.totalBase}
+                      />
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
               {multilateralSummary.length === 0 ? (
                 <div className="flex items-center justify-center h-32">
                   <div className="text-muted-foreground">
-                    No hay facturas outbound registradas para este cliente
+                    No hay facturas emitidas registradas para este cliente
                   </div>
                 </div>
               ) : (
@@ -1401,33 +1684,85 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                       <TableRow>
                         <TableHead>Provincia</TableHead>
                         <TableHead className="text-right">
-                          Cant. comprobantes
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground cursor-pointer select-none"
+                            onClick={() => toggleMultilateralSort("count")}
+                          >
+                            Cant. comprobantes
+                            {multilateralSortKey === "count" && (
+                              multilateralSortDir === "asc" ? (
+                                <ChevronUp className="h-3 w-3" />
+                              ) : (
+                                <ChevronDown className="h-3 w-3" />
+                              )
+                            )}
+                          </button>
                         </TableHead>
                         <TableHead className="text-right">
-                          Total IVA
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground cursor-pointer select-none"
+                            onClick={() => toggleMultilateralSort("iva")}
+                          >
+                            Total IVA
+                            {multilateralSortKey === "iva" && (
+                              multilateralSortDir === "asc" ? (
+                                <ChevronUp className="h-3 w-3" />
+                              ) : (
+                                <ChevronDown className="h-3 w-3" />
+                              )
+                            )}
+                          </button>
                         </TableHead>
                         <TableHead className="text-right">
-                          Base imponible (amount_taxed)
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground cursor-pointer select-none"
+                            onClick={() => toggleMultilateralSort("base")}
+                          >
+                            Base imponible (amount_taxed)
+                            {multilateralSortKey === "base" && (
+                              multilateralSortDir === "asc" ? (
+                                <ChevronUp className="h-3 w-3" />
+                              ) : (
+                                <ChevronDown className="h-3 w-3" />
+                              )
+                            )}
+                          </button>
                         </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {multilateralSummary.map((row: any) => (
-                        <TableRow key={row.receiptProvince ?? "sin-datos"}>
-                          <TableCell className="font-medium">
-                            {row.receiptProvince || "Sin datos"}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {row.invoiceCount}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {formatIvaCurrency(row.totalIVA)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {formatIvaCurrency(row.totalTaxed)}
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {sortedMultilateralSummary.map((row: any) => {
+                        const provinceLabel = row.receiptProvince || "Sin datos";
+                        const provinceValue =
+                          row.receiptProvince ?? null; // null para agrupar "Sin datos"
+                        return (
+                          <TableRow
+                            key={provinceLabel}
+                            className="cursor-pointer hover:bg-muted/50"
+                            onClick={() => {
+                              setSelectedMultilateralProvince(provinceValue);
+                              setSelectedMultilateralProvinceLabel(provinceLabel);
+                              setMultilateralDetailOpen(true);
+                            }}
+                          >
+                            <TableCell className="font-medium">
+                              {provinceLabel}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {row.invoiceCount}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {formatIvaCurrency(row.totalIVA)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {formatIvaCurrency(row.totalTaxed)}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
@@ -1602,6 +1937,91 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Modal de detalle de facturas por provincia (Convenio Multilateral) */}
+      <Dialog
+        open={multilateralDetailOpen}
+        onOpenChange={(open) => {
+          setMultilateralDetailOpen(open);
+          if (!open) {
+            setSelectedMultilateralProvince(null);
+            setSelectedMultilateralProvinceLabel(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-5xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Facturas outbound -{" "}
+              {selectedMultilateralProvinceLabel ?? "Provincia"}
+            </DialogTitle>
+          </DialogHeader>
+
+          {loadingMultilateralDetail ? (
+            <div className="flex items-center justify-center h-32 text-muted-foreground">
+              Cargando facturas...
+            </div>
+          ) : multilateralDetailInvoices.length === 0 ? (
+            <div className="flex items-center justify-center h-32 text-muted-foreground">
+              No hay facturas para este filtro.
+            </div>
+          ) : (
+            <div className="rounded-md border mt-4">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Fecha emisión</TableHead>
+                    <TableHead>Tipo</TableHead>
+                    <TableHead className="text-right">Punto de venta</TableHead>
+                    <TableHead className="text-right">Nro. desde</TableHead>
+                    <TableHead className="text-right">Nro. hasta</TableHead>
+                    <TableHead className="text-right">Base imponible</TableHead>
+                    <TableHead className="text-right">Total IVA</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {multilateralDetailInvoices.map((inv: any) => (
+                    <TableRow key={inv.id}>
+                      <TableCell>
+                        {inv.emitionDate
+                          ? new Date(inv.emitionDate).toLocaleDateString(
+                              "es-AR",
+                              {
+                                day: "2-digit",
+                                month: "2-digit",
+                                year: "numeric",
+                              }
+                            )
+                          : "—"}
+                      </TableCell>
+                      <TableCell>{inv.type || "—"}</TableCell>
+                      <TableCell className="text-right">
+                        {inv.salePoint}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {inv.numberFrom}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {inv.numberTo}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatIvaCurrency(inv.amountTaxed)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatIvaCurrency(inv.totalIVA)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatIvaCurrency(inv.amount)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -613,7 +613,7 @@ export const getLastComprobantesFullJob = createServerFn({
       .where(
         and(
           eq(job.clientId, clientId),
-          eq(job.type, "comprobantes_full")
+          eq(job.type, "comprobantes")
         )
       )
       .orderBy(desc(job.createdAt))

@@ -1024,6 +1024,16 @@ export function InvoicesTable({
                     )}
                   </p>
                 </div>
+                <div className="min-w-0">
+                  <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                    Provincia (Convenio Multilateral)
+                  </label>
+                  <p className="text-sm font-medium">
+                    {invoiceDetails?.receiptProvince
+                      ? invoiceDetails.receiptProvince
+                      : "sin datos"}
+                  </p>
+                </div>
               </div>
 
               {/* Emitter Info */}
