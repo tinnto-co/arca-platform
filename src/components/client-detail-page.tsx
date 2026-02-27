@@ -19,9 +19,9 @@ import {
   ChevronDown,
   ChevronUp,
   Download,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
@@ -31,6 +31,7 @@ import {
   getClientDueDates,
   getClientIvaCredit,
   getLastJobByType,
+  getRunningJobByType,
 } from "@/actions/client";
 import {
   Select,
@@ -72,12 +73,23 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogClose,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { INVOICE_TYPES } from "../../../arca-scrapper/invoicesTypes";
 
 interface ClientDetailPageProps {
   clientId: string;
 }
+
+const INVOICE_TYPE_MAP = new Map(
+  INVOICE_TYPES.map((t) => [t.clave, t.valor] as const)
+);
+
+const getInvoiceTypeLabel = (code: string | number | null | undefined) => {
+  if (code === null || code === undefined || code === "") return "—";
+  const normalized = String(code);
+  return INVOICE_TYPE_MAP.get(normalized) ?? normalized;
+};
 
 const formatIvaCurrency = (
   value: string | number | null | undefined
@@ -124,13 +136,12 @@ const MetricDelta = ({
 
   return (
     <p
-      className={`text-xs mt-1 ${
-        diff > 0
+      className={`text-xs mt-1 ${diff > 0
           ? "text-emerald-600 dark:text-emerald-400"
           : diff < 0
             ? "text-red-600 dark:text-red-400"
             : "text-muted-foreground"
-      }`}
+        }`}
     >
       {label}: {formattedPct}
     </p>
@@ -214,6 +225,10 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   const [multilateralDetailOpen, setMultilateralDetailOpen] = useState(false);
   const [selectedMultilateralProvince, setSelectedMultilateralProvince] = useState<string | null>(null);
   const [selectedMultilateralProvinceLabel, setSelectedMultilateralProvinceLabel] = useState<string | null>(null);
+  const [isDesktopViewport, setIsDesktopViewport] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    return window.matchMedia("(min-width: 1024px)").matches;
+  });
   const [multilateralSortKey, setMultilateralSortKey] = useState<
     "count" | "iva" | "base" | null
   >(null);
@@ -326,6 +341,21 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     setMultilateralDateTo(range.to.toISOString().slice(0, 10));
   }, [clientId]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mediaQuery = window.matchMedia("(min-width: 1024px)");
+    const update = () => setIsDesktopViewport(mediaQuery.matches);
+    update();
+
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", update);
+      return () => mediaQuery.removeEventListener("change", update);
+    }
+
+    mediaQuery.addListener(update);
+    return () => mediaQuery.removeListener(update);
+  }, []);
+
   const { data: debts = [], isLoading: loadingDebts } = useQuery({
     queryKey: ["clientDebts", clientId],
     queryFn: () => getClientDebts({ data: { clientId } }),
@@ -343,6 +373,16 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     enabled: !!clientId,
   });
 
+  // Job incremental de comprobantes en curso (para mostrar loader de IVA aunque se haya iniciado en otro lado)
+  const { data: runningComprobantesJob } = useQuery({
+    queryKey: ["runningComprobantesJob", clientId],
+    queryFn: () =>
+      getRunningJobByType({ data: { clientId, jobType: "comprobantes" } }),
+    enabled: !!clientId,
+    // Refrescar cada 5s para reflejar cambios de estado
+    refetchInterval: 5000,
+  });
+
   // Get all invoices for the client to calculate totals
   const { data: allInvoicesData } = useQuery({
     queryKey: ["clientAllInvoices", clientId],
@@ -356,7 +396,10 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
       }),
   });
 
-  const { data: multilateralSummary = [] } = useQuery({
+  const {
+    data: multilateralSummary = [],
+    isLoading: loadingMultilateralSummary,
+  } = useQuery({
     queryKey: [
       "clientMultilateralSummary",
       clientId,
@@ -500,27 +543,29 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
           dateTo: multilateralDateTo || undefined,
         },
       }),
-    enabled: !!clientId && !!selectedMultilateralProvince && multilateralDetailOpen,
+    enabled: !!clientId && multilateralDetailOpen,
   });
+
+  const multilateralDetailTotals = useMemo(() => {
+    if (!multilateralDetailInvoices?.length) {
+      return { base: 0, iva: 0, total: 0 };
+    }
+    return multilateralDetailInvoices.reduce(
+      (acc: { base: number; iva: number; total: number }, inv: any) => {
+        acc.base += Number(inv.amountTaxed ?? 0);
+        acc.iva += Number(inv.totalIVA ?? 0);
+        acc.total += Number(inv.amount ?? 0);
+        return acc;
+      },
+      { base: 0, iva: 0, total: 0 }
+    );
+  }, [multilateralDetailInvoices]);
 
   const copyToClipboard = (text: string, field: string) => {
     navigator.clipboard.writeText(text);
     setCopiedField(field);
     toast.success("Copiado al portapapeles");
     setTimeout(() => setCopiedField(null), 2000);
-  };
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "active":
-        return <Badge variant="default">Activo</Badge>;
-      case "inactive":
-        return <Badge variant="secondary">Inactivo</Badge>;
-      case "pending":
-        return <Badge variant="outline">Pendiente</Badge>;
-      default:
-        return <Badge variant="outline">{status}</Badge>;
-    }
   };
 
   // Calculate debt statistics
@@ -1671,7 +1716,12 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 </div>
               )}
 
-              {multilateralSummary.length === 0 ? (
+              {loadingMultilateralSummary ? (
+                <div className="flex items-center justify-center h-32 text-muted-foreground gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Cargando ventas por provincia…</span>
+                </div>
+              ) : multilateralSummary.length === 0 ? (
                 <div className="flex items-center justify-center h-32">
                   <div className="text-muted-foreground">
                     No hay facturas emitidas registradas para este cliente
@@ -1870,10 +1920,22 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 </Popover>
               </div>
               <div className="flex items-center gap-2 shrink-0">
+                {runningComprobantesJob && (
+                  <span className="text-xs text-muted-foreground">
+                    Job de comprobantes en curso desde{" "}
+                    {new Date(runningComprobantesJob.createdAt).toLocaleTimeString(
+                      "es-AR",
+                      {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      }
+                    )}
+                  </span>
+                )}
                 <Button
                   variant="default"
                   size="default"
-                  disabled={!!scrapingSection}
+                  disabled={!!scrapingSection || !!runningComprobantesJob}
                   onClick={async () => {
                     setScrapingSection("iva");
                     try {
@@ -1899,7 +1961,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                     }
                   }}
                 >
-                  {scrapingSection === "iva" ? (
+                  {scrapingSection === "iva" || runningComprobantesJob ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Actualizando…
@@ -1922,17 +1984,24 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
             </div>
 
             <div className="w-full">
-              <RenderIvaResume
-                ref={ivaResumeRef}
-                clientId={clientId}
-                clientName={client?.name}
-                clientIva={clientIva ?? undefined}
-                selectedProfileId={effectiveIvaProfileId ?? undefined}
-                dateRange={ivaResumenDateRange}
-                clientIvaLoading={loadingClientIva}
-                clientIvaError={clientIvaError}
-                periodUsedForResumen={periodUsedForResumen}
-              />
+              {loadingClientIva ? (
+                <div className="flex items-center justify-center h-40 text-muted-foreground gap-2">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <span>Cargando resumen de IVA…</span>
+                </div>
+              ) : (
+                <RenderIvaResume
+                  ref={ivaResumeRef}
+                  clientId={clientId}
+                  clientName={client?.name}
+                  clientIva={clientIva ?? undefined}
+                  selectedProfileId={effectiveIvaProfileId ?? undefined}
+                  dateRange={ivaResumenDateRange}
+                  clientIvaLoading={loadingClientIva}
+                  clientIvaError={clientIvaError}
+                  periodUsedForResumen={periodUsedForResumen}
+                />
+              )}
             </div>
           </div>
         </TabsContent>
@@ -1949,12 +2018,32 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
           }
         }}
       >
-        <DialogContent className="max-w-5xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
-              Facturas outbound -{" "}
-              {selectedMultilateralProvinceLabel ?? "Provincia"}
-            </DialogTitle>
+        <DialogContent
+          showCloseButton={false}
+          className="!max-w-none !w-[calc(100vw-1rem)] sm:!w-[calc(100vw-2rem)] lg:!w-[calc(100vw-3rem)] xl:!w-[calc(100vw-4rem)] max-h-[88vh] overflow-y-auto rounded-xl border bg-background shadow-xl p-4 sm:p-5 md:p-6"
+        >
+          <DialogHeader className="pb-2">
+            <div className="flex items-start justify-between gap-3">
+              <div className="pr-2">
+                <DialogTitle className="text-lg sm:text-xl font-semibold">
+                  Facturas outbound -{" "}
+                  {selectedMultilateralProvinceLabel ?? "Provincia"}
+                </DialogTitle>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Detalle de comprobantes utilizados para el Convenio Multilateral.
+                </p>
+              </div>
+              <DialogClose asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 rounded-full border border-muted hover:bg-muted/80"
+                  aria-label="Cerrar detalle de facturas"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </DialogClose>
+            </div>
           </DialogHeader>
 
           {loadingMultilateralDetail ? (
@@ -1966,58 +2055,172 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
               No hay facturas para este filtro.
             </div>
           ) : (
-            <div className="rounded-md border mt-4">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Fecha emisión</TableHead>
-                    <TableHead>Tipo</TableHead>
-                    <TableHead className="text-right">Punto de venta</TableHead>
-                    <TableHead className="text-right">Nro. desde</TableHead>
-                    <TableHead className="text-right">Nro. hasta</TableHead>
-                    <TableHead className="text-right">Base imponible</TableHead>
-                    <TableHead className="text-right">Total IVA</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+            <div className="mt-4 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-sm text-muted-foreground">
+                <span>
+                  {multilateralDetailInvoices.length} comprobante
+                  {multilateralDetailInvoices.length !== 1 && "s"} outbound
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-3 text-sm">
+                  <span>
+                    Base imponible total:{" "}
+                    <span className="font-medium text-foreground">
+                      {formatIvaCurrency(multilateralDetailTotals.base)}
+                    </span>
+                  </span>
+                  <span>
+                    IVA total:{" "}
+                    <span className="font-medium text-foreground">
+                      {formatIvaCurrency(multilateralDetailTotals.iva)}
+                    </span>
+                  </span>
+                  <span>
+                    Total facturado:{" "}
+                    <span className="font-medium text-foreground">
+                      {formatIvaCurrency(multilateralDetailTotals.total)}
+                    </span>
+                  </span>
+                </div>
+              </div>
+              {isDesktopViewport ? (
+                <div className="rounded-md border overflow-x-auto">
+                  <Table className="w-full text-xs">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="whitespace-nowrap">
+                          Fecha emisión
+                        </TableHead>
+                        <TableHead className="whitespace-nowrap">Tipo</TableHead>
+                        <TableHead className="text-right whitespace-nowrap">
+                          Pto. venta
+                        </TableHead>
+                        <TableHead className="text-right whitespace-nowrap">
+                          Nro. desde
+                        </TableHead>
+                        <TableHead className="text-right whitespace-nowrap">
+                          Nro. hasta
+                        </TableHead>
+                        <TableHead className="whitespace-nowrap min-w-[180px]">
+                          Emisor
+                        </TableHead>
+                        <TableHead className="whitespace-nowrap min-w-[180px]">
+                          Destinatario
+                        </TableHead>
+                        <TableHead className="text-right whitespace-nowrap">
+                          Moneda
+                        </TableHead>
+                        <TableHead className="text-right whitespace-nowrap">
+                          Base imponible
+                        </TableHead>
+                        <TableHead className="text-right whitespace-nowrap">
+                          Total IVA
+                        </TableHead>
+                        <TableHead className="text-right whitespace-nowrap">
+                          Total
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {multilateralDetailInvoices.map((inv: any) => (
+                        <TableRow
+                          key={inv.id}
+                          className="hover:bg-muted/50 transition-colors"
+                        >
+                          <TableCell className="text-[11px]">
+                            {inv.emitionDate
+                              ? new Date(inv.emitionDate).toLocaleDateString(
+                                "es-AR",
+                                {
+                                  day: "2-digit",
+                                  month: "2-digit",
+                                  year: "numeric",
+                                }
+                              )
+                              : "—"}
+                          </TableCell>
+                          <TableCell className="text-[11px]">
+                            {getInvoiceTypeLabel(inv.type)}
+                          </TableCell>
+                          <TableCell className="text-right text-[11px]">
+                            {inv.salePoint || "—"}
+                          </TableCell>
+                          <TableCell className="text-right text-[11px]">
+                            {inv.numberFrom || "—"}
+                          </TableCell>
+                          <TableCell className="text-right text-[11px]">
+                            {inv.numberTo || "—"}
+                          </TableCell>
+                          <TableCell className="max-w-[220px]">
+                            <div className="truncate" title={inv.emitterName}>
+                              {inv.emitterName || "—"}
+                            </div>
+                          </TableCell>
+                          <TableCell className="max-w-[220px]">
+                            <div className="truncate" title={inv.recipientName}>
+                              {inv.recipientName || "—"}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right text-[11px]">
+                            {inv.currency || "ARS"}
+                          </TableCell>
+                          <TableCell className="text-right text-[11px]">
+                            {formatIvaCurrency(inv.amountTaxed)}
+                          </TableCell>
+                          <TableCell className="text-right text-[11px]">
+                            {formatIvaCurrency(inv.totalIVA)}
+                          </TableCell>
+                          <TableCell className="text-right text-[11px]">
+                            {formatIvaCurrency(inv.amount)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-2">
                   {multilateralDetailInvoices.map((inv: any) => (
-                    <TableRow key={inv.id}>
-                      <TableCell>
-                        {inv.emitionDate
-                          ? new Date(inv.emitionDate).toLocaleDateString(
-                              "es-AR",
-                              {
+                    <div key={inv.id} className="rounded-md border p-3 space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-medium">{inv.type || "—"}</span>
+                        <span className="text-muted-foreground">
+                          {inv.emitionDate
+                            ? new Date(inv.emitionDate).toLocaleDateString("es-AR", {
                                 day: "2-digit",
                                 month: "2-digit",
                                 year: "numeric",
-                              }
-                            )
-                          : "—"}
-                      </TableCell>
-                      <TableCell>{inv.type || "—"}</TableCell>
-                      <TableCell className="text-right">
-                        {inv.salePoint}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {inv.numberFrom}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {inv.numberTo}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatIvaCurrency(inv.amountTaxed)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatIvaCurrency(inv.totalIVA)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatIvaCurrency(inv.amount)}
-                      </TableCell>
-                    </TableRow>
+                              })
+                            : "—"}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                        <span className="text-muted-foreground">Pto. venta</span>
+                        <span className="text-right">{inv.salePoint || "—"}</span>
+                        <span className="text-muted-foreground">Nro. desde/hasta</span>
+                        <span className="text-right">
+                          {inv.numberFrom || "—"} / {inv.numberTo || "—"}
+                        </span>
+                        <span className="text-muted-foreground">Emisor</span>
+                        <span className="text-right truncate" title={inv.emitterName}>
+                          {inv.emitterName || "—"}
+                        </span>
+                        <span className="text-muted-foreground">Destinatario</span>
+                        <span className="text-right truncate" title={inv.recipientName}>
+                          {inv.recipientName || "—"}
+                        </span>
+                        <span className="text-muted-foreground">Moneda</span>
+                        <span className="text-right">{inv.currency || "ARS"}</span>
+                        <span className="text-muted-foreground">Base imponible</span>
+                        <span className="text-right">{formatIvaCurrency(inv.amountTaxed)}</span>
+                        <span className="text-muted-foreground">Total IVA</span>
+                        <span className="text-right">{formatIvaCurrency(inv.totalIVA)}</span>
+                        <span className="text-muted-foreground font-medium">Total</span>
+                        <span className="text-right font-medium">{formatIvaCurrency(inv.amount)}</span>
+                      </div>
+                    </div>
                   ))}
-                </TableBody>
-              </Table>
+                </div>
+              )}
             </div>
           )}
         </DialogContent>

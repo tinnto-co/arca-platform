@@ -90,15 +90,15 @@ export const notifyBackendNewClient = createServerFn({
       throw new Error("Cliente no encontrado o no autorizado");
     }
 
-    // Notify backend about new client
-    const backendUrl = process.env.BACKEND_API_URL || "http://localhost:3001";
+    // Crear un job "comprobantes" en el scrapper para este nuevo cliente
     try {
-      await axios.post(`${backendUrl}/api/scrap/new-client`, {
+      await axios.post(`${JOBS_API_URL}/api/jobs`, {
+        type: "comprobantes",
         clientId: ctx.data.clientId,
       });
-      return { success: true };
+      return { success: true, type: "comprobantes" };
     } catch (error) {
-      throw new Error("Error al notificar al backend sobre el nuevo cliente");
+      throw new Error("Error al crear el job de comprobantes para el nuevo cliente");
     }
   });
 
@@ -655,6 +655,7 @@ export const getLastJobByType = createServerFn({
       .select({
         createdAt: job.createdAt,
         failedReason: job.failedReason,
+        status: job.status,
       })
       .from(job)
       .where(
@@ -671,6 +672,58 @@ export const getLastJobByType = createServerFn({
     return {
       createdAt: lastJob.createdAt.toISOString(),
       success,
+      status: lastJob.status,
       failedReason: lastJob.failedReason ?? undefined,
+    };
+  });
+
+/** Último job RUNNING de un tipo dado para un cliente (o null si no hay). */
+export const getRunningJobByType = createServerFn({
+  method: "GET",
+})
+  .inputValidator(
+    z.object({
+      clientId: z.string(),
+      jobType: z.enum(["iva", "comprobantes", "comprobantes_full", "notificaciones", "deuda"]),
+    })
+  )
+  .handler(async (ctx) => {
+    const session = await auth.api.getSession({ headers: getRequestHeaders() });
+    if (!session?.user?.id) throw new Error("Unauthorized");
+
+    const { clientId, jobType } = ctx.data;
+
+    const userClients = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(eq(client.userId, session.user.id));
+    const canAccess = userClients.some((c) => c.id === clientId);
+    if (!canAccess) return null;
+
+    const [runningJob] = await db
+      .select({
+        id: job.id,
+        createdAt: job.createdAt,
+        status: job.status,
+        progress: job.progress,
+      })
+      .from(job)
+      .where(
+        and(
+          eq(job.clientId, clientId),
+          eq(job.type, jobType),
+          eq(job.status, "running")
+        )
+      )
+      .orderBy(desc(job.createdAt))
+      .limit(1);
+
+    if (!runningJob) return null;
+
+    return {
+      id: runningJob.id,
+      createdAt: runningJob.createdAt.toISOString(),
+      status: runningJob.status,
+      progress: runningJob.progress,
     };
   });

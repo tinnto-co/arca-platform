@@ -200,11 +200,22 @@ export function ClientsTable() {
                     <TableCell>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" className="h-8 w-8 p-0">
+                          <Button
+                            variant="ghost"
+                            className="h-8 w-8 p-0"
+                            onClick={(e) => {
+                              // Evita que el click en el botón dispare el onClick de la fila
+                              e.stopPropagation();
+                            }}
+                          >
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
+                        <DropdownMenuContent
+                          align="end"
+                          // También evitamos que clicks dentro del menú burbujeen a la fila
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <DropdownMenuItem
                             onSelect={(e) => {
                               e.preventDefault();
