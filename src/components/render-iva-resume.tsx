@@ -450,7 +450,7 @@ export const RenderIvaResume = React.forwardRef<RenderIvaResumeRef, RenderIvaRes
       !!selectedProfileId && !!dateRange.from && !!dateRange.to,
   })
 
-  const { data: invoiceStats } = useQuery({
+  const { data: invoiceStats, isLoading: loadingInvoiceStats } = useQuery({
     queryKey: [
       "invoiceStatsByProfile",
       selectedProfileId,
@@ -624,10 +624,14 @@ export const RenderIvaResume = React.forwardRef<RenderIvaResumeRef, RenderIvaRes
     return saldoTecnico + saldo2doParrafo + ajusteSaldos
   }, [saldosParaTotal, ajusteSaldos])
 
+  const isStatsLoading = loadingInvoices || loadingInvoiceStats
+
   const netoGravadoTotal =
-    invoiceStats != null ? netoGravadoVentas : mockData.resumenDebito["Neto Gravado"]
+    invoiceStats != null && !isStatsLoading
+      ? netoGravadoVentas
+      : mockData.resumenDebito["Neto Gravado"]
   const netoGravadoComprasTotal =
-    invoiceStats != null
+    invoiceStats != null && !isStatsLoading
       ? (invoiceStats?.netoGravadoCompras ?? mockData.resumenCredito["Neto Gravado Compras"])
       : mockData.resumenCredito["Neto Gravado Compras"]
 
@@ -762,11 +766,23 @@ export const RenderIvaResume = React.forwardRef<RenderIvaResumeRef, RenderIvaRes
           <div className="space-y-2.5 text-base">
             <div className="flex justify-between items-baseline gap-2">
               <span className="text-muted-foreground font-medium shrink-0">Neto Gravado</span>
-              <span className="tabular-nums font-bold text-foreground truncate">{formatCurrency(netoGravadoTotal)}</span>
+              {isStatsLoading ? (
+                <span className="inline-flex h-5 w-24 animate-pulse rounded bg-muted" />
+              ) : (
+                <span className="tabular-nums font-bold text-foreground truncate">
+                  {formatCurrency(netoGravadoTotal)}
+                </span>
+              )}
             </div>
             <div className="flex justify-between items-baseline gap-2">
               <span className="text-muted-foreground font-medium shrink-0">Débito Fiscal</span>
-              <span className="tabular-nums font-bold text-foreground truncate">{formatCurrency(debitoFiscalTotal)}</span>
+              {isStatsLoading ? (
+                <span className="inline-flex h-5 w-24 animate-pulse rounded bg-muted" />
+              ) : (
+                <span className="tabular-nums font-bold text-foreground truncate">
+                  {formatCurrency(debitoFiscalTotal)}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -777,11 +793,23 @@ export const RenderIvaResume = React.forwardRef<RenderIvaResumeRef, RenderIvaRes
           <div className="space-y-2.5 text-base">
             <div className="flex justify-between items-baseline gap-2">
               <span className="text-muted-foreground font-medium shrink-0">Neto Gravado</span>
-              <span className="tabular-nums font-bold text-foreground truncate">{formatCurrency(netoGravadoComprasTotal)}</span>
+              {isStatsLoading ? (
+                <span className="inline-flex h-5 w-24 animate-pulse rounded bg-muted" />
+              ) : (
+                <span className="tabular-nums font-bold text-foreground truncate">
+                  {formatCurrency(netoGravadoComprasTotal)}
+                </span>
+              )}
             </div>
             <div className="flex justify-between items-baseline gap-2">
               <span className="text-muted-foreground font-medium shrink-0">Crédito Fiscal</span>
-              <span className="tabular-nums font-bold text-foreground truncate">{formatCurrency(creditoFiscalTotal)}</span>
+              {isStatsLoading ? (
+                <span className="inline-flex h-5 w-24 animate-pulse rounded bg-muted" />
+              ) : (
+                <span className="tabular-nums font-bold text-foreground truncate">
+                  {formatCurrency(creditoFiscalTotal)}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -789,9 +817,17 @@ export const RenderIvaResume = React.forwardRef<RenderIvaResumeRef, RenderIvaRes
           <div className="text-sm font-bold uppercase tracking-wide text-foreground mb-3">
             Saldo Final
           </div>
-          <div className={`text-2xl font-bold tabular-nums truncate ${saldoFinal < 0 ? "text-destructive" : "text-emerald-600"}`}>
-            {formatCurrency(saldoFinal)}
-          </div>
+          {isStatsLoading ? (
+            <div className="h-7 w-32 animate-pulse rounded bg-muted" />
+          ) : (
+            <div
+              className={`text-2xl font-bold tabular-nums truncate ${
+                saldoFinal < 0 ? "text-destructive" : "text-emerald-600"
+              }`}
+            >
+              {formatCurrency(saldoFinal)}
+            </div>
+          )}
           <div className="mt-3 pt-3 border-t border-border text-xs text-muted-foreground truncate">
             Ult. actualización{" "}
             {lastScrapeJob?.createdAt ? (

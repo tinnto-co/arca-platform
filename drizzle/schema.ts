@@ -336,3 +336,22 @@ export const job = pgTable("job", {
   attempts: integer("attempts").default(0),
   progress: integer("progress").default(0),
 });
+
+/**
+ * Tabla maestra de entidades fiscales: CUIL/CUIT único con nombre y provincia.
+ * Sirve como catálogo de identidades fiscales vistas en facturas.
+ */
+export const fiscalEntity = pgTable(
+  "fiscal_entity",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    cuilCuit: text("cuil_cuit").notNull().unique(),
+    name: text("name").notNull(),
+    province: text("province").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  }
+);

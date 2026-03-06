@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useImperativeHandle, forwardRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Search,
@@ -82,7 +82,8 @@ function sanitizeFilename(name: string): string {
   return name.replace(/[/\\:*?"<>|]/g, "-").replace(/\s+/g, " ").trim() || "facturas";
 }
 
-const TYPE_LABELS: Record<string, string> = {
+/** Mapa código AFIP → etiqueta; exportado para usar en filtros del módulo Facturas (client-detail-page). */
+export const INVOICE_TYPE_LABELS: Record<string, string> = {
   "1": "Factura A", "2": "Nota de Débito A", "3": "Nota de Crédito A", "4": "Recibo A",
   "5": "Nota de Venta al Contado A", "6": "Factura B", "7": "Nota de Débito B", "8": "Nota de Crédito B",
   "9": "Recibo B", "10": "Nota de Venta al Contado B", "11": "Factura C", "12": "Nota de Débito C",
@@ -100,6 +101,8 @@ const TYPE_LABELS: Record<string, string> = {
   "208": "Nota de Crédito Electrónica MiPyME B", "211": "Factura de Crédito Electrónica MiPyME C",
   "212": "Nota de Débito Electrónica MiPyME C", "213": "Nota de Crédito Electrónica MiPyME C",
 };
+
+const TYPE_LABELS = INVOICE_TYPE_LABELS;
 const DIRECTION_LABELS: Record<string, string> = {
   outbound: "Emitida", inbound: "Recibida",
   Outbound: "Emitida", Inbound: "Recibida",
@@ -141,17 +144,48 @@ interface InvoiceData {
 interface InvoicesTableProps {
   clientId?: string;
   profileId?: string;
+  /** Cuando se pasan, el período lo controla el padre (ej. pestaña Facturas del detalle de cliente). */
+  controlledDateFrom?: string;
+  controlledDateTo?: string;
+  /** Filtros controlados por el padre (módulo Facturas): se ocultan los selects de perfil/tipo/dirección en la tabla. */
+  controlledProfileFilter?: string;
+  controlledTypeFilter?: string;
+  controlledDirectionFilter?: string;
+  /** Búsqueda controlada por el padre (se muestra la barra de búsqueda arriba de las cards). */
+  controlledSearchTerm?: string;
+  /** Contenido extra para la barra de filtros (ej. selector de período), se muestra al lado del botón Excel. */
+  toolbarExtra?: React.ReactNode;
+  /** Callback cuando cambian perfil, tipo o dirección (para que el padre actualice los totales Ventas/Compras). */
+  onFiltersChange?: (filters: { profileFilter: string; typeFilter: string; directionFilter: string }) => void;
 }
 
-export function InvoicesTable({
+export interface InvoicesTableRef {
+  exportExcel: () => Promise<void>;
+}
+
+const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(function InvoicesTable({
   clientId,
   profileId,
-}: InvoicesTableProps = {}) {
+  controlledDateFrom,
+  controlledDateTo,
+  controlledProfileFilter,
+  controlledTypeFilter,
+  controlledDirectionFilter,
+  controlledSearchTerm,
+  toolbarExtra,
+  onFiltersChange,
+}: InvoicesTableProps = {}, ref) {
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
   const [clientFilter, setClientFilter] = useState<string>(clientId || "all");
   const [profileFilter, setProfileFilter] = useState<string>("all");
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
+  /** Padre controla fechas cuando hay valores definidos; si estamos en modo filtros controlados, undefined/undefined = Sin período = sin filtro de fecha. */
+  const isDateControlled = controlledDateFrom !== undefined && controlledDateTo !== undefined;
+  const isFiltersControlled =
+    controlledProfileFilter !== undefined &&
+    controlledTypeFilter !== undefined &&
+    controlledDirectionFilter !== undefined;
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [directionFilter, setDirectionFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<"amount" | "emitionDate" | undefined>(
@@ -199,6 +233,51 @@ export function InvoicesTable({
     return () => clearTimeout(timer);
   }, [searchTerm, debouncedSearchTerm]);
 
+  // Sincronizar rango de fechas cuando el padre controla el período (p. ej. pestaña Facturas). Sin período = undefined/undefined → limpiamos.
+  useEffect(() => {
+    if (controlledDateFrom && controlledDateTo) {
+      setDateRange({
+        from: new Date(controlledDateFrom),
+        to: new Date(controlledDateTo),
+      });
+    } else if (isFiltersControlled && controlledDateFrom === undefined && controlledDateTo === undefined) {
+      setDateRange(undefined);
+    }
+  }, [controlledDateFrom, controlledDateTo, isFiltersControlled]);
+
+  // Sincronizar filtros cuando el padre los controla (módulo Facturas: filtros arriba de las cards)
+  useEffect(() => {
+    if (isFiltersControlled && controlledProfileFilter !== undefined) {
+      setProfileFilter(controlledProfileFilter);
+    }
+  }, [isFiltersControlled, controlledProfileFilter]);
+  useEffect(() => {
+    if (isFiltersControlled && controlledTypeFilter !== undefined) {
+      setTypeFilter(controlledTypeFilter);
+    }
+  }, [isFiltersControlled, controlledTypeFilter]);
+  useEffect(() => {
+    if (isFiltersControlled && controlledDirectionFilter !== undefined) {
+      setDirectionFilter(controlledDirectionFilter);
+    }
+  }, [isFiltersControlled, controlledDirectionFilter]);
+
+  useEffect(() => {
+    if (controlledSearchTerm !== undefined) {
+      setSearchTerm(controlledSearchTerm);
+      setDebouncedSearchTerm(controlledSearchTerm);
+    }
+  }, [controlledSearchTerm]);
+
+  // Notificar al padre (módulo Facturas) cuando cambian los filtros para actualizar totales Ventas/Compras
+  useEffect(() => {
+    if (clientId && onFiltersChange) {
+      onFiltersChange({ profileFilter, typeFilter, directionFilter });
+    }
+  }, [clientId, onFiltersChange, profileFilter, typeFilter, directionFilter]);
+
+  const effectiveSearchTerm = controlledSearchTerm !== undefined ? controlledSearchTerm : debouncedSearchTerm;
+
   const { data: clients = [] } = useQuery({
     queryKey: ["clients"],
     queryFn: () => getClients(),
@@ -211,8 +290,23 @@ export function InvoicesTable({
     enabled: !!clientForProfiles,
   });
 
-  const dateFrom = dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : "";
-  const dateTo = dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : "";
+  /** Con filtros controlados por el padre, undefined = Sin período = sin filtro (todas las facturas). */
+  const dateFrom =
+    isFiltersControlled
+      ? (controlledDateFrom ?? "")
+      : isDateControlled
+        ? (controlledDateFrom ?? "")
+        : dateRange?.from
+          ? format(dateRange.from, "yyyy-MM-dd")
+          : "";
+  const dateTo =
+    isFiltersControlled
+      ? (controlledDateTo ?? "")
+      : isDateControlled
+        ? (controlledDateTo ?? "")
+        : dateRange?.to
+          ? format(dateRange.to, "yyyy-MM-dd")
+          : "";
 
   const { data: invoicesData, isLoading } = useQuery({
     queryKey: profileId
@@ -224,7 +318,7 @@ export function InvoicesTable({
           dateTo,
           typeFilter,
           directionFilter,
-          debouncedSearchTerm,
+          effectiveSearchTerm,
           sortBy,
           sortOrder,
         ]
@@ -237,7 +331,7 @@ export function InvoicesTable({
           dateTo,
           typeFilter,
           directionFilter,
-          debouncedSearchTerm,
+          effectiveSearchTerm,
           sortBy,
           sortOrder,
         ],
@@ -261,7 +355,7 @@ export function InvoicesTable({
               typeFilter: typeFilter === "all" ? undefined : typeFilter,
               directionFilter:
                 directionFilter === "all" ? undefined : directionFilter,
-              search: debouncedSearchTerm || undefined,
+              search: effectiveSearchTerm || undefined,
               sortBy: sortBy,
               sortOrder: sortBy ? sortOrder : undefined,
             },
@@ -309,7 +403,7 @@ export function InvoicesTable({
               dateTo: dateTo || undefined,
               typeFilter: typeFilter === "all" ? undefined : typeFilter,
               directionFilter: directionFilter === "all" ? undefined : directionFilter,
-              search: debouncedSearchTerm || undefined,
+              search: effectiveSearchTerm || undefined,
               sortBy: sortBy ?? undefined,
               sortOrder: sortBy ? (sortOrder ?? undefined) : undefined,
             },
@@ -389,6 +483,14 @@ export function InvoicesTable({
     } finally {
       setExportingExcel(false);
     }
+  };
+
+  useImperativeHandle(ref, () => ({ exportExcel: handleExportExcel }), [handleExportExcel]);
+
+  /** Formatea YYYY-MM-DD a dd/MM/yyyy sin pasar por UTC (evita desfase de día en otras zonas horarias). */
+  const formatDateOnlyString = (isoDate: string): string => {
+    const [y, m, d] = isoDate.split("-");
+    return d && m && y ? `${d}/${m}/${y}` : isoDate;
   };
 
   const formatDate = (date: Date | string) => {
@@ -588,6 +690,7 @@ export function InvoicesTable({
       {/* Filters */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="flex flex-col gap-2 md:flex-row md:items-center flex-wrap">
+          {!isFiltersControlled && (
           <div className="relative">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
@@ -597,6 +700,7 @@ export function InvoicesTable({
               className="pl-8 w-full md:w-80"
             />
           </div>
+          )}
 
           {!clientId && !profileId && (
             <Select value={clientFilter} onValueChange={setClientFilter}>
@@ -614,7 +718,7 @@ export function InvoicesTable({
             </Select>
           )}
 
-          {!profileId && clientForProfiles && (
+          {!isFiltersControlled && !profileId && clientForProfiles && (
             <Select value={profileFilter} onValueChange={(v) => { setProfileFilter(v); setCurrentPage(1); }}>
               <SelectTrigger className="w-full md:w-48">
                 <SelectValue placeholder="Perfil" />
@@ -630,6 +734,7 @@ export function InvoicesTable({
             </Select>
           )}
 
+          {!isFiltersControlled && (
           <Select value={typeFilter} onValueChange={setTypeFilter}>
             <SelectTrigger className="w-full md:w-64">
               <SelectValue placeholder="Tipo" />
@@ -714,7 +819,9 @@ export function InvoicesTable({
               </SelectItem>
             </SelectContent>
           </Select>
+          )}
 
+          {!isFiltersControlled && (
           <Select value={directionFilter} onValueChange={setDirectionFilter}>
             <SelectTrigger className="w-full md:w-56">
               <SelectValue placeholder="Dirección" />
@@ -725,44 +832,67 @@ export function InvoicesTable({
               <SelectItem value="Inbound">Recibida</SelectItem>
             </SelectContent>
           </Select>
+          )}
 
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                id="date"
-                variant="outline"
+          {!isFiltersControlled && !toolbarExtra && (
+            isDateControlled ? (
+              <div
                 className={cn(
-                  "w-full md:w-[300px] justify-start text-left font-normal",
-                  !dateRange && "text-muted-foreground"
+                  "flex items-center gap-2 h-9 px-3 py-2 rounded-md border bg-muted/50 text-sm",
+                  !dateFrom && !dateTo && "text-muted-foreground"
                 )}
               >
-                <CalendarIcon className="mr-2 h-4 w-4" />
-                {dateRange?.from ? (
-                  dateRange.to ? (
-                    <>
-                      {format(dateRange.from, "dd/MM/yyyy", { locale: es })} -{" "}
-                      {format(dateRange.to, "dd/MM/yyyy", { locale: es })}
-                    </>
-                  ) : (
-                    format(dateRange.from, "dd/MM/yyyy", { locale: es })
-                  )
+                <CalendarIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                {dateFrom && dateTo ? (
+                  <>
+                    {formatDateOnlyString(dateFrom)} – {formatDateOnlyString(dateTo)}
+                  </>
                 ) : (
-                  <span>Seleccionar rango de fechas</span>
+                  <span>Sin período seleccionado</span>
                 )}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
-              <Calendar
-                initialFocus
-                mode="range"
-                defaultMonth={dateRange?.from}
-                selected={dateRange}
-                onSelect={setDateRange}
-                numberOfMonths={2}
-                locale={es}
-              />
-            </PopoverContent>
-          </Popover>
+              </div>
+            ) : (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    id="date"
+                    variant="outline"
+                    className={cn(
+                      "w-full md:w-[300px] justify-start text-left font-normal",
+                      !dateRange && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {dateRange?.from ? (
+                      dateRange.to ? (
+                        <>
+                          {format(dateRange.from, "dd/MM/yyyy", { locale: es })} -{" "}
+                          {format(dateRange.to, "dd/MM/yyyy", { locale: es })}
+                        </>
+                      ) : (
+                        format(dateRange.from, "dd/MM/yyyy", { locale: es })
+                      )
+                    ) : (
+                      <span>Seleccionar rango de fechas</span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    initialFocus
+                    mode="range"
+                    defaultMonth={dateRange?.from}
+                    selected={dateRange}
+                    onSelect={setDateRange}
+                    numberOfMonths={2}
+                    locale={es}
+                  />
+                </PopoverContent>
+              </Popover>
+            )
+          )}
+          {toolbarExtra && <div className="flex flex-wrap items-center gap-2">{toolbarExtra}</div>}
+        {!isFiltersControlled && (
         <Button
           variant="outline"
           size="sm"
@@ -777,6 +907,7 @@ export function InvoicesTable({
           )}
           <span>Excel</span>
         </Button>
+        )}
         </div>
 
       </div>
@@ -1022,6 +1153,16 @@ export function InvoicesTable({
                       selectedInvoice.amount,
                       selectedInvoice.currency
                     )}
+                  </p>
+                </div>
+                <div className="min-w-0">
+                  <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                    Provincia (Convenio Multilateral)
+                  </label>
+                  <p className="text-sm font-medium">
+                    {invoiceDetails?.receiptProvince
+                      ? invoiceDetails.receiptProvince
+                      : "sin datos"}
                   </p>
                 </div>
               </div>
@@ -1375,4 +1516,6 @@ export function InvoicesTable({
       </Dialog>
     </div>
   );
-}
+});
+
+export const InvoicesTable = InvoicesTableComponent;
