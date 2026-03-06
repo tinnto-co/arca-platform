@@ -55,6 +55,8 @@ export const client = pgTable("client", {
   password: text("password").notNull().default(""),
   image: text("image").default(""),
   status: text("status").notNull().default("active"),
+  hasErrors: boolean("has_errors").default(false).notNull(),
+  errorMessage: text("error_message").default(""),
   registeredAt: timestamp("registered_at").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
