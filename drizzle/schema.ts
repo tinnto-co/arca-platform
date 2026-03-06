@@ -20,6 +20,7 @@ export const jobTypeEnum = pgEnum("job_type", [
   "comprobantes_full",
   "notificaciones",
   "deuda",
+  "vencimientos",
 ]);
 // User table must be defined before client to allow references
 export const user = pgTable("user", {

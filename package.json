@@ -14,6 +14,7 @@
     "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,css,md}\"",
     "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,css,md}\"",
     "fix-inbound-recipient": "bun run src/scripts/fix-inbound-recipient-last-2-months.ts",
+    "sync-client-job-errors": "bun run src/scripts/sync-client-job-errors.ts",
     "db:push": "drizzle-kit push"
   },
   "keywords": [],

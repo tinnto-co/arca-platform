@@ -265,8 +265,8 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     to: Date;
   }>(() => getMonthBounds(now.getFullYear(), now.getMonth()));
   const [ivaPeriodPickerOpen, setIvaPeriodPickerOpen] = useState(false);
-  /** Sección que está ejecutando un job (iva = comprobantes_full + iva, deudas = deuda, facturas = comprobantes_full, notificaciones = notificaciones). */
-  const [scrapingSection, setScrapingSection] = useState<"iva" | "deudas" | "facturas" | "notificaciones" | null>(null);
+  /** Sección que está ejecutando un job (iva = comprobantes_full + iva, deudas = deuda, vencimientos = vencimientos, facturas = comprobantes_full, notificaciones = notificaciones). */
+  const [scrapingSection, setScrapingSection] = useState<"iva" | "deudas" | "vencimientos" | "facturas" | "notificaciones" | null>(null);
   /** Filtros del módulo de deudas (vacío = todos). */
   const [debtFilterImpuesto, setDebtFilterImpuesto] = useState<string>("");
   const [debtFilterConcepto, setDebtFilterConcepto] = useState<string>("");
@@ -447,6 +447,13 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     queryKey: ["lastDeudaJob", clientId],
     queryFn: () =>
       getLastJobByType({ data: { clientId, jobType: "deuda" } }),
+    enabled: !!clientId,
+  });
+
+  const { data: lastVencimientosJob } = useQuery({
+    queryKey: ["lastVencimientosJob", clientId],
+    queryFn: () =>
+      getLastJobByType({ data: { clientId, jobType: "vencimientos" } }),
     enabled: !!clientId,
   });
 
@@ -1104,7 +1111,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
             <DollarSign className="mr-2 h-4 w-4" />
             Deudas
           </TabsTrigger>
-          <TabsTrigger value="vencimientos" disabled>
+          <TabsTrigger value="vencimientos">
             <Calendar className="mr-2 h-4 w-4" />
             Vencimientos
           </TabsTrigger>
@@ -1753,11 +1760,77 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
           )}
 
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Calendar className="h-5 w-5" />
-                Vencimientos del Cliente
-              </CardTitle>
+            <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between space-y-0">
+              <div className="space-y-1 min-w-0">
+                <CardTitle className="flex items-center gap-2">
+                  <Calendar className="h-5 w-5" />
+                  Vencimientos del Cliente
+                </CardTitle>
+                {lastVencimientosJob && !lastVencimientosJob.success && lastVencimientosJob.failedReason && (
+                  <p className="text-xs text-destructive max-w-md">
+                    {lastVencimientosJob.failedReason}
+                  </p>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <div className="flex flex-col gap-1">
+                  <p className="text-xs text-muted-foreground">
+                    Ult. actualización{" "}
+                    {lastVencimientosJob?.createdAt ? (
+                      <span
+                        className={
+                          lastVencimientosJob.success
+                            ? "text-emerald-600 dark:text-emerald-400 font-medium"
+                            : "text-destructive"
+                        }
+                        title={lastVencimientosJob.failedReason ?? undefined}
+                      >
+                        {new Date(lastVencimientosJob.createdAt).toLocaleDateString("es-AR", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </p>
+                </div>
+              <Button
+                variant="default"
+                size="sm"
+                disabled={!!scrapingSection}
+                onClick={async () => {
+                  setScrapingSection("vencimientos");
+                  try {
+                    await scrapSingleJob({
+                      data: { clientId, jobType: "vencimientos" },
+                    });
+                    await Promise.all([
+                      queryClient.invalidateQueries({ queryKey: ["clientDueDates", clientId] }),
+                      queryClient.invalidateQueries({ queryKey: ["lastVencimientosJob", clientId] }),
+                    ]);
+                    toast.success("Vencimientos actualizados correctamente");
+                  } catch (err) {
+                    toast.error(
+                      err instanceof Error ? err.message : "Error al actualizar vencimientos"
+                    );
+                    queryClient.invalidateQueries({ queryKey: ["lastVencimientosJob", clientId] });
+                  } finally {
+                    setScrapingSection(null);
+                  }
+                }}
+              >
+                {scrapingSection === "vencimientos" ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Actualizando…
+                  </>
+                ) : (
+                  "Actualizar Vencimientos"
+                )}
+              </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {loadingDueDates ? (

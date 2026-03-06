@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Eye, Edit, Trash2, MoreHorizontal, Search } from "lucide-react";
+import { Eye, Edit, Trash2, MoreHorizontal, Search, CircleAlert } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -29,7 +29,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -38,6 +37,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { getClientsWithProfiles, deleteClient } from "@/actions/client";
 import { EditClientDialog } from "@/components/edit-client-dialog";
 
@@ -191,7 +195,27 @@ export function ClientsTable() {
                 {filteredClients.map((client) => (
                   <TableRow key={client.id} onClick={() => navigate({ to: `/clients/${client.id}` })} className="cursor-pointer hover:bg-gray-600/10">
                     <TableCell>
-                      {client.name}
+                      <div className="flex items-center gap-2">
+                        <span className={client.hasErrors ? "text-destructive font-medium" : ""}>
+                          {client.name}
+                        </span>
+                        {client.hasErrors && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span
+                                className="inline-flex text-destructive"
+                                onClick={(e) => e.stopPropagation()}
+                                aria-label="Cliente con errores"
+                              >
+                                <CircleAlert className="h-4 w-4" />
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" sideOffset={6}>
+                              {client.errorMessage?.trim() || "Cliente con errores en jobs de scraping"}
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>{client.identityNumber}</TableCell>
                     <TableCell>

@@ -549,7 +549,7 @@ export const scrapSingleJob = createServerFn({
   .inputValidator(
     z.object({
       clientId: z.string(),
-      jobType: z.enum(["comprobantes_full", "comprobantes", "iva", "deuda", "notificaciones"]),
+      jobType: z.enum(["comprobantes_full", "comprobantes", "iva", "deuda", "notificaciones", "vencimientos"]),
     })
   )
   .handler(async (ctx) => {
@@ -635,7 +635,7 @@ export const getLastJobByType = createServerFn({
   .inputValidator(
     z.object({
       clientId: z.string(),
-      jobType: z.enum(["iva", "comprobantes", "comprobantes_full", "notificaciones", "deuda"]),
+      jobType: z.enum(["iva", "comprobantes", "comprobantes_full", "notificaciones", "deuda", "vencimientos"]),
     })
   )
   .handler(async (ctx) => {
@@ -684,7 +684,7 @@ export const getRunningJobByType = createServerFn({
   .inputValidator(
     z.object({
       clientId: z.string(),
-      jobType: z.enum(["iva", "comprobantes", "comprobantes_full", "notificaciones", "deuda"]),
+      jobType: z.enum(["iva", "comprobantes", "comprobantes_full", "notificaciones", "deuda", "vencimientos"]),
     })
   )
   .handler(async (ctx) => {
