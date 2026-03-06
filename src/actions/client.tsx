@@ -5,7 +5,7 @@ import axios from "axios";
 import { db } from "@/lib/db";
 import { client, profile, debt, dueDate, ivaScrape, job } from "@/drizzle/schema";
 import { auth } from "@/lib/auth";
-import { eq, and, inArray, desc } from "drizzle-orm";
+import { eq, and, inArray, desc, asc } from "drizzle-orm";
 const JOBS_API_URL =
   process.env.SCRAPPER_JOBS_URL ||
   process.env.BACKEND_API_URL ||
@@ -148,7 +148,7 @@ export const getClients = createServerFn({
   const session = await auth.api.getSession({ headers: getRequestHeaders() });
   if (!session?.user?.id) throw new Error("Unauthorized");
 
-  const clients = await db.select().from(client).where(eq(client.userId, session.user.id)).orderBy(client.createdAt);
+  const clients = await db.select().from(client).where(eq(client.userId, session.user.id)).orderBy(asc(client.name));
 
   return clients;
 });
@@ -159,7 +159,7 @@ export const getClientsWithProfiles = createServerFn({
   const session = await auth.api.getSession({ headers: getRequestHeaders() });
   if (!session?.user?.id) throw new Error("Unauthorized");
 
-  const clients = await db.select().from(client).where(eq(client.userId, session.user.id)).orderBy(client.createdAt);
+  const clients = await db.select().from(client).where(eq(client.userId, session.user.id)).orderBy(asc(client.name));
   const clientIds = clients.map((c) => c.id);
   if (clientIds.length === 0) {
     return clients.map((c) => ({ ...c, profiles: [] as { id: string; name: string }[] }));

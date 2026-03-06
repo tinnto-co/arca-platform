@@ -20,8 +20,10 @@ import {
   ChevronUp,
   Download,
   X,
+  Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
@@ -42,14 +44,14 @@ import {
 } from "@/components/ui/select";
 import { EditClientDialog } from "@/components/edit-client-dialog";
 import { NotificationsView } from "@/components/notifications-view";
-import { InvoicesTable } from "@/components/invoices-table";
+import { InvoicesTable, INVOICE_TYPE_LABELS, type InvoicesTableRef } from "@/components/invoices-table";
 import {
   getInvoices,
   getClientMultilateralSummary,
   getClientMultilateralInvoices,
 } from "@/actions/invoice";
 import { scrapSingleJob } from "@/actions/client";
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { toast } from "sonner";
 import { Clock, CalendarCheck, CalendarX, Loader2 } from "lucide-react";
 import {
@@ -68,6 +70,10 @@ import {
   type RenderIvaResumeRef,
 } from "./render-iva-resume";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar as DateRangeCalendar } from "@/components/ui/calendar";
+import { DateRange } from "react-day-picker";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
 import {
   Dialog,
   DialogContent,
@@ -75,7 +81,22 @@ import {
   DialogTitle,
   DialogClose,
 } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 import { INVOICE_TYPES } from "../../../arca-scrapper/invoicesTypes";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Legend,
+} from "recharts";
 
 interface ClientDetailPageProps {
   clientId: string;
@@ -90,6 +111,11 @@ const getInvoiceTypeLabel = (code: string | number | null | undefined) => {
   const normalized = String(code);
   return INVOICE_TYPE_MAP.get(normalized) ?? normalized;
 };
+
+const facturasChartConfig = {
+  ventas: { label: "Ventas", color: "hsl(142, 76%, 36%)" },
+  compras: { label: "Compras", color: "hsl(0, 72%, 51%)" },
+} satisfies ChartConfig;
 
 const formatIvaCurrency = (
   value: string | number | null | undefined
@@ -241,6 +267,35 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   const [ivaPeriodPickerOpen, setIvaPeriodPickerOpen] = useState(false);
   /** Sección que está ejecutando un job (iva = comprobantes_full + iva, deudas = deuda, facturas = comprobantes_full, notificaciones = notificaciones). */
   const [scrapingSection, setScrapingSection] = useState<"iva" | "deudas" | "facturas" | "notificaciones" | null>(null);
+  /** Filtros del módulo de deudas (vacío = todos). */
+  const [debtFilterImpuesto, setDebtFilterImpuesto] = useState<string>("");
+  const [debtFilterConcepto, setDebtFilterConcepto] = useState<string>("");
+
+  /** Período para el módulo Facturas: sin período, por año, por mes o rango de días. */
+  const [facturasPeriodType, setFacturasPeriodType] = useState<"none" | "year" | "month" | "range">("none");
+  const [facturasYear, setFacturasYear] = useState(() => now.getFullYear());
+  const [facturasMonth, setFacturasMonth] = useState(now.getMonth());
+  const [facturasDateRange, setFacturasDateRange] = useState<DateRange | undefined>(undefined);
+  const [facturasPeriodPickerOpen, setFacturasPeriodPickerOpen] = useState(false);
+  /** Filtros de la tabla de facturas (perfil, tipo, dirección) para que los totales Ventas/Compras los respeten. */
+  const [facturasProfileFilter, setFacturasProfileFilter] = useState<string>("all");
+  const [facturasTypeFilter, setFacturasTypeFilter] = useState<string>("all");
+  const [facturasDirectionFilter, setFacturasDirectionFilter] = useState<string>("all");
+  const facturasOnFiltersChange = useCallback(
+    ({ profileFilter, typeFilter, directionFilter }: { profileFilter: string; typeFilter: string; directionFilter: string }) => {
+      setFacturasProfileFilter(profileFilter);
+      setFacturasTypeFilter(typeFilter);
+      setFacturasDirectionFilter(directionFilter);
+    },
+    []
+  );
+  const [facturasSearchTerm, setFacturasSearchTerm] = useState("");
+  const [facturasDebouncedSearchTerm, setFacturasDebouncedSearchTerm] = useState("");
+  useEffect(() => {
+    const timer = window.setTimeout(() => setFacturasDebouncedSearchTerm(facturasSearchTerm), 500);
+    return () => clearTimeout(timer);
+  }, [facturasSearchTerm]);
+  const invoicesTableRef = useRef<InvoicesTableRef>(null);
   const queryClient = useQueryClient();
   const ivaResumeRef = useRef<RenderIvaResumeRef>(null);
   const ivaSelectedYear = ivaResumenDateRange.from.getFullYear();
@@ -366,10 +421,32 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     queryFn: () => getClientDueDates({ data: { clientId } }),
   });
 
+  // Últimos jobs por tipo para mostrar errores en Resumen
+  const { data: lastComprobantesJob } = useQuery({
+    queryKey: ["lastComprobantesJob", clientId],
+    queryFn: () =>
+      getLastJobByType({ data: { clientId, jobType: "comprobantes" } }),
+    enabled: !!clientId,
+  });
+
+  const { data: lastIvaJob } = useQuery({
+    queryKey: ["lastIvaJob", clientId],
+    queryFn: () =>
+      getLastJobByType({ data: { clientId, jobType: "iva" } }),
+    enabled: !!clientId,
+  });
+
   const { data: lastNotificacionesJob } = useQuery({
     queryKey: ["lastNotificacionesJob", clientId],
     queryFn: () =>
       getLastJobByType({ data: { clientId, jobType: "notificaciones" } }),
+    enabled: !!clientId,
+  });
+
+  const { data: lastDeudaJob } = useQuery({
+    queryKey: ["lastDeudaJob", clientId],
+    queryFn: () =>
+      getLastJobByType({ data: { clientId, jobType: "deuda" } }),
     enabled: !!clientId,
   });
 
@@ -622,35 +699,296 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     };
   }, [debts]);
 
-  // Calculate invoice totals (sales and purchases)
-  const invoiceStats = useMemo(() => {
-    if (!allInvoicesData?.invoices) {
-      return { totalSales: 0, totalPurchases: 0 };
-    }
+  // Opciones únicas para filtros de deudas (impuesto, concepto)
+  const debtFilterOptions = useMemo(() => {
+    const impuestos = Array.from(
+      new Set(debts.map((d) => (d.tax ?? "").trim()).filter(Boolean))
+    ).sort();
+    const conceptos = Array.from(
+      new Set(debts.map((d) => (d.concept ?? "").trim()).filter(Boolean))
+    ).sort();
+    return { impuestos, conceptos };
+  }, [debts]);
 
+  // Deudas filtradas por impuesto y concepto
+  const filteredDebts = useMemo(() => {
+    return debts.filter((debt) => {
+      if (debtFilterImpuesto && (debt.tax ?? "").trim() !== debtFilterImpuesto)
+        return false;
+      if (debtFilterConcepto && (debt.concept ?? "").trim() !== debtFilterConcepto)
+        return false;
+      return true;
+    });
+  }, [debts, debtFilterImpuesto, debtFilterConcepto]);
+
+  /** Formatea una fecha en hora local como YYYY-MM-DD (evita desfase por UTC con toISOString). */
+  const formatLocalYYYYMMDD = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+
+  /** Parsea YYYY-MM-DD como fecha en hora local (evita que "2026-01-01" se interprete como UTC y cambie de día). */
+  const parseLocalDateOnly = (s: string): Date => {
+    const [y, m, d] = s.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  };
+
+  /** Coincide tipo de factura con el filtro (código exacto o etiqueta "...(código)" al final). */
+  const matchInvoiceType = (invType: string | null | undefined, typeFilter: string): boolean => {
+    if (!typeFilter || typeFilter === "all") return true;
+    const t = (invType ?? "").trim();
+    if (t === typeFilter) return true;
+    if (/^\d+$/.test(typeFilter) && new RegExp(`\\(${typeFilter}\\)$`).test(t)) return true;
+    return false;
+  };
+
+  /** True si la factura pasa los filtros de perfil, tipo y dirección (para totales Ventas/Compras). */
+  const invoicePassesFacturasFilters = (inv: any): boolean => {
+    if (facturasProfileFilter && facturasProfileFilter !== "all") {
+      if ((inv.profileId ?? inv.profile) !== facturasProfileFilter) return false;
+    }
+    if (facturasTypeFilter && facturasTypeFilter !== "all") {
+      if (!matchInvoiceType(inv.type, facturasTypeFilter)) return false;
+    }
+    if (facturasDirectionFilter && facturasDirectionFilter !== "all") {
+      const dir = (inv.direction ?? "").trim();
+      if (dir.toLowerCase() !== facturasDirectionFilter.toLowerCase()) return false;
+    }
+    return true;
+  };
+
+  /** Rango de fechas para Facturas según tipo de período seleccionado. */
+  const facturasBounds = useMemo((): { dateFrom: string | undefined; dateTo: string | undefined } => {
+    if (facturasPeriodType === "none") return { dateFrom: undefined, dateTo: undefined };
+    if (facturasPeriodType === "year") {
+      const from = new Date(facturasYear, 0, 1);
+      const to = new Date(facturasYear, 11, 31);
+      return { dateFrom: formatLocalYYYYMMDD(from), dateTo: formatLocalYYYYMMDD(to) };
+    }
+    if (facturasPeriodType === "month") {
+      const { from, to } = getMonthBounds(facturasYear, facturasMonth);
+      return { dateFrom: formatLocalYYYYMMDD(from), dateTo: formatLocalYYYYMMDD(to) };
+    }
+    if (facturasPeriodType === "range" && facturasDateRange?.from && facturasDateRange?.to) {
+      return {
+        dateFrom: format(facturasDateRange.from, "yyyy-MM-dd"),
+        dateTo: format(facturasDateRange.to, "yyyy-MM-dd"),
+      };
+    }
+    return { dateFrom: undefined, dateTo: undefined };
+  }, [facturasPeriodType, facturasYear, facturasMonth, facturasDateRange]);
+
+  /** Totales de Ventas y Compras filtrados por el período de Facturas; null si no hay período seleccionado. */
+  const invoiceStatsFiltered = useMemo(() => {
+    if (!facturasBounds.dateFrom || !facturasBounds.dateTo || !allInvoicesData?.invoices) {
+      if (facturasPeriodType !== "none") return { totalSales: 0, totalPurchases: 0 };
+      return null;
+    }
+    const from = parseLocalDateOnly(facturasBounds.dateFrom);
+    const to = parseLocalDateOnly(facturasBounds.dateTo);
+    to.setHours(23, 59, 59, 999);
     let totalSales = 0;
     let totalPurchases = 0;
-
     allInvoicesData.invoices.forEach((inv: any) => {
-      // Convert amount to number
+      if (!invoicePassesFacturasFilters(inv)) return;
+      const invDate = new Date(inv.emitionDate);
+      if (invDate < from || invDate > to) return;
       let amount = parseFloat(inv.amount || "0");
-
-      // If currency is USD, convert to ARS using the currency rate
       if (inv.currency?.toUpperCase() === "USD") {
         const rate = parseFloat(inv.currencyRate || "1");
         amount = amount * rate;
       }
-
       const direction = inv.direction?.toLowerCase();
-      if (direction === "outbound") {
-        totalSales += amount;
-      } else if (direction === "inbound") {
-        totalPurchases += amount;
-      }
+      if (direction === "outbound") totalSales += amount;
+      else if (direction === "inbound") totalPurchases += amount;
     });
-
     return { totalSales, totalPurchases };
-  }, [allInvoicesData]);
+  }, [allInvoicesData, facturasBounds, facturasPeriodType, facturasProfileFilter, facturasTypeFilter, facturasDirectionFilter]);
+
+  /** Totales del período anterior (mes anterior o año anterior) para la variación %. */
+  const invoiceStatsPrevious = useMemo(() => {
+    if (!allInvoicesData?.invoices?.length) return null;
+    if (facturasPeriodType === "month") {
+      const prevMonth = facturasMonth === 0 ? 11 : facturasMonth - 1;
+      const prevYear = facturasMonth === 0 ? facturasYear - 1 : facturasYear;
+      const { from, to } = getMonthBounds(prevYear, prevMonth);
+      const fromStr = formatLocalYYYYMMDD(from);
+      const toStr = formatLocalYYYYMMDD(to);
+      const fromDate = parseLocalDateOnly(fromStr);
+      const toDate = parseLocalDateOnly(toStr);
+      toDate.setHours(23, 59, 59, 999);
+      let totalSales = 0;
+      let totalPurchases = 0;
+      allInvoicesData.invoices.forEach((inv: any) => {
+        if (!invoicePassesFacturasFilters(inv)) return;
+        const invDate = new Date(inv.emitionDate);
+        if (invDate < fromDate || invDate > toDate) return;
+        let amount = parseFloat(inv.amount || "0");
+        if (inv.currency?.toUpperCase() === "USD") amount *= parseFloat(inv.currencyRate || "1");
+        const dir = inv.direction?.toLowerCase();
+        if (dir === "outbound") totalSales += amount;
+        else if (dir === "inbound") totalPurchases += amount;
+      });
+      return { totalSales, totalPurchases };
+    }
+    if (facturasPeriodType === "year") {
+      const from = new Date(facturasYear - 1, 0, 1);
+      const to = new Date(facturasYear - 1, 11, 31);
+      const fromStr = formatLocalYYYYMMDD(from);
+      const toStr = formatLocalYYYYMMDD(to);
+      const fromDate = parseLocalDateOnly(fromStr);
+      const toDate = parseLocalDateOnly(toStr);
+      toDate.setHours(23, 59, 59, 999);
+      let totalSales = 0;
+      let totalPurchases = 0;
+      allInvoicesData.invoices.forEach((inv: any) => {
+        if (!invoicePassesFacturasFilters(inv)) return;
+        const invDate = new Date(inv.emitionDate);
+        if (invDate < fromDate || invDate > toDate) return;
+        let amount = parseFloat(inv.amount || "0");
+        if (inv.currency?.toUpperCase() === "USD") amount *= parseFloat(inv.currencyRate || "1");
+        const dir = inv.direction?.toLowerCase();
+        if (dir === "outbound") totalSales += amount;
+        else if (dir === "inbound") totalPurchases += amount;
+      });
+      return { totalSales, totalPurchases };
+    }
+    return null;
+  }, [allInvoicesData, facturasPeriodType, facturasYear, facturasMonth, facturasProfileFilter, facturasTypeFilter, facturasDirectionFilter]);
+
+  /** Variación % vs período anterior: { salesPct, purchasesPct } o null si no aplica. */
+  const facturasVariationPct = useMemo(() => {
+    if (invoiceStatsFiltered == null || invoiceStatsPrevious == null) return null;
+    if (facturasPeriodType !== "month" && facturasPeriodType !== "year") return null;
+    const salesPct =
+      invoiceStatsPrevious.totalSales === 0
+        ? (invoiceStatsFiltered.totalSales === 0 ? 0 : null)
+        : ((invoiceStatsFiltered.totalSales - invoiceStatsPrevious.totalSales) / invoiceStatsPrevious.totalSales) * 100;
+    const purchasesPct =
+      invoiceStatsPrevious.totalPurchases === 0
+        ? (invoiceStatsFiltered.totalPurchases === 0 ? 0 : null)
+        : ((invoiceStatsFiltered.totalPurchases - invoiceStatsPrevious.totalPurchases) / invoiceStatsPrevious.totalPurchases) * 100;
+    return { salesPct, purchasesPct };
+  }, [invoiceStatsFiltered, invoiceStatsPrevious, facturasPeriodType]);
+
+  /** Datos para el gráfico de barras Ventas/Compras: por mes o por año según el filtro de período. Respeta perfil, tipo y dirección. */
+  const facturasChartData = useMemo((): { period: string; ventas: number; compras: number }[] => {
+    const invoices = allInvoicesData?.invoices;
+    if (!invoices?.length) return [];
+    const filtered = invoices.filter((inv: any) => invoicePassesFacturasFilters(inv));
+    const getAmount = (inv: any): number => {
+      let amount = parseFloat(inv.amount || "0");
+      if (inv.currency?.toUpperCase() === "USD") {
+        const rate = parseFloat(inv.currencyRate || "1");
+        amount = amount * rate;
+      }
+      return amount;
+    };
+
+    // Por año: barras de todos los meses del año seleccionado
+    if (facturasPeriodType === "year") {
+      const byMonth: Record<number, { ventas: number; compras: number }> = {};
+      for (let i = 0; i < 12; i++) byMonth[i] = { ventas: 0, compras: 0 };
+      filtered.forEach((inv: any) => {
+        const d = new Date(inv.emitionDate);
+        if (d.getFullYear() !== facturasYear) return;
+        const m = d.getMonth();
+        const amount = getAmount(inv);
+        const dir = inv.direction?.toLowerCase();
+        if (dir === "outbound") byMonth[m].ventas += amount;
+        else if (dir === "inbound") byMonth[m].compras += amount;
+      });
+      return Array.from({ length: 12 }, (_, i) => ({
+        period: MONTH_NAMES_SHORT[i],
+        ventas: byMonth[i]?.ventas ?? 0,
+        compras: byMonth[i]?.compras ?? 0,
+      }));
+    }
+
+    // Por mes: solo el mes seleccionado (una barra de ventas y una de compras)
+    if (facturasPeriodType === "month") {
+      let ventas = 0;
+      let compras = 0;
+      filtered.forEach((inv: any) => {
+        const d = new Date(inv.emitionDate);
+        if (d.getFullYear() !== facturasYear || d.getMonth() !== facturasMonth) return;
+        const amount = getAmount(inv);
+        const dir = inv.direction?.toLowerCase();
+        if (dir === "outbound") ventas += amount;
+        else if (dir === "inbound") compras += amount;
+      });
+      const periodLabel = `${MONTH_NAMES[facturasMonth]} ${facturasYear}`;
+      return [{ period: periodLabel, ventas, compras }];
+    }
+
+    if (facturasPeriodType === "range" && facturasDateRange?.from && facturasDateRange?.to) {
+      const from = new Date(facturasDateRange.from.getFullYear(), facturasDateRange.from.getMonth(), 1);
+      const to = new Date(facturasDateRange.to.getFullYear(), facturasDateRange.to.getMonth(), 1);
+      const byMonthKey: Record<string, { ventas: number; compras: number }> = {};
+      for (let t = from.getTime(); t <= to.getTime(); ) {
+        const d = new Date(t);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        byMonthKey[key] = { ventas: 0, compras: 0 };
+        d.setMonth(d.getMonth() + 1);
+        t = d.getTime();
+      }
+      filtered.forEach((inv: any) => {
+        const d = new Date(inv.emitionDate);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        if (!byMonthKey[key]) return;
+        const amount = getAmount(inv);
+        const dir = inv.direction?.toLowerCase();
+        if (dir === "outbound") byMonthKey[key].ventas += amount;
+        else if (dir === "inbound") byMonthKey[key].compras += amount;
+      });
+      return Object.entries(byMonthKey)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, data]) => {
+          const [y, m] = key.split("-").map(Number);
+          const label = `${MONTH_NAMES_SHORT[m - 1]} ${y}`;
+          return { period: label, ventas: data.ventas, compras: data.compras };
+        });
+    }
+
+    if (facturasPeriodType === "none") {
+      const now = new Date();
+      const byMonthKey: Record<string, { ventas: number; compras: number }> = {};
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        byMonthKey[key] = { ventas: 0, compras: 0 };
+      }
+      filtered.forEach((inv: any) => {
+        const d = new Date(inv.emitionDate);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        if (!byMonthKey[key]) return;
+        const amount = getAmount(inv);
+        const dir = inv.direction?.toLowerCase();
+        if (dir === "outbound") byMonthKey[key].ventas += amount;
+        else if (dir === "inbound") byMonthKey[key].compras += amount;
+      });
+      return Object.entries(byMonthKey)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, data]) => {
+          const [y, m] = key.split("-").map(Number);
+          const label = `${MONTH_NAMES_SHORT[m - 1]} ${y}`;
+          return { period: label, ventas: data.ventas, compras: data.compras };
+        });
+    }
+
+    return [];
+  }, [
+    allInvoicesData,
+    facturasPeriodType,
+    facturasYear,
+    facturasMonth,
+    facturasDateRange,
+    facturasProfileFilter,
+    facturasTypeFilter,
+    facturasDirectionFilter,
+  ]);
 
   // Calculate due date statistics
   const dueDateStats = useMemo(() => {
@@ -762,7 +1100,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
             <FileText className="mr-2 h-4 w-4" />
             Resumen
           </TabsTrigger>
-          <TabsTrigger value="deudas" disabled>
+          <TabsTrigger value="deudas">
             <DollarSign className="mr-2 h-4 w-4" />
             Deudas
           </TabsTrigger>
@@ -1000,6 +1338,39 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
             </Card>
           </div>
 
+          {/* Errores de últimos jobs (facturas, IVA, notificaciones, deudas) */}
+          {(lastComprobantesJob?.failedReason ||
+            lastIvaJob?.failedReason ||
+            lastNotificacionesJob?.failedReason ||
+            lastDeudaJob?.failedReason) && (
+            <div className="space-y-1 text-xs">
+              {lastComprobantesJob?.failedReason && (
+                <p className="text-destructive">
+                  <span className="font-semibold">Facturas:</span>{" "}
+                  {lastComprobantesJob.failedReason}
+                </p>
+              )}
+              {lastIvaJob?.failedReason && (
+                <p className="text-destructive">
+                  <span className="font-semibold">IVA:</span>{" "}
+                  {lastIvaJob.failedReason}
+                </p>
+              )}
+              {lastNotificacionesJob?.failedReason && (
+                <p className="text-destructive">
+                  <span className="font-semibold">Notificaciones:</span>{" "}
+                  {lastNotificacionesJob.failedReason}
+                </p>
+              )}
+              {lastDeudaJob?.failedReason && (
+                <p className="text-destructive">
+                  <span className="font-semibold">Deudas:</span>{" "}
+                  {lastDeudaJob.failedReason}
+                </p>
+              )}
+            </div>
+          )}
+
 
         </TabsContent>
 
@@ -1095,27 +1466,62 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
           )}
 
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0">
-              <CardTitle className="flex items-center gap-2">
-                <DollarSign className="h-5 w-5" />
-                Deudas del Cliente
-              </CardTitle>
-              <Button
-                variant="default"
-                size="sm"
-                disabled={!!scrapingSection}
-                onClick={async () => {
+            <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between space-y-0">
+              <div className="space-y-1 min-w-0">
+                <CardTitle className="flex items-center gap-2">
+                  <DollarSign className="h-5 w-5" />
+                  Deudas del Cliente
+                </CardTitle>
+                {lastDeudaJob && !lastDeudaJob.success && lastDeudaJob.failedReason && (
+                  <p className="text-xs text-destructive max-w-md">
+                    {lastDeudaJob.failedReason}
+                  </p>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <div className="flex flex-col gap-1">
+                  <p className="text-xs text-muted-foreground">
+                    Ult. actualización{" "}
+                    {lastDeudaJob?.createdAt ? (
+                      <span
+                        className={
+                          lastDeudaJob.success
+                            ? "text-emerald-600 dark:text-emerald-400 font-medium"
+                            : "text-destructive"
+                        }
+                        title={lastDeudaJob.failedReason ?? undefined}
+                      >
+                        {new Date(lastDeudaJob.createdAt).toLocaleDateString("es-AR", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </p>
+                </div>
+                <Button
+                  variant="default"
+                  size="sm"
+                  disabled={!!scrapingSection}
+                  onClick={async () => {
                   setScrapingSection("deudas");
                   try {
                     await scrapSingleJob({
                       data: { clientId, jobType: "deuda" },
                     });
-                    await queryClient.invalidateQueries({ queryKey: ["clientDebts", clientId] });
+                    await Promise.all([
+                      queryClient.invalidateQueries({ queryKey: ["clientDebts", clientId] }),
+                      queryClient.invalidateQueries({ queryKey: ["lastDeudaJob", clientId] }),
+                    ]);
                     toast.success("Deudas actualizadas correctamente");
                   } catch (err) {
                     toast.error(
                       err instanceof Error ? err.message : "Error al actualizar deudas"
                     );
+                    queryClient.invalidateQueries({ queryKey: ["lastDeudaJob", clientId] });
                   } finally {
                     setScrapingSection(null);
                   }
@@ -1130,6 +1536,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                   "Actualizar Deudas"
                 )}
               </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {loadingDebts ? (
@@ -1145,21 +1552,82 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                   </div>
                 </div>
               ) : (
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Impuesto</TableHead>
-                        <TableHead>Concepto</TableHead>
-                        <TableHead>Período</TableHead>
-                        <TableHead>Vencimiento</TableHead>
-                        <TableHead>Saldo</TableHead>
-                        <TableHead>Interés Compensatorio</TableHead>
-                        <TableHead>Interés Punitorio</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {debts.map((debt) => (
+                <div className="space-y-4">
+                  {/* Filtros por impuesto, concepto y período */}
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground whitespace-nowrap">Impuesto:</span>
+                      <Select
+                        value={debtFilterImpuesto || "all"}
+                        onValueChange={(v) => setDebtFilterImpuesto(v === "all" ? "" : v)}
+                      >
+                        <SelectTrigger className="w-[180px]">
+                          <SelectValue placeholder="Todos" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todos</SelectItem>
+                          {debtFilterOptions.impuestos.map((v) => (
+                            <SelectItem key={v} value={v}>{v}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground whitespace-nowrap">Concepto:</span>
+                      <Select
+                        value={debtFilterConcepto || "all"}
+                        onValueChange={(v) => setDebtFilterConcepto(v === "all" ? "" : v)}
+                      >
+                        <SelectTrigger className="w-[200px]">
+                          <SelectValue placeholder="Todos" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todos</SelectItem>
+                          {debtFilterOptions.conceptos.map((v) => (
+                            <SelectItem key={v} value={v}>{v}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {(debtFilterImpuesto || debtFilterConcepto) && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setDebtFilterImpuesto("");
+                          setDebtFilterConcepto("");
+                        }}
+                      >
+                        <X className="h-4 w-4 mr-1" />
+                        Limpiar filtros
+                      </Button>
+                    )}
+                  </div>
+                  {(debtFilterImpuesto || debtFilterConcepto) && (
+                    <p className="text-sm text-muted-foreground">
+                      Mostrando {filteredDebts.length} de {debts.length} deudas
+                    </p>
+                  )}
+                  <div className="rounded-md border">
+                    {filteredDebts.length === 0 ? (
+                      <div className="flex items-center justify-center py-12 text-muted-foreground">
+                        No hay deudas que coincidan con los filtros
+                      </div>
+                    ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Impuesto</TableHead>
+                          <TableHead>Concepto</TableHead>
+                          <TableHead>Período</TableHead>
+                          <TableHead>Vencimiento</TableHead>
+                          <TableHead>Saldo</TableHead>
+                          <TableHead>Interés Compensatorio</TableHead>
+                          <TableHead>Interés Punitorio</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredDebts.map((debt) => (
                         <TableRow key={debt.id}>
                           <TableCell className="font-medium">
                             {debt.tax || "-"}
@@ -1194,6 +1662,8 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                       ))}
                     </TableBody>
                   </Table>
+                    )}
+                </div>
                 </div>
               )}
             </CardContent>
@@ -1349,27 +1819,36 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
             className="min-h-[500px]"
             toolbar={
               <>
-                <p className="text-xs text-muted-foreground">
-                  Ult. actualización{" "}
-                  {lastNotificacionesJob?.createdAt ? (
-                    <span
-                      className={
-                        lastNotificacionesJob.success
-                          ? "text-emerald-600 dark:text-emerald-400 font-medium"
-                          : "text-destructive"
-                      }
-                      title={lastNotificacionesJob.failedReason ?? undefined}
-                    >
-                      {new Date(lastNotificacionesJob.createdAt).toLocaleDateString("es-AR", {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      })}
-                    </span>
-                  ) : (
-                    "—"
-                  )}
-                </p>
+                <div className="flex flex-col gap-1">
+                  <p className="text-xs text-muted-foreground">
+                    Ult. actualización{" "}
+                    {lastNotificacionesJob?.createdAt ? (
+                      <span
+                        className={
+                          lastNotificacionesJob.success
+                            ? "text-emerald-600 dark:text-emerald-400 font-medium"
+                            : "text-destructive"
+                        }
+                        title={lastNotificacionesJob.failedReason ?? undefined}
+                      >
+                        {new Date(lastNotificacionesJob.createdAt).toLocaleDateString("es-AR", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </p>
+                  {lastNotificacionesJob &&
+                    !lastNotificacionesJob.success &&
+                    lastNotificacionesJob.failedReason && (
+                      <p className="text-[11px] text-destructive max-w-md">
+                        {lastNotificacionesJob.failedReason}
+                      </p>
+                    )}
+                </div>
                 <Button
                   variant="default"
                   size="sm"
@@ -1387,12 +1866,13 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                         queryKey: ["lastNotificacionesJob", clientId],
                       });
                       toast.success("Notificaciones actualizadas correctamente");
-                    } catch (err) {
+                  } catch (err) {
                       toast.error(
                         err instanceof Error
                           ? err.message
                           : "Error al actualizar notificaciones"
                       );
+                      queryClient.invalidateQueries({ queryKey: ["lastNotificacionesJob", clientId] });
                     } finally {
                       setScrapingSection(null);
                     }
@@ -1414,7 +1894,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
 
         {/* Facturas Tab */}
         <TabsContent value="facturas" className="space-y-6 mt-6">
-          <div className="flex justify-end">
+          {/* <div className="flex justify-end">
             <Button
               variant="default"
               size="sm"
@@ -1449,57 +1929,411 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 "Actualizar Facturas"
               )}
             </Button>
+          </div> */}
+          {/* Fila 1: solo botón Actualizar Facturas */}
+          <div className="flex justify-end">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-col gap-1">
+                <p className="text-xs text-muted-foreground">
+                  Ult. actualización{" "}
+                  {lastComprobantesJob?.createdAt ? (
+                    <span
+                      className={
+                        lastComprobantesJob.success
+                          ? "text-emerald-600 dark:text-emerald-400 font-medium"
+                          : "text-destructive"
+                      }
+                      title={lastComprobantesJob.failedReason ?? undefined}
+                    >
+                      {new Date(lastComprobantesJob.createdAt).toLocaleDateString("es-AR", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </span>
+                  ) : (
+                    "—"
+                  )}
+                </p>
+                {lastComprobantesJob &&
+                  !lastComprobantesJob.success &&
+                  lastComprobantesJob.failedReason && (
+                    <p className="text-[11px] text-destructive max-w-md">
+                      {lastComprobantesJob.failedReason}
+                    </p>
+                  )}
+              </div>
+              <Button
+                variant="default"
+                size="sm"
+                disabled={!!scrapingSection}
+                onClick={async () => {
+                  setScrapingSection("facturas");
+                  try {
+                    await scrapSingleJob({
+                      data: { clientId, jobType: "comprobantes" },
+                    });
+                    await Promise.all([
+                      queryClient.invalidateQueries({ queryKey: ["clientAllInvoices", clientId] }),
+                      queryClient.invalidateQueries({ queryKey: ["invoices"] }),
+                      queryClient.invalidateQueries({ queryKey: ["lastComprobantesFullJob", clientId] }),
+                      queryClient.invalidateQueries({ queryKey: ["lastComprobantesJob", clientId] }),
+                    ]);
+                    toast.success("Facturas (comprobantes) actualizadas correctamente");
+                  } catch (err) {
+                    toast.error(
+                      err instanceof Error ? err.message : "Error al actualizar facturas"
+                    );
+                    queryClient.invalidateQueries({ queryKey: ["lastComprobantesJob", clientId] });
+                  } finally {
+                    setScrapingSection(null);
+                  }
+                }}
+              >
+                {scrapingSection === "facturas" ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Actualizando…
+                  </>
+                ) : (
+                  "Actualizar Facturas"
+                )}
+              </Button>
+            </div>
           </div>
-          {/* Invoice Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-3">
-                  <div className="h-12 w-12 rounded-full bg-gray-100 flex items-center justify-center">
-                    <DollarSign className="h-6 w-6 text-black" />
+
+          {/* Fila 2: todos los filtros en una sola fila */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-muted-foreground shrink-0">Período:</span>
+            <Select
+              value={facturasPeriodType}
+              onValueChange={(v) => {
+                setFacturasPeriodType(v as "none" | "year" | "month" | "range");
+                setFacturasPeriodPickerOpen(false);
+              }}
+            >
+              <SelectTrigger className="w-[160px] h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Sin período</SelectItem>
+                <SelectItem value="year">Por año</SelectItem>
+                <SelectItem value="month">Por mes</SelectItem>
+                <SelectItem value="range">Rango de días</SelectItem>
+              </SelectContent>
+            </Select>
+            {facturasPeriodType === "year" && (
+              <Select value={String(facturasYear)} onValueChange={(v) => setFacturasYear(Number(v))}>
+                <SelectTrigger className="w-[100px] h-9">
+                  <SelectValue placeholder="Año" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 8 }, (_, i) => now.getFullYear() - i).map((y) => (
+                    <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {facturasPeriodType === "month" && (
+              <Popover open={facturasPeriodPickerOpen} onOpenChange={setFacturasPeriodPickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="h-9 min-w-[160px] justify-start text-left font-normal px-3">
+                    <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                    <span className="text-sm">{`${MONTH_NAMES[facturasMonth]} ${facturasYear}`}</span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-4" align="start">
+                  <div className="space-y-3">
+                    <Select
+                      value={String(facturasYear)}
+                      onValueChange={(v) => {
+                        const y = Number(v);
+                        const newMax = y === now.getFullYear() ? now.getMonth() : 11;
+                        setFacturasYear(y);
+                        setFacturasMonth((m) => Math.min(m, newMax));
+                      }}
+                    >
+                      <SelectTrigger className="w-full h-9">
+                        <SelectValue placeholder="Año" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Array.from({ length: 8 }, (_, i) => now.getFullYear() - i).map((y) => (
+                          <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {Array.from(
+                        { length: facturasYear === now.getFullYear() ? now.getMonth() + 1 : 12 },
+                        (_, i) => i
+                      ).map((i) => (
+                        <Button
+                          key={i}
+                          variant={facturasMonth === i ? "default" : "outline"}
+                          size="sm"
+                          className="text-xs h-8"
+                          onClick={() => {
+                            setFacturasMonth(i);
+                            setFacturasPeriodPickerOpen(false);
+                          }}
+                        >
+                          {MONTH_NAMES_SHORT[i]}
+                        </Button>
+                      ))}
+                    </div>
                   </div>
-                  <span>Ventas</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-xs text-muted-foreground mb-2">
-                  TOTAL VENTAS
+                </PopoverContent>
+              </Popover>
+            )}
+            {facturasPeriodType === "range" && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn("h-9 min-w-[200px] justify-start text-left font-normal", !facturasDateRange?.from && "text-muted-foreground")}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                    {facturasDateRange?.from
+                      ? facturasDateRange?.to
+                        ? `${format(facturasDateRange.from, "dd/MM/yyyy", { locale: es })} – ${format(facturasDateRange.to, "dd/MM/yyyy", { locale: es })}`
+                        : format(facturasDateRange.from, "dd/MM/yyyy", { locale: es })
+                      : "Elegir fechas"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <DateRangeCalendar
+                    mode="range"
+                    defaultMonth={facturasDateRange?.from}
+                    selected={facturasDateRange}
+                    onSelect={setFacturasDateRange}
+                    numberOfMonths={2}
+                    locale={es}
+                  />
+                </PopoverContent>
+              </Popover>
+            )}
+
+            <span className="text-sm text-muted-foreground shrink-0 ml-1">Perfil:</span>
+            <Select value={facturasProfileFilter} onValueChange={setFacturasProfileFilter}>
+              <SelectTrigger className="w-[160px] h-9">
+                <SelectValue placeholder="Perfil" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos los perfiles</SelectItem>
+                {(profiles as { id: string; name?: string; identityNumber?: string }[]).map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name || p.identityNumber || p.id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <span className="text-sm text-muted-foreground shrink-0">Tipo:</span>
+            <Select value={facturasTypeFilter} onValueChange={setFacturasTypeFilter}>
+              <SelectTrigger className="w-[220px] h-9">
+                <SelectValue placeholder="Tipo" />
+              </SelectTrigger>
+              <SelectContent className="max-h-[300px]">
+                <SelectItem value="all">Todas las facturas</SelectItem>
+                {Object.entries(INVOICE_TYPE_LABELS)
+                  .sort(([a], [b]) => Number(a) - Number(b))
+                  .map(([code, label]) => (
+                    <SelectItem key={code} value={code}>
+                      {label}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+
+            <span className="text-sm text-muted-foreground shrink-0">Dirección:</span>
+            <Select value={facturasDirectionFilter} onValueChange={setFacturasDirectionFilter}>
+              <SelectTrigger className="w-[130px] h-9">
+                <SelectValue placeholder="Dirección" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas</SelectItem>
+                <SelectItem value="Outbound">Emitida</SelectItem>
+                <SelectItem value="Inbound">Recibida</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Fila 3: búsqueda por emisor/receptor y exportar Excel */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar mediante emisor o receptor..."
+                value={facturasSearchTerm}
+                onChange={(e) => setFacturasSearchTerm(e.target.value)}
+                className="pl-8 w-full md:w-80"
+              />
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => invoicesTableRef.current?.exportExcel()}
+              className="h-9 gap-1.5 shrink-0 font-normal"
+            >
+              <Download className="h-4 w-4" />
+              <span>Excel</span>
+            </Button>
+          </div>
+
+          {/* Resumen Ventas/Compras (1/3) + Gráfico (2/3) */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 w-full max-w-full">
+            <Card className="overflow-hidden min-h-[7.25rem]">
+              <CardContent className="py-4 px-4 space-y-4">
+                <div>
+                  <div className="text-[11px] text-muted-foreground uppercase tracking-wide">
+                    Total ventas
+                  </div>
+                  <div className="text-xl font-bold tabular-nums break-all">
+                    {invoiceStatsFiltered == null
+                      ? "—"
+                      : new Intl.NumberFormat("es-AR", {
+                          style: "currency",
+                          currency: "ARS",
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        }).format(invoiceStatsFiltered.totalSales)}
+                  </div>
+                  {facturasVariationPct != null && facturasVariationPct.salesPct !== undefined && (
+                    <div
+                      className={cn(
+                        "text-xs mt-0.5",
+                        facturasVariationPct.salesPct === 0
+                          ? "text-muted-foreground"
+                          : facturasVariationPct.salesPct !== null && facturasVariationPct.salesPct > 0
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : "text-red-600 dark:text-red-400"
+                      )}
+                    >
+                      {facturasVariationPct.salesPct === null
+                        ? "—"
+                        : facturasVariationPct.salesPct >= 0
+                          ? `+${facturasVariationPct.salesPct.toFixed(1)}%`
+                          : `${facturasVariationPct.salesPct.toFixed(1)}%`}{" "}
+                      vs {facturasPeriodType === "month" ? "mes ant." : "año ant."}
+                    </div>
+                  )}
                 </div>
-                <div className="text-3xl font-bold mb-4">
-                  {new Intl.NumberFormat("es-AR", {
-                    style: "currency",
-                    currency: "ARS",
-                    minimumFractionDigits: 2,
-                  }).format(invoiceStats.totalSales)}
+                <div>
+                  <div className="text-[11px] text-muted-foreground uppercase tracking-wide">
+                    Total compras
+                  </div>
+                  <div className="text-xl font-bold tabular-nums break-all">
+                    {invoiceStatsFiltered == null
+                      ? "—"
+                      : new Intl.NumberFormat("es-AR", {
+                          style: "currency",
+                          currency: "ARS",
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        }).format(invoiceStatsFiltered.totalPurchases)}
+                  </div>
+                  {facturasVariationPct != null && facturasVariationPct.purchasesPct !== undefined && (
+                    <div
+                      className={cn(
+                        "text-xs mt-0.5",
+                        facturasVariationPct.purchasesPct === 0
+                          ? "text-muted-foreground"
+                          : facturasVariationPct.purchasesPct !== null && facturasVariationPct.purchasesPct > 0
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : "text-red-600 dark:text-red-400"
+                      )}
+                    >
+                      {facturasVariationPct.purchasesPct === null
+                        ? "—"
+                        : facturasVariationPct.purchasesPct >= 0
+                          ? `+${facturasVariationPct.purchasesPct.toFixed(1)}%`
+                          : `${facturasVariationPct.purchasesPct.toFixed(1)}%`}{" "}
+                      vs {facturasPeriodType === "month" ? "mes ant." : "año ant."}
+                    </div>
+                  )}
+                </div>
+                <div className="pt-2 border-t">
+                  <div className="text-[11px] text-muted-foreground uppercase tracking-wide">
+                    Ventas − Compras
+                  </div>
+                  <div
+                    className={cn(
+                      "text-xl font-bold tabular-nums break-all",
+                      invoiceStatsFiltered != null &&
+                        invoiceStatsFiltered.totalSales - invoiceStatsFiltered.totalPurchases < 0
+                        ? "text-red-600 dark:text-red-400"
+                        : "text-foreground"
+                    )}
+                  >
+                    {invoiceStatsFiltered == null
+                      ? "—"
+                      : new Intl.NumberFormat("es-AR", {
+                          style: "currency",
+                          currency: "ARS",
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        }).format(
+                          invoiceStatsFiltered.totalSales - invoiceStatsFiltered.totalPurchases
+                        )}
+                  </div>
                 </div>
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-3">
-                  <div className="h-12 w-12 rounded-full bg-gray-100 flex items-center justify-center">
-                    <DollarSign className="h-6 w-6 text-black" />
-                  </div>
-                  <span>Compras</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-xs text-muted-foreground mb-2">
-                  TOTAL COMPRAS
-                </div>
-                <div className="text-3xl font-bold mb-4">
-                  {new Intl.NumberFormat("es-AR", {
-                    style: "currency",
-                    currency: "ARS",
-                    minimumFractionDigits: 2,
-                  }).format(invoiceStats.totalPurchases)}
-                </div>
-              </CardContent>
-            </Card>
+            {/* Gráfico Ventas / Compras — 2/3 de la fila */}
+            {facturasChartData.length > 0 && (
+              <Card className="min-h-[7.25rem] md:col-span-2">
+                <CardHeader className="py-1.5 px-3">
+                  <CardTitle className="text-sm font-semibold">
+                    Ventas y compras {facturasPeriodType === "year" ? "por mes del año" : facturasPeriodType === "month" ? "del mes seleccionado" : facturasPeriodType === "range" ? "por mes (rango)" : "últimos 12 meses"}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0 px-3 pb-2">
+                  <ChartContainer config={facturasChartConfig} className="h-[160px] w-full">
+                    <BarChart
+                      data={facturasChartData}
+                      margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
+                      barCategoryGap={4}
+                      barSize={20}
+                    >
+                      <CartesianGrid strokeDasharray="2 2" className="stroke-muted" />
+                      <XAxis dataKey="period" tick={{ fontSize: 9 }} />
+                      <YAxis tick={{ fontSize: 9 }} tickFormatter={(v) => (v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `${(v / 1e3).toFixed(0)}k` : String(v))} />
+                      <ChartTooltip
+                        content={
+                          <ChartTooltipContent
+                            formatter={(value) =>
+                              new Intl.NumberFormat("es-AR", {
+                                style: "currency",
+                                currency: "ARS",
+                                minimumFractionDigits: 0,
+                                maximumFractionDigits: 0,
+                              }).format(Number(value))
+                            }
+                          />
+                        }
+                      />
+                      <Legend wrapperStyle={{ fontSize: 10 }} />
+                      <Bar dataKey="ventas" fill="var(--color-ventas)" name="Ventas" radius={[2, 2, 0, 0]} />
+                      <Bar dataKey="compras" fill="var(--color-compras)" name="Compras" radius={[2, 2, 0, 0]} />
+                    </BarChart>
+                  </ChartContainer>
+                </CardContent>
+              </Card>
+            )}
           </div>
 
-          <InvoicesTable clientId={clientId} />
+          <InvoicesTable
+            ref={invoicesTableRef}
+            clientId={clientId}
+            controlledDateFrom={facturasBounds.dateFrom}
+            controlledDateTo={facturasBounds.dateTo}
+            controlledProfileFilter={facturasProfileFilter}
+            controlledTypeFilter={facturasTypeFilter}
+            controlledDirectionFilter={facturasDirectionFilter}
+            controlledSearchTerm={facturasDebouncedSearchTerm}
+            onFiltersChange={facturasOnFiltersChange}
+          />
         </TabsContent>
 
         {/* Convenio Multilateral Tab */}
@@ -1918,7 +2752,9 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                     </div>
                   </PopoverContent>
                 </Popover>
+                
               </div>
+              
               <div className="flex items-center gap-2 shrink-0">
                 {runningComprobantesJob && (
                   <span className="text-xs text-muted-foreground">
@@ -1950,12 +2786,16 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                         queryClient.invalidateQueries({ queryKey: ["clientAllInvoices", clientId] }),
                         queryClient.invalidateQueries({ queryKey: ["invoices"] }),
                         queryClient.invalidateQueries({ queryKey: ["lastComprobantesFullJob", clientId] }),
+                        queryClient.invalidateQueries({ queryKey: ["lastIvaJob", clientId] }),
                       ]);
                       toast.success("IVA y comprobantes actualizados correctamente");
                     } catch (err) {
                       toast.error(
                         err instanceof Error ? err.message : "Error al actualizar IVA"
                       );
+                      // Refrescar el último job para que el error quede visible en IVA y Resumen
+                      queryClient.invalidateQueries({ queryKey: ["lastIvaJob", clientId] });
+                      queryClient.invalidateQueries({ queryKey: ["lastComprobantesJob", clientId] });
                     } finally {
                       setScrapingSection(null);
                     }
@@ -1982,7 +2822,36 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 </Button>
               </div>
             </div>
-
+            <div className="flex flex-col gap-1">
+                  <p className="text-xs text-muted-foreground">
+                    Ult. actualización{" "}
+                    {lastIvaJob?.createdAt ? (
+                      <span
+                        className={
+                          lastIvaJob.success
+                            ? "text-emerald-600 dark:text-emerald-400 font-medium"
+                            : "text-destructive"
+                        }
+                        title={lastIvaJob.failedReason ?? undefined}
+                      >
+                        {new Date(lastIvaJob.createdAt).toLocaleDateString("es-AR", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </p>
+                  {lastIvaJob &&
+                    !lastIvaJob.success &&
+                    lastIvaJob.failedReason && (
+                      <p className="text-[11px] text-destructive max-w-md">
+                        {lastIvaJob.failedReason}
+                      </p>
+                    )}
+                </div>
             <div className="w-full">
               {loadingClientIva ? (
                 <div className="flex items-center justify-center h-40 text-muted-foreground gap-2">

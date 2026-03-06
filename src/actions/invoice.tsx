@@ -96,15 +96,27 @@ export const getInvoices = createServerFn({
     }
 
     if (dateFrom) {
-      conditions.push(gte(invoice.emitionDate, new Date(dateFrom)));
+      // Interpretar como inicio del día en UTC para no cambiar de día por zona horaria
+      conditions.push(gte(invoice.emitionDate, new Date(`${dateFrom}T00:00:00.000Z`)));
     }
 
     if (dateTo) {
-      conditions.push(lte(invoice.emitionDate, new Date(dateTo)));
+      // Incluir todo el último día (hasta 23:59:59.999 UTC)
+      conditions.push(lte(invoice.emitionDate, new Date(`${dateTo}T23:59:59.999Z`)));
     }
 
     if (typeFilter && typeFilter !== "all") {
-      conditions.push(eq(invoice.type, typeFilter));
+      // El tipo en BD puede ser el código ("1", "6") o la etiqueta AFIP ("Factura A (1)", "Factura B (6)").
+      // Usar regex para que "(1)" no coincida con "(11)": el código debe estar entre paréntesis al final.
+      const safeCode = /^\d+$/.test(typeFilter) ? typeFilter : "";
+      const regexPattern = safeCode ? `\\(${safeCode}\\)$` : null;
+      if (regexPattern) {
+        conditions.push(
+          sql`(${invoice.type} = ${typeFilter} OR ${invoice.type}::text ~ ${regexPattern})`
+        );
+      } else {
+        conditions.push(eq(invoice.type, typeFilter));
+      }
     }
 
     if (directionFilter && directionFilter !== "all") {
@@ -153,6 +165,7 @@ export const getInvoices = createServerFn({
         clientId: invoice.client,
         clientName: client.name,
         clientEmail: client.email,
+        profileId: invoice.profile,
         profileName: profile.name,
         createdAt: invoice.createdAt,
         updatedAt: invoice.updatedAt,
