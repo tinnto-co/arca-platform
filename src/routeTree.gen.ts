@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthedRouteRouteImport } from './routes/_authed/route'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
+import { Route as AuthedSueldosIndexRouteImport } from './routes/_authed/sueldos/index'
 import { Route as AuthedScan_pdfIndexRouteImport } from './routes/_authed/scan_pdf/index'
 import { Route as AuthedProductsIndexRouteImport } from './routes/_authed/products/index'
 import { Route as AuthedNotificationsIndexRouteImport } from './routes/_authed/notifications/index'
@@ -34,6 +35,11 @@ const AuthedRouteRoute = AuthedRouteRouteImport.update({
 const AuthedIndexRoute = AuthedIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AuthedRouteRoute,
+} as any)
+const AuthedSueldosIndexRoute = AuthedSueldosIndexRouteImport.update({
+  id: '/sueldos/',
+  path: '/sueldos/',
   getParentRoute: () => AuthedRouteRoute,
 } as any)
 const AuthedScan_pdfIndexRoute = AuthedScan_pdfIndexRouteImport.update({
@@ -95,6 +101,7 @@ export interface FileRoutesByFullPath {
   '/notifications': typeof AuthedNotificationsIndexRoute
   '/products': typeof AuthedProductsIndexRoute
   '/scan_pdf': typeof AuthedScan_pdfIndexRoute
+  '/sueldos': typeof AuthedSueldosIndexRoute
   '/clients/$clientId': typeof AuthedClientsClientIdIndexRoute
   '/clients/$clientId/$profileId': typeof AuthedClientsClientIdProfileIdIndexRoute
 }
@@ -108,6 +115,7 @@ export interface FileRoutesByTo {
   '/notifications': typeof AuthedNotificationsIndexRoute
   '/products': typeof AuthedProductsIndexRoute
   '/scan_pdf': typeof AuthedScan_pdfIndexRoute
+  '/sueldos': typeof AuthedSueldosIndexRoute
   '/clients/$clientId': typeof AuthedClientsClientIdIndexRoute
   '/clients/$clientId/$profileId': typeof AuthedClientsClientIdProfileIdIndexRoute
 }
@@ -123,6 +131,7 @@ export interface FileRoutesById {
   '/_authed/notifications/': typeof AuthedNotificationsIndexRoute
   '/_authed/products/': typeof AuthedProductsIndexRoute
   '/_authed/scan_pdf/': typeof AuthedScan_pdfIndexRoute
+  '/_authed/sueldos/': typeof AuthedSueldosIndexRoute
   '/_authed/clients/$clientId/': typeof AuthedClientsClientIdIndexRoute
   '/_authed/clients/$clientId/$profileId/': typeof AuthedClientsClientIdProfileIdIndexRoute
 }
@@ -138,6 +147,7 @@ export interface FileRouteTypes {
     | '/notifications'
     | '/products'
     | '/scan_pdf'
+    | '/sueldos'
     | '/clients/$clientId'
     | '/clients/$clientId/$profileId'
   fileRoutesByTo: FileRoutesByTo
@@ -151,6 +161,7 @@ export interface FileRouteTypes {
     | '/notifications'
     | '/products'
     | '/scan_pdf'
+    | '/sueldos'
     | '/clients/$clientId'
     | '/clients/$clientId/$profileId'
   id:
@@ -165,6 +176,7 @@ export interface FileRouteTypes {
     | '/_authed/notifications/'
     | '/_authed/products/'
     | '/_authed/scan_pdf/'
+    | '/_authed/sueldos/'
     | '/_authed/clients/$clientId/'
     | '/_authed/clients/$clientId/$profileId/'
   fileRoutesById: FileRoutesById
@@ -196,6 +208,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof AuthedIndexRouteImport
+      parentRoute: typeof AuthedRouteRoute
+    }
+    '/_authed/sueldos/': {
+      id: '/_authed/sueldos/'
+      path: '/sueldos'
+      fullPath: '/sueldos'
+      preLoaderRoute: typeof AuthedSueldosIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
     '/_authed/scan_pdf/': {
@@ -272,6 +291,7 @@ interface AuthedRouteRouteChildren {
   AuthedNotificationsIndexRoute: typeof AuthedNotificationsIndexRoute
   AuthedProductsIndexRoute: typeof AuthedProductsIndexRoute
   AuthedScan_pdfIndexRoute: typeof AuthedScan_pdfIndexRoute
+  AuthedSueldosIndexRoute: typeof AuthedSueldosIndexRoute
   AuthedClientsClientIdIndexRoute: typeof AuthedClientsClientIdIndexRoute
   AuthedClientsClientIdProfileIdIndexRoute: typeof AuthedClientsClientIdProfileIdIndexRoute
 }
@@ -284,6 +304,7 @@ const AuthedRouteRouteChildren: AuthedRouteRouteChildren = {
   AuthedNotificationsIndexRoute: AuthedNotificationsIndexRoute,
   AuthedProductsIndexRoute: AuthedProductsIndexRoute,
   AuthedScan_pdfIndexRoute: AuthedScan_pdfIndexRoute,
+  AuthedSueldosIndexRoute: AuthedSueldosIndexRoute,
   AuthedClientsClientIdIndexRoute: AuthedClientsClientIdIndexRoute,
   AuthedClientsClientIdProfileIdIndexRoute:
     AuthedClientsClientIdProfileIdIndexRoute,

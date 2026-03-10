@@ -1270,10 +1270,19 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {profiles.map((profile) => (
+                        {profiles.map((profile) => {
+                          const normCuit = (s: string) => s.replace(/\D/g, "");
+                          const warningCuits = lastNotificacionesJob?.notificationFetchWarningCuits ?? [];
+                          const isNotificationWarningProfile = warningCuits.some(
+                            (c) => normCuit(c) === normCuit(profile.identityNumber ?? "")
+                          );
+                          return (
                           <TableRow
                             key={profile.id}
-                            className="cursor-pointer hover:bg-muted/50"
+                            className={cn(
+                              "cursor-pointer hover:bg-muted/50",
+                              isNotificationWarningProfile && "text-orange-600 dark:text-orange-400"
+                            )}
                           >
                             <TableCell className="font-medium">
                               <Link
@@ -1336,7 +1345,8 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                               </Link>
                             </TableCell>
                           </TableRow>
-                        ))}
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </div>
@@ -1349,6 +1359,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
           {(lastComprobantesJob?.failedReason ||
             lastIvaJob?.failedReason ||
             lastNotificacionesJob?.failedReason ||
+            lastNotificacionesJob?.notificationFetchWarning ||
             lastDeudaJob?.failedReason) && (
             <div className="space-y-1 text-xs">
               {lastComprobantesJob?.failedReason && (
@@ -1373,6 +1384,12 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 <p className="text-destructive">
                   <span className="font-semibold">Deudas:</span>{" "}
                   {lastDeudaJob.failedReason}
+                </p>
+              )}
+              {lastNotificacionesJob?.notificationFetchWarning && (
+                <p className="text-orange-600 dark:text-orange-400 text-[11px] mt-0.5">
+                  <span className="font-semibold">Notificaciones (advertencia):</span>{" "}
+                  {lastNotificacionesJob.notificationFetchWarning}
                 </p>
               )}
             </div>
@@ -1921,6 +1938,11 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                         {lastNotificacionesJob.failedReason}
                       </p>
                     )}
+                  {lastNotificacionesJob?.notificationFetchWarning && (
+                    <p className="text-[11px] text-orange-600 dark:text-orange-400 max-w-md mt-0.5">
+                      {lastNotificacionesJob.notificationFetchWarning}
+                    </p>
+                  )}
                 </div>
                 <Button
                   variant="default"

@@ -133,3 +133,28 @@
     font-family: "Poppins", sans-serif;
   }
 }
+
+/* Al imprimir desde Recibo (body.recibo-print-mode): solo se muestran los cuadros de recibo, uno por hoja */
+@media print {
+  body.recibo-print-mode * {
+    visibility: hidden;
+  }
+  body.recibo-print-mode #recibo-print-area,
+  body.recibo-print-mode #recibo-print-area * {
+    visibility: visible;
+  }
+  body.recibo-print-mode #recibo-print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    overflow: visible;
+  }
+  /* Cada recibo en una hoja distinta */
+  body.recibo-print-mode #recibo-print-area > * {
+    page-break-after: always;
+  }
+  body.recibo-print-mode #recibo-print-area > *:last-child {
+    page-break-after: auto;
+  }
+}

@@ -656,6 +656,7 @@ export const getLastJobByType = createServerFn({
         createdAt: job.createdAt,
         failedReason: job.failedReason,
         status: job.status,
+        result: job.result,
       })
       .from(job)
       .where(
@@ -669,11 +670,16 @@ export const getLastJobByType = createServerFn({
 
     if (!lastJob?.createdAt) return null;
     const success = lastJob.failedReason == null;
+    const result = lastJob.result as { notificationFetchWarning?: string; notificationFetchWarningCuits?: string[] } | null;
     return {
       createdAt: lastJob.createdAt.toISOString(),
       success,
       status: lastJob.status,
       failedReason: lastJob.failedReason ?? undefined,
+      ...(jobType === "notificaciones" && result?.notificationFetchWarning != null && {
+        notificationFetchWarning: result.notificationFetchWarning,
+        notificationFetchWarningCuits: result.notificationFetchWarningCuits ?? [],
+      }),
     };
   });
 

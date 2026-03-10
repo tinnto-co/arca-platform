@@ -43,6 +43,13 @@
       "when": 1769725254371,
       "tag": "0005_exotic_robbie_robertson",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1772804283744,
+      "tag": "0006_fat_romulus",
+      "breakpoints": true
     }
   ]
 }
