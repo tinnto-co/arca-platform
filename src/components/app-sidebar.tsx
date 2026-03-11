@@ -172,6 +172,17 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 </Link>
               </SidebarMenuItem>
               <SidebarMenuItem>
+                <Link to="/jobs">
+                  <SidebarMenuButton
+                    isActive={pathname === "/jobs"}
+                    tooltip="Jobs"
+                  >
+                    <Loader2 />
+                    <span>Jobs</span>
+                  </SidebarMenuButton>
+                </Link>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
                 <Link to="/invoices">
                   <SidebarMenuButton
                     isActive={pathname === "/invoices"}

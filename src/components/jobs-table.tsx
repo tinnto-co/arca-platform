@@ -1,0 +1,731 @@
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  AlertCircle,
+  AlertTriangle,
+  Bug,
+  CheckCircle2,
+  Clock,
+  Info,
+  Loader2,
+  MoreHorizontal,
+  Receipt,
+  Bell,
+  CalendarClock,
+  FileWarning,
+  Search,
+  ArrowRight,
+} from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  getJobs,
+  getJobLogs,
+  JobStatus,
+  JobType,
+  type JobRow,
+  type JobsResponse,
+  type JobLogRow,
+} from "@/actions/job";
+import { getClients } from "@/actions/client";
+
+export function JobsTable() {
+  const navigate = useNavigate();
+  const [statusFilter, setStatusFilter] = useState<"all" | JobStatus>("all");
+  const [typeFilter, setTypeFilter] = useState<"all" | JobType>("all");
+  const [clientFilter, setClientFilter] = useState<string>("all");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [selectedJob, setSelectedJob] = useState<JobRow | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [logsOpen, setLogsOpen] = useState(false);
+
+  const pageSize = 20;
+
+  const { data: clients = [] } = useQuery({
+    queryKey: ["clients"],
+    queryFn: () => getClients(),
+  });
+
+  const { data, isLoading } = useQuery<JobsResponse>({
+    queryKey: ["jobs", currentPage, statusFilter, typeFilter, clientFilter],
+    queryFn: async (): Promise<JobsResponse> => {
+      const response = await getJobs({
+        data: {
+          page: currentPage,
+          limit: pageSize,
+          clientId: clientFilter === "all" ? undefined : clientFilter,
+          status: statusFilter === "all" ? undefined : statusFilter,
+          type: typeFilter === "all" ? undefined : typeFilter,
+        },
+      });
+      return response as JobsResponse;
+    },
+  });
+
+  const jobs = (data?.jobs ?? []).filter((job: JobRow) => {
+    if (!searchTerm.trim()) return true;
+    const term = searchTerm.toLowerCase();
+    return (
+      job.id.toLowerCase().includes(term) ||
+      (job.clientName ?? "").toLowerCase().includes(term) ||
+      job.type.toLowerCase().includes(term)
+    );
+  });
+
+  const totalPages = data?.totalPages ?? 1;
+
+  const {
+    data: jobLogs = [],
+    isLoading: logsLoading,
+  } = useQuery<JobLogRow[]>({
+    queryKey: ["job-logs", selectedJob?.id],
+    queryFn: async (): Promise<JobLogRow[]> => {
+      if (!selectedJob?.id) return [];
+      const logs = await getJobLogs({
+        data: { jobId: selectedJob.id, limit: 200 },
+      });
+      return logs as JobLogRow[];
+    },
+    enabled: !!selectedJob?.id && logsOpen,
+  });
+
+  const formatDateTime = (value: string | Date | null | undefined) => {
+    if (!value) return "-";
+    const dateObj = typeof value === "string" ? new Date(value) : value;
+    if (Number.isNaN(dateObj.getTime())) return "-";
+    return dateObj.toLocaleString("es-ES", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  const getDurationMinutes = (
+    startedAt: string | Date | null,
+    finishedAt: string | Date | null
+  ) => {
+    if (!startedAt || !finishedAt) return "-";
+    const start = new Date(startedAt);
+    const end = new Date(finishedAt);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return "-";
+    const diffMs = end.getTime() - start.getTime();
+    const minutes = diffMs / 1000 / 60;
+    if (minutes < 1) return "<1 min";
+    return `${minutes.toFixed(1)} min`;
+  };
+
+  const renderStatusBadge = (status: JobStatus, progress: number | null) => {
+    const baseClass =
+      "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium";
+
+    switch (status) {
+      case "pending":
+        return (
+          <span className={`${baseClass} bg-amber-100 text-amber-900`}>
+            <Clock className="h-3 w-3" />
+            Pendiente
+          </span>
+        );
+      case "running":
+        return (
+          <span className={`${baseClass} bg-blue-100 text-blue-900`}>
+            <Loader2 className="h-3 w-3 animate-spin" />
+            En progreso {typeof progress === "number" ? `(${progress}%)` : ""}
+          </span>
+        );
+      case "failed":
+        return (
+          <span className={`${baseClass} bg-red-100 text-red-900`}>
+            <AlertCircle className="h-3 w-3" />
+            Fallido
+          </span>
+        );
+      case "finished":
+        return (
+          <span className={`${baseClass} bg-emerald-100 text-emerald-900`}>
+            <CheckCircle2 className="h-3 w-3" />
+            Correcto
+          </span>
+        );
+      default:
+        return null;
+    }
+  };
+
+  const renderTypeBadge = (type: JobType) => {
+    const baseClass =
+      "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium";
+
+    switch (type) {
+      case "comprobantes":
+      case "comprobantes_full":
+        return (
+          <span className={`${baseClass} bg-sky-100 text-sky-900`}>
+            <Receipt className="h-3 w-3" />
+            {type === "comprobantes" ? "Comprobantes" : "Comprobantes full"}
+          </span>
+        );
+      case "iva":
+        return (
+          <span className={`${baseClass} bg-purple-100 text-purple-900`}>
+            <FileWarning className="h-3 w-3" />
+            IVA
+          </span>
+        );
+      case "notificaciones":
+        return (
+          <span className={`${baseClass} bg-indigo-100 text-indigo-900`}>
+            <Bell className="h-3 w-3" />
+            Notificaciones
+          </span>
+        );
+      case "deuda":
+        return (
+          <span className={`${baseClass} bg-rose-100 text-rose-900`}>
+            <AlertCircle className="h-3 w-3" />
+            Deuda
+          </span>
+        );
+      case "vencimientos":
+        return (
+          <span className={`${baseClass} bg-teal-100 text-teal-900`}>
+            <CalendarClock className="h-3 w-3" />
+            Vencimientos
+          </span>
+        );
+      default:
+        return type;
+    }
+  };
+
+  const handleViewDetails = (job: JobRow) => {
+    setSelectedJob(job);
+    setDetailOpen(true);
+  };
+
+  const handleViewLogs = (job: JobRow) => {
+    setSelectedJob(job);
+    setLogsOpen(true);
+  };
+
+  const handleGoToClient = (job: JobRow) => {
+    navigate({
+      to: "/clients/$clientId",
+      params: { clientId: job.clientId },
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center">
+          <div className="relative">
+            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por ID, cliente o tipo..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-8 w-full md:w-72"
+            />
+          </div>
+
+          <Select
+            value={clientFilter}
+            onValueChange={(value) => {
+              setClientFilter(value);
+              setCurrentPage(1);
+            }}
+          >
+            <SelectTrigger className="w-full md:w-56">
+              <SelectValue placeholder="Filtrar por cliente" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos los clientes</SelectItem>
+              {clients.map((client) => (
+                <SelectItem key={client.id} value={client.id}>
+                  {client.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={statusFilter}
+            onValueChange={(value) => {
+              setStatusFilter(value as "all" | JobStatus);
+              setCurrentPage(1);
+            }}
+          >
+            <SelectTrigger className="w-full md:w-40">
+              <SelectValue placeholder="Estado" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos</SelectItem>
+              <SelectItem value="pending">Pendiente</SelectItem>
+              <SelectItem value="running">En progreso</SelectItem>
+              <SelectItem value="finished">Correcto</SelectItem>
+              <SelectItem value="failed">Fallido</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={typeFilter}
+            onValueChange={(value) => {
+              setTypeFilter(value as "all" | JobType);
+              setCurrentPage(1);
+            }}
+          >
+            <SelectTrigger className="w-full md:w-48">
+              <SelectValue placeholder="Tipo de job" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos los tipos</SelectItem>
+              <SelectItem value="comprobantes">Comprobantes</SelectItem>
+              <SelectItem value="comprobantes_full">Comprobantes full</SelectItem>
+              <SelectItem value="iva">IVA</SelectItem>
+              <SelectItem value="notificaciones">Notificaciones</SelectItem>
+              <SelectItem value="deuda">Deuda</SelectItem>
+              <SelectItem value="vencimientos">Vencimientos</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="mt-2 md:mt-0">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setSearchTerm("");
+              setClientFilter("all");
+              setStatusFilter("all");
+              setTypeFilter("all");
+              setCurrentPage(1);
+            }}
+          >
+            Limpiar filtros
+          </Button>
+        </div>
+      </div>
+
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[90px]">ID</TableHead>
+              <TableHead>Cliente</TableHead>
+              <TableHead>Tipo</TableHead>
+              <TableHead>Estado</TableHead>
+              <TableHead>Creado</TableHead>
+              <TableHead>Duración</TableHead>
+              <TableHead className="text-right">Acciones</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={8} className="h-24 text-center">
+                  Cargando jobs...
+                </TableCell>
+              </TableRow>
+            ) : jobs.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={8} className="h-24 text-center">
+                  No se encontraron jobs.
+                </TableCell>
+              </TableRow>
+            ) : (
+              jobs.map((job: JobRow) => (
+                <TableRow key={job.id}>
+                  <TableCell>
+                    <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
+                      {job.id.slice(0, 8)}
+                    </code>
+                  </TableCell>
+                  <TableCell>
+                    {job.clientName ? (
+                      <div className="flex flex-col">
+                        <span className="font-medium">{job.clientName}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {job.clientId.slice(0, 8)}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground text-sm">
+                        Cliente desconocido
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell>{renderTypeBadge(job.type)}</TableCell>
+              <TableCell>{renderStatusBadge(job.status, job.progress)}</TableCell>
+                  <TableCell>{formatDateTime(job.createdAt)}</TableCell>
+                  <TableCell>
+                    {getDurationMinutes(job.startedAt, job.finishedAt)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" className="h-8 w-8 p-0">
+                          <span className="sr-only">Abrir menú</span>
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleViewDetails(job)}>
+                          <Search className="mr-2 h-4 w-4" />
+                          Ver detalle del job
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleViewLogs(job)}>
+                          <Search className="mr-2 h-4 w-4" />
+                          Ver logs
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleGoToClient(job)}>
+                          <ArrowRight className="mr-2 h-4 w-4" />
+                          Ir al cliente
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      {totalPages > 1 && (
+        <div className="flex justify-center">
+          <Pagination>
+            <PaginationContent>
+              <PaginationItem>
+                <PaginationPrevious
+                  onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                  className={
+                    currentPage === 1
+                      ? "pointer-events-none opacity-50"
+                      : "cursor-pointer"
+                  }
+                />
+              </PaginationItem>
+
+              {/* Mostrar solo primeras 3, últimas 1 y ventana alrededor de la actual */}
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter((page) => {
+                  if (page <= 3) return true;
+                  if (page === totalPages) return true;
+                  if (Math.abs(page - currentPage) <= 1) return true;
+                  return false;
+                })
+                .map((page, index, visiblePages) => {
+                  const prevPage = visiblePages[index - 1];
+                  const showEllipsis = prevPage && page - prevPage > 1;
+
+                  return (
+                    <>
+                      {showEllipsis && (
+                        <PaginationItem key={`ellipsis-${page}`}>
+                          <span className="px-2 text-muted-foreground">...</span>
+                        </PaginationItem>
+                      )}
+                      <PaginationItem key={page}>
+                        <PaginationLink
+                          onClick={() => setCurrentPage(page)}
+                          isActive={currentPage === page}
+                          className="cursor-pointer"
+                        >
+                          {page}
+                        </PaginationLink>
+                      </PaginationItem>
+                    </>
+                  );
+                })}
+
+              <PaginationItem>
+                <PaginationNext
+                  onClick={() =>
+                    setCurrentPage(Math.min(totalPages, currentPage + 1))
+                  }
+                  className={
+                    currentPage === totalPages
+                      ? "pointer-events-none opacity-50"
+                      : "cursor-pointer"
+                  }
+                />
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
+        </div>
+      )}
+
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
+          <DialogHeader className="space-y-2 pb-2 border-b pr-6">
+            <DialogTitle className="flex items-center gap-2 text-lg min-w-0">
+              <span className="truncate">Detalle del job</span>
+              {selectedJob && renderTypeBadge(selectedJob.type)}
+            </DialogTitle>
+            {selectedJob && (
+              <>
+                <p className="text-[11px] text-muted-foreground font-mono truncate">
+                  ID: {selectedJob.id}
+                </p>
+                <div className="pt-1">
+                  {renderStatusBadge(selectedJob.status, selectedJob.progress)}
+                </div>
+              </>
+            )}
+          </DialogHeader>
+
+          {selectedJob && (
+            <div className="space-y-6 pt-4 overflow-y-auto pr-2">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Cliente
+                  </p>
+                  <p className="text-sm font-semibold">
+                    {selectedJob.clientName ?? "Cliente desconocido"}
+                  </p>
+                  <p className="text-xs text-muted-foreground font-mono">
+                    {selectedJob.clientId}
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Duración
+                  </p>
+                  <p className="text-sm">
+                    {getDurationMinutes(selectedJob.startedAt, selectedJob.finishedAt)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {selectedJob.startedAt && selectedJob.finishedAt
+                      ? `${formatDateTime(selectedJob.startedAt)} → ${formatDateTime(
+                          selectedJob.finishedAt
+                        )}`
+                      : "Sin información completa de tiempos"}
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Creado
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {formatDateTime(selectedJob.createdAt)}
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Última actualización
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {formatDateTime(selectedJob.updatedAt)}
+                  </p>
+                </div>
+
+                <div className="space-y-1.5 col-span-2">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Motivo de error
+                  </p>
+                  <p
+                    className={`mt-1 text-sm rounded-md px-2 py-1 ${
+                      selectedJob.failedReason
+                        ? "bg-red-50 text-red-800 border border-red-100"
+                        : "text-muted-foreground bg-muted"
+                    }`}
+                  >
+                    {selectedJob.failedReason || "Sin errores reportados"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-4 text-sm">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex flex-col">
+                    <p className="font-medium">Resultado</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Resumen de lo que devolvió el scrapper
+                    </p>
+                  </div>
+                  {selectedJob.result && (
+                    <Badge variant="outline" className="text-[10px]">
+                      Detalle
+                    </Badge>
+                  )}
+                </div>
+
+                {!selectedJob.result || Object.keys(selectedJob.result).length === 0 ? (
+                  <div className="border rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                    Sin resultado aún.
+                  </div>
+                ) : (
+                  <ScrollArea className="h-48 border rounded-md bg-muted/40 p-2">
+                    <div className="space-y-1 text-xs">
+                      {Object.entries(selectedJob.result).map(([key, value]) => (
+                        <div
+                          key={key}
+                          className="flex items-start justify-between gap-4 border-b last:border-b-0 border-border/40 pb-1.5"
+                        >
+                          <span className="font-medium text-foreground min-w-[120px]">
+                            {key}
+                          </span>
+                          <span className="text-muted-foreground text-right flex-1 break-words">
+                            {typeof value === "object"
+                              ? JSON.stringify(value)
+                              : String(value)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                )}
+              </div>
+
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={logsOpen} onOpenChange={setLogsOpen}>
+        <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col">
+          <DialogHeader className="space-y-2 pb-2 border-b pr-6">
+            <DialogTitle className="flex items-center justify-between gap-4 text-lg">
+              <div className="flex flex-col gap-1 min-w-0">
+                <span className="truncate">Logs del job</span>
+                {selectedJob && (
+                  <p className="text-[11px] text-muted-foreground font-mono truncate">
+                    {selectedJob.id}
+                  </p>
+                )}
+              </div>
+              {selectedJob && (
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  {renderTypeBadge(selectedJob.type)}
+                  {renderStatusBadge(selectedJob.status, selectedJob.progress)}
+                </div>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="pt-3 flex-1 min-h-0">
+            {logsLoading ? (
+              <div className="border rounded-md bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                Cargando logs...
+              </div>
+            ) : jobLogs.length === 0 ? (
+              <div className="border rounded-md bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                No hay logs registrados para este job.
+              </div>
+            ) : (
+              <ScrollArea className="h-[60vh] border rounded-md bg-muted/40 p-3">
+                <div className="space-y-2 text-xs">
+                  {jobLogs.map((log) => {
+                    const level = log.level.toLowerCase();
+                    let colorClasses =
+                      "border-slate-200 bg-white text-slate-900";
+                    let icon = <Info className="h-3.5 w-3.5 text-slate-500" />;
+
+                    if (level === "info") {
+                      colorClasses =
+                        "border-blue-100 bg-blue-50 text-blue-900";
+                      icon = (
+                        <Info className="h-3.5 w-3.5 text-blue-500" />
+                      );
+                    } else if (level === "warn") {
+                      colorClasses =
+                        "border-amber-100 bg-amber-50 text-amber-900";
+                      icon = (
+                        <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+                      );
+                    } else if (level === "error") {
+                      colorClasses =
+                        "border-red-100 bg-red-50 text-red-900";
+                      icon = (
+                        <AlertCircle className="h-3.5 w-3.5 text-red-500" />
+                      );
+                    } else if (level === "debug") {
+                      colorClasses =
+                        "border-slate-200 bg-slate-50 text-slate-900";
+                      icon = (
+                        <Bug className="h-3.5 w-3.5 text-slate-500" />
+                      );
+                    }
+
+                    return (
+                      <div
+                        key={log.id}
+                        className={`flex items-start gap-3 rounded-md border px-3 py-2 ${colorClasses}`}
+                      >
+                        <div className="mt-0.5">{icon}</div>
+                        <div className="flex-1 space-y-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-semibold tracking-wide uppercase">
+                              {level}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {formatDateTime(log.createdAt)}
+                            </span>
+                          </div>
+                          <p className="text-[11px] leading-snug">{log.message}</p>
+                          {log.context && Object.keys(log.context).length > 0 && (
+                            <pre className="mt-1 text-[10px] text-muted-foreground bg-background/60 rounded px-2 py-1 whitespace-pre-wrap break-words">
+                              {JSON.stringify(log.context, null, 2)}
+                            </pre>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </ScrollArea>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+

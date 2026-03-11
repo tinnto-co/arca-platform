@@ -16,6 +16,7 @@ import { Route as AuthedSueldosIndexRouteImport } from './routes/_authed/sueldos
 import { Route as AuthedScan_pdfIndexRouteImport } from './routes/_authed/scan_pdf/index'
 import { Route as AuthedProductsIndexRouteImport } from './routes/_authed/products/index'
 import { Route as AuthedNotificationsIndexRouteImport } from './routes/_authed/notifications/index'
+import { Route as AuthedJobsIndexRouteImport } from './routes/_authed/jobs/index'
 import { Route as AuthedInvoicesIndexRouteImport } from './routes/_authed/invoices/index'
 import { Route as AuthedClientsIndexRouteImport } from './routes/_authed/clients/index'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -58,6 +59,11 @@ const AuthedNotificationsIndexRoute =
     path: '/notifications/',
     getParentRoute: () => AuthedRouteRoute,
   } as any)
+const AuthedJobsIndexRoute = AuthedJobsIndexRouteImport.update({
+  id: '/jobs/',
+  path: '/jobs/',
+  getParentRoute: () => AuthedRouteRoute,
+} as any)
 const AuthedInvoicesIndexRoute = AuthedInvoicesIndexRouteImport.update({
   id: '/invoices/',
   path: '/invoices/',
@@ -98,6 +104,7 @@ export interface FileRoutesByFullPath {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/clients': typeof AuthedClientsIndexRoute
   '/invoices': typeof AuthedInvoicesIndexRoute
+  '/jobs': typeof AuthedJobsIndexRoute
   '/notifications': typeof AuthedNotificationsIndexRoute
   '/products': typeof AuthedProductsIndexRoute
   '/scan_pdf': typeof AuthedScan_pdfIndexRoute
@@ -112,6 +119,7 @@ export interface FileRoutesByTo {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/clients': typeof AuthedClientsIndexRoute
   '/invoices': typeof AuthedInvoicesIndexRoute
+  '/jobs': typeof AuthedJobsIndexRoute
   '/notifications': typeof AuthedNotificationsIndexRoute
   '/products': typeof AuthedProductsIndexRoute
   '/scan_pdf': typeof AuthedScan_pdfIndexRoute
@@ -128,6 +136,7 @@ export interface FileRoutesById {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/_authed/clients/': typeof AuthedClientsIndexRoute
   '/_authed/invoices/': typeof AuthedInvoicesIndexRoute
+  '/_authed/jobs/': typeof AuthedJobsIndexRoute
   '/_authed/notifications/': typeof AuthedNotificationsIndexRoute
   '/_authed/products/': typeof AuthedProductsIndexRoute
   '/_authed/scan_pdf/': typeof AuthedScan_pdfIndexRoute
@@ -144,6 +153,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/clients'
     | '/invoices'
+    | '/jobs'
     | '/notifications'
     | '/products'
     | '/scan_pdf'
@@ -158,6 +168,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/clients'
     | '/invoices'
+    | '/jobs'
     | '/notifications'
     | '/products'
     | '/scan_pdf'
@@ -173,6 +184,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/_authed/clients/'
     | '/_authed/invoices/'
+    | '/_authed/jobs/'
     | '/_authed/notifications/'
     | '/_authed/products/'
     | '/_authed/scan_pdf/'
@@ -238,6 +250,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedNotificationsIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
+    '/_authed/jobs/': {
+      id: '/_authed/jobs/'
+      path: '/jobs'
+      fullPath: '/jobs'
+      preLoaderRoute: typeof AuthedJobsIndexRouteImport
+      parentRoute: typeof AuthedRouteRoute
+    }
     '/_authed/invoices/': {
       id: '/_authed/invoices/'
       path: '/invoices'
@@ -288,6 +307,7 @@ interface AuthedRouteRouteChildren {
   AuthedProductsIdRoute: typeof AuthedProductsIdRoute
   AuthedClientsIndexRoute: typeof AuthedClientsIndexRoute
   AuthedInvoicesIndexRoute: typeof AuthedInvoicesIndexRoute
+  AuthedJobsIndexRoute: typeof AuthedJobsIndexRoute
   AuthedNotificationsIndexRoute: typeof AuthedNotificationsIndexRoute
   AuthedProductsIndexRoute: typeof AuthedProductsIndexRoute
   AuthedScan_pdfIndexRoute: typeof AuthedScan_pdfIndexRoute
@@ -301,6 +321,7 @@ const AuthedRouteRouteChildren: AuthedRouteRouteChildren = {
   AuthedProductsIdRoute: AuthedProductsIdRoute,
   AuthedClientsIndexRoute: AuthedClientsIndexRoute,
   AuthedInvoicesIndexRoute: AuthedInvoicesIndexRoute,
+  AuthedJobsIndexRoute: AuthedJobsIndexRoute,
   AuthedNotificationsIndexRoute: AuthedNotificationsIndexRoute,
   AuthedProductsIndexRoute: AuthedProductsIndexRoute,
   AuthedScan_pdfIndexRoute: AuthedScan_pdfIndexRoute,

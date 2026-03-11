@@ -340,6 +340,18 @@ export const job = pgTable("job", {
   progress: integer("progress").default(0),
 });
 
+// Logs por job (historial de ejecución)
+export const jobLog = pgTable("job_log", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  jobId: uuid("job_id")
+    .notNull()
+    .references(() => job.id, { onDelete: "cascade" }),
+  level: text("level").notNull(),
+  message: text("message").notNull(),
+  context: jsonb("context"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 /**
  * Tabla maestra de entidades fiscales: CUIL/CUIT único con nombre y provincia.
  * Sirve como catálogo de identidades fiscales vistas en facturas.
