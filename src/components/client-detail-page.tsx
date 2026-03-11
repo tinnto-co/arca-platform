@@ -117,6 +117,12 @@ const facturasChartConfig = {
   compras: { label: "Compras", color: "hsl(0, 72%, 51%)" },
 } satisfies ChartConfig;
 
+/** Convenio Multilateral: comparativa período actual vs anterior */
+const convenioChartConfig = {
+  actual: { label: "Período actual", color: "hsl(142, 76%, 36%)" },
+  anterior: { label: "Período anterior", color: "hsl(215, 20%, 55%)" },
+} satisfies ChartConfig;
+
 const formatIvaCurrency = (
   value: string | number | null | undefined
 ): string => {
@@ -561,6 +567,54 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     () => aggregateMultilateral(multilateralSummaryPrev as any[]),
     [multilateralSummaryPrev]
   );
+
+  /** Datos para gráficos Convenio: actividad (provincias, comprobantes) actual vs anterior */
+  const convenioActividadChartData = useMemo(() => {
+    if (!multilateralPeriod || !multilateralPrevPeriod) return [];
+    return [
+      {
+        metrica: "Provincias",
+        actual: multilateralAggCurrent.provinces,
+        anterior: multilateralAggPrev.provinces,
+      },
+      {
+        metrica: "Comprobantes",
+        actual: multilateralAggCurrent.invoices,
+        anterior: multilateralAggPrev.invoices,
+      },
+    ];
+  }, [
+    multilateralPeriod,
+    multilateralPrevPeriod,
+    multilateralAggCurrent.provinces,
+    multilateralAggCurrent.invoices,
+    multilateralAggPrev.provinces,
+    multilateralAggPrev.invoices,
+  ]);
+
+  /** Datos para gráficos Convenio: montos (IVA, base) actual vs anterior */
+  const convenioMontosChartData = useMemo(() => {
+    if (!multilateralPeriod || !multilateralPrevPeriod) return [];
+    return [
+      {
+        metrica: "Total IVA",
+        actual: Number(multilateralAggCurrent.totalIVA) || 0,
+        anterior: Number(multilateralAggPrev.totalIVA) || 0,
+      },
+      {
+        metrica: "Base imponible",
+        actual: Number(multilateralAggCurrent.totalBase) || 0,
+        anterior: Number(multilateralAggPrev.totalBase) || 0,
+      },
+    ];
+  }, [
+    multilateralPeriod,
+    multilateralPrevPeriod,
+    multilateralAggCurrent.totalIVA,
+    multilateralAggCurrent.totalBase,
+    multilateralAggPrev.totalIVA,
+    multilateralAggPrev.totalBase,
+  ]);
 
   const sortedMultilateralSummary = useMemo(() => {
     if (!multilateralSortKey) return multilateralSummary;
@@ -1489,48 +1543,41 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
             </div>
           )}
 
-          <Card>
-            <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between space-y-0">
-              <div className="space-y-1 min-w-0">
-                <CardTitle className="flex items-center gap-2">
-                  <DollarSign className="h-5 w-5" />
-                  Deudas del Cliente
-                </CardTitle>
+          <div className="rounded-lg border bg-card p-4 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-col gap-1">
+                <p className="text-xs text-muted-foreground">
+                  Ult. actualización{" "}
+                  {lastDeudaJob?.createdAt ? (
+                    <span
+                      className={
+                        lastDeudaJob.success
+                          ? "text-emerald-600 dark:text-emerald-400 font-medium"
+                          : "text-destructive"
+                      }
+                      title={lastDeudaJob.failedReason ?? undefined}
+                    >
+                      {new Date(lastDeudaJob.createdAt).toLocaleDateString("es-AR", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </span>
+                  ) : (
+                    "—"
+                  )}
+                </p>
                 {lastDeudaJob && !lastDeudaJob.success && lastDeudaJob.failedReason && (
-                  <p className="text-xs text-destructive max-w-md">
+                  <p className="text-[11px] text-destructive max-w-md">
                     {lastDeudaJob.failedReason}
                   </p>
                 )}
               </div>
-              <div className="flex flex-wrap items-center gap-2 shrink-0">
-                <div className="flex flex-col gap-1">
-                  <p className="text-xs text-muted-foreground">
-                    Ult. actualización{" "}
-                    {lastDeudaJob?.createdAt ? (
-                      <span
-                        className={
-                          lastDeudaJob.success
-                            ? "text-emerald-600 dark:text-emerald-400 font-medium"
-                            : "text-destructive"
-                        }
-                        title={lastDeudaJob.failedReason ?? undefined}
-                      >
-                        {new Date(lastDeudaJob.createdAt).toLocaleDateString("es-AR", {
-                          day: "2-digit",
-                          month: "short",
-                          year: "numeric",
-                        })}
-                      </span>
-                    ) : (
-                      "—"
-                    )}
-                  </p>
-                </div>
-                <Button
-                  variant="default"
-                  size="sm"
-                  disabled={!!scrapingSection}
-                  onClick={async () => {
+              <Button
+                variant="default"
+                size="sm"
+                disabled={!!scrapingSection}
+                onClick={async () => {
                   setScrapingSection("deudas");
                   try {
                     await scrapSingleJob({
@@ -1560,7 +1607,67 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                   "Actualizar Deudas"
                 )}
               </Button>
+            </div>
+            {!loadingDebts && debts.length > 0 && (
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground whitespace-nowrap">Impuesto:</span>
+                  <Select
+                    value={debtFilterImpuesto || "all"}
+                    onValueChange={(v) => setDebtFilterImpuesto(v === "all" ? "" : v)}
+                  >
+                    <SelectTrigger className="w-[180px] h-9">
+                      <SelectValue placeholder="Todos" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos</SelectItem>
+                      {debtFilterOptions.impuestos.map((v) => (
+                        <SelectItem key={v} value={v}>{v}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground whitespace-nowrap">Concepto:</span>
+                  <Select
+                    value={debtFilterConcepto || "all"}
+                    onValueChange={(v) => setDebtFilterConcepto(v === "all" ? "" : v)}
+                  >
+                    <SelectTrigger className="w-[200px] h-9">
+                      <SelectValue placeholder="Todos" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos</SelectItem>
+                      {debtFilterOptions.conceptos.map((v) => (
+                        <SelectItem key={v} value={v}>{v}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {(debtFilterImpuesto || debtFilterConcepto) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-9"
+                    onClick={() => {
+                      setDebtFilterImpuesto("");
+                      setDebtFilterConcepto("");
+                    }}
+                  >
+                    <X className="h-4 w-4 mr-1" />
+                    Limpiar filtros
+                  </Button>
+                )}
               </div>
+            )}
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <DollarSign className="h-5 w-5" />
+                Deudas del Cliente
+              </CardTitle>
             </CardHeader>
             <CardContent>
               {loadingDebts ? (
@@ -1577,56 +1684,6 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {/* Filtros por impuesto, concepto y período */}
-                  <div className="flex flex-wrap items-center gap-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-muted-foreground whitespace-nowrap">Impuesto:</span>
-                      <Select
-                        value={debtFilterImpuesto || "all"}
-                        onValueChange={(v) => setDebtFilterImpuesto(v === "all" ? "" : v)}
-                      >
-                        <SelectTrigger className="w-[180px]">
-                          <SelectValue placeholder="Todos" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Todos</SelectItem>
-                          {debtFilterOptions.impuestos.map((v) => (
-                            <SelectItem key={v} value={v}>{v}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-muted-foreground whitespace-nowrap">Concepto:</span>
-                      <Select
-                        value={debtFilterConcepto || "all"}
-                        onValueChange={(v) => setDebtFilterConcepto(v === "all" ? "" : v)}
-                      >
-                        <SelectTrigger className="w-[200px]">
-                          <SelectValue placeholder="Todos" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Todos</SelectItem>
-                          {debtFilterOptions.conceptos.map((v) => (
-                            <SelectItem key={v} value={v}>{v}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {(debtFilterImpuesto || debtFilterConcepto) && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setDebtFilterImpuesto("");
-                          setDebtFilterConcepto("");
-                        }}
-                      >
-                        <X className="h-4 w-4 mr-1" />
-                        Limpiar filtros
-                      </Button>
-                    )}
-                  </div>
                   {(debtFilterImpuesto || debtFilterConcepto) && (
                     <p className="text-sm text-muted-foreground">
                       Mostrando {filteredDebts.length} de {debts.length} deudas
@@ -1776,43 +1833,36 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
             </div>
           )}
 
-          <Card>
-            <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between space-y-0">
-              <div className="space-y-1 min-w-0">
-                <CardTitle className="flex items-center gap-2">
-                  <Calendar className="h-5 w-5" />
-                  Vencimientos del Cliente
-                </CardTitle>
+          <div className="rounded-lg border bg-card p-4 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-col gap-1">
+                <p className="text-xs text-muted-foreground">
+                  Ult. actualización{" "}
+                  {lastVencimientosJob?.createdAt ? (
+                    <span
+                      className={
+                        lastVencimientosJob.success
+                          ? "text-emerald-600 dark:text-emerald-400 font-medium"
+                          : "text-destructive"
+                      }
+                      title={lastVencimientosJob.failedReason ?? undefined}
+                    >
+                      {new Date(lastVencimientosJob.createdAt).toLocaleDateString("es-AR", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </span>
+                  ) : (
+                    "—"
+                  )}
+                </p>
                 {lastVencimientosJob && !lastVencimientosJob.success && lastVencimientosJob.failedReason && (
-                  <p className="text-xs text-destructive max-w-md">
+                  <p className="text-[11px] text-destructive max-w-md">
                     {lastVencimientosJob.failedReason}
                   </p>
                 )}
               </div>
-              <div className="flex flex-wrap items-center gap-2 shrink-0">
-                <div className="flex flex-col gap-1">
-                  <p className="text-xs text-muted-foreground">
-                    Ult. actualización{" "}
-                    {lastVencimientosJob?.createdAt ? (
-                      <span
-                        className={
-                          lastVencimientosJob.success
-                            ? "text-emerald-600 dark:text-emerald-400 font-medium"
-                            : "text-destructive"
-                        }
-                        title={lastVencimientosJob.failedReason ?? undefined}
-                      >
-                        {new Date(lastVencimientosJob.createdAt).toLocaleDateString("es-AR", {
-                          day: "2-digit",
-                          month: "short",
-                          year: "numeric",
-                        })}
-                      </span>
-                    ) : (
-                      "—"
-                    )}
-                  </p>
-                </div>
               <Button
                 variant="default"
                 size="sm"
@@ -1847,7 +1897,15 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                   "Actualizar Vencimientos"
                 )}
               </Button>
-              </div>
+            </div>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Calendar className="h-5 w-5" />
+                Vencimientos del Cliente
+              </CardTitle>
             </CardHeader>
             <CardContent>
               {loadingDueDates ? (
@@ -1904,86 +1962,86 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
 
         {/* Notificaciones Tab - mismo formato que la vista del navbar */}
         <TabsContent value="notificaciones" className="space-y-6 mt-6">
+          <div className="rounded-lg border bg-card p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-col gap-1">
+                <p className="text-xs text-muted-foreground">
+                  Ult. actualización{" "}
+                  {lastNotificacionesJob?.createdAt ? (
+                    <span
+                      className={
+                        lastNotificacionesJob.success
+                          ? "text-emerald-600 dark:text-emerald-400 font-medium"
+                          : "text-destructive"
+                      }
+                      title={lastNotificacionesJob.failedReason ?? undefined}
+                    >
+                      {new Date(lastNotificacionesJob.createdAt).toLocaleDateString("es-AR", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </span>
+                  ) : (
+                    "—"
+                  )}
+                </p>
+                {lastNotificacionesJob &&
+                  !lastNotificacionesJob.success &&
+                  lastNotificacionesJob.failedReason && (
+                    <p className="text-[11px] text-destructive max-w-md">
+                      {lastNotificacionesJob.failedReason}
+                    </p>
+                  )}
+                {lastNotificacionesJob?.notificationFetchWarning && (
+                  <p className="text-[11px] text-orange-600 dark:text-orange-400 max-w-md mt-0.5">
+                    {lastNotificacionesJob.notificationFetchWarning}
+                  </p>
+                )}
+              </div>
+              <Button
+                variant="default"
+                size="sm"
+                disabled={!!scrapingSection}
+                onClick={async () => {
+                  setScrapingSection("notificaciones");
+                  try {
+                    await scrapSingleJob({
+                      data: { clientId, jobType: "notificaciones" },
+                    });
+                    await queryClient.invalidateQueries({
+                      queryKey: ["clientNotifications", clientId],
+                    });
+                    await queryClient.invalidateQueries({
+                      queryKey: ["lastNotificacionesJob", clientId],
+                    });
+                    toast.success("Notificaciones actualizadas correctamente");
+                  } catch (err) {
+                    toast.error(
+                      err instanceof Error
+                        ? err.message
+                        : "Error al actualizar notificaciones"
+                    );
+                    queryClient.invalidateQueries({ queryKey: ["lastNotificacionesJob", clientId] });
+                  } finally {
+                    setScrapingSection(null);
+                  }
+                }}
+              >
+                {scrapingSection === "notificaciones" ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Actualizando…
+                  </>
+                ) : (
+                  "Actualizar Notificaciones"
+                )}
+              </Button>
+            </div>
+          </div>
           <NotificationsView
             clientId={clientId}
             className="min-h-[500px]"
-            toolbar={
-              <>
-                <div className="flex flex-col gap-1">
-                  <p className="text-xs text-muted-foreground">
-                    Ult. actualización{" "}
-                    {lastNotificacionesJob?.createdAt ? (
-                      <span
-                        className={
-                          lastNotificacionesJob.success
-                            ? "text-emerald-600 dark:text-emerald-400 font-medium"
-                            : "text-destructive"
-                        }
-                        title={lastNotificacionesJob.failedReason ?? undefined}
-                      >
-                        {new Date(lastNotificacionesJob.createdAt).toLocaleDateString("es-AR", {
-                          day: "2-digit",
-                          month: "short",
-                          year: "numeric",
-                        })}
-                      </span>
-                    ) : (
-                      "—"
-                    )}
-                  </p>
-                  {lastNotificacionesJob &&
-                    !lastNotificacionesJob.success &&
-                    lastNotificacionesJob.failedReason && (
-                      <p className="text-[11px] text-destructive max-w-md">
-                        {lastNotificacionesJob.failedReason}
-                      </p>
-                    )}
-                  {lastNotificacionesJob?.notificationFetchWarning && (
-                    <p className="text-[11px] text-orange-600 dark:text-orange-400 max-w-md mt-0.5">
-                      {lastNotificacionesJob.notificationFetchWarning}
-                    </p>
-                  )}
-                </div>
-                <Button
-                  variant="default"
-                  size="sm"
-                  disabled={!!scrapingSection}
-                  onClick={async () => {
-                    setScrapingSection("notificaciones");
-                    try {
-                      await scrapSingleJob({
-                        data: { clientId, jobType: "notificaciones" },
-                      });
-                      await queryClient.invalidateQueries({
-                        queryKey: ["clientNotifications", clientId],
-                      });
-                      await queryClient.invalidateQueries({
-                        queryKey: ["lastNotificacionesJob", clientId],
-                      });
-                      toast.success("Notificaciones actualizadas correctamente");
-                  } catch (err) {
-                      toast.error(
-                        err instanceof Error
-                          ? err.message
-                          : "Error al actualizar notificaciones"
-                      );
-                      queryClient.invalidateQueries({ queryKey: ["lastNotificacionesJob", clientId] });
-                    } finally {
-                      setScrapingSection(null);
-                    }
-                  }}
-                >
-                  {scrapingSection === "notificaciones" ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Actualizando…
-                    </>
-                  ) : (
-                    "Actualizar Notificaciones"
-                  )}
-                </Button>
-              </>
-            }
           />
         </TabsContent>
 
@@ -2025,9 +2083,9 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
               )}
             </Button>
           </div> */}
-          {/* Fila 1: solo botón Actualizar Facturas */}
-          <div className="flex justify-end">
-            <div className="flex flex-wrap items-center gap-2">
+          <div className="rounded-lg border bg-card p-4 space-y-4">
+            {/* Fila 1: solo botón Actualizar Facturas */}
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex flex-col gap-1">
                 <p className="text-xs text-muted-foreground">
                   Ult. actualización{" "}
@@ -2095,10 +2153,9 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 )}
               </Button>
             </div>
-          </div>
 
-          {/* Fila 2: todos los filtros en una sola fila */}
-          <div className="flex flex-wrap items-center gap-2">
+            {/* Fila 2: filtros */}
+            <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm text-muted-foreground shrink-0">Período:</span>
             <Select
               value={facturasPeriodType}
@@ -2251,28 +2308,29 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 <SelectItem value="Inbound">Recibida</SelectItem>
               </SelectContent>
             </Select>
-          </div>
-
-          {/* Fila 3: búsqueda por emisor/receptor y exportar Excel */}
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar mediante emisor o receptor..."
-                value={facturasSearchTerm}
-                onChange={(e) => setFacturasSearchTerm(e.target.value)}
-                className="pl-8 w-full md:w-80"
-              />
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => invoicesTableRef.current?.exportExcel()}
-              className="h-9 gap-1.5 shrink-0 font-normal"
-            >
-              <Download className="h-4 w-4" />
-              <span>Excel</span>
-            </Button>
+
+            {/* Fila 3: búsqueda por emisor/receptor y exportar Excel */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar mediante emisor o receptor..."
+                  value={facturasSearchTerm}
+                  onChange={(e) => setFacturasSearchTerm(e.target.value)}
+                  className="pl-8 w-full md:w-80"
+                />
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => invoicesTableRef.current?.exportExcel()}
+                className="h-9 gap-1.5 shrink-0 font-normal"
+              >
+                <Download className="h-4 w-4" />
+                <span>Excel</span>
+              </Button>
+            </div>
           </div>
 
           {/* Resumen Ventas/Compras (1/3) + Gráfico (2/3) */}
@@ -2433,86 +2491,123 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
 
         {/* Convenio Multilateral Tab */}
         <TabsContent value="convenio-multilateral" className="space-y-6 mt-6">
-          <Card>
-            <CardHeader className="flex flex-col gap-3">
-              <div className="flex items-center justify-between gap-4 flex-wrap">
-                <CardTitle className="flex items-center gap-2">
-                  <Receipt className="h-5 w-5" />
-                  Convenio Multilateral (ventas por provincia)
-                </CardTitle>
-                <div className="flex items-center gap-4 flex-wrap">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">
-                      Perfil:
-                    </span>
-                    {effectiveMultilateralProfileId ? (
+          <div className="rounded-lg border bg-card p-4 space-y-4">
+            <div className="flex items-center gap-2">
+              <Receipt className="h-5 w-5 shrink-0" />
+              <h3 className="font-semibold text-lg">
+                Convenio Multilateral (ventas por provincia)
+              </h3>
+            </div>
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground shrink-0">
+                  Perfil:
+                </span>
+                {effectiveMultilateralProfileId ? (
+                  <Select
+                    key={`multilateral-${clientId}`}
+                    defaultValue={effectiveMultilateralProfileId}
+                    onValueChange={(value) =>
+                      setMultilateralProfileId(value || undefined)
+                    }
+                    disabled={loadingProfiles || profiles.length <= 1}
+                  >
+                    <SelectTrigger className="h-9 min-w-[220px] w-auto">
+                      <SelectValue placeholder="Seleccionar perfil" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {profiles.map(
+                        (profile: {
+                          id: string;
+                          name?: string;
+                          identityNumber?: string;
+                        }) => (
+                          <SelectItem key={profile.id} value={profile.id}>
+                            {profile.name ||
+                              profile.identityNumber ||
+                              profile.id}
+                          </SelectItem>
+                        )
+                      )}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <span className="min-w-[220px] text-sm text-muted-foreground">
+                    {loadingProfiles
+                      ? "Cargando perfiles..."
+                      : profiles.length === 0
+                        ? "Sin perfiles"
+                        : "Seleccionar perfil"}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground shrink-0">
+                  Período:
+                </span>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="h-9 px-3 text-xs font-normal"
+                    >
+                      {multilateralPeriod
+                        ? `${MONTH_NAMES_SHORT[multilateralSelectedMonth]} ${multilateralSelectedYear}`
+                        : "Sin filtro"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-4" align="end">
+                    <div className="space-y-3">
                       <Select
-                        key={`multilateral-${clientId}`}
-                        defaultValue={effectiveMultilateralProfileId}
-                        onValueChange={(value) =>
-                          setMultilateralProfileId(value || undefined)
-                        }
-                        disabled={loadingProfiles || profiles.length <= 1}
+                        value={String(multilateralSelectedYear)}
+                        onValueChange={(v) => {
+                          const y = Number(v);
+                          const newMax =
+                            y === now.getFullYear() ? now.getMonth() : 11;
+                          const m = Math.min(
+                            multilateralSelectedMonth,
+                            newMax
+                          );
+                          const range = getMonthBounds(y, m);
+                          setMultilateralPeriod(range);
+                          setMultilateralDateFrom(
+                            range.from.toISOString().slice(0, 10)
+                          );
+                          setMultilateralDateTo(
+                            range.to.toISOString().slice(0, 10)
+                          );
+                        }}
                       >
-                        <SelectTrigger className="min-w-[220px] w-auto">
-                          <SelectValue placeholder="Seleccionar perfil" />
+                        <SelectTrigger className="w-full h-9">
+                          <SelectValue placeholder="Año" />
                         </SelectTrigger>
                         <SelectContent>
-                          {profiles.map(
-                            (profile: {
-                              id: string;
-                              name?: string;
-                              identityNumber?: string;
-                            }) => (
-                              <SelectItem key={profile.id} value={profile.id}>
-                                {profile.name ||
-                                  profile.identityNumber ||
-                                  profile.id}
-                              </SelectItem>
-                            )
-                          )}
+                          {Array.from(
+                            { length: 8 },
+                            (_, i) => now.getFullYear() - i
+                          ).map((y) => (
+                            <SelectItem key={y} value={String(y)}>
+                              {y}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
-                    ) : (
-                      <span className="min-w-[220px] text-sm text-muted-foreground">
-                        {loadingProfiles
-                          ? "Cargando perfiles..."
-                          : profiles.length === 0
-                            ? "Sin perfiles"
-                            : "Seleccionar perfil"}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Selector de período (año + meses), igual que IVA pero aplicado al filtro de Convenio Multilateral */}
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">
-                      Período:
-                    </span>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className="h-9 px-3 text-xs font-normal"
-                        >
-                          {multilateralPeriod
-                            ? `${MONTH_NAMES_SHORT[multilateralSelectedMonth]} ${multilateralSelectedYear}`
-                            : "Sin filtro"}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-4" align="end">
-                        <div className="space-y-3">
-                          <Select
-                            value={String(multilateralSelectedYear)}
-                            onValueChange={(v) => {
-                              const y = Number(v);
-                              const newMax =
-                                y === now.getFullYear() ? now.getMonth() : 11;
-                              const m = Math.min(
-                                multilateralSelectedMonth,
-                                newMax
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {multilateralAvailableMonthIndices.map((i) => (
+                          <Button
+                            key={i}
+                            variant={
+                              multilateralSelectedMonth === i
+                                ? "default"
+                                : "outline"
+                            }
+                            size="sm"
+                            className="text-xs h-8"
+                            onClick={() => {
+                              const range = getMonthBounds(
+                                multilateralSelectedYear,
+                                i
                               );
-                              const range = getMonthBounds(y, m);
                               setMultilateralPeriod(range);
                               setMultilateralDateFrom(
                                 range.from.toISOString().slice(0, 10)
@@ -2522,57 +2617,19 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                               );
                             }}
                           >
-                            <SelectTrigger className="w-full h-9">
-                              <SelectValue placeholder="Año" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {Array.from(
-                                { length: 8 },
-                                (_, i) => now.getFullYear() - i
-                              ).map((y) => (
-                                <SelectItem key={y} value={String(y)}>
-                                  {y}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <div className="grid grid-cols-3 gap-1.5">
-                            {multilateralAvailableMonthIndices.map((i) => (
-                              <Button
-                                key={i}
-                                variant={
-                                  multilateralSelectedMonth === i
-                                    ? "default"
-                                    : "outline"
-                                }
-                                size="sm"
-                                className="text-xs h-8"
-                                onClick={() => {
-                                  const range = getMonthBounds(
-                                    multilateralSelectedYear,
-                                    i
-                                  );
-                                  setMultilateralPeriod(range);
-                                  setMultilateralDateFrom(
-                                    range.from.toISOString().slice(0, 10)
-                                  );
-                                  setMultilateralDateTo(
-                                    range.to.toISOString().slice(0, 10)
-                                  );
-                                }}
-                              >
-                                {MONTH_NAMES_SHORT[i]}
-                              </Button>
-                            ))}
-                          </div>
-                        </div>
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-                </div>
+                            {MONTH_NAMES_SHORT[i]}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
-            </CardHeader>
-            <CardContent>
+            </div>
+          </div>
+
+          <Card>
+            <CardContent className="pt-6">
               {multilateralPeriod && multilateralPrevPeriod && (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                   <Card>
@@ -2642,6 +2699,98 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                       />
                     </CardContent>
                   </Card>
+                </div>
+              )}
+
+              {/* Gráficos: Actual vs Anterior */}
+              {multilateralPeriod && multilateralPrevPeriod && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-6">
+                  {convenioActividadChartData.length > 0 && (
+                    <Card className="overflow-hidden">
+                      <CardHeader className="py-2 px-4">
+                        <CardTitle className="text-sm font-semibold">
+                          Actividad: período actual vs anterior
+                        </CardTitle>
+                        <p className="text-xs text-muted-foreground font-normal">
+                          Provincias con actividad y cantidad de comprobantes
+                        </p>
+                      </CardHeader>
+                      <CardContent className="pt-0 px-4 pb-4">
+                        <ChartContainer config={convenioChartConfig} className="h-[180px] w-full">
+                          <BarChart
+                            data={convenioActividadChartData}
+                            margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                            barCategoryGap={12}
+                            barSize={28}
+                          >
+                            <CartesianGrid strokeDasharray="2 2" className="stroke-muted" />
+                            <XAxis dataKey="metrica" tick={{ fontSize: 10 }} />
+                            <YAxis tick={{ fontSize: 9 }} />
+                            <ChartTooltip
+                              content={
+                                <ChartTooltipContent
+                                  formatter={(value) => String(value)}
+                                  labelFormatter={(label) => label}
+                                />
+                              }
+                            />
+                            <Legend wrapperStyle={{ fontSize: 10 }} />
+                            <Bar dataKey="actual" fill="var(--color-actual)" name="Período actual" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="anterior" fill="var(--color-anterior)" name="Período anterior" radius={[4, 4, 0, 0]} />
+                          </BarChart>
+                        </ChartContainer>
+                      </CardContent>
+                    </Card>
+                  )}
+                  {convenioMontosChartData.length > 0 && (
+                    <Card className="overflow-hidden">
+                      <CardHeader className="py-2 px-4">
+                        <CardTitle className="text-sm font-semibold">
+                          Montos: período actual vs anterior
+                        </CardTitle>
+                        <p className="text-xs text-muted-foreground font-normal">
+                          Total IVA y base imponible (ARS)
+                        </p>
+                      </CardHeader>
+                      <CardContent className="pt-0 px-4 pb-4">
+                        <ChartContainer config={convenioChartConfig} className="h-[180px] w-full">
+                          <BarChart
+                            data={convenioMontosChartData}
+                            margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                            barCategoryGap={12}
+                            barSize={28}
+                          >
+                            <CartesianGrid strokeDasharray="2 2" className="stroke-muted" />
+                            <XAxis dataKey="metrica" tick={{ fontSize: 10 }} />
+                            <YAxis
+                              tick={{ fontSize: 9 }}
+                              tickFormatter={(v) =>
+                                v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `${(v / 1e3).toFixed(0)}k` : String(v)
+                              }
+                            />
+                            <ChartTooltip
+                              content={
+                                <ChartTooltipContent
+                                  formatter={(value) =>
+                                    new Intl.NumberFormat("es-AR", {
+                                      style: "currency",
+                                      currency: "ARS",
+                                      minimumFractionDigits: 0,
+                                      maximumFractionDigits: 0,
+                                    }).format(Number(value))
+                                  }
+                                  labelFormatter={(label) => label}
+                                />
+                              }
+                            />
+                            <Legend wrapperStyle={{ fontSize: 10 }} />
+                            <Bar dataKey="actual" fill="var(--color-actual)" name="Período actual" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="anterior" fill="var(--color-anterior)" name="Período anterior" radius={[4, 4, 0, 0]} />
+                          </BarChart>
+                        </ChartContainer>
+                      </CardContent>
+                    </Card>
+                  )}
                 </div>
               )}
 
@@ -2752,120 +2901,51 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
 
         {/* IVA Tab */}
         <TabsContent value="iva" className="mt-6">
-          <div className="space-y-4">
-            {/* Perfil, Período y Descargar Excel (botón a la derecha) */}
+          <div className="rounded-lg border bg-card p-4 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm text-muted-foreground">
-                  Perfil para IVA:
-                </span>
-                {effectiveIvaProfileId ? (
-                  <Select
-                    key={`iva-${clientId}`}
-                    defaultValue={effectiveIvaProfileId}
-                    onValueChange={(value) => setIvaProfileId(value || undefined)}
-                    disabled={loadingProfiles || profiles.length <= 1}
-                  >
-                    <SelectTrigger className="min-w-[200px] w-auto">
-                      <SelectValue placeholder="Seleccionar perfil" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {profiles.map((profile: { id: string; name?: string; identityNumber?: string }) => (
-                        <SelectItem key={profile.id} value={profile.id}>
-                          {profile.name || profile.identityNumber || profile.id}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <span className="min-w-[200px] text-sm text-muted-foreground">
-                    {loadingProfiles ? "Cargando perfiles..." : profiles.length === 0 ? "Sin perfiles" : "Seleccionar perfil"}
-                  </span>
-                )}
-                <Popover
-                  open={ivaPeriodPickerOpen}
-                  onOpenChange={setIvaPeriodPickerOpen}
-                >
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="default"
-                      className="h-9 min-w-[200px] w-auto justify-start text-left font-normal px-3 py-2"
+              <div className="flex flex-col gap-1">
+                <p className="text-xs text-muted-foreground">
+                  Ult. actualización{" "}
+                  {lastIvaJob?.createdAt ? (
+                    <span
+                      className={
+                        lastIvaJob.success
+                          ? "text-emerald-600 dark:text-emerald-400 font-medium"
+                          : "text-destructive"
+                      }
+                      title={lastIvaJob.failedReason ?? undefined}
                     >
-                      <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
-                      <span className="text-sm">
-                        {`${MONTH_NAMES[ivaSelectedMonth]} ${ivaSelectedYear}`}
-                      </span>
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-4" align="end">
-                    <div className="space-y-3">
-                      <Select
-                        value={String(ivaSelectedYear)}
-                        onValueChange={(v) => {
-                          const y = Number(v);
-                          const newMax =
-                            y === now.getFullYear() ? now.getMonth() : 11;
-                          const m = Math.min(ivaSelectedMonth, newMax);
-                          setIvaResumenDateRange(getMonthBounds(y, m));
-                        }}
-                      >
-                        <SelectTrigger className="w-full h-9">
-                          <SelectValue placeholder="Año" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {Array.from(
-                            { length: 8 },
-                            (_, i) => now.getFullYear() - i
-                          ).map((y) => (
-                            <SelectItem key={y} value={String(y)}>
-                              {y}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <div className="grid grid-cols-3 gap-1.5">
-                        {ivaAvailableMonthIndices.map((i) => (
-                          <Button
-                            key={i}
-                            variant={
-                              ivaSelectedMonth === i ? "default" : "outline"
-                            }
-                            size="sm"
-                            className="text-xs h-8"
-                            onClick={() => {
-                              setIvaResumenDateRange(
-                                getMonthBounds(ivaSelectedYear, i)
-                              );
-                              setIvaPeriodPickerOpen(false);
-                            }}
-                          >
-                            {MONTH_NAMES_SHORT[i]}
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-                  </PopoverContent>
-                </Popover>
-                
+                      {new Date(lastIvaJob.createdAt).toLocaleDateString("es-AR", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </span>
+                  ) : (
+                    "—"
+                  )}
+                </p>
+                {lastIvaJob &&
+                  !lastIvaJob.success &&
+                  lastIvaJob.failedReason && (
+                    <p className="text-[11px] text-destructive max-w-md">
+                      {lastIvaJob.failedReason}
+                    </p>
+                  )}
               </div>
-              
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-2 shrink-0 flex-wrap">
                 {runningComprobantesJob && (
                   <span className="text-xs text-muted-foreground">
                     Job de comprobantes en curso desde{" "}
                     {new Date(runningComprobantesJob.createdAt).toLocaleTimeString(
                       "es-AR",
-                      {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      }
+                      { hour: "2-digit", minute: "2-digit" }
                     )}
                   </span>
                 )}
                 <Button
                   variant="default"
-                  size="default"
+                  size="sm"
                   disabled={!!scrapingSection || !!runningComprobantesJob}
                   onClick={async () => {
                     setScrapingSection("iva");
@@ -2888,7 +2968,6 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                       toast.error(
                         err instanceof Error ? err.message : "Error al actualizar IVA"
                       );
-                      // Refrescar el último job para que el error quede visible en IVA y Resumen
                       queryClient.invalidateQueries({ queryKey: ["lastIvaJob", clientId] });
                       queryClient.invalidateQueries({ queryKey: ["lastComprobantesJob", clientId] });
                     } finally {
@@ -2907,7 +2986,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 </Button>
                 <Button
                   variant="outline"
-                  size="default"
+                  size="sm"
                   onClick={() => ivaResumeRef.current?.downloadExcel()}
                   className="gap-2 font-semibold shrink-0"
                   disabled={!effectiveIvaProfileId}
@@ -2917,37 +2996,101 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 </Button>
               </div>
             </div>
-            <div className="flex flex-col gap-1">
-                  <p className="text-xs text-muted-foreground">
-                    Ult. actualización{" "}
-                    {lastIvaJob?.createdAt ? (
-                      <span
-                        className={
-                          lastIvaJob.success
-                            ? "text-emerald-600 dark:text-emerald-400 font-medium"
-                            : "text-destructive"
-                        }
-                        title={lastIvaJob.failedReason ?? undefined}
-                      >
-                        {new Date(lastIvaJob.createdAt).toLocaleDateString("es-AR", {
-                          day: "2-digit",
-                          month: "short",
-                          year: "numeric",
-                        })}
-                      </span>
-                    ) : (
-                      "—"
-                    )}
-                  </p>
-                  {lastIvaJob &&
-                    !lastIvaJob.success &&
-                    lastIvaJob.failedReason && (
-                      <p className="text-[11px] text-destructive max-w-md">
-                        {lastIvaJob.failedReason}
-                      </p>
-                    )}
-                </div>
-            <div className="w-full">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm text-muted-foreground shrink-0">
+                Perfil para IVA:
+              </span>
+              {effectiveIvaProfileId ? (
+                <Select
+                  key={`iva-${clientId}`}
+                  defaultValue={effectiveIvaProfileId}
+                  onValueChange={(value) => setIvaProfileId(value || undefined)}
+                  disabled={loadingProfiles || profiles.length <= 1}
+                >
+                  <SelectTrigger className="h-9 min-w-[200px] w-auto">
+                    <SelectValue placeholder="Seleccionar perfil" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {profiles.map((profile: { id: string; name?: string; identityNumber?: string }) => (
+                      <SelectItem key={profile.id} value={profile.id}>
+                        {profile.name || profile.identityNumber || profile.id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <span className="min-w-[200px] text-sm text-muted-foreground">
+                  {loadingProfiles ? "Cargando perfiles..." : profiles.length === 0 ? "Sin perfiles" : "Seleccionar perfil"}
+                </span>
+              )}
+              <Popover
+                open={ivaPeriodPickerOpen}
+                onOpenChange={setIvaPeriodPickerOpen}
+              >
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9 min-w-[200px] w-auto justify-start text-left font-normal px-3"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                    <span className="text-sm">
+                      {`${MONTH_NAMES[ivaSelectedMonth]} ${ivaSelectedYear}`}
+                    </span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-4" align="end">
+                  <div className="space-y-3">
+                    <Select
+                      value={String(ivaSelectedYear)}
+                      onValueChange={(v) => {
+                        const y = Number(v);
+                        const newMax =
+                          y === now.getFullYear() ? now.getMonth() : 11;
+                        const m = Math.min(ivaSelectedMonth, newMax);
+                        setIvaResumenDateRange(getMonthBounds(y, m));
+                      }}
+                    >
+                      <SelectTrigger className="w-full h-9">
+                        <SelectValue placeholder="Año" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Array.from(
+                          { length: 8 },
+                          (_, i) => now.getFullYear() - i
+                        ).map((y) => (
+                          <SelectItem key={y} value={String(y)}>
+                            {y}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {ivaAvailableMonthIndices.map((i) => (
+                        <Button
+                          key={i}
+                          variant={
+                            ivaSelectedMonth === i ? "default" : "outline"
+                          }
+                          size="sm"
+                          className="text-xs h-8"
+                          onClick={() => {
+                            setIvaResumenDateRange(
+                              getMonthBounds(ivaSelectedYear, i)
+                            );
+                            setIvaPeriodPickerOpen(false);
+                          }}
+                        >
+                          {MONTH_NAMES_SHORT[i]}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+          </div>
+          <div className="w-full mt-4">
               {loadingClientIva ? (
                 <div className="flex items-center justify-center h-40 text-muted-foreground gap-2">
                   <Loader2 className="h-5 w-5 animate-spin" />
@@ -2966,7 +3109,6 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                   periodUsedForResumen={periodUsedForResumen}
                 />
               )}
-            </div>
           </div>
         </TabsContent>
       </Tabs>
