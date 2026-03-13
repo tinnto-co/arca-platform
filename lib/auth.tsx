@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { betterAuth } from "better-auth";
 import { admin } from "better-auth/plugins";
-import { reactStartCookies } from "better-auth/react-start";
+import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "@/lib/db";
 import { anonymous } from "better-auth/plugins";
@@ -51,7 +51,7 @@ export const auth = betterAuth({
   //     await redis.del(key);
   //   },
   // },
-  plugins: [anonymous(), admin({}), reactStartCookies()],
+  plugins: [anonymous(), admin({}), tanstackStartCookies()],
   database: drizzleAdapter(db, {
     provider: "pg",
   }),
