@@ -134,7 +134,7 @@
   }
 }
 
-/* Al imprimir desde Recibo (body.recibo-print-mode): solo se muestran los cuadros de recibo, uno por hoja */
+/* Al imprimir desde Recibo (body.recibo-print-mode): solo se muestran los cuadros de recibo */
 @media print {
   body.recibo-print-mode * {
     visibility: hidden;
@@ -150,11 +150,45 @@
     width: 100%;
     overflow: visible;
   }
-  /* Cada recibo en una hoja distinta */
+}
+
+/* Vertical (retrato): un recibo por cara, ajustado al tamaño de la hoja */
+@media print and (orientation: portrait) {
+  body.recibo-print-mode #recibo-print-area {
+    display: block;
+  }
   body.recibo-print-mode #recibo-print-area > * {
     page-break-after: always;
+    page-break-inside: avoid;
+    width: 100%;
+    max-width: 100%;
   }
   body.recibo-print-mode #recibo-print-area > *:last-child {
     page-break-after: auto;
+  }
+  /* Que el recibo quepa en una cara: límite de altura A4 ~297mm menos márgenes */
+  body.recibo-print-mode .recibo-sheet {
+    max-height: 270mm;
+    box-sizing: border-box;
+  }
+}
+
+/* Horizontal (apaisado): los dos recibos en la misma cara, mismo diseño */
+@media print and (orientation: landscape) {
+  body.recibo-print-mode #recibo-print-area {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    align-items: start;
+  }
+  body.recibo-print-mode #recibo-print-area > * {
+    page-break-after: avoid;
+    page-break-inside: avoid;
+    width: 100%;
+  }
+  /* Mismo diseño: ancho fijo por recibo para que no se deformen */
+  body.recibo-print-mode .recibo-sheet {
+    min-width: 0;
+    max-width: 100%;
   }
 }
