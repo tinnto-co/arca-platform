@@ -159,7 +159,7 @@ export function CredentialsTable({ clientId }: CredentialsTableProps) {
               </CreateCredentialDialog>
             </div>
           ) : (
-            <div className="rounded-md border">
+            <div className="rounded-xl border border-[#efeeef] bg-white shadow-sm overflow-hidden">
               <Table>
                 <TableHeader>
                   <TableRow>

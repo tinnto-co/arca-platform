@@ -127,9 +127,9 @@ export function ClientsTable() {
   const hasResults = filteredClients.length > 0;
 
   return (
-    <div className="space-y-4">
-      {/* Search and Filters - siempre el mismo árbol para no perder foco al cambiar resultados */}
-      <div className="flex flex-col sm:flex-row gap-4">
+    <div className="flex flex-col h-full gap-4">
+      {/* Search and Filters */}
+      <div className="flex flex-col sm:flex-row gap-4 flex-shrink-0">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
           <Input
@@ -163,7 +163,7 @@ export function ClientsTable() {
       ) : (
         <>
           {/* Results counter */}
-          <div className="flex items-center justify-between text-sm text-muted-foreground">
+          <div className="flex items-center justify-between text-sm text-muted-foreground flex-shrink-0">
             <span>
               Mostrando {filteredClients.length} de {clients.length} clientes
             </span>
@@ -181,7 +181,7 @@ export function ClientsTable() {
             )}
           </div>
 
-          <div className="rounded-md border">
+          <div className="rounded-xl border border-[#efeeef] bg-white shadow-sm overflow-auto flex-1 min-h-0">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -193,7 +193,7 @@ export function ClientsTable() {
               </TableHeader>
               <TableBody>
                 {filteredClients.map((client) => (
-                  <TableRow key={client.id} onClick={() => navigate({ to: `/clients/${client.id}` })} className="cursor-pointer hover:bg-gray-600/10">
+                  <TableRow key={client.id} onClick={() => navigate({ to: `/clients/${client.id}` })} className="cursor-pointer hover:bg-[#efeeef]/50">
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <span className={client.hasErrors ? "text-destructive font-medium" : ""}>

@@ -257,9 +257,9 @@ export function NotificationsView({
   return (
     <div
       className={cn(
-        "border rounded-lg overflow-hidden",
+        "border rounded-xl bg-white shadow-sm overflow-hidden",
         toolbar ? "flex flex-col" : "flex",
-        clientIdProp ? "min-h-[400px] flex-1" : "h-[calc(100vh-8rem)]",
+        clientIdProp ? "min-h-[400px] flex-1" : "h-full",
         className
       )}
     >

@@ -1125,7 +1125,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   }
 
   return (
-    <div className="space-y-6 m-[3rem]">
+    <div className="space-y-4 p-4 md:space-y-6 md:p-0 md:m-[3rem]">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -1514,7 +1514,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-black">
+                  <div className="text-2xl font-bold text-[#232c50]">
                     {new Intl.NumberFormat("es-AR", {
                       style: "currency",
                       currency: "ARS",
@@ -1531,7 +1531,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-black">
+                  <div className="text-2xl font-bold text-[#232c50]">
                     {new Intl.NumberFormat("es-AR", {
                       style: "currency",
                       currency: "ARS",
@@ -1759,12 +1759,12 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                    <CalendarCheck className="h-4 w-4 text-black" />
+                    <CalendarCheck className="h-4 w-4 text-[#232c50]" />
                     Vencimientos Futuros
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-black">
+                  <div className="text-2xl font-bold text-[#232c50]">
                     {dueDateStats.future}
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
@@ -1776,12 +1776,12 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                    <CalendarX className="h-4 w-4 text-black" />
+                    <CalendarX className="h-4 w-4 text-[#232c50]" />
                     Vencimientos Vencidos
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-black">
+                  <div className="text-2xl font-bold text-[#232c50]">
                     {dueDateStats.overdue}
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
@@ -1794,7 +1794,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                      <Clock className="h-4 w-4 text-black" />
+                      <Clock className="h-4 w-4 text-[#232c50]" />
                       Próximo Vencimiento
                     </CardTitle>
                   </CardHeader>

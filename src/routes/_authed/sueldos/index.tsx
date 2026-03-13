@@ -46,11 +46,11 @@ function RouteComponent() {
   });
 
   return (
-    <div className="space-y-6 m-[3rem] overflow-x-hidden">
+    <div className="space-y-4 p-4 md:space-y-6 md:p-0 md:m-[3rem] overflow-x-hidden">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <DollarSign className="h-6 w-6" />
-          <h1 className="text-2xl font-bold">Liquidación de sueldos</h1>
+          <DollarSign className="h-6 w-6 text-[#139ed9]" />
+          <h1 className="text-2xl font-bold text-[#232c50]">Liquidación de sueldos</h1>
         </div>
         <div className="flex items-center gap-2">
           <UserCircle className="h-5 w-5 text-muted-foreground" />

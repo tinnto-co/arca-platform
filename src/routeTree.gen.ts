@@ -98,19 +98,19 @@ const AuthedClientsClientIdProfileIdIndexRoute =
   } as any)
 
 export interface FileRoutesByFullPath {
-  '/login': typeof LoginRoute
   '/': typeof AuthedIndexRoute
+  '/login': typeof LoginRoute
   '/products/$id': typeof AuthedProductsIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/clients': typeof AuthedClientsIndexRoute
-  '/invoices': typeof AuthedInvoicesIndexRoute
-  '/jobs': typeof AuthedJobsIndexRoute
-  '/notifications': typeof AuthedNotificationsIndexRoute
-  '/products': typeof AuthedProductsIndexRoute
-  '/scan_pdf': typeof AuthedScan_pdfIndexRoute
-  '/sueldos': typeof AuthedSueldosIndexRoute
-  '/clients/$clientId': typeof AuthedClientsClientIdIndexRoute
-  '/clients/$clientId/$profileId': typeof AuthedClientsClientIdProfileIdIndexRoute
+  '/clients/': typeof AuthedClientsIndexRoute
+  '/invoices/': typeof AuthedInvoicesIndexRoute
+  '/jobs/': typeof AuthedJobsIndexRoute
+  '/notifications/': typeof AuthedNotificationsIndexRoute
+  '/products/': typeof AuthedProductsIndexRoute
+  '/scan_pdf/': typeof AuthedScan_pdfIndexRoute
+  '/sueldos/': typeof AuthedSueldosIndexRoute
+  '/clients/$clientId/': typeof AuthedClientsClientIdIndexRoute
+  '/clients/$clientId/$profileId/': typeof AuthedClientsClientIdProfileIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -147,19 +147,19 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    | '/login'
     | '/'
+    | '/login'
     | '/products/$id'
     | '/api/auth/$'
-    | '/clients'
-    | '/invoices'
-    | '/jobs'
-    | '/notifications'
-    | '/products'
-    | '/scan_pdf'
-    | '/sueldos'
-    | '/clients/$clientId'
-    | '/clients/$clientId/$profileId'
+    | '/clients/'
+    | '/invoices/'
+    | '/jobs/'
+    | '/notifications/'
+    | '/products/'
+    | '/scan_pdf/'
+    | '/sueldos/'
+    | '/clients/$clientId/'
+    | '/clients/$clientId/$profileId/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -211,7 +211,7 @@ declare module '@tanstack/react-router' {
     '/_authed': {
       id: '/_authed'
       path: ''
-      fullPath: ''
+      fullPath: '/'
       preLoaderRoute: typeof AuthedRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
@@ -225,49 +225,49 @@ declare module '@tanstack/react-router' {
     '/_authed/sueldos/': {
       id: '/_authed/sueldos/'
       path: '/sueldos'
-      fullPath: '/sueldos'
+      fullPath: '/sueldos/'
       preLoaderRoute: typeof AuthedSueldosIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
     '/_authed/scan_pdf/': {
       id: '/_authed/scan_pdf/'
       path: '/scan_pdf'
-      fullPath: '/scan_pdf'
+      fullPath: '/scan_pdf/'
       preLoaderRoute: typeof AuthedScan_pdfIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
     '/_authed/products/': {
       id: '/_authed/products/'
       path: '/products'
-      fullPath: '/products'
+      fullPath: '/products/'
       preLoaderRoute: typeof AuthedProductsIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
     '/_authed/notifications/': {
       id: '/_authed/notifications/'
       path: '/notifications'
-      fullPath: '/notifications'
+      fullPath: '/notifications/'
       preLoaderRoute: typeof AuthedNotificationsIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
     '/_authed/jobs/': {
       id: '/_authed/jobs/'
       path: '/jobs'
-      fullPath: '/jobs'
+      fullPath: '/jobs/'
       preLoaderRoute: typeof AuthedJobsIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
     '/_authed/invoices/': {
       id: '/_authed/invoices/'
       path: '/invoices'
-      fullPath: '/invoices'
+      fullPath: '/invoices/'
       preLoaderRoute: typeof AuthedInvoicesIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
     '/_authed/clients/': {
       id: '/_authed/clients/'
       path: '/clients'
-      fullPath: '/clients'
+      fullPath: '/clients/'
       preLoaderRoute: typeof AuthedClientsIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
@@ -288,14 +288,14 @@ declare module '@tanstack/react-router' {
     '/_authed/clients/$clientId/': {
       id: '/_authed/clients/$clientId/'
       path: '/clients/$clientId'
-      fullPath: '/clients/$clientId'
+      fullPath: '/clients/$clientId/'
       preLoaderRoute: typeof AuthedClientsClientIdIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
     '/_authed/clients/$clientId/$profileId/': {
       id: '/_authed/clients/$clientId/$profileId/'
       path: '/clients/$clientId/$profileId'
-      fullPath: '/clients/$clientId/$profileId'
+      fullPath: '/clients/$clientId/$profileId/'
       preLoaderRoute: typeof AuthedClientsClientIdProfileIdIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }

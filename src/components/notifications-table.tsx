@@ -188,9 +188,9 @@ export function NotificationsTable() {
   const totalPages = notificationsData?.totalPages || 1;
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col h-full gap-4">
       {/* Filters */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between flex-shrink-0">
         <div className="flex flex-col gap-2 md:flex-row md:items-center">
           <div className="relative">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -236,7 +236,7 @@ export function NotificationsTable() {
       </div>
 
       {/* Table */}
-      <div className="rounded-md border">
+      <div className="rounded-xl border border-[#efeeef] bg-white shadow-sm overflow-auto flex-1 min-h-0">
         <Table>
           <TableHeader>
             <TableRow>
