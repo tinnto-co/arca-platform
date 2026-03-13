@@ -8,13 +8,13 @@ export const Route = createFileRoute("/_authed/jobs/")({
 
 function RouteComponent() {
   return (
-    <div className="flex flex-col h-full space-y-6 m-[3rem]">
-      <div>
-        <div className="flex items-center gap-2 mb-2">
-          <Loader2 className="h-6 w-6" />
-          <h1 className="text-2xl font-bold">Jobs</h1>
+    <div className="flex flex-col h-full p-4 md:p-6">
+      <div className="mb-4 flex-shrink-0">
+        <div className="flex items-center gap-2 mb-1">
+          <Loader2 className="h-6 w-6 text-[#139ed9]" />
+          <h1 className="text-2xl font-bold text-[#232c50]">Jobs</h1>
         </div>
-        <p className="text-muted-foreground">
+        <p className="text-muted-foreground text-sm">
           Historial de jobs de scraping, con filtros por cliente, tipo y estado.
         </p>
       </div>

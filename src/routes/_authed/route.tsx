@@ -1,5 +1,6 @@
 import { getCookieFn, getSession, signOut } from "@/actions/user";
 import { AppSidebar, userQuery } from "@/components/app-sidebar";
+import { MobileNavbar } from "@/components/mobile-navbar";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { Suspense } from "react";
@@ -24,12 +25,13 @@ function RouteComponent() {
           <AppSidebar />
         </Suspense>
         <SidebarInset>
-          <div className="p-2 h-[100svh] overflow-x-hidden overflow-y-auto">
-            <div className="rounded-lg h-full w-full max-w-full min-w-0 overflow-x-hidden hide-scrollbar">
+          <div className="h-[100svh] overflow-hidden bg-[#efeeef]">
+            <div className="h-full w-full max-w-full min-w-0 overflow-hidden pb-20 md:pb-0">
               <Outlet />
             </div>
           </div>
         </SidebarInset>
+        <MobileNavbar />
       </SidebarProvider>
     </div>
   );

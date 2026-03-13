@@ -88,10 +88,10 @@ export function Dashboard() {
   };
 
   return (
-    <div className="h-[calc(100vh-1rem)] overflow-hidden overflow-y-auto hide-scrollbar flex flex-col p-3 md:p-4">
+    <div className="h-full overflow-y-auto hide-scrollbar flex flex-col p-4 md:p-6">
       {/* Header */}
       <div className="mb-3 md:mb-4 flex-shrink-0">
-        <h1 className="text-xl md:text-2xl font-semibold mb-1">
+        <h1 className="text-xl md:text-2xl font-bold text-[#232c50] mb-1">
           Bienvenido {user?.name}
         </h1>
         <p className="text-xs md:text-sm text-muted-foreground">
@@ -111,7 +111,7 @@ export function Dashboard() {
         <Card>
           <CardContent className="pt-1">
             <div className="flex items-center gap-2 mb-4">
-              <Users className="text-muted-foreground h-4 w-4" />
+              <Users className="text-[#139ed9] h-4 w-4" />
               <p className="text-xs text-muted-foreground">Clientes activos</p>
             </div>
             <div className="text-2xl font-bold">
@@ -122,7 +122,7 @@ export function Dashboard() {
         <Card>
           <CardContent className="pt-1">
             <div className="flex items-center gap-2 mb-4">
-              <Bell className="text-muted-foreground h-4 w-4" />
+              <Bell className="text-[#139ed9] h-4 w-4" />
               <p className="text-xs text-muted-foreground">Notificaciones pendientes</p>
             </div>
             <div className="text-2xl font-bold">
@@ -133,7 +133,7 @@ export function Dashboard() {
         <Card>
           <CardContent className="pt-1">
             <div className="flex items-center gap-2 mb-4">
-              <AlertCircle className="text-muted-foreground h-4 w-4" />
+              <AlertCircle className="text-[#139ed9] h-4 w-4" />
               <p className="text-xs text-muted-foreground">Deudas vencidas</p>
             </div>
             <div className="text-2xl font-bold">
@@ -146,7 +146,7 @@ export function Dashboard() {
         <Card>
           <CardContent className="pt-1">
             <div className="flex items-center gap-2 mb-4">
-              <Calendar className="text-muted-foreground h-4 w-4" />
+              <Calendar className="text-[#139ed9] h-4 w-4" />
               <p className="text-xs text-muted-foreground">Vencimientos (7d)</p>
             </div>
             <div className="text-2xl font-bold">
@@ -165,7 +165,7 @@ export function Dashboard() {
             <CardHeader className="pb-1 flex-shrink-0">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-semibold flex flex-row items-center gap-0.5">
-                  <Calendar className="w-4 h-4 text-black" />
+                  <Calendar className="w-4 h-4 text-[#232c50]" />
                   Vencimientos Próximos
                 </CardTitle>
               </div>
@@ -211,7 +211,7 @@ export function Dashboard() {
             <CardHeader className="pb-1.5 md:pb-2 flex-shrink-0">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-semibold flex flex-row items-center gap-1">
-                  <AlertCircle className="w-4 h-4 text-black" />
+                  <AlertCircle className="w-4 h-4 text-[#232c50]" />
                   Deudas Vencidas
                 </CardTitle>
               </div>

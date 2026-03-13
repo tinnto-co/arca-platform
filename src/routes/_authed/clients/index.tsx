@@ -10,11 +10,11 @@ export const Route = createFileRoute("/_authed/clients/")({
 
 function RouteComponent() {
   return (
-    <div className="space-y-6 m-[3rem]">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col h-full p-4 md:p-6">
+      <div className="flex items-center justify-between mb-4 flex-shrink-0">
         <div className="flex items-center gap-2">
-          <Users className="h-6 w-6" />
-          <h1 className="text-2xl font-bold">Clientes</h1>
+          <Users className="h-6 w-6 text-[#139ed9]" />
+          <h1 className="text-2xl font-bold text-[#232c50]">Clientes</h1>
         </div>
         <CreateClientDialog>
           <Button>
@@ -24,7 +24,9 @@ function RouteComponent() {
         </CreateClientDialog>
       </div>
 
-      <ClientsTable />
+      <div className="flex-1 min-h-0">
+        <ClientsTable />
+      </div>
     </div>
   );
 }

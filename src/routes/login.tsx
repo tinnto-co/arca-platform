@@ -22,17 +22,11 @@ export default function LoginPage() {
           </div>
         </div>
       </div>
-      <div className="bg-muted relative hidden lg:block">
-        <div className="absolute inset-0 h-full w-full z-10 bg-black/40"></div>
-        <p className="text-white w-full text-center text-2xl font-bold absolute  tracking-wider top-1/2 uppercase left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 p-4  ">
-          <span className="text-sm block font-semibold">Bienvenido a</span>
+      <div className="bg-gradient-to-br from-[#232c50] via-[#2e3a66] to-[#139ed9] relative hidden lg:flex lg:items-center lg:justify-center">
+        <p className="text-white w-full text-center text-2xl font-bold tracking-wider uppercase p-4">
+          <span className="text-sm block font-semibold mb-1">Bienvenido a</span>
           Control Integrado de Arca
         </p>
-        <img
-          src="/login.jpg"
-          alt="Image"
-          className="absolute inset-0 h-full w-full object-cover dark:brightness-[0.2] dark:grayscale"
-        />
       </div>
     </div>
   );
