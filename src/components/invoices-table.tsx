@@ -1160,6 +1160,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                     Provincia (Convenio Multilateral)
                   </label>
                   <p className="text-sm font-medium">
+                    {console.log(invoiceDetails)}
                     {invoiceDetails?.receiptProvince
                       ? invoiceDetails.receiptProvince
                       : "sin datos"}

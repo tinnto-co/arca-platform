@@ -1,7 +1,15 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Eye, Edit, Trash2, MoreHorizontal, Search, CircleAlert } from "lucide-react";
+import {
+  Eye,
+  Edit,
+  Trash2,
+  MoreHorizontal,
+  Search,
+  CircleAlert,
+  CheckCircle2,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -186,6 +194,7 @@ export function ClientsTable() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Cliente</TableHead>
+                  <TableHead className="w-[120px] text-center">Estado</TableHead>
                   <TableHead>CUIT</TableHead>
                   <TableHead>Registrado</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
@@ -196,26 +205,42 @@ export function ClientsTable() {
                   <TableRow key={client.id} onClick={() => navigate({ to: `/clients/${client.id}` })} className="cursor-pointer hover:bg-[#efeeef]/50">
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <span className={client.hasErrors ? "text-destructive font-medium" : ""}>
-                          {client.name}
-                        </span>
-                        {client.hasErrors && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span
-                                className="inline-flex text-destructive"
-                                onClick={(e) => e.stopPropagation()}
-                                aria-label="Cliente con errores"
-                              >
-                                <CircleAlert className="h-4 w-4" />
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" sideOffset={6}>
-                              {client.errorMessage?.trim() || "Cliente con errores en jobs de scraping"}
-                            </TooltipContent>
-                          </Tooltip>
-                        )}
+                        <span>{client.name}</span>
                       </div>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {client.hasErrors ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span
+                              className="inline-flex text-destructive"
+                              onClick={(e) => e.stopPropagation()}
+                              aria-label="Cliente con errores"
+                            >
+                              <CircleAlert className="h-4 w-4" />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" sideOffset={6}>
+                            {client.errorMessage?.trim() ||
+                              "Cliente con errores en jobs de scraping"}
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span
+                              className="inline-flex text-emerald-600"
+                              onClick={(e) => e.stopPropagation()}
+                              aria-label="Cliente sin errores"
+                            >
+                              <CheckCircle2 className="h-4 w-4" />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" sideOffset={6}>
+                            Cliente sin errores en jobs de scraping
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
                     </TableCell>
                     <TableCell>{client.identityNumber}</TableCell>
                     <TableCell>
