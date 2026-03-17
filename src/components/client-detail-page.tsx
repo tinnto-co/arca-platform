@@ -53,7 +53,7 @@ import {
 import { scrapSingleJob } from "@/actions/client";
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { toast } from "sonner";
-import { Clock, CalendarCheck, CalendarX, Loader2 } from "lucide-react";
+import { Clock, CalendarCheck, CalendarX, Loader2, TrendingUp } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -1051,6 +1051,51 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     facturasDirectionFilter,
   ]);
 
+  /** Datos del gráfico para el Resumen: meses del año en curso, sin filtros de Facturas. */
+  const resumenChartData = useMemo((): { period: string; ventas: number; compras: number }[] => {
+    const invoices = allInvoicesData?.invoices;
+    if (!invoices?.length) return [];
+    const year = now.getFullYear();
+    const byMonth: Record<number, { ventas: number; compras: number }> = {};
+    for (let i = 0; i < 12; i++) byMonth[i] = { ventas: 0, compras: 0 };
+    invoices.forEach((inv: any) => {
+      const d = new Date(inv.emitionDate);
+      if (d.getFullYear() !== year) return;
+      let amount = parseFloat(inv.amount || "0");
+      if (inv.currency?.toUpperCase() === "USD") amount *= parseFloat(inv.currencyRate || "1");
+      const dir = inv.direction?.toLowerCase();
+      if (dir === "outbound") byMonth[d.getMonth()].ventas += amount;
+      else if (dir === "inbound") byMonth[d.getMonth()].compras += amount;
+    });
+    return Array.from({ length: 12 }, (_, i) => ({
+      period: MONTH_NAMES_SHORT[i],
+      ventas: byMonth[i].ventas,
+      compras: byMonth[i].compras,
+    }));
+  }, [allInvoicesData]);
+
+  /** Totales del mes actual para el Resumen. */
+  const resumenCurrentMonthStats = useMemo(() => {
+    const invoices = allInvoicesData?.invoices;
+    if (!invoices?.length) return { totalSales: 0, totalPurchases: 0 };
+    const now = new Date();
+    const { from, to } = getMonthBounds(now.getFullYear(), now.getMonth());
+    const fromDate = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+    const toDate = new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59, 999);
+    let totalSales = 0;
+    let totalPurchases = 0;
+    invoices.forEach((inv: any) => {
+      const invDate = new Date(inv.emitionDate);
+      if (invDate < fromDate || invDate > toDate) return;
+      let amount = parseFloat(inv.amount || "0");
+      if (inv.currency?.toUpperCase() === "USD") amount *= parseFloat(inv.currencyRate || "1");
+      const dir = inv.direction?.toLowerCase();
+      if (dir === "outbound") totalSales += amount;
+      else if (dir === "inbound") totalPurchases += amount;
+    });
+    return { totalSales, totalPurchases };
+  }, [allInvoicesData]);
+
   // Calculate due date statistics
   const dueDateStats = useMemo(() => {
     const today = new Date();
@@ -1189,112 +1234,101 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
 
         {/* Resumen Tab */}
         <TabsContent value="resumen" className="space-y-6 mt-6">
-          {/* Client Information Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Información del Cliente Card */}
+          {/* Fila superior: Info cliente (compacto) + Resumen mes + Perfiles */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Información del Cliente — compacto */}
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <FileText className="h-5 w-5" />
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <FileText className="h-4 w-4" />
                   Información del Cliente
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <div className="text-sm text-muted-foreground">CUIT</div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">
-                      {client.identityNumber || "-"}
-                    </span>
-                    {client.identityNumber && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={() =>
-                          copyToClipboard(client.identityNumber, "cuit")
-                        }
-                      >
-                        {copiedField === "cuit" ? (
-                          <Check className="h-4 w-4 text-green-500" />
-                        ) : (
-                          <Copy className="h-4 w-4" />
-                        )}
-                      </Button>
-                    )}
+              <CardContent className="space-y-2 text-sm">
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground w-16 shrink-0">CUIT</span>
+                  <span className="font-medium">{client.identityNumber || "-"}</span>
+                  {client.identityNumber && (
+                    <Button variant="ghost" size="icon" className="h-5 w-5 shrink-0" onClick={() => copyToClipboard(client.identityNumber, "cuit")}>
+                      {copiedField === "cuit" ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                    </Button>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground w-16 shrink-0">Teléfono</span>
+                  <Phone className="h-3 w-3 text-muted-foreground shrink-0" />
+                  <span>{client.phone || "-"}</span>
+                  {client.phone && (
+                    <Button variant="ghost" size="icon" className="h-5 w-5 shrink-0" onClick={() => copyToClipboard(client.phone!, "phone")}>
+                      {copiedField === "phone" ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                    </Button>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground w-16 shrink-0">Email</span>
+                  <Mail className="h-3 w-3 text-muted-foreground shrink-0" />
+                  <span className="truncate">{client.email || "-"}</span>
+                  {client.email && (
+                    <Button variant="ghost" size="icon" className="h-5 w-5 shrink-0" onClick={() => copyToClipboard(client.email!, "email")}>
+                      {copiedField === "email" ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                    </Button>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground w-16 shrink-0">Dirección</span>
+                  <MapPin className="h-3 w-3 text-muted-foreground shrink-0" />
+                  <span className="truncate">{client.address || "-"}</span>
+                  {client.address && (
+                    <Button variant="ghost" size="icon" className="h-5 w-5 shrink-0" onClick={() => copyToClipboard(client.address!, "address")}>
+                      {copiedField === "address" ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Resumen del mes actual */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <Receipt className="h-4 w-4" />
+                  Facturación — {MONTH_NAMES[now.getMonth()]}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div>
+                  <div className="text-[11px] text-muted-foreground uppercase tracking-wide">Ventas</div>
+                  <div className="text-lg font-bold tabular-nums">
+                    {new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", minimumFractionDigits: 2 }).format(resumenCurrentMonthStats.totalSales)}
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <div className="text-sm text-muted-foreground">Teléfono</div>
-                  <div className="flex items-center gap-2">
-                    <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
-                    <span>{client.phone || "-"}</span>
-                    {client.phone && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 shrink-0"
-                        onClick={() => copyToClipboard(client.phone!, "phone")}
-                      >
-                        {copiedField === "phone" ? (
-                          <Check className="h-4 w-4 text-green-500" />
-                        ) : (
-                          <Copy className="h-4 w-4" />
-                        )}
-                      </Button>
-                    )}
+                <div>
+                  <div className="text-[11px] text-muted-foreground uppercase tracking-wide">Compras</div>
+                  <div className="text-lg font-bold tabular-nums">
+                    {new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", minimumFractionDigits: 2 }).format(resumenCurrentMonthStats.totalPurchases)}
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <div className="text-sm text-muted-foreground">Email</div>
-                  <div className="flex items-center gap-2">
-                    <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
-                    <span>{client.email || "-"}</span>
-                    {client.email && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 shrink-0"
-                        onClick={() => copyToClipboard(client.email!, "email")}
-                      >
-                        {copiedField === "email" ? (
-                          <Check className="h-4 w-4 text-green-500" />
-                        ) : (
-                          <Copy className="h-4 w-4" />
-                        )}
-                      </Button>
-                    )}
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <div className="text-sm text-muted-foreground">Dirección</div>
-                  <div className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4 text-muted-foreground shrink-0" />
-                    <span>{client.address || "-"}</span>
-                    {client.address && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 shrink-0"
-                        onClick={() => copyToClipboard(client.address!, "address")}
-                      >
-                        {copiedField === "address" ? (
-                          <Check className="h-4 w-4 text-green-500" />
-                        ) : (
-                          <Copy className="h-4 w-4" />
-                        )}
-                      </Button>
+                <div className="pt-2 border-t">
+                  <div className="text-[11px] text-muted-foreground uppercase tracking-wide">Saldo</div>
+                  <div className={cn(
+                    "text-lg font-bold tabular-nums",
+                    resumenCurrentMonthStats.totalSales - resumenCurrentMonthStats.totalPurchases < 0
+                      ? "text-red-600 dark:text-red-400"
+                      : "text-emerald-600 dark:text-emerald-400"
+                  )}>
+                    {new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", minimumFractionDigits: 2 }).format(
+                      resumenCurrentMonthStats.totalSales - resumenCurrentMonthStats.totalPurchases
                     )}
                   </div>
                 </div>
               </CardContent>
             </Card>
 
-            {/* Estado del Cliente Card */}
+            {/* Perfiles Asociados */}
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <User className="h-5 w-5" />
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <User className="h-4 w-4" />
                   Perfiles Asociados
                 </CardTitle>
               </CardHeader>
@@ -1449,6 +1483,48 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
             </div>
           )}
 
+          {/* Gráfico ventas/compras últimos 12 meses */}
+          {resumenChartData.length > 0 && (
+            <Card>
+              <CardHeader className="py-3 px-4">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4" />
+                  Ventas y compras — {now.getFullYear()}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0 px-4 pb-4">
+                <ChartContainer config={facturasChartConfig} className="h-[200px] w-full">
+                  <BarChart
+                    data={resumenChartData}
+                    margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
+                    barCategoryGap={4}
+                    barSize={20}
+                  >
+                    <CartesianGrid strokeDasharray="2 2" className="stroke-muted" />
+                    <XAxis dataKey="period" tick={{ fontSize: 9 }} />
+                    <YAxis tick={{ fontSize: 9 }} tickFormatter={(v) => (v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `${(v / 1e3).toFixed(0)}k` : String(v))} />
+                    <ChartTooltip
+                      content={
+                        <ChartTooltipContent
+                          formatter={(value) =>
+                            new Intl.NumberFormat("es-AR", {
+                              style: "currency",
+                              currency: "ARS",
+                              minimumFractionDigits: 0,
+                              maximumFractionDigits: 0,
+                            }).format(Number(value))
+                          }
+                        />
+                      }
+                    />
+                    <Legend wrapperStyle={{ fontSize: 10 }} />
+                    <Bar dataKey="ventas" fill="var(--color-ventas)" name="Ventas" radius={[2, 2, 0, 0]} />
+                    <Bar dataKey="compras" fill="var(--color-compras)" name="Compras" radius={[2, 2, 0, 0]} />
+                  </BarChart>
+                </ChartContainer>
+              </CardContent>
+            </Card>
+          )}
 
         </TabsContent>
 
@@ -1695,55 +1771,80 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                         No hay deudas que coincidan con los filtros
                       </div>
                     ) : (
-                    <Table>
+                    <Table className="w-full table-fixed">
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Impuesto</TableHead>
-                          <TableHead>Concepto</TableHead>
-                          <TableHead>Período</TableHead>
-                          <TableHead>Vencimiento</TableHead>
-                          <TableHead>Saldo</TableHead>
-                          <TableHead>Interés Compensatorio</TableHead>
-                          <TableHead>Interés Punitorio</TableHead>
+                          <TableHead className="w-[15%]">Impuesto</TableHead>
+                          <TableHead className="w-[22%]">Concepto</TableHead>
+                          <TableHead className="w-[9%]">Período</TableHead>
+                          <TableHead className="w-[12%]">Vencimiento</TableHead>
+                          <TableHead className="w-[14%] text-right">Saldo</TableHead>
+                          <TableHead className="w-[14%] text-right">
+                            Interés Comp.
+                          </TableHead>
+                          <TableHead className="w-[14%] text-right">
+                            Interés Punit.
+                          </TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {filteredDebts.map((debt) => (
-                        <TableRow key={debt.id}>
-                          <TableCell className="font-medium">
-                            {debt.tax || "-"}
-                          </TableCell>
-                          <TableCell>{debt.concept || "-"}</TableCell>
-                          <TableCell>{debt.period || "-"}</TableCell>
-                          <TableCell>
-                            {new Date(debt.dueDate).toLocaleDateString("es-AR")}
-                          </TableCell>
-                          <TableCell>
-                            {new Intl.NumberFormat("es-AR", {
-                              style: "currency",
-                              currency: "ARS",
-                              minimumFractionDigits: 2,
-                            }).format(Number(debt.balance) || 0)}
-                          </TableCell>
-                          <TableCell>
-                            {new Intl.NumberFormat("es-AR", {
-                              style: "currency",
-                              currency: "ARS",
-                              minimumFractionDigits: 2,
-                            }).format(Number(debt.compensatoryInterest) || 0)}
-                          </TableCell>
-                          <TableCell>
-                            {new Intl.NumberFormat("es-AR", {
-                              style: "currency",
-                              currency: "ARS",
-                              minimumFractionDigits: 2,
-                            }).format(Number(debt.punitiveInterest) || 0)}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                    )}
+                        {filteredDebts.length === 0 ? (
+                          <TableRow>
+                            <TableCell
+                              colSpan={7}
+                              className="h-24 text-center text-muted-foreground"
+                            >
+                              No hay deudas que coincidan con los filtros
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          filteredDebts.map((debt) => (
+                            <TableRow key={debt.id}>
+                              <TableCell className="font-medium truncate" title={debt.tax || "-"}>
+                                {debt.tax || "-"}
+                              </TableCell>
+                              <TableCell className="truncate" title={debt.concept || "-"}>
+                                {debt.concept || "-"}
+                              </TableCell>
+                              <TableCell className="truncate" title={debt.period || "-"}>
+                                {debt.period || "-"}
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap">
+                                {new Date(debt.dueDate).toLocaleDateString(
+                                  "es-AR"
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right whitespace-nowrap">
+                                {new Intl.NumberFormat("es-AR", {
+                                  style: "currency",
+                                  currency: "ARS",
+                                  minimumFractionDigits: 2,
+                                }).format(Number(debt.balance) || 0)}
+                              </TableCell>
+                              <TableCell className="text-right whitespace-nowrap">
+                                {new Intl.NumberFormat("es-AR", {
+                                  style: "currency",
+                                  currency: "ARS",
+                                  minimumFractionDigits: 2,
+                                }).format(
+                                  Number(debt.compensatoryInterest) || 0
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right whitespace-nowrap">
+                                {new Intl.NumberFormat("es-AR", {
+                                  style: "currency",
+                                  currency: "ARS",
+                                  minimumFractionDigits: 2,
+                                }).format(
+                                  Number(debt.punitiveInterest) || 0
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  )}
                 </div>
                 </div>
               )}
@@ -1922,34 +2023,44 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 </div>
               ) : (
                 <div className="rounded-md border">
-                  <Table>
+                  <Table className="w-full table-fixed">
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Impuesto</TableHead>
-                        <TableHead>Concepto</TableHead>
-                        <TableHead>Subconcepto</TableHead>
-                        <TableHead>Período</TableHead>
-                        <TableHead>Cuota</TableHead>
-                        <TableHead>Vencimiento</TableHead>
-                        <TableHead>Detalle</TableHead>
+                        <TableHead className="w-[14%]">Impuesto</TableHead>
+                        <TableHead className="w-[16%]">Concepto</TableHead>
+                        <TableHead className="w-[16%]">Subconcepto</TableHead>
+                        <TableHead className="w-[10%]">Período</TableHead>
+                        <TableHead className="w-[7%]">Cuota</TableHead>
+                        <TableHead className="w-[12%]">Vencimiento</TableHead>
+                        <TableHead className="w-[25%]">Detalle</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {dueDates.map((dueDate) => (
                         <TableRow key={dueDate.id}>
-                          <TableCell className="font-medium">
+                          <TableCell className="font-medium truncate" title={dueDate.tax || "-"}>
                             {dueDate.tax || "-"}
                           </TableCell>
-                          <TableCell>{dueDate.concept || "-"}</TableCell>
-                          <TableCell>{dueDate.subConcept || "-"}</TableCell>
-                          <TableCell>{dueDate.period || "-"}</TableCell>
-                          <TableCell>{dueDate.quotaNumber || "-"}</TableCell>
-                          <TableCell>
+                          <TableCell className="truncate" title={dueDate.concept || "-"}>
+                            {dueDate.concept || "-"}
+                          </TableCell>
+                          <TableCell className="truncate" title={dueDate.subConcept || "-"}>
+                            {dueDate.subConcept || "-"}
+                          </TableCell>
+                          <TableCell className="truncate" title={dueDate.period || "-"}>
+                            {dueDate.period || "-"}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-center">
+                            {dueDate.quotaNumber || "-"}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap">
                             {new Date(dueDate.dueDate).toLocaleDateString(
                               "es-AR"
                             )}
                           </TableCell>
-                          <TableCell>{dueDate.detail || "-"}</TableCell>
+                          <TableCell className="truncate" title={dueDate.detail || "-"}>
+                            {dueDate.detail || "-"}
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>

@@ -1121,6 +1121,19 @@ export const confirmarReciboLiquidacion = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+/** Configuración del empleador para el recibo (firma, redondeo). Por ahora valores por defecto. */
+export const getPayrollEmployerConfig = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const session = await auth.api.getSession({ headers: getRequestHeaders() });
+    if (!session?.user?.id) throw new Error("Unauthorized");
+    await ensureClientBelongsToUser(ctx.data.clientId, session.user.id);
+    return {
+      imprimirTotalRedondeado: false,
+      firmaEmpleadorUrl: null as string | null,
+    };
+  });
+
 export const getReciboDetalle = createServerFn({ method: "GET" })
   .inputValidator(z.object({ liquidacionId: z.string().uuid(), clientId: z.string().uuid() }))
   .handler(async (ctx) => {

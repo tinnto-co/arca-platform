@@ -50,6 +50,13 @@
       "when": 1772804283744,
       "tag": "0006_fat_romulus",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1773348151902,
+      "tag": "0007_wooden_steel_serpent",
+      "breakpoints": true
     }
   ]
 }

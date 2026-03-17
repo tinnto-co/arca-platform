@@ -22,6 +22,16 @@ export const jobTypeEnum = pgEnum("job_type", [
   "deuda",
   "vencimientos",
 ]);
+
+// Organization enums
+export const organizationRoleEnum = pgEnum("organization_role", ["admin", "user"]);
+export const organizationInviteStatusEnum = pgEnum("organization_invite_status", [
+  "pending",
+  "accepted",
+  "expired",
+  "revoked",
+]);
+
 // User table must be defined before client to allow references
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -42,8 +52,77 @@ export const user = pgTable("user", {
   changedPassword: boolean("changed_password"),
 });
 
+export const organization = pgTable("organization", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  slug: text("slug"),
+  isActive: boolean("is_active").notNull().default(true),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at")
+    .defaultNow()
+    .$onUpdate(() => /* @__PURE__ */ new Date())
+    .notNull(),
+});
+
+export const organizationUser = pgTable("organization_user", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  role: organizationRoleEnum("role").notNull().default("user"),
+  invitedByUserId: text("invited_by_user_id").references(() => user.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at")
+    .defaultNow()
+    .$onUpdate(() => /* @__PURE__ */ new Date())
+    .notNull(),
+});
+
+export const organizationInvite = pgTable(
+  "organization_invite",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    role: organizationRoleEnum("role").notNull(),
+    token: text("token").notNull(),
+    status: organizationInviteStatusEnum("status").notNull().default("pending"),
+    invitedByUserId: text("invited_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    acceptedByUserId: text("accepted_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    expiresAt: timestamp("expires_at").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    unique("organization_invite_token_unique").on(table.token),
+    unique("organization_invite_org_email_status_unique").on(
+      table.organizationId,
+      table.email,
+      table.status,
+    ),
+  ],
+);
+
 export const client = pgTable("client", {
   id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organization.id, {
+    onDelete: "cascade",
+  }),
   userId: text("user_id")
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),

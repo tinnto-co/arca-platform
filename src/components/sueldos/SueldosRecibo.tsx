@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { listLiquidacionesByPeriodo, getReciboDetalle } from "@/actions/sueldos";
+import { listLiquidacionesByPeriodo, getReciboDetalle, getPayrollEmployerConfig } from "@/actions/sueldos";
 import { montoEnLetras } from "@/lib/numero-a-letras";
 import { Button } from "@/components/ui/button";
 import {
@@ -90,6 +90,12 @@ export function SueldosRecibo({
     queryKey: ["recibo", liquidacionId],
     queryFn: () => getReciboDetalle({ data: { liquidacionId, clientId } }),
     enabled: !!liquidacionId && !!clientId,
+  });
+
+  const { data: employerConfig } = useQuery({
+    queryKey: ["payroll-employer-config", clientId],
+    queryFn: () => getPayrollEmployerConfig({ data: { clientId } }),
+    enabled: !!clientId,
   });
 
   const options = liquidaciones.map((l) => ({
@@ -207,17 +213,21 @@ export function SueldosRecibo({
           ) : (
             <div
               id="recibo-print-area"
-              className="grid gap-8 w-full grid-cols-1 md:grid-cols-[minmax(420px,1fr)_minmax(420px,1fr)] overflow-x-auto print:grid-cols-1 print:gap-0 print:overflow-visible"
+              className="recibo-print-area grid gap-8 w-full grid-cols-1 md:grid-cols-[minmax(420px,1fr)_minmax(420px,1fr)] overflow-x-auto print:grid-cols-1 print:gap-0 print:overflow-visible"
             >
               <ReciboContent
                 recibo={recibo}
                 periodo={periodo}
                 tituloEjemplar="Ejemplar empleado"
+                imprimirTotalRedondeado={employerConfig?.imprimirTotalRedondeado ?? false}
+                firmaEmpleadorUrl={employerConfig?.firmaEmpleadorUrl ?? null}
               />
               <ReciboContent
                 recibo={recibo}
                 periodo={periodo}
                 tituloEjemplar="Ejemplar empleador"
+                imprimirTotalRedondeado={employerConfig?.imprimirTotalRedondeado ?? false}
+                firmaEmpleadorUrl={employerConfig?.firmaEmpleadorUrl ?? null}
               />
             </div>
           )}
@@ -231,6 +241,8 @@ function ReciboContent({
   recibo,
   periodo,
   tituloEjemplar,
+  imprimirTotalRedondeado = false,
+  firmaEmpleadorUrl = null,
 }: {
   recibo: {
     liquidacion: {
@@ -254,10 +266,14 @@ function ReciboContent({
   };
   periodo: string;
   tituloEjemplar: "Ejemplar empleado" | "Ejemplar empleador";
+  imprimirTotalRedondeado?: boolean;
+  firmaEmpleadorUrl?: string | null;
 }) {
   const liq = recibo.liquidacion;
   const netoNum = Number(liq.neto);
+  const netoDisplay = imprimirTotalRedondeado ? Math.round(netoNum) : netoNum;
   const emp = recibo.empleado;
+  const isEjemplarEmpleador = tituloEjemplar === "Ejemplar empleador";
   // periodo viene del filtro como "YYYY-MM"
   const [anio, mes] = periodo.split("-");
   const periodoLabel = format(
@@ -310,7 +326,7 @@ function ReciboContent({
   const totalDescuentos = filas.reduce((acc, f) => acc + f.descuentos, 0);
 
   return (
-    <Card className="min-w-[420px] max-w-2xl w-full print:max-w-none print:min-w-0 print:break-inside-avoid flex-shrink-0 print:overflow-visible">
+    <Card className="recibo-sheet min-w-[420px] max-w-2xl w-full print:max-w-none print:min-w-0 print:break-inside-avoid flex-shrink-0 print:overflow-visible">
       <CardContent className="p-6 font-sans print:shadow-none print:overflow-visible">
         <div className="space-y-6">
           <div className="border-b pb-4">
@@ -352,29 +368,29 @@ function ReciboContent({
             </colgroup>
             <thead className="bg-muted/60">
               <tr className="border-b text-muted-foreground">
-                <th className="px-2 py-1 text-left break-words">Concepto</th>
-                <th className="px-2 py-1 text-center break-words">Cantidad</th>
-                <th className="px-2 py-1 text-right break-words">Remunerativo</th>
-                <th className="px-2 py-1 text-right break-words">No Remunerativo</th>
-                <th className="px-2 py-1 text-right break-words">Descuentos</th>
+                <th className="px-2 py-1 text-left whitespace-nowrap">Concepto</th>
+                <th className="px-2 py-1 text-center whitespace-nowrap">Cantidad</th>
+                <th className="px-2 py-1 text-right whitespace-nowrap">Remunerativo</th>
+                <th className="px-2 py-1 text-right whitespace-nowrap">No remunerativo</th>
+                <th className="px-2 py-1 text-right whitespace-nowrap">Descuentos</th>
               </tr>
             </thead>
             <tbody>
               {filas.map((f) => (
                 <tr key={f.id} className="border-b last:border-b-0">
-                  <td className="px-2 py-1 break-words">{f.nombre}</td>
-                  <td className="px-2 py-1 text-center break-words">{f.cantidadTexto}</td>
-                  <td className="px-2 py-1 text-right break-words">
+                  <td className="px-2 py-1 whitespace-nowrap">{f.nombre}</td>
+                  <td className="px-2 py-1 text-center whitespace-nowrap">{f.cantidadTexto}</td>
+                  <td className="px-2 py-1 text-right whitespace-nowrap">
                     {f.remunerativo !== 0
                       ? `$${f.remunerativo.toLocaleString("es-AR", { minimumFractionDigits: 2 })}`
                       : ""}
                   </td>
-                  <td className="px-2 py-1 text-right break-words">
+                  <td className="px-2 py-1 text-right whitespace-nowrap">
                     {f.noRemunerativo !== 0
                       ? `$${f.noRemunerativo.toLocaleString("es-AR", { minimumFractionDigits: 2 })}`
                       : ""}
                   </td>
-                  <td className="px-2 py-1 text-right break-words">
+                  <td className="px-2 py-1 text-right whitespace-nowrap">
                     {f.descuentos !== 0
                       ? `- $${f.descuentos.toLocaleString("es-AR", { minimumFractionDigits: 2 })}`
                       : ""}
@@ -384,24 +400,24 @@ function ReciboContent({
             </tbody>
             <tfoot>
               <tr className="bg-muted/40 font-semibold">
-                <td className="px-2 py-1 text-left break-words">Totales</td>
+                <td className="px-2 py-1 text-left whitespace-nowrap">Totales</td>
                 <td className="px-2 py-1" />
-                <td className="px-2 py-1 text-right break-words">
+                <td className="px-2 py-1 text-right whitespace-nowrap">
                   {`$${totalRemunerativo.toLocaleString("es-AR", { minimumFractionDigits: 2 })}`}
                 </td>
-                <td className="px-2 py-1 text-right break-words">
+                <td className="px-2 py-1 text-right whitespace-nowrap">
                   {`$${totalNoRemunerativo.toLocaleString("es-AR", { minimumFractionDigits: 2 })}`}
                 </td>
-                <td className="px-2 py-1 text-right break-words">
+                <td className="px-2 py-1 text-right whitespace-nowrap">
                   {`- $${totalDescuentos.toLocaleString("es-AR", { minimumFractionDigits: 2 })}`}
                 </td>
               </tr>
               <tr className="border-t-2 border-foreground/20 font-bold">
-                <td className="px-2 py-2 text-left break-words" colSpan={4}>
+                <td className="px-2 py-2 text-left whitespace-nowrap" colSpan={4}>
                   Neto a cobrar
                 </td>
-                <td className="px-2 py-2 text-right break-words">
-                  ${netoNum.toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                <td className="px-2 py-2 text-right whitespace-nowrap">
+                  ${netoDisplay.toLocaleString("es-AR", { minimumFractionDigits: imprimirTotalRedondeado ? 0 : 2 })}
                 </td>
               </tr>
             </tfoot>
@@ -411,14 +427,22 @@ function ReciboContent({
 
         <div className="mt-16 pt-10">
           <div className="flex flex-col items-end gap-2">
-            <div className="min-h-[3rem] w-56 border-b-2 border-foreground" aria-hidden />
+            {isEjemplarEmpleador && firmaEmpleadorUrl ? (
+              <img
+                src={firmaEmpleadorUrl}
+                alt="Firma del empleador"
+                className="h-[3rem] w-56 object-contain object-right border-b-2 border-foreground"
+              />
+            ) : (
+              <div className="min-h-[3rem] w-56 border-b-2 border-foreground" aria-hidden />
+            )}
             <span className="text-xs text-muted-foreground">
-              Firma {tituloEjemplar === "Ejemplar empleado" ? "del empleado" : "del empleador"}
+              Firma {isEjemplarEmpleador ? "del empleador" : "del empleado"}
             </span>
           </div>
           <p className="mt-6 text-sm break-words">
             <span className="text-muted-foreground">Son: </span>
-            <span className="font-medium">{montoEnLetras(netoNum)}</span>
+            <span className="font-medium">{montoEnLetras(netoDisplay)}</span>
           </p>
         </div>
         </div>

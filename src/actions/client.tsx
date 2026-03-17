@@ -30,6 +30,17 @@ export const createClient = createServerFn({
       phone: z.string().optional(),
       address: z.string().optional(),
       image: z.string().optional(),
+      liquidaSueldos: z.boolean().optional(),
+      convenioMultilateral: z.boolean().optional(),
+      regimenLocal: z.boolean().optional(),
+      fiscalCondition: z
+        .enum([
+          "responsable_inscripto",
+          "monotributista",
+          "exento",
+          "consumidor_final",
+        ])
+        .optional(),
     })
   )
   .handler(async (ctx) => {
@@ -45,6 +56,10 @@ export const createClient = createServerFn({
       phone,
       address,
       image,
+      liquidaSueldos,
+      convenioMultilateral,
+      regimenLocal,
+      fiscalCondition,
     } = ctx.data;
 
     const [newClient] = await db
@@ -60,6 +75,10 @@ export const createClient = createServerFn({
         password,
         image: image || null,
         status: "active",
+        liquidaSueldos: liquidaSueldos ?? false,
+        convenioMultilateral: convenioMultilateral ?? false,
+        regimenLocal: regimenLocal ?? false,
+        fiscalCondition: fiscalCondition ?? null,
         registeredAt: new Date(),
       })
       .returning();
@@ -340,6 +359,18 @@ export const updateClient = createServerFn({
       phone: z.string().optional().or(z.literal("")),
       address: z.string().optional().or(z.literal("")),
       image: z.string().optional(),
+      liquidaSueldos: z.boolean().optional(),
+      convenioMultilateral: z.boolean().optional(),
+      regimenLocal: z.boolean().optional(),
+      fiscalCondition: z
+        .enum([
+          "responsable_inscripto",
+          "monotributista",
+          "exento",
+          "consumidor_final",
+        ])
+        .optional()
+        .or(z.literal("")),
     })
   )
   .handler(async (ctx) => {
@@ -356,6 +387,22 @@ export const updateClient = createServerFn({
         phone: updateData.phone || "",
         address: updateData.address || "",
         image: updateData.image || null,
+        liquidaSueldos:
+          typeof updateData.liquidaSueldos === "boolean"
+            ? updateData.liquidaSueldos
+            : undefined,
+        convenioMultilateral:
+          typeof updateData.convenioMultilateral === "boolean"
+            ? updateData.convenioMultilateral
+            : undefined,
+        regimenLocal:
+          typeof updateData.regimenLocal === "boolean"
+            ? updateData.regimenLocal
+            : undefined,
+        fiscalCondition:
+          updateData.fiscalCondition === ""
+            ? null
+            : updateData.fiscalCondition ?? undefined,
         updatedAt: new Date(),
       })
       .where(eq(client.id, id))
@@ -538,6 +585,57 @@ export const scrapUpdateClient = createServerFn({
         error.response?.data?.error ||
         error.message ||
         "Error al actualizar el cliente";
+      throw new Error(msg);
+    }
+  });
+
+/** Encola la actualización de todos los módulos (deudas, vencimientos, novedades, facturas, IVA) para un cliente. */
+export const updateClientModules = createServerFn({
+  method: "POST",
+})
+  .inputValidator(z.object({ clientId: z.string() }))
+  .handler(async (ctx) => {
+    const session = await auth.api.getSession({ headers: getRequestHeaders() });
+    if (!session?.user?.id) throw new Error("Unauthorized");
+
+    const { clientId } = ctx.data;
+
+    const [clientData] = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(
+        and(eq(client.id, clientId), eq(client.userId, session.user.id))
+      )
+      .limit(1);
+
+    if (!clientData) {
+      throw new Error("Cliente no encontrado o no autorizado");
+    }
+
+    const baseUrl = JOBS_API_URL;
+    const types = [
+      "deuda",
+      "vencimientos",
+      "notificaciones",
+      "comprobantes_full",
+      "iva",
+    ] as const;
+    const jobs = types.map((type) => ({ type, clientId }));
+
+    try {
+      await axios.post(`${baseUrl}/api/jobs/batch`, { jobs });
+      return {
+        success: true,
+        message:
+          "Actualización encolada: deudas, vencimientos, novedades, facturas e IVA",
+        clientId,
+      };
+    } catch (error: any) {
+      console.error("[updateClientModules]", error?.response?.data ?? error);
+      const msg =
+        error.response?.data?.error ||
+        error.message ||
+        "Error al encolar la actualización";
       throw new Error(msg);
     }
   });
