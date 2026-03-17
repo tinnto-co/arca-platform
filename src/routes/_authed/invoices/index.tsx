@@ -8,7 +8,7 @@ export const Route = createFileRoute("/_authed/invoices/")({
 
 function RouteComponent() {
   return (
-    <div className="flex flex-col h-full w-full max-w-full min-w-0 p-4 md:p-6">
+    <div className="flex flex-col h-[calc(100svh-5rem)] md:h-svh w-full max-w-full min-w-0 p-4 md:p-6">
       <div className="flex items-center justify-between min-w-0 mb-4 flex-shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <Receipt className="h-6 w-6 flex-shrink-0 text-[#139ed9]" />

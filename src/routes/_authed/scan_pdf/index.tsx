@@ -78,7 +78,7 @@ function RouteComponent() {
     };
 
     return (
-        <div className="flex flex-col h-full space-y-4 p-4 md:space-y-6 md:p-0 md:m-[3rem] max-w-4xl">
+        <div className="flex flex-col space-y-4 p-4 md:space-y-6 md:p-0 md:m-[3rem] max-w-4xl">
             {/* Header */}
             <div>
                 <div className="flex items-center gap-2 mb-2">
