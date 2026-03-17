@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, Link } from "@tanstack/react-router";
 import {
   ArrowLeft,
@@ -50,6 +50,10 @@ import {
   getClientMultilateralSummary,
   getClientMultilateralInvoices,
 } from "@/actions/invoice";
+import {
+  getNotifications,
+  markNotificationOpened,
+} from "@/actions/notification";
 import { scrapSingleJob } from "@/actions/client";
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { toast } from "sonner";
@@ -244,6 +248,15 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   );
   const [ivaProfileId, setIvaProfileId] = useState<string | undefined>(undefined);
   const [multilateralProfileId, setMultilateralProfileId] = useState<string | undefined>(undefined);
+  const [resumenProfileId, setResumenProfileId] = useState<string | undefined>(undefined);
+  const [resumenNotifProfileId, setResumenNotifProfileId] = useState<string | "all">("all");
+  const [resumenNotifSelected, setResumenNotifSelected] = useState<{
+    id: string;
+    message: string;
+    profileName: string | null | undefined;
+    publicationDate: Date | string | null;
+    expirationDate: Date | string | null;
+  } | null>(null);
   const [multilateralDateFrom, setMultilateralDateFrom] = useState<string>(
     initialMultilateralRange.from.toISOString().slice(0, 10)
   );
@@ -303,6 +316,13 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   }, [facturasSearchTerm]);
   const invoicesTableRef = useRef<InvoicesTableRef>(null);
   const queryClient = useQueryClient();
+
+  const markOpenedMutation = useMutation({
+    mutationFn: (id: string) => markNotificationOpened({ data: { id } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["unreadNotifications", clientId] });
+    },
+  });
   const ivaResumeRef = useRef<RenderIvaResumeRef>(null);
   const ivaSelectedYear = ivaResumenDateRange.from.getFullYear();
   const ivaSelectedMonth = ivaResumenDateRange.from.getMonth();
@@ -371,6 +391,13 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   const effectiveMultilateralProfileId =
     multilateralProfileId ?? defaultIvaProfileId ?? profiles[0]?.id;
 
+  /** Perfil efectivo para el cuadro de Resumen (selector de perfiles asociados). */
+  const effectiveResumenProfileId =
+    resumenProfileId ?? defaultIvaProfileId ?? profiles[0]?.id;
+  const selectedResumenProfile = profiles.find(
+    (p) => p.id === effectiveResumenProfileId
+  );
+
   const periodoFiscalResumen = getResumenPeriodMMYYYY(ivaResumenDateRange.from);
 
   const {
@@ -396,6 +423,8 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   useEffect(() => {
     setIvaProfileId(undefined);
     setMultilateralProfileId(undefined);
+    setResumenProfileId(undefined);
+    setResumenNotifProfileId("all");
     const range = getMonthBounds(now.getFullYear(), now.getMonth());
     setMultilateralPeriod(range);
     setMultilateralDateFrom(range.from.toISOString().slice(0, 10));
@@ -453,6 +482,21 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     queryKey: ["lastDeudaJob", clientId],
     queryFn: () =>
       getLastJobByType({ data: { clientId, jobType: "deuda" } }),
+    enabled: !!clientId,
+  });
+
+  const { data: unreadNotifications, isLoading: loadingUnreadNotifications } = useQuery({
+    queryKey: ["unreadNotifications", clientId, resumenNotifProfileId],
+    queryFn: () =>
+      getNotifications({
+        data: {
+          clientFilter: clientId,
+          profileId: resumenNotifProfileId !== "all" ? resumenNotifProfileId : undefined,
+          opened: false,
+          limit: 50,
+          page: 1,
+        },
+      }),
     enabled: !!clientId,
   });
 
@@ -1234,65 +1278,114 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
 
         {/* Resumen Tab */}
         <TabsContent value="resumen" className="space-y-6 mt-6">
-          {/* Fila superior: Info cliente (compacto) + Resumen mes + Perfiles */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Información del Cliente — compacto */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm">
-                  <FileText className="h-4 w-4" />
-                  Información del Cliente
-                </CardTitle>
+          {/* Fila superior: Perfiles (col-span-2) + Facturación + IVA */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+
+            {/* Cuadro combinado: Perfiles Asociados */}
+            <Card className="md:col-span-2">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2 text-sm">
+                    <User className="h-4 w-4" />
+                    Perfiles Asociados
+                  </CardTitle>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => setEditClientDialogOpen(true)}
+                  >
+                    <Edit className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground w-16 shrink-0">CUIT</span>
-                  <span className="font-medium">{client.identityNumber || "-"}</span>
-                  {client.identityNumber && (
-                    <Button variant="ghost" size="icon" className="h-5 w-5 shrink-0" onClick={() => copyToClipboard(client.identityNumber, "cuit")}>
-                      {copiedField === "cuit" ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
-                    </Button>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground w-16 shrink-0">Teléfono</span>
-                  <Phone className="h-3 w-3 text-muted-foreground shrink-0" />
-                  <span>{client.phone || "-"}</span>
-                  {client.phone && (
-                    <Button variant="ghost" size="icon" className="h-5 w-5 shrink-0" onClick={() => copyToClipboard(client.phone!, "phone")}>
-                      {copiedField === "phone" ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
-                    </Button>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground w-16 shrink-0">Email</span>
-                  <Mail className="h-3 w-3 text-muted-foreground shrink-0" />
-                  <span className="truncate">{client.email || "-"}</span>
-                  {client.email && (
-                    <Button variant="ghost" size="icon" className="h-5 w-5 shrink-0" onClick={() => copyToClipboard(client.email!, "email")}>
-                      {copiedField === "email" ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
-                    </Button>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground w-16 shrink-0">Dirección</span>
-                  <MapPin className="h-3 w-3 text-muted-foreground shrink-0" />
-                  <span className="truncate">{client.address || "-"}</span>
-                  {client.address && (
-                    <Button variant="ghost" size="icon" className="h-5 w-5 shrink-0" onClick={() => copyToClipboard(client.address!, "address")}>
-                      {copiedField === "address" ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
-                    </Button>
-                  )}
-                </div>
+              <CardContent className="space-y-2.5">
+                {loadingProfiles ? (
+                  <p className="text-xs text-muted-foreground">Cargando perfiles...</p>
+                ) : profiles.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">Sin perfiles asociados.</p>
+                ) : (
+                  <>
+                    {/* Pills selector */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {profiles.map((prof) => {
+                        const normCuit = (s: string) => s.replace(/\D/g, "");
+                        const warningCuits = lastNotificacionesJob?.notificationFetchWarningCuits ?? [];
+                        const isWarning = warningCuits.some(
+                          (c) => normCuit(c) === normCuit(prof.identityNumber ?? "")
+                        );
+                        const isSelected = effectiveResumenProfileId === prof.id;
+                        return (
+                          <button
+                            key={prof.id}
+                            onClick={() => setResumenProfileId(prof.id)}
+                            className={cn(
+                              "px-3 py-1 rounded-full text-xs font-medium transition-all border",
+                              isSelected
+                                ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                                : isWarning
+                                ? "bg-orange-50 dark:bg-orange-950/30 text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-800 hover:bg-orange-100 dark:hover:bg-orange-950/50"
+                                : "bg-muted/60 text-muted-foreground border-transparent hover:bg-muted hover:text-foreground"
+                            )}
+                          >
+                            {prof.name || prof.identityNumber}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {/* Datos del perfil seleccionado */}
+                    {selectedResumenProfile && (
+                      <div className="rounded-xl bg-muted/40 border border-border/60 p-3 text-sm">
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                          <div>
+                            <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">CUIT</div>
+                            <div className="font-medium tabular-nums">{selectedResumenProfile.identityNumber || "—"}</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Tipo</div>
+                            <div className="capitalize">{selectedResumenProfile.identityType || "—"}</div>
+                          </div>
+                          {selectedResumenProfile.email && (
+                            <div className="col-span-2 min-w-0">
+                              <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Email</div>
+                              <div className="truncate">{selectedResumenProfile.email}</div>
+                            </div>
+                          )}
+                          {selectedResumenProfile.phone && (
+                            <div>
+                              <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Teléfono</div>
+                              <div>{selectedResumenProfile.phone}</div>
+                            </div>
+                          )}
+                          {selectedResumenProfile.address && (
+                            <div className={cn("min-w-0", selectedResumenProfile.phone ? "" : "col-span-2")}>
+                              <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Dirección</div>
+                              <div className="truncate">{selectedResumenProfile.address}</div>
+                            </div>
+                          )}
+                        </div>
+                        <div className="mt-2.5 pt-2 border-t border-border/50">
+                          <Link
+                            to="/clients/$clientId/$profileId"
+                            params={{ clientId, profileId: selectedResumenProfile.id }}
+                            className="text-xs text-primary hover:underline flex items-center gap-1"
+                          >
+                            Ver perfil completo →
+                          </Link>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
               </CardContent>
             </Card>
 
-            {/* Resumen del mes actual */}
+            {/* Facturación del mes actual */}
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-sm">
                   <Receipt className="h-4 w-4" />
-                  Facturación — {MONTH_NAMES[now.getMonth()]}
+                  Facturación — {MONTH_NAMES[now.getMonth()]} {now.getFullYear()}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -1324,120 +1417,50 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
               </CardContent>
             </Card>
 
-            {/* Perfiles Asociados */}
+            {/* IVA — saldo del período */}
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-sm">
-                  <User className="h-4 w-4" />
-                  Perfiles Asociados
+                  <BanknoteArrowUp className="h-4 w-4" />
+                  IVA — {periodoFiscalResumen
+                    ? `${MONTH_NAMES[parseInt(periodoFiscalResumen.split("/")[0]!, 10) - 1]} ${periodoFiscalResumen.split("/")[1]}`
+                    : `${MONTH_NAMES[now.getMonth()]} ${now.getFullYear()}`
+                  }
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                {loadingProfiles ? (
-                  <div className="flex items-center justify-center h-32">
-                    <div className="text-muted-foreground">
-                      Cargando perfiles...
-                    </div>
+              <CardContent className="space-y-3">
+                {loadingClientIva ? (
+                  <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Cargando...
                   </div>
-                ) : profiles.length === 0 ? (
-                  <div className="flex items-center justify-center h-32">
-                    <div className="text-muted-foreground">
-                      No hay perfiles asociados a este cliente
-                    </div>
-                  </div>
+                ) : !clientIva?.data ? (
+                  <p className="text-sm text-muted-foreground">Sin datos para el período.</p>
                 ) : (
-                  <div className="rounded-md border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Nombre</TableHead>
-                          <TableHead>Número de Identidad</TableHead>
-                          <TableHead>Tipo</TableHead>
-                          <TableHead>Email</TableHead>
-                          <TableHead>Teléfono</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {profiles.map((profile) => {
-                          const normCuit = (s: string) => s.replace(/\D/g, "");
-                          const warningCuits = lastNotificacionesJob?.notificationFetchWarningCuits ?? [];
-                          const isNotificationWarningProfile = warningCuits.some(
-                            (c) => normCuit(c) === normCuit(profile.identityNumber ?? "")
-                          );
-                          return (
-                          <TableRow
-                            key={profile.id}
-                            className={cn(
-                              "cursor-pointer hover:bg-muted/50",
-                              isNotificationWarningProfile && "text-orange-600 dark:text-orange-400"
-                            )}
-                          >
-                            <TableCell className="font-medium">
-                              <Link
-                                to="/clients/$clientId/$profileId"
-                                params={{
-                                  clientId: clientId,
-                                  profileId: profile.id,
-                                }}
-                                className="block"
-                              >
-                                {profile.name}
-                              </Link>
-                            </TableCell>
-                            <TableCell>
-                              <Link
-                                to="/clients/$clientId/$profileId"
-                                params={{
-                                  clientId: clientId,
-                                  profileId: profile.id,
-                                }}
-                                className="block"
-                              >
-                                {profile.identityNumber}
-                              </Link>
-                            </TableCell>
-                            <TableCell>
-                              <Link
-                                to="/clients/$clientId/$profileId"
-                                params={{
-                                  clientId: clientId,
-                                  profileId: profile.id,
-                                }}
-                                className="block"
-                              >
-                                {profile.identityType}
-                              </Link>
-                            </TableCell>
-                            <TableCell>
-                              <Link
-                                to="/clients/$clientId/$profileId"
-                                params={{
-                                  clientId: clientId,
-                                  profileId: profile.id,
-                                }}
-                                className="block"
-                              >
-                                {profile.email}
-                              </Link>
-                            </TableCell>
-                            <TableCell>
-                              <Link
-                                to="/clients/$clientId/$profileId"
-                                params={{
-                                  clientId: clientId,
-                                  profileId: profile.id,
-                                }}
-                                className="block"
-                              >
-                                {profile.phone}
-                              </Link>
-                            </TableCell>
-                          </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </div>
+                  <>
+                    <div>
+                      <div className="text-[11px] text-muted-foreground uppercase tracking-wide">Saldo técnico</div>
+                      <div className={cn(
+                        "text-lg font-bold tabular-nums",
+                        Number(clientIva.data.saldoTecnicoFavorContribuyente ?? 0) > 0
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-muted-foreground"
+                      )}>
+                        {formatIvaCurrency(clientIva.data.saldoTecnicoFavorContribuyente)}
+                      </div>
+                    </div>
+                    <div className="pt-2 border-t">
+                      <div className="text-[11px] text-muted-foreground uppercase tracking-wide">Saldo libre disponible</div>
+                      <div className={cn(
+                        "text-lg font-bold tabular-nums",
+                        Number(clientIva.data.saldoLibreDisponibilidadFavorContribuyentePeriodo ?? 0) > 0
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-muted-foreground"
+                      )}>
+                        {formatIvaCurrency(clientIva.data.saldoLibreDisponibilidadFavorContribuyentePeriodo)}
+                      </div>
+                    </div>
+                  </>
                 )}
               </CardContent>
             </Card>
@@ -1483,50 +1506,194 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
             </div>
           )}
 
-          {/* Gráfico ventas/compras últimos 12 meses */}
-          {resumenChartData.length > 0 && (
-            <Card>
-              <CardHeader className="py-3 px-4">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4" />
-                  Ventas y compras — {now.getFullYear()}
-                </CardTitle>
+          {/* Gráfico ventas/compras + Notificaciones no leídas */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+            {/* Gráfico — 2 columnas */}
+            {resumenChartData.length > 0 && (
+              <Card className="md:col-span-2">
+                <CardHeader className="py-3 px-4">
+                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4" />
+                    Ventas y compras — {now.getFullYear()}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0 px-4 pb-4">
+                  <ChartContainer config={facturasChartConfig} className="h-[200px] w-full">
+                    <BarChart
+                      data={resumenChartData}
+                      margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
+                      barCategoryGap={4}
+                      barSize={20}
+                    >
+                      <CartesianGrid strokeDasharray="2 2" className="stroke-muted" />
+                      <XAxis dataKey="period" tick={{ fontSize: 9 }} />
+                      <YAxis tick={{ fontSize: 9 }} tickFormatter={(v) => (v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `${(v / 1e3).toFixed(0)}k` : String(v))} />
+                      <ChartTooltip
+                        content={
+                          <ChartTooltipContent
+                            formatter={(value) =>
+                              new Intl.NumberFormat("es-AR", {
+                                style: "currency",
+                                currency: "ARS",
+                                minimumFractionDigits: 0,
+                                maximumFractionDigits: 0,
+                              }).format(Number(value))
+                            }
+                          />
+                        }
+                      />
+                      <Legend wrapperStyle={{ fontSize: 10 }} />
+                      <Bar dataKey="ventas" fill="var(--color-ventas)" name="Ventas" radius={[2, 2, 0, 0]} />
+                      <Bar dataKey="compras" fill="var(--color-compras)" name="Compras" radius={[2, 2, 0, 0]} />
+                    </BarChart>
+                  </ChartContainer>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Notificaciones no leídas */}
+            <Card className={resumenChartData.length === 0 ? "md:col-span-3" : ""}>
+              <CardHeader className="py-2.5 px-4">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                    <Bell className="h-4 w-4" />
+                    Notificaciones
+                    {(unreadNotifications?.totalCount ?? 0) > 0 && (
+                      <span className="inline-flex items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold h-4 min-w-4 px-1">
+                        {unreadNotifications!.totalCount}
+                      </span>
+                    )}
+                  </CardTitle>
+                </div>
+                {/* Filtro por perfil */}
+                {profiles.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    <button
+                      onClick={() => setResumenNotifProfileId("all")}
+                      className={cn(
+                        "px-2.5 py-0.5 rounded-full text-[11px] font-medium transition-all border",
+                        resumenNotifProfileId === "all"
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-muted/60 text-muted-foreground border-transparent hover:bg-muted hover:text-foreground"
+                      )}
+                    >
+                      Todos
+                    </button>
+                    {profiles.map((prof) => (
+                      <button
+                        key={prof.id}
+                        onClick={() => setResumenNotifProfileId(prof.id)}
+                        className={cn(
+                          "px-2.5 py-0.5 rounded-full text-[11px] font-medium transition-all border",
+                          resumenNotifProfileId === prof.id
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-muted/60 text-muted-foreground border-transparent hover:bg-muted hover:text-foreground"
+                        )}
+                      >
+                        {prof.name || prof.identityNumber}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </CardHeader>
-              <CardContent className="pt-0 px-4 pb-4">
-                <ChartContainer config={facturasChartConfig} className="h-[200px] w-full">
-                  <BarChart
-                    data={resumenChartData}
-                    margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
-                    barCategoryGap={4}
-                    barSize={20}
-                  >
-                    <CartesianGrid strokeDasharray="2 2" className="stroke-muted" />
-                    <XAxis dataKey="period" tick={{ fontSize: 9 }} />
-                    <YAxis tick={{ fontSize: 9 }} tickFormatter={(v) => (v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `${(v / 1e3).toFixed(0)}k` : String(v))} />
-                    <ChartTooltip
-                      content={
-                        <ChartTooltipContent
-                          formatter={(value) =>
-                            new Intl.NumberFormat("es-AR", {
-                              style: "currency",
-                              currency: "ARS",
-                              minimumFractionDigits: 0,
-                              maximumFractionDigits: 0,
-                            }).format(Number(value))
-                          }
-                        />
-                      }
-                    />
-                    <Legend wrapperStyle={{ fontSize: 10 }} />
-                    <Bar dataKey="ventas" fill="var(--color-ventas)" name="Ventas" radius={[2, 2, 0, 0]} />
-                    <Bar dataKey="compras" fill="var(--color-compras)" name="Compras" radius={[2, 2, 0, 0]} />
-                  </BarChart>
-                </ChartContainer>
+              <CardContent className="px-4 pb-3 pt-0">
+                {loadingUnreadNotifications ? (
+                  <div className="flex items-center gap-2 text-muted-foreground text-xs py-4 justify-center">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Cargando...
+                  </div>
+                ) : !unreadNotifications?.notifications.length ? (
+                  <p className="text-xs text-muted-foreground py-4 text-center">Sin notificaciones pendientes.</p>
+                ) : (
+                  <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-1">
+                    {unreadNotifications.notifications.map((notif) => (
+                      <div
+                        key={notif.id}
+                        className="flex items-start gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs hover:bg-muted/60 transition-colors"
+                      >
+                        <button
+                          className="flex-1 min-w-0 text-left"
+                          onClick={() => setResumenNotifSelected(notif)}
+                        >
+                          {notif.profileName && (
+                            <div className="text-[10px] text-muted-foreground mb-0.5 font-medium uppercase tracking-wide">{notif.profileName}</div>
+                          )}
+                          <p className="text-foreground line-clamp-2 leading-snug">{notif.message}</p>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
+                            {notif.publicationDate
+                              ? format(new Date(notif.publicationDate), "dd/MM/yyyy", { locale: es })
+                              : "—"}
+                          </p>
+                        </button>
+                        <button
+                          onClick={() => markOpenedMutation.mutate(notif.id)}
+                          disabled={markOpenedMutation.isPending}
+                          className="shrink-0 mt-0.5 text-emerald-500 hover:text-emerald-600 transition-colors"
+                          title="Marcar como leída"
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
-          )}
+          </div>
 
         </TabsContent>
+
+        {/* Dialog: detalle de notificación no leída (Resumen) */}
+        <Dialog open={!!resumenNotifSelected} onOpenChange={(open) => { if (!open) setResumenNotifSelected(null); }}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-base">
+                <Bell className="h-4 w-4 shrink-0" />
+                {resumenNotifSelected?.profileName
+                  ? `Notificación — ${resumenNotifSelected.profileName}`
+                  : "Notificación"}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 text-sm">
+              {/* Fechas */}
+              <div className="flex gap-6 text-xs text-muted-foreground">
+                {resumenNotifSelected?.publicationDate && (
+                  <span>
+                    <span className="font-medium text-foreground">Publicación: </span>
+                    {format(new Date(resumenNotifSelected.publicationDate), "dd/MM/yyyy", { locale: es })}
+                  </span>
+                )}
+                {resumenNotifSelected?.expirationDate && (
+                  <span>
+                    <span className="font-medium text-foreground">Vencimiento: </span>
+                    {format(new Date(resumenNotifSelected.expirationDate), "dd/MM/yyyy", { locale: es })}
+                  </span>
+                )}
+              </div>
+              {/* Mensaje completo */}
+              <p className="leading-relaxed whitespace-pre-wrap">{resumenNotifSelected?.message}</p>
+              {/* Acciones */}
+              <div className="flex justify-between items-center pt-2 border-t">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (resumenNotifSelected) markOpenedMutation.mutate(resumenNotifSelected.id);
+                    setResumenNotifSelected(null);
+                  }}
+                  disabled={markOpenedMutation.isPending}
+                  className="gap-1.5"
+                >
+                  <Check className="h-3.5 w-3.5" />
+                  Marcar como leída
+                </Button>
+                <DialogClose asChild>
+                  <Button variant="ghost" size="sm">Cerrar</Button>
+                </DialogClose>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Deudas Tab */}
         <TabsContent value="deudas" className="space-y-6 mt-6">
