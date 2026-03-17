@@ -430,6 +430,26 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     refetchOnWindowFocus: false,
   });
 
+  /** IVA para el cuadro del Resumen: usa el perfil seleccionado en "Perfiles Asociados". */
+  const {
+    data: resumenClientIva,
+    isLoading: loadingResumenClientIva,
+  } = useQuery({
+    queryKey: ["clientIva", clientId, effectiveResumenProfileId, periodoFiscalResumen],
+    queryFn: () =>
+      getClientIvaCredit({
+        data: {
+          clientId,
+          profileId: effectiveResumenProfileId ?? undefined,
+          periodoFiscalResumen: periodoFiscalResumen ?? undefined,
+        },
+      }),
+    enabled: !!effectiveResumenProfileId,
+    staleTime: Infinity,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+  });
+
   useEffect(() => {
     setIvaProfileId(undefined);
     setMultilateralProfileId(undefined);
@@ -1128,6 +1148,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     const byMonth: Record<number, { ventas: number; compras: number }> = {};
     for (let i = 0; i < 12; i++) byMonth[i] = { ventas: 0, compras: 0 };
     invoices.forEach((inv: any) => {
+      if (effectiveResumenProfileId && inv.profileId !== effectiveResumenProfileId) return;
       const d = new Date(inv.emitionDate);
       if (d.getFullYear() !== year) return;
       let amount = parseFloat(inv.amount || "0");
@@ -1141,7 +1162,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
       ventas: byMonth[i].ventas,
       compras: byMonth[i].compras,
     }));
-  }, [allInvoicesData]);
+  }, [allInvoicesData, effectiveResumenProfileId]);
 
   /** Totales del mes actual para el Resumen. */
   const resumenCurrentMonthStats = useMemo(() => {
@@ -1154,6 +1175,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     let totalSales = 0;
     let totalPurchases = 0;
     invoices.forEach((inv: any) => {
+      if (effectiveResumenProfileId && inv.profileId !== effectiveResumenProfileId) return;
       const invDate = new Date(inv.emitionDate);
       if (invDate < fromDate || invDate > toDate) return;
       let amount = parseFloat(inv.amount || "0");
@@ -1163,7 +1185,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
       else if (dir === "inbound") totalPurchases += amount;
     });
     return { totalSales, totalPurchases };
-  }, [allInvoicesData]);
+  }, [allInvoicesData, effectiveResumenProfileId]);
 
   // Calculate due date statistics
   const dueDateStats = useMemo(() => {
@@ -1362,33 +1384,19 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                     {/* Datos del perfil seleccionado */}
                     {selectedResumenProfile && (
                       <div className="rounded-xl bg-muted/40 border border-border/60 p-3 text-sm">
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                        <div className="flex flex-wrap gap-x-10 gap-y-3">
                           <div>
                             <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">CUIT</div>
                             <div className="font-medium tabular-nums">{selectedResumenProfile.identityNumber || "—"}</div>
                           </div>
                           <div>
-                            <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Tipo</div>
-                            <div className="capitalize">{selectedResumenProfile.identityType || "—"}</div>
+                            <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Teléfono</div>
+                            <div>{client?.phone || "—"}</div>
                           </div>
-                          {selectedResumenProfile.email && (
-                            <div className="col-span-2 min-w-0">
-                              <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Email</div>
-                              <div className="truncate">{selectedResumenProfile.email}</div>
-                            </div>
-                          )}
-                          {selectedResumenProfile.phone && (
-                            <div>
-                              <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Teléfono</div>
-                              <div>{selectedResumenProfile.phone}</div>
-                            </div>
-                          )}
-                          {selectedResumenProfile.address && (
-                            <div className={cn("min-w-0", selectedResumenProfile.phone ? "" : "col-span-2")}>
-                              <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Dirección</div>
-                              <div className="truncate">{selectedResumenProfile.address}</div>
-                            </div>
-                          )}
+                          <div className="min-w-0">
+                            <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Email</div>
+                            <div className="truncate">{client?.email || "—"}</div>
+                          </div>
                         </div>
                         <div className="mt-2.5 pt-2 border-t border-border/50">
                           <Link
@@ -1461,12 +1469,12 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 </p>
               </CardHeader>
               <CardContent className="px-3 pb-3 pt-0 space-y-1.5 md:px-5 md:pb-4 md:space-y-2.5">
-                {loadingClientIva ? (
+                {loadingResumenClientIva ? (
                   <div className="flex items-center gap-2 text-muted-foreground text-xs md:text-sm">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     Cargando...
                   </div>
-                ) : !clientIva?.data ? (
+                ) : !resumenClientIva?.data ? (
                   <p className="text-xs md:text-sm text-muted-foreground">Sin datos.</p>
                 ) : (
                   <>
@@ -1474,22 +1482,22 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                       <div className="text-[10px] md:text-[11px] text-muted-foreground uppercase tracking-wide">Saldo técnico</div>
                       <div className={cn(
                         "text-sm md:text-lg font-bold tabular-nums",
-                        Number(clientIva.data.saldoTecnicoFavorContribuyente ?? 0) > 0
+                        Number(resumenClientIva.data.saldoTecnicoFavorContribuyente ?? 0) > 0
                           ? "text-emerald-600 dark:text-emerald-400"
                           : "text-muted-foreground"
                       )}>
-                        {formatIvaCurrency(clientIva.data.saldoTecnicoFavorContribuyente)}
+                        {formatIvaCurrency(resumenClientIva.data.saldoTecnicoFavorContribuyente)}
                       </div>
                     </div>
                     <div className="pt-1.5 md:pt-2 border-t">
                       <div className="text-[10px] md:text-[11px] text-muted-foreground uppercase tracking-wide">Saldo libre disp.</div>
                       <div className={cn(
                         "text-sm md:text-lg font-bold tabular-nums",
-                        Number(clientIva.data.saldoLibreDisponibilidadFavorContribuyentePeriodo ?? 0) > 0
+                        Number(resumenClientIva.data.saldoLibreDisponibilidadFavorContribuyentePeriodo ?? 0) > 0
                           ? "text-emerald-600 dark:text-emerald-400"
                           : "text-muted-foreground"
                       )}>
-                        {formatIvaCurrency(clientIva.data.saldoLibreDisponibilidadFavorContribuyentePeriodo)}
+                        {formatIvaCurrency(resumenClientIva.data.saldoLibreDisponibilidadFavorContribuyentePeriodo)}
                       </div>
                     </div>
                   </>
@@ -1584,7 +1592,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
             )}
 
             {/* Notificaciones no leídas */}
-            <Card className={resumenChartData.length === 0 ? "md:col-span-3" : ""}>
+            <Card className={cn("flex flex-col self-start", resumenChartData.length === 0 ? "md:col-span-3" : "")}>
               <CardHeader className="py-2.5 px-4">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm font-semibold flex items-center gap-2">
@@ -1628,7 +1636,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                   </div>
                 )}
               </CardHeader>
-              <CardContent className="px-4 pb-3 pt-0">
+              <CardContent className="px-4 pb-3 pt-0 flex flex-col min-h-[140px]">
                 {loadingUnreadNotifications ? (
                   <div className="flex items-center gap-2 text-muted-foreground text-xs py-4 justify-center">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1637,7 +1645,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 ) : !unreadNotifications?.notifications.length ? (
                   <p className="text-xs text-muted-foreground py-4 text-center">Sin notificaciones pendientes.</p>
                 ) : (
-                  <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-1">
+                  <div className="space-y-1.5 overflow-y-auto pr-1 max-h-[140px]">
                     {unreadNotifications.notifications.map((notif) => (
                       <div
                         key={notif.id}
