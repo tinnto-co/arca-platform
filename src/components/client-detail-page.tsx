@@ -23,6 +23,14 @@ import {
   Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -289,6 +297,8 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   /** Filtros del módulo de deudas (vacío = todos). */
   const [debtFilterImpuesto, setDebtFilterImpuesto] = useState<string>("");
   const [debtFilterConcepto, setDebtFilterConcepto] = useState<string>("");
+  const [debtPage, setDebtPage] = useState(1);
+  const [dueDatePage, setDueDatePage] = useState(1);
 
   /** Período para el módulo Facturas: sin período, por año, por mes o rango de días. */
   const [facturasPeriodType, setFacturasPeriodType] = useState<"none" | "year" | "month" | "range">("none");
@@ -826,6 +836,21 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     });
   }, [debts, debtFilterImpuesto, debtFilterConcepto]);
 
+  const ITEMS_PER_PAGE = 10;
+  const debtTotalPages = Math.max(1, Math.ceil(filteredDebts.length / ITEMS_PER_PAGE));
+  const pagedDebts = filteredDebts.slice((debtPage - 1) * ITEMS_PER_PAGE, debtPage * ITEMS_PER_PAGE);
+  const dueDateTotalPages = Math.max(1, Math.ceil(dueDates.length / ITEMS_PER_PAGE));
+  const pagedDueDates = dueDates.slice((dueDatePage - 1) * ITEMS_PER_PAGE, dueDatePage * ITEMS_PER_PAGE);
+
+  const getPageRange = (currentPage: number, totalPages: number) => {
+    const maxVisible = 7;
+    if (totalPages <= maxVisible) return { startPage: 1, endPage: totalPages };
+    let startPage = Math.max(1, currentPage - 3);
+    let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+    if (endPage - startPage < maxVisible - 1) startPage = Math.max(1, endPage - maxVisible + 1);
+    return { startPage, endPage };
+  };
+
   /** Formatea una fecha en hora local como YYYY-MM-DD (evita desfase por UTC con toISOString). */
   const formatLocalYYYYMMDD = (d: Date) => {
     const y = d.getFullYear();
@@ -1217,15 +1242,16 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     <div className="space-y-4 p-4 md:space-y-6 md:p-0 md:m-[3rem]">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 min-w-0">
           <Button
             variant="ghost"
             size="icon"
+            className="shrink-0"
             onClick={() => navigate({ to: "/clients" })}
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <h1 className="text-2xl font-bold">{client.name}</h1>
+          <h1 className="text-2xl font-bold truncate">{client.name}</h1>
           <Button
             variant="outline"
             size="sm"
@@ -1245,7 +1271,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
 
       {/* Navigation Tabs */}
       <Tabs defaultValue="resumen" className="w-full">
-        <TabsList>
+        <TabsList className="flex flex-wrap h-auto w-full gap-1">
           <TabsTrigger value="resumen">
             <FileText className="mr-2 h-4 w-4" />
             Resumen
@@ -1279,10 +1305,10 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
         {/* Resumen Tab */}
         <TabsContent value="resumen" className="space-y-6 mt-6">
           {/* Fila superior: Perfiles (col-span-2) + Facturación + IVA */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
 
             {/* Cuadro combinado: Perfiles Asociados */}
-            <Card className="md:col-span-2">
+            <Card className="col-span-2 md:col-span-2">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="flex items-center gap-2 text-sm">
@@ -1381,30 +1407,33 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
             </Card>
 
             {/* Facturación del mes actual */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm">
-                  <Receipt className="h-4 w-4" />
-                  Facturación — {MONTH_NAMES[now.getMonth()]} {now.getFullYear()}
+            <Card className="py-0 gap-0">
+              <CardHeader className="pt-3 pb-1.5 px-3 md:pt-4 md:pb-2 md:px-5">
+                <CardTitle className="flex items-center gap-1.5 text-xs md:text-sm">
+                  <Receipt className="h-3.5 w-3.5 shrink-0 md:h-4 md:w-4" />
+                  Facturación
                 </CardTitle>
+                <p className="text-[10px] md:text-xs text-muted-foreground">
+                  {MONTH_NAMES[now.getMonth()]} {now.getFullYear()}
+                </p>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="px-3 pb-3 pt-0 space-y-1.5 md:px-5 md:pb-4 md:space-y-2.5">
                 <div>
-                  <div className="text-[11px] text-muted-foreground uppercase tracking-wide">Ventas</div>
-                  <div className="text-lg font-bold tabular-nums">
+                  <div className="text-[10px] md:text-[11px] text-muted-foreground uppercase tracking-wide">Ventas</div>
+                  <div className="text-sm md:text-lg font-bold tabular-nums">
                     {new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", minimumFractionDigits: 2 }).format(resumenCurrentMonthStats.totalSales)}
                   </div>
                 </div>
                 <div>
-                  <div className="text-[11px] text-muted-foreground uppercase tracking-wide">Compras</div>
-                  <div className="text-lg font-bold tabular-nums">
+                  <div className="text-[10px] md:text-[11px] text-muted-foreground uppercase tracking-wide">Compras</div>
+                  <div className="text-sm md:text-lg font-bold tabular-nums">
                     {new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", minimumFractionDigits: 2 }).format(resumenCurrentMonthStats.totalPurchases)}
                   </div>
                 </div>
-                <div className="pt-2 border-t">
-                  <div className="text-[11px] text-muted-foreground uppercase tracking-wide">Saldo</div>
+                <div className="pt-1.5 md:pt-2 border-t">
+                  <div className="text-[10px] md:text-[11px] text-muted-foreground uppercase tracking-wide">Saldo</div>
                   <div className={cn(
-                    "text-lg font-bold tabular-nums",
+                    "text-sm md:text-lg font-bold tabular-nums",
                     resumenCurrentMonthStats.totalSales - resumenCurrentMonthStats.totalPurchases < 0
                       ? "text-red-600 dark:text-red-400"
                       : "text-emerald-600 dark:text-emerald-400"
@@ -1418,30 +1447,33 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
             </Card>
 
             {/* IVA — saldo del período */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm">
-                  <BanknoteArrowUp className="h-4 w-4" />
-                  IVA — {periodoFiscalResumen
+            <Card className="py-0 gap-0">
+              <CardHeader className="pt-3 pb-1.5 px-3 md:pt-4 md:pb-2 md:px-5">
+                <CardTitle className="flex items-center gap-1.5 text-xs md:text-sm">
+                  <BanknoteArrowUp className="h-3.5 w-3.5 shrink-0 md:h-4 md:w-4" />
+                  IVA
+                </CardTitle>
+                <p className="text-[10px] md:text-xs text-muted-foreground">
+                  {periodoFiscalResumen
                     ? `${MONTH_NAMES[parseInt(periodoFiscalResumen.split("/")[0]!, 10) - 1]} ${periodoFiscalResumen.split("/")[1]}`
                     : `${MONTH_NAMES[now.getMonth()]} ${now.getFullYear()}`
                   }
-                </CardTitle>
+                </p>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="px-3 pb-3 pt-0 space-y-1.5 md:px-5 md:pb-4 md:space-y-2.5">
                 {loadingClientIva ? (
-                  <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                  <div className="flex items-center gap-2 text-muted-foreground text-xs md:text-sm">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     Cargando...
                   </div>
                 ) : !clientIva?.data ? (
-                  <p className="text-sm text-muted-foreground">Sin datos para el período.</p>
+                  <p className="text-xs md:text-sm text-muted-foreground">Sin datos.</p>
                 ) : (
                   <>
                     <div>
-                      <div className="text-[11px] text-muted-foreground uppercase tracking-wide">Saldo técnico</div>
+                      <div className="text-[10px] md:text-[11px] text-muted-foreground uppercase tracking-wide">Saldo técnico</div>
                       <div className={cn(
-                        "text-lg font-bold tabular-nums",
+                        "text-sm md:text-lg font-bold tabular-nums",
                         Number(clientIva.data.saldoTecnicoFavorContribuyente ?? 0) > 0
                           ? "text-emerald-600 dark:text-emerald-400"
                           : "text-muted-foreground"
@@ -1449,10 +1481,10 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                         {formatIvaCurrency(clientIva.data.saldoTecnicoFavorContribuyente)}
                       </div>
                     </div>
-                    <div className="pt-2 border-t">
-                      <div className="text-[11px] text-muted-foreground uppercase tracking-wide">Saldo libre disponible</div>
+                    <div className="pt-1.5 md:pt-2 border-t">
+                      <div className="text-[10px] md:text-[11px] text-muted-foreground uppercase tracking-wide">Saldo libre disp.</div>
                       <div className={cn(
-                        "text-lg font-bold tabular-nums",
+                        "text-sm md:text-lg font-bold tabular-nums",
                         Number(clientIva.data.saldoLibreDisponibilidadFavorContribuyentePeriodo ?? 0) > 0
                           ? "text-emerald-600 dark:text-emerald-400"
                           : "text-muted-foreground"
@@ -1857,7 +1889,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                   <span className="text-sm text-muted-foreground whitespace-nowrap">Impuesto:</span>
                   <Select
                     value={debtFilterImpuesto || "all"}
-                    onValueChange={(v) => setDebtFilterImpuesto(v === "all" ? "" : v)}
+                    onValueChange={(v) => { setDebtFilterImpuesto(v === "all" ? "" : v); setDebtPage(1); }}
                   >
                     <SelectTrigger className="w-[180px] h-9">
                       <SelectValue placeholder="Todos" />
@@ -1874,7 +1906,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                   <span className="text-sm text-muted-foreground whitespace-nowrap">Concepto:</span>
                   <Select
                     value={debtFilterConcepto || "all"}
-                    onValueChange={(v) => setDebtFilterConcepto(v === "all" ? "" : v)}
+                    onValueChange={(v) => { setDebtFilterConcepto(v === "all" ? "" : v); setDebtPage(1); }}
                   >
                     <SelectTrigger className="w-[200px] h-9">
                       <SelectValue placeholder="Todos" />
@@ -1895,6 +1927,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                     onClick={() => {
                       setDebtFilterImpuesto("");
                       setDebtFilterConcepto("");
+                      setDebtPage(1);
                     }}
                   >
                     <X className="h-4 w-4 mr-1" />
@@ -1932,7 +1965,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                       Mostrando {filteredDebts.length} de {debts.length} deudas
                     </p>
                   )}
-                  <div className="rounded-md border">
+                  <div className="rounded-md border overflow-x-auto">
                     {filteredDebts.length === 0 ? (
                       <div className="flex items-center justify-center py-12 text-muted-foreground">
                         No hay deudas que coincidan con los filtros
@@ -1955,64 +1988,92 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {filteredDebts.length === 0 ? (
-                          <TableRow>
-                            <TableCell
-                              colSpan={7}
-                              className="h-24 text-center text-muted-foreground"
-                            >
-                              No hay deudas que coincidan con los filtros
+                        {pagedDebts.map((debt) => (
+                          <TableRow key={debt.id}>
+                            <TableCell className="font-medium truncate" title={debt.tax || "-"}>
+                              {debt.tax || "-"}
+                            </TableCell>
+                            <TableCell className="truncate" title={debt.concept || "-"}>
+                              {debt.concept || "-"}
+                            </TableCell>
+                            <TableCell className="truncate" title={debt.period || "-"}>
+                              {debt.period || "-"}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              {new Date(debt.dueDate).toLocaleDateString("es-AR")}
+                            </TableCell>
+                            <TableCell className="text-right whitespace-nowrap">
+                              {new Intl.NumberFormat("es-AR", {
+                                style: "currency",
+                                currency: "ARS",
+                                minimumFractionDigits: 2,
+                              }).format(Number(debt.balance) || 0)}
+                            </TableCell>
+                            <TableCell className="text-right whitespace-nowrap">
+                              {new Intl.NumberFormat("es-AR", {
+                                style: "currency",
+                                currency: "ARS",
+                                minimumFractionDigits: 2,
+                              }).format(Number(debt.compensatoryInterest) || 0)}
+                            </TableCell>
+                            <TableCell className="text-right whitespace-nowrap">
+                              {new Intl.NumberFormat("es-AR", {
+                                style: "currency",
+                                currency: "ARS",
+                                minimumFractionDigits: 2,
+                              }).format(Number(debt.punitiveInterest) || 0)}
                             </TableCell>
                           </TableRow>
-                        ) : (
-                          filteredDebts.map((debt) => (
-                            <TableRow key={debt.id}>
-                              <TableCell className="font-medium truncate" title={debt.tax || "-"}>
-                                {debt.tax || "-"}
-                              </TableCell>
-                              <TableCell className="truncate" title={debt.concept || "-"}>
-                                {debt.concept || "-"}
-                              </TableCell>
-                              <TableCell className="truncate" title={debt.period || "-"}>
-                                {debt.period || "-"}
-                              </TableCell>
-                              <TableCell className="whitespace-nowrap">
-                                {new Date(debt.dueDate).toLocaleDateString(
-                                  "es-AR"
-                                )}
-                              </TableCell>
-                              <TableCell className="text-right whitespace-nowrap">
-                                {new Intl.NumberFormat("es-AR", {
-                                  style: "currency",
-                                  currency: "ARS",
-                                  minimumFractionDigits: 2,
-                                }).format(Number(debt.balance) || 0)}
-                              </TableCell>
-                              <TableCell className="text-right whitespace-nowrap">
-                                {new Intl.NumberFormat("es-AR", {
-                                  style: "currency",
-                                  currency: "ARS",
-                                  minimumFractionDigits: 2,
-                                }).format(
-                                  Number(debt.compensatoryInterest) || 0
-                                )}
-                              </TableCell>
-                              <TableCell className="text-right whitespace-nowrap">
-                                {new Intl.NumberFormat("es-AR", {
-                                  style: "currency",
-                                  currency: "ARS",
-                                  minimumFractionDigits: 2,
-                                }).format(
-                                  Number(debt.punitiveInterest) || 0
-                                )}
-                              </TableCell>
-                            </TableRow>
-                          ))
-                        )}
+                        ))}
                       </TableBody>
                     </Table>
                   )}
                 </div>
+                  {debtTotalPages > 1 && (() => {
+                    const { startPage, endPage } = getPageRange(debtPage, debtTotalPages);
+                    const visiblePages = Array.from({ length: endPage - startPage + 1 }, (_, i) => startPage + i);
+                    return (
+                      <div className="flex justify-center w-full min-w-0">
+                        <Pagination>
+                          <PaginationContent className="flex-wrap justify-center">
+                            <PaginationItem>
+                              <PaginationPrevious
+                                onClick={() => setDebtPage((p) => Math.max(1, p - 1))}
+                                className={debtPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                              />
+                            </PaginationItem>
+                            {startPage > 1 && (
+                              <>
+                                <PaginationItem>
+                                  <PaginationLink onClick={() => setDebtPage(1)} className="cursor-pointer">1</PaginationLink>
+                                </PaginationItem>
+                                {startPage > 2 && <PaginationItem><span className="px-2">...</span></PaginationItem>}
+                              </>
+                            )}
+                            {visiblePages.map((page) => (
+                              <PaginationItem key={page}>
+                                <PaginationLink onClick={() => setDebtPage(page)} isActive={debtPage === page} className="cursor-pointer">{page}</PaginationLink>
+                              </PaginationItem>
+                            ))}
+                            {endPage < debtTotalPages && (
+                              <>
+                                {endPage < debtTotalPages - 1 && <PaginationItem><span className="px-2">...</span></PaginationItem>}
+                                <PaginationItem>
+                                  <PaginationLink onClick={() => setDebtPage(debtTotalPages)} className="cursor-pointer">{debtTotalPages}</PaginationLink>
+                                </PaginationItem>
+                              </>
+                            )}
+                            <PaginationItem>
+                              <PaginationNext
+                                onClick={() => setDebtPage((p) => Math.min(debtTotalPages, p + 1))}
+                                className={debtPage === debtTotalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                              />
+                            </PaginationItem>
+                          </PaginationContent>
+                        </Pagination>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </CardContent>
@@ -2189,49 +2250,94 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                   </div>
                 </div>
               ) : (
-                <div className="rounded-md border">
-                  <Table className="w-full table-fixed">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-[14%]">Impuesto</TableHead>
-                        <TableHead className="w-[16%]">Concepto</TableHead>
-                        <TableHead className="w-[16%]">Subconcepto</TableHead>
-                        <TableHead className="w-[10%]">Período</TableHead>
-                        <TableHead className="w-[7%]">Cuota</TableHead>
-                        <TableHead className="w-[12%]">Vencimiento</TableHead>
-                        <TableHead className="w-[25%]">Detalle</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {dueDates.map((dueDate) => (
-                        <TableRow key={dueDate.id}>
-                          <TableCell className="font-medium truncate" title={dueDate.tax || "-"}>
-                            {dueDate.tax || "-"}
-                          </TableCell>
-                          <TableCell className="truncate" title={dueDate.concept || "-"}>
-                            {dueDate.concept || "-"}
-                          </TableCell>
-                          <TableCell className="truncate" title={dueDate.subConcept || "-"}>
-                            {dueDate.subConcept || "-"}
-                          </TableCell>
-                          <TableCell className="truncate" title={dueDate.period || "-"}>
-                            {dueDate.period || "-"}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap text-center">
-                            {dueDate.quotaNumber || "-"}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap">
-                            {new Date(dueDate.dueDate).toLocaleDateString(
-                              "es-AR"
-                            )}
-                          </TableCell>
-                          <TableCell className="truncate" title={dueDate.detail || "-"}>
-                            {dueDate.detail || "-"}
-                          </TableCell>
+                <div className="space-y-4">
+                  <div className="rounded-md border overflow-x-auto">
+                    <Table className="w-full table-fixed">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[14%]">Impuesto</TableHead>
+                          <TableHead className="w-[16%]">Concepto</TableHead>
+                          <TableHead className="w-[16%]">Subconcepto</TableHead>
+                          <TableHead className="w-[10%]">Período</TableHead>
+                          <TableHead className="w-[7%]">Cuota</TableHead>
+                          <TableHead className="w-[12%]">Vencimiento</TableHead>
+                          <TableHead className="w-[25%]">Detalle</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {pagedDueDates.map((dueDate) => (
+                          <TableRow key={dueDate.id}>
+                            <TableCell className="font-medium truncate" title={dueDate.tax || "-"}>
+                              {dueDate.tax || "-"}
+                            </TableCell>
+                            <TableCell className="truncate" title={dueDate.concept || "-"}>
+                              {dueDate.concept || "-"}
+                            </TableCell>
+                            <TableCell className="truncate" title={dueDate.subConcept || "-"}>
+                              {dueDate.subConcept || "-"}
+                            </TableCell>
+                            <TableCell className="truncate" title={dueDate.period || "-"}>
+                              {dueDate.period || "-"}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-center">
+                              {dueDate.quotaNumber || "-"}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              {new Date(dueDate.dueDate).toLocaleDateString("es-AR")}
+                            </TableCell>
+                            <TableCell className="truncate" title={dueDate.detail || "-"}>
+                              {dueDate.detail || "-"}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  {dueDateTotalPages > 1 && (() => {
+                    const { startPage, endPage } = getPageRange(dueDatePage, dueDateTotalPages);
+                    const visiblePages = Array.from({ length: endPage - startPage + 1 }, (_, i) => startPage + i);
+                    return (
+                      <div className="flex justify-center w-full min-w-0">
+                        <Pagination>
+                          <PaginationContent className="flex-wrap justify-center">
+                            <PaginationItem>
+                              <PaginationPrevious
+                                onClick={() => setDueDatePage((p) => Math.max(1, p - 1))}
+                                className={dueDatePage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                              />
+                            </PaginationItem>
+                            {startPage > 1 && (
+                              <>
+                                <PaginationItem>
+                                  <PaginationLink onClick={() => setDueDatePage(1)} className="cursor-pointer">1</PaginationLink>
+                                </PaginationItem>
+                                {startPage > 2 && <PaginationItem><span className="px-2">...</span></PaginationItem>}
+                              </>
+                            )}
+                            {visiblePages.map((page) => (
+                              <PaginationItem key={page}>
+                                <PaginationLink onClick={() => setDueDatePage(page)} isActive={dueDatePage === page} className="cursor-pointer">{page}</PaginationLink>
+                              </PaginationItem>
+                            ))}
+                            {endPage < dueDateTotalPages && (
+                              <>
+                                {endPage < dueDateTotalPages - 1 && <PaginationItem><span className="px-2">...</span></PaginationItem>}
+                                <PaginationItem>
+                                  <PaginationLink onClick={() => setDueDatePage(dueDateTotalPages)} className="cursor-pointer">{dueDateTotalPages}</PaginationLink>
+                                </PaginationItem>
+                              </>
+                            )}
+                            <PaginationItem>
+                              <PaginationNext
+                                onClick={() => setDueDatePage((p) => Math.min(dueDateTotalPages, p + 1))}
+                                className={dueDatePage === dueDateTotalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                              />
+                            </PaginationItem>
+                          </PaginationContent>
+                        </Pagination>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </CardContent>
