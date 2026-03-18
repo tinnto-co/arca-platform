@@ -181,10 +181,10 @@ const MetricDelta = ({
   return (
     <p
       className={`text-xs mt-1 ${diff > 0
-          ? "text-emerald-600 dark:text-emerald-400"
-          : diff < 0
-            ? "text-red-600 dark:text-red-400"
-            : "text-muted-foreground"
+        ? "text-emerald-600 dark:text-emerald-400"
+        : diff < 0
+          ? "text-red-600 dark:text-red-400"
+          : "text-muted-foreground"
         }`}
     >
       {label}: {formattedPct}
@@ -1077,7 +1077,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
       const from = new Date(facturasDateRange.from.getFullYear(), facturasDateRange.from.getMonth(), 1);
       const to = new Date(facturasDateRange.to.getFullYear(), facturasDateRange.to.getMonth(), 1);
       const byMonthKey: Record<string, { ventas: number; compras: number }> = {};
-      for (let t = from.getTime(); t <= to.getTime(); ) {
+      for (let t = from.getTime(); t <= to.getTime();) {
         const d = new Date(t);
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
         byMonthKey[key] = { ventas: 0, compras: 0 };
@@ -1298,23 +1298,59 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
             <FileText className="mr-2 h-4 w-4" />
             Resumen
           </TabsTrigger>
-          <TabsTrigger value="deudas">
+          <TabsTrigger
+            value="deudas"
+            className={cn(
+              lastDeudaJob?.failedReason
+                ? "text-orange-600 dark:text-orange-400"
+                : undefined
+            )}
+          >
             <DollarSign className="mr-2 h-4 w-4" />
             Deudas
           </TabsTrigger>
-          <TabsTrigger value="vencimientos">
+          <TabsTrigger
+            value="vencimientos"
+            className={cn(
+              lastVencimientosJob?.failedReason
+                ? "text-orange-600 dark:text-orange-400"
+                : undefined
+            )}
+          >
             <Calendar className="mr-2 h-4 w-4" />
             Vencimientos
           </TabsTrigger>
-          <TabsTrigger value="notificaciones">
+          <TabsTrigger
+            value="notificaciones"
+            className={cn(
+              lastNotificacionesJob?.failedReason ||
+                lastNotificacionesJob?.notificationFetchWarning
+                ? "text-orange-600 dark:text-orange-400"
+                : undefined
+            )}
+          >
             <Bell className="mr-2 h-4 w-4" />
             Notificaciones
           </TabsTrigger>
-          <TabsTrigger value="facturas">
+          <TabsTrigger
+            value="facturas"
+            className={cn(
+              lastComprobantesJob?.failedReason
+                ? "text-orange-600 dark:text-orange-400"
+                : undefined
+            )}
+          >
             <Receipt className="mr-2 h-4 w-4" />
             Facturas
           </TabsTrigger>
-          <TabsTrigger value="iva">
+          <TabsTrigger
+            value="iva"
+            className={cn(
+              lastIvaJob?.failedReason
+                ? "text-orange-600 dark:text-orange-400"
+                : undefined
+            )}
+          >
             <BanknoteArrowUp className="mr-2 h-4 w-4" />
             Iva
           </TabsTrigger>
@@ -1372,8 +1408,8 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                               isSelected
                                 ? "bg-primary text-primary-foreground border-primary shadow-sm"
                                 : isWarning
-                                ? "bg-orange-50 dark:bg-orange-950/30 text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-800 hover:bg-orange-100 dark:hover:bg-orange-950/50"
-                                : "bg-muted/60 text-muted-foreground border-transparent hover:bg-muted hover:text-foreground"
+                                  ? "bg-orange-50 dark:bg-orange-950/30 text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-800 hover:bg-orange-100 dark:hover:bg-orange-950/50"
+                                  : "bg-muted/60 text-muted-foreground border-transparent hover:bg-muted hover:text-foreground"
                             )}
                           >
                             {prof.name || prof.identityNumber}
@@ -1506,46 +1542,6 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
             </Card>
           </div>
 
-          {/* Errores de últimos jobs (facturas, IVA, notificaciones, deudas) */}
-          {(lastComprobantesJob?.failedReason ||
-            lastIvaJob?.failedReason ||
-            lastNotificacionesJob?.failedReason ||
-            lastNotificacionesJob?.notificationFetchWarning ||
-            lastDeudaJob?.failedReason) && (
-            <div className="space-y-1 text-xs">
-              {lastComprobantesJob?.failedReason && (
-                <p className="text-destructive">
-                  <span className="font-semibold">Facturas:</span>{" "}
-                  {lastComprobantesJob.failedReason}
-                </p>
-              )}
-              {lastIvaJob?.failedReason && (
-                <p className="text-destructive">
-                  <span className="font-semibold">IVA:</span>{" "}
-                  {lastIvaJob.failedReason}
-                </p>
-              )}
-              {lastNotificacionesJob?.failedReason && (
-                <p className="text-destructive">
-                  <span className="font-semibold">Notificaciones:</span>{" "}
-                  {lastNotificacionesJob.failedReason}
-                </p>
-              )}
-              {lastDeudaJob?.failedReason && (
-                <p className="text-destructive">
-                  <span className="font-semibold">Deudas:</span>{" "}
-                  {lastDeudaJob.failedReason}
-                </p>
-              )}
-              {lastNotificacionesJob?.notificationFetchWarning && (
-                <p className="text-orange-600 dark:text-orange-400 text-[11px] mt-0.5">
-                  <span className="font-semibold">Notificaciones (advertencia):</span>{" "}
-                  {lastNotificacionesJob.notificationFetchWarning}
-                </p>
-              )}
-            </div>
-          )}
-
           {/* Gráfico ventas/compras + Notificaciones no leídas */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
             {/* Gráfico — 2 columnas */}
@@ -1598,11 +1594,6 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                   <CardTitle className="text-sm font-semibold flex items-center gap-2">
                     <Bell className="h-4 w-4" />
                     Notificaciones
-                    {(unreadNotifications?.totalCount ?? 0) > 0 && (
-                      <span className="inline-flex items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold h-4 min-w-4 px-1">
-                        {unreadNotifications!.totalCount}
-                      </span>
-                    )}
                   </CardTitle>
                 </div>
                 {/* Filtro por perfil */}
@@ -1979,64 +1970,64 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                         No hay deudas que coincidan con los filtros
                       </div>
                     ) : (
-                    <Table className="w-full table-fixed">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-[15%]">Impuesto</TableHead>
-                          <TableHead className="w-[22%]">Concepto</TableHead>
-                          <TableHead className="w-[9%]">Período</TableHead>
-                          <TableHead className="w-[12%]">Vencimiento</TableHead>
-                          <TableHead className="w-[14%] text-right">Saldo</TableHead>
-                          <TableHead className="w-[14%] text-right">
-                            Interés Comp.
-                          </TableHead>
-                          <TableHead className="w-[14%] text-right">
-                            Interés Punit.
-                          </TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {pagedDebts.map((debt) => (
-                          <TableRow key={debt.id}>
-                            <TableCell className="font-medium truncate" title={debt.tax || "-"}>
-                              {debt.tax || "-"}
-                            </TableCell>
-                            <TableCell className="truncate" title={debt.concept || "-"}>
-                              {debt.concept || "-"}
-                            </TableCell>
-                            <TableCell className="truncate" title={debt.period || "-"}>
-                              {debt.period || "-"}
-                            </TableCell>
-                            <TableCell className="whitespace-nowrap">
-                              {new Date(debt.dueDate).toLocaleDateString("es-AR")}
-                            </TableCell>
-                            <TableCell className="text-right whitespace-nowrap">
-                              {new Intl.NumberFormat("es-AR", {
-                                style: "currency",
-                                currency: "ARS",
-                                minimumFractionDigits: 2,
-                              }).format(Number(debt.balance) || 0)}
-                            </TableCell>
-                            <TableCell className="text-right whitespace-nowrap">
-                              {new Intl.NumberFormat("es-AR", {
-                                style: "currency",
-                                currency: "ARS",
-                                minimumFractionDigits: 2,
-                              }).format(Number(debt.compensatoryInterest) || 0)}
-                            </TableCell>
-                            <TableCell className="text-right whitespace-nowrap">
-                              {new Intl.NumberFormat("es-AR", {
-                                style: "currency",
-                                currency: "ARS",
-                                minimumFractionDigits: 2,
-                              }).format(Number(debt.punitiveInterest) || 0)}
-                            </TableCell>
+                      <Table className="w-full table-fixed">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-[15%]">Impuesto</TableHead>
+                            <TableHead className="w-[22%]">Concepto</TableHead>
+                            <TableHead className="w-[9%]">Período</TableHead>
+                            <TableHead className="w-[12%]">Vencimiento</TableHead>
+                            <TableHead className="w-[14%] text-right">Saldo</TableHead>
+                            <TableHead className="w-[14%] text-right">
+                              Interés Comp.
+                            </TableHead>
+                            <TableHead className="w-[14%] text-right">
+                              Interés Punit.
+                            </TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  )}
-                </div>
+                        </TableHeader>
+                        <TableBody>
+                          {pagedDebts.map((debt) => (
+                            <TableRow key={debt.id}>
+                              <TableCell className="font-medium truncate" title={debt.tax || "-"}>
+                                {debt.tax || "-"}
+                              </TableCell>
+                              <TableCell className="truncate" title={debt.concept || "-"}>
+                                {debt.concept || "-"}
+                              </TableCell>
+                              <TableCell className="truncate" title={debt.period || "-"}>
+                                {debt.period || "-"}
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap">
+                                {new Date(debt.dueDate).toLocaleDateString("es-AR")}
+                              </TableCell>
+                              <TableCell className="text-right whitespace-nowrap">
+                                {new Intl.NumberFormat("es-AR", {
+                                  style: "currency",
+                                  currency: "ARS",
+                                  minimumFractionDigits: 2,
+                                }).format(Number(debt.balance) || 0)}
+                              </TableCell>
+                              <TableCell className="text-right whitespace-nowrap">
+                                {new Intl.NumberFormat("es-AR", {
+                                  style: "currency",
+                                  currency: "ARS",
+                                  minimumFractionDigits: 2,
+                                }).format(Number(debt.compensatoryInterest) || 0)}
+                              </TableCell>
+                              <TableCell className="text-right whitespace-nowrap">
+                                {new Intl.NumberFormat("es-AR", {
+                                  style: "currency",
+                                  currency: "ARS",
+                                  minimumFractionDigits: 2,
+                                }).format(Number(debt.punitiveInterest) || 0)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </div>
                   {debtTotalPages > 1 && (() => {
                     const { startPage, endPage } = getPageRange(debtPage, debtTotalPages);
                     const visiblePages = Array.from({ length: endPage - startPage + 1 }, (_, i) => startPage + i);
@@ -2548,158 +2539,158 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
 
             {/* Fila 2: filtros */}
             <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm text-muted-foreground shrink-0">Período:</span>
-            <Select
-              value={facturasPeriodType}
-              onValueChange={(v) => {
-                setFacturasPeriodType(v as "none" | "year" | "month" | "range");
-                setFacturasPeriodPickerOpen(false);
-              }}
-            >
-              <SelectTrigger className="w-[160px] h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Sin período</SelectItem>
-                <SelectItem value="year">Por año</SelectItem>
-                <SelectItem value="month">Por mes</SelectItem>
-                <SelectItem value="range">Rango de días</SelectItem>
-              </SelectContent>
-            </Select>
-            {facturasPeriodType === "year" && (
-              <Select value={String(facturasYear)} onValueChange={(v) => setFacturasYear(Number(v))}>
-                <SelectTrigger className="w-[100px] h-9">
-                  <SelectValue placeholder="Año" />
+              <span className="text-sm text-muted-foreground shrink-0">Período:</span>
+              <Select
+                value={facturasPeriodType}
+                onValueChange={(v) => {
+                  setFacturasPeriodType(v as "none" | "year" | "month" | "range");
+                  setFacturasPeriodPickerOpen(false);
+                }}
+              >
+                <SelectTrigger className="w-[160px] h-9">
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {Array.from({ length: 8 }, (_, i) => now.getFullYear() - i).map((y) => (
-                    <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                  <SelectItem value="none">Sin período</SelectItem>
+                  <SelectItem value="year">Por año</SelectItem>
+                  <SelectItem value="month">Por mes</SelectItem>
+                  <SelectItem value="range">Rango de días</SelectItem>
+                </SelectContent>
+              </Select>
+              {facturasPeriodType === "year" && (
+                <Select value={String(facturasYear)} onValueChange={(v) => setFacturasYear(Number(v))}>
+                  <SelectTrigger className="w-[100px] h-9">
+                    <SelectValue placeholder="Año" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 8 }, (_, i) => now.getFullYear() - i).map((y) => (
+                      <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {facturasPeriodType === "month" && (
+                <Popover open={facturasPeriodPickerOpen} onOpenChange={setFacturasPeriodPickerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="h-9 min-w-[160px] justify-start text-left font-normal px-3">
+                      <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                      <span className="text-sm">{`${MONTH_NAMES[facturasMonth]} ${facturasYear}`}</span>
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-4" align="start">
+                    <div className="space-y-3">
+                      <Select
+                        value={String(facturasYear)}
+                        onValueChange={(v) => {
+                          const y = Number(v);
+                          const newMax = y === now.getFullYear() ? now.getMonth() : 11;
+                          setFacturasYear(y);
+                          setFacturasMonth((m) => Math.min(m, newMax));
+                        }}
+                      >
+                        <SelectTrigger className="w-full h-9">
+                          <SelectValue placeholder="Año" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Array.from({ length: 8 }, (_, i) => now.getFullYear() - i).map((y) => (
+                            <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {Array.from(
+                          { length: facturasYear === now.getFullYear() ? now.getMonth() + 1 : 12 },
+                          (_, i) => i
+                        ).map((i) => (
+                          <Button
+                            key={i}
+                            variant={facturasMonth === i ? "default" : "outline"}
+                            size="sm"
+                            className="text-xs h-8"
+                            onClick={() => {
+                              setFacturasMonth(i);
+                              setFacturasPeriodPickerOpen(false);
+                            }}
+                          >
+                            {MONTH_NAMES_SHORT[i]}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              )}
+              {facturasPeriodType === "range" && (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn("h-9 min-w-[200px] justify-start text-left font-normal", !facturasDateRange?.from && "text-muted-foreground")}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                      {facturasDateRange?.from
+                        ? facturasDateRange?.to
+                          ? `${format(facturasDateRange.from, "dd/MM/yyyy", { locale: es })} – ${format(facturasDateRange.to, "dd/MM/yyyy", { locale: es })}`
+                          : format(facturasDateRange.from, "dd/MM/yyyy", { locale: es })
+                        : "Elegir fechas"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <DateRangeCalendar
+                      mode="range"
+                      defaultMonth={facturasDateRange?.from}
+                      selected={facturasDateRange}
+                      onSelect={setFacturasDateRange}
+                      numberOfMonths={2}
+                      locale={es}
+                    />
+                  </PopoverContent>
+                </Popover>
+              )}
+
+              <span className="text-sm text-muted-foreground shrink-0 ml-1">Perfil:</span>
+              <Select value={facturasProfileFilter} onValueChange={setFacturasProfileFilter}>
+                <SelectTrigger className="w-[160px] h-9">
+                  <SelectValue placeholder="Perfil" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los perfiles</SelectItem>
+                  {(profiles as { id: string; name?: string; identityNumber?: string }[]).map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name || p.identityNumber || p.id}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            )}
-            {facturasPeriodType === "month" && (
-              <Popover open={facturasPeriodPickerOpen} onOpenChange={setFacturasPeriodPickerOpen}>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="h-9 min-w-[160px] justify-start text-left font-normal px-3">
-                    <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
-                    <span className="text-sm">{`${MONTH_NAMES[facturasMonth]} ${facturasYear}`}</span>
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-4" align="start">
-                  <div className="space-y-3">
-                    <Select
-                      value={String(facturasYear)}
-                      onValueChange={(v) => {
-                        const y = Number(v);
-                        const newMax = y === now.getFullYear() ? now.getMonth() : 11;
-                        setFacturasYear(y);
-                        setFacturasMonth((m) => Math.min(m, newMax));
-                      }}
-                    >
-                      <SelectTrigger className="w-full h-9">
-                        <SelectValue placeholder="Año" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Array.from({ length: 8 }, (_, i) => now.getFullYear() - i).map((y) => (
-                          <SelectItem key={y} value={String(y)}>{y}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {Array.from(
-                        { length: facturasYear === now.getFullYear() ? now.getMonth() + 1 : 12 },
-                        (_, i) => i
-                      ).map((i) => (
-                        <Button
-                          key={i}
-                          variant={facturasMonth === i ? "default" : "outline"}
-                          size="sm"
-                          className="text-xs h-8"
-                          onClick={() => {
-                            setFacturasMonth(i);
-                            setFacturasPeriodPickerOpen(false);
-                          }}
-                        >
-                          {MONTH_NAMES_SHORT[i]}
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-                </PopoverContent>
-              </Popover>
-            )}
-            {facturasPeriodType === "range" && (
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn("h-9 min-w-[200px] justify-start text-left font-normal", !facturasDateRange?.from && "text-muted-foreground")}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
-                    {facturasDateRange?.from
-                      ? facturasDateRange?.to
-                        ? `${format(facturasDateRange.from, "dd/MM/yyyy", { locale: es })} – ${format(facturasDateRange.to, "dd/MM/yyyy", { locale: es })}`
-                        : format(facturasDateRange.from, "dd/MM/yyyy", { locale: es })
-                      : "Elegir fechas"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <DateRangeCalendar
-                    mode="range"
-                    defaultMonth={facturasDateRange?.from}
-                    selected={facturasDateRange}
-                    onSelect={setFacturasDateRange}
-                    numberOfMonths={2}
-                    locale={es}
-                  />
-                </PopoverContent>
-              </Popover>
-            )}
 
-            <span className="text-sm text-muted-foreground shrink-0 ml-1">Perfil:</span>
-            <Select value={facturasProfileFilter} onValueChange={setFacturasProfileFilter}>
-              <SelectTrigger className="w-[160px] h-9">
-                <SelectValue placeholder="Perfil" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos los perfiles</SelectItem>
-                {(profiles as { id: string; name?: string; identityNumber?: string }[]).map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.name || p.identityNumber || p.id}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              <span className="text-sm text-muted-foreground shrink-0">Tipo:</span>
+              <Select value={facturasTypeFilter} onValueChange={setFacturasTypeFilter}>
+                <SelectTrigger className="w-[220px] h-9">
+                  <SelectValue placeholder="Tipo" />
+                </SelectTrigger>
+                <SelectContent className="max-h-[300px]">
+                  <SelectItem value="all">Todas las facturas</SelectItem>
+                  {Object.entries(INVOICE_TYPE_LABELS)
+                    .sort(([a], [b]) => Number(a) - Number(b))
+                    .map(([code, label]) => (
+                      <SelectItem key={code} value={code}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
 
-            <span className="text-sm text-muted-foreground shrink-0">Tipo:</span>
-            <Select value={facturasTypeFilter} onValueChange={setFacturasTypeFilter}>
-              <SelectTrigger className="w-[220px] h-9">
-                <SelectValue placeholder="Tipo" />
-              </SelectTrigger>
-              <SelectContent className="max-h-[300px]">
-                <SelectItem value="all">Todas las facturas</SelectItem>
-                {Object.entries(INVOICE_TYPE_LABELS)
-                  .sort(([a], [b]) => Number(a) - Number(b))
-                  .map(([code, label]) => (
-                    <SelectItem key={code} value={code}>
-                      {label}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-
-            <span className="text-sm text-muted-foreground shrink-0">Dirección:</span>
-            <Select value={facturasDirectionFilter} onValueChange={setFacturasDirectionFilter}>
-              <SelectTrigger className="w-[130px] h-9">
-                <SelectValue placeholder="Dirección" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas</SelectItem>
-                <SelectItem value="Outbound">Emitida</SelectItem>
-                <SelectItem value="Inbound">Recibida</SelectItem>
-              </SelectContent>
-            </Select>
+              <span className="text-sm text-muted-foreground shrink-0">Dirección:</span>
+              <Select value={facturasDirectionFilter} onValueChange={setFacturasDirectionFilter}>
+                <SelectTrigger className="w-[130px] h-9">
+                  <SelectValue placeholder="Dirección" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas</SelectItem>
+                  <SelectItem value="Outbound">Emitida</SelectItem>
+                  <SelectItem value="Inbound">Recibida</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Fila 3: búsqueda por emisor/receptor y exportar Excel */}
@@ -2737,11 +2728,11 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                     {invoiceStatsFiltered == null
                       ? "—"
                       : new Intl.NumberFormat("es-AR", {
-                          style: "currency",
-                          currency: "ARS",
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        }).format(invoiceStatsFiltered.totalSales)}
+                        style: "currency",
+                        currency: "ARS",
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      }).format(invoiceStatsFiltered.totalSales)}
                   </div>
                   {facturasVariationPct != null && facturasVariationPct.salesPct !== undefined && (
                     <div
@@ -2771,11 +2762,11 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                     {invoiceStatsFiltered == null
                       ? "—"
                       : new Intl.NumberFormat("es-AR", {
-                          style: "currency",
-                          currency: "ARS",
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        }).format(invoiceStatsFiltered.totalPurchases)}
+                        style: "currency",
+                        currency: "ARS",
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      }).format(invoiceStatsFiltered.totalPurchases)}
                   </div>
                   {facturasVariationPct != null && facturasVariationPct.purchasesPct !== undefined && (
                     <div
@@ -2813,13 +2804,13 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                     {invoiceStatsFiltered == null
                       ? "—"
                       : new Intl.NumberFormat("es-AR", {
-                          style: "currency",
-                          currency: "ARS",
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        }).format(
-                          invoiceStatsFiltered.totalSales - invoiceStatsFiltered.totalPurchases
-                        )}
+                        style: "currency",
+                        currency: "ARS",
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      }).format(
+                        invoiceStatsFiltered.totalSales - invoiceStatsFiltered.totalPurchases
+                      )}
                   </div>
                 </div>
               </CardContent>
@@ -3483,24 +3474,24 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
             </div>
           </div>
           <div className="w-full mt-4">
-              {loadingClientIva ? (
-                <div className="flex items-center justify-center h-40 text-muted-foreground gap-2">
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                  <span>Cargando resumen de IVA…</span>
-                </div>
-              ) : (
-                <RenderIvaResume
-                  ref={ivaResumeRef}
-                  clientId={clientId}
-                  clientName={client?.name}
-                  clientIva={clientIva ?? undefined}
-                  selectedProfileId={effectiveIvaProfileId ?? undefined}
-                  dateRange={ivaResumenDateRange}
-                  clientIvaLoading={loadingClientIva}
-                  clientIvaError={clientIvaError}
-                  periodUsedForResumen={periodUsedForResumen}
-                />
-              )}
+            {loadingClientIva ? (
+              <div className="flex items-center justify-center h-40 text-muted-foreground gap-2">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                <span>Cargando resumen de IVA…</span>
+              </div>
+            ) : (
+              <RenderIvaResume
+                ref={ivaResumeRef}
+                clientId={clientId}
+                clientName={client?.name}
+                clientIva={clientIva ?? undefined}
+                selectedProfileId={effectiveIvaProfileId ?? undefined}
+                dateRange={ivaResumenDateRange}
+                clientIvaLoading={loadingClientIva}
+                clientIvaError={clientIvaError}
+                periodUsedForResumen={periodUsedForResumen}
+              />
+            )}
           </div>
         </TabsContent>
       </Tabs>
@@ -3684,10 +3675,10 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                         <span className="text-muted-foreground">
                           {inv.emitionDate
                             ? new Date(inv.emitionDate).toLocaleDateString("es-AR", {
-                                day: "2-digit",
-                                month: "2-digit",
-                                year: "numeric",
-                              })
+                              day: "2-digit",
+                              month: "2-digit",
+                              year: "numeric",
+                            })
                             : "—"}
                         </span>
                       </div>

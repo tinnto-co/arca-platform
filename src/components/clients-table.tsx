@@ -213,7 +213,7 @@ export function ClientsTable() {
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <span
-                              className="inline-flex text-destructive"
+                              className="inline-flex text-orange-400"
                               onClick={(e) => e.stopPropagation()}
                               aria-label="Cliente con errores"
                             >

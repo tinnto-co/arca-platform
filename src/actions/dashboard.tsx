@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeaders } from "@tanstack/react-start/server";
 import z from "zod";
 import { db } from "@/lib/db";
-import { client, invoice, debt, dueDate } from "@/drizzle/schema";
+import { client, invoice, debt, dueDate, notification } from "@/drizzle/schema";
 import { auth } from "@/lib/auth";
 import { eq, and, gte, lte, sql, inArray } from "drizzle-orm";
 
@@ -394,3 +394,33 @@ export const getRecentInvoices = createServerFn({
 
     return invoices;
   });
+
+export const getPendingNotificationsCount = createServerFn({
+  method: "GET",
+}).handler(async () => {
+  const session = await auth.api.getSession({ headers: getRequestHeaders() });
+  if (!session?.user?.id) throw new Error("Unauthorized");
+
+  const userClients = await db
+    .select({ id: client.id })
+    .from(client)
+    .where(eq(client.userId, session.user.id));
+
+  const userClientIds = userClients.map((c) => c.id);
+
+  if (userClientIds.length === 0) {
+    return { count: 0 };
+  }
+
+  const [result] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(notification)
+    .where(
+      and(
+        inArray(notification.client, userClientIds),
+        eq(notification.opened, false)
+      )
+    );
+
+  return { count: result?.count ?? 0 };
+});

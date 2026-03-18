@@ -171,7 +171,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>
-              <SidebarMenuItem>
+{/*               <SidebarMenuItem>
                 <Link to="/jobs">
                   <SidebarMenuButton
                     isActive={pathname === "/jobs"}
@@ -181,7 +181,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                     <span>Jobs</span>
                   </SidebarMenuButton>
                 </Link>
-              </SidebarMenuItem>
+              </SidebarMenuItem> */}
               <SidebarMenuItem>
                 <Link to="/invoices">
                   <SidebarMenuButton
@@ -204,7 +204,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>
-              <SidebarMenuItem>
+{/*               <SidebarMenuItem>
                 <span className="cursor-not-allowed opacity-50 pointer-events-none flex w-full items-center gap-2">
                   <SidebarMenuButton
                     isActive={false}
@@ -214,7 +214,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                     <span>Escanear PDF</span>
                   </SidebarMenuButton>
                 </span>
-              </SidebarMenuItem>
+              </SidebarMenuItem> */}
             </SidebarMenu>
           </SidebarGroup>
         </SidebarContent>
