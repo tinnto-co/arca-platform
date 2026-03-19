@@ -345,6 +345,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     mutationFn: (id: string) => markNotificationOpened({ data: { id } }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["unreadNotifications", clientId] });
+      queryClient.invalidateQueries({ queryKey: ["allUnreadForCounts", clientId] });
     },
   });
   const ivaResumeRef = useRef<RenderIvaResumeRef>(null);
@@ -2492,6 +2493,12 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                     });
                     await queryClient.invalidateQueries({
                       queryKey: ["clientNotifications", clientId],
+                    });
+                    await queryClient.invalidateQueries({
+                      queryKey: ["unreadNotifications", clientId],
+                    });
+                    await queryClient.invalidateQueries({
+                      queryKey: ["allUnreadForCounts", clientId],
                     });
                     await queryClient.invalidateQueries({
                       queryKey: ["lastNotificacionesJob", clientId],
