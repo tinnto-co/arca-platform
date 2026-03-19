@@ -300,6 +300,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   >(null);
   const [multilateralSortDir, setMultilateralSortDir] = useState<"asc" | "desc">("desc");
   const [exportingMultilateralExcel, setExportingMultilateralExcel] = useState(false);
+  const [perfilDialogOpen, setPerfilDialogOpen] = useState(false);
   /** Rango de fechas elegido en el resumen IVA (para resaltar el scrape del período usado). */
   const [ivaResumenDateRange, setIvaResumenDateRange] = useState<{
     from: Date;
@@ -1534,14 +1535,42 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                           </div>
                         </div>
                         <div className="mt-2.5 pt-2 border-t border-border/50">
-                          <Link
-                            to="/clients/$clientId/$profileId"
-                            params={{ clientId, profileId: selectedResumenProfile.id }}
+                          <button
+                            onClick={() => setPerfilDialogOpen(true)}
                             className="text-xs text-primary hover:underline flex items-center gap-1"
                           >
                             Ver perfil completo →
-                          </Link>
+                          </button>
                         </div>
+                        <Dialog open={perfilDialogOpen} onOpenChange={setPerfilDialogOpen}>
+                          <DialogContent className="max-w-sm">
+                            <DialogHeader>
+                              <DialogTitle>Información del cliente</DialogTitle>
+                            </DialogHeader>
+                            <div className="space-y-3 text-sm">
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-xs text-muted-foreground uppercase tracking-wider">CUIT</span>
+                                <span className="font-medium">{selectedResumenProfile.identityNumber || "—"}</span>
+                              </div>
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-xs text-muted-foreground uppercase tracking-wider">Teléfono</span>
+                                <span className="font-medium">{client?.phone || "—"}</span>
+                              </div>
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-xs text-muted-foreground uppercase tracking-wider">Email</span>
+                                <span className="font-medium">{client?.email || "—"}</span>
+                              </div>
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-xs text-muted-foreground uppercase tracking-wider">Dirección</span>
+                                <span className="font-medium">{client?.address || "—"}</span>
+                              </div>
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-xs text-muted-foreground uppercase tracking-wider">Estado</span>
+                                <span className="font-medium">{client?.status || "—"}</span>
+                              </div>
+                            </div>
+                          </DialogContent>
+                        </Dialog>
                       </div>
                     )}
                   </>
