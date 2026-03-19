@@ -52,38 +52,38 @@
 }
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --radius: 0.75rem;
+  --background: #ffffff;
+  --foreground: #1a1a1a;
+  --card: #ffffff;
+  --card-foreground: #1a1a1a;
+  --popover: #ffffff;
+  --popover-foreground: #1a1a1a;
+  --primary: #232c50;
+  --primary-foreground: #ffffff;
+  --secondary: #139ed9;
+  --secondary-foreground: #ffffff;
+  --muted: #efeeef;
+  --muted-foreground: #8a8a8a;
+  --accent: #efeeef;
+  --accent-foreground: #232c50;
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --border: #d1d0d1;
+  --input: #d1d0d1;
+  --ring: #139ed9;
+  --chart-1: #139ed9;
+  --chart-2: #232c50;
+  --chart-3: #16a34a;
+  --chart-4: #f59e0b;
+  --chart-5: #dc2626;
+  --sidebar: #232c50;
+  --sidebar-foreground: rgba(255, 255, 255, 0.8);
+  --sidebar-primary: #139ed9;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: rgba(255, 255, 255, 0.1);
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgba(255, 255, 255, 0.1);
+  --sidebar-ring: #139ed9;
 }
 
 .dark {
@@ -123,13 +123,72 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
-    font-family: "Poppins", sans-serif;
+    font-family: "Noto Sans", sans-serif;
   }
   html {
-    font-family: "Poppins", sans-serif;
+    font-family: "Noto Sans", sans-serif;
   }
   body {
     @apply bg-background text-foreground;
-    font-family: "Poppins", sans-serif;
+    font-family: "Noto Sans", sans-serif;
+  }
+}
+
+/* Al imprimir desde Recibo (body.recibo-print-mode): solo se muestran los cuadros de recibo */
+@media print {
+  body.recibo-print-mode * {
+    visibility: hidden;
+  }
+  body.recibo-print-mode #recibo-print-area,
+  body.recibo-print-mode #recibo-print-area * {
+    visibility: visible;
+  }
+  body.recibo-print-mode #recibo-print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    overflow: visible;
+  }
+}
+
+/* Vertical (retrato): un recibo por cara, ajustado al tamaño de la hoja */
+@media print and (orientation: portrait) {
+  body.recibo-print-mode #recibo-print-area {
+    display: block;
+  }
+  body.recibo-print-mode #recibo-print-area > * {
+    page-break-after: always;
+    page-break-inside: avoid;
+    width: 100%;
+    max-width: 100%;
+  }
+  body.recibo-print-mode #recibo-print-area > *:last-child {
+    page-break-after: auto;
+  }
+  /* Que el recibo quepa en una cara: límite de altura A4 ~297mm menos márgenes */
+  body.recibo-print-mode .recibo-sheet {
+    max-height: 270mm;
+    box-sizing: border-box;
+  }
+}
+
+/* Horizontal (apaisado): los dos recibos en la misma cara, mismo diseño */
+@media print and (orientation: landscape) {
+  body.recibo-print-mode #recibo-print-area {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    align-items: start;
+  }
+  body.recibo-print-mode #recibo-print-area > * {
+    page-break-after: avoid;
+    page-break-inside: avoid;
+    width: 100%;
+  }
+  /* Mismo diseño: ancho fijo por recibo para que no se deformen */
+  body.recibo-print-mode .recibo-sheet {
+    min-width: 0;
+    max-width: 100%;
   }
 }

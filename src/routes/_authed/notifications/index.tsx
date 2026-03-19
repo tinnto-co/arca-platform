@@ -24,19 +24,17 @@ function RouteComponent() {
   const totalCount = notificationsData?.totalCount || 0;
 
   return (
-    <div className="flex flex-col h-full space-y-6 m-[3rem]">
-      {/* Header */}
-      <div>
-        <div className="flex items-center gap-2 mb-2">
-          <Mail className="h-6 w-6" />
-          <h1 className="text-2xl font-bold">Notificaciones</h1>
+    <div className="flex flex-col h-[calc(100svh-5rem)] md:h-svh p-4 md:p-6">
+      <div className="mb-4 flex-shrink-0">
+        <div className="flex items-center gap-2 mb-1">
+          <Mail className="h-6 w-6 text-[#139ed9]" />
+          <h1 className="text-2xl font-bold text-[#232c50]">Notificaciones</h1>
         </div>
-        <p className="text-muted-foreground">
+        <p className="text-muted-foreground text-sm">
           Todas las notificaciones ({totalCount})
         </p>
       </div>
 
-      {/* Notifications View */}
       <div className="flex-1 min-h-0">
         <NotificationsView />
       </div>

@@ -158,18 +158,19 @@ export function ProfileDetailPage({
   }));
 
   return (
-    <div className="space-y-6 m-[3rem]">
+    <div className="space-y-4 p-4 md:space-y-6 md:p-0 md:m-[3rem]">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 min-w-0">
           <Button
             variant="ghost"
             size="icon"
+            className="shrink-0"
             onClick={() => navigate({ to: `/clients/${clientId}` })}
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <h1 className="text-2xl font-bold">{profile.name}</h1>
+          <h1 className="text-2xl font-bold truncate">{profile.name}</h1>
         </div>
       </div>
 
@@ -286,8 +287,8 @@ export function ProfileDetailPage({
                       (stats?.totalOutbound || 0) -
                         (stats?.totalInbound || 0) >=
                       0
-                        ? "text-black"
-                        : "text-black"
+                        ? "text-[#232c50]"
+                        : "text-[#232c50]"
                     }`}
                   >
                     {new Intl.NumberFormat("es-AR", {

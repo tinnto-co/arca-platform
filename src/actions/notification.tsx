@@ -24,6 +24,7 @@ export const getNotifications = createServerFn({
       dateTo: z.string().optional(),
       profileId: z.string().optional(),
       search: z.string().optional(),
+      opened: z.boolean().optional(),
     })
   )
   .handler(async (ctx) => {
@@ -31,7 +32,7 @@ export const getNotifications = createServerFn({
     const session = await auth.api.getSession({ headers: getRequestHeaders() });
     if (!session?.user?.id) throw new Error("Unauthorized");
 
-    const { page, limit, clientFilter, dateFrom, dateTo, profileId } = ctx.data;
+    const { page, limit, clientFilter, dateFrom, dateTo, profileId, opened } = ctx.data;
     const offset = (page - 1) * limit;
 
     // Build where conditions
@@ -51,6 +52,10 @@ export const getNotifications = createServerFn({
 
     if (dateTo) {
       conditions.push(lte(notification.publicationDate, new Date(dateTo)));
+    }
+
+    if (opened !== undefined) {
+      conditions.push(eq(notification.opened, opened));
     }
 
     const whereCondition =

@@ -105,9 +105,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <SidebarHeader>
           <div className="flex items-center justify-center gap-2">
             {open && (
-              <p className="text-lg font-bold text-black  px-2">GESTION ARCA</p>
+              <p className="text-lg font-bold text-white px-2">GESTION ARCA</p>
             )}
-            <SidebarTrigger onClick={() => setOpen(!open)} className="-ml-1" />
+            <SidebarTrigger onClick={() => setOpen(!open)} className="-ml-1 text-white/80 hover:text-white hover:bg-white/10" />
           </div>
         </SidebarHeader>
         <SidebarContent>
@@ -115,7 +115,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <SidebarMenu>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <SidebarMenuButton className="bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground active:bg-primary/90 active:text-primary-foreground duration-200 ease-linear">
+                  <SidebarMenuButton className="bg-gradient-to-r from-[#139ed9] to-[#0e7eb0] text-white hover:from-[#3db8e8] hover:to-[#139ed9] active:from-[#0e7eb0] active:to-[#0a6a96] duration-200 ease-linear">
                     <PlusCircle />
                     Crear nuevo
                   </SidebarMenuButton>
@@ -171,6 +171,17 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>
+{/*               <SidebarMenuItem>
+                <Link to="/jobs">
+                  <SidebarMenuButton
+                    isActive={pathname === "/jobs"}
+                    tooltip="Jobs"
+                  >
+                    <Loader2 />
+                    <span>Jobs</span>
+                  </SidebarMenuButton>
+                </Link>
+              </SidebarMenuItem> */}
               <SidebarMenuItem>
                 <Link to="/invoices">
                   <SidebarMenuButton
@@ -183,6 +194,17 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 </Link>
               </SidebarMenuItem>
               <SidebarMenuItem>
+                <Link to="/sueldos">
+                  <SidebarMenuButton
+                    isActive={pathname === "/sueldos"}
+                    tooltip="Sueldos"
+                  >
+                    <DollarSign />
+                    <span>Sueldos</span>
+                  </SidebarMenuButton>
+                </Link>
+              </SidebarMenuItem>
+{/*               <SidebarMenuItem>
                 <span className="cursor-not-allowed opacity-50 pointer-events-none flex w-full items-center gap-2">
                   <SidebarMenuButton
                     isActive={false}
@@ -192,7 +214,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                     <span>Escanear PDF</span>
                   </SidebarMenuButton>
                 </span>
-              </SidebarMenuItem>
+              </SidebarMenuItem> */}
             </SidebarMenu>
           </SidebarGroup>
         </SidebarContent>
