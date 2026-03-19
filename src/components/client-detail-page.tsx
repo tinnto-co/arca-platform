@@ -1,4 +1,17 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import ExcelJSRaw from "exceljs";
+
+const ExcelJSClient = ExcelJSRaw as unknown as {
+  Workbook: new () => {
+    addWorksheet(name: string): {
+      getColumn(col: number): { width?: number };
+      getRow(row: number): {
+        getCell(col: number): { value: unknown; font?: { bold?: boolean }; numFmt?: string };
+      };
+    };
+    xlsx: { writeBuffer(): Promise<ArrayBuffer | Buffer> };
+  };
+};
 import { useNavigate, Link } from "@tanstack/react-router";
 import {
   ArrowLeft,
@@ -286,6 +299,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     "count" | "iva" | "base" | null
   >(null);
   const [multilateralSortDir, setMultilateralSortDir] = useState<"asc" | "desc">("desc");
+  const [exportingMultilateralExcel, setExportingMultilateralExcel] = useState(false);
   /** Rango de fechas elegido en el resumen IVA (para resaltar el scrape del período usado). */
   const [ivaResumenDateRange, setIvaResumenDateRange] = useState<{
     from: Date;
@@ -530,6 +544,20 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     enabled: !!clientId,
   });
 
+  const { data: allUnreadForCounts } = useQuery({
+    queryKey: ["allUnreadForCounts", clientId],
+    queryFn: () =>
+      getNotifications({
+        data: {
+          clientFilter: clientId,
+          opened: false,
+          limit: 500,
+          page: 1,
+        },
+      }),
+    enabled: !!clientId,
+  });
+
   const { data: lastVencimientosJob } = useQuery({
     queryKey: ["lastVencimientosJob", clientId],
     queryFn: () =>
@@ -731,6 +759,52 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
       setMultilateralSortDir("asc");
       return null;
     });
+  };
+
+  const handleExportMultilateralExcel = async () => {
+    setExportingMultilateralExcel(true);
+    try {
+      const wb = new ExcelJSClient.Workbook();
+      const ws = wb.addWorksheet("Convenio Multilateral");
+      ws.getColumn(1).width = 30;
+      ws.getColumn(2).width = 22;
+      ws.getColumn(3).width = 22;
+      ws.getColumn(4).width = 28;
+      const headers = ["Provincia", "Cant. comprobantes", "Total IVA", "Base imponible"];
+      headers.forEach((h, i) => {
+        const cell = ws.getRow(1).getCell(i + 1);
+        cell.value = h;
+        cell.font = { bold: true };
+      });
+      sortedMultilateralSummary.forEach((row: any, idx: number) => {
+        const dataRow = ws.getRow(idx + 2);
+        dataRow.getCell(1).value = row.receiptProvince || "Sin datos";
+        dataRow.getCell(2).value = Number(row.invoiceCount);
+        const ivaCell = dataRow.getCell(3);
+        ivaCell.value = Number(row.totalIVA) || 0;
+        ivaCell.numFmt = "#,##0.00";
+        const baseCell = dataRow.getCell(4);
+        baseCell.value = Number(row.totalTaxed) || 0;
+        baseCell.numFmt = "#,##0.00";
+      });
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer as BlobPart], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const mm = String(multilateralSelectedMonth + 1).padStart(2, "0");
+      a.download = `convenio_multilateral_${mm}_${multilateralSelectedYear}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Excel exportado correctamente.");
+    } catch (e) {
+      console.error(e);
+      toast.error("Error al exportar Excel.");
+    } finally {
+      setExportingMultilateralExcel(false);
+    }
   };
 
   const {
@@ -1057,20 +1131,24 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
       }));
     }
 
-    // Por mes: solo el mes seleccionado (una barra de ventas y una de compras)
+    // Por mes: ventas/compras por día del mes seleccionado
     if (facturasPeriodType === "month") {
-      let ventas = 0;
-      let compras = 0;
+      const daysInMonth = new Date(facturasYear, facturasMonth + 1, 0).getDate();
+      const byDay: Record<number, { ventas: number; compras: number }> = {};
+      for (let d = 1; d <= daysInMonth; d++) byDay[d] = { ventas: 0, compras: 0 };
       filtered.forEach((inv: any) => {
         const d = new Date(inv.emitionDate);
         if (d.getFullYear() !== facturasYear || d.getMonth() !== facturasMonth) return;
         const amount = getAmount(inv);
         const dir = inv.direction?.toLowerCase();
-        if (dir === "outbound") ventas += amount;
-        else if (dir === "inbound") compras += amount;
+        if (dir === "outbound") byDay[d.getDate()].ventas += amount;
+        else if (dir === "inbound") byDay[d.getDate()].compras += amount;
       });
-      const periodLabel = `${MONTH_NAMES[facturasMonth]} ${facturasYear}`;
-      return [{ period: periodLabel, ventas, compras }];
+      return Array.from({ length: daysInMonth }, (_, i) => ({
+        period: String(i + 1),
+        ventas: byDay[i + 1].ventas,
+        compras: byDay[i + 1].compras,
+      }));
     }
 
     if (facturasPeriodType === "range" && facturasDateRange?.from && facturasDateRange?.to) {
@@ -1140,28 +1218,48 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     facturasDirectionFilter,
   ]);
 
-  /** Datos del gráfico para el Resumen: meses del año en curso, sin filtros de Facturas. */
+  /** Conteo de notificaciones no leídas por perfil (para mostrar en los botones de filtro del Resumen). */
+  const notifCountsByProfile = useMemo(() => {
+    const notifications = allUnreadForCounts?.notifications ?? [];
+    const total = notifications.length;
+    const byProfile: Record<string, number> = {};
+    notifications.forEach((n: any) => {
+      if (n.profileId) {
+        byProfile[n.profileId] = (byProfile[n.profileId] || 0) + 1;
+      }
+    });
+    return { total, byProfile };
+  }, [allUnreadForCounts]);
+
+  /** Datos del gráfico para el Resumen: últimos 12 meses (incluyendo el actual), sin filtros de Facturas. */
   const resumenChartData = useMemo((): { period: string; ventas: number; compras: number }[] => {
     const invoices = allInvoicesData?.invoices;
     if (!invoices?.length) return [];
-    const year = now.getFullYear();
-    const byMonth: Record<number, { ventas: number; compras: number }> = {};
-    for (let i = 0; i < 12; i++) byMonth[i] = { ventas: 0, compras: 0 };
+    const currentDate = new Date();
+    const byMonthKey: Record<string, { ventas: number; compras: number }> = {};
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      byMonthKey[key] = { ventas: 0, compras: 0 };
+    }
     invoices.forEach((inv: any) => {
       if (effectiveResumenProfileId && inv.profileId !== effectiveResumenProfileId) return;
       const d = new Date(inv.emitionDate);
-      if (d.getFullYear() !== year) return;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      if (!byMonthKey[key]) return;
       let amount = parseFloat(inv.amount || "0");
       if (inv.currency?.toUpperCase() === "USD") amount *= parseFloat(inv.currencyRate || "1");
       const dir = inv.direction?.toLowerCase();
-      if (dir === "outbound") byMonth[d.getMonth()].ventas += amount;
-      else if (dir === "inbound") byMonth[d.getMonth()].compras += amount;
+      if (dir === "outbound") byMonthKey[key].ventas += amount;
+      else if (dir === "inbound") byMonthKey[key].compras += amount;
     });
-    return Array.from({ length: 12 }, (_, i) => ({
-      period: MONTH_NAMES_SHORT[i],
-      ventas: byMonth[i].ventas,
-      compras: byMonth[i].compras,
-    }));
+    return Object.entries(byMonthKey)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, data]) => {
+        const [y, m] = key.split("-").map(Number);
+        const label = `${MONTH_NAMES_SHORT[m - 1]} ${y}`;
+        return { period: label, ventas: data.ventas, compras: data.compras };
+      });
   }, [allInvoicesData, effectiveResumenProfileId]);
 
   /** Totales del mes actual para el Resumen. */
@@ -1608,7 +1706,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                           : "bg-muted/60 text-muted-foreground border-transparent hover:bg-muted hover:text-foreground"
                       )}
                     >
-                      Todos
+                      Todos ({notifCountsByProfile.total})
                     </button>
                     {profiles.map((prof) => (
                       <button
@@ -1621,7 +1719,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                             : "bg-muted/60 text-muted-foreground border-transparent hover:bg-muted hover:text-foreground"
                         )}
                       >
-                        {prof.name || prof.identityNumber}
+                        {prof.name || prof.identityNumber} ({notifCountsByProfile.byProfile[prof.id] ?? 0})
                       </button>
                     ))}
                   </div>
@@ -2711,7 +2809,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 className="h-9 gap-1.5 shrink-0 font-normal"
               >
                 <Download className="h-4 w-4" />
-                <span>Excel</span>
+                <span>Descargar</span>
               </Button>
             </div>
           </div>
@@ -3008,6 +3106,20 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                   </PopoverContent>
                 </Popover>
               </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExportMultilateralExcel}
+                disabled={exportingMultilateralExcel || sortedMultilateralSummary.length === 0}
+                className="h-9 gap-1.5 shrink-0 font-normal"
+              >
+                {exportingMultilateralExcel ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                <span>Descargar</span>
+              </Button>
             </div>
           </div>
 
@@ -3375,7 +3487,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                   disabled={!effectiveIvaProfileId}
                 >
                   <Download className="h-4 w-4" />
-                  <span className="hidden sm:inline">Descargar Excel</span>
+                  <span className="hidden sm:inline">Descargar</span>
                 </Button>
               </div>
             </div>

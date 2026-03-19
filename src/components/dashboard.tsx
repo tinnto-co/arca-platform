@@ -67,7 +67,7 @@ export function Dashboard() {
 
   const { data: monthlyData = [], isLoading: loadingMonthly } = useQuery({
     queryKey: ["monthlyEvolution"],
-    queryFn: () => getMonthlyEvolution({ data: { months: 6 } }),
+    queryFn: () => getMonthlyEvolution({ data: { months: 12 } }),
   });
 
   const { data: pendingNotifications, isLoading: loadingNotifications } =

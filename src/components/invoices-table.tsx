@@ -905,7 +905,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
           ) : (
             <Download className="h-4 w-4" />
           )}
-          <span>Excel</span>
+          <span>Descargar</span>
         </Button>
         )}
         </div>

@@ -854,11 +854,11 @@ export const RenderIvaResume = React.forwardRef<RenderIvaResumeRef, RenderIvaRes
 
       {/* Desglose desplegable: Ventas */}
       <Collapsible open={openDebito} onOpenChange={setOpenDebito}>
-        <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border bg-muted/60 px-5 py-4 text-base hover:bg-muted/80 transition-colors">
+        <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border bg-white px-5 py-4 text-base hover:bg-muted/40 transition-colors">
           <span className="font-medium">Ventas — desglose</span>
           <SaldoIconDebito className="h-5 w-5 text-muted-foreground shrink-0" />
         </CollapsibleTrigger>
-        <CollapsibleContent className="mt-2 rounded-lg border bg-muted/30 px-5 py-4">
+        <CollapsibleContent className="mt-2 rounded-lg border bg-white px-5 py-4">
           {Object.entries(debitoRows).map(([label, value]) => (
             <SectionRow key={label} label={label} value={value} />
           ))}
@@ -868,11 +868,11 @@ export const RenderIvaResume = React.forwardRef<RenderIvaResumeRef, RenderIvaRes
 
       {/* Desglose desplegable: Compras */}
       <Collapsible open={openCredito} onOpenChange={setOpenCredito}>
-        <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border bg-muted/60 px-5 py-4 text-base hover:bg-muted/80 transition-colors">
+        <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border bg-white px-5 py-4 text-base hover:bg-muted/40 transition-colors">
           <span className="font-medium">Compras — desglose</span>
           <SaldoIconCredito className="h-5 w-5 text-muted-foreground shrink-0" />
         </CollapsibleTrigger>
-        <CollapsibleContent className="mt-2 rounded-lg border bg-muted/30 px-5 py-4">
+        <CollapsibleContent className="mt-2 rounded-lg border bg-white px-5 py-4">
           {Object.entries(creditoRows).map(([label, value]) => (
             <SectionRow
               key={label}
@@ -887,11 +887,11 @@ export const RenderIvaResume = React.forwardRef<RenderIvaResumeRef, RenderIvaRes
 
       {/* Desglose desplegable: Saldos y retenciones */}
       <Collapsible open={openSaldos} onOpenChange={setOpenSaldos}>
-        <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border bg-muted/60 px-5 py-4 text-base hover:bg-muted/80 transition-colors">
+        <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border bg-white px-5 py-4 text-base hover:bg-muted/40 transition-colors">
           <span className="font-medium">Saldos y retenciones</span>
           <SaldoIconSaldos className="h-5 w-5 text-muted-foreground shrink-0" />
         </CollapsibleTrigger>
-        <CollapsibleContent className="mt-2 rounded-lg border bg-muted/30 px-5 py-4 space-y-2">
+        <CollapsibleContent className="mt-2 rounded-lg border bg-white px-5 py-4 space-y-2">
           {Object.entries(saldosParaTotal)
             .filter(([label]) => label !== "Ajuste")
             .map(([label, value]) =>
@@ -920,10 +920,10 @@ export const RenderIvaResume = React.forwardRef<RenderIvaResumeRef, RenderIvaRes
       {selectedProfileId && (
         <Collapsible open={openIvaArca} onOpenChange={setOpenIvaArca}>
           <CollapsibleTrigger
-            className={`flex w-full items-center justify-between rounded-lg border px-5 py-4 text-base hover:bg-muted/80 transition-colors ${
+            className={`flex w-full items-center justify-between rounded-lg border px-5 py-4 text-base hover:bg-muted/40 transition-colors ${
               clientIvaCredit?.data && periodUsedForResumen && clientIvaCredit.data.periodoFiscal === periodUsedForResumen
                 ? "bg-emerald-500/10 border-emerald-500"
-                : "bg-muted/60"
+                : "bg-white"
             }`}
           >
             <span className="font-medium">
@@ -933,7 +933,7 @@ export const RenderIvaResume = React.forwardRef<RenderIvaResumeRef, RenderIvaRes
             </span>
             <SaldoIconIvaArca className="h-5 w-5 text-muted-foreground shrink-0" />
           </CollapsibleTrigger>
-          <CollapsibleContent className="mt-2 rounded-lg border bg-muted/30 px-5 py-4">
+          <CollapsibleContent className="mt-2 rounded-lg border bg-white px-5 py-4">
             {clientIvaLoading ? (
               <p className="text-sm text-muted-foreground py-4">Calculando IVA del cliente…</p>
             ) : clientIvaError ? (
