@@ -1649,7 +1649,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 <CardHeader className="py-3 px-4">
                   <CardTitle className="text-sm font-semibold flex items-center gap-2">
                     <TrendingUp className="h-4 w-4" />
-                    Ventas y compras — {now.getFullYear()}
+                    Ventas y compras — últimos 12 meses
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="pt-0 px-4 pb-4">
