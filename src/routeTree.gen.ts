@@ -12,9 +12,11 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthedRouteRouteImport } from './routes/_authed/route'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
+import { Route as AuthedSueldosIndexRouteImport } from './routes/_authed/sueldos/index'
 import { Route as AuthedScan_pdfIndexRouteImport } from './routes/_authed/scan_pdf/index'
 import { Route as AuthedProductsIndexRouteImport } from './routes/_authed/products/index'
 import { Route as AuthedNotificationsIndexRouteImport } from './routes/_authed/notifications/index'
+import { Route as AuthedJobsIndexRouteImport } from './routes/_authed/jobs/index'
 import { Route as AuthedInvoicesIndexRouteImport } from './routes/_authed/invoices/index'
 import { Route as AuthedClientsIndexRouteImport } from './routes/_authed/clients/index'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -36,6 +38,11 @@ const AuthedIndexRoute = AuthedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthedRouteRoute,
 } as any)
+const AuthedSueldosIndexRoute = AuthedSueldosIndexRouteImport.update({
+  id: '/sueldos/',
+  path: '/sueldos/',
+  getParentRoute: () => AuthedRouteRoute,
+} as any)
 const AuthedScan_pdfIndexRoute = AuthedScan_pdfIndexRouteImport.update({
   id: '/scan_pdf/',
   path: '/scan_pdf/',
@@ -52,6 +59,11 @@ const AuthedNotificationsIndexRoute =
     path: '/notifications/',
     getParentRoute: () => AuthedRouteRoute,
   } as any)
+const AuthedJobsIndexRoute = AuthedJobsIndexRouteImport.update({
+  id: '/jobs/',
+  path: '/jobs/',
+  getParentRoute: () => AuthedRouteRoute,
+} as any)
 const AuthedInvoicesIndexRoute = AuthedInvoicesIndexRouteImport.update({
   id: '/invoices/',
   path: '/invoices/',
@@ -86,17 +98,19 @@ const AuthedClientsClientIdProfileIdIndexRoute =
   } as any)
 
 export interface FileRoutesByFullPath {
-  '/login': typeof LoginRoute
   '/': typeof AuthedIndexRoute
+  '/login': typeof LoginRoute
   '/products/$id': typeof AuthedProductsIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/clients': typeof AuthedClientsIndexRoute
-  '/invoices': typeof AuthedInvoicesIndexRoute
-  '/notifications': typeof AuthedNotificationsIndexRoute
-  '/products': typeof AuthedProductsIndexRoute
-  '/scan_pdf': typeof AuthedScan_pdfIndexRoute
-  '/clients/$clientId': typeof AuthedClientsClientIdIndexRoute
-  '/clients/$clientId/$profileId': typeof AuthedClientsClientIdProfileIdIndexRoute
+  '/clients/': typeof AuthedClientsIndexRoute
+  '/invoices/': typeof AuthedInvoicesIndexRoute
+  '/jobs/': typeof AuthedJobsIndexRoute
+  '/notifications/': typeof AuthedNotificationsIndexRoute
+  '/products/': typeof AuthedProductsIndexRoute
+  '/scan_pdf/': typeof AuthedScan_pdfIndexRoute
+  '/sueldos/': typeof AuthedSueldosIndexRoute
+  '/clients/$clientId/': typeof AuthedClientsClientIdIndexRoute
+  '/clients/$clientId/$profileId/': typeof AuthedClientsClientIdProfileIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -105,9 +119,11 @@ export interface FileRoutesByTo {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/clients': typeof AuthedClientsIndexRoute
   '/invoices': typeof AuthedInvoicesIndexRoute
+  '/jobs': typeof AuthedJobsIndexRoute
   '/notifications': typeof AuthedNotificationsIndexRoute
   '/products': typeof AuthedProductsIndexRoute
   '/scan_pdf': typeof AuthedScan_pdfIndexRoute
+  '/sueldos': typeof AuthedSueldosIndexRoute
   '/clients/$clientId': typeof AuthedClientsClientIdIndexRoute
   '/clients/$clientId/$profileId': typeof AuthedClientsClientIdProfileIdIndexRoute
 }
@@ -120,26 +136,30 @@ export interface FileRoutesById {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/_authed/clients/': typeof AuthedClientsIndexRoute
   '/_authed/invoices/': typeof AuthedInvoicesIndexRoute
+  '/_authed/jobs/': typeof AuthedJobsIndexRoute
   '/_authed/notifications/': typeof AuthedNotificationsIndexRoute
   '/_authed/products/': typeof AuthedProductsIndexRoute
   '/_authed/scan_pdf/': typeof AuthedScan_pdfIndexRoute
+  '/_authed/sueldos/': typeof AuthedSueldosIndexRoute
   '/_authed/clients/$clientId/': typeof AuthedClientsClientIdIndexRoute
   '/_authed/clients/$clientId/$profileId/': typeof AuthedClientsClientIdProfileIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    | '/login'
     | '/'
+    | '/login'
     | '/products/$id'
     | '/api/auth/$'
-    | '/clients'
-    | '/invoices'
-    | '/notifications'
-    | '/products'
-    | '/scan_pdf'
-    | '/clients/$clientId'
-    | '/clients/$clientId/$profileId'
+    | '/clients/'
+    | '/invoices/'
+    | '/jobs/'
+    | '/notifications/'
+    | '/products/'
+    | '/scan_pdf/'
+    | '/sueldos/'
+    | '/clients/$clientId/'
+    | '/clients/$clientId/$profileId/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -148,9 +168,11 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/clients'
     | '/invoices'
+    | '/jobs'
     | '/notifications'
     | '/products'
     | '/scan_pdf'
+    | '/sueldos'
     | '/clients/$clientId'
     | '/clients/$clientId/$profileId'
   id:
@@ -162,9 +184,11 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/_authed/clients/'
     | '/_authed/invoices/'
+    | '/_authed/jobs/'
     | '/_authed/notifications/'
     | '/_authed/products/'
     | '/_authed/scan_pdf/'
+    | '/_authed/sueldos/'
     | '/_authed/clients/$clientId/'
     | '/_authed/clients/$clientId/$profileId/'
   fileRoutesById: FileRoutesById
@@ -187,7 +211,7 @@ declare module '@tanstack/react-router' {
     '/_authed': {
       id: '/_authed'
       path: ''
-      fullPath: ''
+      fullPath: '/'
       preLoaderRoute: typeof AuthedRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
@@ -198,38 +222,52 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
+    '/_authed/sueldos/': {
+      id: '/_authed/sueldos/'
+      path: '/sueldos'
+      fullPath: '/sueldos/'
+      preLoaderRoute: typeof AuthedSueldosIndexRouteImport
+      parentRoute: typeof AuthedRouteRoute
+    }
     '/_authed/scan_pdf/': {
       id: '/_authed/scan_pdf/'
       path: '/scan_pdf'
-      fullPath: '/scan_pdf'
+      fullPath: '/scan_pdf/'
       preLoaderRoute: typeof AuthedScan_pdfIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
     '/_authed/products/': {
       id: '/_authed/products/'
       path: '/products'
-      fullPath: '/products'
+      fullPath: '/products/'
       preLoaderRoute: typeof AuthedProductsIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
     '/_authed/notifications/': {
       id: '/_authed/notifications/'
       path: '/notifications'
-      fullPath: '/notifications'
+      fullPath: '/notifications/'
       preLoaderRoute: typeof AuthedNotificationsIndexRouteImport
+      parentRoute: typeof AuthedRouteRoute
+    }
+    '/_authed/jobs/': {
+      id: '/_authed/jobs/'
+      path: '/jobs'
+      fullPath: '/jobs/'
+      preLoaderRoute: typeof AuthedJobsIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
     '/_authed/invoices/': {
       id: '/_authed/invoices/'
       path: '/invoices'
-      fullPath: '/invoices'
+      fullPath: '/invoices/'
       preLoaderRoute: typeof AuthedInvoicesIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
     '/_authed/clients/': {
       id: '/_authed/clients/'
       path: '/clients'
-      fullPath: '/clients'
+      fullPath: '/clients/'
       preLoaderRoute: typeof AuthedClientsIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
@@ -250,14 +288,14 @@ declare module '@tanstack/react-router' {
     '/_authed/clients/$clientId/': {
       id: '/_authed/clients/$clientId/'
       path: '/clients/$clientId'
-      fullPath: '/clients/$clientId'
+      fullPath: '/clients/$clientId/'
       preLoaderRoute: typeof AuthedClientsClientIdIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
     '/_authed/clients/$clientId/$profileId/': {
       id: '/_authed/clients/$clientId/$profileId/'
       path: '/clients/$clientId/$profileId'
-      fullPath: '/clients/$clientId/$profileId'
+      fullPath: '/clients/$clientId/$profileId/'
       preLoaderRoute: typeof AuthedClientsClientIdProfileIdIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
@@ -269,9 +307,11 @@ interface AuthedRouteRouteChildren {
   AuthedProductsIdRoute: typeof AuthedProductsIdRoute
   AuthedClientsIndexRoute: typeof AuthedClientsIndexRoute
   AuthedInvoicesIndexRoute: typeof AuthedInvoicesIndexRoute
+  AuthedJobsIndexRoute: typeof AuthedJobsIndexRoute
   AuthedNotificationsIndexRoute: typeof AuthedNotificationsIndexRoute
   AuthedProductsIndexRoute: typeof AuthedProductsIndexRoute
   AuthedScan_pdfIndexRoute: typeof AuthedScan_pdfIndexRoute
+  AuthedSueldosIndexRoute: typeof AuthedSueldosIndexRoute
   AuthedClientsClientIdIndexRoute: typeof AuthedClientsClientIdIndexRoute
   AuthedClientsClientIdProfileIdIndexRoute: typeof AuthedClientsClientIdProfileIdIndexRoute
 }
@@ -281,9 +321,11 @@ const AuthedRouteRouteChildren: AuthedRouteRouteChildren = {
   AuthedProductsIdRoute: AuthedProductsIdRoute,
   AuthedClientsIndexRoute: AuthedClientsIndexRoute,
   AuthedInvoicesIndexRoute: AuthedInvoicesIndexRoute,
+  AuthedJobsIndexRoute: AuthedJobsIndexRoute,
   AuthedNotificationsIndexRoute: AuthedNotificationsIndexRoute,
   AuthedProductsIndexRoute: AuthedProductsIndexRoute,
   AuthedScan_pdfIndexRoute: AuthedScan_pdfIndexRoute,
+  AuthedSueldosIndexRoute: AuthedSueldosIndexRoute,
   AuthedClientsClientIdIndexRoute: AuthedClientsClientIdIndexRoute,
   AuthedClientsClientIdProfileIdIndexRoute:
     AuthedClientsClientIdProfileIdIndexRoute,

@@ -20,7 +20,18 @@ export const jobTypeEnum = pgEnum("job_type", [
   "comprobantes_full",
   "notificaciones",
   "deuda",
+  "vencimientos",
 ]);
+
+// Organization enums
+export const organizationRoleEnum = pgEnum("organization_role", ["admin", "user"]);
+export const organizationInviteStatusEnum = pgEnum("organization_invite_status", [
+  "pending",
+  "accepted",
+  "expired",
+  "revoked",
+]);
+
 // User table must be defined before client to allow references
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -41,8 +52,77 @@ export const user = pgTable("user", {
   changedPassword: boolean("changed_password"),
 });
 
+export const organization = pgTable("organization", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  slug: text("slug"),
+  isActive: boolean("is_active").notNull().default(true),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at")
+    .defaultNow()
+    .$onUpdate(() => /* @__PURE__ */ new Date())
+    .notNull(),
+});
+
+export const organizationUser = pgTable("organization_user", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  role: organizationRoleEnum("role").notNull().default("user"),
+  invitedByUserId: text("invited_by_user_id").references(() => user.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at")
+    .defaultNow()
+    .$onUpdate(() => /* @__PURE__ */ new Date())
+    .notNull(),
+});
+
+export const organizationInvite = pgTable(
+  "organization_invite",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    role: organizationRoleEnum("role").notNull(),
+    token: text("token").notNull(),
+    status: organizationInviteStatusEnum("status").notNull().default("pending"),
+    invitedByUserId: text("invited_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    acceptedByUserId: text("accepted_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    expiresAt: timestamp("expires_at").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    unique("organization_invite_token_unique").on(table.token),
+    unique("organization_invite_org_email_status_unique").on(
+      table.organizationId,
+      table.email,
+      table.status,
+    ),
+  ],
+);
+
 export const client = pgTable("client", {
   id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id").references(() => organization.id, {
+    onDelete: "cascade",
+  }),
   userId: text("user_id")
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),
@@ -55,6 +135,8 @@ export const client = pgTable("client", {
   password: text("password").notNull().default(""),
   image: text("image").default(""),
   status: text("status").notNull().default("active"),
+  hasErrors: boolean("has_errors").default(false).notNull(),
+  errorMessage: text("error_message").default(""),
   registeredAt: timestamp("registered_at").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -337,6 +419,18 @@ export const job = pgTable("job", {
   progress: integer("progress").default(0),
 });
 
+// Logs por job (historial de ejecución)
+export const jobLog = pgTable("job_log", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  jobId: uuid("job_id")
+    .notNull()
+    .references(() => job.id, { onDelete: "cascade" }),
+  level: text("level").notNull(),
+  message: text("message").notNull(),
+  context: jsonb("context"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 /**
  * Tabla maestra de entidades fiscales: CUIL/CUIT único con nombre y provincia.
  * Sirve como catálogo de identidades fiscales vistas en facturas.
@@ -355,3 +449,208 @@ export const fiscalEntity = pgTable(
       .notNull(),
   }
 );
+
+// ========== MÓDULO SUELDOS / LIQUIDACIÓN ==========
+
+export const payrollConvenioTipoJornadaEnum = pgEnum("payroll_tipo_jornada", [
+  "full_time",
+  "part_time",
+  "reducida",
+]);
+
+/** Convenios colectivos de trabajo (por cliente) */
+export const payrollConvenio = pgTable("payroll_convenio", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => client.id, { onDelete: "cascade" }),
+  nombre: text("nombre").notNull(),
+  descripcion: text("descripcion"),
+  activo: boolean("activo").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at")
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+});
+
+/** Categorías dentro de un convenio */
+export const payrollConvenioCategoria = pgTable("payroll_convenio_categoria", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  convenioId: uuid("convenio_id")
+    .notNull()
+    .references(() => payrollConvenio.id, { onDelete: "cascade" }),
+  codigo: text("codigo").notNull(),
+  nombre: text("nombre").notNull(),
+  orden: integer("orden").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at")
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+});
+
+/** Escalas salariales por categoría con vigencia (histórico) */
+export const payrollEscala = pgTable("payroll_escala", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  categoriaId: uuid("categoria_id")
+    .notNull()
+    .references(() => payrollConvenioCategoria.id, { onDelete: "cascade" }),
+  vigenciaDesde: timestamp("vigencia_desde", { mode: "date" }).notNull(),
+  vigenciaHasta: timestamp("vigencia_hasta", { mode: "date" }),
+  montoBasico: numeric("monto_basico", { precision: 12, scale: 2 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at")
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+});
+
+/** Tipo de concepto: remunerativo, no remunerativo, descuento */
+export const payrollConceptoTipoEnum = pgEnum("payroll_concepto_tipo", [
+  "remunerativo",
+  "no_remunerativo",
+  "descuento",
+]);
+
+/** Base de cálculo para fórmulas */
+export const payrollConceptoBaseEnum = pgEnum("payroll_concepto_base", [
+  "basico",
+  "bruto",
+  "total_remunerativo",
+  "total_no_remunerativo",
+  "total_descuentos",
+  "neto",
+  "fijo",
+  "custom",
+]);
+
+/** Conceptos salariales configurables (fórmula, %, monto fijo, base) — por cliente */
+export const payrollConcepto = pgTable("payroll_concepto", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => client.id, { onDelete: "cascade" }),
+  codigo: text("codigo").notNull(),
+  nombre: text("nombre").notNull(),
+  tipo: payrollConceptoTipoEnum("tipo").notNull(),
+  baseCalculo: payrollConceptoBaseEnum("base_calculo").notNull().default("basico"),
+  /** Fórmula: porcentaje (ej. "0.01 * basico") o monto fijo. Variables: basico, antiguedad, bruto, etc. */
+  formula: text("formula").notNull(),
+  /** Si es porcentaje (ej. 11) o monto fijo */
+  esPorcentaje: boolean("es_porcentaje").default(true).notNull(),
+  orden: integer("orden").default(0).notNull(),
+  activo: boolean("activo").default(true).notNull(),
+  vigenciaDesde: timestamp("vigencia_desde", { mode: "date" }),
+  vigenciaHasta: timestamp("vigencia_hasta", { mode: "date" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at")
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+});
+
+/** Empleados del módulo de sueldos (por cliente) */
+export const payrollEmployee = pgTable("payroll_employee", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => client.id, { onDelete: "cascade" }),
+  nombre: text("nombre").notNull(),
+  apellido: text("apellido").notNull(),
+  cuilCuil: text("cuil_cuil").notNull(),
+  fechaIngreso: timestamp("fecha_ingreso", { mode: "date" }).notNull(),
+  convenioId: uuid("convenio_id")
+    .notNull()
+    .references(() => payrollConvenio.id, { onDelete: "restrict" }),
+  categoriaId: uuid("categoria_id")
+    .notNull()
+    .references(() => payrollConvenioCategoria.id, { onDelete: "restrict" }),
+  tipoJornada: payrollConvenioTipoJornadaEnum("tipo_jornada").notNull().default("full_time"),
+  activo: boolean("activo").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at")
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+});
+
+/** Conceptos asignados individualmente al empleado (comisiones, bonos fijos, etc.) */
+export const payrollEmpleadoConcepto = pgTable("payroll_empleado_concepto", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  empleadoId: uuid("empleado_id")
+    .notNull()
+    .references(() => payrollEmployee.id, { onDelete: "cascade" }),
+  conceptoId: uuid("concepto_id")
+    .notNull()
+    .references(() => payrollConcepto.id, { onDelete: "cascade" }),
+  /** Valor adicional para la fórmula (ej. % comisión propio, monto fijo) */
+  valorAdicional: numeric("valor_adicional", { precision: 12, scale: 2 }).default("0"),
+  vigenciaDesde: timestamp("vigencia_desde", { mode: "date" }),
+  vigenciaHasta: timestamp("vigencia_hasta", { mode: "date" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at")
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+});
+
+/** Novedades mensuales (horas extra, bonos, comisiones del mes, etc.) */
+export const payrollNovedad = pgTable("payroll_novedad", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  empleadoId: uuid("empleado_id")
+    .notNull()
+    .references(() => payrollEmployee.id, { onDelete: "cascade" }),
+  conceptoId: uuid("concepto_id")
+    .notNull()
+    .references(() => payrollConcepto.id, { onDelete: "cascade" }),
+  periodo: text("periodo").notNull(), // "YYYY-MM"
+  valor: numeric("valor", { precision: 12, scale: 2 }).notNull(),
+  cantidad: numeric("cantidad", { precision: 10, scale: 2 }), // ej. horas extra
+  detalle: text("detalle"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at")
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+});
+
+/** Cabecera de liquidación por empleado y período */
+export const payrollLiquidacion = pgTable("payroll_liquidacion", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  empleadoId: uuid("empleado_id")
+    .notNull()
+    .references(() => payrollEmployee.id, { onDelete: "cascade" }),
+  periodo: text("periodo").notNull(), // "YYYY-MM"
+  basico: numeric("basico", { precision: 12, scale: 2 }).notNull(),
+  totalRemunerativo: numeric("total_remunerativo", { precision: 12, scale: 2 }).notNull(),
+  totalNoRemunerativo: numeric("total_no_remunerativo", { precision: 12, scale: 2 }).default("0").notNull(),
+  totalDescuentos: numeric("total_descuentos", { precision: 12, scale: 2 }).notNull(),
+  neto: numeric("neto", { precision: 12, scale: 2 }).notNull(),
+  /** Solo se muestran en la solapa Recibo cuando es true (tras "Confirmar recibo" en Simulador) */
+  reciboConfirmado: boolean("recibo_confirmado").default(false).notNull(),
+  calculadoAt: timestamp("calculado_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at")
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+});
+
+/** Detalle por concepto de cada liquidación */
+export const payrollLiquidacionDetalle = pgTable("payroll_liquidacion_detalle", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  liquidacionId: uuid("liquidacion_id")
+    .notNull()
+    .references(() => payrollLiquidacion.id, { onDelete: "cascade" }),
+  conceptoId: uuid("concepto_id")
+    .notNull()
+    .references(() => payrollConcepto.id, { onDelete: "cascade" }),
+  monto: numeric("monto", { precision: 12, scale: 2 }).notNull(),
+  cantidad: numeric("cantidad", { precision: 10, scale: 2 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at")
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+});

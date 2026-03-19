@@ -392,6 +392,7 @@ export const getInvoice = createServerFn({
         recipientName: invoice.recipientName,
         recipientIdentityNumber: invoice.recipientIdentityNumber,
         recipientIdentityType: invoice.recipientIdentityType,
+        receiptProvince: invoice.receiptProvince,
         emitterName: invoice.emitterName,
         emitterIdentityNumber: invoice.emitterIdentityNumber,
         emitterIdentityType: invoice.emitterIdentityType,

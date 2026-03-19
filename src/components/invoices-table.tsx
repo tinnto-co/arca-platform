@@ -686,9 +686,9 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
   );
 
   return (
-    <div className="w-full min-w-0 space-y-4">
+    <div className="w-full min-w-0 flex flex-col h-full gap-4">
       {/* Filters */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between flex-shrink-0">
         <div className="flex flex-col gap-2 md:flex-row md:items-center flex-wrap">
           {!isFiltersControlled && (
           <div className="relative">
@@ -913,8 +913,8 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
       </div>
 
       {/* Table */}
-      <div className="rounded-md border">
-        <div className="w-full overflow-hidden">
+      <div className="rounded-xl border border-[#efeeef] bg-white shadow-sm overflow-auto flex-1 min-h-0">
+        <div className="w-full">
           <table className="w-full table-fixed border-collapse text-xs">
             <TableHeader>
               <TableRow>
@@ -1160,6 +1160,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                     Provincia (Convenio Multilateral)
                   </label>
                   <p className="text-sm font-medium">
+                    {console.log(invoiceDetails)}
                     {invoiceDetails?.receiptProvince
                       ? invoiceDetails.receiptProvince
                       : "sin datos"}
