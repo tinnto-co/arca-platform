@@ -2944,6 +2944,21 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                                 maximumFractionDigits: 0,
                               }).format(Number(value))
                             }
+                            labelFormatter={(label) => {
+                              if (facturasPeriodType === "month") {
+                                const day = parseInt(label, 10);
+                                if (!isNaN(day)) {
+                                  const date = new Date(facturasYear, facturasMonth, day);
+                                  const formatted = date.toLocaleDateString("es-AR", {
+                                    weekday: "long",
+                                    day: "numeric",
+                                    month: "long",
+                                  });
+                                  return formatted.charAt(0).toUpperCase() + formatted.slice(1);
+                                }
+                              }
+                              return label;
+                            }}
                           />
                         }
                       />
