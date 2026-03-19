@@ -1758,7 +1758,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                         <button
                           onClick={() => markOpenedMutation.mutate(notif.id)}
                           disabled={markOpenedMutation.isPending}
-                          className="shrink-0 mt-0.5 text-emerald-500 hover:text-emerald-600 transition-colors"
+                          className="shrink-0 mt-0.5 flex items-center justify-center h-6 w-6 rounded-full bg-emerald-100 text-emerald-600 hover:bg-emerald-500 hover:text-white active:scale-95 transition-all border border-emerald-300 hover:border-emerald-500"
                           title="Marcar como leída"
                         >
                           <Check className="h-3.5 w-3.5" />
