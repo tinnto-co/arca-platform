@@ -2952,6 +2952,10 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                               }).format(Number(value))
                             }
                             labelFormatter={(label) => {
+                              if (facturasPeriodType === "year") {
+                                const idx = MONTH_NAMES_SHORT.indexOf(label as typeof MONTH_NAMES_SHORT[number]);
+                                if (idx !== -1) return `${MONTH_NAMES[idx]} ${facturasYear}`;
+                              }
                               if (facturasPeriodType === "month") {
                                 const day = parseInt(label, 10);
                                 if (!isNaN(day)) {
