@@ -14,6 +14,7 @@ import {
   Plus,
   PlusCircle,
   Search,
+  Settings,
   Table,
   Users,
   Box,
@@ -57,25 +58,18 @@ import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
-import { getUser } from "@/actions/user";
 import { CreateClientDialog } from "./create-client-dialog";
+import { OrgSwitcher } from "./org-switcher";
+import { userQuery } from "../lib/user-query";
 
-export const userQuery = {
-  queryKey: ["user"],
-  queryFn: async () => {
-    const response = await getUser();
-    return response;
-  },
-};
+export { userQuery };
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { isMobile } = useSidebar();
-  // const { data: activeOrganization } = useSuspenseQuery(
-  //   activeOrganizationQuery
-  // );
-
   const [loading, setLoading] = useState(false);
   const { data: user } = useSuspenseQuery(userQuery);
+  const isOwner = user?.organizationRole === "owner";
+  const isViewer = user?.organizationRole === "viewer";
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [open, setOpen] = useState(true);
@@ -96,39 +90,38 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     queryFn: () => [],
   });
 
-  // const { data: activeOrganization } = authClient.useActiveOrganization();
   return (
     <>
       {/* Dialogs for Quick Create */}
 
       <Sidebar collapsible="icon" variant="floating" {...props}>
         <SidebarHeader>
-          <div className="flex items-center justify-center gap-2">
-            {open && (
-              <p className="text-lg font-bold text-white px-2">GESTION ARCA</p>
-            )}
+          <OrgSwitcher />
+          <div className="flex items-center justify-end">
             <SidebarTrigger onClick={() => setOpen(!open)} className="-ml-1 text-white/80 hover:text-white hover:bg-white/10" />
           </div>
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>
             <SidebarMenu>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <SidebarMenuButton className="bg-gradient-to-r from-[#139ed9] to-[#0e7eb0] text-white hover:from-[#3db8e8] hover:to-[#139ed9] active:from-[#0e7eb0] active:to-[#0a6a96] duration-200 ease-linear">
-                    <PlusCircle />
-                    Crear nuevo
-                  </SidebarMenuButton>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-56" align="start">
-                  <CreateClientDialog>
-                    <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                      <User className="mr-2" />
-                      Cliente
-                    </DropdownMenuItem>
-                  </CreateClientDialog>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              {!isViewer && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <SidebarMenuButton className="bg-gradient-to-r from-[#139ed9] to-[#0e7eb0] text-white hover:from-[#3db8e8] hover:to-[#139ed9] active:from-[#0e7eb0] active:to-[#0a6a96] duration-200 ease-linear">
+                      <PlusCircle />
+                      Crear nuevo
+                    </SidebarMenuButton>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="w-56" align="start">
+                    <CreateClientDialog>
+                      <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                        <User className="mr-2" />
+                        Cliente
+                      </DropdownMenuItem>
+                    </CreateClientDialog>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
 
               <SidebarMenuItem>
                 <Link to="/">
@@ -171,7 +164,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>
-{/*               <SidebarMenuItem>
+              <SidebarMenuItem>
                 <Link to="/jobs">
                   <SidebarMenuButton
                     isActive={pathname === "/jobs"}
@@ -181,7 +174,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                     <span>Jobs</span>
                   </SidebarMenuButton>
                 </Link>
-              </SidebarMenuItem> */}
+              </SidebarMenuItem>
               <SidebarMenuItem>
                 <Link to="/invoices">
                   <SidebarMenuButton
@@ -221,6 +214,19 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
         <SidebarFooter>
           <SidebarMenu>
+            {isOwner && (
+              <SidebarMenuItem>
+                <Link to="/admin">
+                  <SidebarMenuButton
+                    isActive={pathname === "/admin"}
+                    tooltip="Administración"
+                  >
+                    <Settings />
+                    <span>Administración</span>
+                  </SidebarMenuButton>
+                </Link>
+              </SidebarMenuItem>
+            )}
             <SidebarMenuItem>
               <div className="flex items-center gap-2">
                 <DropdownMenu>
@@ -233,8 +239,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                         {user?.image && (
                           <AvatarImage src={user?.image} alt={user?.name} />
                         )}
-                        <AvatarFallback className="rounded-lg">
-                          {user?.name?.slice(0, 2).toUpperCase()}
+                        <AvatarFallback className="rounded-lg text-base font-semibold text-[#232c50]">
+                          {user?.name?.slice(0, 2)}
                         </AvatarFallback>
                       </Avatar>
                       <div className="grid flex-1 text-left text-sm leading-tight">

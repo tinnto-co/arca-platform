@@ -3,7 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getCookie, getRequestHeaders } from "@tanstack/react-start/server";
 import z from "zod";
 import { db } from "@/lib/db";
-import { user as userTable } from "@/drizzle/auth";
+import { user as userTable, member, organization } from "@/drizzle/auth";
 import { eq, and } from "drizzle-orm";
 
 export const getSession = createServerFn({
@@ -18,7 +18,7 @@ export const getSession = createServerFn({
 
 export const getSessionAndUser = createServerFn({
   method: "GET",
-}).handler(async ({ context }) => {
+}).handler(async () => {
   const session = await auth.api.getSession({
     headers: getRequestHeaders(),
   });
@@ -37,7 +37,7 @@ export const getSessionAndUser = createServerFn({
 
 export const getUser = createServerFn({
   method: "GET",
-}).handler(async ({ context }) => {
+}).handler(async () => {
   const session = await auth.api.getSession({
     headers: getRequestHeaders(),
   });
@@ -46,12 +46,86 @@ export const getUser = createServerFn({
     return null;
   }
 
-  // Get the user's organization role from the member table
+  const activeOrgId = (session.session as any).activeOrganizationId as
+    | string
+    | null;
+
+  let orgRole: string | null = null;
+  let orgName: string | null = null;
+  let orgSlug: string | null = null;
+  let orgLogo: string | null = null;
+
+  if (activeOrgId) {
+    const [m] = await db
+      .select({ role: member.role })
+      .from(member)
+      .where(
+        and(
+          eq(member.userId, session.user.id),
+          eq(member.organizationId, activeOrgId)
+        )
+      )
+      .limit(1);
+    orgRole = m?.role ?? null;
+
+    const [org] = await db
+      .select({
+        name: organization.name,
+        slug: organization.slug,
+        logo: organization.logo,
+      })
+      .from(organization)
+      .where(eq(organization.id, activeOrgId))
+      .limit(1);
+    orgName = org?.name ?? null;
+    orgSlug = org?.slug ?? null;
+    orgLogo = org?.logo ?? null;
+  }
 
   return {
     ...session.user,
+    activeOrganizationId: activeOrgId,
+    organizationRole: orgRole,
+    organizationName: orgName,
+    organizationSlug: orgSlug,
+    organizationLogo: orgLogo,
   };
 });
+
+export const getOrganizations = createServerFn({
+  method: "GET",
+}).handler(async () => {
+  const session = await auth.api.getSession({
+    headers: getRequestHeaders(),
+  });
+  if (!session?.user?.id) throw new Error("Unauthorized");
+
+  const memberships = await db
+    .select({
+      orgId: organization.id,
+      orgName: organization.name,
+      orgSlug: organization.slug,
+      orgLogo: organization.logo,
+      role: member.role,
+    })
+    .from(member)
+    .innerJoin(organization, eq(member.organizationId, organization.id))
+    .where(eq(member.userId, session.user.id));
+
+  return memberships;
+});
+
+export const setActiveOrganization = createServerFn({
+  method: "POST",
+})
+  .inputValidator(z.object({ organizationId: z.string() }))
+  .handler(async (ctx) => {
+    await auth.api.setActiveOrganization({
+      headers: getRequestHeaders(),
+      body: { organizationId: ctx.data.organizationId },
+    });
+    return { success: true };
+  });
 
 export const getCookieFn = createServerFn({
   method: "GET",

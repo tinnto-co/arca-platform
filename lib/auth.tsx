@@ -1,13 +1,16 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { betterAuth } from "better-auth";
-import { admin } from "better-auth/plugins";
+import { admin, organization } from "better-auth/plugins";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "@/lib/db";
 import { anonymous } from "better-auth/plugins";
-import { and, eq } from "drizzle-orm";
-import { user } from "@/drizzle/auth";
+import { eq } from "drizzle-orm";
+import { member } from "@/drizzle/auth";
+import { ac, owner, member as memberRole, viewer } from "@/lib/permissions";
+import { sendOrganizationInvitationEmail } from "@/lib/send-invitation-email";
 import "dotenv/config";
+
 export const auth = betterAuth({
   trustedOrigins: [
     "http://localhost:3000",
@@ -16,7 +19,7 @@ export const auth = betterAuth({
   session: {
     cookieCache: {
       enabled: true,
-      maxAge: 24 * 60 * 60, // Cache duration in seconds
+      maxAge: 24 * 60 * 60,
     },
   },
   user: {
@@ -28,60 +31,44 @@ export const auth = betterAuth({
   },
   emailAndPassword: {
     enabled: true,
-    // disableSignUp: true,
   },
   account: {
     accountLinking: {
       enabled: true,
-      // trustedProviders: ["google", "email-password"],
     },
   },
-  // secondaryStorage: {
-  //   get: async (key) => {
-  //     const value = await redis.get(key);
-  //     return value ? value : null;
-  //   },
-  //   set: async (key, value, ttl) => {
-  //     if (ttl) await redis.set(key, value, { EX: ttl });
-  //     // or for ioredis:
-  //     // if (ttl) await redis.set(key, value, 'EX', ttl)
-  //     else await redis.set(key, value);
-  //   },
-  //   delete: async (key) => {
-  //     await redis.del(key);
-  //   },
-  // },
-  plugins: [anonymous(), admin({}), tanstackStartCookies()],
+  plugins: [
+    anonymous(),
+    admin({}),
+    tanstackStartCookies(),
+    organization({
+      ac,
+      roles: {
+        owner,
+        member: memberRole,
+        viewer,
+      },
+      allowUserToCreateOrganization: false,
+      sendInvitationEmail: sendOrganizationInvitationEmail,
+    }),
+  ],
   database: drizzleAdapter(db, {
     provider: "pg",
   }),
-  // hooks: {
-  //   after: createAuthMiddleware(async (ctx) => {
-  //     if (ctx.path.startsWith("/sign-up")) {
-  //       const newSession = ctx.context.newSession;
-  //       if (newSession) {
-  //         sendMessage({
-  //           type: "user-register",
-  //           name: newSession.user.name,
-  //         });
-  //       }
-  //     }
-  //   }),
-  // },
   databaseHooks: {
     session: {
       create: {
-        before: async (session /*, ctx */) => {
-          // 1) Buscamos la primera (y única) organización del usuario
-          const [fullUser] = await db
+        before: async (session) => {
+          const [membership] = await db
             .select()
-            .from(user)
-            .where(eq(user.id, session.userId))
+            .from(member)
+            .where(eq(member.userId, session.userId))
             .limit(1);
-          // 2) Devolvemos el payload con activeOrganizationId seteado
+
           return {
             data: {
               ...session,
+              activeOrganizationId: membership?.organizationId ?? null,
               expiresAt: new Date(session.expiresAt),
               createdAt: new Date(session.createdAt),
               updatedAt: new Date(session.updatedAt),
@@ -91,13 +78,4 @@ export const auth = betterAuth({
       },
     },
   },
-  // socialProviders: {
-  //   google: {
-  //     // prompt: "select_account",
-  //     disableSignUp: true,
-  //     disableImplicitSignUp: true,
-  //     clientId: process.env.GOOGLE_CLIENT_ID as string,
-  //     clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
-  //   },
-  // },
 });

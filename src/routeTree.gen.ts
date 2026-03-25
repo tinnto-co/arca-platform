@@ -9,9 +9,11 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as NoOrganizationRouteImport } from './routes/no-organization'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthedRouteRouteImport } from './routes/_authed/route'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
+import { Route as InviteInvitationIdRouteImport } from './routes/invite.$invitationId'
 import { Route as AuthedSueldosIndexRouteImport } from './routes/_authed/sueldos/index'
 import { Route as AuthedScan_pdfIndexRouteImport } from './routes/_authed/scan_pdf/index'
 import { Route as AuthedProductsIndexRouteImport } from './routes/_authed/products/index'
@@ -19,11 +21,17 @@ import { Route as AuthedNotificationsIndexRouteImport } from './routes/_authed/n
 import { Route as AuthedJobsIndexRouteImport } from './routes/_authed/jobs/index'
 import { Route as AuthedInvoicesIndexRouteImport } from './routes/_authed/invoices/index'
 import { Route as AuthedClientsIndexRouteImport } from './routes/_authed/clients/index'
+import { Route as AuthedAdminIndexRouteImport } from './routes/_authed/admin/index'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AuthedProductsIdRouteImport } from './routes/_authed/products/$id'
 import { Route as AuthedClientsClientIdIndexRouteImport } from './routes/_authed/clients/$clientId/index'
 import { Route as AuthedClientsClientIdProfileIdIndexRouteImport } from './routes/_authed/clients/$clientId/$profileId/index'
 
+const NoOrganizationRoute = NoOrganizationRouteImport.update({
+  id: '/no-organization',
+  path: '/no-organization',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -37,6 +45,11 @@ const AuthedIndexRoute = AuthedIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AuthedRouteRoute,
+} as any)
+const InviteInvitationIdRoute = InviteInvitationIdRouteImport.update({
+  id: '/invite/$invitationId',
+  path: '/invite/$invitationId',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AuthedSueldosIndexRoute = AuthedSueldosIndexRouteImport.update({
   id: '/sueldos/',
@@ -74,6 +87,11 @@ const AuthedClientsIndexRoute = AuthedClientsIndexRouteImport.update({
   path: '/clients/',
   getParentRoute: () => AuthedRouteRoute,
 } as any)
+const AuthedAdminIndexRoute = AuthedAdminIndexRouteImport.update({
+  id: '/admin/',
+  path: '/admin/',
+  getParentRoute: () => AuthedRouteRoute,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -100,8 +118,11 @@ const AuthedClientsClientIdProfileIdIndexRoute =
 export interface FileRoutesByFullPath {
   '/': typeof AuthedIndexRoute
   '/login': typeof LoginRoute
+  '/no-organization': typeof NoOrganizationRoute
+  '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/products/$id': typeof AuthedProductsIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/admin/': typeof AuthedAdminIndexRoute
   '/clients/': typeof AuthedClientsIndexRoute
   '/invoices/': typeof AuthedInvoicesIndexRoute
   '/jobs/': typeof AuthedJobsIndexRoute
@@ -114,9 +135,12 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
+  '/no-organization': typeof NoOrganizationRoute
+  '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/': typeof AuthedIndexRoute
   '/products/$id': typeof AuthedProductsIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/admin': typeof AuthedAdminIndexRoute
   '/clients': typeof AuthedClientsIndexRoute
   '/invoices': typeof AuthedInvoicesIndexRoute
   '/jobs': typeof AuthedJobsIndexRoute
@@ -131,9 +155,12 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authed': typeof AuthedRouteRouteWithChildren
   '/login': typeof LoginRoute
+  '/no-organization': typeof NoOrganizationRoute
+  '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/products/$id': typeof AuthedProductsIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/_authed/admin/': typeof AuthedAdminIndexRoute
   '/_authed/clients/': typeof AuthedClientsIndexRoute
   '/_authed/invoices/': typeof AuthedInvoicesIndexRoute
   '/_authed/jobs/': typeof AuthedJobsIndexRoute
@@ -149,8 +176,11 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/login'
+    | '/no-organization'
+    | '/invite/$invitationId'
     | '/products/$id'
     | '/api/auth/$'
+    | '/admin/'
     | '/clients/'
     | '/invoices/'
     | '/jobs/'
@@ -163,9 +193,12 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
+    | '/no-organization'
+    | '/invite/$invitationId'
     | '/'
     | '/products/$id'
     | '/api/auth/$'
+    | '/admin'
     | '/clients'
     | '/invoices'
     | '/jobs'
@@ -179,9 +212,12 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_authed'
     | '/login'
+    | '/no-organization'
+    | '/invite/$invitationId'
     | '/_authed/'
     | '/_authed/products/$id'
     | '/api/auth/$'
+    | '/_authed/admin/'
     | '/_authed/clients/'
     | '/_authed/invoices/'
     | '/_authed/jobs/'
@@ -196,11 +232,20 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   AuthedRouteRoute: typeof AuthedRouteRouteWithChildren
   LoginRoute: typeof LoginRoute
+  NoOrganizationRoute: typeof NoOrganizationRoute
+  InviteInvitationIdRoute: typeof InviteInvitationIdRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/no-organization': {
+      id: '/no-organization'
+      path: '/no-organization'
+      fullPath: '/no-organization'
+      preLoaderRoute: typeof NoOrganizationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -221,6 +266,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof AuthedIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
+    }
+    '/invite/$invitationId': {
+      id: '/invite/$invitationId'
+      path: '/invite/$invitationId'
+      fullPath: '/invite/$invitationId'
+      preLoaderRoute: typeof InviteInvitationIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_authed/sueldos/': {
       id: '/_authed/sueldos/'
@@ -271,6 +323,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedClientsIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
+    '/_authed/admin/': {
+      id: '/_authed/admin/'
+      path: '/admin'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AuthedAdminIndexRouteImport
+      parentRoute: typeof AuthedRouteRoute
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -305,6 +364,7 @@ declare module '@tanstack/react-router' {
 interface AuthedRouteRouteChildren {
   AuthedIndexRoute: typeof AuthedIndexRoute
   AuthedProductsIdRoute: typeof AuthedProductsIdRoute
+  AuthedAdminIndexRoute: typeof AuthedAdminIndexRoute
   AuthedClientsIndexRoute: typeof AuthedClientsIndexRoute
   AuthedInvoicesIndexRoute: typeof AuthedInvoicesIndexRoute
   AuthedJobsIndexRoute: typeof AuthedJobsIndexRoute
@@ -319,6 +379,7 @@ interface AuthedRouteRouteChildren {
 const AuthedRouteRouteChildren: AuthedRouteRouteChildren = {
   AuthedIndexRoute: AuthedIndexRoute,
   AuthedProductsIdRoute: AuthedProductsIdRoute,
+  AuthedAdminIndexRoute: AuthedAdminIndexRoute,
   AuthedClientsIndexRoute: AuthedClientsIndexRoute,
   AuthedInvoicesIndexRoute: AuthedInvoicesIndexRoute,
   AuthedJobsIndexRoute: AuthedJobsIndexRoute,
@@ -338,6 +399,8 @@ const AuthedRouteRouteWithChildren = AuthedRouteRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   AuthedRouteRoute: AuthedRouteRouteWithChildren,
   LoginRoute: LoginRoute,
+  NoOrganizationRoute: NoOrganizationRoute,
+  InviteInvitationIdRoute: InviteInvitationIdRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
 export const routeTree = rootRouteImport

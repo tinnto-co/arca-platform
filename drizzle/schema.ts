@@ -9,11 +9,19 @@ import {
   uuid,
   integer,
   pgEnum,
+  foreignKey,
 } from "drizzle-orm/pg-core";
+import { user, organization } from "./auth";
 
+export { user, organization };
 
 // Job enums
-export const jobStatusEnum = pgEnum("job_status", ["pending", "running", "failed", "finished"]);
+export const jobStatusEnum = pgEnum("job_status", [
+  "pending",
+  "running",
+  "failed",
+  "finished",
+]);
 export const jobTypeEnum = pgEnum("job_type", [
   "iva",
   "comprobantes",
@@ -23,106 +31,11 @@ export const jobTypeEnum = pgEnum("job_type", [
   "vencimientos",
 ]);
 
-// Organization enums
-export const organizationRoleEnum = pgEnum("organization_role", ["admin", "user"]);
-export const organizationInviteStatusEnum = pgEnum("organization_invite_status", [
-  "pending",
-  "accepted",
-  "expired",
-  "revoked",
-]);
-
-// User table must be defined before client to allow references
-export const user = pgTable("user", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  email: text("email").notNull().unique(),
-  emailVerified: boolean("email_verified").default(false).notNull(),
-  image: text("image"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at")
-    .defaultNow()
-    .$onUpdate(() => /* @__PURE__ */ new Date())
-    .notNull(),
-  isAnonymous: boolean("is_anonymous"),
-  role: text("role"),
-  banned: boolean("banned").default(false),
-  banReason: text("ban_reason"),
-  banExpires: timestamp("ban_expires"),
-  changedPassword: boolean("changed_password"),
-});
-
-export const organization = pgTable("organization", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  name: text("name").notNull(),
-  slug: text("slug"),
-  isActive: boolean("is_active").notNull().default(true),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at")
-    .defaultNow()
-    .$onUpdate(() => /* @__PURE__ */ new Date())
-    .notNull(),
-});
-
-export const organizationUser = pgTable("organization_user", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  organizationId: uuid("organization_id")
-    .notNull()
-    .references(() => organization.id, { onDelete: "cascade" }),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  role: organizationRoleEnum("role").notNull().default("user"),
-  invitedByUserId: text("invited_by_user_id").references(() => user.id, {
-    onDelete: "set null",
-  }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at")
-    .defaultNow()
-    .$onUpdate(() => /* @__PURE__ */ new Date())
-    .notNull(),
-});
-
-export const organizationInvite = pgTable(
-  "organization_invite",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    organizationId: uuid("organization_id")
-      .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
-    email: text("email").notNull(),
-    role: organizationRoleEnum("role").notNull(),
-    token: text("token").notNull(),
-    status: organizationInviteStatusEnum("status").notNull().default("pending"),
-    invitedByUserId: text("invited_by_user_id").references(() => user.id, {
-      onDelete: "set null",
-    }),
-    acceptedByUserId: text("accepted_by_user_id").references(() => user.id, {
-      onDelete: "set null",
-    }),
-    expiresAt: timestamp("expires_at").notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at")
-      .defaultNow()
-      .$onUpdate(() => /* @__PURE__ */ new Date())
-      .notNull(),
-  },
-  (table) => [
-    unique("organization_invite_token_unique").on(table.token),
-    unique("organization_invite_org_email_status_unique").on(
-      table.organizationId,
-      table.email,
-      table.status,
-    ),
-  ],
-);
-
 export const client = pgTable("client", {
   id: uuid("id").primaryKey().defaultRandom(),
-  organizationId: uuid("organization_id").references(() => organization.id, {
-    onDelete: "cascade",
-  }),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => organization.id, { onDelete: "cascade" }),
   userId: text("user_id")
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),
@@ -135,6 +48,10 @@ export const client = pgTable("client", {
   password: text("password").notNull().default(""),
   image: text("image").default(""),
   status: text("status").notNull().default("active"),
+  liquidaSueldos: boolean("liquida_sueldos").notNull().default(false),
+  convenioMultilateral: boolean("convenio_multilateral").notNull().default(false),
+  regimenLocal: boolean("regimen_local").notNull().default(false),
+  fiscalCondition: text("fiscal_condition"),
   hasErrors: boolean("has_errors").default(false).notNull(),
   errorMessage: text("error_message").default(""),
   registeredAt: timestamp("registered_at").notNull(),
@@ -158,6 +75,88 @@ export const profile = pgTable("profile", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+/**
+ * Convenios colectivos de trabajo (CCT) obtenidos desde AFIP -
+ * "Simplificación Registral - Empleadores".
+ * Se persiste por `profile_id` y `cct`.
+ */
+export const afipEmpleadoresConvenio = pgTable(
+  "afip_empleadores_convenio",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profile.id, { onDelete: "cascade" }),
+    cct: text("cct").notNull(),
+    actividad: text("actividad").notNull(),
+    signatarios: text("signatarios").notNull(),
+    fechaNovedad: text("fecha_novedad").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("afip_empleadores_convenio_profile_id_cct_unique").on(
+      table.profileId,
+      table.cct
+    ),
+  ]
+);
+
+/**
+ * Conceptos AFIP para el servicio "Simplificación Registral - Empleadores".
+ * Se mapean por `profile_id` y `concepto_afip_id`.
+ */
+export const lsdConceptoAfip = pgTable(
+  "lsd_concepto_afip",
+  {
+    id: uuid("id").primaryKey().defaultRandom().notNull(),
+    codigoAfip: text("codigo_afip").notNull(),
+    descripcion: text("descripcion").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [unique("lsd_concepto_afip_codigo_afip_unique").on(table.codigoAfip)]
+);
+
+export const lsdPerfilConcepto = pgTable(
+  "lsd_perfil_concepto",
+  {
+    id: uuid("id").primaryKey().defaultRandom().notNull(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profile.id, { onDelete: "cascade" }),
+    conceptoAfipId: uuid("concepto_afip_id")
+      .notNull()
+      .references(() => lsdConceptoAfip.id, { onDelete: "cascade" }),
+    codigoContribuyente: text("codigo_contribuyente").notNull(),
+    descripcionContribuyente: text("descripcion_contribuyente").notNull(),
+    marcaRepetible: boolean("marca_repetible").default(false).notNull(),
+    aportesSipa: boolean("aportes_sipa").default(false).notNull(),
+    contribucionesSipa: boolean("contribuciones_sipa").default(false).notNull(),
+    aportesInssjyp: boolean("aportes_inssjyp").default(false).notNull(),
+    contribucionesInssjyp: boolean("contribuciones_inssjyp").default(false).notNull(),
+    aportesObraSocial: boolean("aportes_obra_social").default(false).notNull(),
+    contribucionesObraSocial: boolean("contribuciones_obra_social").default(false).notNull(),
+    aportesFsr: boolean("aportes_fsr").default(false).notNull(),
+    contribucionesFsr: boolean("contribuciones_fsr").default(false).notNull(),
+    aportesRenatea: boolean("aportes_renatea").default(false).notNull(),
+    contribucionesRenatea: boolean("contribuciones_renatea").default(false).notNull(),
+    contribucionesAaff: boolean("contribuciones_aaff").default(false).notNull(),
+    contribucionesFne: boolean("contribuciones_fne").default(false).notNull(),
+    contribucionesLrt: boolean("contribuciones_lrt").default(false).notNull(),
+    aportesDiferenciales: boolean("aportes_diferenciales").default(false).notNull(),
+    aportesEspeciales: boolean("aportes_especiales").default(false).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("lsd_perfil_concepto_profile_id_codigo_contribuyente_unique").on(
+      table.profileId,
+      table.codigoContribuyente
+    ),
+  ]
+);
 
 export const credential = pgTable("credential", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -252,7 +251,20 @@ export const invoice = pgTable("invoice", {
   other_taxes: numeric("other_taxes").notNull(),
   totalIVA: numeric("total_iva").notNull(),
   amount: numeric("amount").notNull(),
-});
+
+}, (table) => [
+  foreignKey({
+    columns: [table.client],
+    foreignColumns: [client.id],
+    name: "invoice_client_id_client_id_fk"
+  }).onDelete("cascade"),
+  foreignKey({
+    columns: [table.profile],
+    foreignColumns: [profile.id],
+    name: "invoice_profile_id_profile_id_fk"
+  }).onDelete("cascade"),
+  unique("invoice_client_auth_type_unique").on(table.client, table.authorizationNumber, table.type),
+]);
 
 export const dueDate = pgTable("due_date", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -289,41 +301,6 @@ export const debt = pgTable("debt", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-export const session = pgTable("session", {
-  id: text("id").primaryKey(),
-  expiresAt: timestamp("expires_at").notNull(),
-  token: text("token").notNull().unique(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at")
-    .$onUpdate(() => /* @__PURE__ */ new Date())
-    .notNull(),
-  ipAddress: text("ip_address"),
-  userAgent: text("user_agent"),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  impersonatedBy: text("impersonated_by"),
-});
-
-export const account = pgTable("account", {
-  id: text("id").primaryKey(),
-  accountId: text("account_id").notNull(),
-  providerId: text("provider_id").notNull(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  accessToken: text("access_token"),
-  refreshToken: text("refresh_token"),
-  idToken: text("id_token"),
-  accessTokenExpiresAt: timestamp("access_token_expires_at"),
-  refreshTokenExpiresAt: timestamp("refresh_token_expires_at"),
-  scope: text("scope"),
-  password: text("password"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at")
-    .$onUpdate(() => /* @__PURE__ */ new Date())
-    .notNull(),
-});
 
 export const movements = pgTable("movements", {
   id: text("id").primaryKey(),

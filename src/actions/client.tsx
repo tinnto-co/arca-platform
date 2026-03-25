@@ -5,6 +5,7 @@ import axios from "axios";
 import { db } from "@/lib/db";
 import { client, profile, debt, dueDate, ivaScrape, job } from "@/drizzle/schema";
 import { auth } from "@/lib/auth";
+import { getSessionWithOrg, assertCanWrite, getMemberRole } from "@/actions/helpers";
 import { eq, and, inArray, desc, asc } from "drizzle-orm";
 const JOBS_API_URL =
   process.env.SCRAPPER_JOBS_URL ||
@@ -13,6 +14,16 @@ const JOBS_API_URL =
 
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLL_ATTEMPTS = 300; // ~15 min max per job
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    const cause = (error as Error & { cause?: unknown }).cause;
+    if (cause instanceof Error) return `${error.message} | cause: ${cause.message}`;
+    if (typeof cause === "string") return `${error.message} | cause: ${cause}`;
+    return error.message;
+  }
+  return "Unknown error";
+}
 
 export const createClient = createServerFn({
   method: "POST",
@@ -44,8 +55,9 @@ export const createClient = createServerFn({
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
 
     const {
       name,
@@ -65,7 +77,8 @@ export const createClient = createServerFn({
     const [newClient] = await db
       .insert(client)
       .values({
-        userId: session.user.id,
+        userId: userId,
+        organizationId: orgId,
         name,
         email: email || "",
         phone: phone || "",
@@ -93,15 +106,15 @@ export const notifyBackendNewClient = createServerFn({
 })
   .inputValidator(z.object({ clientId: z.string() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
 
-    // Verify client belongs to user
     const [clientData] = await db
       .select({ id: client.id })
       .from(client)
       .where(
-        and(eq(client.id, ctx.data.clientId), eq(client.userId, session.user.id))
+        and(eq(client.id, ctx.data.clientId), eq(client.organizationId, orgId))
       )
       .limit(1);
 
@@ -109,7 +122,6 @@ export const notifyBackendNewClient = createServerFn({
       throw new Error("Cliente no encontrado o no autorizado");
     }
 
-    // Crear un job "comprobantes" en el scrapper para este nuevo cliente
     try {
       await axios.post(`${JOBS_API_URL}/api/jobs`, {
         type: "comprobantes",
@@ -126,15 +138,15 @@ export const updateOldClient = createServerFn({
 })
   .inputValidator(z.object({ clientId: z.string() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
 
-    // Verify client belongs to user
     const [clientData] = await db
       .select({ id: client.id })
       .from(client)
       .where(
-        and(eq(client.id, ctx.data.clientId), eq(client.userId, session.user.id))
+        and(eq(client.id, ctx.data.clientId), eq(client.organizationId, orgId))
       )
       .limit(1);
 
@@ -164,44 +176,58 @@ export const updateOldClient = createServerFn({
 export const getClients = createServerFn({
   method: "GET",
 }).handler(async () => {
-  const session = await auth.api.getSession({ headers: getRequestHeaders() });
-  if (!session?.user?.id) throw new Error("Unauthorized");
+  try {
+    const { orgId } = await getSessionWithOrg();
 
-  const clients = await db.select().from(client).where(eq(client.userId, session.user.id)).orderBy(asc(client.name));
+    const clients = await db
+      .select()
+      .from(client)
+      .where(eq(client.organizationId, orgId))
+      .orderBy(asc(client.name));
 
-  return clients;
+    return clients;
+  } catch (error) {
+    throw new Error(`Error loading clients: ${getErrorMessage(error)}`);
+  }
 });
 
 export const getClientsWithProfiles = createServerFn({
   method: "GET",
 }).handler(async () => {
-  const session = await auth.api.getSession({ headers: getRequestHeaders() });
-  if (!session?.user?.id) throw new Error("Unauthorized");
+  try {
+    const { orgId } = await getSessionWithOrg();
 
-  const clients = await db.select().from(client).where(eq(client.userId, session.user.id)).orderBy(asc(client.name));
-  const clientIds = clients.map((c) => c.id);
-  if (clientIds.length === 0) {
-    return clients.map((c) => ({ ...c, profiles: [] as { id: string; name: string }[] }));
-  }
-
-  const profiles = await db
-    .select({ clientId: profile.client, id: profile.id, name: profile.name })
-    .from(profile)
-    .where(inArray(profile.client, clientIds));
-
-  const profilesByClientId = new Map<string, { id: string; name: string }[]>();
-  for (const p of profiles) {
-    if (p.clientId) {
-      const list = profilesByClientId.get(p.clientId) ?? [];
-      list.push({ id: p.id, name: p.name });
-      profilesByClientId.set(p.clientId, list);
+    const clients = await db
+      .select()
+      .from(client)
+      .where(eq(client.organizationId, orgId))
+      .orderBy(asc(client.name));
+    const clientIds = clients.map((c) => c.id);
+    if (clientIds.length === 0) {
+      return clients.map((c) => ({ ...c, profiles: [] as { id: string; name: string }[] }));
     }
-  }
 
-  return clients.map((c) => ({
-    ...c,
-    profiles: profilesByClientId.get(c.id) ?? [],
-  }));
+    const profiles = await db
+      .select({ clientId: profile.client, id: profile.id, name: profile.name })
+      .from(profile)
+      .where(inArray(profile.client, clientIds));
+
+    const profilesByClientId = new Map<string, { id: string; name: string }[]>();
+    for (const p of profiles) {
+      if (p.clientId) {
+        const list = profilesByClientId.get(p.clientId) ?? [];
+        list.push({ id: p.id, name: p.name });
+        profilesByClientId.set(p.clientId, list);
+      }
+    }
+
+    return clients.map((c) => ({
+      ...c,
+      profiles: profilesByClientId.get(c.id) ?? [],
+    }));
+  } catch (error) {
+    throw new Error(`Error loading clients with profiles: ${getErrorMessage(error)}`);
+  }
 });
 
 export const getClient = createServerFn({
@@ -262,15 +288,13 @@ export const getClientIvaCredit = createServerFn({
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
 
-    // Obtener datos del cliente y validar que pertenezca al usuario
     const [clientData] = await db
       .select()
       .from(client)
       .where(
-        and(eq(client.id, ctx.data.clientId), eq(client.userId, session.user.id))
+        and(eq(client.id, ctx.data.clientId), eq(client.organizationId, orgId))
       )
       .limit(1);
 
@@ -374,8 +398,9 @@ export const updateClient = createServerFn({
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
 
     const { id, ...updateData } = ctx.data;
 
@@ -418,8 +443,9 @@ export const deleteClient = createServerFn({
 })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
 
     const [deletedClient] = await db
       .delete(client)
@@ -487,8 +513,9 @@ export const scrapOldClient = createServerFn({
 })
   .inputValidator(z.object({ clientId: z.string() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
 
     const backendUrl = process.env.BACKEND_API_URL || "http://localhost:3001";
     try {
@@ -525,8 +552,9 @@ export const scrapUpdateClient = createServerFn({
 })
   .inputValidator(z.object({ clientId: z.string() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
 
     const baseUrl = JOBS_API_URL;
     const { clientId } = ctx.data;
@@ -595,8 +623,9 @@ export const updateClientModules = createServerFn({
 })
   .inputValidator(z.object({ clientId: z.string() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
 
     const { clientId } = ctx.data;
 
@@ -604,7 +633,7 @@ export const updateClientModules = createServerFn({
       .select({ id: client.id })
       .from(client)
       .where(
-        and(eq(client.id, clientId), eq(client.userId, session.user.id))
+        and(eq(client.id, clientId), eq(client.organizationId, orgId))
       )
       .limit(1);
 
@@ -651,8 +680,9 @@ export const scrapSingleJob = createServerFn({
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
 
     const baseUrl = JOBS_API_URL;
     const { clientId, jobType } = ctx.data;
@@ -690,22 +720,22 @@ export const getLastComprobantesFullJob = createServerFn({
 })
   .inputValidator(z.object({ clientId: z.string() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
 
     const { clientId } = ctx.data;
 
-    const userClients = await db
+    const orgClients = await db
       .select({ id: client.id })
       .from(client)
-      .where(eq(client.userId, session.user.id));
-    const canAccess = userClients.some((c) => c.id === clientId);
+      .where(eq(client.organizationId, orgId));
+    const canAccess = orgClients.some((c) => c.id === clientId);
     if (!canAccess) return null;
 
     const [lastJob] = await db
       .select({
         createdAt: job.createdAt,
         failedReason: job.failedReason,
+        status: job.status,
       })
       .from(job)
       .where(
@@ -718,7 +748,7 @@ export const getLastComprobantesFullJob = createServerFn({
       .limit(1);
 
     if (!lastJob?.createdAt) return null;
-    const success = lastJob.failedReason == null;
+    const success = lastJob.status !== "failed" && lastJob.failedReason == null;
     return {
       createdAt: lastJob.createdAt.toISOString(),
       success,
@@ -737,16 +767,15 @@ export const getLastJobByType = createServerFn({
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
 
     const { clientId, jobType } = ctx.data;
 
-    const userClients = await db
+    const orgClients = await db
       .select({ id: client.id })
       .from(client)
-      .where(eq(client.userId, session.user.id));
-    const canAccess = userClients.some((c) => c.id === clientId);
+      .where(eq(client.organizationId, orgId));
+    const canAccess = orgClients.some((c) => c.id === clientId);
     if (!canAccess) return null;
 
     const [lastJob] = await db
@@ -767,7 +796,8 @@ export const getLastJobByType = createServerFn({
       .limit(1);
 
     if (!lastJob?.createdAt) return null;
-    const success = lastJob.failedReason == null;
+    // "success" debe reflejar el estado real del job (no solo failedReason).
+    const success = lastJob.status !== "failed" && lastJob.failedReason == null;
     const result = lastJob.result as { notificationFetchWarning?: string; notificationFetchWarningCuits?: string[] } | null;
     return {
       createdAt: lastJob.createdAt.toISOString(),
@@ -792,16 +822,15 @@ export const getRunningJobByType = createServerFn({
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
 
     const { clientId, jobType } = ctx.data;
 
-    const userClients = await db
+    const orgClients = await db
       .select({ id: client.id })
       .from(client)
-      .where(eq(client.userId, session.user.id));
-    const canAccess = userClients.some((c) => c.id === clientId);
+      .where(eq(client.organizationId, orgId));
+    const canAccess = orgClients.some((c) => c.id === clientId);
     if (!canAccess) return null;
 
     const [runningJob] = await db
