@@ -137,6 +137,12 @@ export const client = pgTable("client", {
   status: text("status").notNull().default("active"),
   hasErrors: boolean("has_errors").default(false).notNull(),
   errorMessage: text("error_message").default(""),
+  liquidaSueldos: boolean("liquida_sueldos").default(false).notNull(),
+  convenioMultilateral: boolean("convenio_multilateral").default(false).notNull(),
+  regimenLocal: boolean("regimen_local").default(false).notNull(),
+  fiscalCondition: text("fiscal_condition"),
+  /** CUIT de la razón social (el contribuyente empleador); identity_number suele ser CUIL del titular */
+  cuitEmpresa: text("cuit_empresa").notNull().default(""),
   registeredAt: timestamp("registered_at").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

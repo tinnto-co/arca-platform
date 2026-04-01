@@ -17,14 +17,17 @@ import {
 import { auth } from "@/lib/auth";
 import { eq, and, desc, lte, or, isNull, gte, inArray } from "drizzle-orm";
 
-/** Verifica que el cliente pertenezca al usuario. Lanza si no. */
+/** Verifica que el cliente pertenezca al usuario y tenga liquidación de sueldos habilitada. */
 async function ensureClientBelongsToUser(clientId: string, userId: string): Promise<void> {
   const [c] = await db
-    .select({ id: client.id })
+    .select({ id: client.id, liquidaSueldos: client.liquidaSueldos })
     .from(client)
     .where(and(eq(client.id, clientId), eq(client.userId, userId)))
     .limit(1);
   if (!c) throw new Error("Cliente no encontrado o no autorizado");
+  if (!c.liquidaSueldos) {
+    throw new Error("Este cliente no está habilitado para liquidación de sueldos");
+  }
 }
 
 import {

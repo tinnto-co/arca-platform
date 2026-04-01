@@ -1,0 +1,1 @@
+ALTER TABLE "client" ADD COLUMN IF NOT EXISTS "cuit_empresa" text DEFAULT '' NOT NULL;
