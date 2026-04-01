@@ -63,6 +63,7 @@ import {
   getNotification,
 } from "@/actions/notification";
 import { getClients } from "@/actions/client";
+import { userQuery } from "../lib/user-query";
 
 interface NotificationData {
   id: string;
@@ -79,6 +80,10 @@ interface NotificationData {
 
 export function NotificationsTable() {
   const queryClient = useQueryClient();
+  const { data: user } = useQuery(userQuery);
+  const orgKey =
+    (user as { activeOrganizationId?: string | null } | null | undefined)
+      ?.activeOrganizationId ?? "__pending__";
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [notificationToDelete, setNotificationToDelete] = useState<
     string | null
@@ -105,6 +110,7 @@ export function NotificationsTable() {
   const { data: notificationsData, isLoading } = useQuery({
     queryKey: [
       "notifications",
+      orgKey,
       currentPage,
       clientFilter,
       dateFrom,
@@ -128,13 +134,13 @@ export function NotificationsTable() {
   const deleteMutation = useMutation({
     mutationFn: deleteNotification,
     onSuccess: () => {
-      toast.success("Notificación eliminada correctamente");
+      toast.success("Notificaci?n eliminada correctamente");
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
       setDeleteDialogOpen(false);
       setNotificationToDelete(null);
     },
     onError: (error) => {
-      toast.error("Error al eliminar la notificación");
+      toast.error("Error al eliminar la notificaci?n");
       console.error(error);
     },
   });
@@ -148,7 +154,7 @@ export function NotificationsTable() {
       const details = await getNotification({ data: { id: notification.id } });
       setNotificationDetails(details);
     } catch (error) {
-      toast.error("Error al cargar los detalles de la notificación");
+      toast.error("Error al cargar los detalles de la notificaci?n");
       console.error(error);
     }
   };
@@ -242,8 +248,8 @@ export function NotificationsTable() {
             <TableRow>
               <TableHead>Cliente</TableHead>
               <TableHead>Mensaje</TableHead>
-              <TableHead>Fecha Publicación</TableHead>
-              <TableHead>Fecha Expiración</TableHead>
+              <TableHead>Fecha Publicaci?n</TableHead>
+              <TableHead>Fecha Expiraci?n</TableHead>
               <TableHead className="text-right">Acciones</TableHead>
             </TableRow>
           </TableHeader>
@@ -371,7 +377,7 @@ export function NotificationsTable() {
       <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[80vh]">
           <DialogHeader>
-            <DialogTitle>Detalles de la Notificación</DialogTitle>
+            <DialogTitle>Detalles de la Notificaci?n</DialogTitle>
           </DialogHeader>
 
           {selectedNotification && (
@@ -391,7 +397,7 @@ export function NotificationsTable() {
                 </div>
                 <div>
                   <label className="text-sm font-medium">
-                    Fecha de Publicación
+                    Fecha de Publicaci?n
                   </label>
                   <p className="text-sm text-muted-foreground">
                     {formatDate(selectedNotification.publicationDate)}
@@ -399,7 +405,7 @@ export function NotificationsTable() {
                 </div>
                 <div>
                   <label className="text-sm font-medium">
-                    Fecha de Expiración
+                    Fecha de Expiraci?n
                   </label>
                   <p className="text-sm text-muted-foreground">
                     {formatDate(selectedNotification.expirationDate)}
@@ -467,10 +473,10 @@ export function NotificationsTable() {
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
+            <AlertDialogTitle>?Est?s seguro?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta acción no se puede deshacer. Se eliminará permanentemente la
-              notificación.
+              Esta acci?n no se puede deshacer. Se eliminar? permanentemente la
+              notificaci?n.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -1,9 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
-import { getRequestHeaders } from "@tanstack/react-start/server";
 import z from "zod";
 import { db } from "@/lib/db";
 import { profile, client } from "@/drizzle/schema";
-import { auth } from "@/lib/auth";
+import { getSessionWithOrg } from "@/actions/helpers";
 import { eq } from "drizzle-orm";
 
 export const getProfile = createServerFn({
@@ -11,8 +10,7 @@ export const getProfile = createServerFn({
 })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
 
     // Get profile with client information
     const [profileData] = await db
@@ -43,7 +41,7 @@ export const getProfile = createServerFn({
         .where(eq(client.id, profileData.clientId))
         .limit(1);
 
-      if (!clientData || clientData.userId !== session.user.id) {
+      if (!clientData || clientData.organizationId !== orgId) {
         throw new Error("No autorizado");
       }
     }

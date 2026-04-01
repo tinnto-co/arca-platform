@@ -63,9 +63,17 @@ export function ClientsTable() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const queryClient = useQueryClient();
 
-  const { data: clients = [], isLoading } = useQuery({
+  const {
+    data: clients = [],
+    isLoading,
+    isError,
+    error,
+    refetch,
+    isFetching,
+  } = useQuery({
     queryKey: ["clientsWithProfiles"],
     queryFn: () => getClientsWithProfiles(),
+    retry: 1,
   });
 
   // Filter clients based on search term and filters
@@ -120,6 +128,24 @@ export function ClientsTable() {
     return (
       <div className="flex items-center justify-center h-32">
         <div className="text-muted-foreground">Cargando clientes...</div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "No se pudieron cargar los clientes.";
+
+    return (
+      <div className="flex flex-col items-center justify-center h-40 gap-3">
+        <div className="text-muted-foreground text-center">
+          Error al cargar clientes: {message}
+        </div>
+        <Button variant="outline" onClick={() => refetch()} disabled={isFetching}>
+          {isFetching ? "Reintentando..." : "Reintentar"}
+        </Button>
       </div>
     );
   }

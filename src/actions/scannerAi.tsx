@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { getSessionWithOrg, assertCanWrite, getMemberRole } from "@/actions/helpers";
 
 import { GoogleGenAI, Schema } from "@google/genai";
 
@@ -40,6 +41,10 @@ export const scanBankStatement = createServerFn({
 })
     .inputValidator(scanSchema)
     .handler(async (ctx) => {
+        await getSessionWithOrg();
+        const role = await getMemberRole();
+        assertCanWrite(role);
+
         const { fileBase64 } = ctx.data;
 
         // Construir schema optimizado manualmente según mejores prácticas de Gemini

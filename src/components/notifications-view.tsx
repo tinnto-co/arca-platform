@@ -37,6 +37,7 @@ import {
 } from "@/actions/notification";
 import { getClients, getClientProfiles } from "@/actions/client";
 import { cn } from "@/lib/utils";
+import { userQuery } from "../lib/user-query";
 
 interface NotificationData {
   id: string;
@@ -70,6 +71,8 @@ export function NotificationsView({
   className,
 }: NotificationsViewProps = {}) {
   const queryClient = useQueryClient();
+  const { data: user } = useQuery(userQuery);
+  const orgKey = user?.activeOrganizationId ?? "__pending__";
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [notificationToDelete, setNotificationToDelete] = useState<
     string | null
@@ -113,8 +116,14 @@ export function NotificationsView({
   // Get notifications
   const { data: notificationsData, isLoading } = useQuery({
     queryKey: clientIdProp
-      ? ["clientNotifications", clientIdProp, effectiveProfileFilter, searchTerm]
-      : ["notifications", 1, clientFilter, "", "", searchTerm],
+      ? [
+          "clientNotifications",
+          orgKey,
+          clientIdProp,
+          effectiveProfileFilter,
+          searchTerm,
+        ]
+      : ["notifications", orgKey, 1, clientFilter, "", "", searchTerm],
     queryFn: () =>
       getNotifications({
         data: {
@@ -130,7 +139,7 @@ export function NotificationsView({
 
   // Get selected notification details
   const { data: selectedNotification } = useQuery({
-    queryKey: ["notification", selectedNotificationId],
+    queryKey: ["notification", orgKey, selectedNotificationId],
     queryFn: () =>
       getNotification({ data: { id: selectedNotificationId! } }),
     enabled: !!selectedNotificationId,
@@ -145,7 +154,7 @@ export function NotificationsView({
     }
     if (selectedNotificationId) {
       queryClient.invalidateQueries({
-        queryKey: ["notification", selectedNotificationId],
+        queryKey: ["notification", orgKey, selectedNotificationId],
       });
     }
   };

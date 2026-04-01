@@ -1,28 +1,30 @@
 import { createServerFn } from "@tanstack/react-start";
-import { getRequestHeaders } from "@tanstack/react-start/server";
 import z from "zod";
 import { db } from "@/lib/db";
 import {
   client,
+  profile,
+  lsdConceptoAfip,
+  lsdPerfilConcepto,
   payrollConvenio,
   payrollConvenioCategoria,
   payrollEscala,
   payrollConcepto,
   payrollEmployee,
-  payrollEmpleadoConcepto,
   payrollNovedad,
   payrollLiquidacion,
   payrollLiquidacionDetalle,
+  afipEmpleadoresConvenio,
 } from "@/drizzle/schema";
-import { auth } from "@/lib/auth";
-import { eq, and, desc, lte, or, isNull, gte, inArray } from "drizzle-orm";
+import { getSessionWithOrg, assertCanWrite, getMemberRole } from "@/actions/helpers";
+import { eq, and, desc, lte, or, isNull, gte, inArray, sql } from "drizzle-orm";
 
-/** Verifica que el cliente pertenezca al usuario y tenga liquidación de sueldos habilitada. */
-async function ensureClientBelongsToUser(clientId: string, userId: string): Promise<void> {
+/** Verifica que el cliente pertenezca a la organización y tenga liquidación de sueldos habilitada. */
+async function ensureClientBelongsToOrg(clientId: string, orgId: string): Promise<void> {
   const [c] = await db
     .select({ id: client.id, liquidaSueldos: client.liquidaSueldos })
     .from(client)
-    .where(and(eq(client.id, clientId), eq(client.userId, userId)))
+    .where(and(eq(client.id, clientId), eq(client.organizationId, orgId)))
     .limit(1);
   if (!c) throw new Error("Cliente no encontrado o no autorizado");
   if (!c.liquidaSueldos) {
@@ -30,15 +32,24 @@ async function ensureClientBelongsToUser(clientId: string, userId: string): Prom
   }
 }
 
+async function ensureProfileBelongsToClient(profileId: string, clientId: string): Promise<void> {
+  const [p] = await db
+    .select({ id: profile.id })
+    .from(profile)
+    .where(and(eq(profile.id, profileId), eq(profile.client, clientId)))
+    .limit(1);
+  if (!p) throw new Error("Perfil no encontrado o no autorizado");
+}
+
 import {
   evaluatePayrollFormula,
   roundMoney,
   type PayrollFormulaContext,
-} from "@/lib/payroll-formula";
+} from "../lib/payroll-formula";
 import {
   puedeLiquidarPeriodo,
   puedeIngresarDatosPeriodo,
-} from "@/lib/payroll-period-rules";
+} from "../lib/payroll-period-rules";
 import { format, differenceInYears, parseISO } from "date-fns";
 
 function getPeriodKey(date: Date): string {
@@ -50,9 +61,8 @@ function getPeriodKey(date: Date): string {
 export const listConvenios = createServerFn({ method: "GET" })
   .inputValidator(z.object({ clientId: z.string().uuid() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
-    await ensureClientBelongsToUser(ctx.data.clientId, session.user.id);
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     return db
       .select()
       .from(payrollConvenio)
@@ -69,9 +79,10 @@ export const createConvenio = createServerFn({ method: "POST" })
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
-    await ensureClientBelongsToUser(ctx.data.clientId, session.user.id);
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     const [row] = await db
       .insert(payrollConvenio)
       .values({
@@ -93,9 +104,10 @@ export const updateConvenio = createServerFn({ method: "POST" })
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
-    await ensureClientBelongsToUser(ctx.data.clientId, session.user.id);
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     const [row] = await db
       .update(payrollConvenio)
       .set({
@@ -121,9 +133,10 @@ export const deleteConvenio = createServerFn({ method: "POST" })
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
-    await ensureClientBelongsToUser(ctx.data.clientId, session.user.id);
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     const [emp] = await db
       .select({ id: payrollEmployee.id })
       .from(payrollEmployee)
@@ -145,6 +158,157 @@ export const deleteConvenio = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+/** Convenios CCT scrapeados desde AFIP (Simplificación Registral - Empleadores). */
+export const listConveniosAfipEmpleadores = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+
+    return db
+      .select({
+        id: afipEmpleadoresConvenio.id,
+        profileId: afipEmpleadoresConvenio.profileId,
+        cct: afipEmpleadoresConvenio.cct,
+        actividad: afipEmpleadoresConvenio.actividad,
+        signatarios: afipEmpleadoresConvenio.signatarios,
+        fechaNovedad: afipEmpleadoresConvenio.fechaNovedad,
+        updatedAt: afipEmpleadoresConvenio.updatedAt,
+      })
+      .from(afipEmpleadoresConvenio)
+      .innerJoin(profile, eq(afipEmpleadoresConvenio.profileId, profile.id))
+      .where(eq(profile.client, ctx.data.clientId))
+      .orderBy(desc(afipEmpleadoresConvenio.updatedAt));
+  });
+
+/** Lista conceptos AFIP asociados al perfil, y si ya existen mapeados en `payroll_concepto` del cliente. */
+export const listConceptosAfipByPerfil = createServerFn({ method: "GET" })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      profileId: z.string().uuid(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureProfileBelongsToClient(ctx.data.profileId, ctx.data.clientId);
+
+    const afipRows = await db
+      .select({
+        // AFIP / Lsd
+        afipCodigo: lsdConceptoAfip.codigoAfip,
+        afipDescripcion: lsdConceptoAfip.descripcion,
+        perfilCodigoContribuyente: lsdPerfilConcepto.codigoContribuyente,
+        perfilDescripcionContribuyente: lsdPerfilConcepto.descripcionContribuyente,
+        perfilMarcaRepetible: lsdPerfilConcepto.marcaRepetible,
+        perfilAportesSipa: lsdPerfilConcepto.aportesSipa,
+        perfilContribucionesSipa: lsdPerfilConcepto.contribucionesSipa,
+        perfilAportesInssjyp: lsdPerfilConcepto.aportesInssjyp,
+        perfilContribucionesInssjyp: lsdPerfilConcepto.contribucionesInssjyp,
+        perfilAportesObraSocial: lsdPerfilConcepto.aportesObraSocial,
+        perfilContribucionesObraSocial: lsdPerfilConcepto.contribucionesObraSocial,
+        perfilAportesFsr: lsdPerfilConcepto.aportesFsr,
+        perfilContribucionesFsr: lsdPerfilConcepto.contribucionesFsr,
+        perfilAportesRenatea: lsdPerfilConcepto.aportesRenatea,
+        perfilContribucionesRenatea: lsdPerfilConcepto.contribucionesRenatea,
+        perfilContribucionesAaff: lsdPerfilConcepto.contribucionesAaff,
+        perfilContribucionesFne: lsdPerfilConcepto.contribucionesFne,
+        perfilContribucionesLrt: lsdPerfilConcepto.contribucionesLrt,
+        perfilAportesDiferenciales: lsdPerfilConcepto.aportesDiferenciales,
+        perfilAportesEspeciales: lsdPerfilConcepto.aportesEspeciales,
+        // Config payroll concept (nullable)
+        payrollId: payrollConcepto.id,
+        payrollCodigo: payrollConcepto.codigo,
+        payrollNombre: payrollConcepto.nombre,
+        payrollTipo: payrollConcepto.tipo,
+        payrollBaseCalculo: payrollConcepto.baseCalculo,
+        payrollFormula: payrollConcepto.formula,
+        payrollEsPorcentaje: payrollConcepto.esPorcentaje,
+        payrollOrden: payrollConcepto.orden,
+        payrollActivo: payrollConcepto.activo,
+      })
+      .from(lsdPerfilConcepto)
+      .innerJoin(lsdConceptoAfip, eq(lsdPerfilConcepto.conceptoAfipId, lsdConceptoAfip.id))
+      .leftJoin(
+        payrollConcepto,
+        and(
+          eq(payrollConcepto.clientId, ctx.data.clientId),
+          // Los conceptos del perfil se identifican por `codigo_contribuyente`.
+          eq(payrollConcepto.codigo, lsdPerfilConcepto.codigoContribuyente)
+        )
+      )
+      .where(eq(lsdPerfilConcepto.profileId, ctx.data.profileId))
+      .orderBy(lsdPerfilConcepto.codigoContribuyente);
+
+    // Conserva conceptos “manuales” que existan en el cliente pero no están en la grilla AFIP del perfil.
+    const perfilCodes = new Set(
+      afipRows.map((r) => r.perfilCodigoContribuyente).filter((v): v is string => !!v)
+    );
+
+    const manualPayrollConcepts = await db
+      .select({
+        id: payrollConcepto.id,
+        codigo: payrollConcepto.codigo,
+        nombre: payrollConcepto.nombre,
+        tipo: payrollConcepto.tipo,
+        baseCalculo: payrollConcepto.baseCalculo,
+        formula: payrollConcepto.formula,
+        esPorcentaje: payrollConcepto.esPorcentaje,
+        orden: payrollConcepto.orden,
+        activo: payrollConcepto.activo,
+      })
+      .from(payrollConcepto)
+      .where(
+        and(eq(payrollConcepto.clientId, ctx.data.clientId))
+      );
+
+    const manualRows = manualPayrollConcepts
+      .filter((c) => !perfilCodes.has(c.codigo))
+      .map((c) => ({
+        // AFIP/Lsd
+        afipCodigo: c.codigo,
+        afipDescripcion: c.nombre,
+        perfilCodigoContribuyente: null,
+        perfilDescripcionContribuyente: null,
+        perfilMarcaRepetible: null,
+        perfilAportesSipa: null,
+        perfilContribucionesSipa: null,
+        perfilAportesInssjyp: null,
+        perfilContribucionesInssjyp: null,
+        perfilAportesObraSocial: null,
+        perfilContribucionesObraSocial: null,
+        perfilAportesFsr: null,
+        perfilContribucionesFsr: null,
+        perfilAportesRenatea: null,
+        perfilContribucionesRenatea: null,
+        perfilContribucionesAaff: null,
+        perfilContribucionesFne: null,
+        perfilContribucionesLrt: null,
+        perfilAportesDiferenciales: null,
+        perfilAportesEspeciales: null,
+        // payroll config
+        payrollId: c.id,
+        payrollCodigo: c.codigo,
+        payrollNombre: c.nombre,
+        payrollTipo: c.tipo,
+        payrollBaseCalculo: c.baseCalculo,
+        payrollFormula: c.formula,
+        payrollEsPorcentaje: c.esPorcentaje,
+        payrollOrden: c.orden,
+        payrollActivo: c.activo,
+      }));
+
+    const all = [...afipRows, ...manualRows];
+    all.sort((a, b) => {
+      const ao = a.payrollOrden ?? 0;
+      const bo = b.payrollOrden ?? 0;
+      if (ao !== bo) return ao - bo;
+      return a.afipCodigo.localeCompare(b.afipCodigo);
+    });
+    return all;
+  });
+
 /** Convenios y categorías base por convenio (plantilla). */
 const CONVENIOS_PLANTILLA = [
   { nombre: "Comercio", descripcion: "Convenio Colectivo de Trabajo para el sector Comercio (plantilla base).", categorias: [{ codigo: "1", nombre: "Empleado de comercio", orden: 10, montoBasico: "350000" }, { codigo: "2", nombre: "Encargado", orden: 20, montoBasico: "400000" }, { codigo: "3", nombre: "Jefe de sector", orden: 30, montoBasico: "450000" }] },
@@ -153,6 +317,123 @@ const CONVENIOS_PLANTILLA = [
   { nombre: "Plásticos", descripcion: "Convenio Colectivo de Trabajo para la industria del Plástico (plantilla base).", categorias: [{ codigo: "1", nombre: "Operario", orden: 10, montoBasico: "350000" }, { codigo: "2", nombre: "Operario calificado", orden: 20, montoBasico: "400000" }, { codigo: "3", nombre: "Supervisor", orden: 30, montoBasico: "450000" }] },
   { nombre: "Construcción", descripcion: "Convenio Colectivo de Trabajo para la Construcción (plantilla base).", categorias: [{ codigo: "1", nombre: "Oficial", orden: 10, montoBasico: "350000" }, { codigo: "2", nombre: "Oficial especializado", orden: 20, montoBasico: "400000" }, { codigo: "3", nombre: "Encargado / Capataz", orden: 30, montoBasico: "450000" }] },
 ];
+
+function getPlantillaPorActividad(actividad: string) {
+  const a = (actividad ?? "").toLowerCase();
+
+  // Heurística simple para mapear `actividad` (AFIP) a una de las 5 plantillas existentes.
+  if (a.includes("comercio")) return CONVENIOS_PLANTILLA.find((c) => c.nombre === "Comercio") ?? null;
+  if (a.includes("gastron")) return CONVENIOS_PLANTILLA.find((c) => c.nombre === "Gastronomía") ?? null;
+  if (a.includes("pastel")) return CONVENIOS_PLANTILLA.find((c) => c.nombre === "Pasteleros") ?? null;
+  if (a.includes("plasti")) return CONVENIOS_PLANTILLA.find((c) => c.nombre === "Plásticos") ?? null;
+  if (a.includes("constru")) return CONVENIOS_PLANTILLA.find((c) => c.nombre === "Construcción") ?? null;
+
+  return null;
+}
+
+/** Crea un `payroll_convenio` para el cliente a partir del CCT scrapeado desde AFIP. */
+export const agregarConvenioDesdeAfipEmpleadores = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      afipConvenioId: z.string().uuid(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+
+    const [afipRow] = await db
+      .select({
+        id: afipEmpleadoresConvenio.id,
+        profileId: afipEmpleadoresConvenio.profileId,
+        cct: afipEmpleadoresConvenio.cct,
+        actividad: afipEmpleadoresConvenio.actividad,
+        signatarios: afipEmpleadoresConvenio.signatarios,
+        fechaNovedad: afipEmpleadoresConvenio.fechaNovedad,
+      })
+      .from(afipEmpleadoresConvenio)
+      .innerJoin(profile, eq(afipEmpleadoresConvenio.profileId, profile.id))
+      .where(
+        and(
+          eq(profile.client, ctx.data.clientId),
+          eq(afipEmpleadoresConvenio.id, ctx.data.afipConvenioId)
+        )
+      )
+      .limit(1);
+
+    if (!afipRow) throw new Error("Convenio AFIP no encontrado o no autorizado");
+
+    const [existing] = await db
+      .select({ id: payrollConvenio.id })
+      .from(payrollConvenio)
+      .where(
+        and(
+          eq(payrollConvenio.clientId, ctx.data.clientId),
+          eq(payrollConvenio.nombre, afipRow.cct)
+        )
+      )
+      .limit(1);
+
+    if (existing) {
+      return { ok: true, created: false, message: "El cliente ya tiene este convenio (CCT)." };
+    }
+
+    const plantillaDetectada = getPlantillaPorActividad(afipRow.actividad);
+    const plantilla = plantillaDetectada ?? CONVENIOS_PLANTILLA[0];
+    const usandoFallback = !plantillaDetectada;
+    const inicioVigencia = new Date(new Date().getFullYear(), 0, 1);
+
+    const descripcion = [
+      `AFIP CCT: ${afipRow.cct}`,
+      `Actividad: ${afipRow.actividad}`,
+      `Signatarios: ${afipRow.signatarios}`,
+      `Fecha novedad: ${afipRow.fechaNovedad}`,
+    ].join("\n");
+
+    const [inserted] = await db
+      .insert(payrollConvenio)
+      .values({
+        clientId: ctx.data.clientId,
+        nombre: afipRow.cct,
+        descripcion,
+      })
+      .returning({ id: payrollConvenio.id });
+
+    if (!inserted) throw new Error("Error al crear convenio");
+
+    const categoriasInsert = await db
+      .insert(payrollConvenioCategoria)
+      .values(
+        plantilla.categorias.map((c) => ({
+          convenioId: inserted.id,
+          codigo: c.codigo,
+          nombre: c.nombre,
+          orden: c.orden,
+        }))
+      )
+      .returning({ id: payrollConvenioCategoria.id, codigo: payrollConvenioCategoria.codigo });
+
+    const montoBasicoByCodigo = new Map(plantilla.categorias.map((c) => [c.codigo, c.montoBasico]));
+    for (const cat of categoriasInsert) {
+      await db.insert(payrollEscala).values({
+        categoriaId: cat.id,
+        vigenciaDesde: inicioVigencia,
+        vigenciaHasta: null,
+        montoBasico: montoBasicoByCodigo.get(cat.codigo) ?? "0",
+      });
+    }
+
+    return {
+      ok: true,
+      created: true,
+      convenioId: inserted.id,
+      plantillaUsada: plantilla.nombre,
+      usandoFallback,
+    };
+  });
 
 const CONCEPTOS_PLANTILLA = [
   { codigo: "BASICO", nombre: "Sueldo básico", tipo: "remunerativo" as const, baseCalculo: "basico" as const, formula: "basico", esPorcentaje: false, orden: 10 },
@@ -171,9 +452,10 @@ const CONCEPTOS_PLANTILLA = [
 export const aplicarPlantillaBaseSueldos = createServerFn({ method: "POST" })
   .inputValidator(z.object({ clientId: z.string().uuid() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
-    await ensureClientBelongsToUser(ctx.data.clientId, session.user.id);
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
 
     const clientId = ctx.data.clientId;
     const conceptosExistentes = await db
@@ -229,8 +511,7 @@ export const aplicarPlantillaBaseSueldos = createServerFn({ method: "POST" })
 /** Lista los convenios disponibles en la plantilla para que el cliente seleccione el que le corresponde. */
 export const listConveniosPlantilla = createServerFn({ method: "GET" })
   .handler(async () => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    await getSessionWithOrg();
     return CONVENIOS_PLANTILLA.map((c) => ({
       nombre: c.nombre,
       descripcion: c.descripcion,
@@ -243,9 +524,10 @@ export const agregarConvenioDesdePlantilla = createServerFn({ method: "POST" })
     z.object({ clientId: z.string().uuid(), nombreConvenio: z.string().min(1) })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
-    await ensureClientBelongsToUser(ctx.data.clientId, session.user.id);
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
 
     const conv = CONVENIOS_PLANTILLA.find(
       (c) => c.nombre.toLowerCase() === ctx.data.nombreConvenio.toLowerCase()
@@ -306,9 +588,8 @@ export const agregarConvenioDesdePlantilla = createServerFn({ method: "POST" })
 export const listCategoriasByConvenio = createServerFn({ method: "GET" })
   .inputValidator(z.object({ convenioId: z.string().uuid(), clientId: z.string().uuid() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
-    await ensureClientBelongsToUser(ctx.data.clientId, session.user.id);
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     return db
       .select()
       .from(payrollConvenioCategoria)
@@ -327,9 +608,10 @@ export const createCategoria = createServerFn({ method: "POST" })
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
-    await ensureClientBelongsToUser(ctx.data.clientId, session.user.id);
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     const [row] = await db
       .insert(payrollConvenioCategoria)
       .values({
@@ -347,9 +629,8 @@ export const createCategoria = createServerFn({ method: "POST" })
 export const listEscalasByCategoria = createServerFn({ method: "GET" })
   .inputValidator(z.object({ categoriaId: z.string().uuid(), clientId: z.string().uuid() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
-    await ensureClientBelongsToUser(ctx.data.clientId, session.user.id);
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     return db
       .select()
       .from(payrollEscala)
@@ -361,9 +642,10 @@ export const listEscalasByCategoria = createServerFn({ method: "GET" })
 export const deleteEscala = createServerFn({ method: "POST" })
   .inputValidator(z.object({ escalaId: z.string().uuid(), clientId: z.string().uuid() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
-    await ensureClientBelongsToUser(ctx.data.clientId, session.user.id);
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     const [row] = await db
       .select({ id: payrollEscala.id })
       .from(payrollEscala)
@@ -398,9 +680,10 @@ export const upsertEscala = createServerFn({ method: "POST" })
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
-    await ensureClientBelongsToUser(ctx.data.clientId, session.user.id);
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     const [row] = await db
       .insert(payrollEscala)
       .values({
@@ -455,9 +738,8 @@ export const getBasicoVigente = createServerFn({ method: "GET" })
 export const listConceptos = createServerFn({ method: "GET" })
   .inputValidator(z.object({ clientId: z.string().uuid() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
-    await ensureClientBelongsToUser(ctx.data.clientId, session.user.id);
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     return db
       .select()
       .from(payrollConcepto)
@@ -479,9 +761,10 @@ export const createConcepto = createServerFn({ method: "POST" })
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
-    await ensureClientBelongsToUser(ctx.data.clientId, session.user.id);
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     const [row] = await db
       .insert(payrollConcepto)
       .values({
@@ -522,9 +805,10 @@ export const updateConcepto = createServerFn({ method: "POST" })
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
-    await ensureClientBelongsToUser(ctx.data.clientId, session.user.id);
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     const { id, clientId, ...rest } = ctx.data;
     const set: Record<string, unknown> = { updatedAt: new Date(), ...rest };
     const [row] = await db
@@ -548,9 +832,10 @@ export const deleteConcepto = createServerFn({ method: "POST" })
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
-    await ensureClientBelongsToUser(ctx.data.clientId, session.user.id);
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     await db
       .delete(payrollConcepto)
       .where(
@@ -567,9 +852,8 @@ export const deleteConcepto = createServerFn({ method: "POST" })
 export const listEmpleados = createServerFn({ method: "GET" })
   .inputValidator(z.object({ clientId: z.string().uuid() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
-    await ensureClientBelongsToUser(ctx.data.clientId, session.user.id);
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     const rows = await db
       .select({
         empleado: payrollEmployee,
@@ -601,9 +885,10 @@ export const createEmpleado = createServerFn({ method: "POST" })
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
-    await ensureClientBelongsToUser(ctx.data.clientId, session.user.id);
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     const [row] = await db
       .insert(payrollEmployee)
       .values({
@@ -639,9 +924,10 @@ export const createEmpleadosMasivo = createServerFn({ method: "POST" })
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
-    await ensureClientBelongsToUser(ctx.data.clientId, session.user.id);
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
 
     const convenios = await db
       .select()
@@ -719,9 +1005,10 @@ export const updateEmpleado = createServerFn({ method: "POST" })
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
-    await ensureClientBelongsToUser(ctx.data.clientId, session.user.id);
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     const { id, clientId, fechaIngreso, ...rest } = ctx.data;
     const set: Record<string, unknown> = { ...rest, updatedAt: new Date() };
     if (fechaIngreso) set.fechaIngreso = parseISO(fechaIngreso);
@@ -746,9 +1033,10 @@ export const deleteEmpleado = createServerFn({ method: "POST" })
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
-    await ensureClientBelongsToUser(ctx.data.clientId, session.user.id);
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     await db
       .delete(payrollEmployee)
       .where(
@@ -765,9 +1053,8 @@ export const deleteEmpleado = createServerFn({ method: "POST" })
 export const listNovedadesByPeriodo = createServerFn({ method: "GET" })
   .inputValidator(z.object({ periodo: z.string(), clientId: z.string().uuid() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
-    await ensureClientBelongsToUser(ctx.data.clientId, session.user.id);
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     const novedades = await db
       .select({
         novedad: payrollNovedad,
@@ -798,15 +1085,16 @@ export const upsertNovedad = createServerFn({ method: "POST" })
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
     const [emp] = await db
       .select({ clientId: payrollEmployee.clientId })
       .from(payrollEmployee)
       .where(eq(payrollEmployee.id, ctx.data.empleadoId))
       .limit(1);
     if (!emp) throw new Error("Empleado no encontrado");
-    await ensureClientBelongsToUser(emp.clientId, session.user.id);
+    await ensureClientBelongsToOrg(emp.clientId, orgId);
     if (!puedeIngresarDatosPeriodo(ctx.data.periodo)) {
       throw new Error(
         "Solo se puede cargar información de meses anteriores al en curso."
@@ -999,9 +1287,10 @@ export const calcularLiquidacion = createServerFn({ method: "POST" })
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
-    await ensureClientBelongsToUser(ctx.data.clientId, session.user.id);
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     if (!puedeLiquidarPeriodo(ctx.data.periodo)) {
       throw new Error("Solo se puede liquidar el mes anterior al en curso.");
     }
@@ -1012,9 +1301,10 @@ export const calcularLiquidacion = createServerFn({ method: "POST" })
 export const calcularLiquidacionMasiva = createServerFn({ method: "POST" })
   .inputValidator(z.object({ clientId: z.string().uuid(), periodo: z.string() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
-    await ensureClientBelongsToUser(ctx.data.clientId, session.user.id);
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     if (!puedeLiquidarPeriodo(ctx.data.periodo)) {
       throw new Error("Solo se puede liquidar el mes anterior al en curso.");
     }
@@ -1047,9 +1337,10 @@ export const calcularLiquidacionMasiva = createServerFn({ method: "POST" })
 export const eliminarLiquidacionesDelPeriodo = createServerFn({ method: "POST" })
   .inputValidator(z.object({ clientId: z.string().uuid(), periodo: z.string() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
-    await ensureClientBelongsToUser(ctx.data.clientId, session.user.id);
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     const rows = await db
       .select({ id: payrollLiquidacion.id })
       .from(payrollLiquidacion)
@@ -1077,9 +1368,8 @@ export const listLiquidacionesByPeriodo = createServerFn({ method: "GET" })
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
-    await ensureClientBelongsToUser(ctx.data.clientId, session.user.id);
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     const conditions = [
       eq(payrollLiquidacion.periodo, ctx.data.periodo),
       eq(payrollEmployee.clientId, ctx.data.clientId),
@@ -1102,9 +1392,10 @@ export const listLiquidacionesByPeriodo = createServerFn({ method: "GET" })
 export const confirmarReciboLiquidacion = createServerFn({ method: "POST" })
   .inputValidator(z.object({ liquidacionId: z.string().uuid(), clientId: z.string().uuid() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
-    await ensureClientBelongsToUser(ctx.data.clientId, session.user.id);
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     const [row] = await db
       .select({ id: payrollLiquidacion.id })
       .from(payrollLiquidacion)
@@ -1128,9 +1419,8 @@ export const confirmarReciboLiquidacion = createServerFn({ method: "POST" })
 export const getPayrollEmployerConfig = createServerFn({ method: "GET" })
   .inputValidator(z.object({ clientId: z.string().uuid() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
-    await ensureClientBelongsToUser(ctx.data.clientId, session.user.id);
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     return {
       imprimirTotalRedondeado: false,
       firmaEmpleadorUrl: null as string | null,
@@ -1140,9 +1430,8 @@ export const getPayrollEmployerConfig = createServerFn({ method: "GET" })
 export const getReciboDetalle = createServerFn({ method: "GET" })
   .inputValidator(z.object({ liquidacionId: z.string().uuid(), clientId: z.string().uuid() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
-    await ensureClientBelongsToUser(ctx.data.clientId, session.user.id);
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     const [liq] = await db
       .select({
         liquidacion: payrollLiquidacion,

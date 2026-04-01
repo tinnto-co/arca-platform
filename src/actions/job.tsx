@@ -1,9 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
-import { getRequestHeaders } from "@tanstack/react-start/server";
 import z from "zod";
 import { db } from "@/lib/db";
 import { job, client, jobLog } from "@/drizzle/schema";
-import { auth } from "@/lib/auth";
+import { getSessionWithOrg } from "@/actions/helpers";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 
 const jobStatusEnum = z.enum(["pending", "running", "failed", "finished"]);
@@ -64,17 +63,15 @@ export const getJobs = createServerFn({
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
 
     const { page, limit, clientId, status, type } = ctx.data;
     const offset = (page - 1) * limit;
 
-    // Only allow jobs for clients that belong to the current user
     const userClients = await db
       .select({ id: client.id })
       .from(client)
-      .where(eq(client.userId, session.user.id));
+      .where(eq(client.organizationId, orgId));
 
     const clientIds = userClients.map((c) => c.id);
     if (clientIds.length === 0) {
@@ -156,16 +153,14 @@ export const getJobLogs = createServerFn({
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
 
     const { jobId, limit } = ctx.data;
 
-    // Verificar que el job pertenece a algún cliente del usuario
     const userClients = await db
       .select({ id: client.id })
       .from(client)
-      .where(eq(client.userId, session.user.id));
+      .where(eq(client.organizationId, orgId));
 
     const clientIds = userClients.map((c) => c.id);
     if (clientIds.length === 0) {

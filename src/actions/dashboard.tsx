@@ -1,22 +1,19 @@
 import { createServerFn } from "@tanstack/react-start";
-import { getRequestHeaders } from "@tanstack/react-start/server";
 import z from "zod";
 import { db } from "@/lib/db";
 import { client, invoice, debt, dueDate, notification } from "@/drizzle/schema";
-import { auth } from "@/lib/auth";
 import { eq, and, gte, lte, sql, inArray } from "drizzle-orm";
+import { getSessionWithOrg, getOrgClientIds } from "@/actions/helpers";
 
 export const getDashboardStats = createServerFn({
   method: "GET",
 }).handler(async () => {
-  const session = await auth.api.getSession({ headers: getRequestHeaders() });
-  if (!session?.user?.id) throw new Error("Unauthorized");
+  const { orgId } = await getSessionWithOrg();
 
-  // Get clients associated with the current user
   const userClients = await db
     .select({ id: client.id })
     .from(client)
-    .where(eq(client.userId, session.user.id));
+    .where(eq(client.organizationId, orgId));
 
   const userClientIds = userClients.map((c) => c.id);
 
@@ -140,14 +137,12 @@ export const getMonthlyEvolution = createServerFn({
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
 
-    // Get clients associated with the current user
     const userClients = await db
       .select({ id: client.id })
       .from(client)
-      .where(eq(client.userId, session.user.id));
+      .where(eq(client.organizationId, orgId));
 
     const userClientIds = userClients.map((c) => c.id);
 
@@ -155,7 +150,6 @@ export const getMonthlyEvolution = createServerFn({
       return [];
     }
 
-    // Get all invoices for user's clients
     const allInvoices = await db
       .select({
         direction: invoice.direction,
@@ -260,14 +254,12 @@ export const getUpcomingDueDates = createServerFn({
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
 
-    // Get clients associated with the current user
     const userClients = await db
       .select({ id: client.id })
       .from(client)
-      .where(eq(client.userId, session.user.id));
+      .where(eq(client.organizationId, orgId));
 
     const userClientIds = userClients.map((c) => c.id);
 
@@ -314,14 +306,12 @@ export const getOverdueDebts = createServerFn({
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
 
-    // Get clients associated with the current user
     const userClients = await db
       .select({ id: client.id })
       .from(client)
-      .where(eq(client.userId, session.user.id));
+      .where(eq(client.organizationId, orgId));
 
     const userClientIds = userClients.map((c) => c.id);
 
@@ -360,14 +350,12 @@ export const getRecentInvoices = createServerFn({
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
 
-    // Get clients associated with the current user
     const userClients = await db
       .select({ id: client.id })
       .from(client)
-      .where(eq(client.userId, session.user.id));
+      .where(eq(client.organizationId, orgId));
 
     const userClientIds = userClients.map((c) => c.id);
 
@@ -398,13 +386,12 @@ export const getRecentInvoices = createServerFn({
 export const getPendingNotificationsCount = createServerFn({
   method: "GET",
 }).handler(async () => {
-  const session = await auth.api.getSession({ headers: getRequestHeaders() });
-  if (!session?.user?.id) throw new Error("Unauthorized");
+  const { orgId } = await getSessionWithOrg();
 
   const userClients = await db
     .select({ id: client.id })
     .from(client)
-    .where(eq(client.userId, session.user.id));
+    .where(eq(client.organizationId, orgId));
 
   const userClientIds = userClients.map((c) => c.id);
 

@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Plus, ChevronDown, Building2, Layers, DollarSign, Trash2, Loader2, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,8 +35,8 @@ import {
   listConvenios,
   listCategoriasByConvenio,
   listEscalasByCategoria,
-  listConveniosPlantilla,
-  agregarConvenioDesdePlantilla,
+  listConveniosAfipEmpleadores,
+  agregarConvenioDesdeAfipEmpleadores,
   createConvenio,
   createCategoria,
   upsertEscala,
@@ -72,23 +72,29 @@ export function SueldosConvenios({ clientId }: SueldosConveniosProps) {
   });
 
   const [seleccionarConvenioOpen, setSeleccionarConvenioOpen] = useState(false);
-  const { data: conveniosPlantilla = [] } = useQuery({
-    queryKey: ["convenios-plantilla"],
-    queryFn: () => listConveniosPlantilla(),
-    enabled: seleccionarConvenioOpen,
+  const { data: conveniosAfip = [] } = useQuery({
+    queryKey: ["convenios-afip-empleadores", clientId],
+    queryFn: () => listConveniosAfipEmpleadores({ data: { clientId } }),
+    enabled: seleccionarConvenioOpen && !!clientId,
   });
-  const nombresConveniosDelCliente = (convenios ?? []).map((c) => c.nombre);
-  const agregarDesdePlantilla = useMutation({
-    mutationFn: (nombreConvenio: string) =>
-      agregarConvenioDesdePlantilla({ data: { clientId, nombreConvenio } }),
+
+  const convenioYaTieneCct = (cct: string) =>
+    (convenios ?? []).some(
+      (c) => c.nombre === cct || (c.descripcion ?? "").includes(cct)
+    );
+
+  const agregarDesdeAfip = useMutation({
+    mutationFn: (afipConvenioId: string) =>
+      agregarConvenioDesdeAfipEmpleadores({ data: { clientId, afipConvenioId } }),
     onSuccess: (result) => {
       if (result.created) {
-        toast.success("Convenio agregado al cliente");
+        toast.success("Convenio AFIP agregado al cliente");
         setSeleccionarConvenioOpen(false);
+        queryClient.invalidateQueries({ queryKey: ["convenios", clientId] });
       } else {
         toast.info(result.message ?? "El cliente ya tiene este convenio");
+        queryClient.invalidateQueries({ queryKey: ["convenios", clientId] });
       }
-      queryClient.invalidateQueries({ queryKey: ["convenios", clientId] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Error al agregar convenio"),
   });
@@ -112,42 +118,53 @@ export function SueldosConvenios({ clientId }: SueldosConveniosProps) {
       <Dialog open={seleccionarConvenioOpen} onOpenChange={setSeleccionarConvenioOpen}>
         <DialogContent className="max-w-md sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Seleccionar convenio para este cliente</DialogTitle>
+            <DialogTitle>Seleccionar CCT (AFIP) para este cliente</DialogTitle>
             <p className="text-sm text-muted-foreground">
-              Elija el convenio colectivo que corresponde a este cliente. Se crearán las categorías y escalas base.
+              Usamos el CCT scrapeado desde AFIP para este cliente. Se crearán las categorías y escalas base.
             </p>
           </DialogHeader>
           <div className="grid gap-2 py-4">
-            {conveniosPlantilla.map((c) => {
-              const yaTiene = nombresConveniosDelCliente.includes(c.nombre);
-              return (
-                <button
-                  key={c.nombre}
-                  type="button"
-                  onClick={() => !yaTiene && agregarDesdePlantilla.mutate(c.nombre)}
-                  disabled={yaTiene || agregarDesdePlantilla.isPending}
-                  className="flex items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50 disabled:opacity-60 disabled:hover:bg-transparent"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium">{c.nombre}</p>
-                    {c.descripcion && (
-                      <p className="mt-0.5 text-xs text-muted-foreground break-words">
-                        {c.descripcion}
-                      </p>
-                    )}
-                  </div>
-                  <span className="shrink-0">
-                    {yaTiene ? (
-                      <span className="text-xs text-muted-foreground">Ya asignado</span>
-                    ) : agregarDesdePlantilla.isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                    ) : (
-                      <CheckCircle2 className="h-5 w-5 text-primary" />
-                    )}
-                  </span>
-                </button>
-              );
-            })}
+            {conveniosAfip.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No hay convenios AFIP scrapeados para este cliente todavía.
+              </p>
+            ) : (
+              conveniosAfip.map((c) => {
+                const yaTiene = convenioYaTieneCct(c.cct);
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => !yaTiene && agregarDesdeAfip.mutate(c.id)}
+                    disabled={yaTiene || agregarDesdeAfip.isPending}
+                    className="flex items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50 disabled:opacity-60 disabled:hover:bg-transparent"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium">{c.cct}</p>
+                      {c.actividad && (
+                        <p className="mt-0.5 text-xs text-muted-foreground break-words">
+                          {c.actividad}
+                        </p>
+                      )}
+                      {c.fechaNovedad && (
+                        <p className="mt-0.5 text-[11px] text-muted-foreground break-words">
+                          Novedad: {c.fechaNovedad}
+                        </p>
+                      )}
+                    </div>
+                    <span className="shrink-0">
+                      {yaTiene ? (
+                        <span className="text-xs text-muted-foreground">Ya asignado</span>
+                      ) : agregarDesdeAfip.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                      ) : (
+                        <CheckCircle2 className="h-5 w-5 text-primary" />
+                      )}
+                    </span>
+                  </button>
+                );
+              })
+            )}
           </div>
         </DialogContent>
       </Dialog>

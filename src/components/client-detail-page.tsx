@@ -107,6 +107,7 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { userQuery } from "../lib/user-query";
 import { INVOICE_TYPES } from "../../../arca-scrapper/invoicesTypes";
 import {
   ChartContainer,
@@ -341,12 +342,18 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   }, [facturasSearchTerm]);
   const invoicesTableRef = useRef<InvoicesTableRef>(null);
   const queryClient = useQueryClient();
+  const { data: sessionUser } = useQuery(userQuery);
+  const orgKey = sessionUser?.activeOrganizationId ?? "__pending__";
 
   const markOpenedMutation = useMutation({
     mutationFn: (id: string) => markNotificationOpened({ data: { id } }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["unreadNotifications", clientId] });
-      queryClient.invalidateQueries({ queryKey: ["allUnreadForCounts", clientId] });
+      queryClient.invalidateQueries({
+        queryKey: ["unreadNotifications", orgKey, clientId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["allUnreadForCounts", orgKey, clientId],
+      });
     },
   });
   const ivaResumeRef = useRef<RenderIvaResumeRef>(null);
@@ -532,7 +539,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   });
 
   const { data: unreadNotifications, isLoading: loadingUnreadNotifications } = useQuery({
-    queryKey: ["unreadNotifications", clientId, resumenNotifProfileId],
+    queryKey: ["unreadNotifications", orgKey, clientId, resumenNotifProfileId],
     queryFn: () =>
       getNotifications({
         data: {
@@ -547,7 +554,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   });
 
   const { data: allUnreadForCounts } = useQuery({
-    queryKey: ["allUnreadForCounts", clientId],
+    queryKey: ["allUnreadForCounts", orgKey, clientId],
     queryFn: () =>
       getNotifications({
         data: {
@@ -1401,7 +1408,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
           <TabsTrigger
             value="deudas"
             className={cn(
-              lastDeudaJob?.failedReason
+              lastDeudaJob && !lastDeudaJob.success
                 ? "text-orange-600 dark:text-orange-400"
                 : undefined
             )}
@@ -1412,7 +1419,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
           <TabsTrigger
             value="vencimientos"
             className={cn(
-              lastVencimientosJob?.failedReason
+              lastVencimientosJob && !lastVencimientosJob.success
                 ? "text-orange-600 dark:text-orange-400"
                 : undefined
             )}
@@ -1423,7 +1430,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
           <TabsTrigger
             value="notificaciones"
             className={cn(
-              lastNotificacionesJob?.failedReason ||
+              (lastNotificacionesJob && !lastNotificacionesJob.success) ||
                 lastNotificacionesJob?.notificationFetchWarning
                 ? "text-orange-600 dark:text-orange-400"
                 : undefined
@@ -1435,7 +1442,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
           <TabsTrigger
             value="facturas"
             className={cn(
-              lastComprobantesJob?.failedReason
+              lastComprobantesJob && !lastComprobantesJob.success
                 ? "text-orange-600 dark:text-orange-400"
                 : undefined
             )}
@@ -1446,7 +1453,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
           <TabsTrigger
             value="iva"
             className={cn(
-              lastIvaJob?.failedReason
+              lastIvaJob && !lastIvaJob.success
                 ? "text-orange-600 dark:text-orange-400"
                 : undefined
             )}
@@ -2524,10 +2531,10 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                       queryKey: ["clientNotifications", clientId],
                     });
                     await queryClient.invalidateQueries({
-                      queryKey: ["unreadNotifications", clientId],
+                      queryKey: ["unreadNotifications", orgKey, clientId],
                     });
                     await queryClient.invalidateQueries({
-                      queryKey: ["allUnreadForCounts", clientId],
+                      queryKey: ["allUnreadForCounts", orgKey, clientId],
                     });
                     await queryClient.invalidateQueries({
                       queryKey: ["lastNotificacionesJob", clientId],

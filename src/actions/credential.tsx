@@ -1,9 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
-import { getRequestHeaders } from "@tanstack/react-start/server";
 import z from "zod";
 import { db } from "@/lib/db";
 import { credential } from "@/drizzle/schema";
-import { auth } from "@/lib/auth";
+import { getSessionWithOrg, assertCanWrite, getMemberRole } from "@/actions/helpers";
 import { eq, and } from "drizzle-orm";
 
 const arcaCredentialSchema = z.object({
@@ -25,8 +24,9 @@ export const createCredential = createServerFn({
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
 
     const { clientId, provider, data } = ctx.data;
 
@@ -54,8 +54,7 @@ export const getCredentials = createServerFn({
 })
   .inputValidator(z.object({ clientId: z.string() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    await getSessionWithOrg();
 
     const credentials = await db
       .select()
@@ -78,8 +77,7 @@ export const getCredential = createServerFn({
 })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    await getSessionWithOrg();
 
     const [credentialData] = await db
       .select()
@@ -103,8 +101,9 @@ export const updateCredential = createServerFn({
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
 
     const { id, provider, data } = ctx.data;
 
@@ -134,8 +133,9 @@ export const deleteCredential = createServerFn({
 })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
 
     const [deletedCredential] = await db
       .delete(credential)
