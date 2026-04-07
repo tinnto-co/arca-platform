@@ -24,14 +24,24 @@ import {
 import { getSessionWithOrg, assertCanWrite, getMemberRole } from "@/actions/helpers";
 import { eq, and, desc, asc, lte, or, isNull, gte, inArray, sql } from "drizzle-orm";
 
-/** Verifica que el cliente pertenezca a la organización. Lanza si no. */
+/** Verifica que el cliente pertenezca a la org. y tenga liquidación de sueldos habilitada. */
 async function ensureClientBelongsToOrg(clientId: string, orgId: string): Promise<void> {
   const [c] = await db
     .select({ id: client.id })
     .from(client)
-    .where(and(eq(client.id, clientId), eq(client.organizationId, orgId)))
+    .where(
+      and(
+        eq(client.id, clientId),
+        eq(client.organizationId, orgId),
+        eq(client.liquidaSueldos, true)
+      )
+    )
     .limit(1);
-  if (!c) throw new Error("Cliente no encontrado o no autorizado");
+  if (!c) {
+    throw new Error(
+      "Cliente no encontrado, no autorizado o sin liquidación de sueldos habilitada"
+    );
+  }
 }
 
 async function ensureProfileBelongsToClient(profileId: string, clientId: string): Promise<void> {

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   DollarSign,
@@ -26,7 +26,7 @@ import { SueldosConvenios } from "@/components/sueldos/SueldosConvenios";
 import { SueldosConceptos } from "@/components/sueldos/SueldosConceptos";
 import { SueldosSimulador } from "@/components/sueldos/SueldosSimulador";
 import { SueldosRecibo } from "@/components/sueldos/SueldosRecibo";
-import { getClients } from "@/actions/client";
+import { getClientsForSueldos } from "@/actions/client";
 
 export const Route = createFileRoute("/_authed/sueldos/")({
   component: RouteComponent,
@@ -37,9 +37,15 @@ function RouteComponent() {
   const [activeTab, setActiveTab] = useState("dashboard");
 
   const { data: clients = [] } = useQuery({
-    queryKey: ["clients"],
-    queryFn: () => getClients(),
+    queryKey: ["clients", "sueldos"],
+    queryFn: () => getClientsForSueldos(),
   });
+
+  useEffect(() => {
+    if (clientId && clients.length > 0 && !clients.some((c) => c.id === clientId)) {
+      setClientId("");
+    }
+  }, [clients, clientId]);
 
   return (
     <div className="space-y-4 p-4 md:space-y-6 md:p-0 md:m-[3rem] overflow-x-hidden">

@@ -125,6 +125,16 @@ const getInvoiceTypeLabel = (code: string | number | null | undefined) => {
   return INVOICE_TYPE_MAP.get(normalized) ?? normalized;
 };
 
+/** Fecha y hora para el texto "Ult. actualización" en pestañas de scrape (Deudas, Vencimientos, etc.). */
+const formatLastUpdateAt = (iso: string | Date) =>
+  new Date(iso).toLocaleString("es-AR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
 const facturasChartConfig = {
   ventas: { label: "Ventas", color: "hsl(142, 76%, 36%)" },
   compras: { label: "Compras", color: "hsl(0, 72%, 51%)" },
@@ -1836,11 +1846,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                       }
                       title={lastDeudaJob.failedReason ?? undefined}
                     >
-                      {new Date(lastDeudaJob.createdAt).toLocaleDateString("es-AR", {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      })}
+                      {formatLastUpdateAt(lastDeudaJob.createdAt)}
                     </span>
                   ) : (
                     "—"
@@ -2180,11 +2186,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                       }
                       title={lastVencimientosJob.failedReason ?? undefined}
                     >
-                      {new Date(lastVencimientosJob.createdAt).toLocaleDateString("es-AR", {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      })}
+                      {formatLastUpdateAt(lastVencimientosJob.createdAt)}
                     </span>
                   ) : (
                     "—"
@@ -2364,11 +2366,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                       }
                       title={lastNotificacionesJob.failedReason ?? undefined}
                     >
-                      {new Date(lastNotificacionesJob.createdAt).toLocaleDateString("es-AR", {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      })}
+                      {formatLastUpdateAt(lastNotificacionesJob.createdAt)}
                     </span>
                   ) : (
                     "—"
@@ -2486,11 +2484,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                       }
                       title={lastComprobantesJob.failedReason ?? undefined}
                     >
-                      {new Date(lastComprobantesJob.createdAt).toLocaleDateString("es-AR", {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      })}
+                      {formatLastUpdateAt(lastComprobantesJob.createdAt)}
                     </span>
                   ) : (
                     "—"
@@ -3303,11 +3297,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                       }
                       title={lastIvaJob.failedReason ?? undefined}
                     >
-                      {new Date(lastIvaJob.createdAt).toLocaleDateString("es-AR", {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      })}
+                      {formatLastUpdateAt(lastIvaJob.createdAt)}
                     </span>
                   ) : (
                     "—"

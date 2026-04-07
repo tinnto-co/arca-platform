@@ -191,6 +191,25 @@ export const getClients = createServerFn({
   }
 });
 
+/** Clientes habilitados para el módulo de liquidación de sueldos. */
+export const getClientsForSueldos = createServerFn({
+  method: "GET",
+}).handler(async () => {
+  try {
+    const { orgId } = await getSessionWithOrg();
+
+    const clients = await db
+      .select()
+      .from(client)
+      .where(and(eq(client.organizationId, orgId), eq(client.liquidaSueldos, true)))
+      .orderBy(asc(client.name));
+
+    return clients;
+  } catch (error) {
+    throw new Error(`Error loading clients: ${getErrorMessage(error)}`);
+  }
+});
+
 export const getClientsWithProfiles = createServerFn({
   method: "GET",
 }).handler(async () => {
