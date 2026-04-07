@@ -158,6 +158,39 @@ export const lsdPerfilConcepto = pgTable(
   ]
 );
 
+export const conceptoSos = pgTable(
+  "concepto_sos",
+  {
+    id: uuid("id").primaryKey().defaultRandom().notNull(),
+    codigo: text("codigo").notNull(),
+    nombre: text("nombre").notNull(),
+    codigoAfip: text("codigo_afip").notNull(),
+    conceptoAfipId: uuid("concepto_afip_id").references(() => lsdConceptoAfip.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [unique("concepto_sos_codigo_unique").on(table.codigo)]
+);
+
+export const conceptoSosProfile = pgTable(
+  "concepto_sos_profile",
+  {
+    id: uuid("id").primaryKey().defaultRandom().notNull(),
+    conceptoId: uuid("concepto_id")
+      .notNull()
+      .references(() => conceptoSos.id, { onDelete: "cascade" }),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profile.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("concepto_sos_profile_concepto_profile_unique").on(table.conceptoId, table.profileId),
+  ]
+);
+
 export const credential = pgTable("credential", {
   id: uuid("id").primaryKey().defaultRandom(),
   client: uuid("client_id").references(() => client.id, {
@@ -631,3 +664,83 @@ export const payrollLiquidacionDetalle = pgTable("payroll_liquidacion_detalle", 
     .$onUpdate(() => new Date())
     .notNull(),
 });
+
+/** Empleados vistos en importes Excel LSD (histórico), por perfil — separado de payroll_employee */
+export const liquidacionImportEmpleado = pgTable(
+  "liquidacion_import_empleado",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profile.id, { onDelete: "cascade" }),
+    cuil: text("cuil").notNull(),
+    legajo: text("legajo").notNull(),
+    nombre: text("nombre").notNull(),
+    fechaAlta: timestamp("fecha_alta", { mode: "date" }),
+    fechaBaja: timestamp("fecha_baja", { mode: "date" }),
+    modoContrato: text("modo_contrato"),
+    categoria: text("categoria"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    unique("liquidacion_import_empleado_profile_id_cuil_unique").on(
+      table.profileId,
+      table.cuil,
+    ),
+  ],
+);
+
+/** Totales del recibo importado por empleado y período */
+export const liquidacionImportRecibo = pgTable(
+  "liquidacion_import_recibo",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    empleadoId: uuid("empleado_id")
+      .notNull()
+      .references(() => liquidacionImportEmpleado.id, { onDelete: "cascade" }),
+    periodo: text("periodo").notNull(),
+    tipo: text("tipo").notNull(),
+    fecha: timestamp("fecha", { mode: "date" }),
+    haberes: numeric("haberes", { precision: 14, scale: 2 }).notNull(),
+    noRemunerativo: numeric("no_remunerativo", { precision: 14, scale: 2 }).notNull(),
+    descuentos: numeric("descuentos", { precision: 14, scale: 2 }).notNull(),
+    retenciones: numeric("retenciones", { precision: 14, scale: 2 }).notNull(),
+    neto: numeric("neto", { precision: 14, scale: 2 }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    unique("liquidacion_import_recibo_empleado_periodo_tipo_unique").on(
+      table.empleadoId,
+      table.periodo,
+      table.tipo,
+    ),
+  ],
+);
+
+/** Montos por código de concepto LSD en cada recibo importado */
+export const liquidacionImportConceptoValor = pgTable(
+  "liquidacion_import_concepto_valor",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    reciboId: uuid("recibo_id")
+      .notNull()
+      .references(() => liquidacionImportRecibo.id, { onDelete: "cascade" }),
+    codigo: text("codigo").notNull(),
+    monto: numeric("monto", { precision: 14, scale: 2 }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("liquidacion_import_concepto_valor_recibo_id_codigo_unique").on(
+      table.reciboId,
+      table.codigo,
+    ),
+  ],
+);

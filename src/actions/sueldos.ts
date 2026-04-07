@@ -6,6 +6,8 @@ import {
   profile,
   lsdConceptoAfip,
   lsdPerfilConcepto,
+  conceptoSos,
+  conceptoSosProfile,
   payrollConvenio,
   payrollConvenioCategoria,
   payrollEscala,
@@ -15,9 +17,12 @@ import {
   payrollLiquidacion,
   payrollLiquidacionDetalle,
   afipEmpleadoresConvenio,
+  liquidacionImportEmpleado,
+  liquidacionImportRecibo,
+  liquidacionImportConceptoValor,
 } from "@/drizzle/schema";
 import { getSessionWithOrg, assertCanWrite, getMemberRole } from "@/actions/helpers";
-import { eq, and, desc, lte, or, isNull, gte, inArray, sql } from "drizzle-orm";
+import { eq, and, desc, asc, lte, or, isNull, gte, inArray, sql } from "drizzle-orm";
 
 /** Verifica que el cliente pertenezca a la organización. Lanza si no. */
 async function ensureClientBelongsToOrg(clientId: string, orgId: string): Promise<void> {
@@ -178,8 +183,8 @@ export const listConveniosAfipEmpleadores = createServerFn({ method: "GET" })
       .orderBy(desc(afipEmpleadoresConvenio.updatedAt));
   });
 
-/** Lista conceptos AFIP asociados al perfil, y si ya existen mapeados en `payroll_concepto` del cliente. */
-export const listConceptosAfipByPerfil = createServerFn({ method: "GET" })
+/** Lista conceptos unificados SOS + AFIP por perfil, incluyendo subsistemas. */
+export const listConceptosByPerfil = createServerFn({ method: "GET" })
   .inputValidator(
     z.object({
       clientId: z.string().uuid(),
@@ -191,119 +196,50 @@ export const listConceptosAfipByPerfil = createServerFn({ method: "GET" })
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     await ensureProfileBelongsToClient(ctx.data.profileId, ctx.data.clientId);
 
-    const afipRows = await db
+    return db
       .select({
-        // AFIP / Lsd
         afipCodigo: lsdConceptoAfip.codigoAfip,
-        afipDescripcion: lsdConceptoAfip.descripcion,
-        perfilCodigoContribuyente: lsdPerfilConcepto.codigoContribuyente,
-        perfilDescripcionContribuyente: lsdPerfilConcepto.descripcionContribuyente,
-        perfilMarcaRepetible: lsdPerfilConcepto.marcaRepetible,
-        perfilAportesSipa: lsdPerfilConcepto.aportesSipa,
-        perfilContribucionesSipa: lsdPerfilConcepto.contribucionesSipa,
-        perfilAportesInssjyp: lsdPerfilConcepto.aportesInssjyp,
-        perfilContribucionesInssjyp: lsdPerfilConcepto.contribucionesInssjyp,
-        perfilAportesObraSocial: lsdPerfilConcepto.aportesObraSocial,
-        perfilContribucionesObraSocial: lsdPerfilConcepto.contribucionesObraSocial,
-        perfilAportesFsr: lsdPerfilConcepto.aportesFsr,
-        perfilContribucionesFsr: lsdPerfilConcepto.contribucionesFsr,
-        perfilAportesRenatea: lsdPerfilConcepto.aportesRenatea,
-        perfilContribucionesRenatea: lsdPerfilConcepto.contribucionesRenatea,
-        perfilContribucionesAaff: lsdPerfilConcepto.contribucionesAaff,
-        perfilContribucionesFne: lsdPerfilConcepto.contribucionesFne,
-        perfilContribucionesLrt: lsdPerfilConcepto.contribucionesLrt,
-        perfilAportesDiferenciales: lsdPerfilConcepto.aportesDiferenciales,
-        perfilAportesEspeciales: lsdPerfilConcepto.aportesEspeciales,
-        // Config payroll concept (nullable)
-        payrollId: payrollConcepto.id,
-        payrollCodigo: payrollConcepto.codigo,
-        payrollNombre: payrollConcepto.nombre,
-        payrollTipo: payrollConcepto.tipo,
-        payrollBaseCalculo: payrollConcepto.baseCalculo,
-        payrollFormula: payrollConcepto.formula,
-        payrollEsPorcentaje: payrollConcepto.esPorcentaje,
-        payrollOrden: payrollConcepto.orden,
-        payrollActivo: payrollConcepto.activo,
+        afipNombre: lsdConceptoAfip.descripcion,
+        codigoContribuyente: lsdPerfilConcepto.codigoContribuyente,
+        descripcionContribuyente: lsdPerfilConcepto.descripcionContribuyente,
+        marcaRepetible: lsdPerfilConcepto.marcaRepetible,
+        codigoSos: conceptoSos.codigo,
+        nombreSos: conceptoSos.nombre,
+        sosVinculadoPerfil: sql<boolean>`${conceptoSosProfile.id} is not null`,
+        aportesSipa: lsdPerfilConcepto.aportesSipa,
+        contribucionesSipa: lsdPerfilConcepto.contribucionesSipa,
+        aportesInssjyp: lsdPerfilConcepto.aportesInssjyp,
+        contribucionesInssjyp: lsdPerfilConcepto.contribucionesInssjyp,
+        aportesObraSocial: lsdPerfilConcepto.aportesObraSocial,
+        contribucionesObraSocial: lsdPerfilConcepto.contribucionesObraSocial,
+        aportesFsr: lsdPerfilConcepto.aportesFsr,
+        contribucionesFsr: lsdPerfilConcepto.contribucionesFsr,
+        aportesRenatea: lsdPerfilConcepto.aportesRenatea,
+        contribucionesRenatea: lsdPerfilConcepto.contribucionesRenatea,
+        contribucionesAaff: lsdPerfilConcepto.contribucionesAaff,
+        contribucionesFne: lsdPerfilConcepto.contribucionesFne,
+        contribucionesLrt: lsdPerfilConcepto.contribucionesLrt,
+        aportesDiferenciales: lsdPerfilConcepto.aportesDiferenciales,
+        aportesEspeciales: lsdPerfilConcepto.aportesEspeciales,
       })
       .from(lsdPerfilConcepto)
       .innerJoin(lsdConceptoAfip, eq(lsdPerfilConcepto.conceptoAfipId, lsdConceptoAfip.id))
       .leftJoin(
-        payrollConcepto,
+        conceptoSos,
         and(
-          eq(payrollConcepto.clientId, ctx.data.clientId),
-          // Los conceptos del perfil se identifican por `codigo_contribuyente`.
-          eq(payrollConcepto.codigo, lsdPerfilConcepto.codigoContribuyente)
+          eq(conceptoSos.conceptoAfipId, lsdPerfilConcepto.conceptoAfipId),
+          eq(conceptoSos.codigo, lsdPerfilConcepto.codigoContribuyente)
+        )
+      )
+      .leftJoin(
+        conceptoSosProfile,
+        and(
+          eq(conceptoSosProfile.conceptoId, conceptoSos.id),
+          eq(conceptoSosProfile.profileId, lsdPerfilConcepto.profileId)
         )
       )
       .where(eq(lsdPerfilConcepto.profileId, ctx.data.profileId))
       .orderBy(lsdPerfilConcepto.codigoContribuyente);
-
-    // Conserva conceptos “manuales” que existan en el cliente pero no están en la grilla AFIP del perfil.
-    const perfilCodes = new Set(
-      afipRows.map((r) => r.perfilCodigoContribuyente).filter((v): v is string => !!v)
-    );
-
-    const manualPayrollConcepts = await db
-      .select({
-        id: payrollConcepto.id,
-        codigo: payrollConcepto.codigo,
-        nombre: payrollConcepto.nombre,
-        tipo: payrollConcepto.tipo,
-        baseCalculo: payrollConcepto.baseCalculo,
-        formula: payrollConcepto.formula,
-        esPorcentaje: payrollConcepto.esPorcentaje,
-        orden: payrollConcepto.orden,
-        activo: payrollConcepto.activo,
-      })
-      .from(payrollConcepto)
-      .where(
-        and(eq(payrollConcepto.clientId, ctx.data.clientId))
-      );
-
-    const manualRows = manualPayrollConcepts
-      .filter((c) => !perfilCodes.has(c.codigo))
-      .map((c) => ({
-        // AFIP/Lsd
-        afipCodigo: c.codigo,
-        afipDescripcion: c.nombre,
-        perfilCodigoContribuyente: null,
-        perfilDescripcionContribuyente: null,
-        perfilMarcaRepetible: null,
-        perfilAportesSipa: null,
-        perfilContribucionesSipa: null,
-        perfilAportesInssjyp: null,
-        perfilContribucionesInssjyp: null,
-        perfilAportesObraSocial: null,
-        perfilContribucionesObraSocial: null,
-        perfilAportesFsr: null,
-        perfilContribucionesFsr: null,
-        perfilAportesRenatea: null,
-        perfilContribucionesRenatea: null,
-        perfilContribucionesAaff: null,
-        perfilContribucionesFne: null,
-        perfilContribucionesLrt: null,
-        perfilAportesDiferenciales: null,
-        perfilAportesEspeciales: null,
-        // payroll config
-        payrollId: c.id,
-        payrollCodigo: c.codigo,
-        payrollNombre: c.nombre,
-        payrollTipo: c.tipo,
-        payrollBaseCalculo: c.baseCalculo,
-        payrollFormula: c.formula,
-        payrollEsPorcentaje: c.esPorcentaje,
-        payrollOrden: c.orden,
-        payrollActivo: c.activo,
-      }));
-
-    const all = [...afipRows, ...manualRows];
-    all.sort((a, b) => {
-      const ao = a.payrollOrden ?? 0;
-      const bo = b.payrollOrden ?? 0;
-      if (ao !== bo) return ao - bo;
-      return a.afipCodigo.localeCompare(b.afipCodigo);
-    });
-    return all;
   });
 
 /** Convenios y categorías base por convenio (plantilla). */
@@ -866,6 +802,97 @@ export const listEmpleados = createServerFn({ method: "GET" })
       .where(eq(payrollEmployee.clientId, ctx.data.clientId))
       .orderBy(payrollEmployee.apellido, payrollEmployee.nombre);
     return rows;
+  });
+
+/** Empleados importados desde Excel LSD (por perfiles del cliente). */
+export const listImportEmpleados = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    const rows = await db
+      .select({
+        empleado: liquidacionImportEmpleado,
+        profileName: profile.name,
+        profileIdentityNumber: profile.identityNumber,
+      })
+      .from(liquidacionImportEmpleado)
+      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .where(eq(profile.client, ctx.data.clientId))
+      .orderBy(asc(liquidacionImportEmpleado.nombre));
+    return rows;
+  });
+
+/** Recibos importados por período (para selector en solapa Recibo). */
+export const listImportRecibosByPeriodo = createServerFn({ method: "GET" })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      periodo: z.string().regex(/^\d{4}-\d{2}$/),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    const rows = await db
+      .select({
+        recibo: liquidacionImportRecibo,
+        empleadoNombre: liquidacionImportEmpleado.nombre,
+        empleadoCuil: liquidacionImportEmpleado.cuil,
+        empleadoLegajo: liquidacionImportEmpleado.legajo,
+      })
+      .from(liquidacionImportRecibo)
+      .innerJoin(
+        liquidacionImportEmpleado,
+        eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
+      )
+      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .where(
+        and(
+          eq(profile.client, ctx.data.clientId),
+          eq(liquidacionImportRecibo.periodo, ctx.data.periodo)
+        )
+      )
+      .orderBy(asc(liquidacionImportEmpleado.nombre));
+    return rows;
+  });
+
+/** Detalle de un recibo importado + conceptos LSD. */
+export const getImportReciboDetalle = createServerFn({ method: "GET" })
+  .inputValidator(
+    z.object({
+      reciboId: z.string().uuid(),
+      clientId: z.string().uuid(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    const [row] = await db
+      .select({
+        recibo: liquidacionImportRecibo,
+        empleado: liquidacionImportEmpleado,
+      })
+      .from(liquidacionImportRecibo)
+      .innerJoin(
+        liquidacionImportEmpleado,
+        eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
+      )
+      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .where(
+        and(
+          eq(liquidacionImportRecibo.id, ctx.data.reciboId),
+          eq(profile.client, ctx.data.clientId)
+        )
+      )
+      .limit(1);
+    if (!row) throw new Error("Recibo no encontrado o no autorizado");
+    const conceptos = await db
+      .select()
+      .from(liquidacionImportConceptoValor)
+      .where(eq(liquidacionImportConceptoValor.reciboId, ctx.data.reciboId))
+      .orderBy(asc(liquidacionImportConceptoValor.codigo));
+    return { recibo: row.recibo, empleado: row.empleado, conceptos };
   });
 
 export const createEmpleado = createServerFn({ method: "POST" })

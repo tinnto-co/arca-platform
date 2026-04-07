@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Power, PowerOff } from "lucide-react";
-import { toast } from "sonner";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -12,34 +11,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -47,54 +20,43 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  listConceptosAfipByPerfil,
-  createConcepto,
-  updateConcepto,
-  deleteConcepto,
-} from "@/actions/sueldos";
+import { listConceptosByPerfil } from "@/actions/sueldos";
 import { getClientProfiles } from "@/actions/client";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import z from "zod";
-
-const schema = z.object({
-  codigo: z.string().min(1),
-  nombre: z.string().min(1),
-  tipo: z.enum(["remunerativo", "no_remunerativo", "descuento"]),
-  baseCalculo: z.string().optional(),
-  formula: z.string().min(1, "Fórmula requerida"),
-  esPorcentaje: z.boolean(),
-  // `Input type="number"` llega como string en muchos casos; lo convertimos explícitamente.
-  orden: z.preprocess((v) => (typeof v === "string" ? Number(v) : v), z.number()),
-});
-
-type FormValues = z.infer<typeof schema>;
-
-const TIPO_LABEL: Record<string, string> = {
-  remunerativo: "Remunerativo",
-  no_remunerativo: "No remunerativo",
-  descuento: "Descuento",
-};
-
-/** Quita del nombre la parte entre paréntesis con porcentaje (ej. "Jubilación (11%)" → "Jubilación") */
-function nombreSinParentesis(nombre: string): string {
-  return nombre.replace(/\s*\([^)]*%[^)]*\)\s*$/, "").trim();
-}
 
 interface SueldosConceptosProps {
   clientId: string;
 }
 
-type ConceptoRow = Awaited<ReturnType<typeof listConceptosAfipByPerfil>>[number];
+type ConceptoRow = Awaited<ReturnType<typeof listConceptosByPerfil>>[number];
+
+function subsistemasAportes(row: ConceptoRow): string[] {
+  const out: string[] = [];
+  if (row.aportesSipa) out.push("SIPA");
+  if (row.aportesInssjyp) out.push("INSSJYP");
+  if (row.aportesObraSocial) out.push("Obra Social");
+  if (row.aportesFsr) out.push("FSR");
+  if (row.aportesRenatea) out.push("RENATEA");
+  if (row.aportesDiferenciales) out.push("Diferenciales");
+  if (row.aportesEspeciales) out.push("Especiales");
+  return out;
+}
+
+function subsistemasContribuciones(row: ConceptoRow): string[] {
+  const out: string[] = [];
+  if (row.contribucionesSipa) out.push("SIPA");
+  if (row.contribucionesInssjyp) out.push("INSSJYP");
+  if (row.contribucionesObraSocial) out.push("Obra Social");
+  if (row.contribucionesFsr) out.push("FSR");
+  if (row.contribucionesRenatea) out.push("RENATEA");
+  if (row.contribucionesAaff) out.push("AAFF");
+  if (row.contribucionesFne) out.push("FNE");
+  if (row.contribucionesLrt) out.push("LRT");
+  return out;
+}
 
 export function SueldosConceptos({ clientId }: SueldosConceptosProps) {
-  const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
-  const [editingConcepto, setEditingConcepto] = useState<ConceptoRow | null>(null);
-  const [conceptoToDelete, setConceptoToDelete] = useState<ConceptoRow | null>(null);
-
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   const { data: perfiles = [] } = useQuery({
     queryKey: ["profiles", clientId],
@@ -109,482 +71,169 @@ export function SueldosConceptos({ clientId }: SueldosConceptosProps) {
   }, [perfiles, selectedProfileId]);
 
   const { data: conceptos = [], isLoading } = useQuery({
-    queryKey: ["afip-conceptos", clientId, selectedProfileId],
+    queryKey: ["conceptos-by-perfil", clientId, selectedProfileId],
     queryFn: () =>
-      listConceptosAfipByPerfil({
+      listConceptosByPerfil({
         data: { clientId, profileId: selectedProfileId! },
       }),
     enabled: !!clientId && !!selectedProfileId,
   });
 
-  const form = useForm<FormValues>({
-    resolver: zodResolver(schema) as any,
-    defaultValues: {
-      codigo: "",
-      nombre: "",
-      tipo: "remunerativo",
-      baseCalculo: "basico",
-      formula: "0 * basico",
-      esPorcentaje: true,
-      orden: 0,
-    },
-  });
+  const rowsWithKey = useMemo(
+    () =>
+      conceptos.map((row) => ({
+        ...row,
+        __key: `${row.codigoContribuyente}-${row.afipCodigo}`,
+      })),
+    [conceptos]
+  );
 
-  const create = useMutation({
-    mutationFn: (data: FormValues) =>
-      createConcepto({
-        data: {
-          clientId,
-          codigo: data.codigo,
-          nombre: data.nombre,
-          tipo: data.tipo,
-          baseCalculo: data.baseCalculo ?? "basico",
-          formula: data.formula,
-          esPorcentaje: data.esPorcentaje,
-          orden: data.orden,
-        },
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["afip-conceptos", clientId, selectedProfileId] });
-      setOpen(false);
-      setEditingConcepto(null);
-      form.reset(defaultFormValues);
-      toast.success("Concepto creado");
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
-  });
-
-  const defaultFormValues: FormValues = {
-    codigo: "",
-    nombre: "",
-    tipo: "remunerativo",
-    baseCalculo: "basico",
-    formula: "0 * basico",
-    esPorcentaje: true,
-    orden: 0,
-  };
-
-  const update = useMutation({
-    mutationFn: (data: FormValues & { id: string }) =>
-      updateConcepto({
-        data: {
-          id: data.id,
-          clientId,
-          codigo: data.codigo,
-          nombre: data.nombre,
-          tipo: data.tipo,
-          baseCalculo: data.baseCalculo ?? "basico",
-          formula: data.formula,
-          esPorcentaje: data.esPorcentaje,
-          orden: data.orden,
-        },
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["afip-conceptos", clientId, selectedProfileId] });
-      setOpen(false);
-      setEditingConcepto(null);
-      form.reset(defaultFormValues);
-      toast.success("Concepto actualizado");
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
-  });
-
-  const remove = useMutation({
-    mutationFn: (id: string) => deleteConcepto({ data: { id, clientId } }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["afip-conceptos", clientId, selectedProfileId] });
-      setConceptoToDelete(null);
-      toast.success("Concepto eliminado");
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
-  });
-
-  const toggleActivo = useMutation({
-    mutationFn: ({ id, activo }: { id: string; activo: boolean }) =>
-      updateConcepto({ data: { id, clientId, activo } }),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["afip-conceptos", clientId, selectedProfileId] });
-      toast.success(variables.activo ? "Concepto habilitado" : "Concepto deshabilitado");
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
-  });
-
-  const handleOpenCreate = () => {
-    setEditingConcepto(null);
-    form.reset(defaultFormValues);
-    setOpen(true);
-  };
-
-  const handleOpenEdit = (row: ConceptoRow) => {
-    if (!row.payrollId) return;
-    setEditingConcepto(row);
-    form.reset({
-      codigo: row.payrollCodigo ?? row.afipCodigo,
-      nombre: row.payrollNombre ?? row.afipDescripcion,
-      tipo: row.payrollTipo ?? "remunerativo",
-      baseCalculo: row.payrollBaseCalculo ?? "basico",
-      formula: row.payrollFormula ?? "0 * basico",
-      esPorcentaje: row.payrollEsPorcentaje ?? true,
-      orden: row.payrollOrden ?? 0,
+  const toggleRow = (key: string) => {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
     });
-    setOpen(true);
-  };
-
-  const handleOpenConfigureFromAfip = (row: ConceptoRow) => {
-    setEditingConcepto(row);
-    form.reset({
-      codigo: row.perfilCodigoContribuyente ?? row.afipCodigo,
-      nombre: row.perfilDescripcionContribuyente ?? row.afipDescripcion,
-      tipo: "remunerativo",
-      baseCalculo: "basico",
-      formula: "0 * basico",
-      esPorcentaje: true,
-      orden: 0,
-    });
-    setOpen(true);
-  };
-
-  const handleSubmit = (data: FormValues) => {
-    const payrollId = editingConcepto?.payrollId;
-    if (payrollId) {
-      update.mutate({ ...data, id: payrollId });
-    } else {
-      create.mutate(data);
-    }
   };
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-muted-foreground">Perfil:</span>
-          <Select
-            value={selectedProfileId ?? ""}
-            onValueChange={(v) => setSelectedProfileId(v)}
-            disabled={!perfiles.length}
-          >
-            <SelectTrigger className="w-[320px]">
-              <SelectValue placeholder="Seleccione un perfil" />
-            </SelectTrigger>
-            <SelectContent>
-              {perfiles.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.name} {p.identityNumber ? `(${p.identityNumber})` : ""}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="flex justify-end">
-          <Button onClick={handleOpenCreate}>
-            <Plus className="mr-2 h-4 w-4" />
-            Nuevo concepto
-          </Button>
-        </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium text-muted-foreground">Perfil:</span>
+        <Select
+          value={selectedProfileId ?? ""}
+          onValueChange={(v) => setSelectedProfileId(v)}
+          disabled={!perfiles.length}
+        >
+          <SelectTrigger className="w-[320px]">
+            <SelectValue placeholder="Seleccione un perfil" />
+          </SelectTrigger>
+          <SelectContent>
+            {perfiles.map((p) => (
+              <SelectItem key={p.id} value={p.id}>
+                {p.name} {p.identityNumber ? `(${p.identityNumber})` : ""}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
-
-      <Dialog
-        open={open}
-        onOpenChange={(isOpen) => {
-          if (!isOpen) setEditingConcepto(null);
-          setOpen(isOpen);
-        }}
-      >
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>
-              {editingConcepto
-                ? editingConcepto.payrollId
-                  ? "Editar concepto salarial"
-                  : "Configurar concepto desde AFIP"
-                : "Nuevo concepto salarial"}
-            </DialogTitle>
-          </DialogHeader>
-          <Form {...form}>
-            <form
-              onSubmit={form.handleSubmit(handleSubmit)}
-              className="space-y-4"
-            >
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="codigo"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Código</FormLabel>
-                      <FormControl>
-                        <Input {...field} placeholder="BASICO" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="nombre"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Nombre</FormLabel>
-                      <FormControl>
-                        <Input {...field} placeholder="Sueldo básico" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-              <FormField
-                control={form.control}
-                name="tipo"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Tipo</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="remunerativo">Remunerativo</SelectItem>
-                        <SelectItem value="no_remunerativo">No remunerativo</SelectItem>
-                        <SelectItem value="descuento">Descuento</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="formula"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Fórmula</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        placeholder="0.11 * basico | valor | 1000"
-                      />
-                    </FormControl>
-                    <p className="text-xs text-muted-foreground">
-                      Variables: basico, antiguedad, bruto, valor, cantidad
-                    </p>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <div className="flex gap-4">
-                <FormField
-                  control={form.control}
-                  name="esPorcentaje"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>¿Porcentaje?</FormLabel>
-                      <Select
-                        onValueChange={(v) => field.onChange(v === "true")}
-                        value={String(field.value)}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="true">Sí</SelectItem>
-                          <SelectItem value="false">Monto fijo</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="orden"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Orden</FormLabel>
-                      <FormControl>
-                        <Input type="number" {...field} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-              </div>
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-                  Cancelar
-                </Button>
-                <Button type="submit" disabled={create.isPending || update.isPending}>
-                  {editingConcepto?.payrollId ? "Guardar" : "Crear"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </Form>
-        </DialogContent>
-      </Dialog>
 
       <div className="rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Código</TableHead>
-              <TableHead>Nombre</TableHead>
-              <TableHead>Tipo</TableHead>
-              <TableHead>Orden</TableHead>
-              <TableHead className="text-center">Estado</TableHead>
-              <TableHead className="w-[160px] text-right">Acciones</TableHead>
+              <TableHead className="w-10" />
+              <TableHead>Cód. SOS</TableHead>
+              <TableHead>Concepto SOS</TableHead>
+              <TableHead>Cód. AFIP</TableHead>
+              <TableHead>Concepto AFIP</TableHead>
+              <TableHead>Cód. Contribuyente</TableHead>
+              <TableHead className="text-center">Repetible</TableHead>
+              <TableHead className="text-center">Vinculado perfil</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground">
-                  Cargando…
+                <TableCell colSpan={8} className="text-center text-muted-foreground">
+                  Cargando...
+                </TableCell>
+              </TableRow>
+            ) : rowsWithKey.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center text-muted-foreground">
+                  No hay conceptos para este perfil.
                 </TableCell>
               </TableRow>
             ) : (
-              conceptos.map((row) => {
-                const configured = !!row.payrollId;
-                const activo = row.payrollActivo;
+              rowsWithKey.map((row) => {
+                const expanded = expandedRows.has(row.__key);
+                const aportes = subsistemasAportes(row);
+                const contribuciones = subsistemasContribuciones(row);
 
                 return (
-                  <TableRow
-                    key={`${row.afipCodigo}-${row.perfilCodigoContribuyente ?? ""}-${row.payrollId ?? ""}`}
-                    className={configured && activo === false ? "opacity-60" : undefined}
-                  >
-                    <TableCell className="font-mono text-sm">
-                      {row.payrollCodigo ?? row.perfilCodigoContribuyente ?? row.afipCodigo}
-                    </TableCell>
-                    <TableCell>
-                      {nombreSinParentesis(
-                        row.payrollNombre ??
-                          row.perfilDescripcionContribuyente ??
-                          row.afipDescripcion
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {configured ? (
-                        <Badge
-                          variant={row.payrollTipo === "descuento" ? "secondary" : "default"}
+                  <Fragment key={row.__key}>
+                    <TableRow>
+                      <TableCell>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => toggleRow(row.__key)}
+                          title={expanded ? "Ocultar subsistemas" : "Ver subsistemas"}
                         >
-                          {TIPO_LABEL[row.payrollTipo ?? ""] ?? row.payrollTipo ?? "—"}
+                          {expanded ? (
+                            <ChevronDown className="h-4 w-4" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">{row.codigoSos ?? "-"}</TableCell>
+                      <TableCell>{row.nombreSos ?? "-"}</TableCell>
+                      <TableCell className="font-mono text-sm">{row.afipCodigo}</TableCell>
+                      <TableCell>{row.afipNombre}</TableCell>
+                      <TableCell className="font-mono text-sm">{row.codigoContribuyente}</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant={row.marcaRepetible ? "default" : "secondary"}>
+                          {row.marcaRepetible ? "Sí" : "No"}
                         </Badge>
-                      ) : (
-                        <Badge variant="secondary">No configurado</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>{configured ? row.payrollOrden ?? 0 : "—"}</TableCell>
-                    <TableCell className="text-center">
-                      {configured ? (
-                        activo !== false ? (
-                          <Badge variant="default" className="bg-green-600">
-                            Activo
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary">Inactivo</Badge>
-                        )
-                      ) : (
-                        <Badge variant="secondary">Sin config</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
-                        {configured ? (
-                          <>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() =>
-                                toggleActivo.mutate({
-                                  id: row.payrollId!,
-                                  activo: activo === false,
-                                })
-                              }
-                              disabled={toggleActivo.isPending}
-                              title={activo !== false ? "Deshabilitar" : "Habilitar"}
-                            >
-                              {activo !== false ? (
-                                <PowerOff className="h-4 w-4 text-amber-600" />
-                              ) : (
-                                <Power className="h-4 w-4 text-green-600" />
-                              )}
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => handleOpenEdit(row)}
-                              title="Editar"
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-destructive hover:text-destructive"
-                              onClick={() => setConceptoToDelete(row)}
-                              title="Eliminar"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </>
-                        ) : (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleOpenConfigureFromAfip(row)}
-                          >
-                            Configurar
-                          </Button>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant={row.sosVinculadoPerfil ? "default" : "secondary"}>
+                          {row.sosVinculadoPerfil ? "Sí" : "No"}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                    {expanded ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="bg-muted/40">
+                          <div className="grid gap-4 py-2 md:grid-cols-2">
+                            <div>
+                              <p className="mb-2 text-xs font-medium uppercase text-muted-foreground">
+                                Aportes
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                {aportes.length > 0 ? (
+                                  aportes.map((item) => (
+                                    <Badge key={`a-${row.__key}-${item}`} variant="outline">
+                                      {item}
+                                    </Badge>
+                                  ))
+                                ) : (
+                                  <span className="text-sm text-muted-foreground">Sin aportes activos</span>
+                                )}
+                              </div>
+                            </div>
+                            <div>
+                              <p className="mb-2 text-xs font-medium uppercase text-muted-foreground">
+                                Contribuciones
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                {contribuciones.length > 0 ? (
+                                  contribuciones.map((item) => (
+                                    <Badge key={`c-${row.__key}-${item}`} variant="outline">
+                                      {item}
+                                    </Badge>
+                                  ))
+                                ) : (
+                                  <span className="text-sm text-muted-foreground">Sin contribuciones activas</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                  </Fragment>
                 );
               })
             )}
           </TableBody>
         </Table>
       </div>
-
-      <AlertDialog open={!!conceptoToDelete} onOpenChange={() => setConceptoToDelete(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Eliminar concepto?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Se eliminará el concepto configurado &quot;
-              {conceptoToDelete
-                ? nombreSinParentesis(
-                    conceptoToDelete.payrollNombre ??
-                      conceptoToDelete.perfilDescripcionContribuyente ??
-                      conceptoToDelete.afipDescripcion
-                  )
-                : ""}
-              &quot; (
-              {conceptoToDelete?.payrollCodigo ?? conceptoToDelete?.perfilCodigoContribuyente ?? conceptoToDelete?.afipCodigo}). Las novedades y detalles
-              de liquidación que lo usen pueden verse afectados.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() =>
-                conceptoToDelete?.payrollId && remove.mutate(conceptoToDelete.payrollId)
-              }
-            >
-              {remove.isPending ? "Eliminando…" : "Eliminar"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

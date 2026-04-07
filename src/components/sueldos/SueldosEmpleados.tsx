@@ -1,10 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { format } from "date-fns";
-import { Plus, Pencil, Upload, Trash2 } from "lucide-react";
-import { toast } from "sonner";
+import { useQuery } from "@tanstack/react-query";
+import { format, parseISO } from "date-fns";
 import {
   Table,
   TableBody,
@@ -13,217 +10,127 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  listEmpleados,
-  listConvenios,
-  updateEmpleado,
-  deleteEmpleado,
-} from "@/actions/sueldos";
-import { EmpleadoFormDialog } from "./EmpleadoFormDialog";
-import { EmpleadosCargaMasivaDialog } from "./EmpleadosCargaMasivaDialog";
-
-const TIPO_JORNADA: Record<string, string> = {
-  full_time: "Tiempo completo",
-  part_time: "Part time",
-  reducida: "Reducida",
-};
+import { listImportEmpleados } from "@/actions/sueldos";
 
 interface SueldosEmpleadosProps {
   clientId: string;
 }
 
+function formatDate(d: Date | string | null | undefined): string {
+  if (d == null) return "—";
+  try {
+    const dt = typeof d === "string" ? parseISO(d) : d;
+    return format(dt, "dd/MM/yyyy");
+  } catch {
+    return "—";
+  }
+}
+
 export function SueldosEmpleados({ clientId }: SueldosEmpleadosProps) {
-  const queryClient = useQueryClient();
-  const [formOpen, setFormOpen] = useState(false);
-  const [cargaMasivaOpen, setCargaMasivaOpen] = useState(false);
-  const [editId, setEditId] = useState<string | null>(null);
-  const [empleadoToDelete, setEmpleadoToDelete] = useState<{
-    id: string;
-    nombre: string;
-    apellido: string;
-  } | null>(null);
-
   const { data: rows = [], isLoading } = useQuery({
-    queryKey: ["empleados", clientId],
-    queryFn: () => listEmpleados({ data: { clientId } }),
+    queryKey: ["import-empleados", clientId],
+    queryFn: () => listImportEmpleados({ data: { clientId } }),
     enabled: !!clientId,
-  });
-
-  const { data: convenios = [] } = useQuery({
-    queryKey: ["convenios", clientId],
-    queryFn: () => listConvenios({ data: { clientId } }),
-    enabled: !!clientId,
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: updateEmpleado,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["empleados", clientId] });
-      setFormOpen(false);
-      setEditId(null);
-      toast.success("Empleado actualizado");
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => deleteEmpleado({ data: { id, clientId } }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["empleados", clientId] });
-      setEmpleadoToDelete(null);
-      toast.success("Empleado eliminado");
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
   });
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-end gap-2">
-        <Button variant="outline" onClick={() => setCargaMasivaOpen(true)}>
-          <Upload className="mr-2 h-4 w-4" />
-          Carga masiva (Excel)
-        </Button>
-        <Button onClick={() => { setEditId(null); setFormOpen(true); }}>
-          <Plus className="mr-2 h-4 w-4" />
-          Nuevo empleado
-        </Button>
-      </div>
+    <div className="w-full min-w-0 max-w-full space-y-4">
+      <p className="text-sm text-muted-foreground break-words">
+        Datos importados desde liquidaciones LSD (histórico por perfil fiscal del cliente). Solo
+        lectura.
+      </p>
 
-      <EmpleadosCargaMasivaDialog
-        open={cargaMasivaOpen}
-        onOpenChange={setCargaMasivaOpen}
-        clientId={clientId}
-        onSuccess={() => queryClient.invalidateQueries({ queryKey: ["empleados", clientId] })}
-      />
-
-      <EmpleadoFormDialog
-        open={formOpen}
-        onOpenChange={setFormOpen}
-        clientId={clientId}
-        convenios={convenios}
-        editId={editId}
-        empleado={rows.find((r) => r.empleado.id === editId)?.empleado}
-        onSuccess={() => {
-          queryClient.invalidateQueries({ queryKey: ["empleados", clientId] });
-          setFormOpen(false);
-          setEditId(null);
-        }}
-      />
-
-      <div className="rounded-md border">
-        <Table>
+      {/* Contiene el scroll horizontal solo acá si hiciera falta en pantallas muy chicas */}
+      <div className="w-full min-w-0 max-w-full overflow-x-auto rounded-md border">
+        <Table className="w-full min-w-0 table-fixed text-sm">
+          <colgroup>
+            <col className="w-[18%]" />
+            <col className="w-[11%]" />
+            <col className="w-[8%]" />
+            <col className="w-[9%]" />
+            <col className="w-[9%]" />
+            <col className="w-[8%]" />
+            <col className="w-[13%]" />
+            <col className="w-[15%]" />
+            <col className="w-[9%]" />
+          </colgroup>
           <TableHeader>
             <TableRow>
-              <TableHead>Apellido y nombre</TableHead>
-              <TableHead>CUIT/CUIL</TableHead>
-              <TableHead>Ingreso</TableHead>
-              <TableHead>Convenio</TableHead>
-              <TableHead>Categoría</TableHead>
-              <TableHead>Jornada</TableHead>
+              <TableHead className="whitespace-normal">Nombre</TableHead>
+              <TableHead>CUIL</TableHead>
+              <TableHead>Legajo</TableHead>
+              <TableHead className="whitespace-normal">Fecha alta</TableHead>
+              <TableHead className="whitespace-normal">Fecha baja</TableHead>
+              <TableHead className="whitespace-normal">Modo</TableHead>
+              <TableHead className="whitespace-normal">Categoría</TableHead>
+              <TableHead className="whitespace-normal">Perfil</TableHead>
               <TableHead>Estado</TableHead>
-              <TableHead className="w-[120px] text-right">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground">
+                <TableCell colSpan={9} className="text-center text-muted-foreground">
                   Cargando…
                 </TableCell>
               </TableRow>
+            ) : rows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={9} className="text-center text-muted-foreground">
+                  No hay empleados importados para este cliente. Ejecutá el import de Excel en el
+                  scrapper o verificá que los perfiles estén vinculados al cliente.
+                </TableCell>
+              </TableRow>
             ) : (
-              rows.map((r) => (
-                <TableRow key={r.empleado.id}>
-                  <TableCell className="font-medium">
-                    {r.empleado.apellido}, {r.empleado.nombre}
-                  </TableCell>
-                  <TableCell>{r.empleado.cuilCuil}</TableCell>
-                  <TableCell>{format(r.empleado.fechaIngreso, "dd/MM/yyyy")}</TableCell>
-                  <TableCell>{r.convenioNombre}</TableCell>
-                  <TableCell>{r.categoriaNombre}</TableCell>
-                  <TableCell>{TIPO_JORNADA[r.empleado.tipoJornada] ?? r.empleado.tipoJornada}</TableCell>
-                  <TableCell>
-                    {r.empleado.activo ? (
-                      <Badge variant="default">Activo</Badge>
-                    ) : (
-                      <Badge variant="secondary">Inactivo</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => {
-                          setEditId(r.empleado.id);
-                          setFormOpen(true);
-                        }}
-                        title="Editar"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
-                        onClick={() =>
-                          setEmpleadoToDelete({
-                            id: r.empleado.id,
-                            nombre: r.empleado.nombre,
-                            apellido: r.empleado.apellido,
-                          })
-                        }
-                        title="Eliminar"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
+              rows.map((r) => {
+                const e = r.empleado;
+                const baja = e.fechaBaja != null;
+                return (
+                  <TableRow key={e.id}>
+                    <TableCell className="min-w-0 break-words font-medium align-top py-2">
+                      {e.nombre}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap align-top py-2 tabular-nums">
+                      {e.cuil}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap align-top py-2 tabular-nums">
+                      {e.legajo}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap align-top py-2">
+                      {formatDate(e.fechaAlta ?? undefined)}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap align-top py-2">
+                      {formatDate(e.fechaBaja ?? undefined)}
+                    </TableCell>
+                    <TableCell className="min-w-0 break-words align-top py-2">
+                      {e.modoContrato ?? "—"}
+                    </TableCell>
+                    <TableCell className="min-w-0 break-words align-top py-2">
+                      {e.categoria ?? "—"}
+                    </TableCell>
+                    <TableCell className="min-w-0 break-words align-top py-2 text-muted-foreground">
+                      {r.profileName}
+                      {r.profileIdentityNumber ? ` (${r.profileIdentityNumber})` : ""}
+                    </TableCell>
+                    <TableCell className="align-top py-2">
+                      {baja ? (
+                        <Badge variant="secondary" className="whitespace-nowrap">
+                          Baja
+                        </Badge>
+                      ) : (
+                        <Badge variant="default" className="whitespace-nowrap">
+                          Activo
+                        </Badge>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>
       </div>
-
-      <AlertDialog
-        open={!!empleadoToDelete}
-        onOpenChange={() => !deleteMutation.isPending && setEmpleadoToDelete(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Eliminar empleado?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Se eliminará a {empleadoToDelete?.apellido}, {empleadoToDelete?.nombre}. También se
-              eliminarán sus novedades y liquidaciones asociadas. Esta acción no se puede deshacer.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleteMutation.isPending}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => empleadoToDelete && deleteMutation.mutate(empleadoToDelete.id)}
-            >
-              {deleteMutation.isPending ? "Eliminando…" : "Eliminar"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

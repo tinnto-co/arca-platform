@@ -35,10 +35,6 @@ export const Route = createFileRoute("/_authed/sueldos/")({
 function RouteComponent() {
   const [clientId, setClientId] = useState<string>("");
   const [activeTab, setActiveTab] = useState("dashboard");
-  const [reciboPreload, setReciboPreload] = useState<{
-    periodo: string;
-    liquidacionId: string;
-  } | null>(null);
 
   const { data: clients = [] } = useQuery({
     queryKey: ["clients"],
@@ -82,7 +78,7 @@ function RouteComponent() {
           </CardContent>
         </Card>
       ) : (
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full min-w-0 max-w-full">
           <TabsList className="flex flex-wrap h-auto gap-1 bg-muted/50 p-1">
             <TabsTrigger value="dashboard" className="gap-2">
               <LayoutDashboard className="h-4 w-4" />
@@ -109,7 +105,7 @@ function RouteComponent() {
               Recibo
             </TabsTrigger>
           </TabsList>
-          <div className="mt-4">
+          <div className="mt-4 min-w-0 max-w-full">
             <TabsContent value="dashboard">
               <SueldosDashboard clientId={clientId} />
             </TabsContent>
@@ -123,20 +119,10 @@ function RouteComponent() {
               <SueldosConceptos clientId={clientId} />
             </TabsContent>
             <TabsContent value="simulador">
-              <SueldosSimulador
-                clientId={clientId}
-                onConfirmRecibo={(periodo, liquidacionId) => {
-                  setReciboPreload({ periodo, liquidacionId });
-                  setActiveTab("recibo");
-                }}
-              />
+              <SueldosSimulador clientId={clientId} />
             </TabsContent>
             <TabsContent value="recibo">
-              <SueldosRecibo
-                clientId={clientId}
-                reciboPreload={reciboPreload}
-                onPreloadApplied={() => setReciboPreload(null)}
-              />
+              <SueldosRecibo clientId={clientId} />
             </TabsContent>
           </div>
         </Tabs>
