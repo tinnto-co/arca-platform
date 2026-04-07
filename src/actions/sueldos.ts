@@ -24,16 +24,19 @@ import {
 import { getSessionWithOrg, assertCanWrite, getMemberRole } from "@/actions/helpers";
 import { eq, and, desc, asc, lte, or, isNull, gte, inArray, sql } from "drizzle-orm";
 
-/** Verifica que el cliente pertenezca a la org. y tenga liquidación de sueldos habilitada. */
+/** Verifica que el cliente pertenezca a la org. y tenga al menos un perfil con liquidación de sueldos habilitada. */
 async function ensureClientBelongsToOrg(clientId: string, orgId: string): Promise<void> {
   const [c] = await db
     .select({ id: client.id })
     .from(client)
+    .innerJoin(
+      profile,
+      and(eq(profile.client, client.id), eq(profile.liquidaSueldos, true))
+    )
     .where(
       and(
         eq(client.id, clientId),
         eq(client.organizationId, orgId),
-        eq(client.liquidaSueldos, true)
       )
     )
     .limit(1);
@@ -814,9 +817,9 @@ export const listEmpleados = createServerFn({ method: "GET" })
     return rows;
   });
 
-/** Empleados importados desde Excel LSD (por perfiles del cliente). */
+/** Empleados importados desde Excel LSD (filtrados por perfil seleccionado). */
 export const listImportEmpleados = createServerFn({ method: "GET" })
-  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .inputValidator(z.object({ clientId: z.string().uuid(), profileId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
@@ -828,8 +831,13 @@ export const listImportEmpleados = createServerFn({ method: "GET" })
       })
       .from(liquidacionImportEmpleado)
       .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
-      .where(eq(profile.client, ctx.data.clientId))
-      .orderBy(asc(liquidacionImportEmpleado.nombre));
+      .where(
+        and(
+          eq(profile.client, ctx.data.clientId),
+          eq(liquidacionImportEmpleado.profileId, ctx.data.profileId)
+        )
+      )
+      .orderBy(sql`${liquidacionImportEmpleado.legajo}::int asc`);
     return rows;
   });
 

@@ -15,6 +15,7 @@ import { listImportEmpleados } from "@/actions/sueldos";
 
 interface SueldosEmpleadosProps {
   clientId: string;
+  profileId: string;
 }
 
 function formatDate(d: Date | string | null | undefined): string {
@@ -27,11 +28,11 @@ function formatDate(d: Date | string | null | undefined): string {
   }
 }
 
-export function SueldosEmpleados({ clientId }: SueldosEmpleadosProps) {
+export function SueldosEmpleados({ clientId, profileId }: SueldosEmpleadosProps) {
   const { data: rows = [], isLoading } = useQuery({
-    queryKey: ["import-empleados", clientId],
-    queryFn: () => listImportEmpleados({ data: { clientId } }),
-    enabled: !!clientId,
+    queryKey: ["import-empleados", clientId, profileId],
+    queryFn: () => listImportEmpleados({ data: { clientId, profileId } }),
+    enabled: !!clientId && !!profileId,
   });
 
   return (
@@ -41,17 +42,15 @@ export function SueldosEmpleados({ clientId }: SueldosEmpleadosProps) {
         lectura.
       </p>
 
-      {/* Contiene el scroll horizontal solo acá si hiciera falta en pantallas muy chicas */}
       <div className="w-full min-w-0 max-w-full overflow-x-auto rounded-md border">
         <Table className="w-full min-w-0 table-fixed text-sm">
           <colgroup>
-            <col className="w-[18%]" />
-            <col className="w-[11%]" />
-            <col className="w-[8%]" />
-            <col className="w-[9%]" />
-            <col className="w-[9%]" />
-            <col className="w-[8%]" />
+            <col className="w-[22%]" />
             <col className="w-[13%]" />
+            <col className="w-[9%]" />
+            <col className="w-[11%]" />
+            <col className="w-[11%]" />
+            <col className="w-[10%]" />
             <col className="w-[15%]" />
             <col className="w-[9%]" />
           </colgroup>
@@ -64,20 +63,19 @@ export function SueldosEmpleados({ clientId }: SueldosEmpleadosProps) {
               <TableHead className="whitespace-normal">Fecha baja</TableHead>
               <TableHead className="whitespace-normal">Modo</TableHead>
               <TableHead className="whitespace-normal">Categoría</TableHead>
-              <TableHead className="whitespace-normal">Perfil</TableHead>
               <TableHead>Estado</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center text-muted-foreground">
+                <TableCell colSpan={8} className="text-center text-muted-foreground">
                   Cargando…
                 </TableCell>
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center text-muted-foreground">
+                <TableCell colSpan={8} className="text-center text-muted-foreground">
                   No hay empleados importados para este cliente. Ejecutá el import de Excel en el
                   scrapper o verificá que los perfiles estén vinculados al cliente.
                 </TableCell>
@@ -108,10 +106,6 @@ export function SueldosEmpleados({ clientId }: SueldosEmpleadosProps) {
                     </TableCell>
                     <TableCell className="min-w-0 break-words align-top py-2">
                       {e.categoria ?? "—"}
-                    </TableCell>
-                    <TableCell className="min-w-0 break-words align-top py-2 text-muted-foreground">
-                      {r.profileName}
-                      {r.profileIdentityNumber ? ` (${r.profileIdentityNumber})` : ""}
                     </TableCell>
                     <TableCell className="align-top py-2">
                       {baja ? (

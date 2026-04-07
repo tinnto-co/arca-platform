@@ -33,7 +33,7 @@ export const Route = createFileRoute("/_authed/sueldos/")({
 });
 
 function RouteComponent() {
-  const [clientId, setClientId] = useState<string>("");
+  const [selectedOptionId, setSelectedOptionId] = useState<string>("");
   const [activeTab, setActiveTab] = useState("dashboard");
 
   const { data: clients = [] } = useQuery({
@@ -41,11 +41,15 @@ function RouteComponent() {
     queryFn: () => getClientsForSueldos(),
   });
 
+  const selectedOption = clients.find((c) => c.id === selectedOptionId);
+  const clientId = selectedOption?.clientId ?? "";
+  const profileId = selectedOption?.profileId ?? "";
+
   useEffect(() => {
-    if (clientId && clients.length > 0 && !clients.some((c) => c.id === clientId)) {
-      setClientId("");
+    if (selectedOptionId && clients.length > 0 && !clients.some((c) => c.id === selectedOptionId)) {
+      setSelectedOptionId("");
     }
-  }, [clients, clientId]);
+  }, [clients, selectedOptionId]);
 
   return (
     <div className="space-y-4 p-4 md:space-y-6 md:p-0 md:m-[3rem] overflow-x-hidden">
@@ -57,7 +61,7 @@ function RouteComponent() {
         <div className="flex items-center gap-2">
           <UserCircle className="h-5 w-5 text-muted-foreground" />
           <span className="text-sm font-medium text-muted-foreground">Cliente:</span>
-          <Select value={clientId} onValueChange={setClientId}>
+          <Select value={selectedOptionId} onValueChange={setSelectedOptionId}>
             <SelectTrigger className="w-[280px]">
               <SelectValue placeholder="Seleccione un cliente" />
             </SelectTrigger>
@@ -116,13 +120,13 @@ function RouteComponent() {
               <SueldosDashboard clientId={clientId} />
             </TabsContent>
             <TabsContent value="empleados">
-              <SueldosEmpleados clientId={clientId} />
+              <SueldosEmpleados clientId={clientId} profileId={profileId} />
             </TabsContent>
             <TabsContent value="convenios">
               <SueldosConvenios clientId={clientId} />
             </TabsContent>
             <TabsContent value="conceptos">
-              <SueldosConceptos clientId={clientId} />
+              <SueldosConceptos clientId={clientId} profileId={profileId} />
             </TabsContent>
             <TabsContent value="simulador">
               <SueldosSimulador clientId={clientId} />

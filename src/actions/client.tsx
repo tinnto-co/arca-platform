@@ -3,7 +3,14 @@ import { getRequestHeaders } from "@tanstack/react-start/server";
 import z from "zod";
 import axios from "axios";
 import { db } from "@/lib/db";
-import { client, profile, debt, dueDate, ivaScrape, job } from "@/drizzle/schema";
+import {
+  client,
+  profile,
+  debt,
+  dueDate,
+  ivaScrape,
+  job,
+} from "@/drizzle/schema";
 import { auth } from "@/lib/auth";
 import { getSessionWithOrg, assertCanWrite, getMemberRole } from "@/actions/helpers";
 import { eq, and, inArray, desc, asc } from "drizzle-orm";
@@ -41,7 +48,6 @@ export const createClient = createServerFn({
       phone: z.string().optional(),
       address: z.string().optional(),
       image: z.string().optional(),
-      liquidaSueldos: z.boolean().optional(),
       convenioMultilateral: z.boolean().optional(),
       regimenLocal: z.boolean().optional(),
       fiscalCondition: z
@@ -68,7 +74,6 @@ export const createClient = createServerFn({
       phone,
       address,
       image,
-      liquidaSueldos,
       convenioMultilateral,
       regimenLocal,
       fiscalCondition,
@@ -88,7 +93,6 @@ export const createClient = createServerFn({
         password,
         image: image || null,
         status: "active",
-        liquidaSueldos: liquidaSueldos ?? false,
         convenioMultilateral: convenioMultilateral ?? false,
         regimenLocal: regimenLocal ?? false,
         fiscalCondition: fiscalCondition ?? null,
@@ -198,13 +202,36 @@ export const getClientsForSueldos = createServerFn({
   try {
     const { orgId } = await getSessionWithOrg();
 
-    const clients = await db
-      .select()
-      .from(client)
-      .where(and(eq(client.organizationId, orgId), eq(client.liquidaSueldos, true)))
-      .orderBy(asc(client.name));
+    const rows = await db
+      .select({
+        profileId: profile.id,
+        profileName: profile.name,
+        profileIdentityNumber: profile.identityNumber,
+        clientId: client.id,
+        clientIdentityNumber: client.identityNumber,
+      })
+      .from(profile)
+      .innerJoin(client, eq(profile.client, client.id))
+      .where(
+        and(
+          eq(client.organizationId, orgId),
+          eq(profile.liquidaSueldos, true)
+        )
+      )
+      .orderBy(asc(profile.name));
 
-    return clients;
+    return rows.map((p) => ({
+      id: `profile:${p.profileId}`,
+      clientId: p.clientId,
+      profileId: p.profileId,
+      name: p.profileName,
+      label: `${p.profileName}${
+        p.profileIdentityNumber || p.clientIdentityNumber
+          ? ` (${p.profileIdentityNumber ?? p.clientIdentityNumber})`
+          : ""
+      }`,
+      type: "profile" as const,
+    }));
   } catch (error) {
     throw new Error(`Error loading clients: ${getErrorMessage(error)}`);
   }
@@ -402,7 +429,6 @@ export const updateClient = createServerFn({
       phone: z.string().optional().or(z.literal("")),
       address: z.string().optional().or(z.literal("")),
       image: z.string().optional(),
-      liquidaSueldos: z.boolean().optional(),
       convenioMultilateral: z.boolean().optional(),
       regimenLocal: z.boolean().optional(),
       fiscalCondition: z
@@ -431,10 +457,6 @@ export const updateClient = createServerFn({
         phone: updateData.phone || "",
         address: updateData.address || "",
         image: updateData.image || null,
-        liquidaSueldos:
-          typeof updateData.liquidaSueldos === "boolean"
-            ? updateData.liquidaSueldos
-            : undefined,
         convenioMultilateral:
           typeof updateData.convenioMultilateral === "boolean"
             ? updateData.convenioMultilateral
