@@ -578,6 +578,7 @@ export const payrollEmployee = pgTable("payroll_employee", {
     .references(() => payrollConvenioCategoria.id, { onDelete: "restrict" }),
   tipoJornada: payrollConvenioTipoJornadaEnum("tipo_jornada").notNull().default("full_time"),
   activo: boolean("activo").default(true).notNull(),
+  importEmpleadoId: uuid("import_empleado_id").references(() => liquidacionImportEmpleado.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
     .defaultNow()
@@ -680,6 +681,7 @@ export const liquidacionImportEmpleado = pgTable(
     fechaBaja: timestamp("fecha_baja", { mode: "date" }),
     modoContrato: text("modo_contrato"),
     categoria: text("categoria"),
+    origen: text("origen").notNull().default("import"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()

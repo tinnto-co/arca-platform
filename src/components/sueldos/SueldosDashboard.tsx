@@ -1,9 +1,9 @@
-"use client";
+'use client';
 
-import { useState, useMemo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { format } from "date-fns";
-import { es } from "date-fns/locale";
+import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
 import {
   LayoutDashboard,
   Users,
@@ -13,10 +13,10 @@ import {
   Calendar,
   Database,
   Trash2,
-} from "lucide-react";
-import { toast } from "sonner";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+} from 'lucide-react';
+import { toast } from 'sonner';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,40 +26,46 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+} from '@/components/ui/alert-dialog';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from '@/components/ui/select';
 import {
   listLiquidacionesByPeriodo,
   listEmpleados,
+  listImportEmpleados,
   listConvenios,
   calcularLiquidacionMasiva,
   aplicarPlantillaBaseSueldos,
   eliminarLiquidacionesDelPeriodo,
-} from "@/actions/sueldos";
+} from '@/actions/sueldos';
 import {
   getPeriodoMesAnterior,
   puedeLiquidarPeriodo,
-} from "@/lib/payroll-period-rules";
+} from '@/lib/payroll-period-rules';
 
 const now = new Date();
-const [PERIODO_INICIAL_ANO, PERIODO_INICIAL_MES] = getPeriodoMesAnterior().split("-");
+const [PERIODO_INICIAL_ANO, PERIODO_INICIAL_MES] =
+  getPeriodoMesAnterior().split('-');
 const ANOS = Array.from({ length: 6 }, (_, i) => now.getFullYear() - i);
 const MESES = Array.from({ length: 12 }, (_, i) => ({
-  value: String(i + 1).padStart(2, "0"),
-  label: format(new Date(2000, i, 1), "MMMM", { locale: es }),
+  value: String(i + 1).padStart(2, '0'),
+  label: format(new Date(2000, i, 1), 'MMMM', { locale: es }),
 }));
 
 interface SueldosDashboardProps {
   clientId: string;
+  profileId: string;
 }
 
-export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
+export function SueldosDashboard({
+  clientId,
+  profileId,
+}: SueldosDashboardProps) {
   const queryClient = useQueryClient();
   const [ano, setAno] = useState(PERIODO_INICIAL_ANO);
   const [mes, setMes] = useState(PERIODO_INICIAL_MES);
@@ -67,19 +73,25 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
   const permiteLiquidar = puedeLiquidarPeriodo(periodo);
 
   const { data: liquidaciones = [], isLoading: loadingLiq } = useQuery({
-    queryKey: ["liquidaciones", clientId, periodo],
+    queryKey: ['liquidaciones', clientId, periodo],
     queryFn: () => listLiquidacionesByPeriodo({ data: { clientId, periodo } }),
     enabled: !!clientId,
   });
 
   const { data: empleados = [] } = useQuery({
-    queryKey: ["empleados", clientId],
+    queryKey: ['empleados', clientId],
     queryFn: () => listEmpleados({ data: { clientId } }),
     enabled: !!clientId,
   });
 
+  const { data: importEmpleados = [] } = useQuery({
+    queryKey: ['import-empleados', clientId, profileId],
+    queryFn: () => listImportEmpleados({ data: { clientId, profileId } }),
+    enabled: !!clientId && !!profileId,
+  });
+
   const { data: convenios = [] } = useQuery({
-    queryKey: ["convenios", clientId],
+    queryKey: ['convenios', clientId],
     queryFn: () => listConvenios({ data: { clientId } }),
     enabled: !!clientId,
   });
@@ -89,23 +101,34 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
     onSuccess: (result) => {
       const parts: string[] = [];
       if (result.conceptosCreated + result.conceptosUpdated > 0)
-        parts.push(`Conceptos: ${result.conceptosCreated} creados, ${result.conceptosUpdated} actualizados`);
-      toast.success(parts.length ? `Plantilla base: ${parts.join(". ")}` : "Plantilla base aplicada.");
-      queryClient.invalidateQueries({ queryKey: ["conceptos", clientId] });
+        parts.push(
+          `Conceptos: ${result.conceptosCreated} creados, ${result.conceptosUpdated} actualizados`
+        );
+      toast.success(
+        parts.length
+          ? `Plantilla base: ${parts.join('. ')}`
+          : 'Plantilla base aplicada.'
+      );
+      queryClient.invalidateQueries({ queryKey: ['conceptos', clientId] });
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Error al cargar plantilla"),
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : 'Error al cargar plantilla'),
   });
 
   const liquidacionMasiva = useMutation({
-    mutationFn: (p: string) => calcularLiquidacionMasiva({ data: { clientId, periodo: p } }),
+    mutationFn: (p: string) =>
+      calcularLiquidacionMasiva({ data: { clientId, periodo: p } }),
     onSuccess: (results) => {
       const ok = results.filter((r) => r.ok).length;
       const fail = results.filter((r) => !r.ok).length;
-      if (fail === 0) toast.success(`Liquidación masiva: ${ok} empleados procesados.`);
+      if (fail === 0)
+        toast.success(`Liquidación masiva: ${ok} empleados procesados.`);
       else toast.warning(`${ok} OK, ${fail} con error. Revisar datos.`);
-      queryClient.invalidateQueries({ queryKey: ["liquidaciones", clientId, periodo] });
+      queryClient.invalidateQueries({
+        queryKey: ['liquidaciones', clientId, periodo],
+      });
     },
-    onError: () => toast.error("Error al ejecutar liquidación masiva"),
+    onError: () => toast.error('Error al ejecutar liquidación masiva'),
   });
 
   const [deleteLiquidacionesOpen, setDeleteLiquidacionesOpen] = useState(false);
@@ -117,11 +140,14 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
       toast.success(
         result.deleted > 0
           ? `Se eliminaron ${result.deleted} liquidación(es) del período ${periodo}.`
-          : "No había liquidaciones para eliminar."
+          : 'No había liquidaciones para eliminar.'
       );
-      queryClient.invalidateQueries({ queryKey: ["liquidaciones", clientId, periodo] });
+      queryClient.invalidateQueries({
+        queryKey: ['liquidaciones', clientId, periodo],
+      });
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Error al eliminar"),
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : 'Error al eliminar'),
   });
 
   const totalNeto = liquidaciones.reduce(
@@ -145,9 +171,10 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
             Datos base de sueldos
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Cargue o actualice solo los <strong>conceptos</strong> típicos (básico, antigüedad,
-            presentismo, descuentos, etc.). Los convenios se asignan en la solapa Convenios con
-            &quot;Seleccionar convenio&quot;.
+            Cargue o actualice solo los <strong>conceptos</strong> típicos
+            (básico, antigüedad, presentismo, descuentos, etc.). Los convenios
+            se asignan en la solapa Convenios con &quot;Seleccionar
+            convenio&quot;.
           </p>
         </CardHeader>
         <CardContent>
@@ -226,7 +253,7 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{empleados.length}</div>
+            <div className="text-2xl font-bold">{importEmpleados.length}</div>
           </CardContent>
         </Card>
         <Card>
@@ -238,7 +265,7 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {loadingLiq ? "—" : liquidaciones.length}
+              {loadingLiq ? '—' : liquidaciones.length}
             </div>
           </CardContent>
         </Card>
@@ -251,7 +278,9 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {loadingLiq ? "—" : `$${totalBruto.toLocaleString("es-AR", { minimumFractionDigits: 2 })}`}
+              {loadingLiq
+                ? '—'
+                : `$${totalBruto.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`}
             </div>
           </CardContent>
         </Card>
@@ -264,7 +293,9 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {loadingLiq ? "—" : `$${totalNeto.toLocaleString("es-AR", { minimumFractionDigits: 2 })}`}
+              {loadingLiq
+                ? '—'
+                : `$${totalNeto.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`}
             </div>
           </CardContent>
         </Card>
@@ -276,7 +307,8 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
             <div>
               <CardTitle>Últimas liquidaciones del período</CardTitle>
               <p className="text-sm text-muted-foreground">
-                Período {periodo}. Use &quot;Liquidación masiva&quot; para recalcular.
+                Período {periodo}. Use &quot;Liquidación masiva&quot; para
+                recalcular.
               </p>
             </div>
             <Button
@@ -299,7 +331,8 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
             </div>
           ) : liquidaciones.length === 0 ? (
             <p className="text-muted-foreground">
-              No hay liquidaciones para este período. Configure empleados, convenios y conceptos, luego ejecute liquidación masiva.
+              No hay liquidaciones para este período. Configure empleados,
+              convenios y conceptos, luego ejecute liquidación masiva.
             </p>
           ) : (
             <ul className="space-y-2">
@@ -312,7 +345,10 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
                     {l.empleado.apellido}, {l.empleado.nombre}
                   </span>
                   <span className="font-medium">
-                    ${Number(l.liquidacion.neto).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                    $
+                    {Number(l.liquidacion.neto).toLocaleString('es-AR', {
+                      minimumFractionDigits: 2,
+                    })}
                   </span>
                 </li>
               ))}
@@ -323,15 +359,20 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
 
       <AlertDialog
         open={deleteLiquidacionesOpen}
-        onOpenChange={(open) => !eliminarLiquidaciones.isPending && setDeleteLiquidacionesOpen(open)}
+        onOpenChange={(open) =>
+          !eliminarLiquidaciones.isPending && setDeleteLiquidacionesOpen(open)
+        }
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Eliminar liquidaciones del período?</AlertDialogTitle>
+            <AlertDialogTitle>
+              ¿Eliminar liquidaciones del período?
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              Se eliminarán todas las liquidaciones del período {periodo} para este cliente
-              ({liquidaciones.length} en total). Los recibos confirmados también se eliminarán.
-              Esta acción no se puede deshacer.
+              Se eliminarán todas las liquidaciones del período {periodo} para
+              este cliente ({liquidaciones.length} en total). Los recibos
+              confirmados también se eliminarán. Esta acción no se puede
+              deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -342,7 +383,7 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => eliminarLiquidaciones.mutate()}
             >
-              {eliminarLiquidaciones.isPending ? "Eliminando…" : "Eliminar"}
+              {eliminarLiquidaciones.isPending ? 'Eliminando…' : 'Eliminar'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
