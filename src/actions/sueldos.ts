@@ -73,11 +73,24 @@ async function ensureProfileBelongsToClient(
   if (!p) throw new Error('Perfil no encontrado o no autorizado');
 }
 
+function extractCctCodigo(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const match = raw.match(/\b(\d{2,4})\/(\d{2,4})\b/);
+  if (!match) return null;
+  const izquierda = String(parseInt(match[1], 10));
+  const derecha = String(parseInt(match[2], 10)).padStart(2, '0');
+  return `${izquierda}/${derecha}`;
+}
+
 import {
   evaluatePayrollFormula,
   roundMoney,
   type PayrollFormulaContext,
 } from '../lib/payroll-formula';
+import {
+  CONVENIOS_REFERENCIA,
+  getPlantillaPorActividad,
+} from '../lib/payroll-convenios-referencia';
 import {
   puedeLiquidarPeriodo,
   puedeIngresarDatosPeriodo,
@@ -91,15 +104,44 @@ function getPeriodKey(date: Date): string {
 // ---------- Convenios ----------
 
 export const listConvenios = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      profileId: z.string().uuid().optional(),
+    })
+  )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
-    return db
+    const convenios = await db
       .select()
       .from(payrollConvenio)
       .where(eq(payrollConvenio.clientId, ctx.data.clientId))
       .orderBy(payrollConvenio.nombre);
+
+    if (!ctx.data.profileId) return convenios;
+
+    await ensureProfileBelongsToClient(ctx.data.profileId, ctx.data.clientId);
+    const conveniosAfip = await db
+      .select({ cct: afipEmpleadoresConvenio.cct })
+      .from(afipEmpleadoresConvenio)
+      .where(eq(afipEmpleadoresConvenio.profileId, ctx.data.profileId));
+
+    const cctSet = new Set(
+      conveniosAfip
+        .map((row) => extractCctCodigo(row.cct))
+        .filter((value): value is string => Boolean(value))
+    );
+    if (cctSet.size === 0) return [];
+
+    return convenios.filter((convenio) => {
+      const candidates = [
+        convenio.cctCodigo,
+        extractCctCodigo(convenio.nombre),
+        extractCctCodigo(convenio.descripcion),
+      ].filter((v): v is string => Boolean(v));
+      return candidates.some((cct) => cctSet.has(cct));
+    });
   });
 
 export const createConvenio = createServerFn({ method: 'POST' })
@@ -120,6 +162,7 @@ export const createConvenio = createServerFn({ method: 'POST' })
       .values({
         clientId: ctx.data.clientId,
         nombre: ctx.data.nombre,
+        cctCodigo: extractCctCodigo(ctx.data.nombre),
         descripcion: ctx.data.descripcion ?? null,
       })
       .returning();
@@ -144,6 +187,7 @@ export const updateConvenio = createServerFn({ method: 'POST' })
       .update(payrollConvenio)
       .set({
         nombre: ctx.data.nombre,
+        cctCodigo: extractCctCodigo(ctx.data.nombre),
         descripcion: ctx.data.descripcion ?? null,
         updatedAt: new Date(),
       })
@@ -284,123 +328,6 @@ export const listConceptosByPerfil = createServerFn({ method: 'GET' })
       .orderBy(lsdPerfilConcepto.codigoContribuyente);
   });
 
-/** Convenios y categorías base por convenio (plantilla). */
-const CONVENIOS_PLANTILLA = [
-  {
-    nombre: 'Comercio',
-    descripcion:
-      'Convenio Colectivo de Trabajo para el sector Comercio (plantilla base).',
-    categorias: [
-      {
-        codigo: '1',
-        nombre: 'Empleado de comercio',
-        orden: 10,
-        montoBasico: '350000',
-      },
-      { codigo: '2', nombre: 'Encargado', orden: 20, montoBasico: '400000' },
-      {
-        codigo: '3',
-        nombre: 'Jefe de sector',
-        orden: 30,
-        montoBasico: '450000',
-      },
-    ],
-  },
-  {
-    nombre: 'Gastronomía',
-    descripcion:
-      'Convenio Colectivo de Trabajo para Gastronomía (plantilla base).',
-    categorias: [
-      {
-        codigo: '1',
-        nombre: 'Ayudante de cocina',
-        orden: 10,
-        montoBasico: '350000',
-      },
-      { codigo: '2', nombre: 'Cocinero', orden: 20, montoBasico: '400000' },
-      {
-        codigo: '3',
-        nombre: 'Jefe de cocina',
-        orden: 30,
-        montoBasico: '450000',
-      },
-    ],
-  },
-  {
-    nombre: 'Pasteleros',
-    descripcion:
-      'Convenio Colectivo de Trabajo para Pasteleros (plantilla base).',
-    categorias: [
-      {
-        codigo: '1',
-        nombre: 'Ayudante pastelero',
-        orden: 10,
-        montoBasico: '350000',
-      },
-      { codigo: '2', nombre: 'Pastelero', orden: 20, montoBasico: '400000' },
-      {
-        codigo: '3',
-        nombre: 'Pastelero especializado',
-        orden: 30,
-        montoBasico: '450000',
-      },
-    ],
-  },
-  {
-    nombre: 'Plásticos',
-    descripcion:
-      'Convenio Colectivo de Trabajo para la industria del Plástico (plantilla base).',
-    categorias: [
-      { codigo: '1', nombre: 'Operario', orden: 10, montoBasico: '350000' },
-      {
-        codigo: '2',
-        nombre: 'Operario calificado',
-        orden: 20,
-        montoBasico: '400000',
-      },
-      { codigo: '3', nombre: 'Supervisor', orden: 30, montoBasico: '450000' },
-    ],
-  },
-  {
-    nombre: 'Construcción',
-    descripcion:
-      'Convenio Colectivo de Trabajo para la Construcción (plantilla base).',
-    categorias: [
-      { codigo: '1', nombre: 'Oficial', orden: 10, montoBasico: '350000' },
-      {
-        codigo: '2',
-        nombre: 'Oficial especializado',
-        orden: 20,
-        montoBasico: '400000',
-      },
-      {
-        codigo: '3',
-        nombre: 'Encargado / Capataz',
-        orden: 30,
-        montoBasico: '450000',
-      },
-    ],
-  },
-];
-
-function getPlantillaPorActividad(actividad: string) {
-  const a = (actividad ?? '').toLowerCase();
-
-  // Heurística simple para mapear `actividad` (AFIP) a una de las 5 plantillas existentes.
-  if (a.includes('comercio'))
-    return CONVENIOS_PLANTILLA.find((c) => c.nombre === 'Comercio') ?? null;
-  if (a.includes('gastron'))
-    return CONVENIOS_PLANTILLA.find((c) => c.nombre === 'Gastronomía') ?? null;
-  if (a.includes('pastel'))
-    return CONVENIOS_PLANTILLA.find((c) => c.nombre === 'Pasteleros') ?? null;
-  if (a.includes('plasti'))
-    return CONVENIOS_PLANTILLA.find((c) => c.nombre === 'Plásticos') ?? null;
-  if (a.includes('constru'))
-    return CONVENIOS_PLANTILLA.find((c) => c.nombre === 'Construcción') ?? null;
-
-  return null;
-}
-
 /** Crea un `payroll_convenio` para el cliente a partir del CCT scrapeado desde AFIP. */
 export const agregarConvenioDesdeAfipEmpleadores = createServerFn({
   method: 'POST',
@@ -459,9 +386,8 @@ export const agregarConvenioDesdeAfipEmpleadores = createServerFn({
     }
 
     const plantillaDetectada = getPlantillaPorActividad(afipRow.actividad);
-    const plantilla = plantillaDetectada ?? CONVENIOS_PLANTILLA[0];
+    const plantilla = plantillaDetectada ?? CONVENIOS_REFERENCIA[0];
     const usandoFallback = !plantillaDetectada;
-    const inicioVigencia = new Date(new Date().getFullYear(), 0, 1);
 
     const descripcion = [
       `AFIP CCT: ${afipRow.cct}`,
@@ -474,7 +400,8 @@ export const agregarConvenioDesdeAfipEmpleadores = createServerFn({
       .insert(payrollConvenio)
       .values({
         clientId: ctx.data.clientId,
-        nombre: afipRow.cct,
+        nombre: extractCctCodigo(afipRow.cct) ?? afipRow.cct,
+        cctCodigo: extractCctCodigo(afipRow.cct),
         descripcion,
       })
       .returning({ id: payrollConvenio.id });
@@ -496,16 +423,25 @@ export const agregarConvenioDesdeAfipEmpleadores = createServerFn({
         codigo: payrollConvenioCategoria.codigo,
       });
 
-    const montoBasicoByCodigo = new Map(
-      plantilla.categorias.map((c) => [c.codigo, c.montoBasico])
+    const categoriaByCodigo = new Map(
+      plantilla.categorias.map((c) => [c.codigo, c])
     );
     for (const cat of categoriasInsert) {
-      await db.insert(payrollEscala).values({
-        categoriaId: cat.id,
-        vigenciaDesde: inicioVigencia,
-        vigenciaHasta: null,
-        montoBasico: montoBasicoByCodigo.get(cat.codigo) ?? '0',
-      });
+      const categoriaPlantilla = categoriaByCodigo.get(cat.codigo);
+      if (!categoriaPlantilla) continue;
+      for (const escala of categoriaPlantilla.escalas) {
+        await db.insert(payrollEscala).values({
+          categoriaId: cat.id,
+          vigenciaDesde: parseISO(escala.vigenciaDesde),
+          vigenciaHasta: escala.vigenciaHasta
+            ? parseISO(escala.vigenciaHasta)
+            : null,
+          montoBasico: escala.montoBasico,
+          montoNoRemunerativo: escala.montoNoRemunerativo,
+          periodoLabel: escala.periodo,
+          fuente: 'https://estudiovilaplana.com.ar/',
+        });
+      }
     }
 
     return {
@@ -676,7 +612,7 @@ export const aplicarPlantillaBaseSueldos = createServerFn({ method: 'POST' })
 export const listConveniosPlantilla = createServerFn({ method: 'GET' }).handler(
   async () => {
     await getSessionWithOrg();
-    return CONVENIOS_PLANTILLA.map((c) => ({
+    return CONVENIOS_REFERENCIA.map((c) => ({
       nombre: c.nombre,
       descripcion: c.descripcion,
     }));
@@ -694,7 +630,7 @@ export const agregarConvenioDesdePlantilla = createServerFn({ method: 'POST' })
     assertCanWrite(role);
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
 
-    const conv = CONVENIOS_PLANTILLA.find(
+    const conv = CONVENIOS_REFERENCIA.find(
       (c) => c.nombre.toLowerCase() === ctx.data.nombreConvenio.toLowerCase()
     );
     if (!conv) throw new Error('Convenio no encontrado en la plantilla');
@@ -717,12 +653,12 @@ export const agregarConvenioDesdePlantilla = createServerFn({ method: 'POST' })
       };
     }
 
-    const inicioVigencia = new Date(new Date().getFullYear(), 0, 1);
     const [inserted] = await db
       .insert(payrollConvenio)
       .values({
         clientId: ctx.data.clientId,
         nombre: conv.nombre,
+        cctCodigo: extractCctCodigo(conv.nombre),
         descripcion: conv.descripcion,
       })
       .returning({ id: payrollConvenio.id });
@@ -741,12 +677,20 @@ export const agregarConvenioDesdePlantilla = createServerFn({ method: 'POST' })
       .returning({ id: payrollConvenioCategoria.id });
 
     for (let i = 0; i < categoriasInsert.length; i++) {
-      await db.insert(payrollEscala).values({
-        categoriaId: categoriasInsert[i].id,
-        vigenciaDesde: inicioVigencia,
-        vigenciaHasta: null,
-        montoBasico: conv.categorias[i].montoBasico,
-      });
+      const categoria = conv.categorias[i];
+      for (const escala of categoria.escalas) {
+        await db.insert(payrollEscala).values({
+          categoriaId: categoriasInsert[i].id,
+          vigenciaDesde: parseISO(escala.vigenciaDesde),
+          vigenciaHasta: escala.vigenciaHasta
+            ? parseISO(escala.vigenciaHasta)
+            : null,
+          montoBasico: escala.montoBasico,
+          montoNoRemunerativo: escala.montoNoRemunerativo,
+          periodoLabel: escala.periodo,
+          fuente: 'https://estudiovilaplana.com.ar/',
+        });
+      }
     }
 
     return { ok: true, created: true, convenioId: inserted.id };
@@ -854,6 +798,9 @@ export const upsertEscala = createServerFn({ method: 'POST' })
       vigenciaDesde: z.string(), // ISO date
       vigenciaHasta: z.string().optional(),
       montoBasico: z.number().positive(),
+      montoNoRemunerativo: z.number().min(0).optional(),
+      periodoLabel: z.string().optional(),
+      fuente: z.string().optional(),
     })
   )
   .handler(async (ctx) => {
@@ -870,6 +817,9 @@ export const upsertEscala = createServerFn({ method: 'POST' })
           ? parseISO(ctx.data.vigenciaHasta)
           : null,
         montoBasico: String(ctx.data.montoBasico),
+        montoNoRemunerativo: String(ctx.data.montoNoRemunerativo ?? 0),
+        periodoLabel: ctx.data.periodoLabel ?? null,
+        fuente: ctx.data.fuente ?? null,
       })
       .returning();
     return row;

@@ -15,6 +15,9 @@
     "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,css,md}\"",
     "fix-inbound-recipient": "bun run src/scripts/fix-inbound-recipient-last-2-months.ts",
     "sync-client-job-errors": "bun run src/scripts/sync-client-job-errors.ts",
+    "sync-payroll-convenios-referencia": "bun run src/scripts/sync-payroll-convenios-referencia.ts",
+    "link-cct-and-refresh-reference-scales": "bun run src/scripts/link-cct-and-refresh-reference-scales.ts",
+    "map-import-empleados-a-convenios": "bun run src/scripts/map-import-empleados-a-convenios.ts",
     "db:push": "drizzle-kit push",
     "db:seed-obras": "bun run src/scripts/seed-obras-sociales.ts",
     "db:seed-caravelle": "bun run src/scripts/run-caravelle-seed.ts"

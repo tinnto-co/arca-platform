@@ -55,17 +55,18 @@ import {
 
 interface SueldosConveniosProps {
   clientId: string;
+  profileId: string;
 }
 
-export function SueldosConvenios({ clientId }: SueldosConveniosProps) {
+export function SueldosConvenios({ clientId, profileId }: SueldosConveniosProps) {
   const queryClient = useQueryClient();
   const [newConvenioOpen, setNewConvenioOpen] = useState(false);
   const [newConvenioNombre, setNewConvenioNombre] = useState('');
 
   const { data: convenios = [] } = useQuery({
-    queryKey: ['convenios', clientId],
-    queryFn: () => listConvenios({ data: { clientId } }),
-    enabled: !!clientId,
+    queryKey: ['convenios', clientId, profileId],
+    queryFn: () => listConvenios({ data: { clientId, profileId } }),
+    enabled: !!clientId && !!profileId,
   });
 
   const createConv = useMutation({
@@ -237,7 +238,7 @@ function ConvenioCard({
   onRefresh,
 }: {
   clientId: string;
-  convenio: { id: string; nombre: string; descripcion: string | null };
+  convenio: { id: string; nombre: string; cctCodigo: string | null; descripcion: string | null };
   onRefresh: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -287,7 +288,9 @@ function ConvenioCard({
           <button className="flex w-full items-center justify-between px-6 py-4 text-left">
             <div className="flex items-center gap-2">
               <Building2 className="h-5 w-5 text-muted-foreground" />
-              <CardTitle className="text-lg">{convenio.nombre}</CardTitle>
+              <CardTitle className="text-lg">
+                {convenio.cctCodigo ?? convenio.nombre}
+              </CardTitle>
             </div>
             <div
               className="flex items-center gap-1"
@@ -405,6 +408,18 @@ function CategoriaRow({
   categoria: { id: string; codigo: string; nombre: string };
   onRefresh: () => void;
 }) {
+  const getCategoriaDisplay = (codigo: string, nombre: string) => {
+    if (!nombre.includes(' - ')) {
+      return { titulo: `${codigo} - ${nombre}`, subtitulo: null as string | null };
+    }
+    const [grupo, detalle] = nombre.split(' - ', 2);
+    return {
+      titulo: `${codigo} - ${grupo}`,
+      subtitulo: detalle || null,
+    };
+  };
+  const categoriaDisplay = getCategoriaDisplay(categoria.codigo, categoria.nombre);
+
   const queryClient = useQueryClient();
   const [showEscala, setShowEscala] = useState(false);
   const [vigenciaDesde, setVigenciaDesde] = useState(
@@ -459,9 +474,14 @@ function CategoriaRow({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Layers className="h-4 w-4 text-muted-foreground" />
-          <span className="font-medium">
-            {categoria.codigo} – {categoria.nombre}
-          </span>
+          <div className="min-w-0">
+            <span className="font-medium">{categoriaDisplay.titulo}</span>
+            {categoriaDisplay.subtitulo ? (
+              <p className="text-xs text-muted-foreground break-words">
+                {categoriaDisplay.subtitulo}
+              </p>
+            ) : null}
+          </div>
         </div>
         <Button
           variant="ghost"

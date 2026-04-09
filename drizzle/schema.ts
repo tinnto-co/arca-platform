@@ -483,6 +483,7 @@ export const payrollConvenio = pgTable("payroll_convenio", {
     .notNull()
     .references(() => client.id, { onDelete: "cascade" }),
   nombre: text("nombre").notNull(),
+  cctCodigo: text("cct_codigo"),
   descripcion: text("descripcion"),
   activo: boolean("activo").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -517,6 +518,14 @@ export const payrollEscala = pgTable("payroll_escala", {
   vigenciaDesde: timestamp("vigencia_desde", { mode: "date" }).notNull(),
   vigenciaHasta: timestamp("vigencia_hasta", { mode: "date" }),
   montoBasico: numeric("monto_basico", { precision: 12, scale: 2 }).notNull(),
+  montoNoRemunerativo: numeric("monto_no_remunerativo", {
+    precision: 12,
+    scale: 2,
+  })
+    .default("0")
+    .notNull(),
+  periodoLabel: text("periodo_label"),
+  fuente: text("fuente"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
     .defaultNow()

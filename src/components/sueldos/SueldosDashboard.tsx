@@ -91,9 +91,9 @@ export function SueldosDashboard({
   });
 
   const { data: convenios = [] } = useQuery({
-    queryKey: ['convenios', clientId],
-    queryFn: () => listConvenios({ data: { clientId } }),
-    enabled: !!clientId,
+    queryKey: ['convenios', clientId, profileId],
+    queryFn: () => listConvenios({ data: { clientId, profileId } }),
+    enabled: !!clientId && !!profileId,
   });
 
   const aplicarPlantilla = useMutation({

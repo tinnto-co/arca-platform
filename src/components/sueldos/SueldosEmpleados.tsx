@@ -28,7 +28,16 @@ import {
   listImportEmpleados,
   createManualEmpleado,
   deleteManualEmpleado,
+  listConvenios,
+  listCategoriasByConvenio,
 } from '@/actions/sueldos';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface SueldosEmpleadosProps {
   clientId: string;
@@ -45,6 +54,40 @@ function formatDate(d: Date | string | null | undefined): string {
   }
 }
 
+/** Decodifica entidades numéricas HTML que a veces vienen en imports (ej. &#209; → Ñ). */
+function decodeHtmlEntities(input: string): string {
+  return input
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) =>
+      String.fromCharCode(parseInt(h, 16))
+    );
+}
+
+/** Primera letra de cada palabra en mayúscula, resto en minúscula. */
+function titleCaseWords(segment: string): string {
+  return segment
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => {
+      if (word.length === 0) return word;
+      const lower = word.toLowerCase();
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(' ');
+}
+
+/** Texto legible para nombres y categorías: título por segmentos separados por coma. */
+function formatTitleCaseDisplay(str: string | null | undefined): string {
+  if (str == null || str.trim() === '') return '—';
+  const decoded = decodeHtmlEntities(str);
+  return decoded
+    .split(',')
+    .map((part) => titleCaseWords(part))
+    .filter(Boolean)
+    .join(', ');
+}
+
 export function SueldosEmpleados({
   clientId,
   profileId,
@@ -59,12 +102,27 @@ export function SueldosEmpleados({
     fechaBaja: '',
     modoContrato: '',
     categoria: '',
+    convenioId: '',
+    categoriaId: '',
   });
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['import-empleados', clientId, profileId],
     queryFn: () => listImportEmpleados({ data: { clientId, profileId } }),
     enabled: !!clientId && !!profileId,
+  });
+  const { data: convenios = [] } = useQuery({
+    queryKey: ['convenios', clientId, profileId],
+    queryFn: () => listConvenios({ data: { clientId, profileId } }),
+    enabled: !!clientId && !!profileId,
+  });
+  const { data: categorias = [] } = useQuery({
+    queryKey: ['categorias', form.convenioId, clientId],
+    queryFn: () =>
+      listCategoriasByConvenio({
+        data: { convenioId: form.convenioId, clientId },
+      }),
+    enabled: !!clientId && !!form.convenioId,
   });
 
   const crear = useMutation({
@@ -96,6 +154,8 @@ export function SueldosEmpleados({
         fechaBaja: '',
         modoContrato: '',
         categoria: '',
+        convenioId: '',
+        categoriaId: '',
       });
     },
     onError: (e) => toast.error(e.message),
@@ -213,15 +273,60 @@ export function SueldosEmpleados({
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="categoria">Categoría</Label>
-                  <Input
-                    id="categoria"
-                    value={form.categoria}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, categoria: e.target.value }))
+                  <Label htmlFor="convenio">Convenio</Label>
+                  <Select
+                    value={form.convenioId}
+                    onValueChange={(value) =>
+                      setForm((f) => ({
+                        ...f,
+                        convenioId: value,
+                        categoriaId: '',
+                      }))
                     }
-                    placeholder="A1"
-                  />
+                  >
+                    <SelectTrigger id="convenio">
+                      <SelectValue placeholder="Seleccionar convenio" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {convenios.map((convenio) => (
+                        <SelectItem key={convenio.id} value={convenio.id}>
+                          {convenio.nombre}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <Label htmlFor="categoria">Categoría</Label>
+                  <Select
+                    value={form.categoriaId}
+                    onValueChange={(value) => {
+                      const categoriaSeleccionada = categorias.find(
+                        (categoria) => categoria.id === value
+                      );
+                      setForm((f) => ({
+                        ...f,
+                        categoriaId: value,
+                        categoria: categoriaSeleccionada
+                          ? `${categoriaSeleccionada.codigo} - ${categoriaSeleccionada.nombre}`
+                          : '',
+                      }));
+                    }}
+                    disabled={!form.convenioId}
+                  >
+                    <SelectTrigger id="categoria">
+                      <SelectValue placeholder="Seleccionar categoría" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categorias.map((categoria) => (
+                        <SelectItem key={categoria.id} value={categoria.id}>
+                          {categoria.codigo} - {categoria.nombre}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <div className="flex justify-end gap-2 pt-2">
@@ -296,7 +401,7 @@ export function SueldosEmpleados({
                 return (
                   <TableRow key={e.id}>
                     <TableCell className="min-w-0 break-words font-medium align-top py-2">
-                      {e.nombre}
+                      {formatTitleCaseDisplay(e.nombre)}
                     </TableCell>
                     <TableCell className="whitespace-nowrap align-top py-2 tabular-nums">
                       {e.cuil}
@@ -311,10 +416,12 @@ export function SueldosEmpleados({
                       {formatDate(e.fechaBaja ?? undefined)}
                     </TableCell>
                     <TableCell className="min-w-0 break-words align-top py-2">
-                      {e.modoContrato ?? '—'}
+                      {e.modoContrato != null && e.modoContrato !== ''
+                        ? formatTitleCaseDisplay(e.modoContrato)
+                        : '—'}
                     </TableCell>
                     <TableCell className="min-w-0 break-words align-top py-2">
-                      {e.categoria ?? '—'}
+                      {formatTitleCaseDisplay(e.categoria)}
                     </TableCell>
                     <TableCell className="align-top py-2">
                       {baja ? (
