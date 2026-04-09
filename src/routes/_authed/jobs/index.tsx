@@ -1,8 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { JobsTable } from "@/components/jobs-table";
-import { Loader2 } from "lucide-react";
+import { createFileRoute } from '@tanstack/react-router';
+import { JobsTable } from '@/components/jobs-table';
+import { Loader2 } from 'lucide-react';
 
-export const Route = createFileRoute("/_authed/jobs/")({
+export const Route = createFileRoute('/_authed/jobs/')({
   component: RouteComponent,
 });
 
@@ -25,4 +25,3 @@ function RouteComponent() {
     </div>
   );
 }
-

@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery } from '@tanstack/react-query';
 import {
   AlertCircle,
   Calendar,
@@ -9,8 +9,8 @@ import {
   Bell,
   DollarSign,
   ShoppingCart,
-} from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+} from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   getDashboardStats,
   getUpcomingDueDates,
@@ -18,61 +18,61 @@ import {
   getRecentInvoices,
   getMonthlyEvolution,
   getPendingNotificationsCount,
-} from "@/actions/dashboard";
+} from '@/actions/dashboard';
 import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
-} from "@/components/ui/chart";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
-import { getUser } from "@/actions/user";
+} from '@/components/ui/chart';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
+import { getUser } from '@/actions/user';
 
 const chartConfig = {
   outbound: {
-    label: "Ventas",
-    color: "#139ed9",
+    label: 'Ventas',
+    color: '#139ed9',
   },
   inbound: {
-    label: "Compras",
-    color: "#232c50",
+    label: 'Compras',
+    color: '#232c50',
   },
 } satisfies ChartConfig;
 
 export function Dashboard() {
   const { data: user } = useQuery({
-    queryKey: ["user"],
+    queryKey: ['user'],
     queryFn: () => getUser(),
   });
 
   const { data: stats, isLoading: loadingStats } = useQuery({
-    queryKey: ["dashboardStats"],
+    queryKey: ['dashboardStats'],
     queryFn: () => getDashboardStats(),
   });
 
   const { data: upcomingDueDates = [], isLoading: loadingDueDates } = useQuery({
-    queryKey: ["upcomingDueDates"],
+    queryKey: ['upcomingDueDates'],
     queryFn: () => getUpcomingDueDates({ data: { days: 7, limit: 5 } }),
   });
 
   const { data: overdueDebts = [], isLoading: loadingDebts } = useQuery({
-    queryKey: ["overdueDebts"],
+    queryKey: ['overdueDebts'],
     queryFn: () => getOverdueDebts({ data: { limit: 5 } }),
   });
 
   const { data: recentInvoices = [], isLoading: loadingInvoices } = useQuery({
-    queryKey: ["recentInvoices"],
+    queryKey: ['recentInvoices'],
     queryFn: () => getRecentInvoices({ data: { limit: 5 } }),
   });
 
   const { data: monthlyData = [], isLoading: loadingMonthly } = useQuery({
-    queryKey: ["monthlyEvolution"],
+    queryKey: ['monthlyEvolution'],
     queryFn: () => getMonthlyEvolution({ data: { months: 6 } }),
   });
 
   const { data: pendingNotifications, isLoading: loadingNotifications } =
     useQuery({
-      queryKey: ["pendingNotificationsCount"],
+      queryKey: ['pendingNotificationsCount'],
       queryFn: () => getPendingNotificationsCount(),
     });
 
@@ -96,27 +96,27 @@ export function Dashboard() {
   );
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("es-AR", {
-      style: "currency",
-      currency: "ARS",
+    return new Intl.NumberFormat('es-AR', {
+      style: 'currency',
+      currency: 'ARS',
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     }).format(amount);
   };
 
   const formatCurrencyFull = (amount: number) => {
-    return new Intl.NumberFormat("es-AR", {
-      style: "currency",
-      currency: "ARS",
+    return new Intl.NumberFormat('es-AR', {
+      style: 'currency',
+      currency: 'ARS',
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(amount);
   };
 
   const formatDate = (date: Date | string) => {
-    return new Date(date).toLocaleDateString("es-AR", {
-      day: "numeric",
-      month: "short",
+    return new Date(date).toLocaleDateString('es-AR', {
+      day: 'numeric',
+      month: 'short',
     });
   };
 
@@ -150,8 +150,8 @@ export function Dashboard() {
                 <div
                   className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${
                     salesChange > 0
-                      ? "text-emerald-700 bg-emerald-50"
-                      : "text-red-700 bg-red-50"
+                      ? 'text-emerald-700 bg-emerald-50'
+                      : 'text-red-700 bg-red-50'
                   }`}
                 >
                   {salesChange > 0 ? (
@@ -164,7 +164,7 @@ export function Dashboard() {
               )}
             </div>
             <div className="text-2xl md:text-3xl font-bold text-[#232c50]">
-              {loadingStats ? "-" : formatCurrency(stats?.monthlySales || 0)}
+              {loadingStats ? '-' : formatCurrency(stats?.monthlySales || 0)}
             </div>
             <p className="text-[11px] text-muted-foreground mt-1">
               vs {formatCurrency(stats?.previousMonthSales || 0)} mes anterior
@@ -187,8 +187,8 @@ export function Dashboard() {
                 <div
                   className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${
                     purchasesChange > 0
-                      ? "text-red-700 bg-red-50"
-                      : "text-emerald-700 bg-emerald-50"
+                      ? 'text-red-700 bg-red-50'
+                      : 'text-emerald-700 bg-emerald-50'
                   }`}
                 >
                   {purchasesChange > 0 ? (
@@ -202,7 +202,7 @@ export function Dashboard() {
             </div>
             <div className="text-2xl md:text-3xl font-bold text-[#232c50]">
               {loadingStats
-                ? "-"
+                ? '-'
                 : formatCurrency(stats?.monthlyPurchases || 0)}
             </div>
             <p className="text-[11px] text-muted-foreground mt-1">
@@ -222,7 +222,7 @@ export function Dashboard() {
               <p className="text-xs text-muted-foreground">Clientes activos</p>
             </div>
             <div className="text-2xl font-bold">
-              {loadingStats ? "-" : stats?.totalClients || 0}
+              {loadingStats ? '-' : stats?.totalClients || 0}
             </div>
           </CardContent>
         </Card>
@@ -234,7 +234,7 @@ export function Dashboard() {
               <p className="text-xs text-muted-foreground">Facturas del mes</p>
             </div>
             <div className="text-2xl font-bold">
-              {loadingStats ? "-" : stats?.monthlyInvoices || 0}
+              {loadingStats ? '-' : stats?.monthlyInvoices || 0}
             </div>
           </CardContent>
         </Card>
@@ -248,9 +248,7 @@ export function Dashboard() {
               </p>
             </div>
             <div className="text-2xl font-bold">
-              {loadingNotifications
-                ? "-"
-                : pendingNotifications?.count || 0}
+              {loadingNotifications ? '-' : pendingNotifications?.count || 0}
             </div>
           </CardContent>
         </Card>
@@ -262,7 +260,7 @@ export function Dashboard() {
               <p className="text-xs text-muted-foreground">Deudas vencidas</p>
             </div>
             <div className="text-2xl font-bold">
-              {loadingDebts ? "-" : overdueDebts.length}
+              {loadingDebts ? '-' : overdueDebts.length}
             </div>
             {!loadingDebts && totalOverdueAmount > 0 && (
               <p className="text-[11px] text-red-600 font-medium mt-0.5">
@@ -318,9 +316,7 @@ export function Dashboard() {
                 <ChartTooltip
                   content={
                     <ChartTooltipContent
-                      formatter={(value) =>
-                        formatCurrencyFull(Number(value))
-                      }
+                      formatter={(value) => formatCurrencyFull(Number(value))}
                     />
                   }
                 />
@@ -370,10 +366,10 @@ export function Dashboard() {
                   >
                     <div className="flex-1 min-w-0 pr-2">
                       <div className="font-medium truncate">
-                        {dd.clientName || "-"}
+                        {dd.clientName || '-'}
                       </div>
                       <div className="text-muted-foreground truncate text-[10px]">
-                        {dd.tax || "-"} - {dd.concept || "-"}
+                        {dd.tax || '-'} - {dd.concept || '-'}
                       </div>
                     </div>
                     <div className="text-right flex-shrink-0">
@@ -414,10 +410,10 @@ export function Dashboard() {
                   >
                     <div className="flex-1 min-w-0 pr-2">
                       <div className="font-medium truncate">
-                        {debt.clientName || "-"}
+                        {debt.clientName || '-'}
                       </div>
                       <div className="text-muted-foreground truncate text-[10px]">
-                        {debt.tax || "-"} - {debt.concept || "-"}
+                        {debt.tax || '-'} - {debt.concept || '-'}
                       </div>
                     </div>
                     <div className="text-right flex-shrink-0">
@@ -461,18 +457,18 @@ export function Dashboard() {
                   >
                     <div className="flex-1 min-w-0 pr-2">
                       <div className="font-medium truncate">
-                        {inv.clientName || "-"}
+                        {inv.clientName || '-'}
                       </div>
                       <div className="text-muted-foreground truncate text-[10px]">
-                        {inv.type || "-"}{" "}
+                        {inv.type || '-'}{' '}
                         <span
                           className={`inline-block px-1 rounded text-[9px] font-medium ${
-                            inv.direction === "outbound"
-                              ? "bg-emerald-50 text-emerald-700"
-                              : "bg-blue-50 text-blue-700"
+                            inv.direction === 'outbound'
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : 'bg-blue-50 text-blue-700'
                           }`}
                         >
-                          {inv.direction === "outbound" ? "Venta" : "Compra"}
+                          {inv.direction === 'outbound' ? 'Venta' : 'Compra'}
                         </span>
                       </div>
                     </div>

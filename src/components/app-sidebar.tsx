@@ -1,4 +1,4 @@
-import * as React from "react";
+import * as React from 'react';
 import {
   BadgeCheck,
   Bell,
@@ -26,7 +26,7 @@ import {
   Receipt,
   Mail,
   FileText,
-} from "lucide-react";
+} from 'lucide-react';
 
 import {
   Sidebar,
@@ -42,7 +42,7 @@ import {
   SidebarRail,
   SidebarTrigger,
   useSidebar,
-} from "@/components/ui/sidebar";
+} from '@/components/ui/sidebar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -52,15 +52,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuTrigger,
-} from "./ui/dropdown-menu";
-import { authClient } from "@/lib/auth-client";
-import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
-import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
-import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
-import { CreateClientDialog } from "./create-client-dialog";
-import { OrgSwitcher } from "./org-switcher";
-import { userQuery } from "../lib/user-query";
+} from './ui/dropdown-menu';
+import { authClient } from '@/lib/auth-client';
+import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
+import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
+import { Link, useLocation, useNavigate } from '@tanstack/react-router';
+import { useState, useEffect } from 'react';
+import { CreateClientDialog } from './create-client-dialog';
+import { OrgSwitcher } from './org-switcher';
+import { userQuery } from '../lib/user-query';
 
 export { userQuery };
 
@@ -68,8 +68,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { isMobile } = useSidebar();
   const [loading, setLoading] = useState(false);
   const { data: user } = useSuspenseQuery(userQuery);
-  const isOwner = user?.organizationRole === "owner";
-  const isViewer = user?.organizationRole === "viewer";
+  const isOwner = user?.organizationRole === 'owner';
+  const isViewer = user?.organizationRole === 'viewer';
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [open, setOpen] = useState(true);
@@ -86,7 +86,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   //   queryFn: () => [],
   // });
   const { data: monitors = [] } = useQuery({
-    queryKey: ["monitors"],
+    queryKey: ['monitors'],
     queryFn: () => [],
   });
 
@@ -98,7 +98,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <SidebarHeader>
           <OrgSwitcher />
           <div className="flex items-center justify-end">
-            <SidebarTrigger onClick={() => setOpen(!open)} className="-ml-1 text-white/80 hover:text-white hover:bg-white/10" />
+            <SidebarTrigger
+              onClick={() => setOpen(!open)}
+              className="-ml-1 text-white/80 hover:text-white hover:bg-white/10"
+            />
           </div>
         </SidebarHeader>
         <SidebarContent>
@@ -125,7 +128,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
               <SidebarMenuItem>
                 <Link to="/">
-                  <SidebarMenuButton isActive={pathname === "/"}>
+                  <SidebarMenuButton isActive={pathname === '/'}>
                     <Home />
                     Home
                   </SidebarMenuButton>
@@ -145,7 +148,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <SidebarMenuItem>
                 <Link to="/clients">
                   <SidebarMenuButton
-                    isActive={pathname === "/clients"}
+                    isActive={pathname === '/clients'}
                     tooltip="Clientes"
                   >
                     <User />
@@ -156,7 +159,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <SidebarMenuItem>
                 <Link to="/notifications">
                   <SidebarMenuButton
-                    isActive={pathname === "/notifications"}
+                    isActive={pathname === '/notifications'}
                     tooltip="Notificaciones"
                   >
                     <Mail />
@@ -167,7 +170,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <SidebarMenuItem>
                 <Link to="/jobs">
                   <SidebarMenuButton
-                    isActive={pathname === "/jobs"}
+                    isActive={pathname === '/jobs'}
                     tooltip="Jobs"
                   >
                     <Loader2 />
@@ -178,7 +181,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <SidebarMenuItem>
                 <Link to="/invoices">
                   <SidebarMenuButton
-                    isActive={pathname === "/invoices"}
+                    isActive={pathname === '/invoices'}
                     tooltip="Facturas"
                   >
                     <Receipt />
@@ -189,7 +192,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <SidebarMenuItem>
                 <Link to="/sueldos">
                   <SidebarMenuButton
-                    isActive={pathname === "/sueldos"}
+                    isActive={pathname === '/sueldos'}
                     tooltip="Sueldos"
                   >
                     <DollarSign />
@@ -197,7 +200,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>
-{/*               <SidebarMenuItem>
+              {/*               <SidebarMenuItem>
                 <span className="cursor-not-allowed opacity-50 pointer-events-none flex w-full items-center gap-2">
                   <SidebarMenuButton
                     isActive={false}
@@ -218,7 +221,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <SidebarMenuItem>
                 <Link to="/admin">
                   <SidebarMenuButton
-                    isActive={pathname === "/admin"}
+                    isActive={pathname === '/admin'}
                     tooltip="Administración"
                   >
                     <Settings />
@@ -254,7 +257,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent
                     className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg"
-                    side={isMobile ? "bottom" : "right"}
+                    side={isMobile ? 'bottom' : 'right'}
                     align="end"
                     sideOffset={4}
                   >
@@ -303,7 +306,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                     <DropdownMenuItem
                       onClick={async () => {
                         await authClient.signOut();
-                        navigate({ to: "/login" });
+                        navigate({ to: '/login' });
                       }}
                     >
                       <LogOut />

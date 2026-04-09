@@ -1,8 +1,8 @@
-import { authClient } from "@/lib/auth-client";
-import { useOrgSwitch } from "@/contexts/org-switch-context";
-import { userQuery } from "../lib/user-query";
-import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { authClient } from '@/lib/auth-client';
+import { useOrgSwitch } from '@/contexts/org-switch-context';
+import { userQuery } from '../lib/user-query';
+import { useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,21 +10,17 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "./ui/dropdown-menu";
-import {
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-} from "./ui/sidebar";
-import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
-import { Building, ChevronsUpDown, Check } from "lucide-react";
+} from './ui/dropdown-menu';
+import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from './ui/sidebar';
+import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
+import { Building, ChevronsUpDown, Check } from 'lucide-react';
 
-type ListedOrg = {
+interface ListedOrg {
   id: string;
   name: string;
   slug?: string | null;
   logo?: string | null;
-};
+}
 
 export function OrgSwitcher() {
   const { data: user } = useSuspenseQuery(userQuery);
@@ -35,7 +31,7 @@ export function OrgSwitcher() {
   const { runOrgSwitch } = useOrgSwitch();
 
   const displayName = user?.organizationName ?? activeOrg?.name;
-  const displaySlug = user?.organizationSlug ?? activeOrg?.slug ?? "";
+  const displaySlug = user?.organizationSlug ?? activeOrg?.slug ?? '';
   const displayLogo = user?.organizationLogo ?? activeOrg?.logo ?? null;
 
   const handleSwitchOrg = async (orgId: string) => {
@@ -47,7 +43,7 @@ export function OrgSwitcher() {
     if (!target) return;
 
     const fromName =
-      user?.organizationName ?? activeOrg?.name ?? "Organización actual";
+      user?.organizationName ?? activeOrg?.name ?? 'Organización actual';
     const fromLogo = user?.organizationLogo ?? activeOrg?.logo ?? null;
 
     await runOrgSwitch(
@@ -60,14 +56,14 @@ export function OrgSwitcher() {
       async () => {
         await authClient.organization.setActive({ organizationId: orgId });
         await queryClient.invalidateQueries();
-        await navigate({ to: "/" });
+        await navigate({ to: '/' });
       }
     );
   };
 
   const titleText =
     displayName ??
-    (user?.activeOrganizationId ? "Cargando…" : "Sin organización");
+    (user?.activeOrganizationId ? 'Cargando…' : 'Sin organización');
 
   return (
     <SidebarMenu>
@@ -81,7 +77,11 @@ export function OrgSwitcher() {
               <div className="flex aspect-square size-8 items-center justify-center overflow-hidden rounded-lg bg-white/10">
                 {displayLogo ? (
                   <Avatar className="size-8 rounded-lg">
-                    <AvatarImage src={displayLogo} alt="" className="object-cover" />
+                    <AvatarImage
+                      src={displayLogo}
+                      alt=""
+                      className="object-cover"
+                    />
                     <AvatarFallback className="rounded-lg bg-white/10">
                       <Building className="size-4" />
                     </AvatarFallback>
@@ -120,9 +120,13 @@ export function OrgSwitcher() {
                   <div className="flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-sm border">
                     {org.logo ? (
                       <Avatar className="size-6 rounded-sm">
-                        <AvatarImage src={org.logo} alt="" className="object-cover" />
+                        <AvatarImage
+                          src={org.logo}
+                          alt=""
+                          className="object-cover"
+                        />
                         <AvatarFallback className="rounded-sm text-[10px]">
-                          {org.name?.charAt(0)?.toUpperCase() ?? "?"}
+                          {org.name?.charAt(0)?.toUpperCase() ?? '?'}
                         </AvatarFallback>
                       </Avatar>
                     ) : (

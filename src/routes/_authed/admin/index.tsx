@@ -1,7 +1,7 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState, useEffect } from "react";
-import z from "zod";
+import { createFileRoute, redirect } from '@tanstack/react-router';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
+import z from 'zod';
 import {
   getOrgMembers,
   getOrgDetails,
@@ -11,26 +11,26 @@ import {
   updateMemberRole,
   getOrgInvitations,
   cancelInvitation,
-} from "@/actions/admin";
-import { getUser } from "@/actions/user";
+} from '@/actions/admin';
+import { getUser } from '@/actions/user';
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
+} from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from '@/components/ui/select';
 import {
   Table,
   TableBody,
@@ -38,7 +38,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
+} from '@/components/ui/table';
 import {
   Dialog,
   DialogContent,
@@ -47,7 +47,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog";
+} from '@/components/ui/dialog';
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -56,10 +56,10 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { toast } from "sonner";
+} from '@/components/ui/alert-dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { toast } from 'sonner';
 import {
   Building,
   Loader2,
@@ -69,36 +69,36 @@ import {
   UserPlus,
   Users,
   X,
-} from "lucide-react";
-import { userQuery } from "../../../lib/user-query";
+} from 'lucide-react';
+import { userQuery } from '../../../lib/user-query';
 
-const logoUrlSchema = z.union([z.string().url(), z.literal("")]);
+const logoUrlSchema = z.union([z.string().url(), z.literal('')]);
 
-export const Route = createFileRoute("/_authed/admin/")({
+export const Route = createFileRoute('/_authed/admin/')({
   beforeLoad: async () => {
     const user = await getUser();
-    if (!user?.organizationRole || user.organizationRole !== "owner") {
-      throw redirect({ to: "/" });
+    if (!user?.organizationRole || user.organizationRole !== 'owner') {
+      throw redirect({ to: '/' });
     }
   },
   component: AdminPanel,
 });
 
 const ROLE_LABELS: Record<string, string> = {
-  owner: "Administrador",
-  member: "Miembro",
-  viewer: "Solo lectura",
+  owner: 'Administrador',
+  member: 'Miembro',
+  viewer: 'Solo lectura',
 };
 
 const ROLE_COLORS: Record<string, string> = {
-  owner: "bg-orange-100 text-orange-800",
-  member: "bg-blue-100 text-blue-800",
-  viewer: "bg-gray-100 text-gray-800",
+  owner: 'bg-orange-100 text-orange-800',
+  member: 'bg-blue-100 text-blue-800',
+  viewer: 'bg-gray-100 text-gray-800',
 };
 
 function AdminPanel() {
   const { data: org, isLoading } = useQuery({
-    queryKey: ["admin", "org"],
+    queryKey: ['admin', 'org'],
     queryFn: () => getOrgDetails(),
   });
 
@@ -131,9 +131,13 @@ function AdminPanel() {
               <p className="text-sm font-medium text-muted-foreground">
                 Administración
               </p>
-              <h1 className="truncate text-2xl font-bold">{org?.name ?? "—"}</h1>
+              <h1 className="truncate text-2xl font-bold">
+                {org?.name ?? '—'}
+              </h1>
               {org?.slug ? (
-                <p className="truncate text-sm text-muted-foreground">{org.slug}</p>
+                <p className="truncate text-sm text-muted-foreground">
+                  {org.slug}
+                </p>
               ) : (
                 <p className="text-sm text-muted-foreground">
                   Miembros e invitaciones de la organización
@@ -177,18 +181,20 @@ function AdminPanel() {
 function MembersTab() {
   const queryClient = useQueryClient();
   const { data: members, isLoading } = useQuery({
-    queryKey: ["admin", "members"],
+    queryKey: ['admin', 'members'],
     queryFn: () => getOrgMembers(),
   });
 
   const [removeMemberId, setRemoveMemberId] = useState<string | null>(null);
 
   const rolesMutation = useMutation({
-    mutationFn: (data: { memberId: string; role: "owner" | "member" | "viewer" }) =>
-      updateMemberRole({ data }),
+    mutationFn: (data: {
+      memberId: string;
+      role: 'owner' | 'member' | 'viewer';
+    }) => updateMemberRole({ data }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin", "members"] });
-      toast.success("Rol actualizado");
+      queryClient.invalidateQueries({ queryKey: ['admin', 'members'] });
+      toast.success('Rol actualizado');
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -197,9 +203,9 @@ function MembersTab() {
     mutationFn: (memberIdOrEmail: string) =>
       removeMember({ data: { memberIdOrEmail } }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin", "members"] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'members'] });
       setRemoveMemberId(null);
-      toast.success("Miembro removido");
+      toast.success('Miembro removido');
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -236,9 +242,9 @@ function MembersTab() {
                   <TableCell>
                     <div className="flex items-center gap-3">
                       <Avatar className="size-8">
-                        <AvatarImage src={m.image ?? ""} />
+                        <AvatarImage src={m.image ?? ''} />
                         <AvatarFallback>
-                          {m.name?.charAt(0)?.toUpperCase() ?? "?"}
+                          {m.name?.charAt(0)?.toUpperCase() ?? '?'}
                         </AvatarFallback>
                       </Avatar>
                       <span className="font-medium">{m.name}</span>
@@ -250,7 +256,7 @@ function MembersTab() {
                   <TableCell>
                     <Select
                       value={m.role}
-                      onValueChange={(role: "owner" | "member" | "viewer") =>
+                      onValueChange={(role: 'owner' | 'member' | 'viewer') =>
                         rolesMutation.mutate({ memberId: m.memberId, role })
                       }
                     >
@@ -280,7 +286,9 @@ function MembersTab() {
                     <AlertDialog
                       open={removeMemberId === m.memberId}
                       onOpenChange={(open) =>
-                        !open && !removeMutation.isPending && setRemoveMemberId(null)
+                        !open &&
+                        !removeMutation.isPending &&
+                        setRemoveMemberId(null)
                       }
                     >
                       <AlertDialogContent>
@@ -294,7 +302,9 @@ function MembersTab() {
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
-                          <AlertDialogCancel disabled={removeMutation.isPending}>
+                          <AlertDialogCancel
+                            disabled={removeMutation.isPending}
+                          >
                             Cancelar
                           </AlertDialogCancel>
                           <Button
@@ -308,7 +318,7 @@ function MembersTab() {
                                 Removiendo...
                               </>
                             ) : (
-                              "Remover"
+                              'Remover'
                             )}
                           </Button>
                         </AlertDialogFooter>
@@ -328,7 +338,7 @@ function MembersTab() {
 function InvitationsTab() {
   const queryClient = useQueryClient();
   const { data: invitations, isLoading } = useQuery({
-    queryKey: ["admin", "invitations"],
+    queryKey: ['admin', 'invitations'],
     queryFn: () => getOrgInvitations(),
   });
 
@@ -338,18 +348,20 @@ function InvitationsTab() {
     mutationFn: (invitationId: string) =>
       cancelInvitation({ data: { invitationId } }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin", "invitations"] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'invitations'] });
       setCancelInviteId(null);
-      toast.success("Invitación cancelada");
+      toast.success('Invitación cancelada');
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
   const pending = Array.isArray(invitations)
-    ? invitations.filter((i: { status: string }) => i.status === "pending")
+    ? invitations.filter((i: { status: string }) => i.status === 'pending')
     : [];
 
-  const inviteToCancel = pending.find((i: { id: string }) => i.id === cancelInviteId);
+  const inviteToCancel = pending.find(
+    (i: { id: string }) => i.id === cancelInviteId
+  );
 
   return (
     <Card>
@@ -380,69 +392,78 @@ function InvitationsTab() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {pending.map((inv: { id: string; email: string; role: string }) => (
-                <TableRow key={inv.id}>
-                  <TableCell>{inv.email}</TableCell>
-                  <TableCell>
-                    <Badge
-                      className={ROLE_COLORS[inv.role] ?? ""}
-                      variant="secondary"
-                    >
-                      {ROLE_LABELS[inv.role] ?? inv.role}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">Pendiente</Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setCancelInviteId(inv.id)}
-                    >
-                      <X className="size-4 text-destructive" />
-                    </Button>
-                    <AlertDialog
-                      open={cancelInviteId === inv.id}
-                      onOpenChange={(open) =>
-                        !open && !cancelMutation.isPending && setCancelInviteId(null)
-                      }
-                    >
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>¿Cancelar invitación?</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            Se anulará la invitación enviada a{" "}
-                            <span className="font-medium">
-                              {inviteToCancel?.email ?? inv.email}
-                            </span>
-                            . Podrás volver a invitar a esa dirección más tarde.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel disabled={cancelMutation.isPending}>
-                            Volver
-                          </AlertDialogCancel>
-                          <Button
-                            variant="destructive"
-                            disabled={cancelMutation.isPending}
-                            onClick={() => cancelMutation.mutate(inv.id)}
-                          >
-                            {cancelMutation.isPending ? (
-                              <>
-                                <Loader2 className="mr-2 size-4 animate-spin" />
-                                Cancelando...
-                              </>
-                            ) : (
-                              "Cancelar invitación"
-                            )}
-                          </Button>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {pending.map(
+                (inv: { id: string; email: string; role: string }) => (
+                  <TableRow key={inv.id}>
+                    <TableCell>{inv.email}</TableCell>
+                    <TableCell>
+                      <Badge
+                        className={ROLE_COLORS[inv.role] ?? ''}
+                        variant="secondary"
+                      >
+                        {ROLE_LABELS[inv.role] ?? inv.role}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">Pendiente</Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setCancelInviteId(inv.id)}
+                      >
+                        <X className="size-4 text-destructive" />
+                      </Button>
+                      <AlertDialog
+                        open={cancelInviteId === inv.id}
+                        onOpenChange={(open) =>
+                          !open &&
+                          !cancelMutation.isPending &&
+                          setCancelInviteId(null)
+                        }
+                      >
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>
+                              ¿Cancelar invitación?
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Se anulará la invitación enviada a{' '}
+                              <span className="font-medium">
+                                {inviteToCancel?.email ?? inv.email}
+                              </span>
+                              . Podrás volver a invitar a esa dirección más
+                              tarde.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel
+                              disabled={cancelMutation.isPending}
+                            >
+                              Volver
+                            </AlertDialogCancel>
+                            <Button
+                              variant="destructive"
+                              disabled={cancelMutation.isPending}
+                              onClick={() => cancelMutation.mutate(inv.id)}
+                            >
+                              {cancelMutation.isPending ? (
+                                <>
+                                  <Loader2 className="mr-2 size-4 animate-spin" />
+                                  Cancelando...
+                                </>
+                              ) : (
+                                'Cancelar invitación'
+                              )}
+                            </Button>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </TableCell>
+                  </TableRow>
+                )
+              )}
             </TableBody>
           </Table>
         )}
@@ -454,17 +475,17 @@ function InvitationsTab() {
 function SettingsTab() {
   const queryClient = useQueryClient();
   const { data: org, isLoading } = useQuery({
-    queryKey: ["admin", "org"],
+    queryKey: ['admin', 'org'],
     queryFn: () => getOrgDetails(),
   });
 
-  const [name, setName] = useState("");
-  const [slug, setSlug] = useState("");
-  const [logoUrl, setLogoUrl] = useState("");
+  const [name, setName] = useState('');
+  const [slug, setSlug] = useState('');
+  const [logoUrl, setLogoUrl] = useState('');
 
   useEffect(() => {
     if (org) {
-      setLogoUrl(org.logo ?? "");
+      setLogoUrl(org.logo ?? '');
     }
   }, [org?.id, org?.logo]);
 
@@ -472,9 +493,9 @@ function SettingsTab() {
     mutationFn: (data: { name?: string; slug?: string; logo?: string }) =>
       updateOrg({ data }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin", "org"] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'org'] });
       queryClient.invalidateQueries({ queryKey: userQuery.queryKey });
-      toast.success("Organización actualizada");
+      toast.success('Organización actualizada');
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -485,7 +506,7 @@ function SettingsTab() {
 
     const parsedLogo = logoUrlSchema.safeParse(logoUrl.trim());
     if (!parsedLogo.success) {
-      toast.error("La URL del logo no es válida");
+      toast.error('La URL del logo no es válida');
       return;
     }
 
@@ -493,7 +514,7 @@ function SettingsTab() {
     if (name && name !== org.name) updates.name = name;
     if (slug && slug !== org.slug) updates.slug = slug;
     const trimmedLogo = parsedLogo.data;
-    const currentLogo = org.logo ?? "";
+    const currentLogo = org.logo ?? '';
     if (trimmedLogo !== currentLogo) {
       updates.logo = trimmedLogo;
     }
@@ -548,7 +569,7 @@ function SettingsTab() {
             <Label htmlFor="org-name">Nombre</Label>
             <Input
               id="org-name"
-              defaultValue={org?.name ?? ""}
+              defaultValue={org?.name ?? ''}
               onChange={(e) => setName(e.target.value)}
               placeholder="Nombre de la organización"
             />
@@ -557,13 +578,13 @@ function SettingsTab() {
             <Label htmlFor="org-slug">Slug</Label>
             <Input
               id="org-slug"
-              defaultValue={org?.slug ?? ""}
+              defaultValue={org?.slug ?? ''}
               onChange={(e) => setSlug(e.target.value)}
               placeholder="identificador-unico"
             />
           </div>
           <Button type="submit" disabled={updateMutation.isPending}>
-            {updateMutation.isPending ? "Guardando..." : "Guardar cambios"}
+            {updateMutation.isPending ? 'Guardando...' : 'Guardar cambios'}
           </Button>
         </form>
       </CardContent>
@@ -573,19 +594,19 @@ function SettingsTab() {
 
 function InviteDialog() {
   const queryClient = useQueryClient();
-  const [email, setEmail] = useState("");
-  const [role, setRole] = useState<"owner" | "member" | "viewer">("member");
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState<'owner' | 'member' | 'viewer'>('member');
   const [open, setOpen] = useState(false);
-  const [step, setStep] = useState<"edit" | "confirm">("edit");
+  const [step, setStep] = useState<'edit' | 'confirm'>('edit');
 
   const mutation = useMutation({
     mutationFn: () => inviteMember({ data: { email, role } }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin", "invitations"] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'invitations'] });
       toast.success(`Invitación enviada a ${email}`);
-      setEmail("");
-      setRole("member");
-      setStep("edit");
+      setEmail('');
+      setRole('member');
+      setStep('edit');
       setOpen(false);
     },
     onError: (e: Error) => toast.error(e.message),
@@ -594,7 +615,7 @@ function InviteDialog() {
   const handleOpenChange = (next: boolean) => {
     setOpen(next);
     if (!next) {
-      setStep("edit");
+      setStep('edit');
     }
   };
 
@@ -612,12 +633,12 @@ function InviteDialog() {
         <DialogHeader>
           <DialogTitle>Invitar usuario</DialogTitle>
           <DialogDescription>
-            {step === "edit"
-              ? "Ingresá el email y el rol. Luego confirmá el envío."
-              : "Revisá los datos antes de enviar la invitación."}
+            {step === 'edit'
+              ? 'Ingresá el email y el rol. Luego confirmá el envío.'
+              : 'Revisá los datos antes de enviar la invitación.'}
           </DialogDescription>
         </DialogHeader>
-        {step === "edit" ? (
+        {step === 'edit' ? (
           <>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
@@ -634,7 +655,9 @@ function InviteDialog() {
                 <Label>Rol</Label>
                 <Select
                   value={role}
-                  onValueChange={(v: "owner" | "member" | "viewer") => setRole(v)}
+                  onValueChange={(v: 'owner' | 'member' | 'viewer') =>
+                    setRole(v)
+                  }
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -650,7 +673,7 @@ function InviteDialog() {
             <DialogFooter className="gap-2 sm:gap-0">
               <Button
                 type="button"
-                onClick={() => setStep("confirm")}
+                onClick={() => setStep('confirm')}
                 disabled={!emailOk}
               >
                 Continuar
@@ -674,7 +697,7 @@ function InviteDialog() {
                 type="button"
                 variant="outline"
                 disabled={mutation.isPending}
-                onClick={() => setStep("edit")}
+                onClick={() => setStep('edit')}
               >
                 Volver
               </Button>
@@ -689,7 +712,7 @@ function InviteDialog() {
                     Enviando...
                   </>
                 ) : (
-                  "Confirmar y enviar"
+                  'Confirmar y enviar'
                 )}
               </Button>
             </DialogFooter>

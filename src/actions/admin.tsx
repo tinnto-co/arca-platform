@@ -1,17 +1,17 @@
-import { createServerFn } from "@tanstack/react-start";
-import { getRequestHeaders } from "@tanstack/react-start/server";
-import z from "zod";
-import { auth } from "@/lib/auth";
-import { db } from "@/lib/db";
-import { member, organization, user } from "@/drizzle/auth";
-import { eq, and } from "drizzle-orm";
+import { createServerFn } from '@tanstack/react-start';
+import { getRequestHeaders } from '@tanstack/react-start/server';
+import z from 'zod';
+import { auth } from '@/lib/auth';
+import { db } from '@/lib/db';
+import { member, organization, user } from '@/drizzle/auth';
+import { eq, and } from 'drizzle-orm';
 
 async function requireOwner() {
   const session = await auth.api.getSession({ headers: getRequestHeaders() });
-  if (!session?.user?.id) throw new Error("Unauthorized");
+  if (!session?.user?.id) throw new Error('Unauthorized');
 
   const orgId = (session.session as any).activeOrganizationId as string | null;
-  if (!orgId) throw new Error("No active organization");
+  if (!orgId) throw new Error('No active organization');
 
   const [m] = await db
     .select({ role: member.role })
@@ -21,15 +21,15 @@ async function requireOwner() {
     )
     .limit(1);
 
-  if (!m || m.role !== "owner") {
-    throw new Error("Solo el administrador puede realizar esta acción");
+  if (m?.role !== 'owner') {
+    throw new Error('Solo el administrador puede realizar esta acción');
   }
 
   return { session, orgId, userId: session.user.id };
 }
 
 export const getOrgMembers = createServerFn({
-  method: "GET",
+  method: 'GET',
 }).handler(async () => {
   const { orgId } = await requireOwner();
 
@@ -51,7 +51,7 @@ export const getOrgMembers = createServerFn({
 });
 
 export const getOrgDetails = createServerFn({
-  method: "GET",
+  method: 'GET',
 }).handler(async () => {
   const { orgId } = await requireOwner();
 
@@ -61,12 +61,12 @@ export const getOrgDetails = createServerFn({
     .where(eq(organization.id, orgId))
     .limit(1);
 
-  if (!org) throw new Error("Organización no encontrada");
+  if (!org) throw new Error('Organización no encontrada');
   return org;
 });
 
 export const updateOrg = createServerFn({
-  method: "POST",
+  method: 'POST',
 })
   .inputValidator(
     z.object({
@@ -94,12 +94,12 @@ export const updateOrg = createServerFn({
   });
 
 export const inviteMember = createServerFn({
-  method: "POST",
+  method: 'POST',
 })
   .inputValidator(
     z.object({
       email: z.string().email(),
-      role: z.enum(["owner", "member", "viewer"]),
+      role: z.enum(['owner', 'member', 'viewer']),
     })
   )
   .handler(async (ctx) => {
@@ -117,7 +117,7 @@ export const inviteMember = createServerFn({
   });
 
 export const removeMember = createServerFn({
-  method: "POST",
+  method: 'POST',
 })
   .inputValidator(z.object({ memberIdOrEmail: z.string() }))
   .handler(async (ctx) => {
@@ -134,12 +134,12 @@ export const removeMember = createServerFn({
   });
 
 export const updateMemberRole = createServerFn({
-  method: "POST",
+  method: 'POST',
 })
   .inputValidator(
     z.object({
       memberId: z.string(),
-      role: z.enum(["owner", "member", "viewer"]),
+      role: z.enum(['owner', 'member', 'viewer']),
     })
   )
   .handler(async (ctx) => {
@@ -157,7 +157,7 @@ export const updateMemberRole = createServerFn({
   });
 
 export const getOrgInvitations = createServerFn({
-  method: "GET",
+  method: 'GET',
 }).handler(async () => {
   await requireOwner();
 
@@ -170,7 +170,7 @@ export const getOrgInvitations = createServerFn({
 });
 
 export const cancelInvitation = createServerFn({
-  method: "POST",
+  method: 'POST',
 })
   .inputValidator(z.object({ invitationId: z.string() }))
   .handler(async (ctx) => {

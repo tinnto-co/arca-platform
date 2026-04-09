@@ -1,18 +1,18 @@
-import { createServerFn } from "@tanstack/react-start";
-import z from "zod";
-import { db } from "@/lib/db";
-import { job, client, jobLog } from "@/drizzle/schema";
-import { getSessionWithOrg } from "@/actions/helpers";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { createServerFn } from '@tanstack/react-start';
+import z from 'zod';
+import { db } from '@/lib/db';
+import { job, client, jobLog } from '@/drizzle/schema';
+import { getSessionWithOrg } from '@/actions/helpers';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 
-const jobStatusEnum = z.enum(["pending", "running", "failed", "finished"]);
+const jobStatusEnum = z.enum(['pending', 'running', 'failed', 'finished']);
 const jobTypeEnum = z.enum([
-  "iva",
-  "comprobantes",
-  "comprobantes_full",
-  "notificaciones",
-  "deuda",
-  "vencimientos",
+  'iva',
+  'comprobantes',
+  'comprobantes_full',
+  'notificaciones',
+  'deuda',
+  'vencimientos',
 ]);
 
 export type JobStatus = z.infer<typeof jobStatusEnum>;
@@ -24,8 +24,8 @@ export interface JobRow {
   type: JobType;
   clientId: string;
   clientName: string | null;
-  params: { [key: string]: {} } | null;
-  result: { [key: string]: {} } | null;
+  params: Record<string, {}> | null;
+  result: Record<string, {}> | null;
   failedReason: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -46,12 +46,12 @@ export interface JobLogRow {
   jobId: string;
   level: string;
   message: string;
-  context: { [key: string]: {} } | null;
+  context: Record<string, {}> | null;
   createdAt: Date;
 }
 
 export const getJobs = createServerFn({
-  method: "GET",
+  method: 'GET',
 })
   .inputValidator(
     z.object({
@@ -129,8 +129,8 @@ export const getJobs = createServerFn({
 
     const jobs: JobRow[] = rawJobs.map((j) => ({
       ...j,
-      params: (j.params ?? null) as { [key: string]: {} } | null,
-      result: (j.result ?? null) as { [key: string]: {} } | null,
+      params: (j.params ?? null) as Record<string, {}> | null,
+      result: (j.result ?? null) as Record<string, {}> | null,
     }));
 
     const response: JobsResponse = {
@@ -144,7 +144,7 @@ export const getJobs = createServerFn({
   });
 
 export const getJobLogs = createServerFn({
-  method: "GET",
+  method: 'GET',
 })
   .inputValidator(
     z.object({
@@ -193,4 +193,3 @@ export const getJobLogs = createServerFn({
 
     return logs as JobLogRow[];
   });
-

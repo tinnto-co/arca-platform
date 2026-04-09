@@ -1,11 +1,11 @@
-import * as React from "react";
-import { useState } from "react";
-import { useForm, type Resolver } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Edit } from "lucide-react";
-import { toast } from "sonner";
+import * as React from 'react';
+import { useState } from 'react';
+import { useForm, type Resolver } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Loader2, Edit } from 'lucide-react';
+import { toast } from 'sonner';
 
 import {
   Dialog,
@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog";
+} from '@/components/ui/dialog';
 import {
   Form,
   FormControl,
@@ -23,23 +23,23 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { getClient, updateClient } from "@/actions/client";
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { getClient, updateClient } from '@/actions/client';
 
 const clientSchema = z.object({
-  name: z.string().min(1, "El nombre es requerido"),
+  name: z.string().min(1, 'El nombre es requerido'),
   email: z
     .string()
     .optional()
     .refine(
-      (val) => !val || val === "" || z.string().email().safeParse(val).success,
-      { message: "Email inválido" }
+      (val) => !val || val === '' || z.string().email().safeParse(val).success,
+      { message: 'Email inválido' }
     )
-    .or(z.literal("")),
-  phone: z.string().optional().or(z.literal("")),
-  address: z.string().optional().or(z.literal("")),
+    .or(z.literal('')),
+  phone: z.string().optional().or(z.literal('')),
+  address: z.string().optional().or(z.literal('')),
   image: z.string().optional(),
 });
 
@@ -63,12 +63,15 @@ export function EditClientDialog({
   const [loading, setLoading] = useState(false);
   const queryClient = useQueryClient();
 
-  const isControlled = controlledOpen !== undefined && controlledOnOpenChange !== undefined;
+  const isControlled =
+    controlledOpen !== undefined && controlledOnOpenChange !== undefined;
   const open = isControlled ? controlledOpen : internalOpen;
-  const setOpen = isControlled ? (v: boolean) => controlledOnOpenChange?.(v) : setInternalOpen;
+  const setOpen = isControlled
+    ? (v: boolean) => controlledOnOpenChange?.(v)
+    : setInternalOpen;
 
   const { data: client, isLoading: loadingClient } = useQuery({
-    queryKey: ["client", clientId],
+    queryKey: ['client', clientId],
     queryFn: () => getClient({ data: { id: clientId } }),
     enabled: open && !!clientId,
   });
@@ -76,11 +79,11 @@ export function EditClientDialog({
   const form = useForm<ClientFormValues>({
     resolver: zodResolver(clientSchema) as Resolver<ClientFormValues>,
     defaultValues: {
-      name: "",
-      email: "",
-      phone: "",
-      address: "",
-      image: "",
+      name: '',
+      email: '',
+      phone: '',
+      address: '',
+      image: '',
     },
   });
 
@@ -89,10 +92,10 @@ export function EditClientDialog({
     if (client) {
       form.reset({
         name: client.name,
-        email: client.email || "",
-        phone: client.phone || "",
-        address: client.address || "",
-        image: client.image || "",
+        email: client.email || '',
+        phone: client.phone || '',
+        address: client.address || '',
+        image: client.image || '',
       });
     }
   }, [client, form]);
@@ -100,15 +103,15 @@ export function EditClientDialog({
   const updateMutation = useMutation({
     mutationFn: (data: any) => updateClient({ data }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["clients"] });
-      queryClient.invalidateQueries({ queryKey: ["clientsWithProfiles"] });
-      queryClient.invalidateQueries({ queryKey: ["client", clientId] });
-      toast.success("Cliente actualizado exitosamente");
+      queryClient.invalidateQueries({ queryKey: ['clients'] });
+      queryClient.invalidateQueries({ queryKey: ['clientsWithProfiles'] });
+      queryClient.invalidateQueries({ queryKey: ['client', clientId] });
+      toast.success('Cliente actualizado exitosamente');
       setOpen(false);
     },
     onError: (error) => {
-      console.error("Error updating client:", error);
-      toast.error("Error al actualizar el cliente");
+      console.error('Error updating client:', error);
+      toast.error('Error al actualizar el cliente');
     },
   });
 
@@ -172,7 +175,7 @@ export function EditClientDialog({
                           type="email"
                           placeholder="cliente@ejemplo.com"
                           {...field}
-                          value={field.value || ""}
+                          value={field.value || ''}
                         />
                       </FormControl>
                       <FormMessage />
@@ -188,10 +191,10 @@ export function EditClientDialog({
                   <FormItem>
                     <FormLabel>Teléfono (opcional)</FormLabel>
                     <FormControl>
-                      <Input 
-                        placeholder="+54 9 11 1234-5678" 
+                      <Input
+                        placeholder="+54 9 11 1234-5678"
                         {...field}
-                        value={field.value || ""}
+                        value={field.value || ''}
                       />
                     </FormControl>
                     <FormMessage />
@@ -206,10 +209,10 @@ export function EditClientDialog({
                   <FormItem>
                     <FormLabel>Dirección (opcional)</FormLabel>
                     <FormControl>
-                      <Input 
-                        placeholder="Dirección completa" 
+                      <Input
+                        placeholder="Dirección completa"
                         {...field}
-                        value={field.value || ""}
+                        value={field.value || ''}
                       />
                     </FormControl>
                     <FormMessage />

@@ -1,16 +1,16 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { authClient } from "@/lib/auth-client";
-import { Button } from "@/components/ui/button";
+import { createFileRoute } from '@tanstack/react-router';
+import { authClient } from '@/lib/auth-client';
+import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { Building, LogOut } from "lucide-react";
+} from '@/components/ui/card';
+import { Building, LogOut } from 'lucide-react';
 
-export const Route = createFileRoute("/no-organization")({
+export const Route = createFileRoute('/no-organization')({
   component: NoOrganizationPage,
 });
 
@@ -19,7 +19,7 @@ function NoOrganizationPage() {
     await authClient.signOut({
       fetchOptions: {
         onSuccess: () => {
-          window.location.href = "/login";
+          window.location.href = '/login';
         },
       },
     });

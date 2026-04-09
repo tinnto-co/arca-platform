@@ -4,23 +4,23 @@ import {
   useContext,
   useState,
   type ReactNode,
-} from "react";
-import { ArrowRight, Building, Loader2 } from "lucide-react";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+} from 'react';
+import { ArrowRight, Building, Loader2 } from 'lucide-react';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
-export type OrgSwitchVisual = {
+export interface OrgSwitchVisual {
   fromName: string;
   fromLogo: string | null;
   toName: string;
   toLogo: string | null;
-};
+}
 
-type OrgSwitchContextValue = {
+interface OrgSwitchContextValue {
   runOrgSwitch: (
     visual: OrgSwitchVisual,
     fn: () => Promise<void>
   ) => Promise<void>;
-};
+}
 
 const OrgSwitchContext = createContext<OrgSwitchContextValue | null>(null);
 
@@ -33,7 +33,7 @@ function OrgMini({
   name: string;
   logo: string | null;
 }) {
-  const initial = name.trim().slice(0, 2).toUpperCase() || "?";
+  const initial = name.trim().slice(0, 2).toUpperCase() || '?';
   return (
     <div className="flex max-w-[130px] flex-col items-center gap-2">
       <span className="text-[10px] font-medium uppercase tracking-wide text-[#232c50]/60">
@@ -52,7 +52,7 @@ function OrgMini({
         )}
       </div>
       <span className="w-full truncate text-center text-xs font-medium text-[#232c50]">
-        {name || "—"}
+        {name || '—'}
       </span>
     </div>
   );
@@ -68,7 +68,11 @@ function OrgSwitchOverlay({ visual }: { visual: OrgSwitchVisual }) {
     >
       <div className="flex max-w-md flex-col items-center gap-6">
         <div className="flex items-center justify-center gap-2 sm:gap-4">
-          <OrgMini label="Desde" name={visual.fromName} logo={visual.fromLogo} />
+          <OrgMini
+            label="Desde"
+            name={visual.fromName}
+            logo={visual.fromLogo}
+          />
 
           <div className="flex flex-col items-center gap-3 px-1 pt-6 sm:px-2">
             <div className="flex items-center gap-1">
@@ -124,7 +128,7 @@ export function OrgSwitchProvider({ children }: { children: ReactNode }) {
 export function useOrgSwitch() {
   const ctx = useContext(OrgSwitchContext);
   if (!ctx) {
-    throw new Error("useOrgSwitch must be used within OrgSwitchProvider");
+    throw new Error('useOrgSwitch must be used within OrgSwitchProvider');
   }
   return ctx;
 }

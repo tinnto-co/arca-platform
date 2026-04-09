@@ -1,23 +1,23 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
-import { authClient } from "@/lib/auth-client";
-import { getSession } from "@/actions/user";
-import { getPublicInvitationPreview } from "@/actions/invitation";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { useState, useEffect } from 'react';
+import { authClient } from '@/lib/auth-client';
+import { getSession } from '@/actions/user';
+import { getPublicInvitationPreview } from '@/actions/invitation';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2, Building, CheckCircle, AlertCircle } from "lucide-react";
-import { toast } from "sonner";
+} from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Loader2, Building, CheckCircle, AlertCircle } from 'lucide-react';
+import { toast } from 'sonner';
 
-export const Route = createFileRoute("/invite/$invitationId")({
+export const Route = createFileRoute('/invite/$invitationId')({
   component: InvitePage,
 });
 
@@ -34,8 +34,8 @@ function InvitePage() {
   const [accepted, setAccepted] = useState(false);
 
   const [showSignUp, setShowSignUp] = useState(false);
-  const [name, setName] = useState("");
-  const [password, setPassword] = useState("");
+  const [name, setName] = useState('');
+  const [password, setPassword] = useState('');
   const [signUpError, setSignUpError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -46,7 +46,7 @@ function InvitePage() {
         });
 
         if (!preview) {
-          setError("Invitación no encontrada o expirada");
+          setError('Invitación no encontrada o expirada');
           return;
         }
 
@@ -56,7 +56,7 @@ function InvitePage() {
         setIsLoggedIn(!!session?.user);
         setSessionEmail(session?.user?.email ?? null);
       } catch {
-        setError("Error al cargar la invitación");
+        setError('Error al cargar la invitación');
       } finally {
         setLoading(false);
       }
@@ -77,11 +77,11 @@ function InvitePage() {
         invitationId,
       });
       if (result.error) {
-        throw new Error(result.error.message || "Error al aceptar");
+        throw new Error(result.error.message || 'Error al aceptar');
       }
       setAccepted(true);
-      toast.success("Invitación aceptada");
-      setTimeout(() => navigate({ to: "/" }), 1500);
+      toast.success('Invitación aceptada');
+      setTimeout(() => navigate({ to: '/' }), 1500);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -92,11 +92,11 @@ function InvitePage() {
   const handleSignUpAndAccept = async () => {
     setSignUpError(null);
     if (!name.trim() || !password.trim()) {
-      setSignUpError("Nombre y contraseña son requeridos");
+      setSignUpError('Nombre y contraseña son requeridos');
       return;
     }
     if (password.length < 8) {
-      setSignUpError("La contraseña debe tener al menos 8 caracteres");
+      setSignUpError('La contraseña debe tener al menos 8 caracteres');
       return;
     }
 
@@ -109,7 +109,7 @@ function InvitePage() {
       });
       if (signUpResult.error) {
         throw new Error(
-          signUpResult.error.message || "Error al crear la cuenta"
+          signUpResult.error.message || 'Error al crear la cuenta'
         );
       }
 
@@ -118,13 +118,13 @@ function InvitePage() {
       });
       if (acceptResult.error) {
         throw new Error(
-          acceptResult.error.message || "Error al aceptar la invitación"
+          acceptResult.error.message || 'Error al aceptar la invitación'
         );
       }
 
       setAccepted(true);
-      toast.success("Cuenta creada e invitación aceptada");
-      setTimeout(() => navigate({ to: "/" }), 1500);
+      toast.success('Cuenta creada e invitación aceptada');
+      setTimeout(() => navigate({ to: '/' }), 1500);
     } catch (e: any) {
       setSignUpError(e.message);
     } finally {
@@ -150,7 +150,7 @@ function InvitePage() {
             <CardDescription>{error}</CardDescription>
           </CardHeader>
           <CardContent className="flex justify-center">
-            <Button onClick={() => navigate({ to: "/login" })}>
+            <Button onClick={() => navigate({ to: '/login' })}>
               Ir al inicio de sesión
             </Button>
           </CardContent>
@@ -167,7 +167,7 @@ function InvitePage() {
             <CheckCircle className="mx-auto size-12 text-green-500 mb-2" />
             <CardTitle>¡Bienvenido!</CardTitle>
             <CardDescription>
-              Te uniste a {invitation?.organizationName ?? "la organización"}.
+              Te uniste a {invitation?.organizationName ?? 'la organización'}.
               Redirigiendo...
             </CardDescription>
           </CardHeader>
@@ -185,15 +185,17 @@ function InvitePage() {
           </div>
           <CardTitle>Invitación a organización</CardTitle>
           <CardDescription>
-            Has sido invitado a unirte a{" "}
-            <strong>{invitation?.organizationName ?? "una organización"}</strong>{" "}
-            como{" "}
+            Has sido invitado a unirte a{' '}
             <strong>
-              {invitation?.role === "owner"
-                ? "Administrador"
-                : invitation?.role === "viewer"
-                  ? "Solo lectura"
-                  : "Miembro"}
+              {invitation?.organizationName ?? 'una organización'}
+            </strong>{' '}
+            como{' '}
+            <strong>
+              {invitation?.role === 'owner'
+                ? 'Administrador'
+                : invitation?.role === 'viewer'
+                  ? 'Solo lectura'
+                  : 'Miembro'}
             </strong>
           </CardDescription>
         </CardHeader>
@@ -211,9 +213,9 @@ function InvitePage() {
                 <Alert variant="destructive">
                   <AlertCircle className="size-4" />
                   <AlertDescription>
-                    Esta invitación fue enviada a{" "}
-                    <strong>{invitation?.email}</strong>. Cerrá sesión e
-                    iniciá con ese correo para aceptarla.
+                    Esta invitación fue enviada a{' '}
+                    <strong>{invitation?.email}</strong>. Cerrá sesión e iniciá
+                    con ese correo para aceptarla.
                   </AlertDescription>
                 </Alert>
                 <Button
@@ -256,7 +258,7 @@ function InvitePage() {
               </p>
               <div className="space-y-2">
                 <Label>Email</Label>
-                <Input value={invitation?.email ?? ""} disabled />
+                <Input value={invitation?.email ?? ''} disabled />
               </div>
               <div className="space-y-2">
                 <Label>Nombre</Label>
@@ -286,9 +288,7 @@ function InvitePage() {
                 onClick={handleSignUpAndAccept}
                 disabled={accepting}
               >
-                {accepting && (
-                  <Loader2 className="mr-2 size-4 animate-spin" />
-                )}
+                {accepting && <Loader2 className="mr-2 size-4 animate-spin" />}
                 Crear cuenta y aceptar
               </Button>
               <Button
@@ -305,7 +305,7 @@ function InvitePage() {
                 className="w-full"
                 onClick={() =>
                   navigate({
-                    to: "/login",
+                    to: '/login',
                     search: { redirect: `/invite/${invitationId}` },
                   })
                 }

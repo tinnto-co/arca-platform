@@ -1,18 +1,18 @@
-import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
-import { ArrowLeft } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getProfile } from "@/actions/profile";
-import { getInvoiceStatsByProfile } from "@/actions/invoice";
-import { InvoicesTable } from "@/components/invoices-table";
+import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
+import { ArrowLeft } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { getProfile } from '@/actions/profile';
+import { getInvoiceStatsByProfile } from '@/actions/invoice';
+import { InvoicesTable } from '@/components/invoices-table';
 import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
-} from "@/components/ui/chart";
+} from '@/components/ui/chart';
 import {
   BarChart,
   Bar,
@@ -23,7 +23,7 @@ import {
   Pie,
   Cell,
   Legend,
-} from "recharts";
+} from 'recharts';
 
 interface ProfileDetailPageProps {
   profileId: string;
@@ -32,24 +32,24 @@ interface ProfileDetailPageProps {
 
 const chartConfig = {
   ventas: {
-    label: "Ventas",
-    color: "hsl(var(--chart-1))",
+    label: 'Ventas',
+    color: 'hsl(var(--chart-1))',
   },
   compras: {
-    label: "Compras",
-    color: "hsl(var(--chart-2))",
+    label: 'Compras',
+    color: 'hsl(var(--chart-2))',
   },
 } satisfies ChartConfig;
 
 const COLORS = [
-  "#1F2937", // gray-800
-  "#374151", // gray-700
-  "#4B5563", // gray-600
-  "#6B7280", // gray-500
-  "#9CA3AF", // gray-400
-  "#111827", // gray-900
-  "#1F2937", // gray-800 (repeat for more items)
-  "#374151", // gray-700 (repeat for more items)
+  '#1F2937', // gray-800
+  '#374151', // gray-700
+  '#4B5563', // gray-600
+  '#6B7280', // gray-500
+  '#9CA3AF', // gray-400
+  '#111827', // gray-900
+  '#1F2937', // gray-800 (repeat for more items)
+  '#374151', // gray-700 (repeat for more items)
 ];
 
 export function ProfileDetailPage({
@@ -59,22 +59,22 @@ export function ProfileDetailPage({
   const navigate = useNavigate();
 
   const { data: profile, isLoading: loadingProfile } = useQuery({
-    queryKey: ["profile", profileId],
+    queryKey: ['profile', profileId],
     queryFn: () => getProfile({ data: { id: profileId } }),
   });
 
   const { data: stats, isLoading: loadingStats } = useQuery({
-    queryKey: ["profileStats", profileId],
+    queryKey: ['profileStats', profileId],
     queryFn: () => getInvoiceStatsByProfile({ data: { profileId } }),
   });
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case "active":
+      case 'active':
         return <Badge variant="outline">Activo</Badge>;
-      case "inactive":
+      case 'inactive':
         return <Badge variant="outline">Inactivo</Badge>;
-      case "pending":
+      case 'pending':
         return <Badge variant="outline">Pendiente</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
@@ -83,53 +83,53 @@ export function ProfileDetailPage({
 
   // Map invoice type number to label
   const getInvoiceTypeLabel = (type: string): string => {
-    const typeMap: { [key: string]: string } = {
-      "1": "Factura A",
-      "2": "Nota de Débito A",
-      "3": "Nota de Crédito A",
-      "4": "Recibo A",
-      "5": "Nota de Venta al Contado A",
-      "6": "Factura B",
-      "7": "Nota de Débito B",
-      "8": "Nota de Crédito B",
-      "9": "Recibo B",
-      "10": "Nota de Venta al Contado B",
-      "11": "Factura C",
-      "12": "Nota de Débito C",
-      "13": "Nota de Crédito C",
-      "15": "Recibo C",
-      "16": "Nota de Venta al Contado C",
-      "17": "Liquidación",
-      "18": "Liquidación A",
-      "19": "Factura E",
-      "20": "Nota de Débito E",
-      "21": "Nota de Crédito E",
-      "22": "Factura – Crédito Fiscal",
-      "34": "Comprobante A del Sector Público",
-      "35": "Nota de Débito A del Sector Público",
-      "36": "Nota de Crédito A del Sector Público",
-      "37": "Recibo A del Sector Público",
-      "38": "Comprobante B del Sector Público",
-      "39": "Nota de Débito B del Sector Público",
-      "40": "Nota de Crédito B del Sector Público",
-      "41": "Recibo B del Sector Público",
-      "51": "Factura M",
-      "52": "Nota de Débito M",
-      "53": "Nota de Crédito M",
-      "54": "Recibo M",
-      "81": "Ticket Factura A",
-      "82": "Ticket Factura B",
-      "83": "Ticket",
-      "110": "Ticket Nota de Crédito",
-      "201": "Factura de Crédito Electrónica MiPyME A",
-      "202": "Nota de Débito Electrónica MiPyME A",
-      "203": "Nota de Crédito Electrónica MiPyME A",
-      "206": "Factura de Crédito Electrónica MiPyME B",
-      "207": "Nota de Débito Electrónica MiPyME B",
-      "208": "Nota de Crédito Electrónica MiPyME B",
-      "211": "Factura de Crédito Electrónica MiPyME C",
-      "212": "Nota de Débito Electrónica MiPyME C",
-      "213": "Nota de Crédito Electrónica MiPyME C",
+    const typeMap: Record<string, string> = {
+      '1': 'Factura A',
+      '2': 'Nota de Débito A',
+      '3': 'Nota de Crédito A',
+      '4': 'Recibo A',
+      '5': 'Nota de Venta al Contado A',
+      '6': 'Factura B',
+      '7': 'Nota de Débito B',
+      '8': 'Nota de Crédito B',
+      '9': 'Recibo B',
+      '10': 'Nota de Venta al Contado B',
+      '11': 'Factura C',
+      '12': 'Nota de Débito C',
+      '13': 'Nota de Crédito C',
+      '15': 'Recibo C',
+      '16': 'Nota de Venta al Contado C',
+      '17': 'Liquidación',
+      '18': 'Liquidación A',
+      '19': 'Factura E',
+      '20': 'Nota de Débito E',
+      '21': 'Nota de Crédito E',
+      '22': 'Factura – Crédito Fiscal',
+      '34': 'Comprobante A del Sector Público',
+      '35': 'Nota de Débito A del Sector Público',
+      '36': 'Nota de Crédito A del Sector Público',
+      '37': 'Recibo A del Sector Público',
+      '38': 'Comprobante B del Sector Público',
+      '39': 'Nota de Débito B del Sector Público',
+      '40': 'Nota de Crédito B del Sector Público',
+      '41': 'Recibo B del Sector Público',
+      '51': 'Factura M',
+      '52': 'Nota de Débito M',
+      '53': 'Nota de Crédito M',
+      '54': 'Recibo M',
+      '81': 'Ticket Factura A',
+      '82': 'Ticket Factura B',
+      '83': 'Ticket',
+      '110': 'Ticket Nota de Crédito',
+      '201': 'Factura de Crédito Electrónica MiPyME A',
+      '202': 'Nota de Débito Electrónica MiPyME A',
+      '203': 'Nota de Crédito Electrónica MiPyME A',
+      '206': 'Factura de Crédito Electrónica MiPyME B',
+      '207': 'Nota de Débito Electrónica MiPyME B',
+      '208': 'Nota de Crédito Electrónica MiPyME B',
+      '211': 'Factura de Crédito Electrónica MiPyME C',
+      '212': 'Nota de Débito Electrónica MiPyME C',
+      '213': 'Nota de Crédito Electrónica MiPyME C',
     };
 
     return typeMap[type] || `Tipo ${type}`;
@@ -189,26 +189,26 @@ export function ProfileDetailPage({
                 Número de Identidad
               </div>
               <div className="text-sm font-medium">
-                {profile.identityNumber || "-"}
+                {profile.identityNumber || '-'}
               </div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground mb-1">Tipo</div>
-              <div className="text-sm">{profile.identityType || "-"}</div>
+              <div className="text-sm">{profile.identityType || '-'}</div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground mb-1">Teléfono</div>
-              <div className="text-sm">{profile.phone || "-"}</div>
+              <div className="text-sm">{profile.phone || '-'}</div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground mb-1">Email</div>
-              <div className="text-sm">{profile.email || "-"}</div>
+              <div className="text-sm">{profile.email || '-'}</div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground mb-1">
                 Dirección
               </div>
-              <div className="text-sm">{profile.address || "-"}</div>
+              <div className="text-sm">{profile.address || '-'}</div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground mb-1">Estado</div>
@@ -244,9 +244,9 @@ export function ProfileDetailPage({
                     Total Ventas
                   </div>
                   <div className="text-xl font-semibold">
-                    {new Intl.NumberFormat("es-AR", {
-                      style: "currency",
-                      currency: "ARS",
+                    {new Intl.NumberFormat('es-AR', {
+                      style: 'currency',
+                      currency: 'ARS',
                       minimumFractionDigits: 2,
                     }).format(stats?.totalOutbound || 0)}
                   </div>
@@ -256,9 +256,9 @@ export function ProfileDetailPage({
                     Total Compras
                   </div>
                   <div className="text-xl font-semibold">
-                    {new Intl.NumberFormat("es-AR", {
-                      style: "currency",
-                      currency: "ARS",
+                    {new Intl.NumberFormat('es-AR', {
+                      style: 'currency',
+                      currency: 'ARS',
                       minimumFractionDigits: 2,
                     }).format(stats?.totalInbound || 0)}
                   </div>
@@ -287,13 +287,13 @@ export function ProfileDetailPage({
                       (stats?.totalOutbound || 0) -
                         (stats?.totalInbound || 0) >=
                       0
-                        ? "text-[#232c50]"
-                        : "text-[#232c50]"
+                        ? 'text-[#232c50]'
+                        : 'text-[#232c50]'
                     }`}
                   >
-                    {new Intl.NumberFormat("es-AR", {
-                      style: "currency",
-                      currency: "ARS",
+                    {new Intl.NumberFormat('es-AR', {
+                      style: 'currency',
+                      currency: 'ARS',
                       minimumFractionDigits: 2,
                     }).format(
                       (stats?.totalOutbound || 0) - (stats?.totalInbound || 0)

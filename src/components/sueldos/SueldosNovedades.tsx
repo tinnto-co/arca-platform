@@ -1,29 +1,29 @@
-"use client";
+'use client';
 
-import { useState, useMemo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { format } from "date-fns";
-import { es } from "date-fns/locale";
-import { Plus, Calendar } from "lucide-react";
-import { toast } from "sonner";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
+import { Plus, Calendar } from 'lucide-react';
+import { toast } from 'sonner';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from '@/components/ui/dialog';
 import {
   Table,
   TableBody,
@@ -31,20 +31,20 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
+} from '@/components/ui/table';
 import {
   listNovedadesByPeriodo,
   listEmpleados,
   listConceptos,
   upsertNovedad,
-} from "@/actions/sueldos";
-import { puedeIngresarDatosPeriodo } from "@/lib/payroll-period-rules";
+} from '@/actions/sueldos';
+import { puedeIngresarDatosPeriodo } from '@/lib/payroll-period-rules';
 
 const now = new Date();
 const ANOS = Array.from({ length: 6 }, (_, i) => now.getFullYear() - i);
 const MESES = Array.from({ length: 12 }, (_, i) => ({
-  value: String(i + 1).padStart(2, "0"),
-  label: format(new Date(2000, i, 1), "MMMM", { locale: es }),
+  value: String(i + 1).padStart(2, '0'),
+  label: format(new Date(2000, i, 1), 'MMMM', { locale: es }),
 }));
 
 interface SueldosNovedadesProps {
@@ -54,30 +54,30 @@ interface SueldosNovedadesProps {
 export function SueldosNovedades({ clientId }: SueldosNovedadesProps) {
   const queryClient = useQueryClient();
   const [ano, setAno] = useState(String(now.getFullYear()));
-  const [mes, setMes] = useState(String(now.getMonth() + 1).padStart(2, "0"));
+  const [mes, setMes] = useState(String(now.getMonth() + 1).padStart(2, '0'));
   const periodo = useMemo(() => `${ano}-${mes}`, [ano, mes]);
   const permiteIngresar = puedeIngresarDatosPeriodo(periodo);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [empleadoId, setEmpleadoId] = useState("");
-  const [conceptoId, setConceptoId] = useState("");
-  const [valor, setValor] = useState("");
-  const [cantidad, setCantidad] = useState("");
-  const [detalle, setDetalle] = useState("");
+  const [empleadoId, setEmpleadoId] = useState('');
+  const [conceptoId, setConceptoId] = useState('');
+  const [valor, setValor] = useState('');
+  const [cantidad, setCantidad] = useState('');
+  const [detalle, setDetalle] = useState('');
 
   const { data: novedades = [] } = useQuery({
-    queryKey: ["novedades", clientId, periodo],
+    queryKey: ['novedades', clientId, periodo],
     queryFn: () => listNovedadesByPeriodo({ data: { clientId, periodo } }),
     enabled: !!clientId,
   });
 
   const { data: empleados = [] } = useQuery({
-    queryKey: ["empleados", clientId],
+    queryKey: ['empleados', clientId],
     queryFn: () => listEmpleados({ data: { clientId } }),
     enabled: !!clientId,
   });
 
   const { data: conceptos = [] } = useQuery({
-    queryKey: ["conceptos", clientId],
+    queryKey: ['conceptos', clientId],
     queryFn: () => listConceptos({ data: { clientId } }),
     enabled: !!clientId,
   });
@@ -95,14 +95,16 @@ export function SueldosNovedades({ clientId }: SueldosNovedadesProps) {
         },
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["novedades", clientId, periodo] });
+      queryClient.invalidateQueries({
+        queryKey: ['novedades', clientId, periodo],
+      });
       setDialogOpen(false);
-      setEmpleadoId("");
-      setConceptoId("");
-      setValor("");
-      setCantidad("");
-      setDetalle("");
-      toast.success("Novedad cargada");
+      setEmpleadoId('');
+      setConceptoId('');
+      setValor('');
+      setCantidad('');
+      setDetalle('');
+      toast.success('Novedad cargada');
     },
     onError: (e) => toast.error(e.message),
   });
@@ -211,13 +213,16 @@ export function SueldosNovedades({ clientId }: SueldosNovedadesProps) {
             </div>
             <div>
               <Label>Detalle (opcional)</Label>
-              <Input value={detalle} onChange={(e) => setDetalle(e.target.value)} />
+              <Input
+                value={detalle}
+                onChange={(e) => setDetalle(e.target.value)}
+              />
             </div>
           </div>
           <DialogFooter>
             <Button
               onClick={() => addNovedad.mutate()}
-              disabled={!empleadoId || !conceptoId || valor === ""}
+              disabled={!empleadoId || !conceptoId || valor === ''}
             >
               Guardar
             </Button>
@@ -253,9 +258,12 @@ export function SueldosNovedades({ clientId }: SueldosNovedadesProps) {
                     <TableCell>{n.empleadoNombre}</TableCell>
                     <TableCell>{n.conceptoNombre}</TableCell>
                     <TableCell>
-                      ${Number(n.novedad.valor).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                      $
+                      {Number(n.novedad.valor).toLocaleString('es-AR', {
+                        minimumFractionDigits: 2,
+                      })}
                     </TableCell>
-                    <TableCell>{n.novedad.cantidad ?? "—"}</TableCell>
+                    <TableCell>{n.novedad.cantidad ?? '—'}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

@@ -1,10 +1,10 @@
-import { createServerFn } from "@tanstack/react-start";
-import z from "zod";
-import { db } from "@/lib/db";
-import { invitation, organization } from "@/drizzle/auth";
-import { and, eq, gt } from "drizzle-orm";
+import { createServerFn } from '@tanstack/react-start';
+import z from 'zod';
+import { db } from '@/lib/db';
+import { invitation, organization } from '@/drizzle/auth';
+import { and, eq, gt } from 'drizzle-orm';
 
-export type PublicInvitationPreview = {
+export interface PublicInvitationPreview {
   id: string;
   email: string;
   role: string;
@@ -12,7 +12,7 @@ export type PublicInvitationPreview = {
   organizationName: string;
   organizationSlug: string | null;
   expiresAt: Date;
-};
+}
 
 /**
  * Lectura pública por id (solo pending y no vencida) para la página /invite/:id.
@@ -20,7 +20,7 @@ export type PublicInvitationPreview = {
  * sin esto, un usuario anónimo no puede cargar la invitación.
  */
 export const getPublicInvitationPreview = createServerFn({
-  method: "GET",
+  method: 'GET',
 })
   .inputValidator(
     z.object({
@@ -42,14 +42,11 @@ export const getPublicInvitationPreview = createServerFn({
         expiresAt: invitation.expiresAt,
       })
       .from(invitation)
-      .innerJoin(
-        organization,
-        eq(invitation.organizationId, organization.id)
-      )
+      .innerJoin(organization, eq(invitation.organizationId, organization.id))
       .where(
         and(
           eq(invitation.id, invitationId),
-          eq(invitation.status, "pending"),
+          eq(invitation.status, 'pending'),
           gt(invitation.expiresAt, now)
         )
       )
@@ -61,7 +58,7 @@ export const getPublicInvitationPreview = createServerFn({
     return {
       id: row.id,
       email: row.email,
-      role: row.role ?? "member",
+      role: row.role ?? 'member',
       organizationId: row.organizationId,
       organizationName: row.organizationName,
       organizationSlug: row.organizationSlug,

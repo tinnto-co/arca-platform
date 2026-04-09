@@ -1,21 +1,18 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { betterAuth } from "better-auth";
-import { admin, organization } from "better-auth/plugins";
-import { tanstackStartCookies } from "better-auth/tanstack-start";
-import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { db } from "@/lib/db";
-import { anonymous } from "better-auth/plugins";
-import { eq } from "drizzle-orm";
-import { member } from "@/drizzle/auth";
-import { ac, owner, member as memberRole, viewer } from "@/lib/permissions";
-import { sendOrganizationInvitationEmail } from "@/lib/send-invitation-email";
-import "dotenv/config";
+import { betterAuth } from 'better-auth';
+import { admin, organization } from 'better-auth/plugins';
+import { tanstackStartCookies } from 'better-auth/tanstack-start';
+import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { db } from '@/lib/db';
+import { anonymous } from 'better-auth/plugins';
+import { eq } from 'drizzle-orm';
+import { member } from '@/drizzle/auth';
+import { ac, owner, member as memberRole, viewer } from '@/lib/permissions';
+import { sendOrganizationInvitationEmail } from '@/lib/send-invitation-email';
+import 'dotenv/config';
 
 export const auth = betterAuth({
-  trustedOrigins: [
-    "http://localhost:3000",
-    "https://blakg.tinnto.co",
-  ],
+  trustedOrigins: ['http://localhost:3000', 'https://blakg.tinnto.co'],
   session: {
     cookieCache: {
       enabled: true,
@@ -25,7 +22,7 @@ export const auth = betterAuth({
   user: {
     additionalFields: {
       changedPassword: {
-        type: "boolean",
+        type: 'boolean',
       },
     },
   },
@@ -53,7 +50,7 @@ export const auth = betterAuth({
     }),
   ],
   database: drizzleAdapter(db, {
-    provider: "pg",
+    provider: 'pg',
   }),
   databaseHooks: {
     session: {

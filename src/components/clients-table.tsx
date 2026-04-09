@@ -1,6 +1,6 @@
-import { useState, useMemo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
 import {
   Eye,
   Edit,
@@ -9,8 +9,8 @@ import {
   Search,
   CircleAlert,
   CheckCircle2,
-} from "lucide-react";
-import { toast } from "sonner";
+} from 'lucide-react';
+import { toast } from 'sonner';
 
 import {
   Table,
@@ -19,13 +19,13 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
+} from '@/components/ui/table';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from '@/components/ui/dropdown-menu';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,23 +35,23 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+} from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from '@/components/ui/select';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { getClientsWithProfiles, deleteClient } from "@/actions/client";
-import { EditClientDialog } from "@/components/edit-client-dialog";
+} from '@/components/ui/tooltip';
+import { getClientsWithProfiles, deleteClient } from '@/actions/client';
+import { EditClientDialog } from '@/components/edit-client-dialog';
 
 export function ClientsTable() {
   const navigate = useNavigate();
@@ -59,8 +59,8 @@ export function ClientsTable() {
   const [clientToDelete, setClientToDelete] = useState<string | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [clientToEditId, setClientToEditId] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const queryClient = useQueryClient();
 
   const {
@@ -71,7 +71,7 @@ export function ClientsTable() {
     refetch,
     isFetching,
   } = useQuery({
-    queryKey: ["clientsWithProfiles"],
+    queryKey: ['clientsWithProfiles'],
     queryFn: () => getClientsWithProfiles(),
     retry: 1,
   });
@@ -81,7 +81,7 @@ export function ClientsTable() {
     return clients.filter((client) => {
       // Search filter (name, profile name, identity number, phone)
       const matchesSearch =
-        searchTerm === "" ||
+        searchTerm === '' ||
         client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         client.identityNumber
           .toLowerCase()
@@ -93,7 +93,7 @@ export function ClientsTable() {
 
       // Status filter
       const matchesStatus =
-        statusFilter === "all" || client.status === statusFilter;
+        statusFilter === 'all' || client.status === statusFilter;
 
       return matchesSearch && matchesStatus;
     });
@@ -102,14 +102,14 @@ export function ClientsTable() {
   const deleteMutation = useMutation({
     mutationFn: (data: { id: string }) => deleteClient({ data }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["clientsWithProfiles"] });
-      toast.success("Cliente eliminado exitosamente");
+      queryClient.invalidateQueries({ queryKey: ['clientsWithProfiles'] });
+      toast.success('Cliente eliminado exitosamente');
       setDeleteDialogOpen(false);
       setClientToDelete(null);
     },
     onError: (error) => {
-      console.error("Error deleting client:", error);
-      toast.error("Error al eliminar el cliente");
+      console.error('Error deleting client:', error);
+      toast.error('Error al eliminar el cliente');
     },
   });
 
@@ -136,15 +136,19 @@ export function ClientsTable() {
     const message =
       error instanceof Error
         ? error.message
-        : "No se pudieron cargar los clientes.";
+        : 'No se pudieron cargar los clientes.';
 
     return (
       <div className="flex flex-col items-center justify-center h-40 gap-3">
         <div className="text-muted-foreground text-center">
           Error al cargar clientes: {message}
         </div>
-        <Button variant="outline" onClick={() => refetch()} disabled={isFetching}>
-          {isFetching ? "Reintentando..." : "Reintentar"}
+        <Button
+          variant="outline"
+          onClick={() => refetch()}
+          disabled={isFetching}
+        >
+          {isFetching ? 'Reintentando...' : 'Reintentar'}
         </Button>
       </div>
     );
@@ -201,13 +205,13 @@ export function ClientsTable() {
             <span>
               Mostrando {filteredClients.length} de {clients.length} clientes
             </span>
-            {(searchTerm || statusFilter !== "all") && (
+            {(searchTerm || statusFilter !== 'all') && (
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => {
-                  setSearchTerm("");
-                  setStatusFilter("all");
+                  setSearchTerm('');
+                  setStatusFilter('all');
                 }}
               >
                 Limpiar filtros
@@ -220,7 +224,9 @@ export function ClientsTable() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Cliente</TableHead>
-                  <TableHead className="w-[120px] text-center">Estado</TableHead>
+                  <TableHead className="w-[120px] text-center">
+                    Estado
+                  </TableHead>
                   <TableHead>CUIT</TableHead>
                   <TableHead>Registrado</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
@@ -228,7 +234,11 @@ export function ClientsTable() {
               </TableHeader>
               <TableBody>
                 {filteredClients.map((client) => (
-                  <TableRow key={client.id} onClick={() => navigate({ to: `/clients/${client.id}` })} className="cursor-pointer hover:bg-[#efeeef]/50">
+                  <TableRow
+                    key={client.id}
+                    onClick={() => navigate({ to: `/clients/${client.id}` })}
+                    className="cursor-pointer hover:bg-[#efeeef]/50"
+                  >
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <span>{client.name}</span>
@@ -248,7 +258,7 @@ export function ClientsTable() {
                           </TooltipTrigger>
                           <TooltipContent side="top" sideOffset={6}>
                             {client.errorMessage?.trim() ||
-                              "Cliente con errores en jobs de scraping"}
+                              'Cliente con errores en jobs de scraping'}
                           </TooltipContent>
                         </Tooltip>
                       ) : (
@@ -283,7 +293,10 @@ export function ClientsTable() {
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                        <DropdownMenuContent
+                          align="end"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <DropdownMenuItem
                             onSelect={(e) => {
                               e.preventDefault();

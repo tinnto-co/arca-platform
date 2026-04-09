@@ -1,18 +1,18 @@
-"use client";
+'use client';
 
-import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { format } from "date-fns";
-import { es } from "date-fns/locale";
-import { FileText } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
+import { FileText } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from '@/components/ui/select';
 import {
   Table,
   TableBody,
@@ -20,14 +20,17 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
-import { listImportRecibosByPeriodo, getImportReciboDetalle } from "@/actions/sueldos";
+} from '@/components/ui/table';
+import {
+  listImportRecibosByPeriodo,
+  getImportReciboDetalle,
+} from '@/actions/sueldos';
 
 const now = new Date();
 const ANOS = Array.from({ length: 8 }, (_, i) => now.getFullYear() - i);
 const MESES = Array.from({ length: 12 }, (_, i) => ({
-  value: String(i + 1).padStart(2, "0"),
-  label: format(new Date(2000, i, 1), "MMMM", { locale: es }),
+  value: String(i + 1).padStart(2, '0'),
+  label: format(new Date(2000, i, 1), 'MMMM', { locale: es }),
 }));
 
 interface SueldosReciboProps {
@@ -35,19 +38,19 @@ interface SueldosReciboProps {
 }
 
 function moneyLabel(v: string | number): string {
-  const n = typeof v === "number" ? v : Number(v);
-  if (Number.isNaN(n)) return "—";
-  return `$${n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const n = typeof v === 'number' ? v : Number(v);
+  if (Number.isNaN(n)) return '—';
+  return `$${n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 export function SueldosRecibo({ clientId }: SueldosReciboProps) {
   const [ano, setAno] = useState(String(now.getFullYear()));
-  const [mes, setMes] = useState(String(now.getMonth() + 1).padStart(2, "0"));
+  const [mes, setMes] = useState(String(now.getMonth() + 1).padStart(2, '0'));
   const periodo = useMemo(() => `${ano}-${mes}`, [ano, mes]);
-  const [reciboId, setReciboId] = useState("");
+  const [reciboId, setReciboId] = useState('');
 
   const { data: recibosPeriodo = [], isLoading: loadingList } = useQuery({
-    queryKey: ["import-recibos", clientId, periodo],
+    queryKey: ['import-recibos', clientId, periodo],
     queryFn: () =>
       listImportRecibosByPeriodo({
         data: { clientId, periodo },
@@ -56,7 +59,7 @@ export function SueldosRecibo({ clientId }: SueldosReciboProps) {
   });
 
   const { data: detalle, isLoading: loadingDetalle } = useQuery({
-    queryKey: ["import-recibo-detalle", reciboId, clientId],
+    queryKey: ['import-recibo-detalle', reciboId, clientId],
     queryFn: () =>
       getImportReciboDetalle({
         data: { reciboId, clientId },
@@ -73,8 +76,8 @@ export function SueldosRecibo({ clientId }: SueldosReciboProps) {
             Recibos importados (LSD)
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Seleccioná período y empleado para ver totales y conceptos del recibo importado desde
-            Excel.
+            Seleccioná período y empleado para ver totales y conceptos del
+            recibo importado desde Excel.
           </p>
         </CardHeader>
         <CardContent className="flex flex-wrap items-end gap-4">
@@ -84,7 +87,7 @@ export function SueldosRecibo({ clientId }: SueldosReciboProps) {
               value={ano}
               onValueChange={(v) => {
                 setAno(v);
-                setReciboId("");
+                setReciboId('');
               }}
             >
               <SelectTrigger className="w-[120px]">
@@ -105,7 +108,7 @@ export function SueldosRecibo({ clientId }: SueldosReciboProps) {
               value={mes}
               onValueChange={(v) => {
                 setMes(v);
-                setReciboId("");
+                setReciboId('');
               }}
             >
               <SelectTrigger className="w-[160px]">
@@ -126,7 +129,7 @@ export function SueldosRecibo({ clientId }: SueldosReciboProps) {
               <SelectTrigger className="w-[min(100%,320px)] max-w-[320px]">
                 <SelectValue
                   placeholder={
-                    loadingList ? "Cargando…" : "Seleccioná un recibo"
+                    loadingList ? 'Cargando…' : 'Seleccioná un recibo'
                   }
                 />
               </SelectTrigger>
@@ -153,14 +156,18 @@ export function SueldosRecibo({ clientId }: SueldosReciboProps) {
           ) : !detalle ? (
             <Card>
               <CardContent className="py-8">
-                <p className="text-muted-foreground">No se encontró el recibo.</p>
+                <p className="text-muted-foreground">
+                  No se encontró el recibo.
+                </p>
               </CardContent>
             </Card>
           ) : (
             <>
               <Card className="w-full max-w-md">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Datos del empleado</CardTitle>
+                  <CardTitle className="text-base">
+                    Datos del empleado
+                  </CardTitle>
                 </CardHeader>
                 <CardContent className="pt-0">
                   <dl className="grid grid-cols-[minmax(4.5rem,auto)_1fr] gap-x-3 gap-y-2 text-sm">
@@ -169,13 +176,19 @@ export function SueldosRecibo({ clientId }: SueldosReciboProps) {
                       {detalle.empleado.nombre}
                     </dd>
                     <dt className="text-muted-foreground">CUIL</dt>
-                    <dd className="min-w-0 tabular-nums">{detalle.empleado.cuil}</dd>
+                    <dd className="min-w-0 tabular-nums">
+                      {detalle.empleado.cuil}
+                    </dd>
                     <dt className="text-muted-foreground">Legajo</dt>
-                    <dd className="min-w-0 tabular-nums">{detalle.empleado.legajo}</dd>
+                    <dd className="min-w-0 tabular-nums">
+                      {detalle.empleado.legajo}
+                    </dd>
                     <dt className="text-muted-foreground">Período</dt>
                     <dd className="min-w-0">{detalle.recibo.periodo}</dd>
                     <dt className="text-muted-foreground">Tipo</dt>
-                    <dd className="min-w-0 capitalize">{detalle.recibo.tipo}</dd>
+                    <dd className="min-w-0 capitalize">
+                      {detalle.recibo.tipo}
+                    </dd>
                   </dl>
                 </CardContent>
               </Card>
@@ -236,9 +249,12 @@ export function SueldosRecibo({ clientId }: SueldosReciboProps) {
 
               <Card className="w-full min-w-0 max-w-full">
                 <CardHeader>
-                  <CardTitle className="text-base">Conceptos LSD (código)</CardTitle>
+                  <CardTitle className="text-base">
+                    Conceptos LSD (código)
+                  </CardTitle>
                   <p className="text-sm text-muted-foreground">
-                    Solo conceptos con importe distinto de cero en el archivo importado.
+                    Solo conceptos con importe distinto de cero en el archivo
+                    importado.
                   </p>
                 </CardHeader>
                 <CardContent className="min-w-0">
@@ -262,7 +278,9 @@ export function SueldosRecibo({ clientId }: SueldosReciboProps) {
                         <TableBody>
                           {detalle.conceptos.map((c) => (
                             <TableRow key={c.id}>
-                              <TableCell className="font-mono">{c.codigo}</TableCell>
+                              <TableCell className="font-mono">
+                                {c.codigo}
+                              </TableCell>
                               <TableCell className="text-right tabular-nums">
                                 {moneyLabel(c.monto)}
                               </TableCell>

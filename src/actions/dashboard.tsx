@@ -1,12 +1,12 @@
-import { createServerFn } from "@tanstack/react-start";
-import z from "zod";
-import { db } from "@/lib/db";
-import { client, invoice, debt, dueDate, notification } from "@/drizzle/schema";
-import { eq, and, gte, lte, sql, inArray } from "drizzle-orm";
-import { getSessionWithOrg, getOrgClientIds } from "@/actions/helpers";
+import { createServerFn } from '@tanstack/react-start';
+import z from 'zod';
+import { db } from '@/lib/db';
+import { client, invoice, debt, dueDate, notification } from '@/drizzle/schema';
+import { eq, and, gte, lte, sql, inArray } from 'drizzle-orm';
+import { getSessionWithOrg, getOrgClientIds } from '@/actions/helpers';
 
 export const getDashboardStats = createServerFn({
-  method: "GET",
+  method: 'GET',
 }).handler(async () => {
   const { orgId } = await getSessionWithOrg();
 
@@ -75,16 +75,16 @@ export const getDashboardStats = createServerFn({
   let previousMonthPurchases = 0;
 
   allInvoices.forEach((inv) => {
-    let amount = parseFloat(inv.amount || "0");
-    if (inv.currency?.toUpperCase() === "USD") {
-      const rate = parseFloat(inv.currencyRate || "1");
+    let amount = parseFloat(inv.amount || '0');
+    if (inv.currency?.toUpperCase() === 'USD') {
+      const rate = parseFloat(inv.currencyRate || '1');
       amount = amount * rate;
     }
 
     const direction = inv.direction?.toLowerCase();
     const invoiceDate = new Date(inv.emitionDate);
 
-    if (direction === "outbound") {
+    if (direction === 'outbound') {
       totalSales += amount;
       if (invoiceDate >= currentMonthStart && invoiceDate <= currentMonthEnd) {
         monthlySales += amount;
@@ -95,7 +95,7 @@ export const getDashboardStats = createServerFn({
       ) {
         previousMonthSales += amount;
       }
-    } else if (direction === "inbound") {
+    } else if (direction === 'inbound') {
       totalPurchases += amount;
       if (invoiceDate >= currentMonthStart && invoiceDate <= currentMonthEnd) {
         monthlyPurchases += amount;
@@ -129,7 +129,7 @@ export const getDashboardStats = createServerFn({
 });
 
 export const getMonthlyEvolution = createServerFn({
-  method: "GET",
+  method: 'GET',
 })
   .inputValidator(
     z.object({
@@ -171,25 +171,25 @@ export const getMonthlyEvolution = createServerFn({
     // Initialize all months with 0
     for (let i = ctx.data.months - 1; i >= 0; i--) {
       const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const monthKey = date.toLocaleString("es-AR", {
-        month: "short",
-        year: "2-digit",
+      const monthKey = date.toLocaleString('es-AR', {
+        month: 'short',
+        year: '2-digit',
       });
       monthlyDataMap[monthKey] = { outbound: 0, inbound: 0 };
     }
 
     // Process invoices
     allInvoices.forEach((inv) => {
-      let amount = parseFloat(inv.amount || "0");
-      if (inv.currency?.toUpperCase() === "USD") {
-        const rate = parseFloat(inv.currencyRate || "1");
+      let amount = parseFloat(inv.amount || '0');
+      if (inv.currency?.toUpperCase() === 'USD') {
+        const rate = parseFloat(inv.currencyRate || '1');
         amount = amount * rate;
       }
 
       const invoiceDate = new Date(inv.emitionDate);
-      const monthKey = invoiceDate.toLocaleString("es-AR", {
-        month: "short",
-        year: "2-digit",
+      const monthKey = invoiceDate.toLocaleString('es-AR', {
+        month: 'short',
+        year: '2-digit',
       });
 
       // Only include if within the last N months
@@ -201,9 +201,9 @@ export const getMonthlyEvolution = createServerFn({
           monthlyDataMap[monthKey] = { outbound: 0, inbound: 0 };
         }
 
-        if (inv.direction?.toLowerCase() === "outbound") {
+        if (inv.direction?.toLowerCase() === 'outbound') {
           monthlyDataMap[monthKey].outbound += amount;
-        } else if (inv.direction?.toLowerCase() === "inbound") {
+        } else if (inv.direction?.toLowerCase() === 'inbound') {
           monthlyDataMap[monthKey].inbound += amount;
         }
       }
@@ -228,8 +228,8 @@ export const getMonthlyEvolution = createServerFn({
     const monthlyData = Object.keys(monthlyDataMap)
       .map((month) => ({ month, ...monthlyDataMap[month] }))
       .sort((a, b) => {
-        const [monthA, yearA] = a.month.split(" ");
-        const [monthB, yearB] = b.month.split(" ");
+        const [monthA, yearA] = a.month.split(' ');
+        const [monthB, yearB] = b.month.split(' ');
         const monthIndexA = monthNames[monthA.toLowerCase()] ?? 0;
         const monthIndexB = monthNames[monthB.toLowerCase()] ?? 0;
         const yearA_num = parseInt(`20${yearA}`);
@@ -245,7 +245,7 @@ export const getMonthlyEvolution = createServerFn({
   });
 
 export const getUpcomingDueDates = createServerFn({
-  method: "GET",
+  method: 'GET',
 })
   .inputValidator(
     z.object({
@@ -298,7 +298,7 @@ export const getUpcomingDueDates = createServerFn({
   });
 
 export const getOverdueDebts = createServerFn({
-  method: "GET",
+  method: 'GET',
 })
   .inputValidator(
     z.object({
@@ -342,7 +342,7 @@ export const getOverdueDebts = createServerFn({
   });
 
 export const getRecentInvoices = createServerFn({
-  method: "GET",
+  method: 'GET',
 })
   .inputValidator(
     z.object({
@@ -384,7 +384,7 @@ export const getRecentInvoices = createServerFn({
   });
 
 export const getPendingNotificationsCount = createServerFn({
-  method: "GET",
+  method: 'GET',
 }).handler(async () => {
   const { orgId } = await getSessionWithOrg();
 

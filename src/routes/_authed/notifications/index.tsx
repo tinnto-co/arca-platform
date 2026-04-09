@@ -1,11 +1,11 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { NotificationsView } from "@/components/notifications-view";
-import { Mail } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
-import { getNotifications } from "@/actions/notification";
-import { userQuery } from "../../../lib/user-query";
+import { createFileRoute } from '@tanstack/react-router';
+import { NotificationsView } from '@/components/notifications-view';
+import { Mail } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { getNotifications } from '@/actions/notification';
+import { userQuery } from '../../../lib/user-query';
 
-export const Route = createFileRoute("/_authed/notifications/")({
+export const Route = createFileRoute('/_authed/notifications/')({
   component: RouteComponent,
 });
 
@@ -13,10 +13,10 @@ function RouteComponent() {
   const { data: user } = useQuery(userQuery);
   const orgKey =
     (user as { activeOrganizationId?: string | null } | null | undefined)
-      ?.activeOrganizationId ?? "__pending__";
+      ?.activeOrganizationId ?? '__pending__';
 
   const { data: notificationsData } = useQuery({
-    queryKey: ["notifications", orgKey, 1, "all", "", "", ""],
+    queryKey: ['notifications', orgKey, 1, 'all', '', '', ''],
     queryFn: () =>
       getNotifications({
         data: {

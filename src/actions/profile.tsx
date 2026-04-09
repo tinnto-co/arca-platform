@@ -1,12 +1,12 @@
-import { createServerFn } from "@tanstack/react-start";
-import z from "zod";
-import { db } from "@/lib/db";
-import { profile, client } from "@/drizzle/schema";
-import { getSessionWithOrg } from "@/actions/helpers";
-import { eq } from "drizzle-orm";
+import { createServerFn } from '@tanstack/react-start';
+import z from 'zod';
+import { db } from '@/lib/db';
+import { profile, client } from '@/drizzle/schema';
+import { getSessionWithOrg } from '@/actions/helpers';
+import { eq } from 'drizzle-orm';
 
 export const getProfile = createServerFn({
-  method: "GET",
+  method: 'GET',
 })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async (ctx) => {
@@ -31,7 +31,7 @@ export const getProfile = createServerFn({
       .where(eq(profile.id, ctx.data.id))
       .limit(1);
 
-    if (!profileData) throw new Error("Perfil no encontrado");
+    if (!profileData) throw new Error('Perfil no encontrado');
 
     // Verify the client belongs to the user
     if (profileData.clientId) {
@@ -42,10 +42,9 @@ export const getProfile = createServerFn({
         .limit(1);
 
       if (!clientData || clientData.organizationId !== orgId) {
-        throw new Error("No autorizado");
+        throw new Error('No autorizado');
       }
     }
 
     return profileData;
   });
-
