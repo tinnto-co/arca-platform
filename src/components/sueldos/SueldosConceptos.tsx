@@ -187,7 +187,12 @@ export function SueldosConceptos({
                 <TableRow key={row.__key}>
                   <TableCell className="font-mono">{row.afipCodigo}</TableCell>
                   <TableCell className="min-w-0 break-words">
-                    {row.afipNombre}
+                    <div className="space-y-0.5">
+                      <p>{row.afipNombre}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {row.descripcionContribuyente}
+                      </p>
+                    </div>
                   </TableCell>
                   <TableCell className="text-center">
                     <ConceptoDialog row={row} />

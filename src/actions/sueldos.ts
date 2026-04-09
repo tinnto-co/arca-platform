@@ -20,6 +20,7 @@ import {
   liquidacionImportEmpleado,
   liquidacionImportRecibo,
   liquidacionImportConceptoValor,
+  obraSocial,
 } from '@/drizzle/schema';
 import {
   getSessionWithOrg,
@@ -196,7 +197,7 @@ export const listConveniosAfipEmpleadores = createServerFn({ method: 'GET' })
     const { orgId } = await getSessionWithOrg();
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
 
-    return db
+    const rows = await db
       .select({
         id: afipEmpleadoresConvenio.id,
         profileId: afipEmpleadoresConvenio.profileId,
@@ -210,6 +211,15 @@ export const listConveniosAfipEmpleadores = createServerFn({ method: 'GET' })
       .innerJoin(profile, eq(afipEmpleadoresConvenio.profileId, profile.id))
       .where(eq(profile.client, ctx.data.clientId))
       .orderBy(desc(afipEmpleadoresConvenio.updatedAt));
+
+    // Unificamos por CCT a nivel cliente para no duplicar convenios
+    // cuando existen varios perfiles del mismo cliente con el mismo CCT.
+    const byCct = new Map<string, (typeof rows)[number]>();
+    for (const row of rows) {
+      const key = row.cct.trim().replace(/\s+/g, ' ');
+      if (!byCct.has(key)) byCct.set(key, row);
+    }
+    return Array.from(byCct.values());
   });
 
 /** Lista conceptos unificados SOS + AFIP por perfil, incluyendo subsistemas. */
@@ -1140,6 +1150,7 @@ export const listImportEmpleadosConConfig = createServerFn({ method: 'GET' })
       .select({
         empleado: liquidacionImportEmpleado,
         payrollId: payrollEmployee.id,
+        payrollLegajo: payrollEmployee.legajo,
       })
       .from(liquidacionImportEmpleado)
       .leftJoin(
@@ -1230,6 +1241,184 @@ export const getImportReciboDetalle = createServerFn({ method: 'GET' })
     return { recibo: row.recibo, empleado: row.empleado, conceptos };
   });
 
+export const listObrasSociales = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    await getSessionWithOrg();
+    return db
+      .select({
+        id: obraSocial.id,
+        codigo: obraSocial.codigo,
+        nombre: obraSocial.nombre,
+      })
+      .from(obraSocial)
+      .orderBy(asc(obraSocial.nombre));
+  }
+);
+
+const tipoReciboReciboSchema = z.enum([
+  'sueldo',
+  'anticipo',
+  'SAC',
+  'vacaciones',
+  'despido',
+  'comisiones',
+  'desempleo',
+  'varios',
+]);
+
+/** Crea la cabecera de liquidación (paso previo al cálculo en el simulador). */
+export const createReciboHeader = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z
+      .object({
+        clientId: z.string().uuid(),
+        importEmpleadoId: z.string().uuid(),
+        periodo: z.string().regex(/^\d{4}-\d{2}$/),
+        tipoRecibo: tipoReciboReciboSchema,
+        quincena: z.enum(['0', '1', '2']),
+        fechaLiquidacion: z.string().min(1),
+        obraSocialId: z.string().uuid().optional().nullable(),
+        fechaPago: z.string().min(1),
+        lugarPago: z.string().optional().nullable(),
+        formaPago: z.enum(['efectivo', 'cheque', 'acreditacion']),
+        cbu: z.string().optional().nullable(),
+        banco: z.string().optional().nullable(),
+        periodoCargas: z.string().min(1),
+        fechaDepositoCargas: z.string().optional().nullable(),
+        observacionInterna: z.string().optional().nullable(),
+        observacionRecibo: z.string().optional().nullable(),
+        copiarUltimoRecibo: z.boolean(),
+      })
+      .superRefine((data, ctx) => {
+        if (data.formaPago === 'acreditacion') {
+          const c = (data.cbu ?? '').replace(/\D/g, '');
+          if (c.length < 22) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: 'CBU obligatorio (22 dígitos) si la forma de pago es acreditación',
+              path: ['cbu'],
+            });
+          }
+        }
+      })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    if (!puedeLiquidarPeriodo(ctx.data.periodo)) {
+      throw new Error('Solo se puede liquidar el mes anterior al en curso.');
+    }
+
+    const [empConfig] = await db
+      .select({ id: payrollEmployee.id })
+      .from(payrollEmployee)
+      .where(eq(payrollEmployee.importEmpleadoId, ctx.data.importEmpleadoId))
+      .limit(1);
+    if (!empConfig) {
+      throw new Error(
+        'Este empleado no tiene configuración de liquidación. Asigná convenio y categoría primero.'
+      );
+    }
+
+    const empleadoId = empConfig.id;
+
+    await db
+      .delete(payrollLiquidacion)
+      .where(
+        and(
+          eq(payrollLiquidacion.empleadoId, empleadoId),
+          eq(payrollLiquidacion.periodo, ctx.data.periodo)
+        )
+      );
+
+    let basico = '0';
+    let totalRemunerativo = '0';
+    let totalNoRemunerativo = '0';
+    let totalDescuentos = '0';
+    let neto = '0';
+
+    let prevId: string | null = null;
+    if (ctx.data.copiarUltimoRecibo) {
+      const [prev] = await db
+        .select()
+        .from(payrollLiquidacion)
+        .where(
+          and(
+            eq(payrollLiquidacion.empleadoId, empleadoId),
+            eq(payrollLiquidacion.tipoRecibo, ctx.data.tipoRecibo)
+          )
+        )
+        .orderBy(desc(payrollLiquidacion.calculadoAt))
+        .limit(1);
+      if (prev) {
+        prevId = prev.id;
+        basico = String(prev.basico);
+        totalRemunerativo = String(prev.totalRemunerativo);
+        totalNoRemunerativo = String(prev.totalNoRemunerativo);
+        totalDescuentos = String(prev.totalDescuentos);
+        neto = String(prev.neto);
+      }
+    }
+
+    const fechaLiq = parseISO(ctx.data.fechaLiquidacion.slice(0, 10));
+    const fechaPago = parseISO(ctx.data.fechaPago.slice(0, 10));
+    const fechaDep = ctx.data.fechaDepositoCargas
+      ? parseISO(ctx.data.fechaDepositoCargas.slice(0, 10))
+      : null;
+
+    const [liq] = await db
+      .insert(payrollLiquidacion)
+      .values({
+        empleadoId,
+        periodo: ctx.data.periodo,
+        basico,
+        totalRemunerativo,
+        totalNoRemunerativo,
+        totalDescuentos,
+        neto,
+        tipoRecibo: ctx.data.tipoRecibo,
+        quincena: ctx.data.quincena,
+        fechaLiquidacion: fechaLiq,
+        obraSocialId: ctx.data.obraSocialId ?? null,
+        fechaPago,
+        lugarPago: ctx.data.lugarPago?.trim() || null,
+        formaPago: ctx.data.formaPago,
+        cbu: ctx.data.cbu?.trim() || null,
+        banco: ctx.data.banco?.trim() || null,
+        periodoCargas: ctx.data.periodoCargas,
+        fechaDepositoCargas: fechaDep,
+        observacionInterna: ctx.data.observacionInterna?.trim() || null,
+        observacionRecibo: ctx.data.observacionRecibo?.trim() || null,
+        reciboConfirmado: false,
+      })
+      .returning();
+
+    if (!liq) throw new Error('No se pudo crear la cabecera del recibo');
+
+    if (prevId) {
+      const detallesPrev = await db
+        .select()
+        .from(payrollLiquidacionDetalle)
+        .where(eq(payrollLiquidacionDetalle.liquidacionId, prevId));
+      for (const d of detallesPrev) {
+        await db.insert(payrollLiquidacionDetalle).values({
+          liquidacionId: liq.id,
+          conceptoId: d.conceptoId,
+          monto: String(d.monto),
+          cantidad: d.cantidad != null ? String(d.cantidad) : null,
+        });
+      }
+    }
+
+    return {
+      liquidacionId: liq.id,
+      importEmpleadoId: ctx.data.importEmpleadoId,
+      periodo: ctx.data.periodo,
+    };
+  });
+
 export const createEmpleado = createServerFn({ method: 'POST' })
   .inputValidator(
     z.object({
@@ -1241,6 +1430,7 @@ export const createEmpleado = createServerFn({ method: 'POST' })
       convenioId: z.string().uuid(),
       categoriaId: z.string().uuid(),
       tipoJornada: z.enum(['full_time', 'part_time', 'reducida']).optional(),
+      legajo: z.string().optional().nullable(),
     })
   )
   .handler(async (ctx) => {
@@ -1259,6 +1449,7 @@ export const createEmpleado = createServerFn({ method: 'POST' })
         convenioId: ctx.data.convenioId,
         categoriaId: ctx.data.categoriaId,
         tipoJornada: ctx.data.tipoJornada! ?? 'full_time',
+        legajo: ctx.data.legajo?.trim() || null,
       })
       .returning();
     return row;
@@ -1381,6 +1572,7 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
       categoriaId: z.string().uuid().optional(),
       tipoJornada: z.enum(['full_time', 'part_time', 'reducida']).optional(),
       activo: z.boolean().optional(),
+      legajo: z.string().optional().nullable(),
     })
   )
   .handler(async (ctx) => {
@@ -1504,10 +1696,19 @@ export const upsertNovedad = createServerFn({ method: 'POST' })
 async function calcularUnaLiquidacion(
   empleadoId: string,
   periodo: string,
-  clientId: string
+  clientId: string,
+  opts?: { liquidacionId?: string }
 ): Promise<{
   liquidacion: typeof payrollLiquidacion.$inferSelect;
-  detalles: { conceptoId: string; monto: number; cantidad?: number }[];
+  detalles: {
+    conceptoId: string;
+    monto: number;
+    cantidad?: number;
+    conceptoNombre: string;
+    conceptoCodigo: string;
+    conceptoTipo: 'remunerativo' | 'no_remunerativo' | 'descuento';
+    conceptoFormula: string;
+  }[];
   totalRemunerativo: number;
   totalNoRemunerativo: number;
   totalDescuentos: number;
@@ -1620,6 +1821,65 @@ async function calcularUnaLiquidacion(
   context.bruto = totalRemunerativo + totalNoRemunerativo;
   const neto = roundMoney(context.bruto - totalDescuentos);
 
+  if (opts?.liquidacionId) {
+    const [existing] = await db
+      .select()
+      .from(payrollLiquidacion)
+      .where(
+        and(
+          eq(payrollLiquidacion.id, opts.liquidacionId),
+          eq(payrollLiquidacion.empleadoId, empleadoId),
+          eq(payrollLiquidacion.periodo, periodo)
+        )
+      )
+      .limit(1);
+    if (!existing) {
+      throw new Error(
+        'Liquidación no encontrada o no coincide con empleado y período'
+      );
+    }
+    await db
+      .delete(payrollLiquidacionDetalle)
+      .where(eq(payrollLiquidacionDetalle.liquidacionId, existing.id));
+
+    await db
+      .update(payrollLiquidacion)
+      .set({
+        basico: String(basico),
+        totalRemunerativo: String(totalRemunerativo),
+        totalNoRemunerativo: String(totalNoRemunerativo),
+        totalDescuentos: String(totalDescuentos),
+        neto: String(neto),
+        calculadoAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(payrollLiquidacion.id, existing.id));
+
+    for (const d of detalles) {
+      await db.insert(payrollLiquidacionDetalle).values({
+        liquidacionId: existing.id,
+        conceptoId: d.conceptoId,
+        monto: String(d.monto),
+        cantidad: d.cantidad != null ? String(d.cantidad) : null,
+      });
+    }
+
+    const [liq] = await db
+      .select()
+      .from(payrollLiquidacion)
+      .where(eq(payrollLiquidacion.id, existing.id))
+      .limit(1);
+
+    return {
+      liquidacion: liq!,
+      detalles,
+      totalRemunerativo,
+      totalNoRemunerativo,
+      totalDescuentos,
+      neto,
+    };
+  }
+
   await db
     .delete(payrollLiquidacion)
     .where(
@@ -1670,6 +1930,8 @@ export const calcularLiquidacion = createServerFn({ method: 'POST' })
       clientId: z.string().uuid(),
       importEmpleadoId: z.string().uuid(),
       periodo: z.string(), // YYYY-MM
+      /** Si se creó cabecera con createReciboHeader, pasar para conservar metadata del recibo */
+      liquidacionId: z.string().uuid().optional(),
     })
   )
   .handler(async (ctx) => {
@@ -1693,7 +1955,10 @@ export const calcularLiquidacion = createServerFn({ method: 'POST' })
     return calcularUnaLiquidacion(
       empConfig.id,
       ctx.data.periodo,
-      ctx.data.clientId
+      ctx.data.clientId,
+      ctx.data.liquidacionId
+        ? { liquidacionId: ctx.data.liquidacionId }
+        : undefined
     );
   });
 

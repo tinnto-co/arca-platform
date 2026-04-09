@@ -40,6 +40,7 @@ const schema = z.object({
   convenioId: z.string().uuid('Seleccione convenio'),
   categoriaId: z.string().uuid('Seleccione categoría'),
   tipoJornada: z.enum(['full_time', 'part_time', 'reducida']),
+  legajo: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -57,6 +58,7 @@ interface Empleado {
   convenioId: string;
   categoriaId: string;
   tipoJornada: string;
+  legajo?: string | null;
 }
 
 interface EmpleadoFormDialogProps {
@@ -92,6 +94,7 @@ export function EmpleadoFormDialog({
       convenioId: '',
       categoriaId: '',
       tipoJornada: 'full_time',
+      legajo: '',
     },
   });
 
@@ -121,6 +124,7 @@ export function EmpleadoFormDialog({
           | 'full_time'
           | 'part_time'
           | 'reducida',
+        legajo: empleado.legajo ?? '',
       });
     } else if (open && !editId) {
       form.reset({
@@ -131,6 +135,7 @@ export function EmpleadoFormDialog({
         convenioId: convenios[0]?.id ?? '',
         categoriaId: '',
         tipoJornada: 'full_time',
+        legajo: '',
       });
     }
   }, [empleado, open, editId, convenios, form]);
@@ -141,7 +146,13 @@ export function EmpleadoFormDialog({
       return;
     }
     try {
-      await createEmpleado({ data: { ...values, clientId } });
+      await createEmpleado({
+        data: {
+          ...values,
+          clientId,
+          legajo: values.legajo?.trim() || null,
+        },
+      });
       toast.success('Empleado creado');
       onSuccess();
     } catch (e) {
@@ -207,18 +218,31 @@ export function EmpleadoFormDialog({
               />
               <FormField
                 control={form.control}
-                name="fechaIngreso"
+                name="legajo"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Fecha de ingreso</FormLabel>
+                    <FormLabel>Legajo</FormLabel>
                     <FormControl>
-                      <Input type="date" {...field} className="w-full" />
+                      <Input {...field} placeholder="Opcional" className="w-full" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
             </div>
+            <FormField
+              control={form.control}
+              name="fechaIngreso"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Fecha de ingreso</FormLabel>
+                  <FormControl>
+                    <Input type="date" {...field} className="w-full max-w-xs" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}

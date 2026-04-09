@@ -462,6 +462,14 @@ export const fiscalEntity = pgTable(
 
 // ========== MÓDULO SUELDOS / LIQUIDACIÓN ==========
 
+/** Catálogo nacional de obras sociales (códigos legacy / AFIP). */
+export const obraSocial = pgTable("obra_social", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  codigo: text("codigo").notNull().unique(),
+  nombre: text("nombre").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const payrollConvenioTipoJornadaEnum = pgEnum("payroll_tipo_jornada", [
   "full_time",
   "part_time",
@@ -578,6 +586,8 @@ export const payrollEmployee = pgTable("payroll_employee", {
     .references(() => payrollConvenioCategoria.id, { onDelete: "restrict" }),
   tipoJornada: payrollConvenioTipoJornadaEnum("tipo_jornada").notNull().default("full_time"),
   activo: boolean("activo").default(true).notNull(),
+  /** Número de legajo (referencia al sistema legacy). */
+  legajo: text("legajo"),
   importEmpleadoId: uuid("import_empleado_id").references(() => liquidacionImportEmpleado.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
@@ -638,6 +648,25 @@ export const payrollLiquidacion = pgTable("payroll_liquidacion", {
   totalNoRemunerativo: numeric("total_no_remunerativo", { precision: 12, scale: 2 }).default("0").notNull(),
   totalDescuentos: numeric("total_descuentos", { precision: 12, scale: 2 }).notNull(),
   neto: numeric("neto", { precision: 12, scale: 2 }).notNull(),
+  /** Tipo de recibo (sueldo, anticipo, SAC, vacaciones, despido, comisiones, desempleo, varios). */
+  tipoRecibo: text("tipo_recibo"),
+  /** 0 = mes completo, 1 = primera quincena, 2 = segunda quincena */
+  quincena: text("quincena"),
+  fechaLiquidacion: timestamp("fecha_liquidacion", { mode: "date" }),
+  obraSocialId: uuid("obra_social_id").references(() => obraSocial.id, {
+    onDelete: "set null",
+  }),
+  fechaPago: timestamp("fecha_pago", { mode: "date" }),
+  lugarPago: text("lugar_pago"),
+  /** efectivo | cheque | acreditacion */
+  formaPago: text("forma_pago"),
+  cbu: text("cbu"),
+  banco: text("banco"),
+  /** Período de cargas depositado, ej. "2026 / 02" */
+  periodoCargas: text("periodo_cargas"),
+  fechaDepositoCargas: timestamp("fecha_deposito_cargas", { mode: "date" }),
+  observacionInterna: text("observacion_interna"),
+  observacionRecibo: text("observacion_recibo"),
   /** Solo se muestran en la solapa Recibo cuando es true (tras "Confirmar recibo" en Simulador) */
   reciboConfirmado: boolean("recibo_confirmado").default(false).notNull(),
   calculadoAt: timestamp("calculado_at").defaultNow().notNull(),

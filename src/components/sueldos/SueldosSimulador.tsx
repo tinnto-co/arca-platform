@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -26,6 +26,7 @@ import {
   getPeriodoMesAnterior,
   puedeLiquidarPeriodo,
 } from '@/lib/payroll-period-rules';
+import { ReciboFormulario } from '@/components/sueldos/ReciboFormulario';
 
 const now = new Date();
 const [PERIODO_INICIAL_ANO, PERIODO_INICIAL_MES] =
@@ -54,6 +55,26 @@ export function SueldosSimulador({
   const periodo = useMemo(() => `${ano}-${mes}`, [ano, mes]);
   const permiteLiquidar = puedeLiquidarPeriodo(periodo);
 
+  /** Cabecera creada con el formulario de recibo (calcular actualiza esta fila). */
+  const [headerLiquidacionId, setHeaderLiquidacionId] = useState<string | null>(
+    null
+  );
+  const [headerBinding, setHeaderBinding] = useState<{
+    importEmpleadoId: string;
+    periodo: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!headerBinding) return;
+    if (
+      importEmpleadoId !== headerBinding.importEmpleadoId ||
+      periodo !== headerBinding.periodo
+    ) {
+      setHeaderLiquidacionId(null);
+      setHeaderBinding(null);
+    }
+  }, [importEmpleadoId, periodo, headerBinding]);
+
   const { data: empleados = [] } = useQuery({
     queryKey: ['import-empleados-config', clientId, profileId],
     queryFn: () =>
@@ -63,7 +84,16 @@ export function SueldosSimulador({
 
   const calcular = useMutation({
     mutationFn: () =>
-      calcularLiquidacion({ data: { clientId, importEmpleadoId, periodo } }),
+      calcularLiquidacion({
+        data: {
+          clientId,
+          importEmpleadoId,
+          periodo,
+          ...(headerLiquidacionId
+            ? { liquidacionId: headerLiquidacionId }
+            : {}),
+        },
+      }),
     onSuccess: (result) => {
       toast.success('Liquidación calculada');
       setResult(result);
@@ -136,6 +166,22 @@ export function SueldosSimulador({
 
   return (
     <div className="space-y-6">
+      <ReciboFormulario
+        clientId={clientId}
+        profileId={profileId}
+        onSuccess={(payload) => {
+          setHeaderLiquidacionId(payload.liquidacionId);
+          setHeaderBinding({
+            importEmpleadoId: payload.importEmpleadoId,
+            periodo: payload.periodo,
+          });
+          setImportEmpleadoId(payload.importEmpleadoId);
+          const [y, mo] = payload.periodo.split('-');
+          setAno(y);
+          setMes(mo);
+        }}
+      />
+
       <Card>
         <CardHeader>
           <CardTitle>Simulador de liquidación</CardTitle>
@@ -143,14 +189,28 @@ export function SueldosSimulador({
             Elija empleado y período para calcular (o recalcular) la
             liquidación.
           </p>
+          {headerLiquidacionId && (
+            <p className="text-sm text-primary font-medium">
+              Cabecera de recibo guardada para este empleado y período. Calcular
+              aplicará las fórmulas y conservará los datos del recibo (obra
+              social, pago, etc.).
+            </p>
+          )}
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap gap-4">
             <div>
               <Label>Empleado</Label>
+              <p className="text-xs text-muted-foreground mb-1.5 max-w-[320px]">
+                Los deshabilitados no tienen convenio/categoría asignados; configurálos
+                en la pestaña Empleados.
+              </p>
               <Select
                 value={importEmpleadoId}
-                onValueChange={setImportEmpleadoId}
+                onValueChange={(v) => {
+                  setImportEmpleadoId(v);
+                  setResult(null);
+                }}
               >
                 <SelectTrigger className="w-[280px]">
                   <SelectValue placeholder="Seleccione empleado" />
@@ -177,7 +237,13 @@ export function SueldosSimulador({
             </div>
             <div>
               <Label>Año</Label>
-              <Select value={ano} onValueChange={setAno}>
+              <Select
+                value={ano}
+                onValueChange={(v) => {
+                  setAno(v);
+                  setResult(null);
+                }}
+              >
                 <SelectTrigger className="w-[100px]">
                   <SelectValue />
                 </SelectTrigger>
@@ -192,7 +258,13 @@ export function SueldosSimulador({
             </div>
             <div>
               <Label>Mes</Label>
-              <Select value={mes} onValueChange={setMes}>
+              <Select
+                value={mes}
+                onValueChange={(v) => {
+                  setMes(v);
+                  setResult(null);
+                }}
+              >
                 <SelectTrigger className="w-[140px]">
                   <SelectValue />
                 </SelectTrigger>

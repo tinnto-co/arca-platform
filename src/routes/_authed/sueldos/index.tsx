@@ -143,7 +143,11 @@ function RouteComponent() {
               <SueldosConceptos clientId={clientId} profileId={profileId} />
             </TabsContent>
             <TabsContent value="simulador">
-              <SueldosSimulador clientId={clientId} profileId={profileId} />
+              <SueldosSimulador
+                clientId={clientId}
+                profileId={profileId}
+                onConfirmRecibo={() => setActiveTab('recibo')}
+              />
             </TabsContent>
             <TabsContent value="recibo">
               <SueldosRecibo clientId={clientId} />
