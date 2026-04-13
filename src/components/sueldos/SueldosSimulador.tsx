@@ -1,46 +1,79 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { format } from 'date-fns';
-import { es } from 'date-fns/locale';
-import { Calculator, Loader2, FileCheck } from 'lucide-react';
+import { Loader2, Save } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  listImportEmpleadosConConfig,
-  calcularLiquidacion,
-  confirmarReciboLiquidacion,
+  getUltimoReciboImportado,
+  listConceptosPlantillaManualSos,
+  guardarReciboDesdeTabla,
 } from '@/actions/sueldos';
-import {
-  getPeriodoMesAnterior,
-  puedeLiquidarPeriodo,
-} from '@/lib/payroll-period-rules';
+import { puedeLiquidarPeriodo } from '@/lib/payroll-period-rules';
 import { ReciboFormulario } from '@/components/sueldos/ReciboFormulario';
+import {
+  TablaReciboSos,
+  type ConceptoImportado,
+  type EditsMap,
+} from '@/components/sueldos/TablaReciboSos';
 
-const now = new Date();
-const [PERIODO_INICIAL_ANO, PERIODO_INICIAL_MES] =
-  getPeriodoMesAnterior().split('-');
-const ANOS = Array.from({ length: 6 }, (_, i) => now.getFullYear() - i);
-const MESES = Array.from({ length: 12 }, (_, i) => ({
-  value: String(i + 1).padStart(2, '0'),
-  label: format(new Date(2000, i, 1), 'MMMM', { locale: es }),
-}));
+function buildConceptosParaGuardar(
+  filas: ConceptoImportado[],
+  edits: EditsMap
+) {
+  const empty = {
+    monto: '',
+    cantidad: '',
+    porcentaje: '',
+    importeConceptoNumero: '',
+    importe: '',
+    importeMinimo: '',
+    importeMaximo: '',
+  };
+  return filas.map((c) => {
+    const e = edits[c.codigo] ?? empty;
+    return {
+      codigo: c.codigo,
+      monto: e.monto !== '' ? e.monto : (c.monto ?? ''),
+      cantidad: e.cantidad !== '' ? e.cantidad : (c.cantidad ?? ''),
+      porcentaje: e.porcentaje !== '' ? e.porcentaje : (c.porcentaje ?? ''),
+      importeConceptoNumero:
+        e.importeConceptoNumero !== ''
+          ? e.importeConceptoNumero
+          : (c.importeConceptoNumero ?? ''),
+      importe: e.importe !== '' ? e.importe : (c.importe ?? ''),
+      importeMinimo:
+        e.importeMinimo !== '' ? e.importeMinimo : (c.importeMinimo ?? ''),
+      importeMaximo:
+        e.importeMaximo !== '' ? e.importeMaximo : (c.importeMaximo ?? ''),
+    };
+  });
+}
+
+type TipoReciboGuardar =
+  | 'sueldo'
+  | 'anticipo'
+  | 'SAC'
+  | 'vacaciones'
+  | 'despido'
+  | 'comisiones'
+  | 'desempleo'
+  | 'varios';
+
+interface FlowHeader {
+  importEmpleadoId: string;
+  periodo: string;
+  tipoRecibo: TipoReciboGuardar;
+  copiarUltimoRecibo: boolean;
+}
 
 interface SueldosSimuladorProps {
   clientId: string;
   profileId: string;
-  onConfirmRecibo?: (periodo: string, liquidacionId: string) => void;
+  /** Tras guardar en liquidacion_import_*: período y id del recibo importado */
+  onConfirmRecibo?: (periodo: string, reciboImportId: string) => void;
 }
 
 export function SueldosSimulador({
@@ -49,352 +82,258 @@ export function SueldosSimulador({
   onConfirmRecibo,
 }: SueldosSimuladorProps) {
   const queryClient = useQueryClient();
-  const [importEmpleadoId, setImportEmpleadoId] = useState('');
-  const [ano, setAno] = useState(PERIODO_INICIAL_ANO);
-  const [mes, setMes] = useState(PERIODO_INICIAL_MES);
-  const periodo = useMemo(() => `${ano}-${mes}`, [ano, mes]);
-  const permiteLiquidar = puedeLiquidarPeriodo(periodo);
+  const [flowHeader, setFlowHeader] = useState<FlowHeader | null>(null);
+  const [sosEmpleadoId, setSosEmpleadoId] = useState<string | null>(null);
+  const [tablaEdits, setTablaEdits] = useState<EditsMap>({});
 
-  /** Cabecera creada con el formulario de recibo (calcular actualiza esta fila). */
-  const [headerLiquidacionId, setHeaderLiquidacionId] = useState<string | null>(
-    null
+  const periodo = flowHeader?.periodo ?? '';
+  const permiteLiquidar =
+    periodo.length === 7 && puedeLiquidarPeriodo(periodo);
+
+  const { data: ultimoRecibo, isLoading: loadingUltimo } = useQuery({
+    queryKey: ['ultimo-recibo-importado', clientId, sosEmpleadoId],
+    queryFn: () =>
+      getUltimoReciboImportado({
+        data: { clientId, importEmpleadoId: sosEmpleadoId! },
+      }),
+    enabled: !!sosEmpleadoId,
+  });
+
+  const usaPlantillaManual =
+    flowHeader !== null && !flowHeader.copiarUltimoRecibo;
+
+  const { data: plantillaManual = [], isLoading: loadingPlantilla } = useQuery(
+    {
+      queryKey: ['plantilla-manual-sos', clientId, profileId],
+      queryFn: () =>
+        listConceptosPlantillaManualSos({
+          data: { clientId, profileId },
+        }),
+      enabled: !!clientId && !!profileId && usaPlantillaManual,
+    }
   );
-  const [headerBinding, setHeaderBinding] = useState<{
-    importEmpleadoId: string;
-    periodo: string;
-  } | null>(null);
+
+  const reciboHeaderSimulado = useMemo(() => {
+    if (!flowHeader) {
+      return {
+        id: 'pendiente',
+        periodo: '',
+        tipo: 'sueldo',
+        haberes: null as string | null,
+        noRemunerativo: null as string | null,
+        descuentos: null as string | null,
+        retenciones: null as string | null,
+        neto: null as string | null,
+      };
+    }
+    return {
+      id: 'pendiente',
+      periodo: flowHeader.periodo,
+      tipo: flowHeader.tipoRecibo,
+      haberes: null as string | null,
+      noRemunerativo: null as string | null,
+      descuentos: null as string | null,
+      retenciones: null as string | null,
+      neto: null as string | null,
+    };
+  }, [flowHeader]);
+
+  const showImportTable =
+    !!flowHeader?.copiarUltimoRecibo && !!sosEmpleadoId && !!ultimoRecibo;
+  const showManualTable = !!flowHeader && !flowHeader.copiarUltimoRecibo;
+
+  const conceptosFilas: ConceptoImportado[] = showImportTable
+    ? ultimoRecibo!.conceptos
+    : showManualTable
+      ? plantillaManual
+      : [];
+
+  const plantillaKey = useMemo(
+    () => plantillaManual.map((c) => c.id).join('|'),
+    [plantillaManual]
+  );
 
   useEffect(() => {
-    if (!headerBinding) return;
-    if (
-      importEmpleadoId !== headerBinding.importEmpleadoId ||
-      periodo !== headerBinding.periodo
-    ) {
-      setHeaderLiquidacionId(null);
-      setHeaderBinding(null);
-    }
-  }, [importEmpleadoId, periodo, headerBinding]);
+    setTablaEdits({});
+  }, [
+    flowHeader?.importEmpleadoId,
+    flowHeader?.periodo,
+    flowHeader?.copiarUltimoRecibo,
+    ultimoRecibo?.recibo.id,
+    plantillaKey,
+  ]);
 
-  const { data: empleados = [] } = useQuery({
-    queryKey: ['import-empleados-config', clientId, profileId],
-    queryFn: () =>
-      listImportEmpleadosConConfig({ data: { clientId, profileId } }),
-    enabled: !!clientId && !!profileId,
-  });
-
-  const calcular = useMutation({
-    mutationFn: () =>
-      calcularLiquidacion({
+  const guardarRecibo = useMutation({
+    mutationFn: async () => {
+      if (!flowHeader) throw new Error('Completá el formulario y presioná Agregar');
+      const conceptos = buildConceptosParaGuardar(conceptosFilas, tablaEdits);
+      if (conceptos.length === 0) {
+        throw new Error('No hay conceptos para guardar');
+      }
+      return guardarReciboDesdeTabla({
         data: {
           clientId,
-          importEmpleadoId,
-          periodo,
-          ...(headerLiquidacionId
-            ? { liquidacionId: headerLiquidacionId }
-            : {}),
+          profileId,
+          importEmpleadoId: flowHeader.importEmpleadoId,
+          periodo: flowHeader.periodo,
+          tipoRecibo: flowHeader.tipoRecibo,
+          conceptos,
         },
-      }),
-    onSuccess: (result) => {
-      toast.success('Liquidación calculada');
-      setResult(result);
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const confirmarRecibo = useMutation({
-    mutationFn: (liquidacionId: string) =>
-      confirmarReciboLiquidacion({ data: { clientId, liquidacionId } }),
-    onSuccess: (_, liquidacionId) => {
-      toast.success('Recibo confirmado');
-      queryClient.invalidateQueries({
-        queryKey: ['liquidaciones', clientId, periodo],
       });
-      onConfirmRecibo?.(periodo, liquidacionId);
     },
-    onError: (e) => toast.error(e.message),
+    onSuccess: (data) => {
+      toast.success('Recibo guardado');
+      queryClient.invalidateQueries({
+        queryKey: ['import-recibos', clientId, data.periodo],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['ultimo-recibo-importado', clientId],
+      });
+      onConfirmRecibo?.(data.periodo, data.reciboId);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Error'),
   });
 
-  const [result, setResult] = useState<{
-    liquidacion: { id: string };
-    totalRemunerativo: number;
-    totalNoRemunerativo: number;
-    totalDescuentos: number;
-    neto: number;
-    detalles: {
-      conceptoId: string;
-      monto: number;
-      cantidad?: number;
-      conceptoNombre: string;
-      conceptoCodigo: string;
-      conceptoTipo: 'remunerativo' | 'no_remunerativo' | 'descuento';
-      conceptoFormula: string;
-    }[];
-  } | null>(null);
+  const handleTablaChange = useCallback((edits: EditsMap) => {
+    setTablaEdits(edits);
+  }, []);
 
-  /** Quita del nombre la parte entre paréntesis con porcentaje */
-  const nombreSinParentesis = (nombre: string) =>
-    nombre.replace(/\s*\([^)]*%[^)]*\)\s*$/, '').trim();
+  const onFormSuccess = useCallback(
+    (payload: {
+      importEmpleadoId: string;
+      periodo: string;
+      tipoRecibo: string;
+      copiarUltimoRecibo: boolean;
+    }) => {
+      setFlowHeader({
+        importEmpleadoId: payload.importEmpleadoId,
+        periodo: payload.periodo,
+        tipoRecibo: payload.tipoRecibo as TipoReciboGuardar,
+        copiarUltimoRecibo: payload.copiarUltimoRecibo,
+      });
+      setSosEmpleadoId(
+        payload.copiarUltimoRecibo ? payload.importEmpleadoId : null
+      );
+      setTablaEdits({});
+    },
+    []
+  );
 
-  /** Texto para columna Cantidad (días, %, etc.) */
-  const cantidadTexto = (d: NonNullable<typeof result>['detalles'][number]) => {
-    const codigo = d.conceptoCodigo?.toUpperCase() ?? '';
-    const formula = d.conceptoFormula ?? '';
-    if (codigo === 'BASICO') return '30';
-    if (codigo === 'PRES') return '8,33%';
-    if (d.conceptoTipo === 'descuento' && formula) {
-      const match = /0\.\d+/.exec(formula);
-      if (match) {
-        const pct = parseFloat(match[0]) * 100;
-        return pct % 1 === 0
-          ? `${Math.round(pct)}%`
-          : `${pct.toFixed(2).replace(/\.?0+$/, '')}%`;
-      }
-    }
-    if (d.cantidad != null && d.cantidad !== 0) return String(d.cantidad);
-    return '';
-  };
-
-  const filas =
-    result?.detalles.map((d) => ({
-      id: d.conceptoId,
-      nombre: nombreSinParentesis(d.conceptoNombre),
-      cantidadTexto: cantidadTexto(d),
-      remunerativo: d.conceptoTipo === 'remunerativo' ? d.monto : 0,
-      noRemunerativo: d.conceptoTipo === 'no_remunerativo' ? d.monto : 0,
-      descuentos: d.conceptoTipo === 'descuento' ? d.monto : 0,
-    })) ?? [];
+  const puedeGuardar =
+    !!flowHeader &&
+    conceptosFilas.length > 0 &&
+    permiteLiquidar &&
+    !guardarRecibo.isPending;
 
   return (
     <div className="space-y-6">
       <ReciboFormulario
         clientId={clientId}
         profileId={profileId}
-        onSuccess={(payload) => {
-          setHeaderLiquidacionId(payload.liquidacionId);
-          setHeaderBinding({
-            importEmpleadoId: payload.importEmpleadoId,
-            periodo: payload.periodo,
-          });
-          setImportEmpleadoId(payload.importEmpleadoId);
-          const [y, mo] = payload.periodo.split('-');
-          setAno(y);
-          setMes(mo);
-        }}
+        onSuccess={onFormSuccess}
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Simulador de liquidación</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Elija empleado y período para calcular (o recalcular) la
-            liquidación.
-          </p>
-          {headerLiquidacionId && (
-            <p className="text-sm text-primary font-medium">
-              Cabecera de recibo guardada para este empleado y período. Calcular
-              aplicará las fórmulas y conservará los datos del recibo (obra
-              social, pago, etc.).
-            </p>
-          )}
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap gap-4">
-            <div>
-              <Label>Empleado</Label>
-              <p className="text-xs text-muted-foreground mb-1.5 max-w-[320px]">
-                Los deshabilitados no tienen convenio/categoría asignados; configurálos
-                en la pestaña Empleados.
-              </p>
-              <Select
-                value={importEmpleadoId}
-                onValueChange={(v) => {
-                  setImportEmpleadoId(v);
-                  setResult(null);
-                }}
-              >
-                <SelectTrigger className="w-[280px]">
-                  <SelectValue placeholder="Seleccione empleado" />
-                </SelectTrigger>
-                <SelectContent>
-                  {empleados.map((r) => (
-                    <SelectItem
-                      key={r.empleado.id}
-                      value={r.empleado.id}
-                      disabled={!r.payrollId}
-                    >
-                      <span className="flex items-center gap-2">
-                        {r.empleado.nombre}
-                        {r.payrollId === null && (
-                          <Badge variant="secondary" className="text-xs">
-                            Sin configurar
-                          </Badge>
-                        )}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Año</Label>
-              <Select
-                value={ano}
-                onValueChange={(v) => {
-                  setAno(v);
-                  setResult(null);
-                }}
-              >
-                <SelectTrigger className="w-[100px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ANOS.map((y) => (
-                    <SelectItem key={y} value={String(y)}>
-                      {y}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Mes</Label>
-              <Select
-                value={mes}
-                onValueChange={(v) => {
-                  setMes(v);
-                  setResult(null);
-                }}
-              >
-                <SelectTrigger className="w-[140px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MESES.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>
-                      {m.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-1 items-end">
-              {!permiteLiquidar && (
-                <span className="text-xs text-muted-foreground">
-                  Solo se puede liquidar el mes anterior al en curso.
-                </span>
-              )}
-              <Button
-                onClick={() => calcular.mutate()}
-                disabled={
-                  !importEmpleadoId || calcular.isPending || !permiteLiquidar
-                }
-              >
-                {calcular.isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Calculator className="mr-2 h-4 w-4" />
-                )}
-                Calcular
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {flowHeader?.copiarUltimoRecibo && sosEmpleadoId && loadingUltimo && (
+        <p className="text-sm text-muted-foreground flex items-center gap-2">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Cargando último recibo importado…
+        </p>
+      )}
 
-      {result && (
+      {flowHeader?.copiarUltimoRecibo &&
+        sosEmpleadoId &&
+        !loadingUltimo &&
+        !ultimoRecibo && (
+          <p className="text-sm text-amber-700">
+            No hay recibo importado previo para este empleado. Volvé al formulario
+            y elegí cargar conceptos manualmente o importá liquidaciones desde
+            Excel.
+          </p>
+        )}
+
+      {showImportTable && (
         <Card>
           <CardHeader>
-            <CardTitle>Resultado</CardTitle>
+            <CardTitle className="text-base">
+              Último recibo importado — conceptos
+            </CardTitle>
             <p className="text-sm text-muted-foreground">
-              Detalle por concepto y totales del período {periodo}.
+              Editá la grilla y presioná <span className="font-medium">Guardar recibo</span>{' '}
+              para persistir en el libro de sueldos importado (LSD).
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="overflow-x-auto rounded-md border">
-              <table className="w-full text-xs md:text-sm">
-                <thead className="bg-muted/60">
-                  <tr className="border-b text-muted-foreground">
-                    <th className="px-2 py-1 text-left">Concepto</th>
-                    <th className="px-2 py-1 text-center">Cantidad</th>
-                    <th className="px-2 py-1 text-right">Remunerativo</th>
-                    <th className="px-2 py-1 text-right">No Remunerativo</th>
-                    <th className="px-2 py-1 text-right">Descuentos</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filas.map((f) => (
-                    <tr key={f.id} className="border-b last:border-b-0">
-                      <td className="px-2 py-1">{f.nombre}</td>
-                      <td className="px-2 py-1 text-center">
-                        {f.cantidadTexto}
-                      </td>
-                      <td className="px-2 py-1 text-right">
-                        {f.remunerativo !== 0
-                          ? `$${f.remunerativo.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
-                          : ''}
-                      </td>
-                      <td className="px-2 py-1 text-right">
-                        {f.noRemunerativo !== 0
-                          ? `$${f.noRemunerativo.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
-                          : ''}
-                      </td>
-                      <td className="px-2 py-1 text-right">
-                        {f.descuentos !== 0
-                          ? `- $${f.descuentos.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
-                          : ''}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-muted/40 font-semibold">
-                    <td className="px-2 py-1 text-left">Totales</td>
-                    <td className="px-2 py-1" />
-                    <td className="px-2 py-1 text-right">
-                      $
-                      {result.totalRemunerativo.toLocaleString('es-AR', {
-                        minimumFractionDigits: 2,
-                      })}
-                    </td>
-                    <td className="px-2 py-1 text-right">
-                      $
-                      {result.totalNoRemunerativo.toLocaleString('es-AR', {
-                        minimumFractionDigits: 2,
-                      })}
-                    </td>
-                    <td className="px-2 py-1 text-right">
-                      - $
-                      {result.totalDescuentos.toLocaleString('es-AR', {
-                        minimumFractionDigits: 2,
-                      })}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
+            <TablaReciboSos
+              variant="importado"
+              recibo={ultimoRecibo!.recibo}
+              conceptos={ultimoRecibo!.conceptos}
+              onChange={handleTablaChange}
+            />
+            <div className="flex flex-col items-end gap-2">
+              {!permiteLiquidar && (
+                <span className="text-xs text-muted-foreground">
+                  Solo se puede guardar el mes anterior al en curso.
+                </span>
+              )}
+              <Button
+                onClick={() => guardarRecibo.mutate()}
+                disabled={!puedeGuardar}
+              >
+                {guardarRecibo.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="mr-2 h-4 w-4" />
+                )}
+                Guardar recibo
+              </Button>
             </div>
-            <div className="flex justify-end border-t pt-2 text-base font-semibold">
-              <span className="text-muted-foreground">Neto a cobrar:</span>
-              <span className="ml-2">
-                $
-                {result.neto.toLocaleString('es-AR', {
-                  minimumFractionDigits: 2,
-                })}
-              </span>
-            </div>
-            {onConfirmRecibo && result && (
-              <div className="flex justify-end pt-4">
-                <Button
-                  onClick={() => confirmarRecibo.mutate(result.liquidacion.id)}
-                  disabled={confirmarRecibo.isPending}
-                >
-                  {confirmarRecibo.isPending ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <FileCheck className="mr-2 h-4 w-4" />
+          </CardContent>
+        </Card>
+      )}
+
+      {showManualTable && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Conceptos — carga manual</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Completá la grilla y guardá. Los renglones salen de los conceptos SOS
+              del perfil (<span className="font-medium">concepto_sos_profile</span>).
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {loadingPlantilla ? (
+              <p className="text-sm text-muted-foreground flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Cargando plantilla…
+              </p>
+            ) : (
+              <>
+                <TablaReciboSos
+                  key={plantillaManual.map((c) => c.id).join('|')}
+                  variant="manual"
+                  recibo={reciboHeaderSimulado}
+                  conceptos={plantillaManual}
+                  onChange={handleTablaChange}
+                />
+                <div className="flex flex-col items-end gap-2">
+                  {!permiteLiquidar && (
+                    <span className="text-xs text-muted-foreground">
+                      Solo se puede guardar el mes anterior al en curso.
+                    </span>
                   )}
-                  Confirmar recibo
-                </Button>
-              </div>
+                  <Button
+                    onClick={() => guardarRecibo.mutate()}
+                    disabled={!puedeGuardar}
+                  >
+                    {guardarRecibo.isPending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Save className="mr-2 h-4 w-4" />
+                    )}
+                    Guardar recibo
+                  </Button>
+                </div>
+              </>
             )}
           </CardContent>
         </Card>

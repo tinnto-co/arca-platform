@@ -122,7 +122,7 @@ function RouteComponent() {
             </TabsTrigger>
             <TabsTrigger value="simulador" className="gap-2">
               <Sliders className="h-4 w-4" />
-              Simulador
+              Nuevo recibo
             </TabsTrigger>
             <TabsTrigger value="recibo" className="gap-2">
               <FileText className="h-4 w-4" />

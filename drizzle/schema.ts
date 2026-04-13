@@ -51,6 +51,8 @@ export const client = pgTable("client", {
   convenioMultilateral: boolean("convenio_multilateral").notNull().default(false),
   regimenLocal: boolean("regimen_local").notNull().default(false),
   fiscalCondition: text("fiscal_condition"),
+  liquidaSueldos: boolean("liquida_sueldos").notNull().default(false),
+  cuitEmpresa: text("cuit_empresa").notNull().default(""),
   hasErrors: boolean("has_errors").default(false).notNull(),
   errorMessage: text("error_message").default(""),
   registeredAt: timestamp("registered_at").notNull(),
@@ -485,6 +487,7 @@ export const payrollConvenio = pgTable("payroll_convenio", {
   nombre: text("nombre").notNull(),
   descripcion: text("descripcion"),
   activo: boolean("activo").default(true).notNull(),
+  cctCodigo: text("cct_codigo"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
     .defaultNow()
@@ -517,6 +520,9 @@ export const payrollEscala = pgTable("payroll_escala", {
   vigenciaDesde: timestamp("vigencia_desde", { mode: "date" }).notNull(),
   vigenciaHasta: timestamp("vigencia_hasta", { mode: "date" }),
   montoBasico: numeric("monto_basico", { precision: 12, scale: 2 }).notNull(),
+  montoNoRemunerativo: numeric("monto_no_remunerativo", { precision: 12, scale: 2 }).default("0").notNull(),
+  periodoLabel: text("periodo_label"),
+  fuente: text("fuente"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
     .defaultNow()
@@ -524,11 +530,28 @@ export const payrollEscala = pgTable("payroll_escala", {
     .notNull(),
 });
 
-/** Tipo de concepto: remunerativo, no remunerativo, descuento */
+/** Tipo de concepto: remunerativo, no remunerativo, descuento, retención */
 export const payrollConceptoTipoEnum = pgEnum("payroll_concepto_tipo", [
   "remunerativo",
   "no_remunerativo",
   "descuento",
+  "retencion",
+]);
+
+export const payrollSituacionRevistaEnum = pgEnum("payroll_situacion_revista", [
+  "activo", "licencia_enfermedad", "licencia_maternidad", "licencia_sin_goce",
+  "suspendido_con_goce", "suspendido_sin_goce", "vacaciones", "accidente_trabajo",
+  "baja_despido", "baja_fallecimiento", "baja_otras", "ilt_primeros_10",
+  "ilt_once_o_mas", "reserva_puesto", "excedencia", "otro",
+]);
+
+export const payrollTipoEmpleadorEnum = pgEnum("payroll_tipo_empleador", [
+  "dec814_inc_a", "dec814_inc_b", "dec814_inc_c",
+]);
+
+export const payrollBaseColumnaEnum = pgEnum("payroll_base_columna", [
+  "valHora", "sueldoLegajo", "sueldo", "sub1_9", "sub1_19", "sub1_26",
+  "sub1_39", "sub1_199", "sub411_469", "importe_fijo", "ref_concepto",
 ]);
 
 /** Base de cálculo para fórmulas */
@@ -561,6 +584,14 @@ export const payrollConcepto = pgTable("payroll_concepto", {
   activo: boolean("activo").default(true).notNull(),
   vigenciaDesde: timestamp("vigencia_desde", { mode: "date" }),
   vigenciaHasta: timestamp("vigencia_hasta", { mode: "date" }),
+  numeroSos: text("numero_sos"),
+  codigoArca: text("codigo_arca"),
+  baseColumna: text("base_columna"),
+  divCantidad: numeric("div_cantidad", { precision: 10, scale: 2 }),
+  divHsNorm: text("div_hs_norm"),
+  impMin: numeric("imp_min", { precision: 12, scale: 2 }),
+  impMax: numeric("imp_max", { precision: 12, scale: 2 }),
+  refConceptoId: uuid("ref_concepto_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
     .defaultNow()
@@ -589,46 +620,13 @@ export const payrollEmployee = pgTable("payroll_employee", {
   /** Número de legajo (referencia al sistema legacy). */
   legajo: text("legajo"),
   importEmpleadoId: uuid("import_empleado_id").references(() => liquidacionImportEmpleado.id, { onDelete: "set null" }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at")
-    .defaultNow()
-    .$onUpdate(() => new Date())
-    .notNull(),
-});
-
-/** Conceptos asignados individualmente al empleado (comisiones, bonos fijos, etc.) */
-export const payrollEmpleadoConcepto = pgTable("payroll_empleado_concepto", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  empleadoId: uuid("empleado_id")
-    .notNull()
-    .references(() => payrollEmployee.id, { onDelete: "cascade" }),
-  conceptoId: uuid("concepto_id")
-    .notNull()
-    .references(() => payrollConcepto.id, { onDelete: "cascade" }),
-  /** Valor adicional para la fórmula (ej. % comisión propio, monto fijo) */
-  valorAdicional: numeric("valor_adicional", { precision: 12, scale: 2 }).default("0"),
-  vigenciaDesde: timestamp("vigencia_desde", { mode: "date" }),
-  vigenciaHasta: timestamp("vigencia_hasta", { mode: "date" }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at")
-    .defaultNow()
-    .$onUpdate(() => new Date())
-    .notNull(),
-});
-
-/** Novedades mensuales (horas extra, bonos, comisiones del mes, etc.) */
-export const payrollNovedad = pgTable("payroll_novedad", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  empleadoId: uuid("empleado_id")
-    .notNull()
-    .references(() => payrollEmployee.id, { onDelete: "cascade" }),
-  conceptoId: uuid("concepto_id")
-    .notNull()
-    .references(() => payrollConcepto.id, { onDelete: "cascade" }),
-  periodo: text("periodo").notNull(), // "YYYY-MM"
-  valor: numeric("valor", { precision: 12, scale: 2 }).notNull(),
-  cantidad: numeric("cantidad", { precision: 10, scale: 2 }), // ej. horas extra
-  detalle: text("detalle"),
+  tipoEmpleador: text("tipo_empleador"),
+  tarea: text("tarea"),
+  horasMensualesNormales: numeric("horas_mensuales_normales", { precision: 10, scale: 2 }),
+  diasMensualesNormales: numeric("dias_mensuales_normales", { precision: 10, scale: 2 }),
+  porcentajeAporteAdicionalSs: numeric("porcentaje_aporte_adicional_ss", { precision: 10, scale: 4 }),
+  valorHora: numeric("valor_hora", { precision: 12, scale: 2 }),
+  valorSueldo: numeric("valor_sueldo", { precision: 12, scale: 2 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
     .defaultNow()
@@ -667,6 +665,13 @@ export const payrollLiquidacion = pgTable("payroll_liquidacion", {
   fechaDepositoCargas: timestamp("fecha_deposito_cargas", { mode: "date" }),
   observacionInterna: text("observacion_interna"),
   observacionRecibo: text("observacion_recibo"),
+  situacionRevista: payrollSituacionRevistaEnum("situacion_revista"),
+  rem4y8Override: numeric("rem4y8_override", { precision: 14, scale: 2 }),
+  rem9Override: numeric("rem9_override", { precision: 14, scale: 2 }),
+  contribucionTareaDiferencial: numeric("contribucion_tarea_diferencial", { precision: 5, scale: 4 }),
+  importeADetraerLey27430: numeric("importe_a_detraer_ley27430", { precision: 12, scale: 2 }),
+  totalRetenciones: numeric("total_retenciones", { precision: 12, scale: 2 }),
+  contribucionAdicionalOs: numeric("contribucion_adicional_os", { precision: 12, scale: 2 }),
   /** Solo se muestran en la solapa Recibo cuando es true (tras "Confirmar recibo" en Simulador) */
   reciboConfirmado: boolean("recibo_confirmado").default(false).notNull(),
   calculadoAt: timestamp("calculado_at").defaultNow().notNull(),
@@ -688,6 +693,15 @@ export const payrollLiquidacionDetalle = pgTable("payroll_liquidacion_detalle", 
     .references(() => payrollConcepto.id, { onDelete: "cascade" }),
   monto: numeric("monto", { precision: 12, scale: 2 }).notNull(),
   cantidad: numeric("cantidad", { precision: 10, scale: 2 }),
+  pct: numeric("pct", { precision: 10, scale: 4 }),
+  importeConceptoN: numeric("importe_concepto_n", { precision: 14, scale: 2 }),
+  importeOverride: numeric("importe_override", { precision: 14, scale: 2 }),
+  impMin: numeric("imp_min", { precision: 12, scale: 2 }),
+  impMax: numeric("imp_max", { precision: 12, scale: 2 }),
+  activoEnRecibo: boolean("activo_en_recibo"),
+  memo: text("memo"),
+  pctUsado: numeric("pct_usado", { precision: 10, scale: 4 }),
+  baseUsada: numeric("base_usada", { precision: 14, scale: 2 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
     .defaultNow()
@@ -766,6 +780,12 @@ export const liquidacionImportConceptoValor = pgTable(
       .references(() => liquidacionImportRecibo.id, { onDelete: "cascade" }),
     codigo: text("codigo").notNull(),
     monto: numeric("monto", { precision: 14, scale: 2 }).notNull(),
+    cantidad: numeric("cantidad", { precision: 14, scale: 2 }),
+    porcentaje: numeric("porcentaje", { precision: 14, scale: 2 }),
+    importeConceptoNumero: numeric("importe_concepto_numero", { precision: 14, scale: 2 }),
+    importe: numeric("importe", { precision: 14, scale: 2 }),
+    importeMinimo: numeric("importe_minimo", { precision: 14, scale: 2 }),
+    importeMaximo: numeric("importe_maximo", { precision: 14, scale: 2 }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [

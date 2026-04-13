@@ -124,6 +124,8 @@ export interface ReciboFormularioSuccess {
   liquidacionId: string;
   importEmpleadoId: string;
   periodo: string;
+  copiarUltimoRecibo: boolean;
+  tipoRecibo: string;
 }
 
 interface ReciboFormularioProps {
@@ -230,6 +232,8 @@ export function ReciboFormulario({
         liquidacionId: res.liquidacionId,
         importEmpleadoId: res.importEmpleadoId,
         periodo: res.periodo,
+        copiarUltimoRecibo: values.copiarUltimoRecibo === 'si',
+        tipoRecibo: values.tipoRecibo,
       });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Error al guardar');
@@ -715,12 +719,20 @@ export function ReciboFormulario({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="no">No copiar</SelectItem>
+                      <SelectItem value="no">
+                        No — cargar conceptos manualmente (empleado nuevo / sin import)
+                      </SelectItem>
                       <SelectItem value="si">
                         Copiar último recibo de este empleado y mismo tipo
                       </SelectItem>
                     </SelectContent>
                   </Select>
+                  <FormDescription>
+                    Si no copiás, se muestra la grilla con los conceptos SOS del{' '}
+                    <span className="font-medium">perfil</span> (vínculos en concepto_sos_profile).
+                    Los conceptos salariales sin número SOS coincidente se liquidan solo por
+                    fórmulas al calcular.
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
