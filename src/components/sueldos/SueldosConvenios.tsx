@@ -136,8 +136,8 @@ export function SueldosConvenios({ clientId, profileId }: SueldosConveniosProps)
           <DialogHeader>
             <DialogTitle>Seleccionar CCT (AFIP) para este cliente</DialogTitle>
             <p className="text-sm text-muted-foreground">
-              Usamos el CCT scrapeado desde AFIP para este cliente. Se crearán
-              las categorías y escalas base.
+              Seleccioná el CCT descargado de AFIP para este cliente. Luego
+              cargá las categorías y escalas manualmente.
             </p>
           </DialogHeader>
           <div className="grid gap-2 py-4">

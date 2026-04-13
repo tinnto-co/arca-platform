@@ -276,10 +276,9 @@ export function ReciboFormulario({
                       <SelectContent>
                         {empleados.map((r) => {
                           const leg =
-                            r.payrollLegajo?.trim() ||
-                            r.empleado.legajo ||
+                            r.empleado.legajo?.trim() ||
                             '—';
-                          const disabled = !r.payrollId;
+                          const disabled = !r.empleado.convenioId;
                           return (
                             <SelectItem
                               key={r.empleado.id}

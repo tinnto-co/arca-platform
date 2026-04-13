@@ -5,7 +5,6 @@ import {
   liquidacionImportEmpleado,
   payrollConvenio,
   payrollConvenioCategoria,
-  payrollEmployee,
   profile,
 } from '@/drizzle/schema';
 
@@ -124,12 +123,7 @@ async function main() {
       .where(eq(liquidacionImportEmpleado.profileId, p.id));
 
     for (const imp of imports) {
-      const existingConfig = await db
-        .select({ id: payrollEmployee.id })
-        .from(payrollEmployee)
-        .where(eq(payrollEmployee.importEmpleadoId, imp.id))
-        .limit(1);
-      if (existingConfig.length > 0) continue;
+      if (imp.convenioId) continue;
 
       const catImport = imp.categoria ?? '';
       if (!catImport.trim()) {

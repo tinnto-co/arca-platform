@@ -8,6 +8,7 @@ import { Calculator, Loader2, FileCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -21,6 +22,7 @@ import {
   listImportEmpleadosConConfig,
   calcularLiquidacion,
   confirmarReciboLiquidacion,
+  updateDetalleInputs,
 } from '@/actions/sueldos';
 import {
   getPeriodoMesAnterior,
@@ -43,6 +45,24 @@ interface SueldosSimuladorProps {
   onConfirmRecibo?: (periodo: string, liquidacionId: string) => void;
 }
 
+type DetalleResult = {
+  detalleId?: string;
+  conceptoId: string;
+  monto: number;
+  cantidad?: number;
+  pct?: number;
+  importeOverride?: number;
+  conceptoNombre: string;
+  conceptoCodigo: string;
+  conceptoTipo: 'remunerativo' | 'no_remunerativo' | 'descuento' | 'retencion';
+  conceptoFormula: string;
+};
+
+type EditState = {
+  cantidad: string;
+  importeOverride: string;
+};
+
 export function SueldosSimulador({
   clientId,
   profileId,
@@ -55,14 +75,14 @@ export function SueldosSimulador({
   const periodo = useMemo(() => `${ano}-${mes}`, [ano, mes]);
   const permiteLiquidar = puedeLiquidarPeriodo(periodo);
 
-  /** Cabecera creada con el formulario de recibo (calcular actualiza esta fila). */
-  const [headerLiquidacionId, setHeaderLiquidacionId] = useState<string | null>(
-    null
-  );
+  const [headerLiquidacionId, setHeaderLiquidacionId] = useState<string | null>(null);
   const [headerBinding, setHeaderBinding] = useState<{
     importEmpleadoId: string;
     periodo: string;
   } | null>(null);
+
+  // Estado de edición por conceptoId
+  const [editStates, setEditStates] = useState<Record<string, EditState>>({});
 
   useEffect(() => {
     if (!headerBinding) return;
@@ -82,6 +102,16 @@ export function SueldosSimulador({
     enabled: !!clientId && !!profileId,
   });
 
+  const [result, setResult] = useState<{
+    liquidacion: { id: string };
+    totalRemunerativo: number;
+    totalNoRemunerativo: number;
+    totalDescuentos: number;
+    totalRetenciones: number;
+    neto: number;
+    detalles: DetalleResult[];
+  } | null>(null);
+
   const calcular = useMutation({
     mutationFn: () =>
       calcularLiquidacion({
@@ -89,15 +119,39 @@ export function SueldosSimulador({
           clientId,
           importEmpleadoId,
           periodo,
-          ...(headerLiquidacionId
-            ? { liquidacionId: headerLiquidacionId }
-            : {}),
+          ...(headerLiquidacionId ? { liquidacionId: headerLiquidacionId } : {}),
         },
       }),
-    onSuccess: (result) => {
+    onSuccess: (res) => {
       toast.success('Liquidación calculada');
-      setResult(result);
+      setResult(res as typeof result);
+      // Sincronizar estados de edición con los detalles calculados
+      const newEditStates: Record<string, EditState> = {};
+      for (const d of (res as NonNullable<typeof result>).detalles) {
+        newEditStates[d.conceptoId] = {
+          cantidad: d.cantidad != null ? String(d.cantidad) : '',
+          importeOverride: d.importeOverride != null ? String(d.importeOverride) : '',
+        };
+      }
+      setEditStates(newEditStates);
     },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const guardarInput = useMutation({
+    mutationFn: (params: {
+      detalleId: string;
+      cantidad?: number | null;
+      importeOverride?: number | null;
+    }) =>
+      updateDetalleInputs({
+        data: {
+          clientId,
+          detalleId: params.detalleId,
+          cantidad: params.cantidad,
+          importeOverride: params.importeOverride,
+        },
+      }),
     onError: (e) => toast.error(e.message),
   });
 
@@ -114,55 +168,20 @@ export function SueldosSimulador({
     onError: (e) => toast.error(e.message),
   });
 
-  const [result, setResult] = useState<{
-    liquidacion: { id: string };
-    totalRemunerativo: number;
-    totalNoRemunerativo: number;
-    totalDescuentos: number;
-    neto: number;
-    detalles: {
-      conceptoId: string;
-      monto: number;
-      cantidad?: number;
-      conceptoNombre: string;
-      conceptoCodigo: string;
-      conceptoTipo: 'remunerativo' | 'no_remunerativo' | 'descuento';
-      conceptoFormula: string;
-    }[];
-  } | null>(null);
+  const handleBlurInput = (d: DetalleResult) => {
+    if (!d.detalleId) return;
+    const state = editStates[d.conceptoId];
+    if (!state) return;
+    const cantidad = state.cantidad !== '' ? parseFloat(state.cantidad) : null;
+    const importeOverride = state.importeOverride !== '' ? parseFloat(state.importeOverride) : null;
+    guardarInput.mutate({ detalleId: d.detalleId, cantidad, importeOverride });
+  };
 
-  /** Quita del nombre la parte entre paréntesis con porcentaje */
   const nombreSinParentesis = (nombre: string) =>
     nombre.replace(/\s*\([^)]*%[^)]*\)\s*$/, '').trim();
 
-  /** Texto para columna Cantidad (días, %, etc.) */
-  const cantidadTexto = (d: NonNullable<typeof result>['detalles'][number]) => {
-    const codigo = d.conceptoCodigo?.toUpperCase() ?? '';
-    const formula = d.conceptoFormula ?? '';
-    if (codigo === 'BASICO') return '30';
-    if (codigo === 'PRES') return '8,33%';
-    if (d.conceptoTipo === 'descuento' && formula) {
-      const match = /0\.\d+/.exec(formula);
-      if (match) {
-        const pct = parseFloat(match[0]) * 100;
-        return pct % 1 === 0
-          ? `${Math.round(pct)}%`
-          : `${pct.toFixed(2).replace(/\.?0+$/, '')}%`;
-      }
-    }
-    if (d.cantidad != null && d.cantidad !== 0) return String(d.cantidad);
-    return '';
-  };
-
-  const filas =
-    result?.detalles.map((d) => ({
-      id: d.conceptoId,
-      nombre: nombreSinParentesis(d.conceptoNombre),
-      cantidadTexto: cantidadTexto(d),
-      remunerativo: d.conceptoTipo === 'remunerativo' ? d.monto : 0,
-      noRemunerativo: d.conceptoTipo === 'no_remunerativo' ? d.monto : 0,
-      descuentos: d.conceptoTipo === 'descuento' ? d.monto : 0,
-    })) ?? [];
+  const fmt = (n: number) =>
+    n.toLocaleString('es-AR', { minimumFractionDigits: 2 });
 
   return (
     <div className="space-y-6">
@@ -186,14 +205,11 @@ export function SueldosSimulador({
         <CardHeader>
           <CardTitle>Simulador de liquidación</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Elija empleado y período para calcular (o recalcular) la
-            liquidación.
+            Elija empleado y período para calcular (o recalcular) la liquidación.
           </p>
           {headerLiquidacionId && (
             <p className="text-sm text-primary font-medium">
-              Cabecera de recibo guardada para este empleado y período. Calcular
-              aplicará las fórmulas y conservará los datos del recibo (obra
-              social, pago, etc.).
+              Cabecera de recibo guardada. Calcular aplicará las fórmulas y conservará los datos del recibo.
             </p>
           )}
         </CardHeader>
@@ -202,14 +218,14 @@ export function SueldosSimulador({
             <div>
               <Label>Empleado</Label>
               <p className="text-xs text-muted-foreground mb-1.5 max-w-[320px]">
-                Los deshabilitados no tienen convenio/categoría asignados; configurálos
-                en la pestaña Empleados.
+                Los deshabilitados no tienen convenio/categoría asignados; configurálos en la pestaña Empleados.
               </p>
               <Select
                 value={importEmpleadoId}
                 onValueChange={(v) => {
                   setImportEmpleadoId(v);
                   setResult(null);
+                  setEditStates({});
                 }}
               >
                 <SelectTrigger className="w-[280px]">
@@ -220,11 +236,11 @@ export function SueldosSimulador({
                     <SelectItem
                       key={r.empleado.id}
                       value={r.empleado.id}
-                      disabled={!r.payrollId}
+                      disabled={!r.empleado.convenioId}
                     >
                       <span className="flex items-center gap-2">
                         {r.empleado.nombre}
-                        {r.payrollId === null && (
+                        {!r.empleado.convenioId && (
                           <Badge variant="secondary" className="text-xs">
                             Sin configurar
                           </Badge>
@@ -239,19 +255,14 @@ export function SueldosSimulador({
               <Label>Año</Label>
               <Select
                 value={ano}
-                onValueChange={(v) => {
-                  setAno(v);
-                  setResult(null);
-                }}
+                onValueChange={(v) => { setAno(v); setResult(null); setEditStates({}); }}
               >
                 <SelectTrigger className="w-[100px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {ANOS.map((y) => (
-                    <SelectItem key={y} value={String(y)}>
-                      {y}
-                    </SelectItem>
+                    <SelectItem key={y} value={String(y)}>{y}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -260,19 +271,14 @@ export function SueldosSimulador({
               <Label>Mes</Label>
               <Select
                 value={mes}
-                onValueChange={(v) => {
-                  setMes(v);
-                  setResult(null);
-                }}
+                onValueChange={(v) => { setMes(v); setResult(null); setEditStates({}); }}
               >
                 <SelectTrigger className="w-[140px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {MESES.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>
-                      {m.label}
-                    </SelectItem>
+                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -285,16 +291,14 @@ export function SueldosSimulador({
               )}
               <Button
                 onClick={() => calcular.mutate()}
-                disabled={
-                  !importEmpleadoId || calcular.isPending || !permiteLiquidar
-                }
+                disabled={!importEmpleadoId || calcular.isPending || !permiteLiquidar}
               >
                 {calcular.isPending ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
                   <Calculator className="mr-2 h-4 w-4" />
                 )}
-                Calcular
+                {result ? 'Recalcular' : 'Calcular'}
               </Button>
             </div>
           </div>
@@ -306,7 +310,7 @@ export function SueldosSimulador({
           <CardHeader>
             <CardTitle>Resultado</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Detalle por concepto y totales del período {periodo}.
+              Período {periodo}. Editá Cantidad o Importe y presioná <strong>Recalcular</strong> para actualizar.
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -315,71 +319,84 @@ export function SueldosSimulador({
                 <thead className="bg-muted/60">
                   <tr className="border-b text-muted-foreground">
                     <th className="px-2 py-1 text-left">Concepto</th>
-                    <th className="px-2 py-1 text-center">Cantidad</th>
-                    <th className="px-2 py-1 text-right">Remunerativo</th>
-                    <th className="px-2 py-1 text-right">No Remunerativo</th>
+                    <th className="px-2 py-1 text-center w-[90px]">Cantidad</th>
+                    <th className="px-2 py-1 text-center w-[110px]">Importe fijo</th>
+                    <th className="px-2 py-1 text-right">Haberes</th>
+                    <th className="px-2 py-1 text-right">No Remun.</th>
                     <th className="px-2 py-1 text-right">Descuentos</th>
+                    <th className="px-2 py-1 text-right">Retenciones</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filas.map((f) => (
-                    <tr key={f.id} className="border-b last:border-b-0">
-                      <td className="px-2 py-1">{f.nombre}</td>
-                      <td className="px-2 py-1 text-center">
-                        {f.cantidadTexto}
-                      </td>
-                      <td className="px-2 py-1 text-right">
-                        {f.remunerativo !== 0
-                          ? `$${f.remunerativo.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
-                          : ''}
-                      </td>
-                      <td className="px-2 py-1 text-right">
-                        {f.noRemunerativo !== 0
-                          ? `$${f.noRemunerativo.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
-                          : ''}
-                      </td>
-                      <td className="px-2 py-1 text-right">
-                        {f.descuentos !== 0
-                          ? `- $${f.descuentos.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
-                          : ''}
-                      </td>
-                    </tr>
-                  ))}
+                  {result.detalles.map((d) => {
+                    const state = editStates[d.conceptoId] ?? { cantidad: '', importeOverride: '' };
+                    return (
+                      <tr key={d.conceptoId} className="border-b last:border-b-0">
+                        <td className="px-2 py-1">{nombreSinParentesis(d.conceptoNombre)}</td>
+                        <td className="px-1 py-0.5">
+                          <Input
+                            className="h-7 text-xs text-center w-full"
+                            type="number"
+                            step="0.01"
+                            placeholder="—"
+                            value={state.cantidad}
+                            onChange={(e) =>
+                              setEditStates((prev) => ({
+                                ...prev,
+                                [d.conceptoId]: { ...state, cantidad: e.target.value },
+                              }))
+                            }
+                            onBlur={() => handleBlurInput(d)}
+                          />
+                        </td>
+                        <td className="px-1 py-0.5">
+                          <Input
+                            className="h-7 text-xs text-right w-full"
+                            type="number"
+                            step="0.01"
+                            placeholder="—"
+                            value={state.importeOverride}
+                            onChange={(e) =>
+                              setEditStates((prev) => ({
+                                ...prev,
+                                [d.conceptoId]: { ...state, importeOverride: e.target.value },
+                              }))
+                            }
+                            onBlur={() => handleBlurInput(d)}
+                          />
+                        </td>
+                        <td className="px-2 py-1 text-right">
+                          {d.conceptoTipo === 'remunerativo' ? `$${fmt(d.monto)}` : ''}
+                        </td>
+                        <td className="px-2 py-1 text-right">
+                          {d.conceptoTipo === 'no_remunerativo' ? `$${fmt(d.monto)}` : ''}
+                        </td>
+                        <td className="px-2 py-1 text-right">
+                          {d.conceptoTipo === 'descuento' ? `- $${fmt(d.monto)}` : ''}
+                        </td>
+                        <td className="px-2 py-1 text-right">
+                          {d.conceptoTipo === 'retencion' ? `- $${fmt(d.monto)}` : ''}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
                 <tfoot>
                   <tr className="bg-muted/40 font-semibold">
                     <td className="px-2 py-1 text-left">Totales</td>
                     <td className="px-2 py-1" />
-                    <td className="px-2 py-1 text-right">
-                      $
-                      {result.totalRemunerativo.toLocaleString('es-AR', {
-                        minimumFractionDigits: 2,
-                      })}
-                    </td>
-                    <td className="px-2 py-1 text-right">
-                      $
-                      {result.totalNoRemunerativo.toLocaleString('es-AR', {
-                        minimumFractionDigits: 2,
-                      })}
-                    </td>
-                    <td className="px-2 py-1 text-right">
-                      - $
-                      {result.totalDescuentos.toLocaleString('es-AR', {
-                        minimumFractionDigits: 2,
-                      })}
-                    </td>
+                    <td className="px-2 py-1" />
+                    <td className="px-2 py-1 text-right">${fmt(result.totalRemunerativo)}</td>
+                    <td className="px-2 py-1 text-right">${fmt(result.totalNoRemunerativo)}</td>
+                    <td className="px-2 py-1 text-right">- ${fmt(result.totalDescuentos)}</td>
+                    <td className="px-2 py-1 text-right">- ${fmt(result.totalRetenciones)}</td>
                   </tr>
                 </tfoot>
               </table>
             </div>
             <div className="flex justify-end border-t pt-2 text-base font-semibold">
               <span className="text-muted-foreground">Neto a cobrar:</span>
-              <span className="ml-2">
-                $
-                {result.neto.toLocaleString('es-AR', {
-                  minimumFractionDigits: 2,
-                })}
-              </span>
+              <span className="ml-2">${fmt(result.neto)}</span>
             </div>
             {onConfirmRecibo && result && (
               <div className="flex justify-end pt-4">

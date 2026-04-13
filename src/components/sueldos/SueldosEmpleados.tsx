@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Table,
@@ -30,6 +30,7 @@ import {
   deleteManualEmpleado,
   listConvenios,
   listCategoriasByConvenio,
+  sincronizarConveniosEmpleados,
 } from '@/actions/sueldos';
 import {
   Select,
@@ -161,6 +162,16 @@ export function SueldosEmpleados({
     onError: (e) => toast.error(e.message),
   });
 
+  const sincronizar = useMutation({
+    mutationFn: () =>
+      sincronizarConveniosEmpleados({ data: { clientId, profileId } }),
+    onSuccess: (result) => {
+      toast.success(result.mensaje);
+      queryClient.invalidateQueries({ queryKey: ['import-empleados', clientId, profileId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Error al sincronizar'),
+  });
+
   const eliminar = useMutation({
     mutationFn: (empleadoId: string) =>
       deleteManualEmpleado({ data: { clientId, empleadoId } }),
@@ -184,12 +195,23 @@ export function SueldosEmpleados({
 
   return (
     <div className="w-full min-w-0 max-w-full space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground break-words">
           Empleados del perfil fiscal (importados desde LSD o creados
           manualmente).
         </p>
-        <Dialog open={open} onOpenChange={setOpen}>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-2"
+            onClick={() => sincronizar.mutate()}
+            disabled={sincronizar.isPending}
+          >
+            <RefreshCw className={`h-4 w-4 ${sincronizar.isPending ? 'animate-spin' : ''}`} />
+            Sincronizar convenios
+          </Button>
+          <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button size="sm" className="gap-2">
               <Plus className="h-4 w-4" />
@@ -343,20 +365,21 @@ export function SueldosEmpleados({
               </div>
             </form>
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        </div>
       </div>
 
       <div className="w-full min-w-0 max-w-full overflow-x-auto rounded-md border">
         <Table className="w-full min-w-0 table-fixed text-sm">
           <colgroup>
-            <col className="w-[20%]" />
-            <col className="w-[13%]" />
-            <col className="w-[8%]" />
-            <col className="w-[11%]" />
-            <col className="w-[11%]" />
+            <col className="w-[18%]" />
+            <col className="w-[12%]" />
+            <col className="w-[6%]" />
+            <col className="w-[9%]" />
+            <col className="w-[9%]" />
+            <col className="w-[14%]" />
+            <col className="w-[14%]" />
             <col className="w-[10%]" />
-            <col className="w-[13%]" />
-            <col className="w-[8%]" />
             <col className="w-[6%]" />
           </colgroup>
           <TableHeader>
@@ -366,7 +389,7 @@ export function SueldosEmpleados({
               <TableHead>Legajo</TableHead>
               <TableHead className="whitespace-normal">Fecha alta</TableHead>
               <TableHead className="whitespace-normal">Fecha baja</TableHead>
-              <TableHead className="whitespace-normal">Modo</TableHead>
+              <TableHead className="whitespace-normal">Convenio</TableHead>
               <TableHead className="whitespace-normal">Categoría</TableHead>
               <TableHead>Estado</TableHead>
               <TableHead />
@@ -416,12 +439,14 @@ export function SueldosEmpleados({
                       {formatDate(e.fechaBaja ?? undefined)}
                     </TableCell>
                     <TableCell className="min-w-0 break-words align-top py-2">
-                      {e.modoContrato != null && e.modoContrato !== ''
-                        ? formatTitleCaseDisplay(e.modoContrato)
-                        : '—'}
+                      {r.convenioNombre
+                        ? formatTitleCaseDisplay(r.convenioNombre)
+                        : <span className="text-muted-foreground text-xs">Sin vincular</span>}
                     </TableCell>
                     <TableCell className="min-w-0 break-words align-top py-2">
-                      {formatTitleCaseDisplay(e.categoria)}
+                      {r.categoriaNombre
+                        ? formatTitleCaseDisplay(r.categoriaNombre)
+                        : <span className="text-muted-foreground text-xs">{formatTitleCaseDisplay(e.categoria)}</span>}
                     </TableCell>
                     <TableCell className="align-top py-2">
                       {baja ? (

@@ -5,7 +5,6 @@ import {
   liquidacionImportEmpleado,
   payrollConvenio,
   payrollConvenioCategoria,
-  payrollEmployee,
   profile,
 } from '@/drizzle/schema';
 
@@ -201,51 +200,35 @@ async function main() {
         };
       }
 
-      const existingConfig = (
-        await db
-          .select()
-          .from(payrollEmployee)
-          .where(eq(payrollEmployee.importEmpleadoId, imp.id))
-          .limit(1)
-      )[0];
-
-      if (existingConfig) {
-        if (
-          existingConfig.convenioId !== best.convenioId ||
-          existingConfig.categoriaId !== best.categoriaId
-        ) {
+      // Si ya tiene convenio asignado en liquidacion_import_empleado, actualizar si cambió
+      if (imp.convenioId) {
+        if (imp.convenioId !== best.convenioId || imp.categoriaId !== best.categoriaId) {
           await db
-            .update(payrollEmployee)
-            .set({
-              convenioId: best.convenioId,
-              categoriaId: best.categoriaId,
-              updatedAt: new Date(),
-            })
-            .where(eq(payrollEmployee.id, existingConfig.id));
+            .update(liquidacionImportEmpleado)
+            .set({ convenioId: best.convenioId, categoriaId: best.categoriaId, updatedAt: new Date() })
+            .where(eq(liquidacionImportEmpleado.id, imp.id));
           updatedConfigs++;
         }
         matched++;
         continue;
       }
 
-      const fullName = splitNombreCompleto(imp.nombre);
       const cuil = String(imp.cuil ?? '').trim();
       if (!cuil) {
         withoutMatch++;
         continue;
       }
 
-      await db.insert(payrollEmployee).values({
-        clientId: p.clientId,
-        nombre: fullName.nombre,
-        apellido: fullName.apellido,
-        cuilCuil: cuil,
-        fechaIngreso: imp.fechaAlta ?? new Date(),
-        convenioId: best.convenioId,
-        categoriaId: best.categoriaId,
-        tipoJornada: 'full_time',
-        importEmpleadoId: imp.id,
-      });
+      await db
+        .update(liquidacionImportEmpleado)
+        .set({
+          convenioId: best.convenioId,
+          categoriaId: best.categoriaId,
+          tipoJornada: 'full_time',
+          activo: true,
+          updatedAt: new Date(),
+        })
+        .where(eq(liquidacionImportEmpleado.id, imp.id));
       createdConfigs++;
       matched++;
     }
