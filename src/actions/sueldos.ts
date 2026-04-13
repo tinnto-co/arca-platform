@@ -31,6 +31,7 @@ import {
   lte,
   or,
   isNull,
+  isNotNull,
   gte,
   inArray,
   sql,
@@ -657,6 +658,29 @@ async function getBasicoVigenteInternal(
     .orderBy(desc(payrollEscala.vigenciaDesde))
     .limit(1);
   return escala ? Number(escala.montoBasico) : 0;
+}
+
+/**
+ * Sueldo básico para mostrar en el recibo: override del legajo → escala por categoría → básico persistido en la liquidación.
+ */
+async function basicoParaRecibo(
+  empleado: typeof liquidacionImportEmpleado.$inferSelect,
+  liquidacion: typeof liquidacionImportRecibo.$inferSelect
+): Promise<number> {
+  const override = empleado.valorSueldo != null ? Number(empleado.valorSueldo) : 0;
+  if (!Number.isNaN(override) && override > 0) return override;
+
+  if (empleado.categoriaId) {
+    const deEscala = await getBasicoVigenteInternal(
+      empleado.categoriaId,
+      liquidacion.periodo
+    );
+    if (!Number.isNaN(deEscala) && deEscala > 0) return deEscala;
+  }
+
+  const persistido =
+    liquidacion.basico != null ? Number(liquidacion.basico) : 0;
+  return Number.isNaN(persistido) ? 0 : persistido;
 }
 
 /** Obtiene el básico vigente para una categoría en una fecha */
@@ -1309,6 +1333,7 @@ export const createReciboHeader = createServerFn({ method: 'POST' })
           reciboId: liq.id,
           codigo: d.codigo,
           conceptoId: d.conceptoId ?? null,
+          tipoLiquidacion: d.tipoLiquidacion ?? null,
           monto: String(d.monto),
           cantidad: d.cantidad != null ? String(d.cantidad) : null,
           porcentaje: d.porcentaje ?? null,
@@ -1805,6 +1830,7 @@ async function calcularUnaLiquidacion(
         reciboId,
         codigo: d.conceptoCodigo,
         conceptoId: d.conceptoId,
+        tipoLiquidacion: d.conceptoTipo,
         monto: String(d.monto),
         cantidad: d.cantidad != null ? String(d.cantidad) : null,
         porcentaje: input?.porcentaje ?? null,
@@ -2170,6 +2196,164 @@ export const getPayrollEmployerConfig = createServerFn({ method: 'GET' })
     };
   });
 
+/** Columna del recibo estilo SOS. */
+type TipoColumnaRecibo =
+  | 'remunerativo'
+  | 'no_remunerativo'
+  | 'descuento'
+  | 'retencion';
+
+function tipoConceptoParaColumnaRecibo(
+  concepto: typeof payrollConcepto.$inferSelect | null
+): TipoColumnaRecibo {
+  const t = concepto?.tipo;
+  if (t === 'remunerativo') return 'remunerativo';
+  if (t === 'no_remunerativo') return 'no_remunerativo';
+  if (t === 'retencion') return 'retencion';
+  return 'descuento';
+}
+
+/**
+ * Columna del recibo según SOS Contador (rango del n° de concepto 1–599).
+ * Ver "Formuleo Sueldos SOS CONTADOR.md" §5.1 y §7.
+ */
+function tipoColumnaDesdeRangoSos(numero: number): TipoColumnaRecibo | null {
+  if (numero >= 1 && numero <= 99) return 'remunerativo';
+  if (numero >= 100 && numero <= 199) return 'descuento';
+  if (numero >= 200 && numero <= 299) return 'retencion';
+  if (numero >= 400 && numero <= 499) return 'no_remunerativo';
+  if (numero >= 500 && numero <= 599) return 'retencion';
+  /** Excepción documentada (no rem. Dec. 551/2022). */
+  if (numero === 603) return 'no_remunerativo';
+  return null;
+}
+
+/** Si el código de línea es solo dígitos y cae en el catálogo SOS, devuelve ese número. */
+function parseNumeroSosDesdeCodigoLinea(codigo: string): number | null {
+  const t = codigo.trim();
+  if (!/^\d+$/.test(t)) return null;
+  const n = parseInt(t, 10);
+  if (tipoColumnaDesdeRangoSos(n)) return n;
+  return null;
+}
+
+/**
+ * Códigos ARCA de aportes / retenciones (LSD 81xxxx / 82xxxx) → columna Retenciones.
+ * El n° SOS suele ser 200–299; si el recibo guardó solo el código ARCA, igual ubicamos la columna.
+ */
+function tipoColumnaDesdeCodigoAfip(codigo: string | null | undefined): TipoColumnaRecibo | null {
+  if (!codigo) return null;
+  const digits = codigo.replace(/\D/g, '');
+  if (digits.length === 0) return null;
+  const last6 =
+    digits.length >= 6 ? parseInt(digits.slice(-6), 10) : parseInt(digits, 10);
+  if (Number.isNaN(last6)) return null;
+  if (last6 >= 810000 && last6 <= 829999) return 'retencion';
+  return null;
+}
+
+function extraerNumeroSos(
+  detalle: typeof liquidacionImportConceptoValor.$inferSelect,
+  concepto: typeof payrollConcepto.$inferSelect | null,
+  conceptoSos: typeof conceptoSos.$inferSelect | null
+): number | null {
+  if (concepto?.numeroSos != null && concepto.numeroSos > 0) {
+    return concepto.numeroSos;
+  }
+  if (conceptoSos?.codigo) {
+    const t = conceptoSos.codigo.trim();
+    if (/^\d+$/.test(t)) {
+      const n = parseInt(t, 10);
+      if (tipoColumnaDesdeRangoSos(n)) return n;
+    }
+  }
+  const desdeLinea = parseNumeroSosDesdeCodigoLinea(detalle.codigo);
+  if (desdeLinea != null) return desdeLinea;
+  return null;
+}
+
+/**
+ * Columna para el recibo: prioriza reglas SOS (n° concepto / ARCA); si no alcanza, motor + catálogo.
+ */
+function tipoColumnaSosContador(
+  detalle: typeof liquidacionImportConceptoValor.$inferSelect,
+  concepto: typeof payrollConcepto.$inferSelect | null,
+  conceptoSos: typeof conceptoSos.$inferSelect | null
+): TipoColumnaRecibo {
+  const n = extraerNumeroSos(detalle, concepto, conceptoSos);
+  if (n != null) {
+    const col = tipoColumnaDesdeRangoSos(n);
+    if (col) return col;
+  }
+  const colAfip = tipoColumnaDesdeCodigoAfip(
+    concepto?.codigoArca ?? detalle.codigo
+  );
+  if (colAfip) return colAfip;
+
+  const raw = detalle.tipoLiquidacion;
+  if (
+    raw === 'remunerativo' ||
+    raw === 'no_remunerativo' ||
+    raw === 'descuento' ||
+    raw === 'retencion'
+  ) {
+    return raw;
+  }
+  return tipoConceptoParaColumnaRecibo(concepto);
+}
+
+type DetalleReciboRow = {
+  detalle: typeof liquidacionImportConceptoValor.$inferSelect;
+  concepto: typeof payrollConcepto.$inferSelect | null;
+  conceptoAfip: typeof lsdConceptoAfip.$inferSelect | null;
+  conceptoSos: typeof conceptoSos.$inferSelect | null;
+};
+
+/** El OR en el join a AFIP puede duplicar filas; nos quedamos con una y priorizamos la que trae `concepto`. */
+function mergeDetalleFilasDuplicadas(rows: DetalleReciboRow[]): DetalleReciboRow[] {
+  const map = new Map<string, DetalleReciboRow>();
+  for (const row of rows) {
+    const id = row.detalle.id;
+    const prev = map.get(id);
+    if (!prev) {
+      map.set(id, row);
+      continue;
+    }
+    const prefer = !prev.concepto && row.concepto ? row : prev;
+    const otro = prefer === row ? prev : row;
+    map.set(id, {
+      detalle: prefer.detalle,
+      concepto: prefer.concepto ?? otro.concepto,
+      conceptoAfip: prefer.conceptoAfip ?? otro.conceptoAfip,
+      conceptoSos: prefer.conceptoSos ?? otro.conceptoSos,
+    });
+  }
+  return Array.from(map.values());
+}
+
+async function enrichConceptosFaltantes(
+  rows: DetalleReciboRow[]
+): Promise<DetalleReciboRow[]> {
+  const ids = [
+    ...new Set(
+      rows
+        .filter((r) => r.detalle.conceptoId && !r.concepto)
+        .map((r) => r.detalle.conceptoId!)
+    ),
+  ];
+  if (ids.length === 0) return rows;
+  const extra = await db
+    .select()
+    .from(payrollConcepto)
+    .where(inArray(payrollConcepto.id, ids));
+  const byId = new Map(extra.map((c) => [c.id, c]));
+  return rows.map((r) =>
+    r.concepto || !r.detalle.conceptoId
+      ? r
+      : { ...r, concepto: byId.get(r.detalle.conceptoId) ?? null }
+  );
+}
+
 export const getReciboDetalle = createServerFn({ method: 'GET' })
   .inputValidator(
     z.object({ liquidacionId: z.string().uuid(), clientId: z.string().uuid() })
@@ -2209,15 +2393,12 @@ export const getReciboDetalle = createServerFn({ method: 'GET' })
       .limit(1);
     if (!liq) return null;
 
-    // Si el recibo no tiene básico, lo derivamos de la escala salarial del convenio
-    const basicoCalculado =
-      liq.liquidacion.basico != null
-        ? Number(liq.liquidacion.basico)
-        : liq.empleado.categoriaId
-          ? await getBasicoVigenteInternal(liq.empleado.categoriaId, liq.liquidacion.periodo)
-          : 0;
+    const basicoCalculado = await basicoParaRecibo(
+      liq.empleado,
+      liq.liquidacion
+    );
 
-    const detalles = await db
+    const detallesRaw = await db
       .select({
         detalle: liquidacionImportConceptoValor,
         concepto: payrollConcepto,
@@ -2231,17 +2412,38 @@ export const getReciboDetalle = createServerFn({ method: 'GET' })
       )
       .leftJoin(
         lsdConceptoAfip,
-        or(
-          eq(liquidacionImportConceptoValor.codigo, lsdConceptoAfip.codigoAfip),
-          eq(payrollConcepto.codigoArca, lsdConceptoAfip.codigoAfip)
+        eq(
+          lsdConceptoAfip.codigoAfip,
+          sql`coalesce(${payrollConcepto.codigoArca}, ${liquidacionImportConceptoValor.codigo})`
         )
       )
       .leftJoin(
         conceptoSos,
-        eq(liquidacionImportConceptoValor.codigo, conceptoSos.codigo)
+        or(
+          eq(liquidacionImportConceptoValor.codigo, conceptoSos.codigo),
+          and(
+            isNotNull(payrollConcepto.numeroSos),
+            eq(
+              conceptoSos.codigo,
+              sql`cast(${payrollConcepto.numeroSos} as text)`
+            )
+          )
+        )
       )
       .where(eq(liquidacionImportConceptoValor.reciboId, ctx.data.liquidacionId))
       .orderBy(asc(liquidacionImportConceptoValor.codigo));
+
+    let merged = mergeDetalleFilasDuplicadas(detallesRaw);
+    merged = await enrichConceptosFaltantes(merged);
+
+    const detalles = merged.map((row) => ({
+      ...row,
+      tipoColumna: tipoColumnaSosContador(
+        row.detalle,
+        row.concepto,
+        row.conceptoSos
+      ),
+    }));
 
     /** Objeto plano JSON-serializable (evita pérdida de campos con seroval/Drizzle en el cliente). */
     const payload = { ...liq, basicoCalculado, detalles };

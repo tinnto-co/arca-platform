@@ -782,6 +782,11 @@ export const liquidacionImportConceptoValor = pgTable(
     // --- Campos para recibos generados en el sistema ---
     /** FK al concepto configurado. Null para registros importados del LSD. */
     conceptoId: uuid("concepto_id").references(() => payrollConcepto.id, { onDelete: "set null" }),
+    /**
+     * Tipo según el motor al persistir (remunerativo | no_remunerativo | descuento | retencion).
+     * Permite columnas correctas en el recibo aunque falle el join al concepto de nómina.
+     */
+    tipoLiquidacion: text("tipo_liquidacion"),
     /** Override manual del resultado: si está seteado, saltea el cálculo del motor. */
     importeOverride: numeric("importe_override", { precision: 14, scale: 2 }),
     /** Si el concepto está activo (habilitado) en este recibo. */

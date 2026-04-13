@@ -61,6 +61,20 @@ function moneyFmt(v: string | number | null | undefined): string {
   });
 }
 
+/** Suma montos de líneas de detalle (mismo criterio que la grilla del recibo). */
+function sumaMontosDetalle(
+  rows: Array<{ detalle: { monto: string | null | undefined } }>
+): number {
+  return rows.reduce((acc, r) => {
+    const n = Number(r.detalle.monto ?? 0);
+    return acc + (Number.isFinite(n) ? n : 0);
+  }, 0);
+}
+
+function redondearPesos(n: number): number {
+  return Math.round((Number.isFinite(n) ? n : 0) * 100) / 100;
+}
+
 function dateFmt(d: Date | string | null | undefined): string {
   if (d === null || d === undefined || d === '') return '—';
   const date = d instanceof Date ? d : new Date(d);
@@ -173,12 +187,46 @@ function pesoEnLetras(valor: string | number | null | undefined): string {
 }
 // ────────────────────────────────────────────────────────────────────────────
 
-type ConceptoTipo = 'remunerativo' | 'no_remunerativo' | 'descuento';
+type ConceptoTipo =
+  | 'remunerativo'
+  | 'no_remunerativo'
+  | 'descuento'
+  | 'retencion';
 
-function clasificarTipo(tipo: string): ConceptoTipo {
+function clasificarTipo(tipo: string | null | undefined): ConceptoTipo {
   if (tipo === 'remunerativo') return 'remunerativo';
   if (tipo === 'no_remunerativo') return 'no_remunerativo';
+  if (tipo === 'retencion') return 'retencion';
   return 'descuento';
+}
+
+/**
+ * Columna del recibo (SOS Contador): el servidor calcula `tipoColumna` por rango 1–599 / ARCA.
+ * Va antes que `tipoLiquidacion` (motor) para no pisar la regla de columnas del recibo.
+ */
+function columnaConcepto(d: {
+  tipoColumna?: ConceptoTipo;
+  detalle?: { tipoLiquidacion?: string | null };
+  concepto?: { tipo?: string | null } | null;
+}): ConceptoTipo {
+  if (
+    d.tipoColumna === 'remunerativo' ||
+    d.tipoColumna === 'no_remunerativo' ||
+    d.tipoColumna === 'descuento' ||
+    d.tipoColumna === 'retencion'
+  ) {
+    return d.tipoColumna;
+  }
+  const tl = d.detalle?.tipoLiquidacion;
+  if (
+    tl === 'remunerativo' ||
+    tl === 'no_remunerativo' ||
+    tl === 'descuento' ||
+    tl === 'retencion'
+  ) {
+    return tl;
+  }
+  return clasificarTipo(d.concepto?.tipo ?? null);
 }
 
 // ─── Celda de la grilla del documento ───────────────────────────────────────
@@ -360,28 +408,41 @@ function ReciboDocumento({
   // Clasificar conceptos por tipo (solo los activos)
   const conceptosActivos = detalles.filter((d) => d.detalle.activoEnRecibo);
   const haberesCon = conceptosActivos.filter(
-    (d) => clasificarTipo(d.concepto?.tipo ?? null) === 'remunerativo'
+    (d) => columnaConcepto(d) === 'remunerativo'
   );
   const haberesSin = conceptosActivos.filter(
-    (d) => clasificarTipo(d.concepto?.tipo ?? null) === 'no_remunerativo'
+    (d) => columnaConcepto(d) === 'no_remunerativo'
   );
   const descuentos = conceptosActivos.filter(
-    (d) => clasificarTipo(d.concepto?.tipo ?? null) === 'descuento'
+    (d) => columnaConcepto(d) === 'descuento'
+  );
+  const retenciones = conceptosActivos.filter(
+    (d) => columnaConcepto(d) === 'retencion'
   );
 
-  // Filas de la tabla: unimos los 3 grupos en orden
+  // Filas de la tabla: unimos los 4 grupos en orden
   const filas = [
-    ...haberesCon.map((d) => ({ ...d, col: 'con' as const })),
-    ...haberesSin.map((d) => ({ ...d, col: 'sin' as const })),
+    ...haberesCon.map((d) => ({ ...d, col: 'hab' as const })),
     ...descuentos.map((d) => ({ ...d, col: 'desc' as const })),
+    ...retenciones.map((d) => ({ ...d, col: 'ret' as const })),
+    ...haberesSin.map((d) => ({ ...d, col: 'noRem' as const })),
   ];
 
-  const totalHaberesCon = Number(liquidacion.haberes ?? 0);
-  const totalHaberesSin = Number(liquidacion.noRemunerativo ?? 0);
-  const totalDescuentos =
-    Number(liquidacion.descuentos ?? 0) +
-    Number(liquidacion.retenciones ?? 0);
-  const neto = Number(liquidacion.neto ?? 0);
+  /**
+   * Totales por columna = suma de las filas visibles (reglas SOS / tipoColumna).
+   * No usar solo liquidacion.haberes/descuentos/…: el motor puede clasificar distinto
+   * y quedar en 0 en el encabezado aunque haya importes en la grilla.
+   */
+  const totalHaberes = redondearPesos(sumaMontosDetalle(haberesCon));
+  const totalDescuentos = redondearPesos(sumaMontosDetalle(descuentos));
+  const totalRetenciones = redondearPesos(sumaMontosDetalle(retenciones));
+  const totalNoRemunerativo = redondearPesos(sumaMontosDetalle(haberesSin));
+  const neto = redondearPesos(
+    totalHaberes +
+      totalNoRemunerativo -
+      totalDescuentos -
+      totalRetenciones
+  );
 
   const cab = pickCabecera(liquidacion as unknown as Record<string, unknown>);
 
@@ -495,14 +556,18 @@ function ReciboDocumento({
               <th className="w-[70px] px-2 py-2 text-left">Código</th>
               <th className="px-2 py-2 text-left">Descripción del concepto</th>
               <th className="w-[70px] px-2 py-2 text-right">Cant.</th>
+              <th className="w-[70px] px-2 py-2 text-right">%</th>
               <th className="w-[140px] border-l border-border px-2 py-2 text-right">
-                Hab. con aporte
-              </th>
-              <th className="w-[140px] border-l border-border px-2 py-2 text-right">
-                Hab. sin aporte
+                Haberes
               </th>
               <th className="w-[140px] border-l border-border px-2 py-2 text-right">
                 Descuentos
+              </th>
+              <th className="w-[140px] border-l border-border px-2 py-2 text-right">
+                Retenciones
+              </th>
+              <th className="w-[140px] border-l border-border px-2 py-2 text-right">
+                No remunerativo
               </th>
             </tr>
           </thead>
@@ -510,7 +575,7 @@ function ReciboDocumento({
             {filas.length === 0 ? (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={8}
                   className="px-2 py-4 text-center text-sm text-muted-foreground"
                 >
                   Sin conceptos cargados
@@ -531,14 +596,20 @@ function ReciboDocumento({
                   <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">
                     {det.cantidad ? moneyFmt(det.cantidad) : '—'}
                   </td>
-                  <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
-                    {col === 'con' ? moneyFmt(det.monto) : ''}
+                  <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">
+                    {det.porcentaje ? moneyFmt(det.porcentaje) : '—'}
                   </td>
                   <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
-                    {col === 'sin' ? moneyFmt(det.monto) : ''}
+                    {col === 'hab' ? moneyFmt(det.monto) : ''}
                   </td>
                   <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
                     {col === 'desc' ? moneyFmt(det.monto) : ''}
+                  </td>
+                  <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                    {col === 'ret' ? moneyFmt(det.monto) : ''}
+                  </td>
+                  <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                    {col === 'noRem' ? moneyFmt(det.monto) : ''}
                   </td>
                 </tr>
               ))
@@ -547,17 +618,20 @@ function ReciboDocumento({
           {/* ── Fila de totales ─────────────────────────────────────────── */}
           <tfoot>
             <tr className="border-t-2 border-border bg-muted/30 font-semibold">
-              <td colSpan={3} className="px-2 py-2 uppercase tracking-wide text-xs">
+              <td colSpan={4} className="px-2 py-2 uppercase tracking-wide text-xs">
                 Totales
               </td>
               <td className="border-l border-border px-2 py-2 text-right tabular-nums">
-                {moneyFmt(totalHaberesCon)}
-              </td>
-              <td className="border-l border-border px-2 py-2 text-right tabular-nums">
-                {moneyFmt(totalHaberesSin)}
+                {moneyFmt(totalHaberes)}
               </td>
               <td className="border-l border-border px-2 py-2 text-right tabular-nums">
                 {moneyFmt(totalDescuentos)}
+              </td>
+              <td className="border-l border-border px-2 py-2 text-right tabular-nums">
+                {moneyFmt(totalRetenciones)}
+              </td>
+              <td className="border-l border-border px-2 py-2 text-right tabular-nums">
+                {moneyFmt(totalNoRemunerativo)}
               </td>
             </tr>
           </tfoot>
@@ -568,7 +642,7 @@ function ReciboDocumento({
           <span className="text-sm text-muted-foreground">
             Son{' '}
             <span className="font-medium capitalize text-foreground">
-              {pesoEnLetras(liquidacion.neto)}
+              {pesoEnLetras(neto)}
             </span>
           </span>
           <span className="text-base font-bold">
