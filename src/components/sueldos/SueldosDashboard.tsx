@@ -11,9 +11,9 @@ import {
   Calculator,
   Loader2,
   Calendar,
-  Database,
   Trash2,
 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -40,7 +40,6 @@ import {
   listImportEmpleados,
   listConvenios,
   calcularLiquidacionMasiva,
-  aplicarPlantillaBaseSueldos,
   eliminarLiquidacionesDelPeriodo,
 } from '@/actions/sueldos';
 import {
@@ -91,28 +90,9 @@ export function SueldosDashboard({
   });
 
   const { data: convenios = [] } = useQuery({
-    queryKey: ['convenios', clientId],
-    queryFn: () => listConvenios({ data: { clientId } }),
-    enabled: !!clientId,
-  });
-
-  const aplicarPlantilla = useMutation({
-    mutationFn: () => aplicarPlantillaBaseSueldos({ data: { clientId } }),
-    onSuccess: (result) => {
-      const parts: string[] = [];
-      if (result.conceptosCreated + result.conceptosUpdated > 0)
-        parts.push(
-          `Conceptos: ${result.conceptosCreated} creados, ${result.conceptosUpdated} actualizados`
-        );
-      toast.success(
-        parts.length
-          ? `Plantilla base: ${parts.join('. ')}`
-          : 'Plantilla base aplicada.'
-      );
-      queryClient.invalidateQueries({ queryKey: ['conceptos', clientId] });
-    },
-    onError: (e) =>
-      toast.error(e instanceof Error ? e.message : 'Error al cargar plantilla'),
+    queryKey: ['convenios', clientId, profileId],
+    queryFn: () => listConvenios({ data: { clientId, profileId } }),
+    enabled: !!clientId && !!profileId,
   });
 
   const liquidacionMasiva = useMutation({
@@ -157,41 +137,13 @@ export function SueldosDashboard({
   const totalBruto = liquidaciones.reduce(
     (acc, l) =>
       acc +
-      Number(l.liquidacion.totalRemunerativo) +
-      Number(l.liquidacion.totalNoRemunerativo || 0),
+      Number(l.liquidacion.haberes) +
+      Number(l.liquidacion.noRemunerativo || 0),
     0
   );
 
   return (
     <div className="space-y-6">
-      <Card className="border-dashed border-2 border-primary/30 bg-primary/5">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Database className="h-5 w-5" />
-            Datos base de sueldos
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Cargue o actualice solo los <strong>conceptos</strong> típicos
-            (básico, antigüedad, presentismo, descuentos, etc.). Los convenios
-            se asignan en la solapa Convenios con &quot;Seleccionar
-            convenio&quot;.
-          </p>
-        </CardHeader>
-        <CardContent>
-          <Button
-            onClick={() => aplicarPlantilla.mutate()}
-            disabled={aplicarPlantilla.isPending}
-          >
-            {aplicarPlantilla.isPending ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Database className="mr-2 h-4 w-4" />
-            )}
-            Cargar o actualizar plantilla base
-          </Button>
-        </CardContent>
-      </Card>
-
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-2">
           <Calendar className="h-5 w-5 text-muted-foreground" />
@@ -305,10 +257,9 @@ export function SueldosDashboard({
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
-              <CardTitle>Últimas liquidaciones del período</CardTitle>
+              <CardTitle>Recibos del período</CardTitle>
               <p className="text-sm text-muted-foreground">
-                Período {periodo}. Use &quot;Liquidación masiva&quot; para
-                recalcular.
+                Período {periodo}. Incluye recibos importados (LSD) y generados por el sistema.
               </p>
             </div>
             <Button
@@ -331,8 +282,7 @@ export function SueldosDashboard({
             </div>
           ) : liquidaciones.length === 0 ? (
             <p className="text-muted-foreground">
-              No hay liquidaciones para este período. Configure empleados,
-              convenios y conceptos, luego ejecute liquidación masiva.
+              No hay recibos para este período.
             </p>
           ) : (
             <ul className="space-y-2">
@@ -341,8 +291,13 @@ export function SueldosDashboard({
                   key={l.liquidacion.id}
                   className="flex justify-between rounded-lg border px-3 py-2 text-sm"
                 >
-                  <span>
-                    {l.empleado.apellido}, {l.empleado.nombre}
+                  <span className="flex items-center gap-2">
+                    {l.empleado.nombre}
+                    {l.liquidacion.origen === 'import' ? (
+                      <Badge variant="secondary" className="text-xs">LSD</Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-xs">Generado</Badge>
+                    )}
                   </span>
                   <span className="font-medium">
                     $

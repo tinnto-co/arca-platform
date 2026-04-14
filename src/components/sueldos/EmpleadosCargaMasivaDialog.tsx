@@ -53,6 +53,8 @@ interface EmpleadosCargaMasivaDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   clientId: string;
+  /** Si se omite, el servidor usa el primer perfil del cliente con liquidación de sueldos. */
+  profileId?: string;
   onSuccess: () => void;
 }
 
@@ -64,6 +66,7 @@ export function EmpleadosCargaMasivaDialog({
   open,
   onOpenChange,
   clientId,
+  profileId,
   onSuccess,
 }: EmpleadosCargaMasivaDialogProps) {
   const queryClient = useQueryClient();
@@ -79,10 +82,16 @@ export function EmpleadosCargaMasivaDialog({
       empleados: Parameters<
         typeof createEmpleadosMasivo
       >[0]['data']['empleados']
-    ) => createEmpleadosMasivo({ data: { clientId, empleados } }),
+    ) =>
+      createEmpleadosMasivo({
+        data: { clientId, profileId, empleados },
+      }),
     onSuccess: (data) => {
       setResult(data);
       queryClient.invalidateQueries({ queryKey: ['empleados', clientId] });
+      queryClient.invalidateQueries({
+        queryKey: ['import-empleados', clientId],
+      });
       if (data.errors.length === 0) {
         toast.success(`${data.created} empleado(s) cargados correctamente`);
       } else if (data.created > 0) {

@@ -252,7 +252,7 @@ export function SueldosSimulador({
         )}
 
       {showImportTable && (
-        <Card>
+        <Card className="border border-border/70 shadow-sm">
           <CardHeader>
             <CardTitle className="text-base">
               Último recibo importado — conceptos
@@ -263,12 +263,14 @@ export function SueldosSimulador({
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="rounded-lg border bg-background p-3">
             <TablaReciboSos
               variant="importado"
               recibo={ultimoRecibo!.recibo}
               conceptos={ultimoRecibo!.conceptos}
               onChange={handleTablaChange}
             />
+            </div>
             <div className="flex flex-col items-end gap-2">
               {!permiteLiquidar && (
                 <span className="text-xs text-muted-foreground">
@@ -292,7 +294,7 @@ export function SueldosSimulador({
       )}
 
       {showManualTable && (
-        <Card>
+        <Card className="border border-border/70 shadow-sm">
           <CardHeader>
             <CardTitle className="text-base">Conceptos — carga manual</CardTitle>
             <p className="text-sm text-muted-foreground">
@@ -308,6 +310,7 @@ export function SueldosSimulador({
               </p>
             ) : (
               <>
+                <div className="rounded-lg border bg-background p-3">
                 <TablaReciboSos
                   key={plantillaManual.map((c) => c.id).join('|')}
                   variant="manual"
@@ -315,6 +318,7 @@ export function SueldosSimulador({
                   conceptos={plantillaManual}
                   onChange={handleTablaChange}
                 />
+                </div>
                 <div className="flex flex-col items-end gap-2">
                   {!permiteLiquidar && (
                     <span className="text-xs text-muted-foreground">

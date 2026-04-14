@@ -2,6 +2,7 @@
 
 import {
   Fragment,
+  useState,
   useMemo,
   useReducer,
   useCallback,
@@ -81,20 +82,78 @@ const EMPTY_EDIT_ROW: EditsMap[string] = {
   importeMaximo: '',
 };
 
+/**
+ * Devuelve true si el row tiene una base de fórmula válida y explícita.
+ *
+ * Problema con datos importados: cuando SOS no tiene un campo importe_N explícito
+ * (ej. Sueldo Básico, concepto 1), el scraper almacena el total liquidado como fallback
+ * en `importe`. En ese caso `importe == monto` y la fórmula daría un resultado incorrecto
+ * (ej. 30 días × 100% × $400.000 = $12.000.000 en vez de $400.000).
+ *
+ * Se detecta ese fallback cuando: importe ≈ monto Y el multiplicador (cantidad × %/100) ≠ 1.
+ * Si el multiplicador es ≈ 1, importe ES el valor unitario y la fórmula es correcta.
+ */
+function canApplyFormula(row: EditsMap[string]): boolean {
+  const imp = parseDecimalSos(row.importe);
+  if (imp === null || imp === 0) return false;
+
+  const mont = parseDecimalSos(row.monto);
+  if (mont !== null && Math.abs(imp - mont) < 0.01) {
+    // importe == monto: verificar si es fallback o parámetro unitario real
+    const cant = parseDecimalSos(row.cantidad) ?? 0;
+    const pct = parseDecimalSos(row.porcentaje) ?? 100;
+    const multiplier = cant * (pct / 100);
+    if (Math.abs(multiplier - 1.0) > 0.001) return false; // fallback — no aplicar fórmula
+  }
+
+  return true;
+}
+
 function editsReducer(state: EditsMap, action: EditAction): EditsMap {
   if (action.type !== 'SET_FIELD') return state;
   const prev = state[action.codigo] ?? EMPTY_EDIT_ROW;
   const updated = { ...prev, [action.field]: action.value };
-  const finalRow =
-    action.field === 'monto'
-      ? updated
-      : {
-          ...updated,
-          monto: montoLiquidadoDesdeEditsSos(updated, {
-            forceFormula: true,
-          }).toFixed(2),
+
+  // Edición directa del monto: guardar sin recalcular
+  if (action.field === 'monto') {
+    return { ...state, [action.codigo]: updated };
+  }
+
+  // Hay base de fórmula explícita (importe o importeConceptoNumero): aplicar fórmula
+  if (canApplyFormula(updated)) {
+    return {
+      ...state,
+      [action.codigo]: {
+        ...updated,
+        monto: montoLiquidadoDesdeEditsSos(updated, { forceFormula: true }).toFixed(2),
+      },
+    };
+  }
+
+  // Sin base de fórmula (importe vacío): escalar monto proporcionalmente al cambio
+  // de cantidad o porcentaje. Ej: cantidad 1→2 duplica el monto.
+  if (action.field === 'cantidad' || action.field === 'porcentaje') {
+    const prevMonto = parseDecimalSos(prev.monto);
+    if (prevMonto !== null && prevMonto !== 0) {
+      const prevFactor =
+        action.field === 'cantidad'
+          ? (parseDecimalSos(prev.cantidad) ?? 0)
+          : (parseDecimalSos(prev.porcentaje) ?? 0);
+      const newFactor = parseDecimalSos(action.value);
+      if (prevFactor !== 0 && newFactor !== null && newFactor !== 0) {
+        const scaled = prevMonto * (newFactor / prevFactor);
+        return {
+          ...state,
+          [action.codigo]: {
+            ...updated,
+            monto: (Math.round(scaled * 100) / 100).toFixed(2),
+          },
         };
-  return { ...state, [action.codigo]: finalRow };
+      }
+    }
+  }
+
+  return { ...state, [action.codigo]: updated };
 }
 
 // ---------------------------------------------------------------------------
@@ -130,11 +189,27 @@ function EditableCell({
   value: string;
   onChange: (v: string) => void;
 }) {
+  const [local, setLocal] = useState(value);
+
+  // Sincronizar cuando el reducer actualiza el valor (ej. monto recalculado)
+  useEffect(() => {
+    setLocal(value);
+  }, [value]);
+
+  const commit = () => onChange(local);
+
   return (
     <input
       type="text"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
+      value={local}
+      onChange={(e) => setLocal(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit();
+        }
+      }}
       className="w-full bg-transparent border-0 outline-none focus:bg-yellow-50 focus:ring-1 focus:ring-yellow-300 rounded px-1 py-0.5 text-xs text-right min-w-[64px]"
     />
   );

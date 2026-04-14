@@ -150,15 +150,17 @@ export function SueldosConceptos({
   return (
     <div className="w-full min-w-0 max-w-full">
       <div className="rounded-md border overflow-hidden">
-        <Table className="w-full min-w-0 table-fixed text-sm">
+        <Table className="w-full text-sm">
           <colgroup>
-            <col className="w-28" />
+            <col className="w-20" />
+            <col className="w-20" />
             <col />
-            <col className="w-14" />
+            <col className="w-10" />
           </colgroup>
           <TableHeader>
             <TableRow>
               <TableHead>Cód. AFIP</TableHead>
+              <TableHead>Cód. Contribuyente</TableHead>
               <TableHead>Concepto AFIP</TableHead>
               <TableHead />
             </TableRow>
@@ -167,7 +169,7 @@ export function SueldosConceptos({
             {isLoading ? (
               <TableRow>
                 <TableCell
-                  colSpan={3}
+                  colSpan={4}
                   className="text-center text-muted-foreground"
                 >
                   Cargando...
@@ -176,7 +178,7 @@ export function SueldosConceptos({
             ) : rows.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={3}
+                  colSpan={4}
                   className="text-center text-muted-foreground"
                 >
                   No hay conceptos para este perfil.
@@ -186,6 +188,7 @@ export function SueldosConceptos({
               rows.map((row) => (
                 <TableRow key={row.__key}>
                   <TableCell className="font-mono">{row.afipCodigo}</TableCell>
+                  <TableCell className="font-mono">{row.codigoContribuyente}</TableCell>
                   <TableCell className="min-w-0 break-words">
                     <div className="space-y-0.5">
                       <p>{row.afipNombre}</p>

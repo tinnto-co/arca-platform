@@ -41,7 +41,7 @@ function RouteComponent() {
             <AppSidebar />
           </Suspense>
           <SidebarInset>
-            <div className="h-[100svh] overflow-y-auto bg-[#efeeef]">
+            <div className="min-h-[100svh] bg-[#efeeef]">
               <div className="w-full max-w-full min-w-0 pb-20 md:pb-0 overflow-x-hidden">
                 <Outlet />
               </div>
