@@ -56,7 +56,7 @@ function RouteComponent() {
   }, [clients, selectedOptionId]);
 
   return (
-    <div className="space-y-4 p-4 md:space-y-6 md:p-0 md:m-[3rem] overflow-x-hidden">
+    <div className="space-y-4 overflow-x-hidden p-4 md:space-y-6 md:px-[3rem] md:pt-[3rem] md:pb-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <DollarSign className="h-6 w-6 text-[#139ed9]" />
@@ -122,7 +122,7 @@ function RouteComponent() {
             </TabsTrigger>
             <TabsTrigger value="simulador" className="gap-2">
               <Sliders className="h-4 w-4" />
-              Simulador
+              Nuevo recibo
             </TabsTrigger>
             <TabsTrigger value="recibo" className="gap-2">
               <FileText className="h-4 w-4" />

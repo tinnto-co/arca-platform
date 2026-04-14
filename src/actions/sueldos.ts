@@ -36,6 +36,11 @@ import {
   inArray,
   sql,
 } from 'drizzle-orm';
+import {
+  montoLiquidadoDesdeEditsSos,
+  parseDecimalSos,
+  totalesReciboSosDesdeMontos,
+} from '@/lib/sos-recibo-totales';
 
 /** Verifica que el cliente pertenezca a la org. y tenga al menos un perfil con liquidación de sueldos habilitada. */
 async function ensureClientBelongsToOrg(
@@ -189,11 +194,7 @@ import {
   type PayrollFormulaContext,
 } from '../lib/payroll-formula';
 import { puedeLiquidarPeriodo } from '../lib/payroll-period-rules';
-import { format, differenceInYears, parseISO } from 'date-fns';
-
-function getPeriodKey(date: Date): string {
-  return format(date, 'yyyy-MM');
-}
+import { differenceInYears, parseISO } from 'date-fns';
 
 // ---------- Convenios ----------
 
@@ -1127,6 +1128,130 @@ export const listImportRecibosByPeriodo = createServerFn({ method: 'GET' })
     return rows;
   });
 
+/** Último recibo importado del empleado con todos sus conceptos (para la tabla estilo SOS). */
+export const getUltimoReciboImportado = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      importEmpleadoId: z.string().uuid(),
+      clientId: z.string().uuid(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+
+    const [row] = await db
+      .select({ recibo: liquidacionImportRecibo })
+      .from(liquidacionImportRecibo)
+      .innerJoin(
+        liquidacionImportEmpleado,
+        eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
+      )
+      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .where(
+        and(
+          eq(liquidacionImportRecibo.empleadoId, ctx.data.importEmpleadoId),
+          eq(profile.client, ctx.data.clientId)
+        )
+      )
+      .orderBy(desc(liquidacionImportRecibo.periodo))
+      .limit(1);
+
+    if (!row) return null;
+
+    const conceptos = await db
+      .select({
+        id: liquidacionImportConceptoValor.id,
+        codigo: liquidacionImportConceptoValor.codigo,
+        monto: liquidacionImportConceptoValor.monto,
+        cantidad: liquidacionImportConceptoValor.cantidad,
+        porcentaje: liquidacionImportConceptoValor.porcentaje,
+        importeConceptoNumero: liquidacionImportConceptoValor.importeConceptoNumero,
+        importe: liquidacionImportConceptoValor.importe,
+        importeMinimo: liquidacionImportConceptoValor.importeMinimo,
+        importeMaximo: liquidacionImportConceptoValor.importeMaximo,
+        nombre: conceptoSos.nombre,
+        codigoAfip: conceptoSos.codigoAfip,
+      })
+      .from(liquidacionImportConceptoValor)
+      .leftJoin(
+        conceptoSos,
+        eq(liquidacionImportConceptoValor.codigo, conceptoSos.codigo)
+      )
+      .where(eq(liquidacionImportConceptoValor.reciboId, row.recibo.id))
+      .orderBy(sql`${liquidacionImportConceptoValor.codigo}::int`);
+
+    return { recibo: row.recibo, conceptos };
+  });
+
+/**
+ * Conceptos SOS habilitados para el perfil (`concepto_sos_profile` → `concepto_sos`),
+ * para armar la grilla estilo recibo sin import previo (ej. empleado nuevo).
+ * `codigo` en cada fila = código de fila del recibo (mismo que en import LSD); debe coincidir
+ * con `payroll_concepto.numero_sos` para que `conceptoSosOverrides` reemplace la fórmula al calcular.
+ */
+export const listConceptosPlantillaManualSos = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      profileId: z.string().uuid(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureProfileBelongsToClient(ctx.data.profileId, ctx.data.clientId);
+
+    const rows = await db
+      .select({ sos: conceptoSos })
+      .from(conceptoSosProfile)
+      .innerJoin(
+        conceptoSos,
+        eq(conceptoSosProfile.conceptoId, conceptoSos.id)
+      )
+      .where(eq(conceptoSosProfile.profileId, ctx.data.profileId))
+      .orderBy(sql`${conceptoSos.codigo}::int`);
+
+    type Fila = {
+      id: string;
+      codigo: string;
+      monto: null;
+      cantidad: null;
+      porcentaje: null;
+      importeConceptoNumero: null;
+      importe: null;
+      importeMinimo: null;
+      importeMaximo: null;
+      nombre: string;
+      codigoAfip: string | null;
+    };
+    const out: Fila[] = [];
+    const seen = new Set<string>();
+
+    for (const { sos } of rows) {
+      const raw = sos.codigo.trim();
+      const n = parseInt(raw, 10);
+      if (isNaN(n) || n < 1 || n > 699) continue;
+      if (seen.has(raw)) continue;
+      seen.add(raw);
+      out.push({
+        id: sos.id,
+        codigo: raw,
+        monto: null,
+        cantidad: null,
+        porcentaje: null,
+        importeConceptoNumero: null,
+        importe: null,
+        importeMinimo: null,
+        importeMaximo: null,
+        nombre: sos.nombre,
+        codigoAfip: sos.codigoAfip,
+      });
+    }
+
+    return out;
+  });
+
 /** Detalle de un recibo importado + conceptos LSD. */
 export const getImportReciboDetalle = createServerFn({ method: 'GET' })
   .inputValidator(
@@ -1190,7 +1315,159 @@ const tipoReciboReciboSchema = z.enum([
   'varios',
 ]);
 
-/** Crea la cabecera de liquidación (paso previo al cálculo en el simulador). */
+const conceptoEditsSosSchema = z.object({
+  codigo: z.string().min(1),
+  monto: z.string(),
+  cantidad: z.string().optional(),
+  porcentaje: z.string().optional(),
+  importeConceptoNumero: z.string().optional(),
+  importe: z.string().optional(),
+  importeMinimo: z.string().optional(),
+  importeMaximo: z.string().optional(),
+});
+
+function numericOrNullForSos(s: string | undefined): string | null {
+  const n = parseDecimalSos(s);
+  return n === null ? null : n.toFixed(2);
+}
+
+/**
+ * Persiste cabecera y líneas del recibo en liquidacion_import_* a partir de la tabla estilo SOS.
+ * Totales = suma de montos liquidados por rango de código (igual que TablaReciboSos).
+ * Monto por línea: si hay valor en columna monto, se usa; si no, fórmula SOS (cantidad × %/100 × base) con piso por importe mínimo.
+ */
+export const guardarReciboDesdeTabla = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      profileId: z.string().uuid(),
+      importEmpleadoId: z.string().uuid(),
+      periodo: z.string().regex(/^\d{4}-\d{2}$/),
+      tipoRecibo: tipoReciboReciboSchema,
+      conceptos: z.array(conceptoEditsSosSchema),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureProfileBelongsToClient(ctx.data.profileId, ctx.data.clientId);
+    if (!puedeLiquidarPeriodo(ctx.data.periodo)) {
+      throw new Error('Solo se puede liquidar el mes anterior al en curso.');
+    }
+
+    const [empRow] = await db
+      .select({ id: liquidacionImportEmpleado.id })
+      .from(liquidacionImportEmpleado)
+      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .where(
+        and(
+          eq(liquidacionImportEmpleado.id, ctx.data.importEmpleadoId),
+          eq(liquidacionImportEmpleado.profileId, ctx.data.profileId),
+          eq(profile.client, ctx.data.clientId)
+        )
+      )
+      .limit(1);
+    if (!empRow) {
+      throw new Error('Empleado de importación no encontrado o no pertenece al perfil');
+    }
+
+    const editsRow = (c: z.infer<typeof conceptoEditsSosSchema>) => ({
+      monto: c.monto ?? '',
+      cantidad: c.cantidad ?? '',
+      porcentaje: c.porcentaje ?? '',
+      importeConceptoNumero: c.importeConceptoNumero ?? '',
+      importe: c.importe ?? '',
+      importeMinimo: c.importeMinimo ?? '',
+      importeMaximo: c.importeMaximo ?? '',
+    });
+
+    const montoByCodigo: Record<string, number> = {};
+    for (const c of ctx.data.conceptos) {
+      montoByCodigo[c.codigo] = montoLiquidadoDesdeEditsSos(editsRow(c));
+    }
+    const t = totalesReciboSosDesdeMontos(montoByCodigo);
+
+    const haberesStr = t.haberes.toFixed(2);
+    const noRemStr = t.noRemunerativo.toFixed(2);
+    const descStr = t.descuentos.toFixed(2);
+    const retStr = t.retenciones.toFixed(2);
+    const netoStr = t.neto.toFixed(2);
+
+    const reciboId = await db.transaction(async (tx) => {
+      const [existing] = await tx
+        .select({ id: liquidacionImportRecibo.id })
+        .from(liquidacionImportRecibo)
+        .where(
+          and(
+            eq(liquidacionImportRecibo.empleadoId, ctx.data.importEmpleadoId),
+            eq(liquidacionImportRecibo.periodo, ctx.data.periodo),
+            eq(liquidacionImportRecibo.tipo, ctx.data.tipoRecibo)
+          )
+        )
+        .limit(1);
+
+      let rid: string;
+      if (existing) {
+        await tx
+          .update(liquidacionImportRecibo)
+          .set({
+            haberes: haberesStr,
+            noRemunerativo: noRemStr,
+            descuentos: descStr,
+            retenciones: retStr,
+            neto: netoStr,
+            fecha: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(liquidacionImportRecibo.id, existing.id));
+        rid = existing.id;
+      } else {
+        const [ins] = await tx
+          .insert(liquidacionImportRecibo)
+          .values({
+            empleadoId: ctx.data.importEmpleadoId,
+            periodo: ctx.data.periodo,
+            tipo: ctx.data.tipoRecibo,
+            fecha: new Date(),
+            haberes: haberesStr,
+            noRemunerativo: noRemStr,
+            descuentos: descStr,
+            retenciones: retStr,
+            neto: netoStr,
+          })
+          .returning({ id: liquidacionImportRecibo.id });
+        if (!ins) throw new Error('No se pudo crear el recibo');
+        rid = ins.id;
+      }
+
+      await tx
+        .delete(liquidacionImportConceptoValor)
+        .where(eq(liquidacionImportConceptoValor.reciboId, rid));
+
+      for (const c of ctx.data.conceptos) {
+        const liq = montoLiquidadoDesdeEditsSos(editsRow(c));
+        await tx.insert(liquidacionImportConceptoValor).values({
+          reciboId: rid,
+          codigo: c.codigo,
+          monto: liq.toFixed(2),
+          cantidad: numericOrNullForSos(c.cantidad),
+          porcentaje: numericOrNullForSos(c.porcentaje),
+          importeConceptoNumero: numericOrNullForSos(c.importeConceptoNumero),
+          importe: numericOrNullForSos(c.importe),
+          importeMinimo: numericOrNullForSos(c.importeMinimo),
+          importeMaximo: numericOrNullForSos(c.importeMaximo),
+        });
+      }
+
+      return rid;
+    });
+
+    return { reciboId, periodo: ctx.data.periodo };
+  });
+
+/** Crea cabecera en payroll_liquidacion (metadata del recibo: fechas, obra social, pago). */
 export const createReciboHeader = createServerFn({ method: 'POST' })
   .inputValidator(
     z
@@ -1620,7 +1897,6 @@ export const deleteEmpleado = createServerFn({ method: 'POST' })
     return { ok: true };
   });
 
-
 // ---------- Cálculo y liquidación ----------
 
 type DetalleResult = {
@@ -1641,7 +1917,12 @@ async function calcularUnaLiquidacion(
   empleadoId: string,
   periodo: string,
   clientId: string,
-  opts?: { liquidacionId?: string; tipoRecibo?: string }
+  opts?: {
+    liquidacionId?: string;
+    tipoRecibo?: string;
+    /** Monto override por número SOS (key = numeroSos del payrollConcepto, como string) */
+    conceptoSosOverrides?: Record<string, number>;
+  }
 ): Promise<{
   liquidacion: typeof liquidacionImportRecibo.$inferSelect;
   detalles: DetalleResult[];
@@ -1758,20 +2039,32 @@ async function calcularUnaLiquidacion(
     if (!con.activo) continue;
     const input = inputMap.get(con.id);
 
-    // Si el concepto fue desactivado en este recibo, saltear
     if (input && !input.activoEnRecibo) continue;
 
-    const cantidad = input?.cantidad != null ? Number(input.cantidad) : undefined;
-    const importeConceptoN = input?.importeConceptoNumero != null ? Number(input.importeConceptoNumero) : 0;
-    const rowImpMin = input?.importeMinimo != null ? Number(input.importeMinimo) : con.impMin != null ? Number(con.impMin) : null;
-    const rowImpMax = input?.importeMaximo != null ? Number(input.importeMaximo) : con.impMax != null ? Number(con.impMax) : null;
+    const cantidad =
+      input?.cantidad != null ? Number(input.cantidad) : undefined;
+    const importeConceptoN =
+      input?.importeConceptoNumero != null
+        ? Number(input.importeConceptoNumero)
+        : 0;
+    const rowImpMin =
+      input?.importeMinimo != null
+        ? Number(input.importeMinimo)
+        : con.impMin != null
+          ? Number(con.impMin)
+          : null;
+    const rowImpMax =
+      input?.importeMaximo != null
+        ? Number(input.importeMaximo)
+        : con.impMax != null
+          ? Number(con.impMax)
+          : null;
 
     context.valor = importeConceptoN;
     context.cantidad = cantidad ?? 0;
 
     let monto = 0;
 
-    // Override manual: saltea el motor completamente
     if (input?.importeOverride != null) {
       monto = Number(input.importeOverride);
     } else {
@@ -1783,19 +2076,31 @@ async function calcularUnaLiquidacion(
       monto = roundMoney(monto);
     }
 
-    // Aplicar piso/techo
+    if (
+      opts?.conceptoSosOverrides &&
+      con.numeroSos != null &&
+      input?.importeOverride == null
+    ) {
+      const key = String(con.numeroSos);
+      const override = opts.conceptoSosOverrides[key];
+      if (override != null && !isNaN(override)) monto = roundMoney(override);
+    }
+
     if (rowImpMin != null && monto < rowImpMin) monto = rowImpMin;
     if (rowImpMax != null && monto > rowImpMax) monto = rowImpMax;
 
     if (monto === 0) continue;
 
     detalles.push({
-      detalleId: input?.id,
       conceptoId: con.id,
       monto,
       cantidad,
-      pct: input?.porcentaje != null ? Number(input.porcentaje) : undefined,
-      importeOverride: input?.importeOverride != null ? Number(input.importeOverride) : undefined,
+      pct:
+        input?.porcentaje != null ? Number(input.porcentaje) : undefined,
+      importeOverride:
+        input?.importeOverride != null
+          ? Number(input.importeOverride)
+          : undefined,
       conceptoNombre: con.nombre,
       conceptoCodigo: con.codigo,
       conceptoTipo: con.tipo,
@@ -1961,6 +2266,14 @@ export const calcularLiquidacion = createServerFn({ method: 'POST' })
       periodo: z.string(), // YYYY-MM
       /** Si se creó cabecera con createReciboHeader, pasar para conservar metadata del recibo */
       liquidacionId: z.string().uuid().optional(),
+      /** Debe coincidir con el recibo generado (mismo tipo que en createReciboHeader). */
+      tipoRecibo: z.string().optional(),
+      /**
+       * Overrides de monto por número SOS (key = numeroSos del payrollConcepto, como string).
+       * Cuando se proporciona, el monto calculado por fórmula se reemplaza con el valor de este mapa.
+       * Útil para último recibo importado o carga manual sobre la plantilla de conceptos del cliente.
+       */
+      conceptoSosOverrides: z.record(z.string(), z.number()).optional(),
     })
   )
   .handler(async (ctx) => {
@@ -1985,9 +2298,13 @@ export const calcularLiquidacion = createServerFn({ method: 'POST' })
       empConfig.id,
       ctx.data.periodo,
       ctx.data.clientId,
-      ctx.data.liquidacionId
-        ? { liquidacionId: ctx.data.liquidacionId }
-        : undefined
+      {
+        ...(ctx.data.liquidacionId ? { liquidacionId: ctx.data.liquidacionId } : {}),
+        ...(ctx.data.tipoRecibo ? { tipoRecibo: ctx.data.tipoRecibo } : {}),
+        ...(ctx.data.conceptoSosOverrides
+          ? { conceptoSosOverrides: ctx.data.conceptoSosOverrides }
+          : {}),
+      }
     );
   });
 
@@ -2096,8 +2413,9 @@ export const updateDetalleInputs = createServerFn({ method: 'POST' })
       .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
       .where(eq(liquidacionImportConceptoValor.id, ctx.data.detalleId))
       .limit(1);
-    if (!row) throw new Error('Detalle no encontrado');
-    await ensureClientBelongsToOrg(row.clientId, orgId);
+    const resolvedClientId = row?.clientId;
+    if (!resolvedClientId) throw new Error('Detalle no encontrado');
+    await ensureClientBelongsToOrg(resolvedClientId, orgId);
 
     const update: Record<string, unknown> = { updatedAt: new Date() };
     if (ctx.data.cantidad !== undefined) update.cantidad = ctx.data.cantidad != null ? String(ctx.data.cantidad) : null;

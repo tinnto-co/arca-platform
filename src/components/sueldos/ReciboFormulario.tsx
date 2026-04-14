@@ -124,6 +124,8 @@ export interface ReciboFormularioSuccess {
   liquidacionId: string;
   importEmpleadoId: string;
   periodo: string;
+  copiarUltimoRecibo: boolean;
+  tipoRecibo: string;
 }
 
 interface ReciboFormularioProps {
@@ -230,6 +232,8 @@ export function ReciboFormulario({
         liquidacionId: res.liquidacionId,
         importEmpleadoId: res.importEmpleadoId,
         periodo: res.periodo,
+        copiarUltimoRecibo: values.copiarUltimoRecibo === 'si',
+        tipoRecibo: values.tipoRecibo,
       });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Error al guardar');
@@ -237,7 +241,7 @@ export function ReciboFormulario({
   };
 
   return (
-    <Card className="border-dashed">
+    <Card className="border border-border/70 shadow-sm">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <FilePlus2 className="h-4 w-4" />
@@ -250,8 +254,15 @@ export function ReciboFormulario({
       </CardHeader>
       <CardContent>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+            <section className="space-y-4 rounded-lg border bg-muted/20 p-4">
+              <div>
+                <h3 className="text-sm font-semibold">Cabecera principal</h3>
+                <p className="text-xs text-muted-foreground">
+                  Selección de empleado, tipo y período del recibo.
+                </p>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <FormField
                 control={form.control}
                 name="importEmpleadoId"
@@ -324,9 +335,9 @@ export function ReciboFormulario({
                   </FormItem>
                 )}
               />
-            </div>
+              </div>
 
-            <div className="flex flex-wrap items-end gap-4">
+              <div className="flex flex-wrap items-end gap-3">
               <FormField
                 control={form.control}
                 name="ano"
@@ -338,7 +349,7 @@ export function ReciboFormulario({
                       value={field.value}
                     >
                       <FormControl>
-                        <SelectTrigger className="w-[110px]">
+                        <SelectTrigger className="w-[120px]">
                           <SelectValue />
                         </SelectTrigger>
                       </FormControl>
@@ -365,7 +376,7 @@ export function ReciboFormulario({
                       value={field.value}
                     >
                       <FormControl>
-                        <SelectTrigger className="w-[150px]">
+                        <SelectTrigger className="w-[170px]">
                           <SelectValue />
                         </SelectTrigger>
                       </FormControl>
@@ -392,7 +403,7 @@ export function ReciboFormulario({
                       value={field.value}
                     >
                       <FormControl>
-                        <SelectTrigger className="w-[180px]">
+                        <SelectTrigger className="w-[190px]">
                           <SelectValue />
                         </SelectTrigger>
                       </FormControl>
@@ -406,9 +417,9 @@ export function ReciboFormulario({
                   </FormItem>
                 )}
               />
-            </div>
+              </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-4 sm:grid-cols-2">
               <FormField
                 control={form.control}
                 name="fechaLiquidacion"
@@ -487,16 +498,29 @@ export function ReciboFormulario({
                   </FormItem>
                 )}
               />
-            </div>
+              </div>
+            </section>
 
-            <Collapsible open={cargasOpen} onOpenChange={setCargasOpen}>
-              <CollapsibleTrigger asChild>
-                <Button type="button" variant="ghost" size="sm" className="px-0">
-                  {cargasOpen ? 'Ocultar' : 'Mostrar'} pago, cargas y observaciones
-                </Button>
-              </CollapsibleTrigger>
-              <CollapsibleContent className="space-y-4 pt-2">
-                <div className="grid gap-4 sm:grid-cols-2">
+            <section className="space-y-4 rounded-lg border bg-background p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold">Pago, cargas y observaciones</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Datos complementarios del recibo y del período de cargas.
+                  </p>
+                </div>
+                <Collapsible open={cargasOpen} onOpenChange={setCargasOpen}>
+                  <CollapsibleTrigger asChild>
+                    <Button type="button" variant="outline" size="sm">
+                      {cargasOpen ? 'Ocultar bloque' : 'Mostrar bloque'}
+                    </Button>
+                  </CollapsibleTrigger>
+                </Collapsible>
+              </div>
+
+              <Collapsible open={cargasOpen} onOpenChange={setCargasOpen}>
+                <CollapsibleContent className="space-y-4 pt-1">
+                  <div className="grid gap-4 sm:grid-cols-2">
                   <FormField
                     control={form.control}
                     name="fechaPago"
@@ -523,8 +547,8 @@ export function ReciboFormulario({
                       </FormItem>
                     )}
                   />
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
                   <FormField
                     control={form.control}
                     name="formaPago"
@@ -579,31 +603,33 @@ export function ReciboFormulario({
                       </FormItem>
                     )}
                   />
-                </div>
-                {formaPago === 'acreditacion' && (
-                  <FormField
-                    control={form.control}
-                    name="cbu"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>CBU</FormLabel>
-                        <FormControl>
-                          <Input
-                            {...field}
-                            placeholder="22 dígitos"
-                            maxLength={22}
-                            className="font-mono"
-                          />
-                        </FormControl>
-                        <p className="text-xs text-destructive">
-                          Obligatorio si forma de pago es acreditación
-                        </p>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                )}
-                <div className="flex flex-wrap items-end gap-4">
+                  </div>
+                  {formaPago === 'acreditacion' && (
+                    <div className="rounded-md border border-amber-300/60 bg-amber-50/40 p-3">
+                      <FormField
+                        control={form.control}
+                        name="cbu"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>CBU</FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                placeholder="22 dígitos"
+                                maxLength={22}
+                                className="font-mono"
+                              />
+                            </FormControl>
+                            <p className="text-xs text-destructive">
+                              Obligatorio si forma de pago es acreditación
+                            </p>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  )}
+                  <div className="flex flex-wrap items-end gap-3">
                   <FormField
                     control={form.control}
                     name="anoCargas"
@@ -615,7 +641,7 @@ export function ReciboFormulario({
                           value={field.value}
                         >
                           <FormControl>
-                            <SelectTrigger className="w-[110px]">
+                            <SelectTrigger className="w-[120px]">
                               <SelectValue />
                             </SelectTrigger>
                           </FormControl>
@@ -642,7 +668,7 @@ export function ReciboFormulario({
                           value={field.value}
                         >
                           <FormControl>
-                            <SelectTrigger className="w-[150px]">
+                            <SelectTrigger className="w-[170px]">
                               <SelectValue />
                             </SelectTrigger>
                           </FormControl>
@@ -671,61 +697,74 @@ export function ReciboFormulario({
                       </FormItem>
                     )}
                   />
-                </div>
-                <FormField
-                  control={form.control}
-                  name="observacionInterna"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Observación interna</FormLabel>
-                      <FormControl>
-                        <Textarea {...field} rows={2} className="resize-y" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="observacionRecibo"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Obs. a imprimir en recibo</FormLabel>
-                      <FormControl>
-                        <Textarea {...field} rows={2} className="resize-y" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </CollapsibleContent>
-            </Collapsible>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <FormField
+                      control={form.control}
+                      name="observacionInterna"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Observación interna</FormLabel>
+                          <FormControl>
+                            <Textarea {...field} rows={2} className="resize-y" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="observacionRecibo"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Obs. a imprimir en recibo</FormLabel>
+                          <FormControl>
+                            <Textarea {...field} rows={2} className="resize-y" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+            </section>
 
-            <FormField
-              control={form.control}
-              name="copiarUltimoRecibo"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Copiar conceptos de otro recibo</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger className="max-w-md">
-                        <SelectValue />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="no">No copiar</SelectItem>
-                      <SelectItem value="si">
-                        Copiar último recibo de este empleado y mismo tipo
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <section className="space-y-3 rounded-lg border bg-muted/20 p-4">
+              <FormField
+                control={form.control}
+                name="copiarUltimoRecibo"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Origen de conceptos</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger className="max-w-md">
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="no">
+                          No — cargar conceptos manualmente (empleado nuevo / sin import)
+                        </SelectItem>
+                        <SelectItem value="si">
+                          Copiar último recibo de este empleado y mismo tipo
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      Si no copiás, se muestra la grilla con los conceptos SOS del{' '}
+                      <span className="font-medium">perfil</span> (vínculos en concepto_sos_profile).
+                      Los conceptos salariales sin número SOS coincidente se liquidan solo por
+                      fórmulas al calcular.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </section>
 
-            <div className="flex justify-end">
+            <div className="flex justify-end border-t pt-4">
               <Button type="submit" disabled={form.formState.isSubmitting}>
                 {form.formState.isSubmitting ? 'Guardando…' : 'Agregar'}
               </Button>

@@ -26,6 +26,29 @@ const JOBS_API_URL =
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLL_ATTEMPTS = 300; // ~15 min max per job
 
+const clientBaseSelect = {
+  id: client.id,
+  organizationId: client.organizationId,
+  userId: client.userId,
+  name: client.name,
+  email: client.email,
+  phone: client.phone,
+  address: client.address,
+  identityNumber: client.identityNumber,
+  identityType: client.identityType,
+  password: client.password,
+  image: client.image,
+  status: client.status,
+  convenioMultilateral: client.convenioMultilateral,
+  regimenLocal: client.regimenLocal,
+  fiscalCondition: client.fiscalCondition,
+  hasErrors: client.hasErrors,
+  errorMessage: client.errorMessage,
+  registeredAt: client.registeredAt,
+  createdAt: client.createdAt,
+  updatedAt: client.updatedAt,
+};
+
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     const cause = (error as Error & { cause?: unknown }).cause;
@@ -191,7 +214,7 @@ export const getClients = createServerFn({
     const { orgId } = await getSessionWithOrg();
 
     const clients = await db
-      .select()
+      .select(clientBaseSelect)
       .from(client)
       .where(eq(client.organizationId, orgId))
       .orderBy(asc(client.name));
@@ -248,7 +271,7 @@ export const getClientsWithProfiles = createServerFn({
     const { orgId } = await getSessionWithOrg();
 
     const clients = await db
-      .select()
+      .select(clientBaseSelect)
       .from(client)
       .where(eq(client.organizationId, orgId))
       .orderBy(asc(client.name));
@@ -297,7 +320,7 @@ export const getClient = createServerFn({
     if (!session?.user?.id) throw new Error('Unauthorized');
 
     const [clientData] = await db
-      .select()
+      .select(clientBaseSelect)
       .from(client)
       .where(eq(client.id, ctx.data.id))
       .limit(1);
@@ -350,7 +373,7 @@ export const getClientIvaCredit = createServerFn({
     const { orgId } = await getSessionWithOrg();
 
     const [clientData] = await db
-      .select()
+      .select(clientBaseSelect)
       .from(client)
       .where(
         and(eq(client.id, ctx.data.clientId), eq(client.organizationId, orgId))

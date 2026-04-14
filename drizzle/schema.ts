@@ -51,6 +51,8 @@ export const client = pgTable("client", {
   convenioMultilateral: boolean("convenio_multilateral").notNull().default(false),
   regimenLocal: boolean("regimen_local").notNull().default(false),
   fiscalCondition: text("fiscal_condition"),
+  liquidaSueldos: boolean("liquida_sueldos").notNull().default(false),
+  cuitEmpresa: text("cuit_empresa").notNull().default(""),
   hasErrors: boolean("has_errors").default(false).notNull(),
   errorMessage: text("error_message").default(""),
   registeredAt: timestamp("registered_at").notNull(),
@@ -533,7 +535,7 @@ export const payrollEscala = pgTable("payroll_escala", {
     .notNull(),
 });
 
-/** Tipo de concepto: remunerativo, no remunerativo, descuento */
+/** Tipo de concepto: remunerativo, no remunerativo, descuento, retención */
 export const payrollConceptoTipoEnum = pgEnum("payroll_concepto_tipo", [
   "remunerativo",
   "no_remunerativo",
