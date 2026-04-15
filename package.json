@@ -19,6 +19,9 @@
     "link-cct-and-refresh-reference-scales": "bun run src/scripts/link-cct-and-refresh-reference-scales.ts",
     "map-import-empleados-a-convenios": "bun run src/scripts/map-import-empleados-a-convenios.ts",
     "db:push": "drizzle-kit push",
+    "db:ensure-empleado-pago": "bun run src/scripts/ensure-empleado-datos-pago-columns.ts",
+    "sueldos:seed-comercio-mar2026": "bun run src/scripts/seed-comercio-mar2026.ts",
+    "sueldos:rebuild-feb2026-from-import": "bun run src/scripts/rebuild-sueldo-from-import-feb2026.ts",
     "db:seed-obras": "bun run src/scripts/seed-obras-sociales.ts",
     "db:seed-caravelle": "bun run src/scripts/run-caravelle-seed.ts"
   },

@@ -35,6 +35,7 @@ import {
   gte,
   inArray,
   sql,
+  ne,
 } from 'drizzle-orm';
 import {
   montoLiquidadoDesdeEditsSos,
@@ -638,11 +639,255 @@ export const upsertEscala = createServerFn({ method: 'POST' })
     return row;
   });
 
+/** Normaliza período a YYYY-MM (trim, mes con 2 dígitos). */
+function normalizarPeriodoYYYYMM(fechaStr: string): string {
+  const t = fechaStr.trim();
+  const m = /^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?/.exec(t);
+  if (!m) return t;
+  const y = m[1];
+  const mo = String(m[2]).padStart(2, '0');
+  return `${y}-${mo}`;
+}
+
+/**
+ * Variantes de período que pueden estar en la BD (p. ej. 2026-04 vs 2026-4),
+ * para que el listado de recibos coincida con importados y con el valor crudo del UI.
+ * Incluye `periodoCrudo` para no perder coincidencias si la normalización difiere del texto guardado.
+ */
+function variantesPeriodoParaBusqueda(
+  periodoNorm: string,
+  periodoCrudo: string
+): string[] {
+  const cands = new Set<string>();
+  const raw = periodoCrudo.trim();
+  const norm = periodoNorm.trim();
+  if (raw.length > 0) cands.add(raw);
+  if (norm.length > 0) cands.add(norm);
+
+  for (const s of [norm, raw]) {
+    const m = /^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?/.exec(s);
+    if (m) {
+      const y = m[1];
+      const mo = String(m[2]).padStart(2, '0');
+      cands.add(`${y}-${mo}`);
+      cands.add(`${y}-${parseInt(m[2], 10)}`);
+    }
+  }
+  return [...cands].filter((x) => x.length > 0);
+}
+
+function condicionPeriodoRecibo(periodoCrudo: string) {
+  const periodoNorm = normalizarPeriodoYYYYMM(periodoCrudo);
+  const variantes = variantesPeriodoParaBusqueda(periodoNorm, periodoCrudo);
+  if (variantes.length === 0) {
+    return eq(liquidacionImportRecibo.periodo, periodoNorm);
+  }
+  if (variantes.length === 1) {
+    return eq(liquidacionImportRecibo.periodo, variantes[0]!);
+  }
+  return or(...variantes.map((v) => eq(liquidacionImportRecibo.periodo, v)));
+}
+
+function cabeceraCampoPagoVacio(v: unknown): boolean {
+  if (v === null || v === undefined) return true;
+  if (typeof v === 'string' && v.trim() === '') return true;
+  return false;
+}
+
+/** Valores que no aportan dato útil (import LSD / celdas vacías) y deben ceder al legajo o plantilla. */
+function cabeceraCampoPagoEfectivamenteVacio(v: unknown): boolean {
+  if (cabeceraCampoPagoVacio(v)) return true;
+  if (typeof v === 'string') {
+    const t = v.trim();
+    if (t === '—' || t === '-' || t === '–') return true;
+    const lower = t.toLowerCase();
+    if (lower === 'n/a' || lower === 's/d' || lower === 's.d.') return true;
+  }
+  return false;
+}
+
+/**
+ * Último recibo del mismo empleado con algún dato de lugar/banco/forma/CBU.
+ * Sirve cuando el recibo actual quedó sin cabecera (p. ej. liquidación masiva sin createReciboHeader).
+ */
+async function obtenerCabeceraPagoPlantilla(
+  empleadoId: string,
+  excluirReciboId?: string
+): Promise<Partial<typeof liquidacionImportRecibo.$inferSelect>> {
+  const conditions = [
+    eq(liquidacionImportRecibo.empleadoId, empleadoId),
+    sql`(
+      trim(coalesce(${liquidacionImportRecibo.lugarPago}, '')) <> ''
+      or trim(coalesce(${liquidacionImportRecibo.formaPago}, '')) <> ''
+      or trim(coalesce(${liquidacionImportRecibo.cbu}, '')) <> ''
+      or trim(coalesce(${liquidacionImportRecibo.banco}, '')) <> ''
+    )`,
+  ];
+  if (excluirReciboId) {
+    conditions.push(ne(liquidacionImportRecibo.id, excluirReciboId));
+  }
+  const [row] = await db
+    .select({
+      fechaPago: liquidacionImportRecibo.fechaPago,
+      lugarPago: liquidacionImportRecibo.lugarPago,
+      formaPago: liquidacionImportRecibo.formaPago,
+      cbu: liquidacionImportRecibo.cbu,
+      banco: liquidacionImportRecibo.banco,
+    })
+    .from(liquidacionImportRecibo)
+    .where(and(...conditions))
+    .orderBy(desc(liquidacionImportRecibo.calculadoAt))
+    .limit(1);
+  return row ?? {};
+}
+
+function mergeCabeceraPagoLiquidacion(
+  actual: typeof liquidacionImportRecibo.$inferSelect,
+  plantilla: Partial<typeof liquidacionImportRecibo.$inferSelect>
+): typeof liquidacionImportRecibo.$inferSelect {
+  if (!plantilla || Object.keys(plantilla).length === 0) return actual;
+  const out = { ...actual };
+  if (
+    cabeceraCampoPagoEfectivamenteVacio(out.lugarPago) &&
+    !cabeceraCampoPagoEfectivamenteVacio(plantilla.lugarPago)
+  ) {
+    out.lugarPago = plantilla.lugarPago ?? null;
+  }
+  if (
+    cabeceraCampoPagoEfectivamenteVacio(out.banco) &&
+    !cabeceraCampoPagoEfectivamenteVacio(plantilla.banco)
+  ) {
+    out.banco = plantilla.banco ?? null;
+  }
+  if (
+    cabeceraCampoPagoEfectivamenteVacio(out.formaPago) &&
+    !cabeceraCampoPagoEfectivamenteVacio(plantilla.formaPago)
+  ) {
+    out.formaPago = plantilla.formaPago ?? null;
+  }
+  if (
+    cabeceraCampoPagoEfectivamenteVacio(out.cbu) &&
+    !cabeceraCampoPagoEfectivamenteVacio(plantilla.cbu)
+  ) {
+    out.cbu = plantilla.cbu ?? null;
+  }
+  if (out.fechaPago == null && plantilla.fechaPago != null) {
+    out.fechaPago = plantilla.fechaPago;
+  }
+  return out;
+}
+
+/**
+ * Códigos SOS / import: 1=Efectivo, 2=Acreditación, 3=Cheque, 4=Otro → valores de la app.
+ */
+function normalizarFormaPagoAlmacenada(
+  raw: string | null | undefined
+): string | null {
+  if (raw == null) return null;
+  const s = String(raw).trim().toLowerCase();
+  if (s === '') return null;
+  if (s === '1' || s === 'efectivo') return 'efectivo';
+  if (s === '2' || s === 'acreditacion' || s === 'acreditación') {
+    return 'acreditacion';
+  }
+  if (s === '3' || s === 'cheque') return 'cheque';
+  if (s === '4' || s === 'otro' || s === 'otros') return 'efectivo';
+  return String(raw).trim();
+}
+
+/** Campos de pago guardados en el legajo (`liquidacion_import_empleado`). */
+function cabeceraPagoDesdeEmpleado(
+  empleado: Pick<
+    typeof liquidacionImportEmpleado.$inferSelect,
+    'lugarPago' | 'formaPago' | 'cbu' | 'banco'
+  >
+): Partial<typeof liquidacionImportRecibo.$inferSelect> {
+  const out: Partial<typeof liquidacionImportRecibo.$inferSelect> = {};
+  if (!cabeceraCampoPagoVacio(empleado.lugarPago)) out.lugarPago = empleado.lugarPago;
+  if (!cabeceraCampoPagoVacio(empleado.formaPago)) {
+    out.formaPago = normalizarFormaPagoAlmacenada(empleado.formaPago);
+  }
+  if (!cabeceraCampoPagoVacio(empleado.cbu)) out.cbu = empleado.cbu;
+  if (!cabeceraCampoPagoVacio(empleado.banco)) out.banco = empleado.banco;
+  return out;
+}
+
+/** Prioridad al crear recibo generado: datos del legajo, luego último recibo con cabecera. */
+function mergePagoEmpleadoSobreHistorial(
+  empleado: Pick<
+    typeof liquidacionImportEmpleado.$inferSelect,
+    'lugarPago' | 'formaPago' | 'cbu' | 'banco'
+  >,
+  historial: Partial<typeof liquidacionImportRecibo.$inferSelect>
+) {
+  const lugarPago = !cabeceraCampoPagoVacio(empleado.lugarPago)
+    ? empleado.lugarPago
+    : historial.lugarPago ?? null;
+  const formaPago = normalizarFormaPagoAlmacenada(
+    !cabeceraCampoPagoVacio(empleado.formaPago)
+      ? empleado.formaPago
+      : historial.formaPago
+  );
+  const cbu = !cabeceraCampoPagoVacio(empleado.cbu)
+    ? empleado.cbu
+    : historial.cbu ?? null;
+  const banco = !cabeceraCampoPagoVacio(empleado.banco)
+    ? empleado.banco
+    : historial.banco ?? null;
+  return {
+    fechaPago: historial.fechaPago ?? null,
+    lugarPago,
+    formaPago,
+    cbu,
+    banco,
+  };
+}
+
+/**
+ * Si el empleado no tiene categoria_id pero sí convenio y texto de categoría (import LSD),
+ * intenta resolver la categoría del convenio por código o nombre.
+ */
+async function resolveCategoriaIdParaBasico(
+  empleado: typeof liquidacionImportEmpleado.$inferSelect
+): Promise<string | null> {
+  if (empleado.categoriaId) return empleado.categoriaId;
+  const convId = empleado.convenioId;
+  const texto = empleado.categoria?.trim();
+  if (!convId || !texto) return null;
+
+  const [byCodigo] = await db
+    .select({ id: payrollConvenioCategoria.id })
+    .from(payrollConvenioCategoria)
+    .where(
+      and(
+        eq(payrollConvenioCategoria.convenioId, convId),
+        eq(payrollConvenioCategoria.codigo, texto)
+      )
+    )
+    .limit(1);
+  if (byCodigo) return byCodigo.id;
+
+  const [byNombre] = await db
+    .select({ id: payrollConvenioCategoria.id })
+    .from(payrollConvenioCategoria)
+    .where(
+      and(
+        eq(payrollConvenioCategoria.convenioId, convId),
+        sql`lower(trim(${payrollConvenioCategoria.nombre})) = lower(${texto})`
+      )
+    )
+    .limit(1);
+  return byNombre?.id ?? null;
+}
+
 async function getBasicoVigenteInternal(
   categoriaId: string,
   fechaStr: string
 ): Promise<number> {
-  const fecha = parseISO(fechaStr.length === 7 ? fechaStr + '-01' : fechaStr);
+  const p = normalizarPeriodoYYYYMM(fechaStr);
+  const fechaIso = p.length === 7 ? `${p}-01` : p;
+  const fecha = parseISO(fechaIso);
+  if (Number.isNaN(fecha.getTime())) return 0;
   const [escala] = await db
     .select()
     .from(payrollEscala)
@@ -662,7 +907,8 @@ async function getBasicoVigenteInternal(
 }
 
 /**
- * Sueldo básico para mostrar en el recibo: override del legajo → escala por categoría → básico persistido en la liquidación.
+ * Sueldo básico para mostrar en el recibo: override del legajo → escala por categoría
+ * (incl. resolución por texto de categoría + convenio) → básico persistido en la liquidación.
  */
 async function basicoParaRecibo(
   empleado: typeof liquidacionImportEmpleado.$inferSelect,
@@ -671,11 +917,12 @@ async function basicoParaRecibo(
   const override = empleado.valorSueldo != null ? Number(empleado.valorSueldo) : 0;
   if (!Number.isNaN(override) && override > 0) return override;
 
-  if (empleado.categoriaId) {
-    const deEscala = await getBasicoVigenteInternal(
-      empleado.categoriaId,
-      liquidacion.periodo
-    );
+  const periodoNorm = normalizarPeriodoYYYYMM(liquidacion.periodo);
+  const categoriaId =
+    empleado.categoriaId ?? (await resolveCategoriaIdParaBasico(empleado));
+
+  if (categoriaId) {
+    const deEscala = await getBasicoVigenteInternal(categoriaId, periodoNorm);
     if (!Number.isNaN(deEscala) && deEscala > 0) return deEscala;
   }
 
@@ -1817,6 +2064,10 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
       tipoJornada: z.enum(['full_time', 'part_time', 'reducida']).optional(),
       activo: z.boolean().optional(),
       legajo: z.string().optional().nullable(),
+      lugarPago: z.string().optional().nullable(),
+      formaPago: z.string().optional().nullable(),
+      cbu: z.string().optional().nullable(),
+      banco: z.string().optional().nullable(),
     })
   )
   .handler(async (ctx) => {
@@ -1840,7 +2091,21 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
     if (!empCheck) throw new Error('Empleado no encontrado o no autorizado');
 
     const set: Record<string, unknown> = { updatedAt: new Date() };
-    const { nombre, apellido, cuilCuil, fechaIngreso, convenioId, categoriaId, tipoJornada, activo, legajo } = ctx.data;
+    const {
+      nombre,
+      apellido,
+      cuilCuil,
+      fechaIngreso,
+      convenioId,
+      categoriaId,
+      tipoJornada,
+      activo,
+      legajo,
+      lugarPago,
+      formaPago,
+      cbu,
+      banco,
+    } = ctx.data;
     // Combine nombre + apellido into nombre field if both provided
     if (nombre && apellido) {
       set.nombre = `${nombre} ${apellido}`.trim();
@@ -1854,6 +2119,10 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
     if (tipoJornada !== undefined) set.tipoJornada = tipoJornada;
     if (activo !== undefined) set.activo = activo;
     if (legajo !== undefined) set.legajo = legajo;
+    if (lugarPago !== undefined) set.lugarPago = lugarPago?.trim() || null;
+    if (formaPago !== undefined) set.formaPago = formaPago?.trim() || null;
+    if (cbu !== undefined) set.cbu = cbu?.trim() || null;
+    if (banco !== undefined) set.banco = banco?.trim() || null;
 
     const [row] = await db
       .update(liquidacionImportEmpleado)
@@ -1938,6 +2207,10 @@ async function calcularUnaLiquidacion(
       categoriaId: liquidacionImportEmpleado.categoriaId,
       fechaAlta: liquidacionImportEmpleado.fechaAlta,
       convenioId: liquidacionImportEmpleado.convenioId,
+      lugarPago: liquidacionImportEmpleado.lugarPago,
+      formaPago: liquidacionImportEmpleado.formaPago,
+      cbu: liquidacionImportEmpleado.cbu,
+      banco: liquidacionImportEmpleado.banco,
     })
     .from(liquidacionImportEmpleado)
     .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
@@ -2236,6 +2509,9 @@ async function calcularUnaLiquidacion(
     )
   );
 
+  const plantillaHistorialRecibo = await obtenerCabeceraPagoPlantilla(empleadoId);
+  const pagoNuevo = mergePagoEmpleadoSobreHistorial(emp, plantillaHistorialRecibo);
+
   const [liq] = await db
     .insert(liquidacionImportRecibo)
     .values({
@@ -2249,6 +2525,11 @@ async function calcularUnaLiquidacion(
       neto: String(neto),
       tipo: tipoRecibo,
       origen: 'generado',
+      fechaPago: pagoNuevo.fechaPago,
+      lugarPago: pagoNuevo.lugarPago,
+      formaPago: pagoNuevo.formaPago,
+      cbu: pagoNuevo.cbu,
+      banco: pagoNuevo.banco,
     })
     .returning();
 
@@ -2435,11 +2716,17 @@ export const updateDetalleInputs = createServerFn({ method: 'POST' })
     return { ok: true };
   });
 
+/**
+ * Recibos del período para el cliente seleccionado.
+ * Multi-tenant: solo empleados cuyo perfil pertenece a ese `clientId` (no mezcla empresas en la misma vista).
+ * El período se normaliza a `YYYY-MM` y se buscan variantes guardadas en BD (p. ej. `2026-04` vs `2026-4`).
+ */
 export const listLiquidacionesByPeriodo = createServerFn({ method: 'GET' })
   .inputValidator(
     z.object({
       periodo: z.string(),
       clientId: z.string().uuid(),
+      profileId: z.string().uuid().optional(),
       /** Si true, solo devuelve liquidaciones con recibo confirmado (para solapa Recibo) */
       soloRecibosConfirmados: z.boolean().optional(),
     })
@@ -2447,9 +2734,15 @@ export const listLiquidacionesByPeriodo = createServerFn({ method: 'GET' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    if (ctx.data.profileId) {
+      await ensureProfileBelongsToClient(ctx.data.profileId, ctx.data.clientId);
+    }
     const conditions = [
-      eq(liquidacionImportRecibo.periodo, ctx.data.periodo),
+      condicionPeriodoRecibo(ctx.data.periodo),
       eq(profile.client, ctx.data.clientId),
+      ...(ctx.data.profileId
+        ? [eq(liquidacionImportEmpleado.profileId, ctx.data.profileId)]
+        : []),
       ...(ctx.data.soloRecibosConfirmados
         ? [eq(liquidacionImportRecibo.reciboConfirmado, true)]
         : []),
@@ -2715,6 +3008,15 @@ export const getReciboDetalle = createServerFn({ method: 'GET' })
       liq.empleado,
       liq.liquidacion
     );
+    const categoriaIdBasicoEscala =
+      liq.empleado.categoriaId ?? (await resolveCategoriaIdParaBasico(liq.empleado));
+    const basicoEscalaCategoria =
+      categoriaIdBasicoEscala
+        ? await getBasicoVigenteInternal(
+            categoriaIdBasicoEscala,
+            liq.liquidacion.periodo
+          )
+        : 0;
 
     const detallesRaw = await db
       .select({
@@ -2763,7 +3065,30 @@ export const getReciboDetalle = createServerFn({ method: 'GET' })
       ),
     }));
 
+    const plantillaCabecera = await obtenerCabeceraPagoPlantilla(
+      liq.empleado.id,
+      liq.liquidacion.id
+    );
+    let liquidacionParaVista = mergeCabeceraPagoLiquidacion(
+      liq.liquidacion,
+      cabeceraPagoDesdeEmpleado(liq.empleado)
+    );
+    liquidacionParaVista = mergeCabeceraPagoLiquidacion(
+      liquidacionParaVista,
+      plantillaCabecera
+    );
+    liquidacionParaVista = {
+      ...liquidacionParaVista,
+      formaPago: normalizarFormaPagoAlmacenada(liquidacionParaVista.formaPago),
+    };
+
     /** Objeto plano JSON-serializable (evita pérdida de campos con seroval/Drizzle en el cliente). */
-    const payload = { ...liq, basicoCalculado, detalles };
+    const payload = {
+      ...liq,
+      liquidacion: liquidacionParaVista,
+      basicoCalculado,
+      basicoEscalaCategoria,
+      detalles,
+    };
     return JSON.parse(JSON.stringify(payload)) as typeof payload;
   });

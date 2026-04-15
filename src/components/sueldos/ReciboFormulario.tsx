@@ -11,6 +11,7 @@ import { ChevronsUpDown, FilePlus2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { BANCOS } from '@/lib/bancos';
+import { legajoParaMostrar } from '@/lib/legajo';
 import {
   createReciboHeader,
   listImportEmpleadosConConfig,
@@ -286,9 +287,7 @@ export function ReciboFormulario({
                       </FormControl>
                       <SelectContent>
                         {empleados.map((r) => {
-                          const leg =
-                            r.empleado.legajo?.trim() ||
-                            '—';
+                          const leg = legajoParaMostrar(r.empleado.legajo);
                           const disabled = !r.empleado.convenioId;
                           return (
                             <SelectItem

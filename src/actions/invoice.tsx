@@ -269,6 +269,10 @@ export const getClientMultilateralSummary = createServerFn({
     // Tipos AFIP que son Nota de Crédito: restan del total (3=N.Crédito A, 8=N.Crédito B, 13=N.Crédito C).
     // También consideramos tipo que contenga "Crédito" por si viene con texto desde el CSV.
     const isCreditNote = sql`(${invoice.type} in ('3', '8', '13') or ${invoice.type}::text ilike '%Crédito%')`;
+    // En facturación tipo C no hay IVA discriminado, por lo que la base imponible
+    // se toma desde el total del comprobante (amount).
+    const isTypeC = sql`(${invoice.type} in ('11', '12', '13', '15', '16', '211', '212', '213'))`;
+    const baseForMultilateral = sql`(case when ${isTypeC} then (${invoice.amount}::numeric) else (${invoice.amountTaxed}::numeric) end)`;
 
     // Agrupar invoices outbound por provincia: total IVA y base imponible son NETOS
     // (facturas y notas de débito suman; notas de crédito restan).
@@ -277,7 +281,7 @@ export const getClientMultilateralSummary = createServerFn({
         receiptProvince: invoice.receiptProvince,
         invoiceCount: sql<number>`count(*)::int`,
         totalIVA: sql<string>`(coalesce(sum(case when ${isCreditNote} then -(${invoice.totalIVA}::numeric) else (${invoice.totalIVA}::numeric) end), 0))::text`,
-        totalTaxed: sql<string>`(coalesce(sum(case when ${isCreditNote} then -(${invoice.amountTaxed}::numeric) else (${invoice.amountTaxed}::numeric) end), 0))::text`,
+        totalTaxed: sql<string>`(coalesce(sum(case when ${isCreditNote} then -(${baseForMultilateral}) else (${baseForMultilateral}) end), 0))::text`,
       })
       .from(invoice)
       .where(and(...conditions))
@@ -365,6 +369,7 @@ export const getClientMultilateralInvoices = createServerFn({
         recipientIdentityNumber: invoice.recipientIdentityNumber,
         currency: invoice.currency,
         amountTaxed: invoice.amountTaxed,
+        baseImponible: sql<string>`(case when ${invoice.type} in ('11', '12', '13', '15', '16', '211', '212', '213') then (${invoice.amount}::numeric)::text else (${invoice.amountTaxed}::numeric)::text end)`,
         totalIVA: invoice.totalIVA,
         amount: invoice.amount,
       })

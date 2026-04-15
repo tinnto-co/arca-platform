@@ -150,7 +150,7 @@ function RouteComponent() {
               />
             </TabsContent>
             <TabsContent value="recibo">
-              <SueldosRecibo clientId={clientId} />
+              <SueldosRecibo clientId={clientId} profileId={profileId} />
             </TabsContent>
           </div>
         </Tabs>

@@ -674,6 +674,11 @@ export const liquidacionImportEmpleado = pgTable(
     valorSueldo: numeric("valor_sueldo", { precision: 12, scale: 2 }),
     /** Porcentaje adicional de aporte de Seguridad Social (si aplica). */
     porcentajeAporteAdicionalSS: numeric("porcentaje_aporte_adicional_ss", { precision: 5, scale: 4 }),
+    /** Datos de pago por defecto del legajo (recibo toma estos valores si la cabecera del período está vacía). */
+    lugarPago: text("lugar_pago"),
+    formaPago: text("forma_pago"),
+    cbu: text("cbu"),
+    banco: text("banco"),
     activo: boolean("activo").default(true).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")

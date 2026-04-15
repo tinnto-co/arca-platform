@@ -838,7 +838,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     }
     return multilateralDetailInvoices.reduce(
       (acc: { base: number; iva: number; total: number }, inv: any) => {
-        acc.base += Number(inv.amountTaxed ?? 0);
+        acc.base += Number(inv.baseImponible ?? inv.amountTaxed ?? 0);
         acc.iva += Number(inv.totalIVA ?? 0);
         acc.total += Number(inv.amount ?? 0);
         return acc;
@@ -4282,7 +4282,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                             {inv.currency || 'ARS'}
                           </TableCell>
                           <TableCell className="text-right text-[11px]">
-                            {formatIvaCurrency(inv.amountTaxed)}
+                            {formatIvaCurrency(inv.baseImponible ?? inv.amountTaxed)}
                           </TableCell>
                           <TableCell className="text-right text-[11px]">
                             {formatIvaCurrency(inv.totalIVA)}
@@ -4354,7 +4354,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                           Base imponible
                         </span>
                         <span className="text-right">
-                          {formatIvaCurrency(inv.amountTaxed)}
+                          {formatIvaCurrency(inv.baseImponible ?? inv.amountTaxed)}
                         </span>
                         <span className="text-muted-foreground">Total IVA</span>
                         <span className="text-right">

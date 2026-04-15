@@ -14,6 +14,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -71,23 +72,36 @@ export function SueldosDashboard({
   const periodo = useMemo(() => `${ano}-${mes}`, [ano, mes]);
   const permiteLiquidar = puedeLiquidarPeriodo(periodo);
 
-  const { data: liquidaciones = [], isLoading: loadingLiq } = useQuery({
+  const liquidacionesQuery = useQuery({
     queryKey: ['liquidaciones', clientId, periodo],
     queryFn: () => listLiquidacionesByPeriodo({ data: { clientId, periodo } }),
     enabled: !!clientId,
   });
+  const { data: liquidaciones = [], isLoading: loadingLiq } = liquidacionesQuery;
 
-  const { data: empleados = [] } = useQuery({
+  const empleadosQuery = useQuery({
     queryKey: ['empleados', clientId],
     queryFn: () => listEmpleados({ data: { clientId } }),
     enabled: !!clientId,
   });
+  const { data: empleados = [] } = empleadosQuery;
 
-  const { data: importEmpleados = [] } = useQuery({
+  const importEmpleadosQuery = useQuery({
     queryKey: ['import-empleados', clientId, profileId],
     queryFn: () => listImportEmpleados({ data: { clientId, profileId } }),
     enabled: !!clientId && !!profileId,
   });
+  const { data: importEmpleados = [] } = importEmpleadosQuery;
+
+  const sueldosQueryError =
+    liquidacionesQuery.isError ||
+    empleadosQuery.isError ||
+    importEmpleadosQuery.isError;
+  const sueldosErrorMessage =
+    (liquidacionesQuery.error as Error | undefined)?.message ||
+    (empleadosQuery.error as Error | undefined)?.message ||
+    (importEmpleadosQuery.error as Error | undefined)?.message ||
+    'Error desconocido';
 
   const { data: convenios = [] } = useQuery({
     queryKey: ['convenios', clientId, profileId],
@@ -144,6 +158,26 @@ export function SueldosDashboard({
 
   return (
     <div className="space-y-6">
+      {sueldosQueryError ? (
+        <Alert variant="destructive">
+          <AlertTitle>No se pudieron cargar los datos de sueldos</AlertTitle>
+          <AlertDescription className="space-y-2">
+            <p>{sueldosErrorMessage}</p>
+            <p>
+              Si el error menciona columnas en{' '}
+              <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                liquidacion_import_empleado
+              </code>
+              , ejecutá en la carpeta del proyecto{' '}
+              <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                npm run db:ensure-empleado-pago
+              </code>{' '}
+              (necesita <code className="font-mono text-xs">DATABASE_URL</code> en
+              .env). Es seguro repetirlo: solo agrega columnas si faltan.
+            </p>
+          </AlertDescription>
+        </Alert>
+      ) : null}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-2">
           <Calendar className="h-5 w-5 text-muted-foreground" />

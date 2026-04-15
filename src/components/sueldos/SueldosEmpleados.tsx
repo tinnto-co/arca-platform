@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
-import { Plus, Trash2, RefreshCw } from 'lucide-react';
+import { Plus, Trash2, RefreshCw, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Table,
@@ -14,6 +14,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -31,7 +32,10 @@ import {
   listConvenios,
   listCategoriasByConvenio,
   sincronizarConveniosEmpleados,
+  updateEmpleado,
 } from '@/actions/sueldos';
+import { legajoParaMostrar } from '@/lib/legajo';
+import { BANCOS } from '@/lib/bancos';
 import {
   Select,
   SelectContent,
@@ -43,6 +47,28 @@ import {
 interface SueldosEmpleadosProps {
   clientId: string;
   profileId: string;
+}
+
+const FORMAS_PAGO = [
+  { value: 'efectivo', label: 'Efectivo' },
+  { value: 'cheque', label: 'Cheque' },
+  { value: 'acreditacion', label: 'Acreditación en cuenta' },
+] as const;
+
+function formaDbToSelect(
+  v: string | null | undefined
+): (typeof FORMAS_PAGO)[number]['value'] {
+  if (v == null || String(v).trim() === '') return 'efectivo';
+  const s = String(v).trim().toLowerCase();
+  if (s === '1' || s === 'efectivo') return 'efectivo';
+  if (s === '2' || s === 'acreditacion' || s === 'acreditación') {
+    return 'acreditacion';
+  }
+  if (s === '3' || s === 'cheque') return 'cheque';
+  if (s === '4' || s === 'otro' || s === 'otros') return 'efectivo';
+  if (s === 'cheque') return 'cheque';
+  if (s === 'acreditacion') return 'acreditacion';
+  return 'efectivo';
 }
 
 function formatDate(d: Date | string | null | undefined): string {
@@ -95,6 +121,13 @@ export function SueldosEmpleados({
 }: SueldosEmpleadosProps) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [pagoEdit, setPagoEdit] = useState<{
+    empleadoId: string;
+    lugarPago: string;
+    formaPago: (typeof FORMAS_PAGO)[number]['value'];
+    banco: string;
+    cbu: string;
+  } | null>(null);
   const [form, setForm] = useState({
     cuil: '',
     legajo: '',
@@ -107,11 +140,12 @@ export function SueldosEmpleados({
     categoriaId: '',
   });
 
-  const { data: rows = [], isLoading } = useQuery({
+  const importEmpleadosQuery = useQuery({
     queryKey: ['import-empleados', clientId, profileId],
     queryFn: () => listImportEmpleados({ data: { clientId, profileId } }),
     enabled: !!clientId && !!profileId,
   });
+  const { data: rows = [], isLoading } = importEmpleadosQuery;
   const { data: convenios = [] } = useQuery({
     queryKey: ['convenios', clientId, profileId],
     queryFn: () => listConvenios({ data: { clientId, profileId } }),
@@ -172,6 +206,33 @@ export function SueldosEmpleados({
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Error al sincronizar'),
   });
 
+  const guardarPagoLegajo = useMutation({
+    mutationFn: async () => {
+      if (!pagoEdit) return;
+      await updateEmpleado({
+        data: {
+          id: pagoEdit.empleadoId,
+          clientId,
+          lugarPago: pagoEdit.lugarPago.trim() || null,
+          formaPago: pagoEdit.formaPago,
+          banco: pagoEdit.banco.trim() || null,
+          cbu: pagoEdit.cbu.trim() || null,
+        },
+      });
+    },
+    onSuccess: () => {
+      toast.success('Datos de pago del legajo guardados');
+      queryClient.invalidateQueries({
+        queryKey: ['import-empleados', clientId, profileId],
+      });
+      queryClient.invalidateQueries({ queryKey: ['empleados', clientId] });
+      queryClient.invalidateQueries({ queryKey: ['recibo-detalle'] });
+      setPagoEdit(null);
+    },
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : 'Error al guardar'),
+  });
+
   const eliminar = useMutation({
     mutationFn: (empleadoId: string) =>
       deleteManualEmpleado({ data: { clientId, empleadoId } }),
@@ -195,6 +256,29 @@ export function SueldosEmpleados({
 
   return (
     <div className="w-full min-w-0 max-w-full space-y-4">
+      {importEmpleadosQuery.isError ? (
+        <Alert variant="destructive">
+          <AlertTitle>No se pudieron cargar los empleados</AlertTitle>
+          <AlertDescription className="space-y-2">
+            <p>
+              {(importEmpleadosQuery.error as Error | undefined)?.message ??
+                'Error desconocido'}
+            </p>
+            <p>
+              Si el error menciona columnas en{' '}
+              <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                liquidacion_import_empleado
+              </code>
+              , ejecutá{' '}
+              <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                npm run db:ensure-empleado-pago
+              </code>{' '}
+              (con <code className="font-mono text-xs">DATABASE_URL</code> en
+              .env).
+            </p>
+          </AlertDescription>
+        </Alert>
+      ) : null}
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground break-words">
           Empleados del perfil fiscal (importados desde LSD o creados
@@ -372,13 +456,14 @@ export function SueldosEmpleados({
       <div className="w-full min-w-0 max-w-full overflow-x-auto rounded-md border">
         <Table className="w-full min-w-0 table-fixed text-sm">
           <colgroup>
-            <col className="w-[18%]" />
-            <col className="w-[12%]" />
+            <col className="w-[16%]" />
+            <col className="w-[11%]" />
             <col className="w-[6%]" />
+            <col className="w-[8%]" />
+            <col className="w-[8%]" />
+            <col className="w-[12%]" />
+            <col className="w-[12%]" />
             <col className="w-[9%]" />
-            <col className="w-[9%]" />
-            <col className="w-[14%]" />
-            <col className="w-[14%]" />
             <col className="w-[10%]" />
             <col className="w-[6%]" />
           </colgroup>
@@ -392,6 +477,7 @@ export function SueldosEmpleados({
               <TableHead className="whitespace-normal">Convenio</TableHead>
               <TableHead className="whitespace-normal">Categoría</TableHead>
               <TableHead>Estado</TableHead>
+              <TableHead className="whitespace-normal">Pago</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -399,7 +485,7 @@ export function SueldosEmpleados({
             {isLoading ? (
               <TableRow>
                 <TableCell
-                  colSpan={9}
+                  colSpan={10}
                   className="text-center text-muted-foreground"
                 >
                   Cargando…
@@ -408,7 +494,7 @@ export function SueldosEmpleados({
             ) : rows.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={9}
+                  colSpan={10}
                   className="text-center text-muted-foreground"
                 >
                   No hay empleados para este perfil. Ejecutá el import de Excel
@@ -430,7 +516,7 @@ export function SueldosEmpleados({
                       {e.cuil}
                     </TableCell>
                     <TableCell className="whitespace-nowrap align-top py-2 tabular-nums">
-                      {e.legajo}
+                      {legajoParaMostrar(e.legajo)}
                     </TableCell>
                     <TableCell className="whitespace-nowrap align-top py-2">
                       {formatDate(e.fechaAlta ?? undefined)}
@@ -463,6 +549,29 @@ export function SueldosEmpleados({
                       )}
                     </TableCell>
                     <TableCell className="align-top py-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-1 h-8"
+                        onClick={() =>
+                          setPagoEdit({
+                            empleadoId: e.id,
+                            lugarPago: e.lugarPago ?? '',
+                            formaPago: formaDbToSelect(e.formaPago),
+                            banco:
+                              e.banco && e.banco.trim() !== ''
+                                ? e.banco
+                                : '_otro banco',
+                            cbu: e.cbu ?? '',
+                          })
+                        }
+                      >
+                        <Wallet className="h-3.5 w-3.5" />
+                        Legajo
+                      </Button>
+                    </TableCell>
+                    <TableCell className="align-top py-2">
                       {esManual && (
                         <Button
                           variant="ghost"
@@ -482,6 +591,123 @@ export function SueldosEmpleados({
           </TableBody>
         </Table>
       </div>
+
+      <Dialog
+        open={pagoEdit !== null}
+        onOpenChange={(v) => {
+          if (!v) setPagoEdit(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>Datos de pago del legajo</DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              Se usan en el recibo de haberes cuando el período no trae esos
+              datos. CBU aplica si la forma de pago es acreditación.
+            </p>
+          </DialogHeader>
+          {pagoEdit ? (
+            <div className="grid gap-4 pt-2">
+              <div className="space-y-1">
+                <Label htmlFor="pago-lugar">Lugar de pago</Label>
+                <Input
+                  id="pago-lugar"
+                  value={pagoEdit.lugarPago}
+                  onChange={(ev) =>
+                    setPagoEdit((p) =>
+                      p ? { ...p, lugarPago: ev.target.value } : p
+                    )
+                  }
+                  maxLength={80}
+                  placeholder="Ej. CABA"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <Label>Forma de pago</Label>
+                  <Select
+                    value={pagoEdit.formaPago}
+                    onValueChange={(value) =>
+                      setPagoEdit((p) =>
+                        p
+                          ? {
+                              ...p,
+                              formaPago: value as (typeof FORMAS_PAGO)[number]['value'],
+                            }
+                          : p
+                      )
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {FORMAS_PAGO.map((f) => (
+                        <SelectItem key={f.value} value={f.value}>
+                          {f.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Banco</Label>
+                  <Select
+                    value={pagoEdit.banco || '_otro banco'}
+                    onValueChange={(value) =>
+                      setPagoEdit((p) => (p ? { ...p, banco: value } : p))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-[240px]">
+                      {BANCOS.map((b) => (
+                        <SelectItem key={b} value={b}>
+                          {b}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              {pagoEdit.formaPago === 'acreditacion' && (
+                <div className="space-y-1">
+                  <Label htmlFor="pago-cbu">CBU / cuenta</Label>
+                  <Input
+                    id="pago-cbu"
+                    value={pagoEdit.cbu}
+                    onChange={(ev) =>
+                      setPagoEdit((p) =>
+                        p ? { ...p, cbu: ev.target.value } : p
+                      )
+                    }
+                    maxLength={22}
+                    className="font-mono"
+                    placeholder="22 dígitos"
+                  />
+                </div>
+              )}
+              <div className="flex justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setPagoEdit(null)}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  disabled={guardarPagoLegajo.isPending}
+                  onClick={() => guardarPagoLegajo.mutate()}
+                >
+                  {guardarPagoLegajo.isPending ? 'Guardando…' : 'Guardar'}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

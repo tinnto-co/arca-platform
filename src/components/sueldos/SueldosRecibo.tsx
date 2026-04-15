@@ -18,6 +18,7 @@ import {
   getReciboDetalle,
 } from '@/actions/sueldos';
 import { getClient } from '@/actions/client';
+import { legajoParaMostrar } from '@/lib/legajo';
 
 const now = new Date();
 const ANOS = Array.from({ length: 8 }, (_, i) => now.getFullYear() - i);
@@ -28,6 +29,7 @@ const MESES = Array.from({ length: 12 }, (_, i) => ({
 
 interface SueldosReciboProps {
   clientId: string;
+  profileId: string;
 }
 
 function tipoReciboLabel(tipo: string | null): string {
@@ -75,6 +77,38 @@ function redondearPesos(n: number): number {
   return Math.round((Number.isFinite(n) ? n : 0) * 100) / 100;
 }
 
+function esCategoriaGerente(v: string | null | undefined): boolean {
+  if (!v) return false;
+  return v.trim().toLowerCase().includes('gerente');
+}
+
+function basicoDesdeDetalle(
+  rows: Array<{
+    detalle: { codigo: string; monto: string | null };
+    concepto?: { numeroSos?: number | null; nombre?: string | null } | null;
+    conceptoSos?: { codigo?: string | null; nombre?: string | null } | null;
+  }>
+): number {
+  for (const r of rows) {
+    const numSos = r.concepto?.numeroSos ?? null;
+    const codDet = (r.detalle.codigo ?? '').trim();
+    const codSos = (r.conceptoSos?.codigo ?? '').trim();
+    const nombre = `${r.concepto?.nombre ?? ''} ${r.conceptoSos?.nombre ?? ''}`
+      .trim()
+      .toLowerCase();
+    const esBasico =
+      numSos === 1 ||
+      codDet === '1' ||
+      codSos === '1' ||
+      nombre.includes('sueldo basico') ||
+      nombre.includes('sueldo básico');
+    if (!esBasico) continue;
+    const monto = Number(r.detalle.monto ?? 0);
+    if (Number.isFinite(monto) && monto > 0) return monto;
+  }
+  return 0;
+}
+
 function dateFmt(d: Date | string | null | undefined): string {
   if (d === null || d === undefined || d === '') return '—';
   const date = d instanceof Date ? d : new Date(d);
@@ -84,12 +118,20 @@ function dateFmt(d: Date | string | null | undefined): string {
 
 function formaPagoLabel(v: string | null | undefined): string {
   if (!v) return '—';
+  const s = String(v).trim().toLowerCase();
+  /** Códigos SOS / import (1–4), por si el dato llega sin normalizar del servidor. */
+  if (s === '1' || s === 'efectivo') return 'Efectivo';
+  if (s === '2' || s === 'acreditacion' || s === 'acreditación') {
+    return 'Acreditación';
+  }
+  if (s === '3' || s === 'cheque') return 'Cheque';
+  if (s === '4' || s === 'otro' || s === 'otros') return 'Otro';
   const by: Record<string, string> = {
     efectivo: 'Efectivo',
     cheque: 'Cheque',
     acreditacion: 'Acreditación',
   };
-  return by[v] ?? v;
+  return by[s] ?? String(v);
 }
 
 /** Lectura defensiva: serialización puede exponer camelCase o snake_case; fechas como string ISO. */
@@ -106,15 +148,29 @@ function bancoLabel(v: string | null | undefined): string {
   return s;
 }
 
+/** Ignora guiones / placeholders que no son datos reales (import o celdas vacías). */
+function valorCabeceraLegible(v: unknown): string | null {
+  const s = strU(v);
+  if (!s) return null;
+  if (s === '—' || s === '-' || s === '–') return null;
+  const lower = s.toLowerCase();
+  if (lower === 'n/a' || lower === 's/d' || lower === 's.d.') return null;
+  return s;
+}
+
 function pickCabecera(liquidacion: Record<string, unknown>) {
   const fechaPagoRaw = liquidacion.fechaPago ?? liquidacion.fecha_pago ?? null;
   const fechaLiqRaw = liquidacion.fecha ?? null;
   const lugar =
-    strU(liquidacion.lugarPago) ?? strU(liquidacion.lugar_pago) ?? null;
-  const bancoVal = strU(liquidacion.banco) ?? null;
+    valorCabeceraLegible(liquidacion.lugarPago) ??
+    valorCabeceraLegible(liquidacion.lugar_pago) ??
+    null;
+  const bancoVal = valorCabeceraLegible(liquidacion.banco);
   const forma =
-    strU(liquidacion.formaPago) ?? strU(liquidacion.forma_pago) ?? null;
-  const cbuVal = strU(liquidacion.cbu) ?? null;
+    valorCabeceraLegible(liquidacion.formaPago) ??
+    valorCabeceraLegible(liquidacion.forma_pago) ??
+    null;
+  const cbuVal = valorCabeceraLegible(liquidacion.cbu);
   /** Si falta fecha de pago pero hay fecha de liquidación, mostrar esa. */
   const fechaPagoParaMostrar = fechaPagoRaw ?? fechaLiqRaw;
   return {
@@ -123,6 +179,27 @@ function pickCabecera(liquidacion: Record<string, unknown>) {
     formaPago: forma,
     cbu: cbuVal,
     fechaPagoParaMostrar,
+  };
+}
+
+type CabeceraPago = ReturnType<typeof pickCabecera>;
+
+/** Completa con datos del legajo (empleado) cuando el recibo no trae cabecera útil. */
+function completarCabeceraConLegajo(
+  cab: CabeceraPago,
+  empleado: {
+    lugarPago?: string | null;
+    formaPago?: string | null;
+    cbu?: string | null;
+    banco?: string | null;
+  }
+): CabeceraPago {
+  return {
+    ...cab,
+    lugarPago: cab.lugarPago ?? valorCabeceraLegible(empleado.lugarPago),
+    banco: cab.banco ?? valorCabeceraLegible(empleado.banco),
+    formaPago: cab.formaPago ?? valorCabeceraLegible(empleado.formaPago),
+    cbu: cab.cbu ?? valorCabeceraLegible(empleado.cbu),
   };
 }
 
@@ -249,7 +326,7 @@ function DocCell({
   );
 }
 
-export function SueldosRecibo({ clientId }: SueldosReciboProps) {
+export function SueldosRecibo({ clientId, profileId }: SueldosReciboProps) {
   const [ano, setAno] = useState(String(now.getFullYear()));
   const [mes, setMes] = useState(String(now.getMonth() + 1).padStart(2, '0'));
   const periodo = useMemo(() => `${ano}-${mes}`, [ano, mes]);
@@ -262,10 +339,10 @@ export function SueldosRecibo({ clientId }: SueldosReciboProps) {
   });
 
   const { data: recibosPeriodo = [], isLoading: loadingList } = useQuery({
-    queryKey: ['liquidaciones-recibo', clientId, periodo],
+    queryKey: ['liquidaciones-recibo', clientId, profileId, periodo],
     queryFn: () =>
-      listLiquidacionesByPeriodo({ data: { clientId, periodo } }),
-    enabled: !!clientId,
+      listLiquidacionesByPeriodo({ data: { clientId, profileId, periodo } }),
+    enabled: !!clientId && !!profileId,
   });
 
   const { data: detalle, isLoading: loadingDetalle } = useQuery({
@@ -403,7 +480,30 @@ function ReciboDocumento({
     obraSocial,
     detalles,
     basicoCalculado,
+    basicoEscalaCategoria,
   } = detalle;
+
+  const basicoCalculadoNum = Number(basicoCalculado ?? 0);
+  const basicoEscalaNum = Number(basicoEscalaCategoria ?? 0);
+  const basicoLiquidacionNum = Number(liquidacion.basico ?? 0);
+  const basicoDetalleNum = basicoDesdeDetalle(detalles);
+  const esGerente =
+    esCategoriaGerente(categoria?.nombre) || esCategoriaGerente(empleado.categoria);
+  const mostrarBasicoEscalaGerente =
+    esGerente &&
+    Number.isFinite(basicoCalculadoNum) &&
+    basicoCalculadoNum <= 0 &&
+    Number.isFinite(basicoEscalaNum) &&
+    basicoEscalaNum > 0;
+  const basicoMostrado = mostrarBasicoEscalaGerente
+    ? basicoEscalaNum
+    : esGerente && basicoCalculadoNum <= 0
+      ? basicoLiquidacionNum > 0
+        ? basicoLiquidacionNum
+        : basicoDetalleNum > 0
+          ? basicoDetalleNum
+          : basicoCalculado
+      : basicoCalculado;
 
   // Clasificar conceptos por tipo (solo los activos)
   const conceptosActivos = detalles.filter((d) => d.detalle.activoEnRecibo);
@@ -444,7 +544,10 @@ function ReciboDocumento({
       totalRetenciones
   );
 
-  const cab = pickCabecera(liquidacion as unknown as Record<string, unknown>);
+  const cab = completarCabeceraConLegajo(
+    pickCabecera(liquidacion as unknown as Record<string, unknown>),
+    empleado
+  );
 
   return (
     <div className="w-full overflow-x-auto">
@@ -510,7 +613,12 @@ function ReciboDocumento({
 
         {/* ── FILA 2 EMPLEADO: Legajo | Apellido y Nombre | Ingreso | CUIL | Básico */}
         <div className="grid grid-cols-[100px_1fr_120px_160px_140px] divide-x divide-border border-b border-border">
-          <DocCell label="Legajo" value={empleado.legajo ?? detalle.importLegajo ?? '—'} />
+          <DocCell
+            label="Legajo"
+            value={legajoParaMostrar(
+              empleado.legajo ?? detalle.importLegajo ?? null
+            )}
+          />
           <DocCell
             label="Apellido y Nombres"
             value={empleado.nombre}
@@ -520,7 +628,7 @@ function ReciboDocumento({
             value={dateFmt(empleado.fechaAlta)}
           />
           <DocCell label="CUIL" value={empleado.cuil} />
-          <DocCell label="Sueldo básico" value={`$${moneyFmt(basicoCalculado)}`} />
+          <DocCell label="Sueldo básico" value={`$${moneyFmt(basicoMostrado)}`} />
         </div>
 
         {/* ── FILA 3 EMPLEADO: Convenio | Modalidad | Obra Social ─────────── */}
