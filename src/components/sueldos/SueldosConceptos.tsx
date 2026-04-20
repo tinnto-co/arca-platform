@@ -20,6 +20,10 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { listConceptosByPerfil } from '@/actions/sueldos';
+import {
+  formulaLegibleSos,
+  leyendaRelacionadaFormulaSos,
+} from '@/lib/sos-formula-display';
 
 interface SueldosConceptosProps {
   clientId: string;
@@ -68,6 +72,20 @@ function Check({ value }: { value: boolean | null }) {
 }
 
 function ConceptoDialog({ row }: { row: ConceptoRow }) {
+  const meta = {
+    baseColumna: row.baseColumna,
+    divCantidad: row.divCantidad,
+    divHsNorm: row.divHsNorm,
+    tieneCantidad: row.tieneCantidad,
+    tienePct: row.tienePct,
+    tieneImporte: row.tieneImporte,
+    tieneImpConceptoNro: row.tieneImpConceptoNro,
+    tieneImpMin: row.tieneImpMin,
+    tieneImpMax: row.tieneImpMax,
+  };
+  const formula = formulaLegibleSos(meta);
+  const leyenda = leyendaRelacionadaFormulaSos(meta);
+
   return (
     <Dialog>
       <DialogTrigger asChild>
@@ -84,6 +102,31 @@ function ConceptoDialog({ row }: { row: ConceptoRow }) {
             {row.afipNombre}
           </DialogTitle>
         </DialogHeader>
+        <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs space-y-3">
+          <div>
+            <p className="text-muted-foreground">Fórmula del concepto</p>
+            <p className="mt-1 font-mono leading-relaxed text-foreground break-words">
+              {formula}
+            </p>
+          </div>
+          {leyenda.length > 0 && (
+            <div className="border-t border-border/60 pt-2">
+              <p className="text-muted-foreground mb-1.5">
+                Significado de las abreviaturas
+              </p>
+              <ul className="max-h-[min(40vh,14rem)] space-y-1 overflow-y-auto pr-1 text-[11px] leading-snug text-muted-foreground">
+                {leyenda.map((item) => (
+                  <li key={item.sigla} className="flex gap-2">
+                    <span className="shrink-0 font-mono font-medium text-foreground">
+                      {item.sigla}
+                    </span>
+                    <span>{item.texto}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
         <Table className="text-xs">
           <TableHeader>
             <TableRow>

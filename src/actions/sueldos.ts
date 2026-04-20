@@ -401,6 +401,15 @@ export const listConceptosByPerfil = createServerFn({ method: 'GET' })
         contribucionesLrt: lsdPerfilConcepto.contribucionesLrt,
         aportesDiferenciales: lsdPerfilConcepto.aportesDiferenciales,
         aportesEspeciales: lsdPerfilConcepto.aportesEspeciales,
+        baseColumna: conceptosCompletosSos.baseColumna,
+        divCantidad: conceptosCompletosSos.divCantidad,
+        divHsNorm: conceptosCompletosSos.divHsNorm,
+        tieneCantidad: conceptosCompletosSos.tieneCantidad,
+        tienePct: conceptosCompletosSos.tienePct,
+        tieneImpConceptoNro: conceptosCompletosSos.tieneImpConceptoNro,
+        tieneImporte: conceptosCompletosSos.tieneImporte,
+        tieneImpMin: conceptosCompletosSos.tieneImpMin,
+        tieneImpMax: conceptosCompletosSos.tieneImpMax,
       })
       .from(lsdPerfilConcepto)
       .innerJoin(

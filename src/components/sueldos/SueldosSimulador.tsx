@@ -82,6 +82,15 @@ export function SueldosSimulador({
   profileId,
   onConfirmRecibo,
 }: SueldosSimuladorProps) {
+  const moneyFmt = useCallback(
+    (value: number) =>
+      value.toLocaleString('es-AR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }),
+    []
+  );
+
   const queryClient = useQueryClient();
   const [flowHeader, setFlowHeader] = useState<FlowHeader | null>(null);
   const [sosEmpleadoId, setSosEmpleadoId] = useState<string | null>(null);
@@ -321,8 +330,8 @@ export function SueldosSimulador({
           <CardHeader>
             <CardTitle className="text-base">Conceptos — carga manual</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Los montos se pre-calculan con el básico de escala vigente. Podés
-              ajustar cualquier valor antes de guardar.
+              Los montos se pre-calculan con el básico de escala vigente del empleado
+              en el período a liquidar. Podés ajustar cualquier valor antes de guardar.
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -333,6 +342,13 @@ export function SueldosSimulador({
               </p>
             ) : (
               <>
+                <div className="rounded-md border border-emerald-300/60 bg-emerald-50/50 px-3 py-2 text-xs text-emerald-950">
+                  Básico de escala tomado para empleado/período{' '}
+                  <span className="font-semibold">{flowHeader.periodo}</span>:{' '}
+                  <span className="font-mono font-semibold">
+                    ${moneyFmt(basicoEscala)}
+                  </span>
+                </div>
                 <div className="rounded-lg border bg-background p-3">
                 <TablaReciboSos
                   key={plantillaManual.map((c) => c.id).join('|')}
