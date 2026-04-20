@@ -33,6 +33,12 @@ Se avanzo en la consolidacion funcional del modulo de Sueldos para dejar el fluj
   - `src/lib/sos-recibo-totales.ts`
   - `src/lib/sos-formula-display.ts`
   - `src/components/sueldos/sos-concepto-map.ts`
+- Ajustes funcionales cerrados hoy:
+  - Reclasificacion de conceptos SOS `500-599` para que impacten en **Retenciones** (y no en Descuentos) en grilla y totalizadores.
+  - Evaluacion estricta de formulas (`ok/error`) para evitar fallback silencioso a cero.
+  - Guardrails de validacion en conceptos criticos (`511-520` y `551-562`) para evitar bug triple-campo y exigir `importe=1` cuando corresponde.
+  - Trazabilidad por linea de recibo (`pctUsado`, `baseUsada`, `memo` de origen/calculo).
+  - Lock transaccional para guardado SOS por `(empleado, periodo, tipo)` para evitar pisadas concurrentes.
 
 ### 2.2 Pruebas automatizadas agregadas
 - Se agregaron suites iniciales para validar comportamiento esperado:
@@ -48,11 +54,18 @@ Se avanzo en la consolidacion funcional del modulo de Sueldos para dejar el fluj
 
 ## 3) Documentacion y trazabilidad generada hoy
 
-Se continuaron documentos tecnicos/funcionales para dejar registro operativo y de negocio:
-- `Documentacion Tecnica/Funcionalidad Sueldos.md`
+Se unifico la documentacion y se dejo una referencia principal:
+- `Documentacion Tecnica/Manual Maestro Sueldos SOS + Arca.md` (nuevo documento unificado)
+- `Documentacion Tecnica/Todos los conceptos SOS.md` (catalogo detallado vigente)
+- `Documentacion Tecnica/Cuadro Formulas por Concepto SOS.md` (indice al canvas operativo)
+- `canvases/cuadro-formulas-sos-sueldos.canvas.tsx` (cuadro visual con siglas, formulas e impacto por concepto)
+
+Documentos depurados por solapamiento (eliminados del set operativo):
+- `Documentacion Tecnica/Formuleo Sueldos SOS CONTADOR.md`
 - `Documentacion Tecnica/Funcionalidad sueldos - Analisis, Planificacion, Proximos Pasos.md`
+- `Documentacion Tecnica/Funcionalidad Sueldos.md`
+- `Documentacion Tecnica/Fases de migracion tablas sueldos.md`
 - `Documentacion Tecnica/Pruebas Formuleo SOS 2026-04-20.md`
-- `Documentacion Tecnica/Todos los conceptos SOS.md`
 
 ---
 
@@ -89,5 +102,8 @@ Se continuaron documentos tecnicos/funcionales para dejar registro operativo y d
 - `src/lib/payroll-cron.ts`
 - `src/lib/parse-sos-legajos-sheet.ts`
 - `src/scripts/*` (scripts de soporte, auditoria y migracion)
-- `Documentacion Tecnica/*` (documentacion funcional/tecnica de sueldos)
+- `Documentacion Tecnica/Manual Maestro Sueldos SOS + Arca.md`
+- `Documentacion Tecnica/Todos los conceptos SOS.md`
+- `Documentacion Tecnica/Cuadro Formulas por Concepto SOS.md`
+- `canvases/cuadro-formulas-sos-sueldos.canvas.tsx`
 - `Actualizaciones/2026-04-20 actualizacion.md`
