@@ -60,9 +60,10 @@ export function totalesReciboSosDesdeMontos(
     sectionTotal(montoByCodigo, 'liquidacion_final') +
     sectionTotal(montoByCodigo, 'decretos');
   const descuentos =
-    sectionTotal(montoByCodigo, 'descuentos') +
+    sectionTotal(montoByCodigo, 'descuentos');
+  const retenciones =
+    sectionTotal(montoByCodigo, 'retenciones') +
     sectionTotal(montoByCodigo, 'retenciones_no_rem');
-  const retenciones = sectionTotal(montoByCodigo, 'retenciones');
   const noRemunerativo = sectionTotal(montoByCodigo, 'no_remunerativo');
   const neto = haberes - descuentos - retenciones + noRemunerativo;
   return { haberes, descuentos, retenciones, noRemunerativo, neto };
@@ -115,7 +116,8 @@ export function montoLiquidadoDesdeEditsSos(
   const pct = parseDecimalSos(row.porcentaje) ?? 0;
   const impNro = parseDecimalSos(row.importeConceptoNumero);
   const imp = parseDecimalSos(row.importe);
-  const base = impNro ?? imp ?? 0;
+  // Si no hay base explícita, la fórmula reduce a: cantidad × (pct/100)
+  const base = impNro ?? imp ?? 1;
   let result = cant * (pct / 100) * base;
   const impMin = parseDecimalSos(row.importeMinimo);
   if (impMin !== null && result < impMin) result = impMin;

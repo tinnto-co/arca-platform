@@ -56,7 +56,7 @@ export const SECCIONES_SOS: Record<SeccionSos, SeccionConfig> = {
     label: 'Retenciones sobre no remunerativos',
     rangoMin: 500,
     rangoMax: 599,
-    columna: 'descuentos',
+    columna: 'retenciones',
   },
   decretos: {
     label: 'Decretos y beneficios',
@@ -121,8 +121,18 @@ export const SUBTOTALES_SOS: SubtotalSosConfig[] = [
   },
 ];
 
+/** Excepciones por código verificadas contra SOS (sobre-escriben clasificación por rango). */
+const SECCION_EXCEPCIONES: Record<number, SeccionSos> = {
+  501: 'retenciones_no_rem',
+  502: 'retenciones_no_rem',
+  503: 'retenciones_no_rem',
+  504: 'retenciones_no_rem',
+};
+
 /** Retorna la sección a la que pertenece un código, o null si no corresponde a ninguna. */
 export function getSeccionSos(codigo: number): SeccionSos | null {
+  const excepcion = SECCION_EXCEPCIONES[codigo];
+  if (excepcion) return excepcion;
   for (const [key, cfg] of Object.entries(SECCIONES_SOS) as [SeccionSos, SeccionConfig][]) {
     if (codigo >= cfg.rangoMin && codigo <= cfg.rangoMax) return key;
   }

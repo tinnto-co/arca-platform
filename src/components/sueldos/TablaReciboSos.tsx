@@ -4,7 +4,6 @@ import {
   Fragment,
   useState,
   useMemo,
-  useReducer,
   useCallback,
   useEffect,
   useRef,
@@ -12,10 +11,8 @@ import {
 import {
   SECCIONES_SOS,
   ORDEN_SECCIONES,
-  SUBTOTALES_SOS,
   getSeccionSos,
   type SeccionSos,
-  type SubtotalSosConfig,
 } from '@/components/sueldos/sos-concepto-map';
 import {
   montoLiquidadoDesdeEditsSos,
@@ -38,6 +35,19 @@ export interface ConceptoImportado {
   importeMaximo: string | null;
   nombre: string | null;
   codigoAfip: string | null;
+  /** Base de cálculo SOS (ej. 'sueldo', 'sub1_9'). Solo en plantilla manual. */
+  baseColumna?: string | null;
+  /** Divisor de cantidad del concepto (ej. 30 para sueldo diario). Solo en plantilla manual. */
+  divCantidad?: number | null;
+  /** Si divide por horas normales mensuales. Solo en plantilla manual. */
+  divHsNorm?: boolean | null;
+  /** Columnas editables habilitadas para este concepto según catálogo SOS. */
+  tieneCantidad?: boolean | null;
+  tienePct?: boolean | null;
+  tieneImpConceptoNro?: boolean | null;
+  tieneImporte?: boolean | null;
+  tieneImpMin?: boolean | null;
+  tieneImpMax?: boolean | null;
 }
 
 export interface ReciboImportadoHeader {
@@ -65,13 +75,6 @@ export type EditsMap = Record<
   }
 >;
 
-type EditAction = {
-  type: 'SET_FIELD';
-  codigo: string;
-  field: keyof EditsMap[string];
-  value: string;
-};
-
 const EMPTY_EDIT_ROW: EditsMap[string] = {
   monto: '',
   cantidad: '',
@@ -81,6 +84,12 @@ const EMPTY_EDIT_ROW: EditsMap[string] = {
   importeMinimo: '',
   importeMaximo: '',
 };
+
+/** Bases de cálculo dinámicas (dependen de subtotales acumulados de otras filas). */
+const SUB_BASES = new Set([
+  'sub1_9', 'sub1_19', 'sub1_26', 'sub1_39', 'sub1_199', 'sub411_469',
+  'sub1_199_plus_411_469',
+]);
 
 /**
  * Devuelve true si el row tiene una base de fórmula válida y explícita.
@@ -95,65 +104,26 @@ const EMPTY_EDIT_ROW: EditsMap[string] = {
  */
 function canApplyFormula(row: EditsMap[string]): boolean {
   const imp = parseDecimalSos(row.importe);
-  if (imp === null || imp === 0) return false;
+  const impNro = parseDecimalSos(row.importeConceptoNumero);
+  const hasCantidad = (row.cantidad ?? '').trim() !== '';
+  const hasPct = (row.porcentaje ?? '').trim() !== '';
 
-  const mont = parseDecimalSos(row.monto);
-  if (mont !== null && Math.abs(imp - mont) < 0.01) {
-    // importe == monto: verificar si es fallback o parámetro unitario real
-    const cant = parseDecimalSos(row.cantidad) ?? 0;
-    const pct = parseDecimalSos(row.porcentaje) ?? 100;
-    const multiplier = cant * (pct / 100);
-    if (Math.abs(multiplier - 1.0) > 0.001) return false; // fallback — no aplicar fórmula
-  }
+  // Sin importe ni cantidad ni %: nada que calcular
+  if (imp === null && impNro === null && !hasCantidad && !hasPct) return false;
 
-  return true;
-}
-
-function editsReducer(state: EditsMap, action: EditAction): EditsMap {
-  if (action.type !== 'SET_FIELD') return state;
-  const prev = state[action.codigo] ?? EMPTY_EDIT_ROW;
-  const updated = { ...prev, [action.field]: action.value };
-
-  // Edición directa del monto: guardar sin recalcular
-  if (action.field === 'monto') {
-    return { ...state, [action.codigo]: updated };
-  }
-
-  // Hay base de fórmula explícita (importe o importeConceptoNumero): aplicar fórmula
-  if (canApplyFormula(updated)) {
-    return {
-      ...state,
-      [action.codigo]: {
-        ...updated,
-        monto: montoLiquidadoDesdeEditsSos(updated, { forceFormula: true }).toFixed(2),
-      },
-    };
-  }
-
-  // Sin base de fórmula (importe vacío): escalar monto proporcionalmente al cambio
-  // de cantidad o porcentaje. Ej: cantidad 1→2 duplica el monto.
-  if (action.field === 'cantidad' || action.field === 'porcentaje') {
-    const prevMonto = parseDecimalSos(prev.monto);
-    if (prevMonto !== null && prevMonto !== 0) {
-      const prevFactor =
-        action.field === 'cantidad'
-          ? (parseDecimalSos(prev.cantidad) ?? 0)
-          : (parseDecimalSos(prev.porcentaje) ?? 0);
-      const newFactor = parseDecimalSos(action.value);
-      if (prevFactor !== 0 && newFactor !== null && newFactor !== 0) {
-        const scaled = prevMonto * (newFactor / prevFactor);
-        return {
-          ...state,
-          [action.codigo]: {
-            ...updated,
-            monto: (Math.round(scaled * 100) / 100).toFixed(2),
-          },
-        };
-      }
+  // Si hay importe, verificar que no sea el caso fallback (importe == monto con multiplicador ≠ 1)
+  if (imp !== null && imp !== 0) {
+    const mont = parseDecimalSos(row.monto);
+    if (mont !== null && Math.abs(imp - mont) < 0.01) {
+      // importe == monto: verificar si es fallback o parámetro unitario real
+      const cant = parseDecimalSos(row.cantidad) ?? 0;
+      const pct = parseDecimalSos(row.porcentaje) ?? 100;
+      const multiplier = cant * (pct / 100);
+      if (Math.abs(multiplier - 1.0) > 0.001) return false; // fallback — no aplicar fórmula
     }
   }
 
-  return { ...state, [action.codigo]: updated };
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -177,6 +147,11 @@ function fmtArsSign(n: number): string {
 }
 
 const DASH = <span className="text-slate-300">—</span>;
+const MAX_PCT_WARN = 500;
+
+function isCodeInRange(code: number, min: number, max: number): boolean {
+  return code >= min && code <= max;
+}
 
 // ---------------------------------------------------------------------------
 // Inline editable cell
@@ -210,43 +185,8 @@ function EditableCell({
           commit();
         }
       }}
-      className="w-full bg-transparent border-0 outline-none focus:bg-yellow-50 focus:ring-1 focus:ring-yellow-300 rounded px-1 py-0.5 text-xs text-right min-w-[64px]"
+      className="w-full bg-white border border-slate-200 rounded px-1 py-1 text-[10px] text-right focus:bg-yellow-50 focus:ring-1 focus:ring-yellow-300 focus:border-yellow-300 outline-none"
     />
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Subtotal row
-// ---------------------------------------------------------------------------
-
-function SubtotalRow({
-  label,
-  value,
-  columna,
-}: {
-  label: string;
-  value: number;
-  columna: 'haberes' | 'descuentos' | 'retenciones' | 'no_remunerativo';
-}) {
-  return (
-    <tr className="border-b bg-amber-50">
-      <td className="px-2 py-0.5" />
-      <td className="px-2 py-0.5 text-right italic text-slate-500 text-[11px]" colSpan={7}>
-        {label}
-      </td>
-      <td className="px-2 py-0.5 text-right font-medium text-slate-700">
-        {columna === 'haberes' ? fmtArsSign(value) : DASH}
-      </td>
-      <td className="px-2 py-0.5 text-right font-medium text-slate-700">
-        {columna === 'descuentos' ? fmtArsSign(value) : DASH}
-      </td>
-      <td className="px-2 py-0.5 text-right font-medium text-slate-700">
-        {columna === 'retenciones' ? fmtArsSign(value) : DASH}
-      </td>
-      <td className="px-2 py-0.5 text-right font-medium text-slate-700">
-        {columna === 'no_remunerativo' ? fmtArsSign(value) : DASH}
-      </td>
-    </tr>
   );
 }
 
@@ -260,8 +200,6 @@ interface TableSectionProps {
   filas: ConceptoImportado[];
   edits: EditsMap;
   setField: (codigo: string, field: keyof EditsMap[string], value: string) => void;
-  subtotalesTrasConcepto: Record<string, SubtotalSosConfig[]>;
-  subtotalesCalculados: Record<string, number>;
   sectionTotal: (s: SeccionSos) => number;
 }
 
@@ -271,8 +209,6 @@ function TableSection({
   filas,
   edits,
   setField,
-  subtotalesTrasConcepto,
-  subtotalesCalculados,
   sectionTotal,
 }: TableSectionProps) {
   const isHaberes = cfg.columna === 'haberes';
@@ -295,148 +231,97 @@ function TableSection({
       {/* Concept rows */}
       {filas.map((c) => {
         const edit = edits[c.codigo];
-        const subtotalesAqui = subtotalesTrasConcepto[c.codigo] ?? [];
 
         return (
           <Fragment key={c.codigo}>
-            <tr className="border-b hover:bg-slate-50">
-              <td className="px-2 py-0.5 text-center text-slate-400 tabular-nums">{c.codigo}</td>
-              <td className="px-2 py-0.5 font-medium">
+            <tr className="border-b hover:bg-slate-50 divide-x divide-slate-200">
+              <td className="px-2 py-1.5 text-center text-slate-400 tabular-nums">{c.codigo}</td>
+              <td className="px-2 py-1.5 font-medium">
                 {c.nombre ?? `Concepto ${c.codigo}`}
                 {c.codigoAfip && c.codigoAfip !== '0' && (
                   <span className="ml-1 text-slate-400 font-normal">[{c.codigoAfip}]</span>
                 )}
               </td>
-              <td className="px-1 py-0.5">
-                <EditableCell
-                  value={edit?.cantidad ?? ''}
-                  onChange={(v) => setField(c.codigo, 'cantidad', v)}
-                />
+              <td className="px-1 py-1.5 !border-l-2 !border-l-slate-400">
+                {c.tieneCantidad !== false
+                  ? <EditableCell value={edit?.cantidad ?? ''} onChange={(v) => setField(c.codigo, 'cantidad', v)} />
+                  : DASH}
               </td>
-              <td className="px-1 py-0.5">
-                <EditableCell
-                  value={edit?.porcentaje ?? ''}
-                  onChange={(v) => setField(c.codigo, 'porcentaje', v)}
-                />
+              <td className="px-1 py-1.5">
+                {c.tienePct !== false
+                  ? <EditableCell value={edit?.porcentaje ?? ''} onChange={(v) => setField(c.codigo, 'porcentaje', v)} />
+                  : DASH}
               </td>
-              <td className="px-1 py-0.5">
-                <EditableCell
-                  value={edit?.importeConceptoNumero ?? ''}
-                  onChange={(v) => setField(c.codigo, 'importeConceptoNumero', v)}
-                />
+              <td className="px-1 py-1.5">
+                {c.tieneImpConceptoNro !== false
+                  ? <EditableCell value={edit?.importeConceptoNumero ?? ''} onChange={(v) => setField(c.codigo, 'importeConceptoNumero', v)} />
+                  : DASH}
               </td>
-              <td className="px-1 py-0.5">
-                <EditableCell
-                  value={edit?.importe ?? ''}
-                  onChange={(v) => setField(c.codigo, 'importe', v)}
-                />
+              <td className="px-1 py-1.5">
+                {c.tieneImporte !== false
+                  ? <EditableCell value={edit?.importe ?? ''} onChange={(v) => setField(c.codigo, 'importe', v)} />
+                  : DASH}
               </td>
-              <td className="px-1 py-0.5">
-                <EditableCell
-                  value={edit?.importeMinimo ?? ''}
-                  onChange={(v) => setField(c.codigo, 'importeMinimo', v)}
-                />
+              <td className="px-1 py-1.5">
+                {c.tieneImpMin !== false
+                  ? <EditableCell value={edit?.importeMinimo ?? ''} onChange={(v) => setField(c.codigo, 'importeMinimo', v)} />
+                  : DASH}
               </td>
-              <td className="px-1 py-0.5">
-                <EditableCell
-                  value={edit?.importeMaximo ?? ''}
-                  onChange={(v) => setField(c.codigo, 'importeMaximo', v)}
-                />
+              <td className="px-1 py-1.5">
+                {c.tieneImpMax !== false
+                  ? <EditableCell value={edit?.importeMaximo ?? ''} onChange={(v) => setField(c.codigo, 'importeMaximo', v)} />
+                  : DASH}
               </td>
-              <td className="px-1 py-0.5">
-                {isHaberes ? (
-                  <EditableCell
-                    value={edit?.monto ?? ''}
-                    onChange={(v) => setField(c.codigo, 'monto', v)}
-                  />
-                ) : (
-                  DASH
-                )}
+              <td className="px-2 py-1.5 text-right tabular-nums !border-l-2 !border-l-slate-600">
+                {isHaberes && toNum(edit?.monto) !== 0
+                  ? fmtArsSign(toNum(edit?.monto))
+                  : DASH}
               </td>
-              <td className="px-1 py-0.5 text-right">
-                {isDesc ? (
-                  <EditableCell
-                    value={edit?.monto ?? ''}
-                    onChange={(v) => setField(c.codigo, 'monto', v)}
-                  />
-                ) : (
-                  DASH
-                )}
+              <td className="px-2 py-1.5 text-right tabular-nums">
+                {isDesc && toNum(edit?.monto) !== 0
+                  ? fmtArsSign(toNum(edit?.monto))
+                  : DASH}
               </td>
-              <td className="px-1 py-0.5 text-right">
-                {isReten ? (
-                  <EditableCell
-                    value={edit?.monto ?? ''}
-                    onChange={(v) => setField(c.codigo, 'monto', v)}
-                  />
-                ) : (
-                  DASH
-                )}
+              <td className="px-2 py-1.5 text-right tabular-nums">
+                {isReten && toNum(edit?.monto) !== 0
+                  ? fmtArsSign(toNum(edit?.monto))
+                  : DASH}
               </td>
-              <td className="px-1 py-0.5 text-right">
-                {isNoRem ? (
-                  <EditableCell
-                    value={edit?.monto ?? ''}
-                    onChange={(v) => setField(c.codigo, 'monto', v)}
-                  />
-                ) : (
-                  DASH
-                )}
+              <td className="px-2 py-1.5 text-right tabular-nums">
+                {isNoRem && toNum(edit?.monto) !== 0
+                  ? fmtArsSign(toNum(edit?.monto))
+                  : DASH}
               </td>
             </tr>
 
-            {/* Subtotal rows immediately after this concept */}
-            {subtotalesAqui.map((st) => {
-              const val = subtotalesCalculados[st.key] ?? 0;
-              if (val === 0) return null;
-              return (
-                <SubtotalRow
-                  key={st.key}
-                  label={st.label}
-                  value={val}
-                  columna={cfg.columna}
-                />
-              );
-            })}
+            {/* Subtotal rows hidden — only section totals are shown */}
           </Fragment>
         );
       })}
 
       {/* Section total row */}
-      <tr className="border-b bg-slate-100">
-        <td className="px-2 py-1" />
+      <tr className="border-b border-t-2 border-t-slate-300 bg-slate-100 divide-x divide-slate-300">
+        <td className="px-2 py-1.5" />
         <td
-          className="px-2 py-1 text-right font-semibold text-slate-600 text-[11px] italic"
+          className="px-2 py-1.5 text-right font-semibold text-slate-600 text-[10px] italic"
           colSpan={7}
         >
           Total {cfg.label}
         </td>
         <td
-          className={`px-2 py-1 text-right font-semibold text-sm ${
+          className={`px-2 py-1.5 text-right font-semibold !border-l-2 !border-l-slate-600 ${
             isHaberes ? 'text-slate-800' : 'text-slate-300'
           }`}
         >
           {isHaberes ? fmtArsSign(sectionTotal(seccion)) : '—'}
         </td>
-        <td
-          className={`px-2 py-1 text-right font-semibold text-sm ${
-            isDesc ? 'text-slate-800' : 'text-slate-300'
-          }`}
-        >
+        <td className={`px-2 py-1.5 text-right font-semibold ${isDesc ? 'text-slate-800' : 'text-slate-300'}`}>
           {isDesc ? fmtArsSign(sectionTotal(seccion)) : '—'}
         </td>
-        <td
-          className={`px-2 py-1 text-right font-semibold text-sm ${
-            isReten ? 'text-slate-800' : 'text-slate-300'
-          }`}
-        >
+        <td className={`px-2 py-1.5 text-right font-semibold ${isReten ? 'text-slate-800' : 'text-slate-300'}`}>
           {isReten ? fmtArsSign(sectionTotal(seccion)) : '—'}
         </td>
-        <td
-          className={`px-2 py-1 text-right font-semibold text-sm ${
-            isNoRem ? 'text-slate-800' : 'text-slate-300'
-          }`}
-        >
+        <td className={`px-2 py-1.5 text-right font-semibold ${isNoRem ? 'text-slate-800' : 'text-slate-300'}`}>
           {isNoRem ? fmtArsSign(sectionTotal(seccion)) : '—'}
         </td>
       </tr>
@@ -458,6 +343,12 @@ interface TablaReciboSosProps {
    * `manual`: filas armadas desde payroll_concepto (número SOS); montos vacíos hasta que el usuario complete.
    */
   variant?: 'importado' | 'manual';
+  /**
+   * Básico de escala salarial vigente (solo en modo `manual`).
+   * Se usa como base implícita de cálculo cuando el campo Importe está vacío.
+   * No se muestra en la columna Importe — el usuario solo ve el resultado en Haberes.
+   */
+  basico?: number;
 }
 
 export function TablaReciboSos({
@@ -465,6 +356,7 @@ export function TablaReciboSos({
   conceptos,
   onChange,
   variant = 'importado',
+  basico,
 }: TablaReciboSosProps) {
   const initialEdits = useMemo<EditsMap>(() => {
     const map: EditsMap = {};
@@ -482,7 +374,31 @@ export function TablaReciboSos({
     return map;
   }, [conceptos]);
 
-  const [edits, dispatch] = useReducer(editsReducer, initialEdits);
+  const [edits, setEdits] = useState<EditsMap>(initialEdits);
+
+  // Ref con la tasa unitaria implícita por código (basico / divCantidad).
+  // Se actualiza cuando cambia el básico o los conceptos, sin causar re-renders.
+  const implicitBaseRef = useRef<Record<string, number>>({});
+  useEffect(() => {
+    const map: Record<string, number> = {};
+    const b = basico ?? 0;
+    if (b > 0) {
+      for (const c of conceptos) {
+        const bc = c.baseColumna;
+        if (bc === 'sueldo' || bc === 'sueldoLegajo') {
+          map[c.codigo] = b / Math.max(1, c.divCantidad ?? 1);
+        } else if (bc === 'valHora') {
+          const divHs = c.divHsNorm ? 200 : 1;
+          map[c.codigo] = b / divHs / Math.max(1, c.divCantidad ?? 1);
+        }
+      }
+    }
+    implicitBaseRef.current = map;
+  }, [basico, conceptos]);
+
+  // Ref estable de conceptos para acceder dentro del updater de setEdits sin recrear callbacks.
+  const conceptosRef = useRef(conceptos);
+  useEffect(() => { conceptosRef.current = conceptos; }, [conceptos]);
 
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -492,8 +408,145 @@ export function TablaReciboSos({
   }, [edits]);
 
   const setField = useCallback(
-    (codigo: string, field: keyof EditsMap[string], value: string) => {
-      dispatch({ type: 'SET_FIELD', codigo, field, value });
+    (editedCodigo: string, field: keyof EditsMap[string], value: string) => {
+      setEdits((prev) => {
+        const prevRow = prev[editedCodigo] ?? EMPTY_EDIT_ROW;
+        const updated = { ...prevRow, [field]: value };
+
+        // Edición directa del monto: guardar sin recalcular ni cascadear
+        if (field === 'monto') return { ...prev, [editedCodigo]: updated };
+
+        // Determinar si el concepto editado usa una base de subtotal (dinámica)
+        const editedConcepto = conceptosRef.current.find((c) => c.codigo === editedCodigo);
+        const isSubBased = editedConcepto?.baseColumna != null &&
+          SUB_BASES.has(editedConcepto.baseColumna);
+
+        const hasExplicitPorcentaje = (updated.porcentaje ?? '').trim() !== '';
+
+        let newEdits: EditsMap = { ...prev, [editedCodigo]: updated };
+
+        if (!isSubBased) {
+          // Conceptos con base estática (sueldo, valHora, importe_fijo…)
+          if (!hasExplicitPorcentaje) {
+            newEdits = { ...newEdits, [editedCodigo]: { ...updated, monto: '' } };
+          } else {
+            const implicitBase = implicitBaseRef.current[editedCodigo];
+            const rowParaFormula =
+              implicitBase != null &&
+              (updated.importe === '' || updated.importe == null) &&
+              (updated.importeConceptoNumero === '' || updated.importeConceptoNumero == null)
+                ? { ...updated, importe: String(implicitBase) }
+                : updated;
+
+            if (canApplyFormula(rowParaFormula)) {
+              newEdits = {
+                ...newEdits,
+                [editedCodigo]: {
+                  ...updated,
+                  monto: montoLiquidadoDesdeEditsSos(rowParaFormula, { forceFormula: true }).toFixed(2),
+                },
+              };
+            } else if (field === 'cantidad' || field === 'porcentaje') {
+              const prevMonto = parseDecimalSos(prevRow.monto);
+              if (prevMonto !== null && prevMonto !== 0) {
+                const prevFactor =
+                  field === 'cantidad'
+                    ? (parseDecimalSos(prevRow.cantidad) ?? 0)
+                    : (parseDecimalSos(prevRow.porcentaje) ?? 0);
+                const newFactor = parseDecimalSos(value);
+                if (prevFactor !== 0 && newFactor !== null && newFactor !== 0) {
+                  const scaled = prevMonto * (newFactor / prevFactor);
+                  newEdits = {
+                    ...newEdits,
+                    [editedCodigo]: { ...updated, monto: (Math.round(scaled * 100) / 100).toFixed(2) },
+                  };
+                }
+              }
+            }
+          }
+        } else {
+          // Concepto con base de subtotal: si no tiene %, limpiar monto.
+          // El monto se calcula en la cascada de abajo.
+          if (!hasExplicitPorcentaje) {
+            newEdits = { ...newEdits, [editedCodigo]: { ...updated, monto: '' } };
+          }
+        }
+
+        // ── Cascada de subtotales ────────────────────────────────────────────
+        // Para los conceptos cuya base es un subtotal acumulado (sub1_9, sub1_19,
+        // etc.), recalcular en orden ascendente de N° SOS para que cada uno use
+        // el subtotal correcto de los anteriores.
+        const subTotals: Record<string, number> = {
+          sub1_9: 0, sub1_19: 0, sub1_26: 0,
+          sub1_39: 0, sub1_199: 0, sub411_469: 0,
+        };
+
+        const sortedConcepts = [...conceptosRef.current].sort(
+          (a, b) => (parseInt(a.codigo, 10) || 9999) - (parseInt(b.codigo, 10) || 9999)
+        );
+
+        for (const c of sortedConcepts) {
+          const n = parseInt(c.codigo, 10);
+          if (isNaN(n)) continue;
+
+          const row = newEdits[c.codigo] ?? EMPTY_EDIT_ROW;
+          let effectiveMonto = toNum(row.monto);
+
+          const bc = c.baseColumna;
+          if (bc != null && SUB_BASES.has(bc)) {
+            const hasPct = (row.porcentaje ?? '').trim() !== '';
+            if (hasPct) {
+              // Calcular la base según el tipo (normal o combinada H+NR)
+              const subBase =
+                bc === 'sub1_199_plus_411_469'
+                  ? (subTotals['sub1_199'] ?? 0) + (subTotals['sub411_469'] ?? 0)
+                  : (subTotals[bc] ?? 0);
+
+              if (subBase > 0) {
+                const pctVal = parseDecimalSos(row.porcentaje) ?? 0;
+                // Si el concepto no tiene campo cantidad, usar 1 como multiplicador.
+                const cantNum =
+                  !c.tieneCantidad && (row.cantidad ?? '') === ''
+                    ? 1
+                    : (parseDecimalSos(row.cantidad) ?? 1);
+                // SOS triple-campo: importe actúa como multiplicador (bug verificado).
+                // Con importe=1 (workaround) → subBase × pct/100 × 1 = correcto.
+                // Con importe vacío/sin campo → multiplicador implícito = 1.
+                const imp =
+                  c.tieneImporte !== false && (row.importe ?? '').trim() !== ''
+                    ? (parseDecimalSos(row.importe) ?? 1)
+                    : 1;
+
+                let raw = subBase * (pctVal / 100) * imp * cantNum;
+
+                const impMin = parseDecimalSos(row.importeMinimo);
+                const impMax = parseDecimalSos(row.importeMaximo);
+                if (impMin !== null && raw < impMin) raw = impMin;
+                if (impMax !== null && raw > impMax) raw = impMax;
+
+                effectiveMonto = Math.round(raw * 100) / 100;
+                newEdits = {
+                  ...newEdits,
+                  [c.codigo]: { ...row, monto: effectiveMonto.toFixed(2) },
+                };
+              }
+            }
+          }
+
+          // Acumular subtotales para los conceptos siguientes
+          if (n >= 1 && n <= 199) {
+            subTotals['sub1_199'] += effectiveMonto;
+            if (n <= 9) subTotals['sub1_9'] += effectiveMonto;
+            if (n <= 19) subTotals['sub1_19'] += effectiveMonto;
+            if (n <= 26) subTotals['sub1_26'] += effectiveMonto;
+            if (n <= 39) subTotals['sub1_39'] += effectiveMonto;
+          } else if (n >= 411 && n <= 469) {
+            subTotals['sub411_469'] += effectiveMonto;
+          }
+        }
+
+        return newEdits;
+      });
     },
     []
   );
@@ -536,41 +589,79 @@ export function TablaReciboSos({
   const totales = useMemo(() => {
     const haberes =
       sectionTotal('haberes') + sectionTotal('liquidacion_final') + sectionTotal('decretos');
-    const descuentos = sectionTotal('descuentos') + sectionTotal('retenciones_no_rem');
-    const retenciones = sectionTotal('retenciones');
+    const descuentos = sectionTotal('descuentos');
+    const retenciones =
+      sectionTotal('retenciones') + sectionTotal('retenciones_no_rem');
     const noRemunerativo = sectionTotal('no_remunerativo');
     const neto = haberes - descuentos - retenciones + noRemunerativo;
     return { haberes, descuentos, retenciones, noRemunerativo, neto };
   }, [sectionTotal]);
 
-  const subtotalesCalculados = useMemo(() => {
-    const m: Record<string, number> = {};
-    for (const st of SUBTOTALES_SOS) {
-      m[st.key] = sumaRango(st.rangoMin, st.rangoMax);
-    }
-    return m;
-  }, [sumaRango]);
+  const guardrails = useMemo(() => {
+    const warnings: string[] = [];
+    const errors: string[] = [];
 
-  // Map: concept code → subtotals that appear right after it
-  const subtotalesTrasConcepto = useMemo(() => {
-    const result: Record<string, SubtotalSosConfig[]> = {};
-    for (const st of SUBTOTALES_SOS) {
-      let lastCode: string | null = null;
-      let lastNum = -1;
-      for (const c of conceptos) {
-        const n = parseInt(c.codigo, 10);
-        if (!isNaN(n) && n <= st.despuesDeCodigo && n > lastNum) {
-          lastNum = n;
-          lastCode = c.codigo;
-        }
+    for (const c of conceptos) {
+      const n = parseInt(c.codigo, 10);
+      if (isNaN(n)) continue;
+      const row = edits[c.codigo] ?? EMPTY_EDIT_ROW;
+
+      const pct = parseDecimalSos(row.porcentaje);
+      const imp = parseDecimalSos(row.importe);
+      const impN = parseDecimalSos(row.importeConceptoNumero);
+      const impMin = parseDecimalSos(row.importeMinimo);
+      const impMax = parseDecimalSos(row.importeMaximo);
+
+      if (pct != null && pct < 0) {
+        errors.push(`Concepto ${c.codigo}: porcentaje negativo no permitido.`);
+      } else if (pct != null && pct > MAX_PCT_WARN) {
+        warnings.push(`Concepto ${c.codigo}: porcentaje muy alto (${pct}%).`);
       }
-      if (lastCode !== null) {
-        if (!result[lastCode]) result[lastCode] = [];
-        result[lastCode].push(st);
+
+      if (impMin != null && impMax != null && impMin > impMax) {
+        errors.push(`Concepto ${c.codigo}: importe mínimo es mayor que importe máximo.`);
+      }
+
+      if (
+        (isCodeInRange(n, 511, 520) || isCodeInRange(n, 551, 562)) &&
+        (pct ?? 0) > 0 &&
+        (imp == null || imp === 0)
+      ) {
+        warnings.push(
+          `Concepto ${c.codigo}: para retención sobre base dinámica, usar importe=1 evita resultado en cero.`
+        );
+      }
+
+      if (
+        (isCodeInRange(n, 511, 520) || isCodeInRange(n, 551, 562)) &&
+        (pct ?? 0) > 0 &&
+        (imp ?? 0) > 1
+      ) {
+        warnings.push(
+          `Concepto ${c.codigo}: posible triple-campo (base × % × importe). Revisar importe=1.`
+        );
+      }
+
+      if (
+        (isCodeInRange(n, 511, 520) || isCodeInRange(n, 551, 562)) &&
+        impN != null &&
+        impN > 0 &&
+        (pct ?? 0) > 0
+      ) {
+        warnings.push(
+          `Concepto ${c.codigo}: Imp.N + % en base dinámica puede distorsionar el cálculo.`
+        );
+      }
+
+      if (n === 42 && (parseDecimalSos(row.cantidad) ?? 0) > 0) {
+        warnings.push(
+          'Concepto 42 (SAC proporcional): el valor final puede recalcularse en servidor al guardar.'
+        );
       }
     }
-    return result;
-  }, [conceptos]);
+
+    return { warnings, errors };
+  }, [conceptos, edits]);
 
   const seccionesConDatos = ORDEN_SECCIONES.filter(
     (s) => (conceptosPorSeccion[s]?.length ?? 0) > 0
@@ -596,23 +687,37 @@ export function TablaReciboSos({
       <p className="text-xs text-muted-foreground">
         Período <strong>{recibo.periodo}</strong> · Tipo <strong>{recibo.tipo}</strong> · {pieNota}
       </p>
+      {guardrails.errors.length > 0 && (
+        <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-800">
+          {guardrails.errors.slice(0, 4).map((msg) => (
+            <p key={`err-${msg}`}>{msg}</p>
+          ))}
+        </div>
+      )}
+      {guardrails.warnings.length > 0 && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          {guardrails.warnings.slice(0, 4).map((msg) => (
+            <p key={`warn-${msg}`}>{msg}</p>
+          ))}
+        </div>
+      )}
 
-      <div className="overflow-x-auto rounded-md border text-xs">
-        <table className="w-full border-collapse min-w-[1020px]">
+      <div className="overflow-x-auto rounded-md border text-[10px]">
+        <table className="w-full border-collapse table-fixed">
           <thead>
-            <tr className="bg-slate-100 text-slate-600 border-b text-[11px]">
-              <th className="px-2 py-1.5 text-center w-10">#</th>
-              <th className="px-2 py-1.5 text-left min-w-[200px]">Concepto</th>
-              <th className="px-2 py-1.5 text-right w-20">Cantidad</th>
-              <th className="px-2 py-1.5 text-right w-16">%</th>
-              <th className="px-2 py-1.5 text-right w-24">Imp.&nbsp;Conc.&nbsp;N</th>
-              <th className="px-2 py-1.5 text-right w-28">Importe</th>
-              <th className="px-2 py-1.5 text-right w-24">Imp.&nbsp;mín.</th>
-              <th className="px-2 py-1.5 text-right w-24">Imp.&nbsp;máx.</th>
-              <th className="px-2 py-1.5 text-right w-28">Haberes</th>
-              <th className="px-2 py-1.5 text-right w-28">Desc.</th>
-              <th className="px-2 py-1.5 text-right w-28">Reten.</th>
-              <th className="px-2 py-1.5 text-right w-28">No&nbsp;Rem.</th>
+            <tr className="bg-slate-100 text-slate-600 border-b text-[10px] divide-x divide-slate-300">
+              <th className="px-1 py-1.5 text-center w-[4%]">#</th>
+              <th className="px-1 py-1.5 text-left w-[18%]">Concepto</th>
+              <th className="px-1 py-1.5 text-right w-[7%] !border-l-2 !border-l-slate-400">Cantidad</th>
+              <th className="px-1 py-1.5 text-right w-[5%]">%</th>
+              <th className="px-1 py-1.5 text-right w-[8%]">Imp.&nbsp;N</th>
+              <th className="px-1 py-1.5 text-right w-[8%]">Importe</th>
+              <th className="px-1 py-1.5 text-right w-[7%]">Imp.&nbsp;mín.</th>
+              <th className="px-1 py-1.5 text-right w-[7%]">Imp.&nbsp;máx.</th>
+              <th className="px-1 py-1.5 text-right w-[9%] !border-l-2 !border-l-slate-600">Haberes</th>
+              <th className="px-1 py-1.5 text-right w-[9%]">Desc.</th>
+              <th className="px-1 py-1.5 text-right w-[9%]">Reten.</th>
+              <th className="px-1 py-1.5 text-right w-[9%]">No&nbsp;Rem.</th>
             </tr>
           </thead>
           <tbody>
@@ -624,15 +729,13 @@ export function TablaReciboSos({
                 filas={conceptosPorSeccion[seccion] ?? []}
                 edits={edits}
                 setField={setField}
-                subtotalesTrasConcepto={subtotalesTrasConcepto}
-                subtotalesCalculados={subtotalesCalculados}
                 sectionTotal={sectionTotal}
               />
             ))}
           </tbody>
 
           <tfoot>
-            <tr className="bg-slate-200 border-t-2 border-slate-400 font-bold text-[11px]">
+            <tr className="bg-slate-200 border-t-2 border-slate-500 font-bold text-[10px] divide-x divide-slate-400">
               <td className="px-2 py-1.5" />
               <td
                 className="px-2 py-1.5 text-right text-slate-700 uppercase tracking-wide"
@@ -640,7 +743,7 @@ export function TablaReciboSos({
               >
                 Totales
               </td>
-              <td className="px-2 py-1.5 text-right text-slate-900">
+              <td className="px-2 py-1.5 text-right text-slate-900 !border-l-2 !border-l-slate-600">
                 {fmtArsSign(totales.haberes)}
               </td>
               <td className="px-2 py-1.5 text-right text-slate-900">
@@ -655,7 +758,7 @@ export function TablaReciboSos({
             </tr>
             <tr className="bg-slate-300 font-bold">
               <td colSpan={8} className="px-2 py-1.5" />
-              <td colSpan={4} className="px-2 py-1.5 text-right text-sm text-slate-900">
+              <td colSpan={4} className="px-2 py-1.5 text-right text-sm text-slate-900 border-l-2 border-l-slate-600">
                 Neto a cobrar: ${'\u202f'}
                 {fmtArs(totales.neto)}
               </td>

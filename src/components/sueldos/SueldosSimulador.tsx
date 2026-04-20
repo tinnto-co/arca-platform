@@ -10,6 +10,7 @@ import {
   getUltimoReciboImportado,
   listConceptosPlantillaManualSos,
   guardarReciboDesdeTabla,
+  getBasicoParaEmpleadoPeriodo,
 } from '@/actions/sueldos';
 import { puedeLiquidarPeriodo } from '@/lib/payroll-period-rules';
 import { ReciboFormulario } from '@/components/sueldos/ReciboFormulario';
@@ -112,6 +113,28 @@ export function SueldosSimulador({
       enabled: !!clientId && !!profileId && usaPlantillaManual,
     }
   );
+
+  const { data: basicoData, isLoading: loadingBasico } = useQuery({
+    queryKey: [
+      'basico-empleado-periodo',
+      clientId,
+      flowHeader?.importEmpleadoId,
+      flowHeader?.periodo,
+    ],
+    queryFn: () =>
+      getBasicoParaEmpleadoPeriodo({
+        data: {
+          clientId,
+          importEmpleadoId: flowHeader!.importEmpleadoId,
+          periodo: flowHeader!.periodo,
+        },
+      }),
+    enabled: usaPlantillaManual && !!flowHeader?.importEmpleadoId && !!flowHeader?.periodo,
+  });
+
+  // El básico de escala se pasa como prop implícito a TablaReciboSos.
+  // No se inyecta en la columna Importe — el cálculo ocurre internamente en la grilla.
+  const basicoEscala = basicoData?.basico ?? 0;
 
   const reciboHeaderSimulado = useMemo(() => {
     if (!flowHeader) {
@@ -298,15 +321,15 @@ export function SueldosSimulador({
           <CardHeader>
             <CardTitle className="text-base">Conceptos — carga manual</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Completá la grilla y guardá. Los renglones salen de los conceptos SOS
-              del perfil (<span className="font-medium">concepto_sos_profile</span>).
+              Los montos se pre-calculan con el básico de escala vigente. Podés
+              ajustar cualquier valor antes de guardar.
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
-            {loadingPlantilla ? (
+            {loadingPlantilla || loadingBasico ? (
               <p className="text-sm text-muted-foreground flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Cargando plantilla…
+                {loadingBasico ? 'Cargando escala salarial…' : 'Cargando plantilla…'}
               </p>
             ) : (
               <>
@@ -316,6 +339,7 @@ export function SueldosSimulador({
                   variant="manual"
                   recibo={reciboHeaderSimulado}
                   conceptos={plantillaManual}
+                  basico={basicoEscala}
                   onChange={handleTablaChange}
                 />
                 </div>

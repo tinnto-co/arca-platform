@@ -8,6 +8,7 @@ import {
   lsdPerfilConcepto,
   conceptoSos,
   conceptoSosProfile,
+  conceptosCompletosSos,
   payrollConvenio,
   payrollConvenioCategoria,
   payrollEscala,
@@ -190,7 +191,7 @@ function extractCctCodigo(raw: string | null | undefined): string | null {
 }
 
 import {
-  evaluatePayrollFormula,
+  evaluatePayrollFormulaStrict,
   roundMoney,
   type PayrollFormulaContext,
 } from '../lib/payroll-formula';
@@ -419,6 +420,10 @@ export const listConceptosByPerfil = createServerFn({ method: 'GET' })
           eq(conceptoSosProfile.conceptoId, conceptoSos.id),
           eq(conceptoSosProfile.profileId, lsdPerfilConcepto.profileId)
         )
+      )
+      .leftJoin(
+        conceptosCompletosSos,
+        sql`${conceptosCompletosSos.numeroSos} = cast(${lsdPerfilConcepto.codigoContribuyente} as integer)`
       )
       .where(eq(lsdPerfilConcepto.profileId, ctx.data.profileId))
       .orderBy(lsdPerfilConcepto.codigoContribuyente);
@@ -943,6 +948,66 @@ export const getBasicoVigente = createServerFn({ method: 'GET' })
     getBasicoVigenteInternal(ctx.data.categoriaId, ctx.data.fecha)
   );
 
+/**
+ * Devuelve el básico de escala salarial vigente para un empleado en un período.
+ * Resuelve la cadena: override en legajo → categoría directa → match por texto → 0.
+ * No lanza error si no hay escala configurada.
+ */
+export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      importEmpleadoId: z.string().uuid(),
+      periodo: z.string(), // YYYY-MM
+      clientId: z.string().uuid(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+
+    const [emp] = await db
+      .select()
+      .from(liquidacionImportEmpleado)
+      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .where(
+        and(
+          eq(liquidacionImportEmpleado.id, ctx.data.importEmpleadoId),
+          eq(profile.client, ctx.data.clientId)
+        )
+      )
+      .limit(1);
+
+    if (!emp) return { basico: 0 };
+
+    const empleado = emp.liquidacion_import_empleado;
+
+    // Override manual en el legajo tiene prioridad
+    const override = empleado.valorSueldo != null ? Number(empleado.valorSueldo) : 0;
+    if (!Number.isNaN(override) && override > 0) return { basico: override };
+
+    const categoriaId =
+      empleado.categoriaId ?? (await resolveCategoriaIdParaBasico(empleado));
+
+    if (!categoriaId) return { basico: 0 };
+
+    // Busca la escala exacta para el período
+    let basico = await getBasicoVigenteInternal(categoriaId, ctx.data.periodo);
+
+    // Fallback: si no hay escala para el período exacto, usa la más reciente disponible.
+    // Útil cuando la escala fue cargada después de la fecha de inicio del período.
+    if ((!basico || Number.isNaN(basico)) && categoriaId) {
+      const [masReciente] = await db
+        .select({ monto: payrollEscala.montoBasico })
+        .from(payrollEscala)
+        .where(eq(payrollEscala.categoriaId, categoriaId))
+        .orderBy(desc(payrollEscala.vigenciaDesde))
+        .limit(1);
+      if (masReciente) basico = Number(masReciente.monto);
+    }
+
+    return { basico: Number.isNaN(basico) ? 0 : basico };
+  });
+
 // ---------- Conceptos salariales ----------
 
 export const listConceptos = createServerFn({ method: 'GET' })
@@ -1450,11 +1515,26 @@ export const listConceptosPlantillaManualSos = createServerFn({ method: 'GET' })
     await ensureProfileBelongsToClient(ctx.data.profileId, ctx.data.clientId);
 
     const rows = await db
-      .select({ sos: conceptoSos })
+      .select({
+        sos: conceptoSos,
+        baseColumna: conceptosCompletosSos.baseColumna,
+        divCantidad: conceptosCompletosSos.divCantidad,
+        divHsNorm: conceptosCompletosSos.divHsNorm,
+        tieneCantidad: conceptosCompletosSos.tieneCantidad,
+        tienePct: conceptosCompletosSos.tienePct,
+        tieneImpConceptoNro: conceptosCompletosSos.tieneImpConceptoNro,
+        tieneImporte: conceptosCompletosSos.tieneImporte,
+        tieneImpMin: conceptosCompletosSos.tieneImpMin,
+        tieneImpMax: conceptosCompletosSos.tieneImpMax,
+      })
       .from(conceptoSosProfile)
       .innerJoin(
         conceptoSos,
         eq(conceptoSosProfile.conceptoId, conceptoSos.id)
+      )
+      .leftJoin(
+        conceptosCompletosSos,
+        eq(conceptosCompletosSos.numeroSos, sql`cast(${conceptoSos.codigo} as integer)`)
       )
       .where(eq(conceptoSosProfile.profileId, ctx.data.profileId))
       .orderBy(sql`${conceptoSos.codigo}::int`);
@@ -1471,11 +1551,20 @@ export const listConceptosPlantillaManualSos = createServerFn({ method: 'GET' })
       importeMaximo: null;
       nombre: string;
       codigoAfip: string | null;
+      baseColumna: string | null;
+      divCantidad: number | null;
+      divHsNorm: boolean | null;
+      tieneCantidad: boolean | null;
+      tienePct: boolean | null;
+      tieneImpConceptoNro: boolean | null;
+      tieneImporte: boolean | null;
+      tieneImpMin: boolean | null;
+      tieneImpMax: boolean | null;
     };
     const out: Fila[] = [];
     const seen = new Set<string>();
 
-    for (const { sos } of rows) {
+    for (const { sos, baseColumna, divCantidad, divHsNorm, tieneCantidad, tienePct, tieneImpConceptoNro, tieneImporte, tieneImpMin, tieneImpMax } of rows) {
       const raw = sos.codigo.trim();
       const n = parseInt(raw, 10);
       if (isNaN(n) || n < 1 || n > 699) continue;
@@ -1493,6 +1582,15 @@ export const listConceptosPlantillaManualSos = createServerFn({ method: 'GET' })
         importeMaximo: null,
         nombre: sos.nombre,
         codigoAfip: sos.codigoAfip,
+        baseColumna: baseColumna ?? null,
+        divCantidad: divCantidad != null ? Number(divCantidad) : null,
+        divHsNorm: divHsNorm ?? null,
+        tieneCantidad: tieneCantidad ?? null,
+        tienePct: tienePct ?? null,
+        tieneImpConceptoNro: tieneImpConceptoNro ?? null,
+        tieneImporte: tieneImporte ?? null,
+        tieneImpMin: tieneImpMin ?? null,
+        tieneImpMax: tieneImpMax ?? null,
       });
     }
 
@@ -1578,6 +1676,47 @@ function numericOrNullForSos(s: string | undefined): string | null {
   return n === null ? null : n.toFixed(2);
 }
 
+const MAX_SOS_PORCENTAJE = 500;
+
+function validateConceptoEditSos(c: z.infer<typeof conceptoEditsSosSchema>): void {
+  const code = Number.parseInt(c.codigo, 10);
+  if (Number.isNaN(code)) return;
+
+  const pct = parseDecimalSos(c.porcentaje);
+  const imp = parseDecimalSos(c.importe);
+  const impMin = parseDecimalSos(c.importeMinimo);
+  const impMax = parseDecimalSos(c.importeMaximo);
+
+  if (pct != null && pct < 0) {
+    throw new Error(`Concepto ${c.codigo}: porcentaje negativo no permitido.`);
+  }
+  if (pct != null && pct > MAX_SOS_PORCENTAJE) {
+    throw new Error(
+      `Concepto ${c.codigo}: porcentaje fuera de rango (máximo ${MAX_SOS_PORCENTAJE}%).`
+    );
+  }
+  if (impMin != null && impMax != null && impMin > impMax) {
+    throw new Error(
+      `Concepto ${c.codigo}: importe mínimo no puede ser mayor a importe máximo.`
+    );
+  }
+
+  const esRetencionSubBase =
+    (code >= 511 && code <= 520) || (code >= 551 && code <= 562);
+  if (esRetencionSubBase && (pct ?? 0) > 0) {
+    if (imp == null || imp === 0) {
+      throw new Error(
+        `Concepto ${c.codigo}: para retenciones sobre base dinámica se debe informar importe=1.`
+      );
+    }
+    if (imp > 1) {
+      throw new Error(
+        `Concepto ${c.codigo}: posible triple-campo (base × % × importe). Usar importe=1.`
+      );
+    }
+  }
+}
+
 /**
  * Persiste cabecera y líneas del recibo en liquidacion_import_* a partir de la tabla estilo SOS.
  * Totales = suma de montos liquidados por rango de código (igual que TablaReciboSos).
@@ -1632,6 +1771,7 @@ export const guardarReciboDesdeTabla = createServerFn({ method: 'POST' })
 
     const montoByCodigo: Record<string, number> = {};
     for (const c of ctx.data.conceptos) {
+      validateConceptoEditSos(c);
       montoByCodigo[c.codigo] = montoLiquidadoDesdeEditsSos(editsRow(c));
     }
     const t = totalesReciboSosDesdeMontos(montoByCodigo);
@@ -1643,6 +1783,11 @@ export const guardarReciboDesdeTabla = createServerFn({ method: 'POST' })
     const netoStr = t.neto.toFixed(2);
 
     const reciboId = await db.transaction(async (tx) => {
+      const lockKey = `sos-recibo:${ctx.data.importEmpleadoId}:${ctx.data.periodo}:${ctx.data.tipoRecibo}`;
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtext(${lockKey}))`
+      );
+
       const [existing] = await tx
         .select({ id: liquidacionImportRecibo.id })
         .from(liquidacionImportRecibo)
@@ -1695,6 +1840,9 @@ export const guardarReciboDesdeTabla = createServerFn({ method: 'POST' })
 
       for (const c of ctx.data.conceptos) {
         const liq = montoLiquidadoDesdeEditsSos(editsRow(c));
+        const pctUsado = parseDecimalSos(c.porcentaje);
+        const baseUsada =
+          parseDecimalSos(c.importeConceptoNumero) ?? parseDecimalSos(c.importe);
         await tx.insert(liquidacionImportConceptoValor).values({
           reciboId: rid,
           codigo: c.codigo,
@@ -1705,6 +1853,9 @@ export const guardarReciboDesdeTabla = createServerFn({ method: 'POST' })
           importe: numericOrNullForSos(c.importe),
           importeMinimo: numericOrNullForSos(c.importeMinimo),
           importeMaximo: numericOrNullForSos(c.importeMaximo),
+          pctUsado: pctUsado != null ? String(pctUsado) : null,
+          baseUsada: baseUsada != null ? String(baseUsada) : null,
+          memo: 'source=manual_sos',
         });
       }
 
@@ -2179,6 +2330,10 @@ type DetalleResult = {
   conceptoCodigo: string;
   conceptoTipo: 'remunerativo' | 'no_remunerativo' | 'descuento' | 'retencion';
   conceptoFormula: string;
+  baseUsada?: number;
+  pctUsado?: number;
+  calcError?: string;
+  montoSource: 'formula' | 'override' | 'sos_override';
 };
 
 /** Lógica interna: calcula y persiste una liquidación (empleadoId + periodo, clientId ya autorizado) */
@@ -2333,19 +2488,23 @@ async function calcularUnaLiquidacion(
           ? Number(con.impMax)
           : null;
 
+    const porcentaje =
+      input?.porcentaje != null ? Number(input.porcentaje) : 0;
     context.valor = importeConceptoN;
     context.cantidad = cantidad ?? 0;
+    context.porcentaje = porcentaje;
 
     let monto = 0;
 
+    let calcError: string | undefined;
+    let montoSource: DetalleResult['montoSource'] = 'formula';
     if (input?.importeOverride != null) {
       monto = Number(input.importeOverride);
+      montoSource = 'override';
     } else {
-      try {
-        monto = evaluatePayrollFormula(con.formula, context);
-      } catch {
-        monto = 0;
-      }
+      const evalResult = evaluatePayrollFormulaStrict(con.formula, context);
+      monto = evalResult.value;
+      calcError = evalResult.ok ? undefined : evalResult.error;
       monto = roundMoney(monto);
     }
 
@@ -2356,7 +2515,10 @@ async function calcularUnaLiquidacion(
     ) {
       const key = String(con.numeroSos);
       const override = opts.conceptoSosOverrides[key];
-      if (override != null && !isNaN(override)) monto = roundMoney(override);
+      if (override != null && !isNaN(override)) {
+        monto = roundMoney(override);
+        montoSource = 'sos_override';
+      }
     }
 
     if (rowImpMin != null && monto < rowImpMin) monto = rowImpMin;
@@ -2378,6 +2540,11 @@ async function calcularUnaLiquidacion(
       conceptoCodigo: con.codigo,
       conceptoTipo: con.tipo,
       conceptoFormula: con.formula,
+      baseUsada: input?.importeConceptoNumero != null ? Number(input.importeConceptoNumero) : undefined,
+      pctUsado:
+        input?.porcentaje != null ? Number(input.porcentaje) : undefined,
+      calcError,
+      montoSource,
     });
 
     if (con.tipo === 'remunerativo') {
@@ -2417,9 +2584,12 @@ async function calcularUnaLiquidacion(
         importeMinimo: input?.importeMinimo ?? null,
         importeMaximo: input?.importeMaximo ?? null,
         activoEnRecibo: input?.activoEnRecibo ?? true,
-        memo: input?.memo ?? null,
-        pctUsado: null,
-        baseUsada: null,
+        memo:
+          d.calcError != null
+            ? `${input?.memo ? `${input.memo} | ` : ''}calc_error=${d.calcError}`
+            : input?.memo ?? null,
+        pctUsado: d.pctUsado != null ? String(d.pctUsado) : null,
+        baseUsada: d.baseUsada != null ? String(d.baseUsada) : null,
       });
     }
   };
@@ -2664,6 +2834,47 @@ export const eliminarLiquidacionesDelPeriodo = createServerFn({
     return { deleted: ids.length };
   });
 
+/** Elimina una liquidación puntual del cliente. */
+export const eliminarLiquidacion = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      liquidacionId: z.string().uuid(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+
+    const [row] = await db
+      .select({ id: liquidacionImportRecibo.id })
+      .from(liquidacionImportRecibo)
+      .innerJoin(
+        liquidacionImportEmpleado,
+        eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
+      )
+      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .where(
+        and(
+          eq(liquidacionImportRecibo.id, ctx.data.liquidacionId),
+          eq(profile.client, ctx.data.clientId)
+        )
+      )
+      .limit(1);
+
+    if (!row) {
+      throw new Error('Liquidación no encontrada para este cliente.');
+    }
+
+    await db
+      .delete(liquidacionImportRecibo)
+      .where(eq(liquidacionImportRecibo.id, ctx.data.liquidacionId));
+
+    return { ok: true };
+  });
+
 /** Actualiza los inputs editables de una fila de detalle (cantidad, pct, importeOverride, etc.) */
 export const updateDetalleInputs = createServerFn({ method: 'POST' })
   .inputValidator(
@@ -2795,16 +3006,41 @@ export const confirmarReciboLiquidacion = createServerFn({ method: 'POST' })
     return { ok: true };
   });
 
-/** Configuración del empleador para el recibo (firma, redondeo). Por ahora valores por defecto. */
+/** Configuración del empleador para el recibo (firma digital, redondeo). */
 export const getPayrollEmployerConfig = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .inputValidator(z.object({ clientId: z.string().uuid(), profileId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    const row = await db
+      .select({ firmaDigitalEmpleador: profile.firmaDigitalEmpleador })
+      .from(profile)
+      .where(eq(profile.id, ctx.data.profileId))
+      .then((r) => r[0] ?? null);
     return {
       imprimirTotalRedondeado: false,
-      firmaEmpleadorUrl: null as string | null,
+      firmaEmpleadorUrl: row?.firmaDigitalEmpleador ?? null,
     };
+  });
+
+/** Guarda (o elimina) la firma digital del empleador en el perfil. */
+export const saveFirmaDigitalEmpleador = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      profileId: z.string().uuid(),
+      firmaDigitalEmpleador: z.string().nullable(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await assertCanWrite(orgId);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await db
+      .update(profile)
+      .set({ firmaDigitalEmpleador: ctx.data.firmaDigitalEmpleador, updatedAt: new Date() })
+      .where(eq(profile.id, ctx.data.profileId));
+    return { ok: true };
   });
 
 /** Columna del recibo estilo SOS. */

@@ -41,6 +41,7 @@ import {
   listImportEmpleados,
   listConvenios,
   calcularLiquidacionMasiva,
+  eliminarLiquidacion,
   eliminarLiquidacionesDelPeriodo,
 } from '@/actions/sueldos';
 import {
@@ -126,6 +127,10 @@ export function SueldosDashboard({
   });
 
   const [deleteLiquidacionesOpen, setDeleteLiquidacionesOpen] = useState(false);
+  const [liquidacionToDelete, setLiquidacionToDelete] = useState<{
+    id: string;
+    empleadoNombre: string;
+  } | null>(null);
   const eliminarLiquidaciones = useMutation({
     mutationFn: () =>
       eliminarLiquidacionesDelPeriodo({ data: { clientId, periodo } }),
@@ -142,6 +147,21 @@ export function SueldosDashboard({
     },
     onError: (e) =>
       toast.error(e instanceof Error ? e.message : 'Error al eliminar'),
+  });
+  const eliminarLiquidacionItem = useMutation({
+    mutationFn: (liquidacionId: string) =>
+      eliminarLiquidacion({ data: { clientId, liquidacionId } }),
+    onSuccess: () => {
+      setLiquidacionToDelete(null);
+      toast.success('Liquidación eliminada.');
+      queryClient.invalidateQueries({
+        queryKey: ['liquidaciones', clientId, periodo],
+      });
+    },
+    onError: (e) =>
+      toast.error(
+        e instanceof Error ? e.message : 'Error al eliminar la liquidación'
+      ),
   });
 
   const totalNeto = liquidaciones.reduce(
@@ -323,7 +343,7 @@ export function SueldosDashboard({
               {liquidaciones.slice(0, 10).map((l) => (
                 <li
                   key={l.liquidacion.id}
-                  className="flex justify-between rounded-lg border px-3 py-2 text-sm"
+                  className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm"
                 >
                   <span className="flex items-center gap-2">
                     {l.empleado.nombre}
@@ -333,12 +353,32 @@ export function SueldosDashboard({
                       <Badge variant="outline" className="text-xs">Generado</Badge>
                     )}
                   </span>
-                  <span className="font-medium">
-                    $
-                    {Number(l.liquidacion.neto).toLocaleString('es-AR', {
-                      minimumFractionDigits: 2,
-                    })}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">
+                      $
+                      {Number(l.liquidacion.neto).toLocaleString('es-AR', {
+                        minimumFractionDigits: 2,
+                      })}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      onClick={() =>
+                        setLiquidacionToDelete({
+                          id: l.liquidacion.id,
+                          empleadoNombre: l.empleado.nombre,
+                        })
+                      }
+                      disabled={
+                        eliminarLiquidacionItem.isPending ||
+                        eliminarLiquidaciones.isPending
+                      }
+                      aria-label={`Eliminar liquidación de ${l.empleado.nombre}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -373,6 +413,39 @@ export function SueldosDashboard({
               onClick={() => eliminarLiquidaciones.mutate()}
             >
               {eliminarLiquidaciones.isPending ? 'Eliminando…' : 'Eliminar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!liquidacionToDelete}
+        onOpenChange={(open) =>
+          !eliminarLiquidacionItem.isPending &&
+          !open &&
+          setLiquidacionToDelete(null)
+        }
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar esta liquidación?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se eliminará la liquidación de {liquidacionToDelete?.empleadoNombre}{' '}
+              del período {periodo}. Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={eliminarLiquidacionItem.isPending}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (!liquidacionToDelete) return;
+                eliminarLiquidacionItem.mutate(liquidacionToDelete.id);
+              }}
+            >
+              {eliminarLiquidacionItem.isPending ? 'Eliminando…' : 'Eliminar'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

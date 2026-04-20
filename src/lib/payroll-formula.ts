@@ -16,6 +16,9 @@ export interface PayrollFormulaContext {
   presentismo?: number;
   comisiones?: number;
   bonos?: number;
+  cantidad?: number;
+  porcentaje?: number; // % ingresado manualmente en el concepto
+  valor?: number;
   [key: string]: number | undefined;
 }
 
@@ -32,6 +35,7 @@ const ALLOWED_VARS = new Set([
   'comisiones',
   'bonos',
   'cantidad',
+  'porcentaje',
   'valor',
 ]);
 
@@ -53,6 +57,32 @@ export function evaluatePayrollFormula(
   const tokens = tokenize(expr);
   const parsed = parseExpression(tokens);
   return evaluate(parsed, context);
+}
+
+export type PayrollFormulaEvalResult = {
+  ok: boolean;
+  value: number;
+  error?: string;
+};
+
+/**
+ * Evaluación estricta: nunca lanza excepción y reporta error de fórmula.
+ */
+export function evaluatePayrollFormulaStrict(
+  formula: string,
+  context: PayrollFormulaContext
+): PayrollFormulaEvalResult {
+  try {
+    const value = evaluatePayrollFormula(formula, context);
+    if (!Number.isFinite(value)) {
+      return { ok: false, value: 0, error: 'Resultado no finito en fórmula' };
+    }
+    return { ok: true, value };
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : 'Error desconocido de fórmula';
+    return { ok: false, value: 0, error: message };
+  }
 }
 
 function tokenize(expr: string): string[] {

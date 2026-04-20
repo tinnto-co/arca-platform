@@ -74,6 +74,8 @@ export const profile = pgTable("profile", {
   status: text("status").notNull(),
   liquidaSueldos: boolean("liquida_sueldos").notNull().default(false),
   scrapedAt: timestamp("scraped_at"),
+  /** Firma digital del empleador (data URL base64) para impresión de recibos. */
+  firmaDigitalEmpleador: text("firma_digital_empleador"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -555,6 +557,29 @@ export const payrollConceptoBaseEnum = pgEnum("payroll_concepto_base", [
   "custom",
 ]);
 
+/** Catálogo global de conceptos SOS con metadata de fórmula (base, divisores). */
+export const conceptosCompletosSos = pgTable("conceptos_completos_sos", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  numeroSos: integer("numero_sos").notNull().unique(),
+  codigoAfip: text("codigo_afip"),
+  nombre: text("nombre").notNull(),
+  tieneMemo: boolean("tiene_memo").default(false),
+  tieneCantidad: boolean("tiene_cantidad").default(false),
+  tienePct: boolean("tiene_pct").default(false),
+  tieneImpConceptoNro: boolean("tiene_imp_concepto_nro").default(false),
+  tieneImporte: boolean("tiene_importe").default(false),
+  tieneImpMin: boolean("tiene_imp_min").default(false),
+  tieneImpMax: boolean("tiene_imp_max").default(false),
+  /** Base de cálculo SOS (ej. 'sueldo', 'sub1_9', 'importe_fijo'). */
+  baseColumna: text("base_columna"),
+  /** Divisor de horas normales (1 = no divide, >1 = divide por N horas). */
+  divHsNorm: integer("div_hs_norm").default(1),
+  /** Divisor de días (1, 25 o 30). */
+  divCantidad: integer("div_cantidad").default(1),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().$onUpdate(() => new Date()).notNull(),
+});
+
 /** Columna base de fórmula al estilo SOS (el usuario elige una sola) */
 export const payrollBaseColumnaEnum = pgEnum("payroll_base_columna", [
   "valHora",
@@ -566,6 +591,7 @@ export const payrollBaseColumnaEnum = pgEnum("payroll_base_columna", [
   "sub1_39",
   "sub1_199",
   "sub411_469",
+  "sub1_199_plus_411_469",
   "importe_fijo",
   "ref_concepto",
 ]);
@@ -680,6 +706,30 @@ export const liquidacionImportEmpleado = pgTable(
     cbu: text("cbu"),
     banco: text("banco"),
     activo: boolean("activo").default(true).notNull(),
+    // --- Datos demográficos y de legajo (fuente: planilla Excel SOS) ---
+    nacionalidad: text("nacionalidad"),
+    fechaNacimiento: timestamp("fecha_nacimiento", { mode: "date" }),
+    conyuge: integer("conyuge"),
+    hijos: integer("hijos"),
+    adherentes: integer("adherentes"),
+    sexo: text("sexo"),
+    domicilio: text("domicilio"),
+    localidad: text("localidad"),
+    codigoPostal: text("codigo_postal"),
+    provincia: text("provincia"),
+    codigoModalidadContratacion: text("codigo_modalidad_contratacion"),
+    situacion: text("situacion"),
+    codigoSituacion: text("codigo_situacion"),
+    zona: text("zona"),
+    codigoZona: text("codigo_zona"),
+    condicion: text("condicion"),
+    codigoCondicion: text("codigo_condicion"),
+    actividad: text("actividad"),
+    codigoActividad: text("codigo_actividad"),
+    siniestrado: text("siniestrado"),
+    codigoSiniestrado: text("codigo_siniestrado"),
+    observaciones: text("observaciones"),
+    obraSocialId: uuid("obra_social_id").references(() => obraSocial.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
