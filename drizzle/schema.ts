@@ -53,6 +53,8 @@ export const client = pgTable("client", {
   fiscalCondition: text("fiscal_condition"),
   liquidaSueldos: boolean("liquida_sueldos").notNull().default(false),
   cuitEmpresa: text("cuit_empresa").notNull().default(""),
+  esPersonaFisica: boolean("es_persona_fisica").notNull().default(true),
+  razonSocial: text("razon_social").notNull().default(""),
   hasErrors: boolean("has_errors").default(false).notNull(),
   errorMessage: text("error_message").default(""),
   registeredAt: timestamp("registered_at").notNull(),
@@ -463,6 +465,27 @@ export const fiscalEntity = pgTable(
       .notNull(),
   }
 );
+
+// ========== MÓDULO AGENTE / CHAT (tablas legacy, preservadas) ==========
+
+export const agentConversation = pgTable("agent_conversation", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: text("organization_id").notNull(),
+  userId: text("user_id").notNull(),
+  title: text("title").notNull().default("Nueva conversación"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const agentMessage = pgTable("agent_message", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  conversationId: uuid("conversation_id")
+    .notNull()
+    .references(() => agentConversation.id, { onDelete: "cascade" }),
+  role: text("role").notNull(),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
 
 // ========== MÓDULO SUELDOS / LIQUIDACIÓN ==========
 
