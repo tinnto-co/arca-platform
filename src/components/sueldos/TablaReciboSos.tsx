@@ -349,6 +349,8 @@ interface TablaReciboSosProps {
    * No se muestra en la columna Importe — el usuario solo ve el resultado en Haberes.
    */
   basico?: number;
+  /** URL (data URL o URL pública) de la imagen de firma del empleador. */
+  firmaEmpleadorUrl?: string | null;
 }
 
 export function TablaReciboSos({
@@ -357,6 +359,7 @@ export function TablaReciboSos({
   onChange,
   variant = 'importado',
   basico,
+  firmaEmpleadorUrl,
 }: TablaReciboSosProps) {
   const initialEdits = useMemo<EditsMap>(() => {
     const map: EditsMap = {};
@@ -765,6 +768,30 @@ export function TablaReciboSos({
             </tr>
           </tfoot>
         </table>
+      </div>
+
+      {/* Sección de firmas */}
+      <div className="mt-4 grid grid-cols-2 gap-6 border-t pt-4 text-[11px] text-muted-foreground">
+        <div className="flex flex-col gap-2">
+          {firmaEmpleadorUrl ? (
+            <img
+              src={firmaEmpleadorUrl}
+              alt="Firma del empleador"
+              className="h-16 max-w-[200px] object-contain"
+            />
+          ) : (
+            <div className="h-10" />
+          )}
+          <div className="border-t border-slate-400 pt-1 font-medium text-slate-600">
+            Firma y sello del empleador
+          </div>
+        </div>
+        <div className="flex flex-col gap-2">
+          <div className="h-10" />
+          <div className="border-t border-slate-400 pt-1 font-medium text-slate-600">
+            Firma del trabajador / Acuse de recibo
+          </div>
+        </div>
       </div>
     </div>
   );

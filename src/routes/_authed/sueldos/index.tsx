@@ -10,6 +10,7 @@ import {
   Sliders,
   FileText,
   UserCircle,
+  PenLine,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -26,6 +27,7 @@ import { SueldosConvenios } from '@/components/sueldos/SueldosConvenios';
 import { SueldosConceptos } from '@/components/sueldos/SueldosConceptos';
 import { SueldosSimulador } from '@/components/sueldos/SueldosSimulador';
 import { SueldosRecibo } from '@/components/sueldos/SueldosRecibo';
+import { SueldosFirmaDigital } from '@/components/sueldos/SueldosFirmaDigital';
 import { getClientsForSueldos } from '@/actions/client';
 
 export const Route = createFileRoute('/_authed/sueldos/')({
@@ -128,6 +130,10 @@ function RouteComponent() {
               <FileText className="h-4 w-4" />
               Recibo
             </TabsTrigger>
+            <TabsTrigger value="firma-digital" className="gap-2">
+              <PenLine className="h-4 w-4" />
+              Firma Digital
+            </TabsTrigger>
           </TabsList>
           <div className="mt-4 min-w-0 max-w-full">
             <TabsContent value="dashboard">
@@ -151,6 +157,9 @@ function RouteComponent() {
             </TabsContent>
             <TabsContent value="recibo">
               <SueldosRecibo clientId={clientId} profileId={profileId} />
+            </TabsContent>
+            <TabsContent value="firma-digital">
+              <SueldosFirmaDigital clientId={clientId} profileId={profileId} />
             </TabsContent>
           </div>
         </Tabs>

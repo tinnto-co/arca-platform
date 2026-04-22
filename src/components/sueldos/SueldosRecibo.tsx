@@ -16,6 +16,7 @@ import {
 import {
   listLiquidacionesByPeriodo,
   getReciboDetalle,
+  getPayrollEmployerConfig,
 } from '@/actions/sueldos';
 import { getClient } from '@/actions/client';
 import { legajoParaMostrar } from '@/lib/legajo';
@@ -352,6 +353,13 @@ export function SueldosRecibo({ clientId, profileId }: SueldosReciboProps) {
     enabled: !!reciboId && !!clientId,
   });
 
+  const { data: employerConfig } = useQuery({
+    queryKey: ['payroll-employer-config', clientId, profileId],
+    queryFn: () => getPayrollEmployerConfig({ data: { clientId, profileId } }),
+    enabled: !!clientId && !!profileId,
+  });
+  const firmaEmpleadorUrl = employerConfig?.firmaEmpleadorUrl ?? null;
+
   return (
     <div className="w-full min-w-0 max-w-full space-y-6">
       {/* ── Selectores ────────────────────────────────────────────────────── */}
@@ -451,7 +459,7 @@ export function SueldosRecibo({ clientId, profileId }: SueldosReciboProps) {
               </CardContent>
             </Card>
           ) : (
-            <ReciboDocumento detalle={detalle} clientData={clientData ?? null} />
+            <ReciboDocumento detalle={detalle} clientData={clientData ?? null} firmaEmpleadorUrl={firmaEmpleadorUrl} />
           )}
         </>
       )}
@@ -468,9 +476,11 @@ type ClientData = Awaited<ReturnType<typeof getClient>>;
 function ReciboDocumento({
   detalle,
   clientData,
+  firmaEmpleadorUrl,
 }: {
   detalle: DetalleType;
   clientData: ClientData | null;
+  firmaEmpleadorUrl: string | null;
 }) {
   const {
     liquidacion,
@@ -770,14 +780,22 @@ function ReciboDocumento({
 
         {/* ── FIRMAS ──────────────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 divide-x divide-border border-t border-border">
-          <div className="flex flex-col items-center gap-8 px-8 py-6">
-            <div className="h-12 w-full" />
+          <div className="flex flex-col items-center gap-4 px-8 py-6">
+            {firmaEmpleadorUrl ? (
+              <img
+                src={firmaEmpleadorUrl}
+                alt="Firma del empleador"
+                className="h-16 max-w-[240px] object-contain"
+              />
+            ) : (
+              <div className="h-16 w-full" />
+            )}
             <div className="w-full border-t border-foreground/40 pt-1 text-center text-xs uppercase tracking-widest text-muted-foreground">
               Firma y sello del empleador
             </div>
           </div>
-          <div className="flex flex-col items-center gap-8 px-8 py-6">
-            <div className="h-12 w-full" />
+          <div className="flex flex-col items-center gap-4 px-8 py-6">
+            <div className="h-16 w-full" />
             <div className="w-full border-t border-foreground/40 pt-1 text-center text-xs uppercase tracking-widest text-muted-foreground">
               Firma del empleado
             </div>

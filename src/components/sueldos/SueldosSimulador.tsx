@@ -11,6 +11,7 @@ import {
   listConceptosPlantillaManualSos,
   guardarReciboDesdeTabla,
   getBasicoParaEmpleadoPeriodo,
+  getPayrollEmployerConfig,
 } from '@/actions/sueldos';
 import { puedeLiquidarPeriodo } from '@/lib/payroll-period-rules';
 import { ReciboFormulario } from '@/components/sueldos/ReciboFormulario';
@@ -144,6 +145,13 @@ export function SueldosSimulador({
   // El básico de escala se pasa como prop implícito a TablaReciboSos.
   // No se inyecta en la columna Importe — el cálculo ocurre internamente en la grilla.
   const basicoEscala = basicoData?.basico ?? 0;
+
+  const { data: employerConfig } = useQuery({
+    queryKey: ['payroll-employer-config', clientId, profileId],
+    queryFn: () => getPayrollEmployerConfig({ data: { clientId, profileId } }),
+    enabled: !!clientId && !!profileId,
+  });
+  const firmaEmpleadorUrl = employerConfig?.firmaEmpleadorUrl ?? null;
 
   const reciboHeaderSimulado = useMemo(() => {
     if (!flowHeader) {
@@ -301,6 +309,7 @@ export function SueldosSimulador({
               recibo={ultimoRecibo!.recibo}
               conceptos={ultimoRecibo!.conceptos}
               onChange={handleTablaChange}
+              firmaEmpleadorUrl={firmaEmpleadorUrl}
             />
             </div>
             <div className="flex flex-col items-end gap-2">
@@ -357,6 +366,7 @@ export function SueldosSimulador({
                   conceptos={plantillaManual}
                   basico={basicoEscala}
                   onChange={handleTablaChange}
+                  firmaEmpleadorUrl={firmaEmpleadorUrl}
                 />
                 </div>
                 <div className="flex flex-col items-end gap-2">
