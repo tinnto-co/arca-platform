@@ -4,11 +4,10 @@ import {
   setActiveOrganization,
 } from '@/actions/user';
 import { AppSidebar } from '@/components/app-sidebar';
-import { DashboardTopbar } from '@/components/dashboard/topbar';
 import { MobileNavbar } from '@/components/mobile-navbar';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { OrgSwitchProvider } from '@/contexts/org-switch-context';
-import { createFileRoute, Outlet, redirect, useLocation } from '@tanstack/react-router';
+import { createFileRoute, Outlet, redirect } from '@tanstack/react-router';
 import { Suspense } from 'react';
 
 export const Route = createFileRoute('/_authed')({

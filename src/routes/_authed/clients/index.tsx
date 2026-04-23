@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { ClientsTable } from '@/components/clients-table';
 import { CreateClientDialog } from '@/components/create-client-dialog';
-import { Plus, Users } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
 
