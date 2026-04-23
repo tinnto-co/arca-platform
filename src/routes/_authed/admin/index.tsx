@@ -71,6 +71,7 @@ import {
   X,
 } from 'lucide-react';
 import { userQuery } from '../../../lib/user-query';
+import { PageHeader } from '@/components/shared/page-header';
 
 const logoUrlSchema = z.union([z.string().url(), z.literal('')]);
 
@@ -91,9 +92,9 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 const ROLE_COLORS: Record<string, string> = {
-  owner: 'bg-orange-100 text-orange-800',
-  member: 'bg-blue-100 text-blue-800',
-  viewer: 'bg-gray-100 text-gray-800',
+  owner: 'bg-[var(--arca-accent-warn)]/10 text-[var(--arca-accent-warn)]',
+  member: 'bg-[var(--arca-navy-700)]/10 text-[var(--arca-navy-700)]',
+  viewer: 'bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]',
 };
 
 function AdminPanel() {
@@ -103,51 +104,12 @@ function AdminPanel() {
   });
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
-        {isLoading ? (
-          <div className="flex items-center gap-3">
-            <div className="size-12 shrink-0 animate-pulse rounded-lg bg-muted" />
-            <div className="space-y-2">
-              <div className="h-4 w-40 animate-pulse rounded bg-muted" />
-              <div className="h-3 w-56 animate-pulse rounded bg-muted" />
-            </div>
-          </div>
-        ) : (
-          <>
-            <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/40">
-              {org?.logo ? (
-                <Avatar className="size-12 rounded-lg">
-                  <AvatarImage src={org.logo} alt="" className="object-cover" />
-                  <AvatarFallback className="rounded-lg">
-                    <Building className="size-6 text-primary" />
-                  </AvatarFallback>
-                </Avatar>
-              ) : (
-                <Building className="size-7 text-primary" />
-              )}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-muted-foreground">
-                Administración
-              </p>
-              <h1 className="truncate text-2xl font-bold">
-                {org?.name ?? '—'}
-              </h1>
-              {org?.slug ? (
-                <p className="truncate text-sm text-muted-foreground">
-                  {org.slug}
-                </p>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Miembros e invitaciones de la organización
-                </p>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-
+    <div className="p-[28px_36px_60px] max-w-[1440px] space-y-6">
+      <PageHeader
+        icon={Building}
+        title={isLoading ? 'Administración' : (org?.name ?? 'Administración')}
+        subtitle={isLoading ? '' : (org?.slug ?? 'Miembros e invitaciones de la organización')}
+      />
       <Tabs defaultValue="members" className="w-full">
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="members">
@@ -225,7 +187,7 @@ function MembersTab() {
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <p className="text-muted-foreground">Cargando...</p>
+          <p className="text-[var(--arca-ink-3)]">Cargando...</p>
         ) : (
           <Table>
             <TableHeader>
@@ -250,7 +212,7 @@ function MembersTab() {
                       <span className="font-medium">{m.name}</span>
                     </div>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell className="text-[var(--arca-ink-3)]">
                     {m.email}
                   </TableCell>
                   <TableCell>
@@ -281,7 +243,7 @@ function MembersTab() {
                       size="icon"
                       onClick={() => setRemoveMemberId(m.memberId)}
                     >
-                      <Trash2 className="size-4 text-destructive" />
+                      <Trash2 className="size-4 text-[var(--arca-accent-neg)]" />
                     </Button>
                     <AlertDialog
                       open={removeMemberId === m.memberId}
@@ -376,9 +338,9 @@ function InvitationsTab() {
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <p className="text-muted-foreground">Cargando...</p>
+          <p className="text-[var(--arca-ink-3)]">Cargando...</p>
         ) : pending.length === 0 ? (
-          <p className="text-muted-foreground text-center py-8">
+          <p className="text-[var(--arca-ink-3)] text-center py-8">
             No hay invitaciones pendientes
           </p>
         ) : (
@@ -413,7 +375,7 @@ function InvitationsTab() {
                         size="icon"
                         onClick={() => setCancelInviteId(inv.id)}
                       >
-                        <X className="size-4 text-destructive" />
+                        <X className="size-4 text-[var(--arca-accent-neg)]" />
                       </Button>
                       <AlertDialog
                         open={cancelInviteId === inv.id}
@@ -524,7 +486,7 @@ function SettingsTab() {
     }
   };
 
-  if (isLoading) return <p className="text-muted-foreground">Cargando...</p>;
+  if (isLoading) return <p className="text-[var(--arca-ink-3)]">Cargando...</p>;
 
   return (
     <Card>
@@ -539,7 +501,7 @@ function SettingsTab() {
           <div className="space-y-2">
             <Label>Logo (URL)</Label>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-              <div className="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/40">
+              <div className="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-[var(--arca-surface-2)]">
                 {logoUrl.trim() ? (
                   <Avatar className="size-20 rounded-lg">
                     <AvatarImage
@@ -552,7 +514,7 @@ function SettingsTab() {
                     </AvatarFallback>
                   </Avatar>
                 ) : (
-                  <Building className="size-8 text-muted-foreground" />
+                  <Building className="size-8 text-[var(--arca-ink-3)]" />
                 )}
               </div>
               <Input
@@ -684,11 +646,11 @@ function InviteDialog() {
           <>
             <div className="space-y-3 rounded-lg border p-4 py-4 text-sm">
               <div>
-                <span className="text-muted-foreground">Email</span>
+                <span className="text-[var(--arca-ink-3)]">Email</span>
                 <p className="font-medium">{email.trim()}</p>
               </div>
               <div>
-                <span className="text-muted-foreground">Rol</span>
+                <span className="text-[var(--arca-ink-3)]">Rol</span>
                 <p className="font-medium">{ROLE_LABELS[role] ?? role}</p>
               </div>
             </div>

@@ -36,10 +36,18 @@ function KpiCard({ data }: { data: KpiData }) {
   );
 }
 
-export function KpiCardsRow() {
+interface KpiCardsRowProps {
+  from: Date;
+  to: Date;
+}
+
+export function KpiCardsRow({ from, to }: KpiCardsRowProps) {
+  const fromStr = from.toISOString();
+  const toStr = to.toISOString();
+
   const { data: stats, isLoading } = useQuery({
-    queryKey: ['dashboardStats'],
-    queryFn: () => getDashboardStats(),
+    queryKey: ['dashboardStats', fromStr, toStr],
+    queryFn: () => getDashboardStats({ data: { from: fromStr, to: toStr } }),
   });
 
   if (isLoading || !stats) {
@@ -58,15 +66,15 @@ export function KpiCardsRow() {
   const salesChange =
     stats.previousMonthSales > 0
       ? ((stats.monthlySales - stats.previousMonthSales) /
-        stats.previousMonthSales) *
-      100
+          stats.previousMonthSales) *
+        100
       : 0;
 
   const purchasesChange =
     stats.previousMonthPurchases > 0
       ? ((stats.monthlyPurchases - stats.previousMonthPurchases) /
-        stats.previousMonthPurchases) *
-      100
+          stats.previousMonthPurchases) *
+        100
       : 0;
 
   const resultadoBruto = stats.monthlySales - stats.monthlyPurchases;
@@ -81,39 +89,35 @@ export function KpiCardsRow() {
     stats.previousMonthPurchases
   );
 
-  // Helpers
   const posColor = 'var(--arca-accent-pos)';
   const negColor = 'var(--arca-accent-neg)';
   const warnColor = 'var(--arca-accent-warn)';
-
-  const fmtPct = (n: number) =>
-    `${n >= 0 ? '+' : ''}${n.toFixed(1)}%`;
+  const fmtPct = (n: number) => `${n >= 0 ? '+' : ''}${n.toFixed(1)}%`;
 
   const kpis: KpiData[] = [
     {
-      label: 'Ventas del mes',
+      label: 'Ventas del período',
       value: stats.monthlySales,
       chipColor: salesChange >= 0 ? posColor : negColor,
       chipText:
         stats.previousMonthSales > 0
           ? `${fmtPct(salesChange)}`
           : 'sin comparación',
-      footLabel: 'mes anterior',
+      footLabel: 'período anterior',
       footValue:
         stats.previousMonthSales > 0
           ? `${prevSalesSign} ${prevSalesInt}`
           : undefined,
     },
     {
-      label: 'Compras del mes',
+      label: 'Compras del período',
       value: stats.monthlyPurchases,
-      // más compras = peor, invertimos el color
       chipColor: purchasesChange <= 0 ? posColor : negColor,
       chipText:
         stats.previousMonthPurchases > 0
           ? `${fmtPct(purchasesChange)}`
           : 'sin comparación',
-      footLabel: 'mes anterior',
+      footLabel: 'período anterior',
       footValue:
         stats.previousMonthPurchases > 0
           ? `${prevPurchSign} ${prevPurchInt}`

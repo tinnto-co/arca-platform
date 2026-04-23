@@ -118,7 +118,9 @@ export function CreateClientDialog({ children }: CreateClientDialogProps) {
       >
         {/* Header Button */}
         <div className="mb-6 relative">
-          <Button
+          <h3 className="text-lg font-bold">Nuevo Cliente</h3>
+          <p className="text-sm text-muted-foreground">Todos los campos son obligatorios</p>
+          {/* <Button
             type="button"
             variant="secondary"
             className="bg-gray-500 hover:bg-gray-600 text-white font-medium py-6 text-base"
@@ -126,7 +128,7 @@ export function CreateClientDialog({ children }: CreateClientDialogProps) {
           >
             <User className="h-5 w-5 mr-2" />
             AGREGAR CLIENTE
-          </Button>
+          </Button> */}
           <Button
             type="button"
             variant="ghost"

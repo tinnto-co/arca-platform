@@ -26,10 +26,8 @@ function MiniKpiCard({ data }: { data: MiniKpiData }) {
     <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[14px] p-[14px_16px] flex flex-col gap-2.5">
       <div className="flex items-center justify-between text-xs font-medium text-[var(--arca-ink-3)]">
         <span className="flex items-center gap-1.5">
-          {/* {data.icon} */}
           {data.label}
         </span>
-        {/* {data.trailing} */}
       </div>
       <div className="font-display text-[22px] font-semibold tracking-[-0.02em] text-[var(--arca-ink)] tabular-nums leading-none flex items-baseline justify-between">
         {data.value}
@@ -54,10 +52,18 @@ function MiniKpiCard({ data }: { data: MiniKpiData }) {
   );
 }
 
-export function MiniKpiCardsRow() {
+interface MiniKpiCardsRowProps {
+  from: Date;
+  to: Date;
+}
+
+export function MiniKpiCardsRow({ from, to }: MiniKpiCardsRowProps) {
+  const fromStr = from.toISOString();
+  const toStr = to.toISOString();
+
   const { data: stats } = useQuery({
-    queryKey: ['dashboardStats'],
-    queryFn: () => getDashboardStats(),
+    queryKey: ['dashboardStats', fromStr, toStr],
+    queryFn: () => getDashboardStats({ data: { from: fromStr, to: toStr } }),
   });
 
   const { data: overdueDebts = [] } = useQuery({
@@ -92,7 +98,7 @@ export function MiniKpiCardsRow() {
       footRight: '100% activos',
     },
     {
-      label: 'Facturas del mes',
+      label: 'Facturas del período',
       icon: <FileText className="w-3 h-3" />,
       trailing:
         totalInvoices > monthlyInvoices ? (

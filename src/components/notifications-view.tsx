@@ -3,8 +3,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Mail,
   Search,
-  Download,
-  FileText,
   Calendar,
   User,
   Trash2,
@@ -12,13 +10,7 @@ import {
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -59,6 +51,8 @@ interface NotificationData {
 interface NotificationsViewProps {
   /** When set, only show notifications for this client and hide client filter */
   clientId?: string;
+  /** When set, opens this notification on mount (used via ?notificationId= query param) */
+  initialNotificationId?: string;
   /** Optional toolbar (e.g. "Actualizar" button + last update) rendered above the list/detail */
   toolbar?: React.ReactNode;
   /** Optional class for the container (e.g. min-h for embedded tab) */
@@ -67,6 +61,7 @@ interface NotificationsViewProps {
 
 export function NotificationsView({
   clientId: clientIdProp,
+  initialNotificationId,
   toolbar,
   className,
 }: NotificationsViewProps = {}) {
@@ -84,7 +79,7 @@ export function NotificationsView({
   const [profileFilter, setProfileFilter] = useState<string>('all');
   const [selectedNotificationId, setSelectedNotificationId] = useState<
     string | null
-  >(null);
+  >(initialNotificationId ?? null);
   const [notificationDetails, setNotificationDetails] = useState<any>(null);
 
   // Get clients for filter dropdown (only when not scoped to a single client)
@@ -119,12 +114,12 @@ export function NotificationsView({
   const { data: notificationsData, isLoading } = useQuery({
     queryKey: clientIdProp
       ? [
-          'clientNotifications',
-          orgKey,
-          clientIdProp,
-          effectiveProfileFilter,
-          searchTerm,
-        ]
+        'clientNotifications',
+        orgKey,
+        clientIdProp,
+        effectiveProfileFilter,
+        searchTerm,
+      ]
       : ['notifications', orgKey, 1, clientFilter, '', '', searchTerm],
     queryFn: () =>
       getNotifications({
@@ -258,11 +253,11 @@ export function NotificationsView({
   const rawNotifications = notificationsData?.notifications || [];
   const notifications = clientIdProp
     ? // En el detalle de cliente: solo mostrar notificaciones con perfil asociado
-      rawNotifications.filter(
-        (n: any) => n.profileName || n.profileIdentityNumber
-      )
+    rawNotifications.filter(
+      (n: any) => n.profileName || n.profileIdentityNumber
+    )
     : // En la vista global: solo mostrar notificaciones con cliente asociado
-      rawNotifications.filter((n: any) => n.clientName || n.clientId);
+    rawNotifications.filter((n: any) => n.clientName || n.clientId);
 
   return (
     <div
@@ -293,37 +288,33 @@ export function NotificationsView({
               />
             </div>
             {!clientIdProp ? (
-              <Select value={clientFilter} onValueChange={setClientFilter}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Filtrar por cliente" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos los clientes</SelectItem>
-                  {clients.map((client) => (
-                    <SelectItem key={client.id} value={client.id}>
-                      {client.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                options={[
+                  { value: 'all', label: 'Todos los clientes' },
+                  ...clients.map((c) => ({ value: c.id, label: c.name })),
+                ]}
+                value={clientFilter}
+                onValueChange={setClientFilter}
+                placeholder="Filtrar por cliente"
+                searchPlaceholder="Buscar cliente..."
+                width="100%"
+              />
             ) : (
-              <Select
+              <SearchableSelect
+                options={[
+                  { value: 'all', label: 'Todos los perfiles' },
+                  ...profiles.map((p: any) => ({
+                    value: p.id,
+                    label: p.name || p.identityNumber || p.id,
+                  })),
+                ]}
                 value={profileFilter}
                 onValueChange={setProfileFilter}
+                placeholder="Filtrar por perfil"
+                searchPlaceholder="Buscar perfil..."
+                width="100%"
                 disabled={loadingProfiles || profiles.length === 0}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Filtrar por perfil" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos los perfiles</SelectItem>
-                  {profiles.map((profile: any) => (
-                    <SelectItem key={profile.id} value={profile.id}>
-                      {profile.name || profile.identityNumber || profile.id}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              />
             )}
           </div>
 
@@ -349,7 +340,7 @@ export function NotificationsView({
                       className={cn(
                         'p-4 cursor-pointer hover:bg-muted/50 transition-colors',
                         selectedNotificationId === notification.id &&
-                          'bg-muted border-l-4 border-l-primary',
+                        'bg-muted border-l-4 border-l-primary',
                         notification.opened === false && 'bg-primary/5'
                       )}
                     >
@@ -373,8 +364,8 @@ export function NotificationsView({
                             >
                               {clientIdProp
                                 ? notification.profileName ||
-                                  notification.profileIdentityNumber ||
-                                  'Sin perfil'
+                                notification.profileIdentityNumber ||
+                                'Sin perfil'
                                 : notification.clientName || 'Sin cliente'}
                             </p>
                           </div>
@@ -405,9 +396,12 @@ export function NotificationsView({
               <div className="p-6 border-b">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex-1">
-                    <h2 className="text-xl font-semibold mb-2">
-                      {selectedNotification.clientName || 'Sin cliente'}
-                    </h2>
+                    <div className="items-center gap-2 mb-2">
+                      <h2 className="text-xl font-semibold">
+                        {selectedNotification.clientName || 'Sin cliente'}
+                      </h2>
+                      <span className="font-light text-muted-foreground text-xs">ID Externo: {selectedNotification.externalId}</span>
+                    </div>
                     <div className="flex items-center gap-4 text-sm text-muted-foreground">
                       <div className="flex items-center gap-2">
                         <User className="h-4 w-4" />
@@ -448,12 +442,6 @@ export function NotificationsView({
                   {/* Details */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <h3 className="text-sm font-semibold mb-2">ID Externo</h3>
-                      <p className="text-sm text-muted-foreground">
-                        {selectedNotification.externalId}
-                      </p>
-                    </div>
-                    <div>
                       <h3 className="text-sm font-semibold mb-2">
                         Fecha de Expiración
                       </h3>
@@ -466,45 +454,18 @@ export function NotificationsView({
                   {/* Attachments */}
                   {selectedNotification.attachments &&
                     selectedNotification.attachments.length > 0 && (
-                      <div>
-                        <h3 className="text-sm font-semibold mb-3">
-                          Archivos Adjuntos
-                        </h3>
-                        <div className="space-y-2">
-                          {selectedNotification.attachments.map(
-                            (attachment: any) => (
-                              <div
-                                key={attachment.id}
-                                className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50"
-                              >
-                                <div className="flex items-center gap-3">
-                                  <FileText className="h-5 w-5 text-muted-foreground" />
-                                  <div>
-                                    <p className="text-sm font-medium">
-                                      {attachment.documentName}
-                                    </p>
-                                    <p className="text-xs text-muted-foreground">
-                                      {attachment.documentType}
-                                    </p>
-                                  </div>
-                                </div>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() =>
-                                    handleDownloadAttachment(
-                                      attachment.documentUrl,
-                                      attachment.documentName
-                                    )
-                                  }
-                                >
-                                  <Download className="h-4 w-4 mr-2" />
-                                  Descargar
-                                </Button>
-                              </div>
-                            )
-                          )}
-                        </div>
+                      <div className="space-y-4">
+                        {selectedNotification.attachments.map(
+                          (attachment: any) => (
+                            <div key={attachment.id}>
+                              <iframe
+                                src={attachment.documentUrl}
+                                title={attachment.documentName}
+                                className="w-full h-[600px] rounded-lg border border-[var(--arca-border)]"
+                              />
+                            </div>
+                          )
+                        )}
                       </div>
                     )}
                 </div>

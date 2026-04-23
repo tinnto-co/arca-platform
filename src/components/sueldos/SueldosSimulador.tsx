@@ -275,7 +275,7 @@ export function SueldosSimulador({
       />
 
       {flowHeader?.copiarUltimoRecibo && sosEmpleadoId && loadingUltimo && (
-        <p className="text-sm text-muted-foreground flex items-center gap-2">
+        <p className="text-sm text-[var(--arca-ink-3)] flex items-center gap-2">
           <Loader2 className="h-4 w-4 animate-spin" />
           Cargando último recibo importado…
         </p>
@@ -285,7 +285,7 @@ export function SueldosSimulador({
         sosEmpleadoId &&
         !loadingUltimo &&
         !ultimoRecibo && (
-          <p className="text-sm text-amber-700">
+          <p className="text-sm text-[var(--arca-accent-warn-fg)]">
             No hay recibo importado previo para este empleado. Volvé al
             formulario y elegí cargar conceptos manualmente o importá
             liquidaciones desde Excel.
@@ -298,7 +298,7 @@ export function SueldosSimulador({
             <CardTitle className="text-base">
               Último recibo importado — conceptos
             </CardTitle>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-[var(--arca-ink-3)]">
               Editá la grilla y presioná{' '}
               <span className="font-medium">Guardar recibo</span> para persistir
               en el libro de sueldos importado (LSD).
@@ -316,7 +316,7 @@ export function SueldosSimulador({
             </div>
             <div className="flex flex-col items-end gap-2">
               {!permiteLiquidar && (
-                <span className="text-xs text-muted-foreground">
+                <span className="text-xs text-[var(--arca-ink-3)]">
                   Solo se puede guardar el mes anterior al en curso.
                 </span>
               )}
@@ -342,7 +342,7 @@ export function SueldosSimulador({
             <CardTitle className="text-base">
               Conceptos — carga manual
             </CardTitle>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-[var(--arca-ink-3)]">
               Los montos se pre-calculan con el básico de escala vigente del
               empleado en el período a liquidar. Podés ajustar cualquier valor
               antes de guardar.
@@ -350,7 +350,7 @@ export function SueldosSimulador({
           </CardHeader>
           <CardContent className="space-y-4">
             {loadingPlantilla || loadingBasico ? (
-              <p className="text-sm text-muted-foreground flex items-center gap-2">
+              <p className="text-sm text-[var(--arca-ink-3)] flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 {loadingBasico
                   ? 'Cargando escala salarial…'
@@ -358,7 +358,7 @@ export function SueldosSimulador({
               </p>
             ) : (
               <>
-                <div className="rounded-md border border-emerald-300/60 bg-emerald-50/50 px-3 py-2 text-xs text-emerald-950">
+                <div className="rounded-md border border-[var(--arca-accent-pos)]/30 bg-[var(--arca-accent-pos-bg)] px-3 py-2 text-xs text-[var(--arca-accent-pos-fg)]">
                   Básico de escala tomado para empleado/período{' '}
                   <span className="font-semibold">{flowHeader.periodo}</span>:{' '}
                   <span className="font-mono font-semibold">
@@ -378,7 +378,7 @@ export function SueldosSimulador({
                 </div>
                 <div className="flex flex-col items-end gap-2">
                   {!permiteLiquidar && (
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-xs text-[var(--arca-ink-3)]">
                       Solo se puede guardar el mes anterior al en curso.
                     </span>
                   )}

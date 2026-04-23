@@ -131,9 +131,9 @@ export function LoginForm({ className }: React.ComponentProps<'div'>) {
             type="email"
             placeholder="john@example.com"
             required
-            className={emailError ? 'border-red-500' : ''}
+            className={emailError ? 'border-[var(--arca-accent-neg)]' : ''}
           />
-          {emailError && <p className="text-sm text-red-500">{emailError}</p>}
+          {emailError && <p className="text-sm text-[var(--arca-accent-neg)]">{emailError}</p>}
         </div>
         <div className="flex flex-col gap-2">
           <Label>Contraseña</Label>

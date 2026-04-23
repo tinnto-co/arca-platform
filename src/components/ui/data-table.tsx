@@ -2,6 +2,7 @@ import * as React from 'react';
 import {
   type ColumnDef,
   type ColumnFiltersState,
+  type RowSelectionState,
   type SortingState,
   type VisibilityState,
   flexRender,
@@ -70,24 +71,52 @@ export function DataTable<TData, TValue>({
   emptyMessage = 'Sin resultados.',
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
-  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
-    []
-  );
-  const [columnVisibility, setColumnVisibility] =
-    React.useState<VisibilityState>({});
+  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
+  const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({});
+  const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
+
+  const selectColumn: ColumnDef<TData, unknown> = {
+    id: '__select__',
+    enableSorting: false,
+    header: ({ table: t }) => (
+      <input
+        type="checkbox"
+        className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-navy-900)]"
+        checked={t.getIsAllPageRowsSelected()}
+        ref={(el) => {
+          if (el) el.indeterminate = t.getIsSomePageRowsSelected();
+        }}
+        onChange={(e) => t.toggleAllPageRowsSelected(e.target.checked)}
+        onClick={(e) => e.stopPropagation()}
+      />
+    ),
+    cell: ({ row }) => (
+      <input
+        type="checkbox"
+        className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-navy-900)]"
+        checked={row.getIsSelected()}
+        onChange={row.getToggleSelectedHandler()}
+        onClick={(e) => e.stopPropagation()}
+      />
+    ),
+  };
+
+  const allColumns = [selectColumn, ...columns] as ColumnDef<TData, TData>[];
 
   const table = useReactTable({
     data,
-    columns,
+    columns: allColumns,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
+    enableRowSelection: true,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
+    onRowSelectionChange: setRowSelection,
     initialState: { pagination: { pageSize } },
-    state: { sorting, columnFilters, columnVisibility },
+    state: { sorting, columnFilters, columnVisibility, rowSelection },
   });
 
   const hasToolbar = searchKey ?? filters?.length ?? toolbar;

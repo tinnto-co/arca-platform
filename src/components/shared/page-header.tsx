@@ -1,5 +1,6 @@
 import type { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { Separator } from '../ui/separator';
 
 interface PageHeaderProps {
   icon?: LucideIcon;
@@ -42,6 +43,7 @@ export function PageHeader({
           )}
         </div>
       </div>
+
       {actions && (
         <div className="flex items-center gap-2 shrink-0">{actions}</div>
       )}

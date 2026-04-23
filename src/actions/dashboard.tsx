@@ -5,135 +5,21 @@ import { client, invoice, debt, dueDate, notification } from '@/drizzle/schema';
 import { eq, and, gte, lte, sql, inArray } from 'drizzle-orm';
 import { getSessionWithOrg, getOrgClientIds } from '@/actions/helpers';
 
-export const getDashboardStats = createServerFn({
-  method: 'GET',
-}).handler(async () => {
-  const { orgId } = await getSessionWithOrg();
+// ── Helpers ────────────────────────────────────────────────────────────────
 
-  const userClients = await db
-    .select({ id: client.id })
-    .from(client)
-    .where(eq(client.organizationId, orgId));
+function parseDateParam(s: string | undefined, fallback: Date): Date {
+  if (!s) return fallback;
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? fallback : d;
+}
 
-  const userClientIds = userClients.map((c) => c.id);
+// ── getDashboardStats ──────────────────────────────────────────────────────
 
-  if (userClientIds.length === 0) {
-    return {
-      totalClients: 0,
-      totalSales: 0,
-      totalPurchases: 0,
-      totalInvoices: 0,
-      monthlySales: 0,
-      monthlyPurchases: 0,
-      monthlyInvoices: 0,
-      previousMonthSales: 0,
-      previousMonthPurchases: 0,
-    };
-  }
-
-  // Get current month dates
-  const now = new Date();
-  const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const currentMonthEnd = new Date(
-    now.getFullYear(),
-    now.getMonth() + 1,
-    0,
-    23,
-    59,
-    59
-  );
-
-  // Get previous month dates
-  const previousMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const previousMonthEnd = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    0,
-    23,
-    59,
-    59
-  );
-
-  // Get all invoices for user's clients
-  const allInvoices = await db
-    .select({
-      direction: invoice.direction,
-      amount: invoice.amount,
-      currency: invoice.currency,
-      currencyRate: invoice.cureencyRate,
-      emitionDate: invoice.emitionDate,
-    })
-    .from(invoice)
-    .where(inArray(invoice.client, userClientIds));
-
-  // Calculate totals
-  let totalSales = 0;
-  let totalPurchases = 0;
-  let monthlySales = 0;
-  let monthlyPurchases = 0;
-  let previousMonthSales = 0;
-  let previousMonthPurchases = 0;
-
-  allInvoices.forEach((inv) => {
-    let amount = parseFloat(inv.amount || '0');
-    if (inv.currency?.toUpperCase() === 'USD') {
-      const rate = parseFloat(inv.currencyRate || '1');
-      amount = amount * rate;
-    }
-
-    const direction = inv.direction?.toLowerCase();
-    const invoiceDate = new Date(inv.emitionDate);
-
-    if (direction === 'outbound') {
-      totalSales += amount;
-      if (invoiceDate >= currentMonthStart && invoiceDate <= currentMonthEnd) {
-        monthlySales += amount;
-      }
-      if (
-        invoiceDate >= previousMonthStart &&
-        invoiceDate <= previousMonthEnd
-      ) {
-        previousMonthSales += amount;
-      }
-    } else if (direction === 'inbound') {
-      totalPurchases += amount;
-      if (invoiceDate >= currentMonthStart && invoiceDate <= currentMonthEnd) {
-        monthlyPurchases += amount;
-      }
-      if (
-        invoiceDate >= previousMonthStart &&
-        invoiceDate <= previousMonthEnd
-      ) {
-        previousMonthPurchases += amount;
-      }
-    }
-  });
-
-  const monthlyInvoices = allInvoices.filter(
-    (inv) =>
-      new Date(inv.emitionDate) >= currentMonthStart &&
-      new Date(inv.emitionDate) <= currentMonthEnd
-  ).length;
-
-  return {
-    totalClients: userClientIds.length,
-    totalSales,
-    totalPurchases,
-    totalInvoices: allInvoices.length,
-    monthlySales,
-    monthlyPurchases,
-    monthlyInvoices,
-    previousMonthSales,
-    previousMonthPurchases,
-  };
-});
-
-export const getMonthlyEvolution = createServerFn({
-  method: 'GET',
-})
+export const getDashboardStats = createServerFn({ method: 'GET' })
   .inputValidator(
     z.object({
-      months: z.number().default(6),
+      from: z.string().optional(),
+      to: z.string().optional(),
     })
   )
   .handler(async (ctx) => {
@@ -147,8 +33,36 @@ export const getMonthlyEvolution = createServerFn({
     const userClientIds = userClients.map((c) => c.id);
 
     if (userClientIds.length === 0) {
-      return [];
+      return {
+        totalClients: 0,
+        totalSales: 0,
+        totalPurchases: 0,
+        totalInvoices: 0,
+        monthlySales: 0,
+        monthlyPurchases: 0,
+        monthlyInvoices: 0,
+        previousMonthSales: 0,
+        previousMonthPurchases: 0,
+      };
     }
+
+    const now = new Date();
+
+    // Current period bounds
+    const currentFrom = parseDateParam(
+      ctx.data.from,
+      new Date(now.getFullYear(), now.getMonth(), 1)
+    );
+    const currentTo = parseDateParam(
+      ctx.data.to,
+      new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
+    );
+    currentTo.setHours(23, 59, 59, 999);
+
+    // Previous period: same duration, ending 1ms before currentFrom
+    const rangeMs = currentTo.getTime() - currentFrom.getTime();
+    const previousTo = new Date(currentFrom.getTime() - 1);
+    const previousFrom = new Date(previousTo.getTime() - rangeMs);
 
     const allInvoices = await db
       .select({
@@ -161,24 +75,13 @@ export const getMonthlyEvolution = createServerFn({
       .from(invoice)
       .where(inArray(invoice.client, userClientIds));
 
-    // Calculate monthly data for last N months
-    const now = new Date();
-    const monthlyDataMap: Record<
-      string,
-      { outbound: number; inbound: number }
-    > = {};
+    let totalSales = 0;
+    let totalPurchases = 0;
+    let monthlySales = 0;
+    let monthlyPurchases = 0;
+    let previousMonthSales = 0;
+    let previousMonthPurchases = 0;
 
-    // Initialize all months with 0
-    for (let i = ctx.data.months - 1; i >= 0; i--) {
-      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const monthKey = date.toLocaleString('es-AR', {
-        month: 'short',
-        year: '2-digit',
-      });
-      monthlyDataMap[monthKey] = { outbound: 0, inbound: 0 };
-    }
-
-    // Process invoices
     allInvoices.forEach((inv) => {
       let amount = parseFloat(inv.amount || '0');
       if (inv.currency?.toUpperCase() === 'USD') {
@@ -186,67 +89,130 @@ export const getMonthlyEvolution = createServerFn({
         amount = amount * rate;
       }
 
+      const direction = inv.direction?.toLowerCase();
       const invoiceDate = new Date(inv.emitionDate);
-      const monthKey = invoiceDate.toLocaleString('es-AR', {
-        month: 'short',
-        year: '2-digit',
-      });
 
-      // Only include if within the last N months
-      const monthsDiff =
-        (now.getFullYear() - invoiceDate.getFullYear()) * 12 +
-        (now.getMonth() - invoiceDate.getMonth());
-      if (monthsDiff >= 0 && monthsDiff < ctx.data.months) {
-        if (!monthlyDataMap[monthKey]) {
-          monthlyDataMap[monthKey] = { outbound: 0, inbound: 0 };
+      if (direction === 'outbound') {
+        totalSales += amount;
+        if (invoiceDate >= currentFrom && invoiceDate <= currentTo) {
+          monthlySales += amount;
         }
-
-        if (inv.direction?.toLowerCase() === 'outbound') {
-          monthlyDataMap[monthKey].outbound += amount;
-        } else if (inv.direction?.toLowerCase() === 'inbound') {
-          monthlyDataMap[monthKey].inbound += amount;
+        if (invoiceDate >= previousFrom && invoiceDate <= previousTo) {
+          previousMonthSales += amount;
+        }
+      } else if (direction === 'inbound') {
+        totalPurchases += amount;
+        if (invoiceDate >= currentFrom && invoiceDate <= currentTo) {
+          monthlyPurchases += amount;
+        }
+        if (invoiceDate >= previousFrom && invoiceDate <= previousTo) {
+          previousMonthPurchases += amount;
         }
       }
     });
 
-    // Convert to array and sort
-    const monthNames: Record<string, number> = {
-      ene: 0,
-      feb: 1,
-      mar: 2,
-      abr: 3,
-      may: 4,
-      jun: 5,
-      jul: 6,
-      ago: 7,
-      sep: 8,
-      oct: 9,
-      nov: 10,
-      dic: 11,
+    const monthlyInvoices = allInvoices.filter((inv) => {
+      const d = new Date(inv.emitionDate);
+      return d >= currentFrom && d <= currentTo;
+    }).length;
+
+    return {
+      totalClients: userClientIds.length,
+      totalSales,
+      totalPurchases,
+      totalInvoices: allInvoices.length,
+      monthlySales,
+      monthlyPurchases,
+      monthlyInvoices,
+      previousMonthSales,
+      previousMonthPurchases,
     };
-
-    const monthlyData = Object.keys(monthlyDataMap)
-      .map((month) => ({ month, ...monthlyDataMap[month] }))
-      .sort((a, b) => {
-        const [monthA, yearA] = a.month.split(' ');
-        const [monthB, yearB] = b.month.split(' ');
-        const monthIndexA = monthNames[monthA.toLowerCase()] ?? 0;
-        const monthIndexB = monthNames[monthB.toLowerCase()] ?? 0;
-        const yearA_num = parseInt(`20${yearA}`);
-        const yearB_num = parseInt(`20${yearB}`);
-
-        if (yearA_num !== yearB_num) {
-          return yearA_num - yearB_num;
-        }
-        return monthIndexA - monthIndexB;
-      });
-
-    return monthlyData;
   });
 
-export const getUpcomingDueDates = createServerFn({
-  method: 'GET',
-})
+// ── getMonthlyEvolution ────────────────────────────────────────────────────
+
+export const getMonthlyEvolution = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      from: z.string().optional(),
+      to: z.string().optional(),
+      months: z.number().optional(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+
+    const userClients = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(eq(client.organizationId, orgId));
+
+    const userClientIds = userClients.map((c) => c.id);
+
+    if (userClientIds.length === 0) return [];
+
+    const now = new Date();
+
+    // Determine range
+    const to = parseDateParam(
+      ctx.data.to,
+      new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
+    );
+    const monthCount = ctx.data.months ?? 6;
+    const from = parseDateParam(
+      ctx.data.from,
+      new Date(to.getFullYear(), to.getMonth() - (monthCount - 1), 1)
+    );
+
+    const allInvoices = await db
+      .select({
+        direction: invoice.direction,
+        amount: invoice.amount,
+        currency: invoice.currency,
+        currencyRate: invoice.cureencyRate,
+        emitionDate: invoice.emitionDate,
+      })
+      .from(invoice)
+      .where(inArray(invoice.client, userClientIds));
+
+    // Build monthly buckets from `from` to `to`
+    const buckets: { year: number; month: number; outbound: number; inbound: number }[] = [];
+    let cur = new Date(from.getFullYear(), from.getMonth(), 1);
+    const endBucket = new Date(to.getFullYear(), to.getMonth(), 1);
+    while (cur <= endBucket) {
+      buckets.push({ year: cur.getFullYear(), month: cur.getMonth(), outbound: 0, inbound: 0 });
+      cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+    }
+
+    allInvoices.forEach((inv) => {
+      let amount = parseFloat(inv.amount || '0');
+      if (inv.currency?.toUpperCase() === 'USD') {
+        amount = amount * parseFloat(inv.currencyRate || '1');
+      }
+
+      const d = new Date(inv.emitionDate);
+      const bucket = buckets.find((b) => b.year === d.getFullYear() && b.month === d.getMonth());
+      if (!bucket) return;
+
+      if (inv.direction?.toLowerCase() === 'outbound') bucket.outbound += amount;
+      else if (inv.direction?.toLowerCase() === 'inbound') bucket.inbound += amount;
+    });
+
+    const MONTH_NAMES: Record<number, string> = {
+      0: 'ene', 1: 'feb', 2: 'mar', 3: 'abr', 4: 'may', 5: 'jun',
+      6: 'jul', 7: 'ago', 8: 'sep', 9: 'oct', 10: 'nov', 11: 'dic',
+    };
+
+    return buckets.map((b) => ({
+      month: `${MONTH_NAMES[b.month]} ${String(b.year).slice(2)}`,
+      outbound: b.outbound,
+      inbound: b.inbound,
+    }));
+  });
+
+// ── getUpcomingDueDates ────────────────────────────────────────────────────
+
+export const getUpcomingDueDates = createServerFn({ method: 'GET' })
   .inputValidator(
     z.object({
       days: z.number().default(7),
@@ -263,9 +229,7 @@ export const getUpcomingDueDates = createServerFn({
 
     const userClientIds = userClients.map((c) => c.id);
 
-    if (userClientIds.length === 0) {
-      return [];
-    }
+    if (userClientIds.length === 0) return [];
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -297,9 +261,9 @@ export const getUpcomingDueDates = createServerFn({
     return dueDates;
   });
 
-export const getOverdueDebts = createServerFn({
-  method: 'GET',
-})
+// ── getOverdueDebts ────────────────────────────────────────────────────────
+
+export const getOverdueDebts = createServerFn({ method: 'GET' })
   .inputValidator(
     z.object({
       limit: z.number().default(5),
@@ -315,9 +279,7 @@ export const getOverdueDebts = createServerFn({
 
     const userClientIds = userClients.map((c) => c.id);
 
-    if (userClientIds.length === 0) {
-      return [];
-    }
+    if (userClientIds.length === 0) return [];
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -341,12 +303,14 @@ export const getOverdueDebts = createServerFn({
     return debts;
   });
 
-export const getRecentInvoices = createServerFn({
-  method: 'GET',
-})
+// ── getRecentInvoices ──────────────────────────────────────────────────────
+
+export const getRecentInvoices = createServerFn({ method: 'GET' })
   .inputValidator(
     z.object({
       limit: z.number().default(5),
+      from: z.string().optional(),
+      to: z.string().optional(),
     })
   )
   .handler(async (ctx) => {
@@ -359,8 +323,17 @@ export const getRecentInvoices = createServerFn({
 
     const userClientIds = userClients.map((c) => c.id);
 
-    if (userClientIds.length === 0) {
-      return [];
+    if (userClientIds.length === 0) return [];
+
+    const conditions = [inArray(invoice.client, userClientIds)];
+
+    if (ctx.data.from) {
+      conditions.push(gte(invoice.emitionDate, new Date(ctx.data.from)));
+    }
+    if (ctx.data.to) {
+      const to = new Date(ctx.data.to);
+      to.setHours(23, 59, 59, 999);
+      conditions.push(lte(invoice.emitionDate, to));
     }
 
     const invoices = await db
@@ -376,19 +349,21 @@ export const getRecentInvoices = createServerFn({
       })
       .from(invoice)
       .leftJoin(client, eq(invoice.client, client.id))
-      .where(inArray(invoice.client, userClientIds))
+      .where(and(...conditions))
       .orderBy(sql`${invoice.createdAt} DESC`)
       .limit(ctx.data.limit);
 
     return invoices;
   });
 
-export const getTopClients = createServerFn({
-  method: 'GET',
-})
+// ── getTopClients ──────────────────────────────────────────────────────────
+
+export const getTopClients = createServerFn({ method: 'GET' })
   .inputValidator(
     z.object({
       limit: z.number().default(5),
+      from: z.string().optional(),
+      to: z.string().optional(),
     })
   )
   .handler(async (ctx) => {
@@ -405,20 +380,18 @@ export const getTopClients = createServerFn({
 
     const userClientIds = userClients.map((c) => c.id);
 
-    if (userClientIds.length === 0) {
-      return [];
-    }
+    if (userClientIds.length === 0) return [];
 
     const now = new Date();
-    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const currentMonthEnd = new Date(
-      now.getFullYear(),
-      now.getMonth() + 1,
-      0,
-      23,
-      59,
-      59
+    const rangeFrom = parseDateParam(
+      ctx.data.from,
+      new Date(now.getFullYear(), now.getMonth(), 1)
     );
+    const rangeTo = parseDateParam(
+      ctx.data.to,
+      new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
+    );
+    rangeTo.setHours(23, 59, 59, 999);
 
     const clientInvoices = await db
       .select({
@@ -431,8 +404,8 @@ export const getTopClients = createServerFn({
       .where(
         and(
           inArray(invoice.client, userClientIds),
-          gte(invoice.emitionDate, currentMonthStart),
-          lte(invoice.emitionDate, currentMonthEnd)
+          gte(invoice.emitionDate, rangeFrom),
+          lte(invoice.emitionDate, rangeTo)
         )
       )
       .groupBy(invoice.client)
@@ -441,7 +414,6 @@ export const getTopClients = createServerFn({
 
     const clientMap = new Map(userClients.map((c) => [c.id, c]));
 
-    // Get overdue debts per client for status
     const overdueDebts = await db
       .select({
         clientId: debt.client,
@@ -484,6 +456,8 @@ export const getTopClients = createServerFn({
     });
   });
 
+// ── getPendingNotificationsCount ───────────────────────────────────────────
+
 export const getPendingNotificationsCount = createServerFn({
   method: 'GET',
 }).handler(async () => {
@@ -496,9 +470,7 @@ export const getPendingNotificationsCount = createServerFn({
 
   const userClientIds = userClients.map((c) => c.id);
 
-  if (userClientIds.length === 0) {
-    return { count: 0 };
-  }
+  if (userClientIds.length === 0) return { count: 0 };
 
   const [result] = await db
     .select({ count: sql<number>`count(*)` })

@@ -2,8 +2,6 @@
 
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { format } from 'date-fns';
-import { es } from 'date-fns/locale';
 import {
   LayoutDashboard,
   Users,
@@ -12,6 +10,8 @@ import {
   Loader2,
   Calendar,
   Trash2,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -29,12 +29,11 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
 import {
   listLiquidacionesByPeriodo,
   listEmpleados,
@@ -49,14 +48,8 @@ import {
   puedeLiquidarPeriodo,
 } from '@/lib/payroll-period-rules';
 
-const now = new Date();
 const [PERIODO_INICIAL_ANO, PERIODO_INICIAL_MES] =
   getPeriodoMesAnterior().split('-');
-const ANOS = Array.from({ length: 6 }, (_, i) => now.getFullYear() - i);
-const MESES = Array.from({ length: 12 }, (_, i) => ({
-  value: String(i + 1).padStart(2, '0'),
-  label: format(new Date(2000, i, 1), 'MMMM', { locale: es }),
-}));
 
 interface SueldosDashboardProps {
   clientId: string;
@@ -182,56 +175,13 @@ export function SueldosDashboard({
       {sueldosQueryError ? (
         <Alert variant="destructive">
           <AlertTitle>No se pudieron cargar los datos de sueldos</AlertTitle>
-          <AlertDescription className="space-y-2">
-            <p>{sueldosErrorMessage}</p>
-            <p>
-              Si el error menciona columnas en{' '}
-              <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-                liquidacion_import_empleado
-              </code>
-              , ejecutá en la carpeta del proyecto{' '}
-              <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
-                npm run db:ensure-empleado-pago
-              </code>{' '}
-              (necesita <code className="font-mono text-xs">DATABASE_URL</code>{' '}
-              en .env). Es seguro repetirlo: solo agrega columnas si faltan.
-            </p>
-          </AlertDescription>
         </Alert>
       ) : null}
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-2">
-          <Calendar className="h-5 w-5 text-muted-foreground" />
-          <span className="text-sm font-medium">Año:</span>
-          <Select value={ano} onValueChange={setAno}>
-            <SelectTrigger className="w-[100px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {ANOS.map((y) => (
-                <SelectItem key={y} value={String(y)}>
-                  {y}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <span className="text-sm font-medium">Mes:</span>
-          <Select value={mes} onValueChange={setMes}>
-            <SelectTrigger className="w-[140px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {MESES.map((m) => (
-                <SelectItem key={m.value} value={m.value}>
-                  {m.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <MonthPicker ano={ano} mes={mes} onSelect={(a, m) => { setAno(a); setMes(m); }} />
         <div className="flex flex-col items-end gap-1">
           {!permiteLiquidar && (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs text-[var(--arca-ink-3)]">
               Solo se puede liquidar el mes anterior al en curso.
             </span>
           )}
@@ -254,10 +204,10 @@ export function SueldosDashboard({
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardTitle className="text-sm font-medium text-[var(--arca-ink-3)]">
               Empleados activos
             </CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
+            <Users className="h-4 w-4 text-[var(--arca-ink-3)]" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{importEmpleados.length}</div>
@@ -265,10 +215,10 @@ export function SueldosDashboard({
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardTitle className="text-sm font-medium text-[var(--arca-ink-3)]">
               Liquidaciones (período)
             </CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
+            <FileText className="h-4 w-4 text-[var(--arca-ink-3)]" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
@@ -278,10 +228,10 @@ export function SueldosDashboard({
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardTitle className="text-sm font-medium text-[var(--arca-ink-3)]">
               Total bruto
             </CardTitle>
-            <Calculator className="h-4 w-4 text-muted-foreground" />
+            <Calculator className="h-4 w-4 text-[var(--arca-ink-3)]" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
@@ -293,10 +243,10 @@ export function SueldosDashboard({
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardTitle className="text-sm font-medium text-[var(--arca-ink-3)]">
               Total neto
             </CardTitle>
-            <LayoutDashboard className="h-4 w-4 text-muted-foreground" />
+            <LayoutDashboard className="h-4 w-4 text-[var(--arca-ink-3)]" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
@@ -313,7 +263,7 @@ export function SueldosDashboard({
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
               <CardTitle>Recibos del período</CardTitle>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-[var(--arca-ink-3)]">
                 Período {periodo}. Incluye recibos importados (LSD) y generados
                 por el sistema.
               </p>
@@ -321,7 +271,7 @@ export function SueldosDashboard({
             <Button
               variant="outline"
               size="sm"
-              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+              className="text-[var(--arca-accent-neg)] hover:bg-destructive/10 hover:text-[var(--arca-accent-neg)]"
               onClick={() => setDeleteLiquidacionesOpen(true)}
               disabled={loadingLiq || liquidaciones.length === 0}
             >
@@ -332,12 +282,12 @@ export function SueldosDashboard({
         </CardHeader>
         <CardContent>
           {loadingLiq ? (
-            <div className="flex items-center gap-2 text-muted-foreground">
+            <div className="flex items-center gap-2 text-[var(--arca-ink-3)]">
               <Loader2 className="h-4 w-4 animate-spin" />
               Cargando…
             </div>
           ) : liquidaciones.length === 0 ? (
-            <p className="text-muted-foreground">
+            <p className="text-[var(--arca-ink-3)]">
               No hay recibos para este período.
             </p>
           ) : (
@@ -369,7 +319,7 @@ export function SueldosDashboard({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      className="h-8 w-8 text-[var(--arca-accent-neg)] hover:bg-destructive/10 hover:text-[var(--arca-accent-neg)]"
                       onClick={() =>
                         setLiquidacionToDelete({
                           id: l.liquidacion.id,
@@ -415,7 +365,7 @@ export function SueldosDashboard({
               Cancelar
             </AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="bg-destructive text-[var(--arca-accent-neg)]-foreground hover:bg-destructive/90"
               onClick={() => eliminarLiquidaciones.mutate()}
             >
               {eliminarLiquidaciones.isPending ? 'Eliminando…' : 'Eliminar'}
@@ -446,7 +396,7 @@ export function SueldosDashboard({
               Cancelar
             </AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="bg-destructive text-[var(--arca-accent-neg)]-foreground hover:bg-destructive/90"
               onClick={() => {
                 if (!liquidacionToDelete) return;
                 eliminarLiquidacionItem.mutate(liquidacionToDelete.id);
@@ -458,5 +408,84 @@ export function SueldosDashboard({
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+/* ─── Month Picker ─── */
+const MONTH_LABELS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+const MONTH_LABELS_FULL = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+function MonthPicker({
+  ano,
+  mes,
+  onSelect,
+}: {
+  ano: string;
+  mes: string;
+  onSelect: (ano: string, mes: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [navYear, setNavYear] = useState(Number(ano));
+  const now = new Date();
+  const selectedLabel = `${MONTH_LABELS_FULL[Number(mes) - 1]} ${ano}`;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[var(--arca-r-md)] text-[13px] font-medium border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink)] hover:bg-[var(--arca-surface-2)] transition-colors duration-[120ms]">
+          <Calendar className="w-[13px] h-[13px] shrink-0 text-[var(--arca-ink-3)]" />
+          {selectedLabel}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[240px] p-3" align="start" sideOffset={8}>
+        {/* Year navigation */}
+        <div className="flex items-center justify-between mb-3">
+          <button
+            onClick={() => setNavYear((y) => y - 1)}
+            className="w-6 h-6 flex items-center justify-center rounded-md text-[var(--arca-ink-3)] hover:bg-[var(--arca-surface-2)] transition-colors"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" />
+          </button>
+          <span className="text-[13px] font-semibold text-[var(--arca-ink)]">{navYear}</span>
+          <button
+            onClick={() => setNavYear((y) => y + 1)}
+            disabled={navYear >= now.getFullYear()}
+            className="w-6 h-6 flex items-center justify-center rounded-md text-[var(--arca-ink-3)] hover:bg-[var(--arca-surface-2)] transition-colors disabled:opacity-30 disabled:pointer-events-none"
+          >
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {/* Month grid */}
+        <div className="grid grid-cols-3 gap-1">
+          {MONTH_LABELS.map((label, i) => {
+            const mValue = String(i + 1).padStart(2, '0');
+            const isSelected = String(navYear) === ano && mValue === mes;
+            const isFuture =
+              navYear > now.getFullYear() ||
+              (navYear === now.getFullYear() && i >= now.getMonth());
+            return (
+              <button
+                key={mValue}
+                disabled={isFuture}
+                onClick={() => {
+                  onSelect(String(navYear), mValue);
+                  setOpen(false);
+                }}
+                className={cn(
+                  'py-1.5 rounded-md text-[12.5px] font-medium transition-colors duration-[120ms]',
+                  isSelected
+                    ? 'bg-[var(--arca-navy-900)] text-white'
+                    : 'text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]',
+                  isFuture && 'opacity-30 pointer-events-none'
+                )}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }

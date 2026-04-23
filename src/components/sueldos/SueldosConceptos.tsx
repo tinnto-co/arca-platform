@@ -63,11 +63,11 @@ const SUBSISTEMAS: {
 
 function Check({ value }: { value: boolean | null }) {
   if (value === null)
-    return <span className="text-muted-foreground text-xs">—</span>;
+    return <span className="text-[var(--arca-ink-3)] text-xs">—</span>;
   return value ? (
-    <span className="text-green-600 font-bold">✓</span>
+    <span className="text-[var(--arca-accent-pos)] font-bold">✓</span>
   ) : (
-    <span className="text-muted-foreground">✗</span>
+    <span className="text-[var(--arca-ink-3)]">✗</span>
   );
 }
 
@@ -96,25 +96,25 @@ function ConceptoDialog({ row }: { row: ConceptoRow }) {
       <DialogContent className="w-[95vw] sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle className="text-base">
-            <span className="font-mono text-muted-foreground mr-2">
+            <span className="font-mono text-[var(--arca-ink-3)] mr-2">
               {row.afipCodigo}
             </span>
             {row.afipNombre}
           </DialogTitle>
         </DialogHeader>
-        <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs space-y-3">
+        <div className="rounded-md border bg-[var(--arca-surface-2)] px-3 py-2 text-xs space-y-3">
           <div>
-            <p className="text-muted-foreground">Fórmula del concepto</p>
+            <p className="text-[var(--arca-ink-3)]">Fórmula del concepto</p>
             <p className="mt-1 font-mono leading-relaxed text-foreground break-words">
               {formula}
             </p>
           </div>
           {leyenda.length > 0 && (
             <div className="border-t border-border/60 pt-2">
-              <p className="text-muted-foreground mb-1.5">
+              <p className="text-[var(--arca-ink-3)] mb-1.5">
                 Significado de las abreviaturas
               </p>
-              <ul className="max-h-[min(40vh,14rem)] space-y-1 overflow-y-auto pr-1 text-[11px] leading-snug text-muted-foreground">
+              <ul className="max-h-[min(40vh,14rem)] space-y-1 overflow-y-auto pr-1 text-[11px] leading-snug text-[var(--arca-ink-3)]">
                 {leyenda.map((item) => (
                   <li key={item.sigla} className="flex gap-2">
                     <span className="shrink-0 font-mono font-medium text-foreground">
@@ -213,7 +213,7 @@ export function SueldosConceptos({
               <TableRow>
                 <TableCell
                   colSpan={4}
-                  className="text-center text-muted-foreground"
+                  className="text-center text-[var(--arca-ink-3)]"
                 >
                   Cargando...
                 </TableCell>
@@ -222,7 +222,7 @@ export function SueldosConceptos({
               <TableRow>
                 <TableCell
                   colSpan={4}
-                  className="text-center text-muted-foreground"
+                  className="text-center text-[var(--arca-ink-3)]"
                 >
                   No hay conceptos para este perfil.
                 </TableCell>
@@ -237,7 +237,7 @@ export function SueldosConceptos({
                   <TableCell className="min-w-0 break-words">
                     <div className="space-y-0.5">
                       <p>{row.afipNombre}</p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-xs text-[var(--arca-ink-3)]">
                         {row.descripcionContribuyente}
                       </p>
                     </div>

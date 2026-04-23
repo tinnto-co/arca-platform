@@ -139,7 +139,7 @@ export function RenderPdfInfo({ data }: RenderPdfInfoProps) {
         </div>
         <div className="rounded-xl border bg-card p-4 flex flex-col justify-center">
           <p className="text-sm text-muted-foreground">Total Ingresos</p>
-          <p className="text-xl font-bold text-emerald-600">
+          <p className="text-xl font-bold text-[var(--arca-accent-pos-fg)]">
             {totalIngresos.toLocaleString('es-AR', {
               style: 'currency',
               currency: 'ARS',
@@ -148,7 +148,7 @@ export function RenderPdfInfo({ data }: RenderPdfInfoProps) {
         </div>
         <div className="rounded-xl border bg-card p-4 flex flex-col justify-center">
           <p className="text-sm text-muted-foreground">Total Egresos</p>
-          <p className="text-xl font-bold text-red-600">
+          <p className="text-xl font-bold text-[var(--arca-accent-neg)]">
             {totalEgresos.toLocaleString('es-AR', {
               style: 'currency',
               currency: 'ARS',
@@ -161,7 +161,7 @@ export function RenderPdfInfo({ data }: RenderPdfInfoProps) {
       <Collapsible open={openIngresos} onOpenChange={setOpenIngresos}>
         <CollapsibleTrigger className="flex w-full items-center justify-between rounded-xl border bg-muted/50 px-4 py-3 text-base hover:bg-muted/70 transition-colors">
           <span className="font-medium">Ingresos</span>
-          <TrendingUp className="h-5 w-5 text-emerald-600 shrink-0" />
+          <TrendingUp className="h-5 w-5 text-[var(--arca-accent-pos)] shrink-0" />
         </CollapsibleTrigger>
         <CollapsibleContent
           forceMount
@@ -192,7 +192,7 @@ export function RenderPdfInfo({ data }: RenderPdfInfoProps) {
       <Collapsible open={openEgresos} onOpenChange={setOpenEgresos}>
         <CollapsibleTrigger className="flex w-full items-center justify-between rounded-xl border bg-muted/50 px-4 py-3 text-base hover:bg-muted/70 transition-colors">
           <span className="font-medium">Egresos</span>
-          <TrendingDown className="h-5 w-5 text-red-600 shrink-0" />
+          <TrendingDown className="h-5 w-5 text-[var(--arca-accent-neg)] shrink-0" />
         </CollapsibleTrigger>
         <CollapsibleContent
           forceMount
@@ -396,7 +396,7 @@ function MovementsTable({
 
               <TableCell
                 className={`text-right font-medium ${
-                  title === 'Ingresos' ? 'text-emerald-600' : 'text-red-600'
+                  title === 'Ingresos' ? 'text-[var(--arca-accent-pos-fg)]' : 'text-[var(--arca-accent-neg-fg)]'
                 }`}
               >
                 {m.monto}

@@ -351,7 +351,7 @@ function DocCell({
 }) {
   return (
     <div className={`flex flex-col px-2 py-1 ${className}`}>
-      <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+      <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--arca-ink-3)]">
         {label}
       </span>
       <span className="mt-0.5 text-sm font-medium leading-tight">
@@ -403,7 +403,7 @@ export function SueldosRecibo({ clientId, profileId }: SueldosReciboProps) {
             <FileText className="h-5 w-5" />
             Recibos liquidados
           </CardTitle>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-[var(--arca-ink-3)]">
             Seleccioná período y recibo para ver el detalle de la liquidación.
           </p>
         </CardHeader>
@@ -478,13 +478,13 @@ export function SueldosRecibo({ clientId, profileId }: SueldosReciboProps) {
           {loadingDetalle ? (
             <Card>
               <CardContent className="py-8">
-                <p className="text-muted-foreground">Cargando…</p>
+                <p className="text-[var(--arca-ink-3)]">Cargando…</p>
               </CardContent>
             </Card>
           ) : !detalle ? (
             <Card>
               <CardContent className="py-8">
-                <p className="text-muted-foreground">
+                <p className="text-[var(--arca-ink-3)]">
                   No se encontró el recibo.
                 </p>
               </CardContent>
@@ -601,11 +601,11 @@ function ReciboDocumento({
               {clientData?.name ?? '—'}
             </span>
             {clientData?.address && (
-              <span className="text-sm text-muted-foreground">
+              <span className="text-sm text-[var(--arca-ink-3)]">
                 {clientData.address}
               </span>
             )}
-            <span className="text-sm font-medium text-muted-foreground">
+            <span className="text-sm font-medium text-[var(--arca-ink-3)]">
               CUIT: {clientData?.identityNumber ?? '—'}
             </span>
           </div>
@@ -615,7 +615,7 @@ function ReciboDocumento({
               <span className="text-base font-bold uppercase tracking-widest">
                 Recibo de Haberes
               </span>
-              <span className="ml-3 text-sm font-medium text-muted-foreground">
+              <span className="ml-3 text-sm font-medium text-[var(--arca-ink-3)]">
                 — {tipoReciboLabel(liquidacion.tipo)}
               </span>
             </div>
@@ -705,7 +705,7 @@ function ReciboDocumento({
         {/* ── TABLA DE CONCEPTOS ──────────────────────────────────────────── */}
         <table className="w-full border-collapse">
           <thead>
-            <tr className="border-b border-border bg-muted/40 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <tr className="border-b border-border bg-[var(--arca-surface-2)] text-xs font-semibold uppercase tracking-wide text-[var(--arca-ink-3)]">
               <th className="w-[70px] px-2 py-2 text-left">Código</th>
               <th className="px-2 py-2 text-left">Descripción del concepto</th>
               <th className="w-[70px] px-2 py-2 text-right">Cant.</th>
@@ -729,7 +729,7 @@ function ReciboDocumento({
               <tr>
                 <td
                   colSpan={8}
-                  className="px-2 py-4 text-center text-sm text-muted-foreground"
+                  className="px-2 py-4 text-center text-sm text-[var(--arca-ink-3)]"
                 >
                   Sin conceptos cargados
                 </td>
@@ -743,8 +743,8 @@ function ReciboDocumento({
                   conceptoSos,
                   col,
                 }) => (
-                  <tr key={det.id} className="hover:bg-muted/20">
-                    <td className="px-2 py-1 font-mono text-xs text-muted-foreground">
+                  <tr key={det.id} className="hover:bg-[var(--arca-surface-2)]">
+                    <td className="px-2 py-1 font-mono text-xs text-[var(--arca-ink-3)]">
                       {det.codigo}
                     </td>
                     <td className="px-2 py-1">
@@ -753,10 +753,10 @@ function ReciboDocumento({
                         conceptoSos?.nombre ??
                         det.codigo}
                     </td>
-                    <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">
+                    <td className="px-2 py-1 text-right tabular-nums text-[var(--arca-ink-3)]">
                       {det.cantidad ? moneyFmt(det.cantidad) : '—'}
                     </td>
-                    <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">
+                    <td className="px-2 py-1 text-right tabular-nums text-[var(--arca-ink-3)]">
                       {det.porcentaje ? moneyFmt(det.porcentaje) : '—'}
                     </td>
                     <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
@@ -778,7 +778,7 @@ function ReciboDocumento({
           </tbody>
           {/* ── Fila de totales ─────────────────────────────────────────── */}
           <tfoot>
-            <tr className="border-t-2 border-border bg-muted/30 font-semibold">
+            <tr className="border-t-2 border-border bg-[var(--arca-surface-2)] font-semibold">
               <td
                 colSpan={4}
                 className="px-2 py-2 uppercase tracking-wide text-xs"
@@ -802,8 +802,8 @@ function ReciboDocumento({
         </table>
 
         {/* ── NETO ────────────────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between border-t-2 border-border bg-muted/10 px-4 py-3">
-          <span className="text-sm text-muted-foreground">
+        <div className="flex items-center justify-between border-t-2 border-border bg-[var(--arca-surface-2)] px-4 py-3">
+          <span className="text-sm text-[var(--arca-ink-3)]">
             Son{' '}
             <span className="font-medium capitalize text-foreground">
               {pesoEnLetras(neto)}
@@ -817,7 +817,7 @@ function ReciboDocumento({
         {/* ── OBSERVACIÓN ─────────────────────────────────────────────────── */}
         {liquidacion.observacionRecibo && (
           <div className="border-t border-border px-4 py-2">
-            <span className="text-xs font-semibold uppercase text-muted-foreground">
+            <span className="text-xs font-semibold uppercase text-[var(--arca-ink-3)]">
               Observación:
             </span>{' '}
             <span className="text-sm">{liquidacion.observacionRecibo}</span>
@@ -836,13 +836,13 @@ function ReciboDocumento({
             ) : (
               <div className="h-16 w-full" />
             )}
-            <div className="w-full border-t border-foreground/40 pt-1 text-center text-xs uppercase tracking-widest text-muted-foreground">
+            <div className="w-full border-t border-foreground/40 pt-1 text-center text-xs uppercase tracking-widest text-[var(--arca-ink-3)]">
               Firma y sello del empleador
             </div>
           </div>
           <div className="flex flex-col items-center gap-4 px-8 py-6">
             <div className="h-16 w-full" />
-            <div className="w-full border-t border-foreground/40 pt-1 text-center text-xs uppercase tracking-widest text-muted-foreground">
+            <div className="w-full border-t border-foreground/40 pt-1 text-center text-xs uppercase tracking-widest text-[var(--arca-ink-3)]">
               Firma del empleado
             </div>
           </div>

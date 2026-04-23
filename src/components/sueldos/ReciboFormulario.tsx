@@ -251,7 +251,7 @@ export function ReciboFormulario({
           <FilePlus2 className="h-4 w-4" />
           Nuevo recibo — datos del recibo
         </CardTitle>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-[var(--arca-ink-3)]">
           Completá la cabecera y presioná Agregar. Luego usá Calcular para
           aplicar fórmulas (o conservá conceptos si copiaste el último recibo).
         </p>
@@ -259,10 +259,10 @@ export function ReciboFormulario({
       <CardContent>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
-            <section className="space-y-4 rounded-lg border bg-muted/20 p-4">
+            <section className="space-y-4 rounded-lg border bg-[var(--arca-surface-2)] p-4">
               <div>
                 <h3 className="text-sm font-semibold">Cabecera principal</h3>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-[var(--arca-ink-3)]">
                   Selección de empleado, tipo y período del recibo.
                 </p>
               </div>
@@ -450,7 +450,7 @@ export function ReciboFormulario({
                               role="combobox"
                               className={cn(
                                 'justify-between font-normal',
-                                !field.value && 'text-muted-foreground'
+                                !field.value && 'text-[var(--arca-ink-3)]'
                               )}
                             >
                               <span className="truncate text-left">
@@ -509,7 +509,7 @@ export function ReciboFormulario({
                   <h3 className="text-sm font-semibold">
                     Pago, cargas y observaciones
                   </h3>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs text-[var(--arca-ink-3)]">
                     Datos complementarios del recibo y del período de cargas.
                   </p>
                 </div>
@@ -609,7 +609,7 @@ export function ReciboFormulario({
                     />
                   </div>
                   {formaPago === 'acreditacion' && (
-                    <div className="rounded-md border border-amber-300/60 bg-amber-50/40 p-3">
+                    <div className="rounded-md border border-[var(--arca-accent-warn)]/30 bg-[var(--arca-accent-warn-bg)] p-3">
                       <FormField
                         control={form.control}
                         name="cbu"
@@ -624,7 +624,7 @@ export function ReciboFormulario({
                                 className="font-mono"
                               />
                             </FormControl>
-                            <p className="text-xs text-destructive">
+                            <p className="text-xs text-[var(--arca-accent-neg)]">
                               Obligatorio si forma de pago es acreditación
                             </p>
                             <FormMessage />
@@ -742,7 +742,7 @@ export function ReciboFormulario({
               </Collapsible>
             </section>
 
-            <section className="space-y-3 rounded-lg border bg-muted/20 p-4">
+            <section className="space-y-3 rounded-lg border bg-[var(--arca-surface-2)] p-4">
               <FormField
                 control={form.control}
                 name="copiarUltimoRecibo"

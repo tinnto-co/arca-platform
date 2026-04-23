@@ -23,6 +23,7 @@ import { type DateRange } from 'react-day-picker';
 import ExcelJSRaw from 'exceljs';
 
 import {
+  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -250,12 +251,26 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
     const [typeFilter, setTypeFilter] = useState<string>('all');
     const [directionFilter, setDirectionFilter] = useState<string>('all');
     const [sortBy, setSortBy] = useState<'amount' | 'emitionDate' | undefined>(
-      undefined
+      'emitionDate'
     );
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | undefined>(
-      undefined
+      'desc'
     );
     const [currentPage, setCurrentPage] = useState(1);
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const toggleAllInvoices = (ids: string[]) => {
+      const allSel = ids.length > 0 && ids.every((id) => selectedIds.has(id));
+      setSelectedIds(allSel ? new Set() : new Set(ids));
+    };
+    const toggleInvoiceRow = (id: string) => {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    };
+
     const [viewDialogOpen, setViewDialogOpen] = useState(false);
     const [selectedInvoice, setSelectedInvoice] = useState<InvoiceData | null>(
       null
@@ -719,6 +734,15 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
       );
     };
 
+    const handleSortByDate = () => {
+      if (sortBy === 'emitionDate') {
+        setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc');
+      } else {
+        setSortBy('emitionDate');
+        setSortOrder('desc');
+      }
+    };
+
     const handleSortByAmount = () => {
       if (sortBy === 'amount') {
         if (sortOrder === 'desc') {
@@ -796,7 +820,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
           <div className="flex flex-col gap-2 md:flex-row md:items-center flex-wrap">
             {!isFiltersControlled && (
               <div className="relative">
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-[var(--arca-ink-3)]" />
                 <Input
                   placeholder="Buscar mediante emisor o receptor..."
                   value={searchTerm}
@@ -963,10 +987,10 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                 <div
                   className={cn(
                     'flex items-center gap-2 h-9 px-3 py-2 rounded-md border bg-muted/50 text-sm',
-                    !dateFrom && !dateTo && 'text-muted-foreground'
+                    !dateFrom && !dateTo && 'text-[var(--arca-ink-3)]'
                   )}
                 >
-                  <CalendarIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <CalendarIcon className="h-4 w-4 shrink-0 text-[var(--arca-ink-3)]" />
                   {dateFrom && dateTo ? (
                     <>
                       {formatDateOnlyString(dateFrom)} –{' '}
@@ -984,7 +1008,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                       variant="outline"
                       className={cn(
                         'w-full md:w-[300px] justify-start text-left font-normal',
-                        !dateRange && 'text-muted-foreground'
+                        !dateRange && 'text-[var(--arca-ink-3)]'
                       )}
                     >
                       <CalendarIcon className="mr-2 h-4 w-4" />
@@ -1043,31 +1067,50 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
         </div>
 
         {/* Table */}
-        <div className="overflow-auto flex-1 min-h-0">
-          <div className="w-full">
-            <table className="w-full table-fixed border-collapse text-xs">
+        <Table className="table-fixed text-xs">
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10 px-2">
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-navy-900)]"
+                      checked={(invoicesData?.invoices ?? []).length > 0 && (invoicesData?.invoices ?? []).every((inv) => selectedIds.has(inv.id))}
+                      ref={(el) => {
+                        if (el) el.indeterminate = (invoicesData?.invoices ?? []).some((inv) => selectedIds.has(inv.id)) && !(invoicesData?.invoices ?? []).every((inv) => selectedIds.has(inv.id));
+                      }}
+                      onChange={() => toggleAllInvoices((invoicesData?.invoices ?? []).map((inv) => inv.id))}
+                    />
+                  </TableHead>
                   <TableHead className="w-[10%] px-2 py-2 align-top">
                     Tipo
                   </TableHead>
-                  <TableHead className="w-[15%] px-2 py-2 align-top">
+                  <TableHead className="w-[14%] px-2 py-2 align-top">
                     Cliente
                   </TableHead>
-                  <TableHead className="w-[18%] px-2 py-2 align-top">
+                  <TableHead className="w-[17%] px-2 py-2 align-top">
                     Emisor
                   </TableHead>
-                  <TableHead className="w-[18%] px-2 py-2 align-top">
+                  <TableHead className="w-[17%] px-2 py-2 align-top">
                     Destinatario
                   </TableHead>
                   <TableHead className="w-[9%] px-2 py-2 align-middle">
-                    Fecha
+                    <button
+                      className="flex items-center gap-1 group text-white text-[11px] font-semibold"
+                      onClick={handleSortByDate}
+                    >
+                      Fecha
+                      {sortBy === 'emitionDate' && sortOrder === 'asc' ? (
+                        <ArrowUp className="ml-1 h-3 w-3" />
+                      ) : sortBy === 'emitionDate' && sortOrder === 'desc' ? (
+                        <ArrowDown className="ml-1 h-3 w-3" />
+                      ) : (
+                        <ArrowUpDown className="ml-1 h-3 w-3 opacity-50 group-hover:opacity-100 transition-opacity" />
+                      )}
+                    </button>
                   </TableHead>
-                  <TableHead className="w-[15%] px-2 py-2 align-middle">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="-ml-2 h-7 data-[state=open]:bg-accent whitespace-nowrap text-xs"
+                  <TableHead className="w-[14%] px-2 py-2 align-middle">
+                    <button
+                      className="flex items-center gap-1 group text-white text-[11px] font-semibold"
                       onClick={handleSortByAmount}
                     >
                       Monto
@@ -1076,11 +1119,11 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                       ) : sortBy === 'amount' && sortOrder === 'desc' ? (
                         <ArrowDown className="ml-1 h-3 w-3" />
                       ) : (
-                        <ArrowUpDown className="ml-1 h-3 w-3" />
+                        <ArrowUpDown className="ml-1 h-3 w-3 opacity-50 group-hover:opacity-100 transition-opacity" />
                       )}
-                    </Button>
+                    </button>
                   </TableHead>
-                  <TableHead className="w-[15%] px-2 py-2 align-middle">
+                  <TableHead className="w-[14%] px-2 py-2 align-middle">
                     Dirección
                   </TableHead>
                 </TableRow>
@@ -1088,13 +1131,13 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-24 text-center">
+                    <TableCell colSpan={8} className="h-24 text-center">
                       Cargando facturas...
                     </TableCell>
                   </TableRow>
                 ) : invoicesData?.invoices.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-24 text-center">
+                    <TableCell colSpan={8} className="h-24 text-center">
                       No se encontraron facturas.
                     </TableCell>
                   </TableRow>
@@ -1103,8 +1146,17 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                     <TableRow
                       key={invoice.id}
                       onClick={() => handleViewInvoice(invoice)}
-                      className="cursor-pointer hover:bg-muted/50 transition-colors"
+                      className="cursor-pointer"
+                      data-state={selectedIds.has(invoice.id) ? 'selected' : undefined}
                     >
+                      <TableCell className="w-10 px-2" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-navy-900)]"
+                          checked={selectedIds.has(invoice.id)}
+                          onChange={() => toggleInvoiceRow(invoice.id)}
+                        />
+                      </TableCell>
                       <TableCell className="w-[10%] px-2 py-2 align-top">
                         <div className="truncate">
                           {getTypeBadge(invoice.type)}
@@ -1121,7 +1173,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                             </div>
                             {invoice.profileName && (
                               <div
-                                className="text-xs text-muted-foreground truncate"
+                                className="text-xs text-[var(--arca-ink-3)] truncate"
                                 title={invoice.profileName}
                               >
                                 {invoice.profileName}
@@ -1129,7 +1181,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                             )}
                             {invoice.clientEmail && (
                               <div
-                                className="text-xs text-muted-foreground truncate"
+                                className="text-xs text-[var(--arca-ink-3)] truncate"
                                 title={invoice.clientEmail}
                               >
                                 {invoice.clientEmail}
@@ -1137,7 +1189,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                             )}
                           </div>
                         ) : (
-                          <span className="text-muted-foreground text-xs">
+                          <span className="text-[var(--arca-ink-3)] text-xs">
                             Sin cliente
                           </span>
                         )}
@@ -1151,7 +1203,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                             {invoice.emitterName}
                           </div>
                           <div
-                            className="text-xs text-muted-foreground truncate"
+                            className="text-xs text-[var(--arca-ink-3)] truncate"
                             title={`${invoice.emitterIdentityType}: ${invoice.emitterIdentityNumber}`}
                           >
                             {invoice.emitterIdentityType}:{' '}
@@ -1168,7 +1220,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                             {invoice.recipientName}
                           </div>
                           <div
-                            className="text-xs text-muted-foreground truncate"
+                            className="text-xs text-[var(--arca-ink-3)] truncate"
                             title={`${invoice.recipientIdentityType}: ${invoice.recipientIdentityNumber}`}
                           >
                             {invoice.recipientIdentityType}:{' '}
@@ -1189,9 +1241,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                   ))
                 )}
               </TableBody>
-            </table>
-          </div>
-        </div>
+        </Table>
 
         {/* Pagination */}
         {totalPages > 1 && (
@@ -1288,7 +1338,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                 {/* Basic Info */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-muted/30 rounded-lg">
                   <div className="min-w-0 overflow-hidden">
-                    <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                    <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
                       Tipo
                     </label>
                     <div className="mt-1 w-full overflow-hidden">
@@ -1296,7 +1346,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                     </div>
                   </div>
                   <div className="min-w-0">
-                    <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                    <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
                       Dirección
                     </label>
                     <div className="mt-1">
@@ -1306,7 +1356,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                     </div>
                   </div>
                   <div className="min-w-0">
-                    <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                    <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
                       Fecha de Emisión
                     </label>
                     <p className="text-sm font-medium">
@@ -1314,7 +1364,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                     </p>
                   </div>
                   <div className="min-w-0">
-                    <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                    <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
                       Monto Total
                     </label>
                     <p className="text-lg font-bold break-words">
@@ -1325,7 +1375,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                     </p>
                   </div>
                   <div className="min-w-0">
-                    <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                    <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
                       Provincia (Convenio Multilateral)
                     </label>
                     <p className="text-sm font-medium">
@@ -1344,7 +1394,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                      <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
                         Nombre
                       </label>
                       <p className="text-sm font-medium">
@@ -1352,7 +1402,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                       </p>
                     </div>
                     <div>
-                      <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                      <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
                         Identificación
                       </label>
                       <p className="text-sm font-medium">
@@ -1370,7 +1420,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                      <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
                         Nombre
                       </label>
                       <p className="text-sm font-medium">
@@ -1378,7 +1428,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                       </p>
                     </div>
                     <div>
-                      <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                      <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
                         Identificación
                       </label>
                       <p className="text-sm font-medium">
@@ -1399,7 +1449,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {selectedInvoice.clientName && (
                         <div>
-                          <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                          <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
                             Cliente
                           </label>
                           <p className="text-sm font-medium">
@@ -1409,7 +1459,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                       )}
                       {selectedInvoice.profileName && (
                         <div>
-                          <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                          <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
                             Perfil
                           </label>
                           <p className="text-sm font-medium">
@@ -1419,7 +1469,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                       )}
                       {selectedInvoice.clientEmail && (
                         <div>
-                          <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                          <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
                             Email
                           </label>
                           <p className="text-sm font-medium">
@@ -1439,7 +1489,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                        <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
                           Número de Autorización
                         </label>
                         <p className="text-sm font-medium">
@@ -1447,7 +1497,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                         </p>
                       </div>
                       <div>
-                        <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                        <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
                           Punto de Venta
                         </label>
                         <p className="text-sm font-medium">
@@ -1455,7 +1505,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                         </p>
                       </div>
                       <div>
-                        <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                        <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
                           Rango de IDs
                         </label>
                         <p className="text-sm font-medium">
@@ -1463,7 +1513,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                         </p>
                       </div>
                       <div>
-                        <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                        <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
                           Moneda
                         </label>
                         <p className="text-sm font-medium">
@@ -1480,7 +1530,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                       </h4>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                         <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-muted-foreground">
+                          <span className="text-[var(--arca-ink-3)]">
                             Monto IVA 0%:
                           </span>
                           <span className="font-medium">
@@ -1491,7 +1541,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                           </span>
                         </div>
                         <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-muted-foreground">
+                          <span className="text-[var(--arca-ink-3)]">
                             IVA 2.5%:
                           </span>
                           <span className="font-medium">
@@ -1502,7 +1552,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                           </span>
                         </div>
                         <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-muted-foreground">
+                          <span className="text-[var(--arca-ink-3)]">
                             Monto IVA 2.5%:
                           </span>
                           <span className="font-medium">
@@ -1513,7 +1563,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                           </span>
                         </div>
                         <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-muted-foreground">IVA 5%:</span>
+                          <span className="text-[var(--arca-ink-3)]">IVA 5%:</span>
                           <span className="font-medium">
                             {formatCurrency(
                               invoiceDetails.IVA5,
@@ -1522,7 +1572,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                           </span>
                         </div>
                         <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-muted-foreground">
+                          <span className="text-[var(--arca-ink-3)]">
                             Monto IVA 5%:
                           </span>
                           <span className="font-medium">
@@ -1533,7 +1583,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                           </span>
                         </div>
                         <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-muted-foreground">
+                          <span className="text-[var(--arca-ink-3)]">
                             IVA 10.5%:
                           </span>
                           <span className="font-medium">
@@ -1544,7 +1594,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                           </span>
                         </div>
                         <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-muted-foreground">
+                          <span className="text-[var(--arca-ink-3)]">
                             Monto IVA 10.5%:
                           </span>
                           <span className="font-medium">
@@ -1555,7 +1605,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                           </span>
                         </div>
                         <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-muted-foreground">
+                          <span className="text-[var(--arca-ink-3)]">
                             IVA 21%:
                           </span>
                           <span className="font-medium">
@@ -1566,7 +1616,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                           </span>
                         </div>
                         <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-muted-foreground">
+                          <span className="text-[var(--arca-ink-3)]">
                             Monto IVA 21%:
                           </span>
                           <span className="font-medium">
@@ -1577,7 +1627,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                           </span>
                         </div>
                         <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-muted-foreground">
+                          <span className="text-[var(--arca-ink-3)]">
                             IVA 27%:
                           </span>
                           <span className="font-medium">
@@ -1588,7 +1638,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                           </span>
                         </div>
                         <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-muted-foreground">
+                          <span className="text-[var(--arca-ink-3)]">
                             Monto IVA 27%:
                           </span>
                           <span className="font-medium">
@@ -1608,7 +1658,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                           </span>
                         </div>
                         <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-muted-foreground">
+                          <span className="text-[var(--arca-ink-3)]">
                             Monto Gravado:
                           </span>
                           <span className="font-medium">
@@ -1619,7 +1669,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                           </span>
                         </div>
                         <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-muted-foreground">
+                          <span className="text-[var(--arca-ink-3)]">
                             Monto No Gravado:
                           </span>
                           <span className="font-medium">
@@ -1630,7 +1680,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                           </span>
                         </div>
                         <div className="flex justify-between items-center py-2">
-                          <span className="text-muted-foreground">
+                          <span className="text-[var(--arca-ink-3)]">
                             Monto Exento:
                           </span>
                           <span className="font-medium">
@@ -1659,12 +1709,12 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                             className="flex items-center justify-between p-3 border rounded-md"
                           >
                             <div className="flex items-center gap-2">
-                              <FileText className="h-4 w-4 text-muted-foreground" />
+                              <FileText className="h-4 w-4 text-[var(--arca-ink-3)]" />
                               <div>
                                 <p className="text-sm font-medium">
                                   {attachment.documentName}
                                 </p>
-                                <p className="text-xs text-muted-foreground">
+                                <p className="text-xs text-[var(--arca-ink-3)]">
                                   {attachment.documentType}
                                 </p>
                               </div>

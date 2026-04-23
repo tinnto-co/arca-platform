@@ -138,14 +138,14 @@ export function SueldosConvenios({
         <DialogContent className="max-w-md sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Seleccionar CCT (AFIP) para este cliente</DialogTitle>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-[var(--arca-ink-3)]">
               Seleccioná el CCT descargado de AFIP para este cliente. Luego
               cargá las categorías y escalas manualmente.
             </p>
           </DialogHeader>
           <div className="grid gap-2 py-4">
             {conveniosAfip.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-[var(--arca-ink-3)]">
                 No hay convenios AFIP scrapeados para este cliente todavía.
               </p>
             ) : (
@@ -157,30 +157,30 @@ export function SueldosConvenios({
                     type="button"
                     onClick={() => !yaTiene && agregarDesdeAfip.mutate(c.id)}
                     disabled={yaTiene || agregarDesdeAfip.isPending}
-                    className="flex items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50 disabled:opacity-60 disabled:hover:bg-transparent"
+                    className="flex items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-[var(--arca-surface-2)] disabled:opacity-60 disabled:hover:bg-transparent"
                   >
                     <div className="min-w-0 flex-1">
                       <p className="font-medium">{c.cct}</p>
                       {c.actividad && (
-                        <p className="mt-0.5 text-xs text-muted-foreground break-words">
+                        <p className="mt-0.5 text-xs text-[var(--arca-ink-3)] break-words">
                           {c.actividad}
                         </p>
                       )}
                       {c.fechaNovedad && (
-                        <p className="mt-0.5 text-[11px] text-muted-foreground break-words">
+                        <p className="mt-0.5 text-[11px] text-[var(--arca-ink-3)] break-words">
                           Novedad: {c.fechaNovedad}
                         </p>
                       )}
                     </div>
                     <span className="shrink-0">
                       {yaTiene ? (
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-xs text-[var(--arca-ink-3)]">
                           Ya asignado
                         </span>
                       ) : agregarDesdeAfip.isPending ? (
-                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        <Loader2 className="h-4 w-4 animate-spin text-[var(--arca-ink-3)]" />
                       ) : (
-                        <CheckCircle2 className="h-5 w-5 text-primary" />
+                        <CheckCircle2 className="h-5 w-5 text-[var(--arca-ink)]" />
                       )}
                     </span>
                   </button>
@@ -295,7 +295,7 @@ function ConvenioCard({
         <CollapsibleTrigger asChild>
           <button className="flex w-full items-center justify-between px-6 py-4 text-left">
             <div className="flex items-center gap-2">
-              <Building2 className="h-5 w-5 text-muted-foreground" />
+              <Building2 className="h-5 w-5 text-[var(--arca-ink-3)]" />
               <CardTitle className="text-lg">
                 {convenio.cctCodigo ?? convenio.nombre}
               </CardTitle>
@@ -308,7 +308,7 @@ function ConvenioCard({
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                className="h-8 w-8 text-[var(--arca-ink-3)] hover:text-[var(--arca-accent-neg)]"
                 onClick={(e) => {
                   e.preventDefault();
                   setDeleteOpen(true);
@@ -337,7 +337,7 @@ function ConvenioCard({
               <AlertDialogCancel>Cancelar</AlertDialogCancel>
               <AlertDialogAction
                 onClick={() => deleteConv.mutate()}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                className="bg-destructive text-[var(--arca-accent-neg)]-foreground hover:bg-destructive/90"
                 disabled={deleteConv.isPending}
               >
                 {deleteConv.isPending ? 'Eliminando…' : 'Eliminar'}
@@ -347,7 +347,7 @@ function ConvenioCard({
         </AlertDialog>
         <CollapsibleContent>
           <CardContent className="pt-0">
-            <p className="mb-4 text-sm text-muted-foreground">
+            <p className="mb-4 text-sm text-[var(--arca-ink-3)]">
               {convenio.descripcion || 'Sin descripción.'}
             </p>
             <div className="flex justify-end gap-2">
@@ -487,11 +487,11 @@ function CategoriaRow({
     <li className="rounded-lg border p-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Layers className="h-4 w-4 text-muted-foreground" />
+          <Layers className="h-4 w-4 text-[var(--arca-ink-3)]" />
           <div className="min-w-0">
             <span className="font-medium">{categoriaDisplay.titulo}</span>
             {categoriaDisplay.subtitulo ? (
-              <p className="text-xs text-muted-foreground break-words">
+              <p className="text-xs text-[var(--arca-ink-3)] break-words">
                 {categoriaDisplay.subtitulo}
               </p>
             ) : null}
@@ -528,7 +528,7 @@ function CategoriaRow({
           </Button>
         </div>
       )}
-      <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+      <ul className="mt-2 space-y-1 text-sm text-[var(--arca-ink-3)]">
         {escalas.map((e) => (
           <li
             key={e.id}
@@ -544,7 +544,7 @@ function CategoriaRow({
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              className="h-8 w-8 shrink-0 text-[var(--arca-accent-neg)] hover:bg-destructive/10 hover:text-[var(--arca-accent-neg)]"
               onClick={() =>
                 setEscalaToDelete({
                   id: e.id,
@@ -578,7 +578,7 @@ function CategoriaRow({
               Cancelar
             </AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="bg-destructive text-[var(--arca-accent-neg)]-foreground hover:bg-destructive/90"
               onClick={() =>
                 escalaToDelete && deleteEscalaMutation.mutate(escalaToDelete.id)
               }

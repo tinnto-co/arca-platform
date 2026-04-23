@@ -269,11 +269,11 @@ export function SueldosEmpleados({
             </p>
             <p>
               Si el error menciona columnas en{' '}
-              <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+              <code className="rounded bg-[var(--arca-surface-2)] px-1 py-0.5 font-mono text-xs">
                 liquidacion_import_empleado
               </code>
               , ejecutá{' '}
-              <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+              <code className="rounded bg-[var(--arca-surface-2)] px-1 py-0.5 font-mono text-xs">
                 npm run db:ensure-empleado-pago
               </code>{' '}
               (con <code className="font-mono text-xs">DATABASE_URL</code> en
@@ -283,7 +283,7 @@ export function SueldosEmpleados({
         </Alert>
       ) : null}
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground break-words">
+        <p className="text-sm text-[var(--arca-ink-3)] break-words">
           Empleados del perfil fiscal (importados desde LSD o creados
           manualmente).
         </p>
@@ -491,7 +491,7 @@ export function SueldosEmpleados({
               <TableRow>
                 <TableCell
                   colSpan={10}
-                  className="text-center text-muted-foreground"
+                  className="text-center text-[var(--arca-ink-3)]"
                 >
                   Cargando…
                 </TableCell>
@@ -500,7 +500,7 @@ export function SueldosEmpleados({
               <TableRow>
                 <TableCell
                   colSpan={10}
-                  className="text-center text-muted-foreground"
+                  className="text-center text-[var(--arca-ink-3)]"
                 >
                   No hay empleados para este perfil. Ejecutá el import de Excel
                   en el scrapper o creá uno manualmente con el botón "Nuevo
@@ -533,7 +533,7 @@ export function SueldosEmpleados({
                       {r.convenioNombre ? (
                         formatTitleCaseDisplay(r.convenioNombre)
                       ) : (
-                        <span className="text-muted-foreground text-xs">
+                        <span className="text-[var(--arca-ink-3)] text-xs">
                           Sin vincular
                         </span>
                       )}
@@ -542,7 +542,7 @@ export function SueldosEmpleados({
                       {r.categoriaNombre ? (
                         formatTitleCaseDisplay(r.categoriaNombre)
                       ) : (
-                        <span className="text-muted-foreground text-xs">
+                        <span className="text-[var(--arca-ink-3)] text-xs">
                           {formatTitleCaseDisplay(e.categoria)}
                         </span>
                       )}
@@ -589,7 +589,7 @@ export function SueldosEmpleados({
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-destructive hover:text-destructive"
+                          className="h-7 w-7 text-[var(--arca-accent-neg)] hover:text-[var(--arca-accent-neg)]"
                           disabled={eliminar.isPending}
                           onClick={() => eliminar.mutate(e.id)}
                         >
@@ -614,7 +614,7 @@ export function SueldosEmpleados({
         <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
             <DialogTitle>Datos de pago del legajo</DialogTitle>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-[var(--arca-ink-3)]">
               Se usan en el recibo de haberes cuando el período no trae esos
               datos. CBU aplica si la forma de pago es acreditación.
             </p>

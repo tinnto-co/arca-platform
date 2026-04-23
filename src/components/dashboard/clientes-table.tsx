@@ -22,15 +22,23 @@ function getInitials(name: string): string {
     .toUpperCase();
 }
 
-export function ClientesTable() {
+interface ClientesTableProps {
+  from: Date;
+  to: Date;
+}
+
+export function ClientesTable({ from, to }: ClientesTableProps) {
+  const fromStr = from.toISOString();
+  const toStr = to.toISOString();
+
   const { data: stats } = useQuery({
-    queryKey: ['dashboardStats'],
-    queryFn: () => getDashboardStats(),
+    queryKey: ['dashboardStats', fromStr, toStr],
+    queryFn: () => getDashboardStats({ data: { from: fromStr, to: toStr } }),
   });
 
   const { data: clients = [], isLoading } = useQuery({
-    queryKey: ['topClients'],
-    queryFn: () => getTopClients({ data: { limit: 5 } }),
+    queryKey: ['topClients', fromStr, toStr],
+    queryFn: () => getTopClients({ data: { limit: 5, from: fromStr, to: toStr } }),
   });
 
   return (
@@ -42,7 +50,7 @@ export function ClientesTable() {
             Clientes con movimiento
           </div>
           <div className="text-xs text-[var(--arca-ink-3)] mt-0.5">
-            Facturación del mes · top por volumen
+            Facturación del período · top por volumen
           </div>
         </div>
         <button className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-[var(--arca-r-md)] text-xs font-medium border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink)] hover:bg-[var(--arca-surface-2)] transition-colors duration-[120ms]">
@@ -83,7 +91,7 @@ export function ClientesTable() {
                 colSpan={4}
                 className="px-5 py-8 text-center text-[var(--arca-ink-3)]"
               >
-                No hay clientes con movimiento este mes
+                No hay clientes con movimiento en este período
               </td>
             </tr>
           ) : (

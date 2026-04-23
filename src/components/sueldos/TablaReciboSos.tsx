@@ -749,7 +749,7 @@ export function TablaReciboSos({
 
   if (seccionesConDatos.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground py-4 text-center">
+      <p className="text-sm text-[var(--arca-ink-3)] py-4 text-center">
         {variant === 'manual'
           ? 'No hay conceptos SOS vinculados a este perfil (concepto_sos_profile), o ninguno tiene código de fila 1–699. Revisá la configuración del perfil en ARCA.'
           : 'No hay conceptos en el último recibo importado.'}
@@ -764,19 +764,19 @@ export function TablaReciboSos({
 
   return (
     <div className="space-y-2">
-      <p className="text-xs text-muted-foreground">
+      <p className="text-xs text-[var(--arca-ink-3)]">
         Período <strong>{recibo.periodo}</strong> · Tipo{' '}
         <strong>{recibo.tipo}</strong> · {pieNota}
       </p>
       {guardrails.errors.length > 0 && (
-        <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-800">
+        <div className="rounded-md border border-[var(--arca-accent-neg)]/30 bg-[var(--arca-accent-neg-bg)] px-3 py-2 text-xs text-[var(--arca-accent-neg-fg)]">
           {guardrails.errors.slice(0, 4).map((msg) => (
             <p key={`err-${msg}`}>{msg}</p>
           ))}
         </div>
       )}
       {guardrails.warnings.length > 0 && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        <div className="rounded-md border border-[var(--arca-accent-warn)]/30 bg-[var(--arca-accent-warn-bg)] px-3 py-2 text-xs text-[var(--arca-accent-warn-fg)]">
           {guardrails.warnings.slice(0, 4).map((msg) => (
             <p key={`warn-${msg}`}>{msg}</p>
           ))}
@@ -856,7 +856,7 @@ export function TablaReciboSos({
       </div>
 
       {/* Sección de firmas */}
-      <div className="mt-4 grid grid-cols-2 gap-6 border-t pt-4 text-[11px] text-muted-foreground">
+      <div className="mt-4 grid grid-cols-2 gap-6 border-t pt-4 text-[11px] text-[var(--arca-ink-3)]">
         <div className="flex flex-col gap-2">
           {firmaEmpleadorUrl ? (
             <img

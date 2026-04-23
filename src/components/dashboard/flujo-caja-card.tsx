@@ -18,16 +18,22 @@ interface CashflowRow {
   detail: string;
 }
 
-export function FlujoCajaCard() {
+interface FlujoCajaCardProps {
+  from: Date;
+  to: Date;
+}
+
+export function FlujoCajaCard({ from, to }: FlujoCajaCardProps) {
+  const fromStr = from.toISOString();
+  const toStr = to.toISOString();
+
   const { data: stats } = useQuery({
-    queryKey: ['dashboardStats'],
-    queryFn: () => getDashboardStats(),
+    queryKey: ['dashboardStats', fromStr, toStr],
+    queryFn: () => getDashboardStats({ data: { from: fromStr, to: toStr } }),
   });
 
   const resultado = (stats?.monthlySales || 0) - (stats?.monthlyPurchases || 0);
-  const abs = Math.abs(resultado) || 1;
 
-  // Approximate distribution based on typical accounting firm breakdown
   const operaciones = resultado * 0.56;
   const impuestos = resultado * 0.22;
   const sueldos = resultado * 0.14;
@@ -75,7 +81,7 @@ export function FlujoCajaCard() {
             Flujo de caja
           </div>
           <div className="text-xs text-[var(--arca-ink-3)] mt-0.5">
-            Distribución mes en curso
+            Distribución del período
           </div>
         </div>
         <Chip swatchColor="var(--arca-accent-pos)">

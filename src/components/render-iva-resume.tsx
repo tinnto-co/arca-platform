@@ -206,7 +206,7 @@ function AjusteRow({
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+            className="h-7 w-7 text-[var(--arca-accent-pos-fg)] hover:text-[var(--arca-accent-pos-fg)] hover:bg-[var(--arca-accent-pos-bg)]"
             onClick={handleConfirm}
           >
             <Plus className="h-4 w-4" />
@@ -311,7 +311,7 @@ function EditableSaldoRow({
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+            className="h-7 w-7 text-[var(--arca-accent-pos-fg)] hover:text-[var(--arca-accent-pos-fg)] hover:bg-[var(--arca-accent-pos-bg)]"
             onClick={handleConfirm}
           >
             <Plus className="h-4 w-4" />
@@ -912,7 +912,7 @@ export const RenderIvaResume = React.forwardRef<
           ) : (
             <div
               className={`text-2xl font-bold tabular-nums truncate ${
-                saldoFinal < 0 ? 'text-destructive' : 'text-emerald-600'
+                saldoFinal < 0 ? 'text-[var(--arca-accent-neg)]' : 'text-[var(--arca-accent-pos-fg)]'
               }`}
             >
               {formatCurrency(saldoFinal)}
@@ -924,7 +924,7 @@ export const RenderIvaResume = React.forwardRef<
               <span
                 className={
                   lastScrapeJob.success
-                    ? 'text-emerald-600 dark:text-emerald-400 font-medium'
+                    ? 'text-[var(--arca-accent-pos-fg)] font-medium'
                     : 'text-destructive'
                 }
                 title={lastScrapeJob.failedReason ?? undefined}
@@ -1043,7 +1043,7 @@ export const RenderIvaResume = React.forwardRef<
               clientIvaCredit?.data &&
               periodUsedForResumen &&
               clientIvaCredit.data.periodoFiscal === periodUsedForResumen
-                ? 'bg-emerald-500/10 border-emerald-500'
+                ? 'bg-[var(--arca-accent-pos-bg)] border-[var(--arca-accent-pos)]'
                 : 'bg-muted/60'
             }`}
           >

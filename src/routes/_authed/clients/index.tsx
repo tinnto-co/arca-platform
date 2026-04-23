@@ -12,20 +12,19 @@ export const Route = createFileRoute('/_authed/clients/')({
 function RouteComponent() {
   return (
     <div className="p-[28px_36px_60px] max-w-[1440px]">
-        <PageHeader
-          icon={Users}
-          title="Clientes"
-          subtitle="Gestión de clientes y sus perfiles"
-          actions={
-            <CreateClientDialog>
-              <Button>
-                <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
-                Nuevo cliente
-              </Button>
-            </CreateClientDialog>
-          }
-        />
-        <ClientsTable />
+      <PageHeader
+        title="Clientes"
+        subtitle="Gestión de clientes y sus perfiles"
+        actions={
+          <CreateClientDialog>
+            <Button>
+              <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
+              Nuevo cliente
+            </Button>
+          </CreateClientDialog>
+        }
+      />
+      <ClientsTable />
     </div>
   );
 }

@@ -31,14 +31,22 @@ const kindStyles: Record<FeedKind, string> = {
     'bg-[var(--arca-surface-2)] border-[var(--arca-border)] text-[var(--arca-ink-2)]',
 };
 
-export function ActividadFeed() {
+interface ActividadFeedProps {
+  from: Date;
+  to: Date;
+}
+
+export function ActividadFeed({ from, to }: ActividadFeedProps) {
   const [tab, setTab] = useState('Todo');
+  const fromStr = from.toISOString();
+  const toStr = to.toISOString();
+
   const { data: recentInvoices = [], isLoading } = useQuery({
-    queryKey: ['recentInvoices'],
-    queryFn: () => getRecentInvoices({ data: { limit: 8 } }),
+    queryKey: ['recentInvoices', fromStr, toStr],
+    queryFn: () =>
+      getRecentInvoices({ data: { limit: 8, from: fromStr, to: toStr } }),
   });
 
-  // Transform invoices into feed items
   const feedItems: FeedItem[] = recentInvoices.map((inv, i) => {
     const amount = formatArs(Number(inv.amount || 0));
     const isOutbound = inv.direction?.toLowerCase() === 'outbound';
@@ -99,7 +107,7 @@ export function ActividadFeed() {
             Actividad reciente
           </div>
           <div className="text-xs text-[var(--arca-ink-3)] mt-0.5">
-            Últimos movimientos en tu estudio
+            Movimientos en el período seleccionado
           </div>
         </div>
         <TabBar
@@ -116,7 +124,7 @@ export function ActividadFeed() {
           </div>
         ) : filtered.length === 0 ? (
           <div className="px-5 py-8 text-center text-sm text-[var(--arca-ink-3)]">
-            No hay actividad reciente
+            No hay actividad en este período
           </div>
         ) : (
           filtered.slice(0, 5).map((item) => (
@@ -124,14 +132,12 @@ export function ActividadFeed() {
               key={item.id}
               className="grid grid-cols-[28px_1fr_auto] gap-3 px-5 py-3 items-start border-b border-[var(--arca-border)] last:border-b-0"
             >
-              {/* Icon tile */}
               <div
                 className={`w-7 h-7 rounded-[7px] border flex items-center justify-center flex-shrink-0 ${kindStyles[item.kind]}`}
               >
                 {item.icon}
               </div>
 
-              {/* Body */}
               <div className="min-w-0">
                 <div className="text-[13px] font-medium text-[var(--arca-ink)] leading-[1.35]">
                   {item.title}
@@ -141,7 +147,6 @@ export function ActividadFeed() {
                 </div>
               </div>
 
-              {/* Time */}
               <div className="text-[11px] text-[var(--arca-ink-4)] tabular-nums whitespace-nowrap">
                 {item.time}
               </div>

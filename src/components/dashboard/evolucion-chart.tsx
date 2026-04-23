@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { TrendingUp, MoreHorizontal } from 'lucide-react';
+import { MoreHorizontal } from 'lucide-react';
 import {
   BarChart,
   Bar,
@@ -19,11 +19,20 @@ import {
   formatArs,
 } from './shared';
 
-export function EvolucionChart() {
+interface EvolucionChartProps {
+  from: Date;
+  to: Date;
+}
+
+export function EvolucionChart({ from, to }: EvolucionChartProps) {
   const [tab, setTab] = useState('Mensual');
+  const fromStr = from.toISOString();
+  const toStr = to.toISOString();
+
   const { data: monthlyData = [], isLoading } = useQuery({
-    queryKey: ['monthlyEvolution'],
-    queryFn: () => getMonthlyEvolution({ data: { months: 6 } }),
+    queryKey: ['monthlyEvolution', fromStr, toStr],
+    queryFn: () =>
+      getMonthlyEvolution({ data: { from: fromStr, to: toStr } }),
   });
 
   const average =
@@ -37,11 +46,10 @@ export function EvolucionChart() {
       <ArcaCardHead>
         <div>
           <div className="font-display text-[15px] font-semibold tracking-[-0.01em] text-[var(--arca-ink)] flex items-center gap-2">
-            <TrendingUp className="w-3.5 h-3.5" />
             Evolución mensual
           </div>
           <div className="text-xs text-[var(--arca-ink-3)] mt-0.5">
-            Ventas vs Compras · últimos 6 meses
+            Ventas vs Compras · período seleccionado
           </div>
         </div>
         <div className="flex items-center gap-2">

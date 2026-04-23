@@ -6,7 +6,7 @@ function Table({ className, ...props }: React.ComponentProps<'table'>) {
   return (
     <div
       data-slot="table-container"
-      className="relative w-full overflow-x-auto rounded-[var(--arca-r-lg)] bg-[var(--arca-surface)] border border-[var(--arca-border)]"
+      className="relative w-full overflow-x-auto rounded-md bg-[var(--arca-surface)] border border-[var(--arca-border)]"
     >
       <table
         data-slot="table"
@@ -68,7 +68,7 @@ function TableHead({ className, ...props }: React.ComponentProps<'th'>) {
     <th
       data-slot="table-head"
       className={cn(
-        'bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)] h-10 px-4 text-left align-middle text-[10.5px] font-semibold uppercase tracking-[0.06em] whitespace-nowrap sticky top-0 z-10 [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]',
+        'bg-[var(--arca-navy-900)] text-white h-10 px-4 text-left align-middle text-[11px] font-semibold whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]',
         className
       )}
       {...props}

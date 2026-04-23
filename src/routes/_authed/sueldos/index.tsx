@@ -2,7 +2,6 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  DollarSign,
   LayoutDashboard,
   Users,
   Building2,
@@ -13,13 +12,8 @@ import {
   PenLine,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { cn } from '@/lib/utils';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import { Card, CardContent } from '@/components/ui/card';
 import { SueldosDashboard } from '@/components/sueldos/SueldosDashboard';
 import { SueldosEmpleados } from '@/components/sueldos/SueldosEmpleados';
@@ -29,6 +23,7 @@ import { SueldosSimulador } from '@/components/sueldos/SueldosSimulador';
 import { SueldosRecibo } from '@/components/sueldos/SueldosRecibo';
 import { SueldosFirmaDigital } from '@/components/sueldos/SueldosFirmaDigital';
 import { getClientsForSueldos } from '@/actions/client';
+import { PageHeader } from '@/components/shared/page-header';
 
 export const Route = createFileRoute('/_authed/sueldos/')({
   component: RouteComponent,
@@ -59,43 +54,20 @@ function RouteComponent() {
 
   return (
     <div className="space-y-4 overflow-x-hidden p-4 md:space-y-6 md:px-[3rem] md:pt-[3rem] md:pb-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div
-            className="w-9 h-9 rounded-[10px] flex items-center justify-center shrink-0"
-            style={{
-              background: 'var(--arca-surface-2)',
-              border: '1px solid var(--arca-border)',
-            }}
-          >
-            <DollarSign
-              className="w-[18px] h-[18px] text-[var(--arca-ink-2)]"
-              strokeWidth={1.8}
-            />
-          </div>
-          <h1 className="font-display text-[22px] font-semibold tracking-[-0.01em] text-[var(--arca-ink)]">
-            Liquidación de sueldos
-          </h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <UserCircle className="h-5 w-5 text-muted-foreground" />
-          <span className="text-sm font-medium text-muted-foreground">
-            Cliente:
-          </span>
-          <Select value={selectedOptionId} onValueChange={setSelectedOptionId}>
-            <SelectTrigger className="w-[280px]">
-              <SelectValue placeholder="Seleccione un cliente" />
-            </SelectTrigger>
-            <SelectContent>
-              {clients.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+      <PageHeader
+        title="Liquidación"
+        subtitle="Gestione los sueldos de sus clientes"
+        actions={
+          <SearchableSelect
+            options={clients.map((c) => ({ value: c.id, label: c.label }))}
+            value={selectedOptionId}
+            onValueChange={setSelectedOptionId}
+            placeholder="Seleccione un cliente"
+            searchPlaceholder="Buscar cliente..."
+            align="end"
+          />
+        }
+      />
 
       {!clientId ? (
         <Card>
@@ -116,36 +88,35 @@ function RouteComponent() {
           onValueChange={setActiveTab}
           className="w-full min-w-0 max-w-full"
         >
-          <TabsList className="flex flex-wrap h-auto gap-1 bg-muted/50 p-1">
-            <TabsTrigger value="dashboard" className="gap-2">
-              <LayoutDashboard className="h-4 w-4" />
-              Dashboard
-            </TabsTrigger>
-            <TabsTrigger value="empleados" className="gap-2">
-              <Users className="h-4 w-4" />
-              Empleados
-            </TabsTrigger>
-            <TabsTrigger value="convenios" className="gap-2">
-              <Building2 className="h-4 w-4" />
-              Convenios
-            </TabsTrigger>
-            <TabsTrigger value="conceptos" className="gap-2">
-              <Calculator className="h-4 w-4" />
-              Conceptos
-            </TabsTrigger>
-            <TabsTrigger value="simulador" className="gap-2">
-              <Sliders className="h-4 w-4" />
-              Nuevo recibo
-            </TabsTrigger>
-            <TabsTrigger value="recibo" className="gap-2">
-              <FileText className="h-4 w-4" />
-              Recibo
-            </TabsTrigger>
-            <TabsTrigger value="firma-digital" className="gap-2">
-              <PenLine className="h-4 w-4" />
-              Firma Digital
-            </TabsTrigger>
-          </TabsList>
+          {/* Tab bar — same Arca style as client-detail-page */}
+          <div className="-mx-4 md:-mx-[3rem] border-b border-[var(--arca-border)] px-4 md:px-[3rem]">
+            <TabsList className="flex h-auto w-full bg-transparent p-0 rounded-none gap-0 overflow-x-auto justify-start">
+              {(
+                [
+                  { value: 'dashboard', icon: <LayoutDashboard className="h-[14px] w-[14px]" />, label: 'Dashboard' },
+                  { value: 'empleados', icon: <Users className="h-[14px] w-[14px]" />, label: 'Empleados' },
+                  { value: 'convenios', icon: <Building2 className="h-[14px] w-[14px]" />, label: 'Convenios' },
+                  { value: 'conceptos', icon: <Calculator className="h-[14px] w-[14px]" />, label: 'Conceptos' },
+                  { value: 'simulador', icon: <Sliders className="h-[14px] w-[14px]" />, label: 'Nuevo recibo' },
+                  { value: 'recibo', icon: <FileText className="h-[14px] w-[14px]" />, label: 'Recibo' },
+                  { value: 'firma-digital', icon: <PenLine className="h-[14px] w-[14px]" />, label: 'Firma Digital' },
+                ] as const
+              ).map((tab) => (
+                <TabsTrigger
+                  key={tab.value}
+                  value={tab.value}
+                  className={cn(
+                    'relative h-auto flex-none px-[14px] py-[10px] text-[13px] font-medium rounded-[8px_8px_0_0] border whitespace-nowrap gap-[7px] cursor-pointer',
+                    'border-transparent text-[var(--arca-ink-3)] hover:bg-transparent hover:text-[var(--arca-ink)]',
+                    'data-[state=active]:bg-[var(--arca-surface)] data-[state=active]:border-[var(--arca-border)] data-[state=active]:[border-bottom-color:var(--arca-bg)] data-[state=active]:text-[var(--arca-ink)] data-[state=active]:font-semibold data-[state=active]:shadow-none data-[state=active]:top-px',
+                  )}
+                >
+                  {tab.icon}
+                  {tab.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
           <div className="mt-4 min-w-0 max-w-full">
             <TabsContent value="dashboard">
               <SueldosDashboard clientId={clientId} profileId={profileId} />
