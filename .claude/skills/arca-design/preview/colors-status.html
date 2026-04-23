@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><link rel="stylesheet" href="_base.css">
+<style>
+  body { padding: 24px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .row { display: flex; flex-direction: column; gap: 6px; }
+  .big {
+    height: 54px; border-radius: var(--r-md);
+    display:flex; align-items:center; justify-content:center;
+    font-family: var(--ff-display); font-weight: 600; font-size: 14px;
+  }
+  .bg { height: 32px; border-radius: var(--r-md); display:flex; align-items:center; gap:6px; padding: 0 10px; font-size: 11px; font-weight: 500; }
+  .bg .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .name { font-size: 11px; font-weight: 600; color: var(--ink); }
+  .lbl { font-size: 10.5px; color: var(--ink-3); font-family: var(--ff-mono); }
+</style>
+</head><body>
+  <div class="grid">
+    <div class="row">
+      <div class="big" style="background: var(--accent-pos); color: #fff;">pos</div>
+      <div class="bg" style="background: var(--accent-pos-bg); color: var(--accent-pos-fg);"><span class="dot" style="background:var(--accent-pos)"></span>Al día</div>
+      <span class="name">positive — green</span>
+      <span class="lbl">oklch(.62 .13 160)</span>
+    </div>
+    <div class="row">
+      <div class="big" style="background: var(--accent-neg); color: #fff;">neg</div>
+      <div class="bg" style="background: var(--accent-neg-bg); color: var(--accent-neg-fg);"><span class="dot" style="background:var(--accent-neg)"></span>Vencido</div>
+      <span class="name">negative — coral</span>
+      <span class="lbl">oklch(.60 .15 25)</span>
+    </div>
+    <div class="row">
+      <div class="big" style="background: var(--accent-warn); color: #fff;">warn</div>
+      <div class="bg" style="background: var(--accent-warn-bg); color: var(--accent-warn-fg);"><span class="dot" style="background:var(--accent-warn)"></span>Pendiente</div>
+      <span class="name">warning — amber</span>
+      <span class="lbl">oklch(.72 .13 75)</span>
+    </div>
+    <div class="row">
+      <div class="big" style="background: var(--accent-info); color: #fff;">info</div>
+      <div class="bg" style="background: var(--accent-info-bg); color: var(--accent-info-fg);"><span class="dot" style="background:var(--accent-info)"></span>Info</div>
+      <span class="name">info — blue</span>
+      <span class="lbl">oklch(.60 .12 240)</span>
+    </div>
+  </div>
+</body></html>

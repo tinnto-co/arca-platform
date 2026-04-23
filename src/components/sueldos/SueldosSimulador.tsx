@@ -98,8 +98,7 @@ export function SueldosSimulador({
   const [tablaEdits, setTablaEdits] = useState<EditsMap>({});
 
   const periodo = flowHeader?.periodo ?? '';
-  const permiteLiquidar =
-    periodo.length === 7 && puedeLiquidarPeriodo(periodo);
+  const permiteLiquidar = periodo.length === 7 && puedeLiquidarPeriodo(periodo);
 
   const { data: ultimoRecibo, isLoading: loadingUltimo } = useQuery({
     queryKey: ['ultimo-recibo-importado', clientId, sosEmpleadoId],
@@ -113,16 +112,14 @@ export function SueldosSimulador({
   const usaPlantillaManual =
     flowHeader !== null && !flowHeader.copiarUltimoRecibo;
 
-  const { data: plantillaManual = [], isLoading: loadingPlantilla } = useQuery(
-    {
-      queryKey: ['plantilla-manual-sos', clientId, profileId],
-      queryFn: () =>
-        listConceptosPlantillaManualSos({
-          data: { clientId, profileId },
-        }),
-      enabled: !!clientId && !!profileId && usaPlantillaManual,
-    }
-  );
+  const { data: plantillaManual = [], isLoading: loadingPlantilla } = useQuery({
+    queryKey: ['plantilla-manual-sos', clientId, profileId],
+    queryFn: () =>
+      listConceptosPlantillaManualSos({
+        data: { clientId, profileId },
+      }),
+    enabled: !!clientId && !!profileId && usaPlantillaManual,
+  });
 
   const { data: basicoData, isLoading: loadingBasico } = useQuery({
     queryKey: [
@@ -139,7 +136,10 @@ export function SueldosSimulador({
           periodo: flowHeader!.periodo,
         },
       }),
-    enabled: usaPlantillaManual && !!flowHeader?.importEmpleadoId && !!flowHeader?.periodo,
+    enabled:
+      usaPlantillaManual &&
+      !!flowHeader?.importEmpleadoId &&
+      !!flowHeader?.periodo,
   });
 
   // El básico de escala se pasa como prop implícito a TablaReciboSos.
@@ -183,7 +183,7 @@ export function SueldosSimulador({
   const showManualTable = !!flowHeader && !flowHeader.copiarUltimoRecibo;
 
   const conceptosFilas: ConceptoImportado[] = showImportTable
-    ? ultimoRecibo!.conceptos
+    ? ultimoRecibo.conceptos
     : showManualTable
       ? plantillaManual
       : [];
@@ -205,7 +205,8 @@ export function SueldosSimulador({
 
   const guardarRecibo = useMutation({
     mutationFn: async () => {
-      if (!flowHeader) throw new Error('Completá el formulario y presioná Agregar');
+      if (!flowHeader)
+        throw new Error('Completá el formulario y presioná Agregar');
       const conceptos = buildConceptosParaGuardar(conceptosFilas, tablaEdits);
       if (conceptos.length === 0) {
         throw new Error('No hay conceptos para guardar');
@@ -285,9 +286,9 @@ export function SueldosSimulador({
         !loadingUltimo &&
         !ultimoRecibo && (
           <p className="text-sm text-amber-700">
-            No hay recibo importado previo para este empleado. Volvé al formulario
-            y elegí cargar conceptos manualmente o importá liquidaciones desde
-            Excel.
+            No hay recibo importado previo para este empleado. Volvé al
+            formulario y elegí cargar conceptos manualmente o importá
+            liquidaciones desde Excel.
           </p>
         )}
 
@@ -298,19 +299,20 @@ export function SueldosSimulador({
               Último recibo importado — conceptos
             </CardTitle>
             <p className="text-sm text-muted-foreground">
-              Editá la grilla y presioná <span className="font-medium">Guardar recibo</span>{' '}
-              para persistir en el libro de sueldos importado (LSD).
+              Editá la grilla y presioná{' '}
+              <span className="font-medium">Guardar recibo</span> para persistir
+              en el libro de sueldos importado (LSD).
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="rounded-lg border bg-background p-3">
-            <TablaReciboSos
-              variant="importado"
-              recibo={ultimoRecibo!.recibo}
-              conceptos={ultimoRecibo!.conceptos}
-              onChange={handleTablaChange}
-              firmaEmpleadorUrl={firmaEmpleadorUrl}
-            />
+              <TablaReciboSos
+                variant="importado"
+                recibo={ultimoRecibo.recibo}
+                conceptos={ultimoRecibo.conceptos}
+                onChange={handleTablaChange}
+                firmaEmpleadorUrl={firmaEmpleadorUrl}
+              />
             </div>
             <div className="flex flex-col items-end gap-2">
               {!permiteLiquidar && (
@@ -337,17 +339,22 @@ export function SueldosSimulador({
       {showManualTable && (
         <Card className="border border-border/70 shadow-sm">
           <CardHeader>
-            <CardTitle className="text-base">Conceptos — carga manual</CardTitle>
+            <CardTitle className="text-base">
+              Conceptos — carga manual
+            </CardTitle>
             <p className="text-sm text-muted-foreground">
-              Los montos se pre-calculan con el básico de escala vigente del empleado
-              en el período a liquidar. Podés ajustar cualquier valor antes de guardar.
+              Los montos se pre-calculan con el básico de escala vigente del
+              empleado en el período a liquidar. Podés ajustar cualquier valor
+              antes de guardar.
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
             {loadingPlantilla || loadingBasico ? (
               <p className="text-sm text-muted-foreground flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                {loadingBasico ? 'Cargando escala salarial…' : 'Cargando plantilla…'}
+                {loadingBasico
+                  ? 'Cargando escala salarial…'
+                  : 'Cargando plantilla…'}
               </p>
             ) : (
               <>
@@ -359,15 +366,15 @@ export function SueldosSimulador({
                   </span>
                 </div>
                 <div className="rounded-lg border bg-background p-3">
-                <TablaReciboSos
-                  key={plantillaManual.map((c) => c.id).join('|')}
-                  variant="manual"
-                  recibo={reciboHeaderSimulado}
-                  conceptos={plantillaManual}
-                  basico={basicoEscala}
-                  onChange={handleTablaChange}
-                  firmaEmpleadorUrl={firmaEmpleadorUrl}
-                />
+                  <TablaReciboSos
+                    key={plantillaManual.map((c) => c.id).join('|')}
+                    variant="manual"
+                    recibo={reciboHeaderSimulado}
+                    conceptos={plantillaManual}
+                    basico={basicoEscala}
+                    onChange={handleTablaChange}
+                    firmaEmpleadorUrl={firmaEmpleadorUrl}
+                  />
                 </div>
                 <div className="flex flex-col items-end gap-2">
                   {!permiteLiquidar && (

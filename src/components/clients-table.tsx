@@ -1,25 +1,18 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
+import type { ColumnDef } from '@tanstack/react-table';
 import {
   Eye,
   Edit,
   Trash2,
   MoreHorizontal,
-  Search,
   CircleAlert,
   CheckCircle2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { DataTable } from '@/components/ui/data-table';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,14 +30,6 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import {
   Tooltip,
   TooltipContent,
@@ -52,6 +37,19 @@ import {
 } from '@/components/ui/tooltip';
 import { getClientsWithProfiles, deleteClient } from '@/actions/client';
 import { EditClientDialog } from '@/components/edit-client-dialog';
+import { relativeTime } from '@/components/dashboard/shared';
+
+interface Client {
+  id: string;
+  name: string;
+  identityNumber: string;
+  phone: string;
+  createdAt: string | Date;
+  hasErrors?: boolean;
+  errorMessage?: string | null;
+  status?: string;
+  profiles?: { name: string }[];
+}
 
 export function ClientsTable() {
   const navigate = useNavigate();
@@ -59,45 +57,13 @@ export function ClientsTable() {
   const [clientToDelete, setClientToDelete] = useState<string | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [clientToEditId, setClientToEditId] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
   const queryClient = useQueryClient();
 
-  const {
-    data: clients = [],
-    isLoading,
-    isError,
-    error,
-    refetch,
-    isFetching,
-  } = useQuery({
+  const { data: clients = [], isLoading } = useQuery({
     queryKey: ['clientsWithProfiles'],
     queryFn: () => getClientsWithProfiles(),
     retry: 1,
   });
-
-  // Filter clients based on search term and filters
-  const filteredClients = useMemo(() => {
-    return clients.filter((client) => {
-      // Search filter (name, profile name, identity number, phone)
-      const matchesSearch =
-        searchTerm === '' ||
-        client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        client.identityNumber
-          .toLowerCase()
-          .includes(searchTerm.toLowerCase()) ||
-        client.phone.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        client.profiles?.some((p) =>
-          p.name.toLowerCase().includes(searchTerm.toLowerCase())
-        );
-
-      // Status filter
-      const matchesStatus =
-        statusFilter === 'all' || client.status === statusFilter;
-
-      return matchesSearch && matchesStatus;
-    });
-  }, [clients, searchTerm, statusFilter]);
 
   const deleteMutation = useMutation({
     mutationFn: (data: { id: string }) => deleteClient({ data }),
@@ -107,235 +73,150 @@ export function ClientsTable() {
       setDeleteDialogOpen(false);
       setClientToDelete(null);
     },
-    onError: (error) => {
-      console.error('Error deleting client:', error);
+    onError: () => {
       toast.error('Error al eliminar el cliente');
     },
   });
 
-  const handleDelete = (clientId: string) => {
-    setClientToDelete(clientId);
-    setDeleteDialogOpen(true);
-  };
-
-  const confirmDelete = () => {
-    if (clientToDelete) {
-      deleteMutation.mutate({ id: clientToDelete });
-    }
-  };
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-32">
-        <div className="text-muted-foreground">Cargando clientes...</div>
-      </div>
-    );
-  }
-
-  if (isError) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : 'No se pudieron cargar los clientes.';
-
-    return (
-      <div className="flex flex-col items-center justify-center h-40 gap-3">
-        <div className="text-muted-foreground text-center">
-          Error al cargar clientes: {message}
+  const columns: ColumnDef<Client>[] = [
+    {
+      accessorKey: 'name',
+      header: 'Cliente',
+      cell: ({ row }) => (
+        <div>
+          <div className="font-medium text-[var(--arca-ink)]">
+            {row.original.name}
+          </div>
+          {row.original.profiles?.[0] && (
+            <div className="text-[11px] text-[var(--arca-ink-4)] mt-0.5">
+              {row.original.profiles[0].name}
+            </div>
+          )}
         </div>
-        <Button
-          variant="outline"
-          onClick={() => refetch()}
-          disabled={isFetching}
-        >
-          {isFetching ? 'Reintentando...' : 'Reintentar'}
-        </Button>
-      </div>
-    );
-  }
-
-  if (clients.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-32">
-        <div className="text-muted-foreground">No hay clientes registrados</div>
-      </div>
-    );
-  }
-
-  const hasResults = filteredClients.length > 0;
+      ),
+    },
+    {
+      accessorKey: 'hasErrors',
+      header: 'Estado',
+      enableSorting: false,
+      cell: ({ row }) =>
+        row.original.hasErrors ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className="inline-flex text-[var(--arca-accent-warn-fg)]"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <CircleAlert className="h-4 w-4" />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" sideOffset={6}>
+              {row.original.errorMessage?.trim() ||
+                'Cliente con errores en jobs de scraping'}
+            </TooltipContent>
+          </Tooltip>
+        ) : (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className="inline-flex text-[var(--arca-accent-pos-fg)]"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <CheckCircle2 className="h-4 w-4" />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" sideOffset={6}>
+              Cliente sin errores en jobs de scraping
+            </TooltipContent>
+          </Tooltip>
+        ),
+    },
+    {
+      accessorKey: 'identityNumber',
+      header: 'CUIT',
+      cell: ({ getValue }) => (
+        <span className="font-mono text-[12px] text-[var(--arca-ink-2)]">
+          {getValue() as string}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'createdAt',
+      header: 'Registrado',
+      cell: ({ getValue }) => (
+        <span className="text-[var(--arca-ink-3)]">
+          {relativeTime(new Date(getValue() as string))}
+        </span>
+      ),
+    },
+    {
+      id: 'actions',
+      enableSorting: false,
+      cell: ({ row }) => (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              className="h-7 w-7 p-0"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+            <DropdownMenuItem
+              onSelect={() => navigate({ to: `/clients/${row.original.id}` })}
+            >
+              <Eye className="mr-2 h-3.5 w-3.5" />
+              Ver
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() => {
+                setClientToEditId(row.original.id);
+                setEditDialogOpen(true);
+              }}
+            >
+              <Edit className="mr-2 h-3.5 w-3.5" />
+              Editar
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() => {
+                setClientToDelete(row.original.id);
+                setDeleteDialogOpen(true);
+              }}
+              className="text-destructive"
+            >
+              <Trash2 className="mr-2 h-3.5 w-3.5" />
+              Eliminar
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ),
+    },
+  ];
 
   return (
-    <div className="flex flex-col h-full gap-4">
-      {/* Search and Filters */}
-      <div className="flex flex-col sm:flex-row gap-4 flex-shrink-0">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-          <Input
-            placeholder="Buscar por nombre, perfil, CUIT o teléfono..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10"
-          />
-        </div>
-        <div className="flex gap-2">
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder="Estado" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos los estados</SelectItem>
-              <SelectItem value="active">Activo</SelectItem>
-              <SelectItem value="inactive">Inactivo</SelectItem>
-              <SelectItem value="pending">Pendiente</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      {!hasResults ? (
-        <div className="flex items-center justify-center h-32">
-          <div className="text-muted-foreground">
-            No se encontraron clientes con los filtros aplicados
-          </div>
-        </div>
-      ) : (
-        <>
-          {/* Results counter */}
-          <div className="flex items-center justify-between text-sm text-muted-foreground flex-shrink-0">
-            <span>
-              Mostrando {filteredClients.length} de {clients.length} clientes
-            </span>
-            {(searchTerm || statusFilter !== 'all') && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setSearchTerm('');
-                  setStatusFilter('all');
-                }}
-              >
-                Limpiar filtros
-              </Button>
-            )}
-          </div>
-
-          <div className="rounded-xl border border-[#efeeef] bg-white shadow-sm overflow-auto flex-1 min-h-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Cliente</TableHead>
-                  <TableHead className="w-[120px] text-center">
-                    Estado
-                  </TableHead>
-                  <TableHead>CUIT</TableHead>
-                  <TableHead>Registrado</TableHead>
-                  <TableHead className="w-[50px]"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredClients.map((client) => (
-                  <TableRow
-                    key={client.id}
-                    onClick={() => navigate({ to: `/clients/${client.id}` })}
-                    className="cursor-pointer hover:bg-[#efeeef]/50"
-                  >
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <span>{client.name}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {client.hasErrors ? (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span
-                              className="inline-flex text-orange-400"
-                              onClick={(e) => e.stopPropagation()}
-                              aria-label="Cliente con errores"
-                            >
-                              <CircleAlert className="h-4 w-4" />
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" sideOffset={6}>
-                            {client.errorMessage?.trim() ||
-                              'Cliente con errores en jobs de scraping'}
-                          </TooltipContent>
-                        </Tooltip>
-                      ) : (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span
-                              className="inline-flex text-emerald-600"
-                              onClick={(e) => e.stopPropagation()}
-                              aria-label="Cliente sin errores"
-                            >
-                              <CheckCircle2 className="h-4 w-4" />
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" sideOffset={6}>
-                            Cliente sin errores en jobs de scraping
-                          </TooltipContent>
-                        </Tooltip>
-                      )}
-                    </TableCell>
-                    <TableCell>{client.identityNumber}</TableCell>
-                    <TableCell>
-                      {new Date(client.createdAt).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            className="h-8 w-8 p-0"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent
-                          align="end"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <DropdownMenuItem
-                            onSelect={(e) => {
-                              e.preventDefault();
-                              navigate({ to: `/clients/${client.id}` });
-                            }}
-                          >
-                            <Eye className="mr-2 h-4 w-4" />
-                            Ver
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onSelect={(e) => {
-                              e.preventDefault();
-                              setClientToEditId(client.id);
-                              setEditDialogOpen(true);
-                            }}
-                          >
-                            <Edit className="mr-2 h-4 w-4" />
-                            Editar
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onSelect={(e) => {
-                              e.preventDefault();
-                              handleDelete(client.id);
-                            }}
-                            className="text-destructive"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Eliminar
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </>
-      )}
+    <>
+      <DataTable
+        columns={columns}
+        data={clients as Client[]}
+        isLoading={isLoading}
+        searchKey="name"
+        searchPlaceholder="Buscar por nombre, CUIT..."
+        filters={[
+          {
+            columnId: 'status',
+            label: 'Estado',
+            options: [
+              { label: 'Activo', value: 'active' },
+              { label: 'Inactivo', value: 'inactive' },
+              { label: 'Pendiente', value: 'pending' },
+            ],
+          },
+        ]}
+        onRowClick={(client) => navigate({ to: `/clients/${client.id}` })}
+        emptyMessage="No hay clientes registrados."
+      />
 
       {clientToEditId && (
         <EditClientDialog
@@ -360,7 +241,9 @@ export function ClientsTable() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction
-              onClick={confirmDelete}
+              onClick={() =>
+                clientToDelete && deleteMutation.mutate({ id: clientToDelete })
+              }
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Eliminar
@@ -368,6 +251,6 @@ export function ClientsTable() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </>
   );
 }

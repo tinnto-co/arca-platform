@@ -66,7 +66,7 @@ function moneyFmt(v: string | number | null | undefined): string {
 
 /** Suma montos de líneas de detalle (mismo criterio que la grilla del recibo). */
 function sumaMontosDetalle(
-  rows: Array<{ detalle: { monto: string | null | undefined } }>
+  rows: { detalle: { monto: string | null | undefined } }[]
 ): number {
   return rows.reduce((acc, r) => {
     const n = Number(r.detalle.monto ?? 0);
@@ -84,11 +84,11 @@ function esCategoriaGerente(v: string | null | undefined): boolean {
 }
 
 function basicoDesdeDetalle(
-  rows: Array<{
+  rows: {
     detalle: { codigo: string; monto: string | null };
     concepto?: { numeroSos?: number | null; nombre?: string | null } | null;
     conceptoSos?: { codigo?: string | null; nombre?: string | null } | null;
-  }>
+  }[]
 ): number {
   for (const r of rows) {
     const numSos = r.concepto?.numeroSos ?? null;
@@ -206,17 +206,50 @@ function completarCabeceraConLegajo(
 
 // ─── Número a letras (pesos argentinos) ─────────────────────────────────────
 const UNIDADES = [
-  '', 'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve',
-  'diez', 'once', 'doce', 'trece', 'catorce', 'quince', 'dieciséis', 'diecisiete',
-  'dieciocho', 'diecinueve',
+  '',
+  'uno',
+  'dos',
+  'tres',
+  'cuatro',
+  'cinco',
+  'seis',
+  'siete',
+  'ocho',
+  'nueve',
+  'diez',
+  'once',
+  'doce',
+  'trece',
+  'catorce',
+  'quince',
+  'dieciséis',
+  'diecisiete',
+  'dieciocho',
+  'diecinueve',
 ];
 const DECENAS = [
-  '', 'diez', 'veinte', 'treinta', 'cuarenta', 'cincuenta', 'sesenta', 'setenta',
-  'ochenta', 'noventa',
+  '',
+  'diez',
+  'veinte',
+  'treinta',
+  'cuarenta',
+  'cincuenta',
+  'sesenta',
+  'setenta',
+  'ochenta',
+  'noventa',
 ];
 const CENTENAS = [
-  '', 'ciento', 'doscientos', 'trescientos', 'cuatrocientos', 'quinientos',
-  'seiscientos', 'setecientos', 'ochocientos', 'novecientos',
+  '',
+  'ciento',
+  'doscientos',
+  'trescientos',
+  'cuatrocientos',
+  'quinientos',
+  'seiscientos',
+  'setecientos',
+  'ochocientos',
+  'novecientos',
 ];
 
 function cientos(n: number): string {
@@ -246,8 +279,7 @@ function millones(n: number): string {
   if (n < 1_000_000) return miles(n);
   const m = Math.floor(n / 1_000_000);
   const resto = n % 1_000_000;
-  const parteM =
-    m === 1 ? 'un millón' : `${miles(m)} millones`;
+  const parteM = m === 1 ? 'un millón' : `${miles(m)} millones`;
   if (resto === 0) return parteM;
   return `${parteM} ${miles(resto)}`;
 }
@@ -322,7 +354,9 @@ function DocCell({
       <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
         {label}
       </span>
-      <span className="mt-0.5 text-sm font-medium leading-tight">{value || '—'}</span>
+      <span className="mt-0.5 text-sm font-medium leading-tight">
+        {value || '—'}
+      </span>
     </div>
   );
 }
@@ -428,10 +462,7 @@ export function SueldosRecibo({ clientId, profileId }: SueldosReciboProps) {
               </SelectTrigger>
               <SelectContent>
                 {recibosPeriodo.map((r) => (
-                  <SelectItem
-                    key={r.liquidacion.id}
-                    value={r.liquidacion.id}
-                  >
+                  <SelectItem key={r.liquidacion.id} value={r.liquidacion.id}>
                     {`${r.empleado.nombre} · ${tipoReciboLabel(r.liquidacion.tipo)}`}
                   </SelectItem>
                 ))}
@@ -459,7 +490,11 @@ export function SueldosRecibo({ clientId, profileId }: SueldosReciboProps) {
               </CardContent>
             </Card>
           ) : (
-            <ReciboDocumento detalle={detalle} clientData={clientData ?? null} firmaEmpleadorUrl={firmaEmpleadorUrl} />
+            <ReciboDocumento
+              detalle={detalle}
+              clientData={clientData ?? null}
+              firmaEmpleadorUrl={firmaEmpleadorUrl}
+            />
           )}
         </>
       )}
@@ -468,9 +503,7 @@ export function SueldosRecibo({ clientId, profileId }: SueldosReciboProps) {
 }
 
 // ─── Componente del documento recibo ────────────────────────────────────────
-type DetalleType = NonNullable<
-  Awaited<ReturnType<typeof getReciboDetalle>>
->;
+type DetalleType = NonNullable<Awaited<ReturnType<typeof getReciboDetalle>>>;
 type ClientData = Awaited<ReturnType<typeof getClient>>;
 
 function ReciboDocumento({
@@ -498,7 +531,8 @@ function ReciboDocumento({
   const basicoLiquidacionNum = Number(liquidacion.basico ?? 0);
   const basicoDetalleNum = basicoDesdeDetalle(detalles);
   const esGerente =
-    esCategoriaGerente(categoria?.nombre) || esCategoriaGerente(empleado.categoria);
+    esCategoriaGerente(categoria?.nombre) ||
+    esCategoriaGerente(empleado.categoria);
   const mostrarBasicoEscalaGerente =
     esGerente &&
     Number.isFinite(basicoCalculadoNum) &&
@@ -548,10 +582,7 @@ function ReciboDocumento({
   const totalRetenciones = redondearPesos(sumaMontosDetalle(retenciones));
   const totalNoRemunerativo = redondearPesos(sumaMontosDetalle(haberesSin));
   const neto = redondearPesos(
-    totalHaberes +
-      totalNoRemunerativo -
-      totalDescuentos -
-      totalRetenciones
+    totalHaberes + totalNoRemunerativo - totalDescuentos - totalRetenciones
   );
 
   const cab = completarCabeceraConLegajo(
@@ -562,7 +593,6 @@ function ReciboDocumento({
   return (
     <div className="w-full overflow-x-auto">
       <div className="min-w-[700px] rounded-md border border-border bg-background text-sm shadow-sm">
-
         {/* ── ENCABEZADO ──────────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 border-b border-border">
           {/* Empresa (izquierda) */}
@@ -591,7 +621,10 @@ function ReciboDocumento({
             </div>
             <div className="grid grid-cols-3 divide-x divide-border">
               <DocCell label="Período a pagar" value={liquidacion.periodo} />
-              <DocCell label="Fecha de pago" value={dateFmt(cab.fechaPagoParaMostrar)} />
+              <DocCell
+                label="Fecha de pago"
+                value={dateFmt(cab.fechaPagoParaMostrar)}
+              />
               <DocCell label="Lugar de pago" value={cab.lugarPago ?? '—'} />
               <DocCell
                 label="Banco"
@@ -629,16 +662,16 @@ function ReciboDocumento({
               empleado.legajo ?? detalle.importLegajo ?? null
             )}
           />
-          <DocCell
-            label="Apellido y Nombres"
-            value={empleado.nombre}
-          />
+          <DocCell label="Apellido y Nombres" value={empleado.nombre} />
           <DocCell
             label="Fecha de ingreso"
             value={dateFmt(empleado.fechaAlta)}
           />
           <DocCell label="CUIL" value={empleado.cuil} />
-          <DocCell label="Sueldo básico" value={`$${moneyFmt(basicoMostrado)}`} />
+          <DocCell
+            label="Sueldo básico"
+            value={`$${moneyFmt(basicoMostrado)}`}
+          />
         </div>
 
         {/* ── FILA 3 EMPLEADO: Convenio | Modalidad | Obra Social ─────────── */}
@@ -655,14 +688,16 @@ function ReciboDocumento({
           />
           <DocCell
             label="Modalidad"
-            value={empleado.tipoJornada === 'full_time' ? 'Tiempo completo' : 'Tiempo parcial'}
+            value={
+              empleado.tipoJornada === 'full_time'
+                ? 'Tiempo completo'
+                : 'Tiempo parcial'
+            }
           />
           <DocCell
             label="Obra social"
             value={
-              obraSocial
-                ? `${obraSocial.codigo} ${obraSocial.nombre}`
-                : '—'
+              obraSocial ? `${obraSocial.codigo} ${obraSocial.nombre}` : '—'
             }
           />
         </div>
@@ -700,43 +735,54 @@ function ReciboDocumento({
                 </td>
               </tr>
             ) : (
-              filas.map(({ detalle: det, concepto, conceptoAfip, conceptoSos, col }) => (
-                <tr key={det.id} className="hover:bg-muted/20">
-                  <td className="px-2 py-1 font-mono text-xs text-muted-foreground">
-                    {det.codigo}
-                  </td>
-                  <td className="px-2 py-1">
-                    {concepto?.nombre ??
-                      conceptoAfip?.descripcion ??
-                      conceptoSos?.nombre ??
-                      det.codigo}
-                  </td>
-                  <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">
-                    {det.cantidad ? moneyFmt(det.cantidad) : '—'}
-                  </td>
-                  <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">
-                    {det.porcentaje ? moneyFmt(det.porcentaje) : '—'}
-                  </td>
-                  <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
-                    {col === 'hab' ? moneyFmt(det.monto) : ''}
-                  </td>
-                  <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
-                    {col === 'desc' ? moneyFmt(det.monto) : ''}
-                  </td>
-                  <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
-                    {col === 'ret' ? moneyFmt(det.monto) : ''}
-                  </td>
-                  <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
-                    {col === 'noRem' ? moneyFmt(det.monto) : ''}
-                  </td>
-                </tr>
-              ))
+              filas.map(
+                ({
+                  detalle: det,
+                  concepto,
+                  conceptoAfip,
+                  conceptoSos,
+                  col,
+                }) => (
+                  <tr key={det.id} className="hover:bg-muted/20">
+                    <td className="px-2 py-1 font-mono text-xs text-muted-foreground">
+                      {det.codigo}
+                    </td>
+                    <td className="px-2 py-1">
+                      {concepto?.nombre ??
+                        conceptoAfip?.descripcion ??
+                        conceptoSos?.nombre ??
+                        det.codigo}
+                    </td>
+                    <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">
+                      {det.cantidad ? moneyFmt(det.cantidad) : '—'}
+                    </td>
+                    <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">
+                      {det.porcentaje ? moneyFmt(det.porcentaje) : '—'}
+                    </td>
+                    <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                      {col === 'hab' ? moneyFmt(det.monto) : ''}
+                    </td>
+                    <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                      {col === 'desc' ? moneyFmt(det.monto) : ''}
+                    </td>
+                    <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                      {col === 'ret' ? moneyFmt(det.monto) : ''}
+                    </td>
+                    <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                      {col === 'noRem' ? moneyFmt(det.monto) : ''}
+                    </td>
+                  </tr>
+                )
+              )
             )}
           </tbody>
           {/* ── Fila de totales ─────────────────────────────────────────── */}
           <tfoot>
             <tr className="border-t-2 border-border bg-muted/30 font-semibold">
-              <td colSpan={4} className="px-2 py-2 uppercase tracking-wide text-xs">
+              <td
+                colSpan={4}
+                className="px-2 py-2 uppercase tracking-wide text-xs"
+              >
                 Totales
               </td>
               <td className="border-l border-border px-2 py-2 text-right tabular-nums">

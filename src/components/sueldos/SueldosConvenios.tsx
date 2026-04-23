@@ -58,7 +58,10 @@ interface SueldosConveniosProps {
   profileId: string;
 }
 
-export function SueldosConvenios({ clientId, profileId }: SueldosConveniosProps) {
+export function SueldosConvenios({
+  clientId,
+  profileId,
+}: SueldosConveniosProps) {
   const queryClient = useQueryClient();
   const [newConvenioOpen, setNewConvenioOpen] = useState(false);
   const [newConvenioNombre, setNewConvenioNombre] = useState('');
@@ -238,7 +241,12 @@ function ConvenioCard({
   onRefresh,
 }: {
   clientId: string;
-  convenio: { id: string; nombre: string; cctCodigo: string | null; descripcion: string | null };
+  convenio: {
+    id: string;
+    nombre: string;
+    cctCodigo: string | null;
+    descripcion: string | null;
+  };
   onRefresh: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -410,7 +418,10 @@ function CategoriaRow({
 }) {
   const getCategoriaDisplay = (codigo: string, nombre: string) => {
     if (!nombre.includes(' - ')) {
-      return { titulo: `${codigo} - ${nombre}`, subtitulo: null as string | null };
+      return {
+        titulo: `${codigo} - ${nombre}`,
+        subtitulo: null as string | null,
+      };
     }
     const [grupo, detalle] = nombre.split(' - ', 2);
     return {
@@ -418,7 +429,10 @@ function CategoriaRow({
       subtitulo: detalle || null,
     };
   };
-  const categoriaDisplay = getCategoriaDisplay(categoria.codigo, categoria.nombre);
+  const categoriaDisplay = getCategoriaDisplay(
+    categoria.codigo,
+    categoria.nombre
+  );
 
   const queryClient = useQueryClient();
   const [showEscala, setShowEscala] = useState(false);

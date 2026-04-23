@@ -231,7 +231,9 @@ export function SueldosConceptos({
               rows.map((row) => (
                 <TableRow key={row.__key}>
                   <TableCell className="font-mono">{row.afipCodigo}</TableCell>
-                  <TableCell className="font-mono">{row.codigoContribuyente}</TableCell>
+                  <TableCell className="font-mono">
+                    {row.codigoContribuyente}
+                  </TableCell>
                   <TableCell className="min-w-0 break-words">
                     <div className="space-y-0.5">
                       <p>{row.afipNombre}</p>

@@ -45,7 +45,7 @@ function findExcelFiles(dir: string): string[] {
 }
 
 function cuitFromPath(filePath: string): string | null {
-  const m = filePath.match(/\d{2}-\d{8}-\d|\d{11}/);
+  const m = /\d{2}-\d{8}-\d|\d{11}/.exec(filePath);
   if (!m) return null;
   const cuit = normDigits(m[0]);
   return cuit.length === 11 ? cuit : null;
@@ -83,7 +83,7 @@ async function main() {
     if (!filesByCuit.has(cuit)) filesByCuit.set(cuit, f);
   }
 
-  type EmpresaReporte = {
+  interface EmpresaReporte {
     clientName: string;
     cuit: string;
     filePath: string | null;
@@ -92,7 +92,7 @@ async function main() {
     matches: number;
     sinMatch: number;
     motivoPrincipal: string;
-  };
+  }
 
   const reportes: EmpresaReporte[] = [];
 
@@ -128,7 +128,8 @@ async function main() {
         empleadosBD: empleados.length,
         matches: 0,
         sinMatch: 0,
-        motivoPrincipal: 'No se encontró archivo de legajos para este CUIT en la carpeta SOS_empresas_legajos.',
+        motivoPrincipal:
+          'No se encontró archivo de legajos para este CUIT en la carpeta SOS_empresas_legajos.',
       });
       continue;
     }
@@ -157,7 +158,8 @@ async function main() {
     for (const normalized of rows) {
       const cuil = normDigits(getCuilFromLegajoRow(normalized));
       const legajo = normalizeLegajo(getLegajoFromLegajoRow(normalized));
-      const emp = (cuil && byCuil.get(cuil)) || (legajo && byLegajo.get(legajo));
+      const emp =
+        (cuil && byCuil.get(cuil)) || (legajo && byLegajo.get(legajo));
       if (emp) matches += 1;
       else sinMatch += 1;
     }

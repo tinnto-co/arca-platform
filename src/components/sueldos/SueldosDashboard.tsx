@@ -78,7 +78,8 @@ export function SueldosDashboard({
     queryFn: () => listLiquidacionesByPeriodo({ data: { clientId, periodo } }),
     enabled: !!clientId,
   });
-  const { data: liquidaciones = [], isLoading: loadingLiq } = liquidacionesQuery;
+  const { data: liquidaciones = [], isLoading: loadingLiq } =
+    liquidacionesQuery;
 
   const empleadosQuery = useQuery({
     queryKey: ['empleados', clientId],
@@ -192,8 +193,8 @@ export function SueldosDashboard({
               <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
                 npm run db:ensure-empleado-pago
               </code>{' '}
-              (necesita <code className="font-mono text-xs">DATABASE_URL</code> en
-              .env). Es seguro repetirlo: solo agrega columnas si faltan.
+              (necesita <code className="font-mono text-xs">DATABASE_URL</code>{' '}
+              en .env). Es seguro repetirlo: solo agrega columnas si faltan.
             </p>
           </AlertDescription>
         </Alert>
@@ -313,7 +314,8 @@ export function SueldosDashboard({
             <div>
               <CardTitle>Recibos del período</CardTitle>
               <p className="text-sm text-muted-foreground">
-                Período {periodo}. Incluye recibos importados (LSD) y generados por el sistema.
+                Período {periodo}. Incluye recibos importados (LSD) y generados
+                por el sistema.
               </p>
             </div>
             <Button
@@ -348,9 +350,13 @@ export function SueldosDashboard({
                   <span className="flex items-center gap-2">
                     {l.empleado.nombre}
                     {l.liquidacion.origen === 'import' ? (
-                      <Badge variant="secondary" className="text-xs">LSD</Badge>
+                      <Badge variant="secondary" className="text-xs">
+                        LSD
+                      </Badge>
                     ) : (
-                      <Badge variant="outline" className="text-xs">Generado</Badge>
+                      <Badge variant="outline" className="text-xs">
+                        Generado
+                      </Badge>
                     )}
                   </span>
                   <div className="flex items-center gap-2">
@@ -430,8 +436,9 @@ export function SueldosDashboard({
           <AlertDialogHeader>
             <AlertDialogTitle>¿Eliminar esta liquidación?</AlertDialogTitle>
             <AlertDialogDescription>
-              Se eliminará la liquidación de {liquidacionToDelete?.empleadoNombre}{' '}
-              del período {periodo}. Esta acción no se puede deshacer.
+              Se eliminará la liquidación de{' '}
+              {liquidacionToDelete?.empleadoNombre} del período {periodo}. Esta
+              acción no se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -10,14 +10,14 @@ const badgeVariants = cva(
     variants: {
       variant: {
         default:
-          'border-transparent bg-[#efeeef] text-[#232c50] [a&]:hover:bg-[#efeeef]/80',
+          'border-transparent bg-[var(--arca-surface-2)] text-[var(--arca-ink-2)] [a&]:hover:bg-[var(--arca-surface-2)]/80',
         secondary:
-          'border-transparent bg-[#139ed9]/10 text-[#139ed9] [a&]:hover:bg-[#139ed9]/20',
+          'border-transparent bg-[var(--arca-navy-700)]/10 text-[var(--arca-navy-700)] [a&]:hover:bg-[var(--arca-navy-700)]/20',
         destructive:
           'border-transparent bg-[#dc2626]/10 text-[#dc2626] [a&]:hover:bg-[#dc2626]/20 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40',
         outline:
           'text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground',
-        info: 'border-transparent bg-[#139ed9]/10 text-[#139ed9]',
+        info: 'border-transparent bg-[var(--arca-navy-700)]/10 text-[var(--arca-navy-700)]',
         success: 'border-transparent bg-[#16a34a]/10 text-[#16a34a]',
         warning: 'border-transparent bg-[#f59e0b]/10 text-[#f59e0b]',
         error: 'border-transparent bg-[#dc2626]/10 text-[#dc2626]',

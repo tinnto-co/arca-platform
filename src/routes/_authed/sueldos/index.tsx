@@ -60,9 +60,20 @@ function RouteComponent() {
   return (
     <div className="space-y-4 overflow-x-hidden p-4 md:space-y-6 md:px-[3rem] md:pt-[3rem] md:pb-6">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <DollarSign className="h-6 w-6 text-[#139ed9]" />
-          <h1 className="text-2xl font-bold text-[#232c50]">
+        <div className="flex items-center gap-3">
+          <div
+            className="w-9 h-9 rounded-[10px] flex items-center justify-center shrink-0"
+            style={{
+              background: 'var(--arca-surface-2)',
+              border: '1px solid var(--arca-border)',
+            }}
+          >
+            <DollarSign
+              className="w-[18px] h-[18px] text-[var(--arca-ink-2)]"
+              strokeWidth={1.8}
+            />
+          </div>
+          <h1 className="font-display text-[22px] font-semibold tracking-[-0.01em] text-[var(--arca-ink)]">
             Liquidación de sueldos
           </h1>
         </div>

@@ -10,14 +10,14 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          'bg-gradient-to-r from-[#139ed9] to-[#0e7eb0] text-white hover:from-[#3db8e8] hover:to-[#139ed9] active:from-[#0e7eb0] active:to-[#0a6a96]',
+          'bg-[var(--arca-ink)] text-white hover:bg-black active:bg-black/90',
         destructive:
           'bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60',
         outline:
-          'border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50',
+          'border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] shadow-xs hover:bg-[var(--arca-surface-2)] text-[var(--arca-ink)]',
         secondary:
-          'border border-[#139ed9] text-[#139ed9] bg-transparent hover:bg-[#139ed9]/10 active:bg-[#139ed9]/20',
-        ghost: 'text-[#232c50] hover:bg-[#efeeef] dark:hover:bg-accent/50',
+          'border border-[var(--arca-border-strong)] text-[var(--arca-ink-2)] bg-transparent hover:bg-[var(--arca-surface-2)] active:bg-[var(--arca-surface-2)]',
+        ghost: 'text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]',
         link: 'text-primary underline-offset-4 hover:underline',
       },
       size: {

@@ -383,6 +383,107 @@ export const getRecentInvoices = createServerFn({
     return invoices;
   });
 
+export const getTopClients = createServerFn({
+  method: 'GET',
+})
+  .inputValidator(
+    z.object({
+      limit: z.number().default(5),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+
+    const userClients = await db
+      .select({
+        id: client.id,
+        name: client.name,
+        cuit: client.cuit,
+      })
+      .from(client)
+      .where(eq(client.organizationId, orgId));
+
+    const userClientIds = userClients.map((c) => c.id);
+
+    if (userClientIds.length === 0) {
+      return [];
+    }
+
+    const now = new Date();
+    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const currentMonthEnd = new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      0,
+      23,
+      59,
+      59
+    );
+
+    const clientInvoices = await db
+      .select({
+        clientId: invoice.client,
+        totalAmount: sql<string>`SUM(CAST(${invoice.amount} AS DECIMAL))`,
+        invoiceCount: sql<number>`COUNT(*)`,
+        lastActivity: sql<string>`MAX(${invoice.createdAt})`,
+      })
+      .from(invoice)
+      .where(
+        and(
+          inArray(invoice.client, userClientIds),
+          gte(invoice.emitionDate, currentMonthStart),
+          lte(invoice.emitionDate, currentMonthEnd)
+        )
+      )
+      .groupBy(invoice.client)
+      .orderBy(sql`SUM(CAST(${invoice.amount} AS DECIMAL)) DESC`)
+      .limit(ctx.data.limit);
+
+    const clientMap = new Map(userClients.map((c) => [c.id, c]));
+
+    // Get overdue debts per client for status
+    const overdueDebts = await db
+      .select({
+        clientId: debt.client,
+        overdueCount: sql<number>`COUNT(*)`,
+        maxOverdueDays: sql<number>`MAX(EXTRACT(DAY FROM NOW() - ${debt.dueDate}))`,
+      })
+      .from(debt)
+      .where(
+        and(inArray(debt.client, userClientIds), lte(debt.dueDate, new Date()))
+      )
+      .groupBy(debt.client);
+
+    const overdueMap = new Map(overdueDebts.map((d) => [d.clientId, d]));
+
+    return clientInvoices.map((ci) => {
+      const clientInfo = clientMap.get(ci.clientId);
+      const overdue = overdueMap.get(ci.clientId);
+      let status: 'ok' | 'pend' | 'late' = 'ok';
+      let statusLabel = 'Al día';
+      if (overdue && overdue.overdueCount > 0) {
+        if (overdue.maxOverdueDays > 7) {
+          status = 'late';
+          statusLabel = `Vencido +${Math.round(overdue.maxOverdueDays)}d`;
+        } else {
+          status = 'pend';
+          statusLabel = 'Pendiente';
+        }
+      }
+
+      return {
+        clientId: ci.clientId,
+        name: clientInfo?.name || '-',
+        cuit: clientInfo?.cuit || '-',
+        totalAmount: parseFloat(ci.totalAmount || '0'),
+        invoiceCount: ci.invoiceCount,
+        lastActivity: ci.lastActivity,
+        status,
+        statusLabel,
+      };
+    });
+  });
+
 export const getPendingNotificationsCount = createServerFn({
   method: 'GET',
 }).handler(async () => {

@@ -21,12 +21,14 @@ export function normalizeHeaderKey(h: string): string {
  * `sheet_to_json` sin rango usa la primera fila como keys → rompe CUIL/Legajo.
  * Esta función busca la fila que contiene la columna "CUIL" y arma objetos por fila.
  */
-export function parseSosLegajosRows(sheet: WorkSheet): Record<string, unknown>[] {
+export function parseSosLegajosRows(
+  sheet: WorkSheet
+): Record<string, unknown>[] {
   const aoa = XLSX.utils.sheet_to_json(sheet, {
     header: 1,
     raw: true,
     defval: null,
-  }) as unknown[][];
+  });
 
   let headerRowIdx = -1;
   for (let i = 0; i < Math.min(aoa.length, 15); i++) {
@@ -44,7 +46,7 @@ export function parseSosLegajosRows(sheet: WorkSheet): Record<string, unknown>[]
 
   if (headerRowIdx === -1) return [];
 
-  const headerRow = aoa[headerRowIdx] as unknown[];
+  const headerRow = aoa[headerRowIdx];
   const headers = headerRow.map((c) => normalizeHeaderKey(String(c ?? '')));
 
   /**
@@ -52,8 +54,7 @@ export function parseSosLegajosRows(sheet: WorkSheet): Record<string, unknown>[]
    * pero la fila de datos sí trae CUIT empresa en la columna 0. Sin compensar,
    * "Legajo" y "CUIL" quedan corridos y el CUIL termina en la columna del nombre.
    */
-  const leadSkip =
-    !headers[0] || String(headers[0]).trim() === '' ? 1 : 0;
+  const leadSkip = !headers[0] || String(headers[0]).trim() === '' ? 1 : 0;
 
   const out: Record<string, unknown>[] = [];
   for (let r = headerRowIdx + 1; r < aoa.length; r++) {

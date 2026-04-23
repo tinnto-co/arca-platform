@@ -161,28 +161,36 @@ export function JobsTable() {
     switch (status) {
       case 'pending':
         return (
-          <span className={`${baseClass} bg-amber-100 text-amber-900`}>
+          <span
+            className={`${baseClass} bg-[var(--arca-accent-warn)]/10 text-[var(--arca-accent-warn-fg)]`}
+          >
             <Clock className="h-3 w-3" />
             Pendiente
           </span>
         );
       case 'running':
         return (
-          <span className={`${baseClass} bg-blue-100 text-blue-900`}>
+          <span
+            className={`${baseClass} bg-[var(--arca-navy-700)]/10 text-[var(--arca-navy-700)]`}
+          >
             <Loader2 className="h-3 w-3 animate-spin" />
             En progreso {typeof progress === 'number' ? `(${progress}%)` : ''}
           </span>
         );
       case 'failed':
         return (
-          <span className={`${baseClass} bg-red-100 text-red-900`}>
+          <span
+            className={`${baseClass} bg-[var(--arca-accent-neg)]/10 text-[var(--arca-accent-neg-fg)]`}
+          >
             <AlertCircle className="h-3 w-3" />
             Fallido
           </span>
         );
       case 'finished':
         return (
-          <span className={`${baseClass} bg-emerald-100 text-emerald-900`}>
+          <span
+            className={`${baseClass} bg-[var(--arca-accent-pos)]/10 text-[var(--arca-accent-pos-fg)]`}
+          >
             <CheckCircle2 className="h-3 w-3" />
             Correcto
           </span>
@@ -349,7 +357,7 @@ export function JobsTable() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-[#efeeef] bg-white shadow-sm overflow-auto flex-1 min-h-0">
+      <div className="overflow-auto flex-1 min-h-0">
         <Table>
           <TableHeader>
             <TableRow>

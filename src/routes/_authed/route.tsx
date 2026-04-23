@@ -41,10 +41,8 @@ function RouteComponent() {
             <AppSidebar />
           </Suspense>
           <SidebarInset>
-            <div className="min-h-[100svh] bg-[#efeeef]">
-              <div className="w-full max-w-full min-w-0 pb-20 md:pb-0 overflow-x-hidden">
-                <Outlet />
-              </div>
+            <div className="min-h-[100svh] bg-[var(--arca-bg)] min-w-0 pb-20 md:pb-0">
+              <Outlet />
             </div>
           </SidebarInset>
           <MobileNavbar />

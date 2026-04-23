@@ -6,17 +6,17 @@ import { db } from '@/lib/db';
 import { client, profile } from '@/drizzle/schema';
 import { eq } from 'drizzle-orm';
 
-type PerfilSueldos = {
+interface PerfilSueldos {
   clientId: string;
   clientName: string;
   profileId: string;
   cuit: string;
-};
+}
 
-type ArchivoLegajo = {
+interface ArchivoLegajo {
   filePath: string;
   cuit: string;
-};
+}
 
 const BASE_DIR = 'C:\\Users\\Brian\\Downloads\\SOS_empresas_legajos';
 
@@ -56,7 +56,7 @@ function normalizarCuit(s: string): string {
 }
 
 function extraerCuitDesdeTexto(s: string): string | null {
-  const match = s.match(/\d{2}-\d{8}-\d|\d{11}/);
+  const match = /\d{2}-\d{8}-\d|\d{11}/.exec(s);
   if (!match) return null;
   const cuit = normalizarCuit(match[0]);
   return cuit.length === 11 ? cuit : null;
@@ -159,7 +159,9 @@ async function main() {
     return true;
   });
 
-  const encontrados = unArchivoPorCuit.filter((a) => perfilesPorCuit.has(a.cuit));
+  const encontrados = unArchivoPorCuit.filter((a) =>
+    perfilesPorCuit.has(a.cuit)
+  );
   const sinExcel = perfiles.filter(
     (p) => !unArchivoPorCuit.some((a) => a.cuit === p.cuit)
   );

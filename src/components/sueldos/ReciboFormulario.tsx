@@ -112,7 +112,8 @@ const formSchema = z
       if (digits.length < 22) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'CBU obligatorio (22 dígitos) si forma de pago es acreditación',
+          message:
+            'CBU obligatorio (22 dígitos) si forma de pago es acreditación',
           path: ['cbu'],
         });
       }
@@ -228,7 +229,9 @@ export function ReciboFormulario({
           copiarUltimoRecibo: values.copiarUltimoRecibo === 'si',
         },
       });
-      toast.success('Cabecera del recibo creada. Podés calcular la liquidación.');
+      toast.success(
+        'Cabecera del recibo creada. Podés calcular la liquidación.'
+      );
       onSuccess({
         liquidacionId: res.liquidacionId,
         importEmpleadoId: res.importEmpleadoId,
@@ -264,246 +267,248 @@ export function ReciboFormulario({
                 </p>
               </div>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <FormField
-                control={form.control}
-                name="importEmpleadoId"
-                render={({ field }) => (
-                  <FormItem className="sm:col-span-2">
-                    <FormLabel>Legajo / empleado</FormLabel>
-                    <FormDescription>
-                      Solo podés elegir empleados que ya tengan liquidación
-                      configurada (convenio y categoría en la pestaña{' '}
-                      <span className="font-medium">Empleados</span>). Los que
-                      aparecen deshabilitados aún no tienen ese vínculo.
-                    </FormDescription>
-                    <Select
-                      onValueChange={field.onChange}
-                      value={field.value}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Seleccione empleado" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {empleados.map((r) => {
-                          const leg = legajoParaMostrar(r.empleado.legajo);
-                          const disabled = !r.empleado.convenioId;
-                          return (
-                            <SelectItem
-                              key={r.empleado.id}
-                              value={r.empleado.id}
-                              disabled={disabled}
-                            >
-                              {leg} — {r.empleado.nombre}
-                              {disabled ? ' (sin configurar)' : ''}
-                            </SelectItem>
-                          );
-                        })}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                <FormField
+                  control={form.control}
+                  name="importEmpleadoId"
+                  render={({ field }) => (
+                    <FormItem className="sm:col-span-2">
+                      <FormLabel>Legajo / empleado</FormLabel>
+                      <FormDescription>
+                        Solo podés elegir empleados que ya tengan liquidación
+                        configurada (convenio y categoría en la pestaña{' '}
+                        <span className="font-medium">Empleados</span>). Los que
+                        aparecen deshabilitados aún no tienen ese vínculo.
+                      </FormDescription>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Seleccione empleado" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {empleados.map((r) => {
+                            const leg = legajoParaMostrar(r.empleado.legajo);
+                            const disabled = !r.empleado.convenioId;
+                            return (
+                              <SelectItem
+                                key={r.empleado.id}
+                                value={r.empleado.id}
+                                disabled={disabled}
+                              >
+                                {leg} — {r.empleado.nombre}
+                                {disabled ? ' (sin configurar)' : ''}
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-              <FormField
-                control={form.control}
-                name="tipoRecibo"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Tipo</FormLabel>
-                    <Select
-                      onValueChange={field.onChange}
-                      value={field.value}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {TIPOS_RECIBO.map((t) => (
-                          <SelectItem key={t.value} value={t.value}>
-                            {t.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                <FormField
+                  control={form.control}
+                  name="tipoRecibo"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Tipo</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {TIPOS_RECIBO.map((t) => (
+                            <SelectItem key={t.value} value={t.value}>
+                              {t.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               </div>
 
               <div className="flex flex-wrap items-end gap-3">
-              <FormField
-                control={form.control}
-                name="ano"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Año (liquidado)</FormLabel>
-                    <Select
-                      onValueChange={field.onChange}
-                      value={field.value}
-                    >
-                      <FormControl>
-                        <SelectTrigger className="w-[120px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {ANOS.map((y) => (
-                          <SelectItem key={y} value={String(y)}>
-                            {y}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="mes"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Mes</FormLabel>
-                    <Select
-                      onValueChange={field.onChange}
-                      value={field.value}
-                    >
-                      <FormControl>
-                        <SelectTrigger className="w-[170px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {MESES.map((m) => (
-                          <SelectItem key={m.value} value={m.value}>
-                            {m.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="quincena"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Quincena</FormLabel>
-                    <Select
-                      onValueChange={field.onChange}
-                      value={field.value}
-                    >
-                      <FormControl>
-                        <SelectTrigger className="w-[190px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="0">Mes completo</SelectItem>
-                        <SelectItem value="1">Primera quincena</SelectItem>
-                        <SelectItem value="2">Segunda quincena</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                <FormField
+                  control={form.control}
+                  name="ano"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Año (liquidado)</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
+                      >
+                        <FormControl>
+                          <SelectTrigger className="w-[120px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {ANOS.map((y) => (
+                            <SelectItem key={y} value={String(y)}>
+                              {y}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="mes"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Mes</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
+                      >
+                        <FormControl>
+                          <SelectTrigger className="w-[170px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {MESES.map((m) => (
+                            <SelectItem key={m.value} value={m.value}>
+                              {m.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="quincena"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Quincena</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
+                      >
+                        <FormControl>
+                          <SelectTrigger className="w-[190px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="0">Mes completo</SelectItem>
+                          <SelectItem value="1">Primera quincena</SelectItem>
+                          <SelectItem value="2">Segunda quincena</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
-              <FormField
-                control={form.control}
-                name="fechaLiquidacion"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Fecha de liquidación</FormLabel>
-                    <FormControl>
-                      <Input type="date" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="obraSocialId"
-                render={({ field }) => (
-                  <FormItem className="flex flex-col">
-                    <FormLabel>Obra social</FormLabel>
-                    <Popover open={obraOpen} onOpenChange={setObraOpen}>
-                      <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            role="combobox"
-                            className={cn(
-                              'justify-between font-normal',
-                              !field.value && 'text-muted-foreground'
-                            )}
-                          >
-                            <span className="truncate text-left">
-                              {obraLabel}
-                            </span>
-                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                          </Button>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-[min(100vw-2rem,420px)] p-0">
-                        <Command>
-                          <CommandInput placeholder="Buscar por código o nombre…" />
-                          <CommandList>
-                            <CommandEmpty>
-                              {obras.length === 0
-                                ? 'No hay obras cargadas. Ejecutá el seed.'
-                                : 'Sin resultados.'}
-                            </CommandEmpty>
-                            <CommandGroup>
-                              <CommandItem
-                                value="__none__"
-                                onSelect={() => {
-                                  field.onChange('');
-                                  setObraOpen(false);
-                                }}
-                              >
-                                Sin obra social
-                              </CommandItem>
-                              {obras.map((o) => (
+                <FormField
+                  control={form.control}
+                  name="fechaLiquidacion"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Fecha de liquidación</FormLabel>
+                      <FormControl>
+                        <Input type="date" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="obraSocialId"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-col">
+                      <FormLabel>Obra social</FormLabel>
+                      <Popover open={obraOpen} onOpenChange={setObraOpen}>
+                        <PopoverTrigger asChild>
+                          <FormControl>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              role="combobox"
+                              className={cn(
+                                'justify-between font-normal',
+                                !field.value && 'text-muted-foreground'
+                              )}
+                            >
+                              <span className="truncate text-left">
+                                {obraLabel}
+                              </span>
+                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                            </Button>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[min(100vw-2rem,420px)] p-0">
+                          <Command>
+                            <CommandInput placeholder="Buscar por código o nombre…" />
+                            <CommandList>
+                              <CommandEmpty>
+                                {obras.length === 0
+                                  ? 'No hay obras cargadas. Ejecutá el seed.'
+                                  : 'Sin resultados.'}
+                              </CommandEmpty>
+                              <CommandGroup>
                                 <CommandItem
-                                  key={o.id}
-                                  value={`${o.codigo} ${o.nombre}`}
+                                  value="__none__"
                                   onSelect={() => {
-                                    field.onChange(o.id);
+                                    field.onChange('');
                                     setObraOpen(false);
                                   }}
                                 >
-                                  {o.codigo} — {o.nombre}
+                                  Sin obra social
                                 </CommandItem>
-                              ))}
-                            </CommandGroup>
-                          </CommandList>
-                        </Command>
-                      </PopoverContent>
-                    </Popover>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                                {obras.map((o) => (
+                                  <CommandItem
+                                    key={o.id}
+                                    value={`${o.codigo} ${o.nombre}`}
+                                    onSelect={() => {
+                                      field.onChange(o.id);
+                                      setObraOpen(false);
+                                    }}
+                                  >
+                                    {o.codigo} — {o.nombre}
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               </div>
             </section>
 
             <section className="space-y-4 rounded-lg border bg-background p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-sm font-semibold">Pago, cargas y observaciones</h3>
+                  <h3 className="text-sm font-semibold">
+                    Pago, cargas y observaciones
+                  </h3>
                   <p className="text-xs text-muted-foreground">
                     Datos complementarios del recibo y del período de cargas.
                   </p>
@@ -520,88 +525,88 @@ export function ReciboFormulario({
               <Collapsible open={cargasOpen} onOpenChange={setCargasOpen}>
                 <CollapsibleContent className="space-y-4 pt-1">
                   <div className="grid gap-4 sm:grid-cols-2">
-                  <FormField
-                    control={form.control}
-                    name="fechaPago"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Fecha de pago</FormLabel>
-                        <FormControl>
-                          <Input type="date" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="lugarPago"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Lugar de pago</FormLabel>
-                        <FormControl>
-                          <Input {...field} maxLength={50} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                    <FormField
+                      control={form.control}
+                      name="fechaPago"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Fecha de pago</FormLabel>
+                          <FormControl>
+                            <Input type="date" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="lugarPago"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Lugar de pago</FormLabel>
+                          <FormControl>
+                            <Input {...field} maxLength={50} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2">
-                  <FormField
-                    control={form.control}
-                    name="formaPago"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Forma de pago</FormLabel>
-                        <Select
-                          onValueChange={field.onChange}
-                          value={field.value}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {FORMAS_PAGO.map((f) => (
-                              <SelectItem key={f.value} value={f.value}>
-                                {f.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="banco"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Banco</FormLabel>
-                        <Select
-                          onValueChange={field.onChange}
-                          value={field.value || '_otro banco'}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Banco" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent className="max-h-[240px]">
-                            {BANCOS.map((b) => (
-                              <SelectItem key={b} value={b}>
-                                {b}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                    <FormField
+                      control={form.control}
+                      name="formaPago"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Forma de pago</FormLabel>
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {FORMAS_PAGO.map((f) => (
+                                <SelectItem key={f.value} value={f.value}>
+                                  {f.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="banco"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Banco</FormLabel>
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value || '_otro banco'}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Banco" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent className="max-h-[240px]">
+                              {BANCOS.map((b) => (
+                                <SelectItem key={b} value={b}>
+                                  {b}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                   </div>
                   {formaPago === 'acreditacion' && (
                     <div className="rounded-md border border-amber-300/60 bg-amber-50/40 p-3">
@@ -629,73 +634,73 @@ export function ReciboFormulario({
                     </div>
                   )}
                   <div className="flex flex-wrap items-end gap-3">
-                  <FormField
-                    control={form.control}
-                    name="anoCargas"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Año (período cargas)</FormLabel>
-                        <Select
-                          onValueChange={field.onChange}
-                          value={field.value}
-                        >
+                    <FormField
+                      control={form.control}
+                      name="anoCargas"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Año (período cargas)</FormLabel>
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value}
+                          >
+                            <FormControl>
+                              <SelectTrigger className="w-[120px]">
+                                <SelectValue />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {ANOS.map((y) => (
+                                <SelectItem key={y} value={String(y)}>
+                                  {y}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="mesCargas"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Mes (cargas)</FormLabel>
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value}
+                          >
+                            <FormControl>
+                              <SelectTrigger className="w-[170px]">
+                                <SelectValue />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {MESES.map((m) => (
+                                <SelectItem key={m.value} value={m.value}>
+                                  {m.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="fechaDepositoCargas"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Fecha depósito cargas</FormLabel>
                           <FormControl>
-                            <SelectTrigger className="w-[120px]">
-                              <SelectValue />
-                            </SelectTrigger>
+                            <Input type="date" {...field} />
                           </FormControl>
-                          <SelectContent>
-                            {ANOS.map((y) => (
-                              <SelectItem key={y} value={String(y)}>
-                                {y}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="mesCargas"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Mes (cargas)</FormLabel>
-                        <Select
-                          onValueChange={field.onChange}
-                          value={field.value}
-                        >
-                          <FormControl>
-                            <SelectTrigger className="w-[170px]">
-                              <SelectValue />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {MESES.map((m) => (
-                              <SelectItem key={m.value} value={m.value}>
-                                {m.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="fechaDepositoCargas"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Fecha depósito cargas</FormLabel>
-                        <FormControl>
-                          <Input type="date" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <FormField
@@ -705,7 +710,11 @@ export function ReciboFormulario({
                         <FormItem>
                           <FormLabel>Observación interna</FormLabel>
                           <FormControl>
-                            <Textarea {...field} rows={2} className="resize-y" />
+                            <Textarea
+                              {...field}
+                              rows={2}
+                              className="resize-y"
+                            />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -718,7 +727,11 @@ export function ReciboFormulario({
                         <FormItem>
                           <FormLabel>Obs. a imprimir en recibo</FormLabel>
                           <FormControl>
-                            <Textarea {...field} rows={2} className="resize-y" />
+                            <Textarea
+                              {...field}
+                              rows={2}
+                              className="resize-y"
+                            />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -744,7 +757,8 @@ export function ReciboFormulario({
                       </FormControl>
                       <SelectContent>
                         <SelectItem value="no">
-                          No — cargar conceptos manualmente (empleado nuevo / sin import)
+                          No — cargar conceptos manualmente (empleado nuevo /
+                          sin import)
                         </SelectItem>
                         <SelectItem value="si">
                           Copiar último recibo de este empleado y mismo tipo
@@ -752,10 +766,11 @@ export function ReciboFormulario({
                       </SelectContent>
                     </Select>
                     <FormDescription>
-                      Si no copiás, se muestra la grilla con los conceptos SOS del{' '}
-                      <span className="font-medium">perfil</span> (vínculos en concepto_sos_profile).
-                      Los conceptos salariales sin número SOS coincidente se liquidan solo por
-                      fórmulas al calcular.
+                      Si no copiás, se muestra la grilla con los conceptos SOS
+                      del <span className="font-medium">perfil</span> (vínculos
+                      en concepto_sos_profile). Los conceptos salariales sin
+                      número SOS coincidente se liquidan solo por fórmulas al
+                      calcular.
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

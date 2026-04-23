@@ -112,7 +112,7 @@ export function LoginForm({ className }: React.ComponentProps<'div'>) {
   return (
     <div className={cn('flex flex-col gap-6', className)}>
       <div className="flex flex-col items-center gap-2 text-center">
-        <h1 className="text-2xl font-bold text-[#232c50]">
+        <h1 className="font-display text-[22px] font-semibold tracking-[-0.01em] text-[var(--arca-ink)]">
           Iniciar sesion en tu cuenta
         </h1>
         <p className="text-muted-foreground text-sm text-balance">

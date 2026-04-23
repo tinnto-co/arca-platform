@@ -13,7 +13,7 @@ import { eq } from 'drizzle-orm';
 
 const DRY_RUN = process.argv.includes('--dry-run');
 
-type ConceptoSos = {
+interface ConceptoSos {
   numeroSos: number;
   codigoAfip: string;
   nombre: string;
@@ -39,7 +39,7 @@ type ConceptoSos = {
     | 'ref_concepto';
   divHsNorm: number;
   divCantidad: number;
-};
+}
 
 // prettier-ignore
 const CONCEPTOS: ConceptoSos[] = [
@@ -279,7 +279,9 @@ const CONCEPTOS: ConceptoSos[] = [
 async function main() {
   if (!process.env.DATABASE_URL) throw new Error('Falta DATABASE_URL');
 
-  console.log(`[${DRY_RUN ? 'dry-run' : 'seed'}] Procesando ${CONCEPTOS.length} conceptos SOS...`);
+  console.log(
+    `[${DRY_RUN ? 'dry-run' : 'seed'}] Procesando ${CONCEPTOS.length} conceptos SOS...`
+  );
 
   let inserted = 0;
   let updated = 0;
@@ -308,7 +310,9 @@ async function main() {
     }
   }
 
-  console.log(`[${DRY_RUN ? 'dry-run' : 'ok'}] Insertados: ${inserted} | Actualizados: ${updated}`);
+  console.log(
+    `[${DRY_RUN ? 'dry-run' : 'ok'}] Insertados: ${inserted} | Actualizados: ${updated}`
+  );
 }
 
 main()

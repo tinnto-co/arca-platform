@@ -3,6 +3,7 @@ import { ClientsTable } from '@/components/clients-table';
 import { CreateClientDialog } from '@/components/create-client-dialog';
 import { Plus, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 
 export const Route = createFileRoute('/_authed/clients/')({
   component: RouteComponent,
@@ -10,23 +11,21 @@ export const Route = createFileRoute('/_authed/clients/')({
 
 function RouteComponent() {
   return (
-    <div className="flex flex-col h-[calc(100svh-5rem)] md:h-svh p-4 md:p-6">
-      <div className="flex items-center justify-between mb-4 flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <Users className="h-6 w-6 text-[#139ed9]" />
-          <h1 className="text-2xl font-bold text-[#232c50]">Clientes</h1>
-        </div>
-        <CreateClientDialog>
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            Nuevo Cliente
-          </Button>
-        </CreateClientDialog>
-      </div>
-
-      <div className="flex-1 min-h-0">
+    <div className="p-[28px_36px_60px] max-w-[1440px]">
+        <PageHeader
+          icon={Users}
+          title="Clientes"
+          subtitle="Gestión de clientes y sus perfiles"
+          actions={
+            <CreateClientDialog>
+              <Button>
+                <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
+                Nuevo cliente
+              </Button>
+            </CreateClientDialog>
+          }
+        />
         <ClientsTable />
-      </div>
     </div>
   );
 }

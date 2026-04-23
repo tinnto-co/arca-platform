@@ -1043,7 +1043,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
         </div>
 
         {/* Table */}
-        <div className="rounded-xl border border-[#efeeef] bg-white shadow-sm overflow-auto flex-1 min-h-0">
+        <div className="overflow-auto flex-1 min-h-0">
           <div className="w-full">
             <table className="w-full table-fixed border-collapse text-xs">
               <TableHeader>

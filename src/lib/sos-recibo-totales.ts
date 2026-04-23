@@ -59,8 +59,7 @@ export function totalesReciboSosDesdeMontos(
     sectionTotal(montoByCodigo, 'haberes') +
     sectionTotal(montoByCodigo, 'liquidacion_final') +
     sectionTotal(montoByCodigo, 'decretos');
-  const descuentos =
-    sectionTotal(montoByCodigo, 'descuentos');
+  const descuentos = sectionTotal(montoByCodigo, 'descuentos');
   const retenciones =
     sectionTotal(montoByCodigo, 'retenciones') +
     sectionTotal(montoByCodigo, 'retenciones_no_rem');
@@ -84,10 +83,10 @@ function roundMoney(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-export type MontoLiquidadoSosOptions = {
+export interface MontoLiquidadoSosOptions {
   /** Si es true, ignora el texto en `monto` y aplica siempre la fórmula (p. ej. tras editar % o importe). */
   forceFormula?: boolean;
-};
+}
 
 /**
  * Monto liquidado por fila: si hay texto en `monto`, ese valor gana; si no, fórmula SOS:

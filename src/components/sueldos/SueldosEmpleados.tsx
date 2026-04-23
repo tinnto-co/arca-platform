@@ -201,9 +201,12 @@ export function SueldosEmpleados({
       sincronizarConveniosEmpleados({ data: { clientId, profileId } }),
     onSuccess: (result) => {
       toast.success(result.mensaje);
-      queryClient.invalidateQueries({ queryKey: ['import-empleados', clientId, profileId] });
+      queryClient.invalidateQueries({
+        queryKey: ['import-empleados', clientId, profileId],
+      });
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : 'Error al sincronizar'),
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : 'Error al sincronizar'),
   });
 
   const guardarPagoLegajo = useMutation({
@@ -292,163 +295,165 @@ export function SueldosEmpleados({
             onClick={() => sincronizar.mutate()}
             disabled={sincronizar.isPending}
           >
-            <RefreshCw className={`h-4 w-4 ${sincronizar.isPending ? 'animate-spin' : ''}`} />
+            <RefreshCw
+              className={`h-4 w-4 ${sincronizar.isPending ? 'animate-spin' : ''}`}
+            />
             Sincronizar convenios
           </Button>
           <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm" className="gap-2">
-              <Plus className="h-4 w-4" />
-              Nuevo empleado
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[480px]">
-            <DialogHeader>
-              <DialogTitle>Nuevo empleado manual</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4 pt-2">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <Label htmlFor="cuil">CUIL *</Label>
-                  <Input
-                    id="cuil"
-                    value={form.cuil}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, cuil: e.target.value }))
-                    }
-                    placeholder="20-12345678-9"
-                  />
+            <DialogTrigger asChild>
+              <Button size="sm" className="gap-2">
+                <Plus className="h-4 w-4" />
+                Nuevo empleado
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[480px]">
+              <DialogHeader>
+                <DialogTitle>Nuevo empleado manual</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleSubmit} className="space-y-4 pt-2">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <Label htmlFor="cuil">CUIL *</Label>
+                    <Input
+                      id="cuil"
+                      value={form.cuil}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, cuil: e.target.value }))
+                      }
+                      placeholder="20-12345678-9"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="legajo">Legajo *</Label>
+                    <Input
+                      id="legajo"
+                      value={form.legajo}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, legajo: e.target.value }))
+                      }
+                      placeholder="001"
+                    />
+                  </div>
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="legajo">Legajo *</Label>
+                  <Label htmlFor="nombre">Nombre completo *</Label>
                   <Input
-                    id="legajo"
-                    value={form.legajo}
+                    id="nombre"
+                    value={form.nombre}
                     onChange={(e) =>
-                      setForm((f) => ({ ...f, legajo: e.target.value }))
+                      setForm((f) => ({ ...f, nombre: e.target.value }))
                     }
-                    placeholder="001"
+                    placeholder="Apellido, Nombre"
                   />
                 </div>
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="nombre">Nombre completo *</Label>
-                <Input
-                  id="nombre"
-                  value={form.nombre}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, nombre: e.target.value }))
-                  }
-                  placeholder="Apellido, Nombre"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <Label htmlFor="fechaAlta">Fecha de alta</Label>
-                  <Input
-                    id="fechaAlta"
-                    type="date"
-                    value={form.fechaAlta}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, fechaAlta: e.target.value }))
-                    }
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <Label htmlFor="fechaAlta">Fecha de alta</Label>
+                    <Input
+                      id="fechaAlta"
+                      type="date"
+                      value={form.fechaAlta}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, fechaAlta: e.target.value }))
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="fechaBaja">Fecha de baja</Label>
+                    <Input
+                      id="fechaBaja"
+                      type="date"
+                      value={form.fechaBaja}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, fechaBaja: e.target.value }))
+                      }
+                    />
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <Label htmlFor="fechaBaja">Fecha de baja</Label>
-                  <Input
-                    id="fechaBaja"
-                    type="date"
-                    value={form.fechaBaja}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, fechaBaja: e.target.value }))
-                    }
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <Label htmlFor="modoContrato">Modo contrato</Label>
+                    <Input
+                      id="modoContrato"
+                      value={form.modoContrato}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, modoContrato: e.target.value }))
+                      }
+                      placeholder="Tiempo indeterminado"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="convenio">Convenio</Label>
+                    <Select
+                      value={form.convenioId}
+                      onValueChange={(value) =>
+                        setForm((f) => ({
+                          ...f,
+                          convenioId: value,
+                          categoriaId: '',
+                        }))
+                      }
+                    >
+                      <SelectTrigger id="convenio">
+                        <SelectValue placeholder="Seleccionar convenio" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {convenios.map((convenio) => (
+                          <SelectItem key={convenio.id} value={convenio.id}>
+                            {convenio.nombre}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <Label htmlFor="modoContrato">Modo contrato</Label>
-                  <Input
-                    id="modoContrato"
-                    value={form.modoContrato}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, modoContrato: e.target.value }))
-                    }
-                    placeholder="Tiempo indeterminado"
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <Label htmlFor="categoria">Categoría</Label>
+                    <Select
+                      value={form.categoriaId}
+                      onValueChange={(value) => {
+                        const categoriaSeleccionada = categorias.find(
+                          (categoria) => categoria.id === value
+                        );
+                        setForm((f) => ({
+                          ...f,
+                          categoriaId: value,
+                          categoria: categoriaSeleccionada
+                            ? `${categoriaSeleccionada.codigo} - ${categoriaSeleccionada.nombre}`
+                            : '',
+                        }));
+                      }}
+                      disabled={!form.convenioId}
+                    >
+                      <SelectTrigger id="categoria">
+                        <SelectValue placeholder="Seleccionar categoría" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categorias.map((categoria) => (
+                          <SelectItem key={categoria.id} value={categoria.id}>
+                            {categoria.codigo} - {categoria.nombre}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <Label htmlFor="convenio">Convenio</Label>
-                  <Select
-                    value={form.convenioId}
-                    onValueChange={(value) =>
-                      setForm((f) => ({
-                        ...f,
-                        convenioId: value,
-                        categoriaId: '',
-                      }))
-                    }
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setOpen(false)}
                   >
-                    <SelectTrigger id="convenio">
-                      <SelectValue placeholder="Seleccionar convenio" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {convenios.map((convenio) => (
-                        <SelectItem key={convenio.id} value={convenio.id}>
-                          {convenio.nombre}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    Cancelar
+                  </Button>
+                  <Button type="submit" disabled={crear.isPending}>
+                    {crear.isPending ? 'Guardando…' : 'Guardar'}
+                  </Button>
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <Label htmlFor="categoria">Categoría</Label>
-                  <Select
-                    value={form.categoriaId}
-                    onValueChange={(value) => {
-                      const categoriaSeleccionada = categorias.find(
-                        (categoria) => categoria.id === value
-                      );
-                      setForm((f) => ({
-                        ...f,
-                        categoriaId: value,
-                        categoria: categoriaSeleccionada
-                          ? `${categoriaSeleccionada.codigo} - ${categoriaSeleccionada.nombre}`
-                          : '',
-                      }));
-                    }}
-                    disabled={!form.convenioId}
-                  >
-                    <SelectTrigger id="categoria">
-                      <SelectValue placeholder="Seleccionar categoría" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {categorias.map((categoria) => (
-                        <SelectItem key={categoria.id} value={categoria.id}>
-                          {categoria.codigo} - {categoria.nombre}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setOpen(false)}
-                >
-                  Cancelar
-                </Button>
-                <Button type="submit" disabled={crear.isPending}>
-                  {crear.isPending ? 'Guardando…' : 'Guardar'}
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
+              </form>
+            </DialogContent>
           </Dialog>
         </div>
       </div>
@@ -525,14 +530,22 @@ export function SueldosEmpleados({
                       {formatDate(e.fechaBaja ?? undefined)}
                     </TableCell>
                     <TableCell className="min-w-0 break-words align-top py-2">
-                      {r.convenioNombre
-                        ? formatTitleCaseDisplay(r.convenioNombre)
-                        : <span className="text-muted-foreground text-xs">Sin vincular</span>}
+                      {r.convenioNombre ? (
+                        formatTitleCaseDisplay(r.convenioNombre)
+                      ) : (
+                        <span className="text-muted-foreground text-xs">
+                          Sin vincular
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="min-w-0 break-words align-top py-2">
-                      {r.categoriaNombre
-                        ? formatTitleCaseDisplay(r.categoriaNombre)
-                        : <span className="text-muted-foreground text-xs">{formatTitleCaseDisplay(e.categoria)}</span>}
+                      {r.categoriaNombre ? (
+                        formatTitleCaseDisplay(r.categoriaNombre)
+                      ) : (
+                        <span className="text-muted-foreground text-xs">
+                          {formatTitleCaseDisplay(e.categoria)}
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="align-top py-2">
                       {baja ? (
@@ -632,7 +645,8 @@ export function SueldosEmpleados({
                         p
                           ? {
                               ...p,
-                              formaPago: value as (typeof FORMAS_PAGO)[number]['value'],
+                              formaPago:
+                                value as (typeof FORMAS_PAGO)[number]['value'],
                             }
                           : p
                       )

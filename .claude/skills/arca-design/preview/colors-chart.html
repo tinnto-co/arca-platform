@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><link rel="stylesheet" href="_base.css">
+<style>
+  body { padding: 24px; }
+  .row { display: flex; gap: 14px; align-items: flex-end; }
+  .col { display:flex; flex-direction:column; gap: 6px; align-items:flex-start; }
+  .chip { width: 110px; height: 64px; border-radius: var(--r-md); display:flex; align-items:center; justify-content:center; color:#fff; font-family: var(--ff-display); font-weight:600; }
+  .name { font-size: 11.5px; font-weight: 600; color: var(--ink); }
+  .hex  { font-family: var(--ff-mono); font-size: 10.5px; color: var(--ink-3); }
+
+  .demo { flex:1; display:flex; align-items:flex-end; gap: 6px; height: 80px; padding: 0 14px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); }
+  .bar { width: 16px; border-radius: 4px 4px 0 0; }
+</style>
+</head><body>
+  <div class="row">
+    <div class="col"><div class="chip" style="background:#1E3460">1</div><span class="name">chart-1</span><span class="hex">#1E3460</span></div>
+    <div class="col"><div class="chip" style="background:#7AA2C8">2</div><span class="name">chart-2</span><span class="hex">#7AA2C8</span></div>
+    <div class="col"><div class="chip" style="background:#C2A878">3</div><span class="name">chart-3</span><span class="hex">#C2A878</span></div>
+    <div class="col"><div class="chip" style="background:#8FB39F">4</div><span class="name">chart-4</span><span class="hex">#8FB39F</span></div>
+    <div class="demo">
+      <div class="bar" style="height:68px; background:#1E3460"></div>
+      <div class="bar" style="height:46px; background:#7AA2C8"></div>
+      <div class="bar" style="height:58px; background:#1E3460"></div>
+      <div class="bar" style="height:40px; background:#7AA2C8"></div>
+      <div class="bar" style="height:62px; background:#1E3460"></div>
+      <div class="bar" style="height:48px; background:#7AA2C8"></div>
+      <svg width="80" height="60" viewBox="0 0 80 60" style="margin-left:-72px">
+        <path d="M4 38 L16 22 L28 30 L40 18 L52 24 L64 12 L76 20" fill="none" stroke="#C2A878" stroke-width="2" stroke-dasharray="4 4" stroke-linecap="round"/>
+      </svg>
+    </div>
+  </div>
+</body></html>

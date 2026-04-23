@@ -53,37 +53,77 @@
 
 :root {
   --radius: 0.75rem;
-  --background: #ffffff;
-  --foreground: #1a1a1a;
+  --background: #F7F6F2;
+  --foreground: #12131A;
   --card: #ffffff;
-  --card-foreground: #1a1a1a;
+  --card-foreground: #12131A;
   --popover: #ffffff;
-  --popover-foreground: #1a1a1a;
-  --primary: #232c50;
+  --popover-foreground: #12131A;
+  --primary: #0B1730;
   --primary-foreground: #ffffff;
-  --secondary: #139ed9;
+  --secondary: #2A4680;
   --secondary-foreground: #ffffff;
-  --muted: #efeeef;
-  --muted-foreground: #8a8a8a;
-  --accent: #efeeef;
-  --accent-foreground: #232c50;
+  --muted: #FBFAF6;
+  --muted-foreground: #6E7079;
+  --accent: #FBFAF6;
+  --accent-foreground: #12131A;
   --destructive: oklch(0.577 0.245 27.325);
-  --border: #d1d0d1;
-  --input: #d1d0d1;
-  --ring: #139ed9;
-  --chart-1: #139ed9;
-  --chart-2: #232c50;
-  --chart-3: #16a34a;
-  --chart-4: #f59e0b;
-  --chart-5: #dc2626;
-  --sidebar: #232c50;
-  --sidebar-foreground: rgba(255, 255, 255, 0.8);
-  --sidebar-primary: #139ed9;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: rgba(255, 255, 255, 0.1);
-  --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: rgba(255, 255, 255, 0.1);
-  --sidebar-ring: #139ed9;
+  --border: #ECEAE3;
+  --input: #DFDCD3;
+  --ring: #2A4680;
+  --chart-1: #1E3460;
+  --chart-2: #7AA2C8;
+  --chart-3: #C2A878;
+  --chart-4: #8FB39F;
+  --chart-5: oklch(0.60 0.15 25);
+  --sidebar: #0B1730;
+  --sidebar-foreground: #E8E9EE;
+  --sidebar-primary: #F7F6F2;
+  --sidebar-primary-foreground: #0B1730;
+  --sidebar-accent: rgba(255, 255, 255, 0.06);
+  --sidebar-accent-foreground: #F2F3F7;
+  --sidebar-border: rgba(255, 255, 255, 0.06);
+  --sidebar-ring: #2A4680;
+
+  /* Arca design tokens */
+  --arca-bg: #F7F6F2;
+  --arca-surface: #FFFFFF;
+  --arca-surface-2: #FBFAF6;
+  --arca-border: #ECEAE3;
+  --arca-border-strong: #DFDCD3;
+  --arca-ink: #12131A;
+  --arca-ink-2: #3E404A;
+  --arca-ink-3: #6E7079;
+  --arca-ink-4: #9B9CA3;
+  --arca-navy-900: #0B1730;
+  --arca-navy-800: #142447;
+  --arca-navy-700: #1E3460;
+  --arca-navy-600: #2A4680;
+  --arca-accent-pos: oklch(0.62 0.13 160);
+  --arca-accent-pos-bg: oklch(0.94 0.04 160);
+  --arca-accent-pos-fg: oklch(0.45 0.13 160);
+  --arca-accent-neg: oklch(0.60 0.15 25);
+  --arca-accent-neg-bg: oklch(0.94 0.04 25);
+  --arca-accent-neg-fg: oklch(0.45 0.15 25);
+  --arca-accent-warn: oklch(0.72 0.13 75);
+  --arca-accent-warn-bg: oklch(0.95 0.04 75);
+  --arca-accent-warn-fg: oklch(0.50 0.13 75);
+  --arca-accent-info: oklch(0.60 0.12 240);
+  --arca-accent-info-bg: oklch(0.94 0.04 240);
+  --arca-accent-info-fg: oklch(0.45 0.12 240);
+  --arca-chart-1: #1E3460;
+  --arca-chart-2: #7AA2C8;
+  --arca-chart-3: #C2A878;
+  --arca-chart-4: #8FB39F;
+  --arca-shadow-sm: 0 1px 2px rgba(18,19,26,0.04);
+  --arca-shadow-md: 0 1px 3px rgba(18,19,26,0.04), 0 4px 12px rgba(18,19,26,0.04);
+  --arca-r-sm: 6px;
+  --arca-r-md: 10px;
+  --arca-r-lg: 14px;
+  --arca-r-pill: 20px;
+  --ff-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --ff-display: 'Inter Tight', 'Inter', sans-serif;
+  --ff-mono: 'JetBrains Mono', ui-monospace, monospace;
 }
 
 .dark {
@@ -123,14 +163,18 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
-    font-family: "Noto Sans", sans-serif;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
   html {
-    font-family: "Noto Sans", sans-serif;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
   body {
     @apply bg-background text-foreground;
-    font-family: "Noto Sans", sans-serif;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
   }
 }
 
