@@ -1,10 +1,10 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { ClientsTable } from "@/components/clients-table";
-import { CreateClientDialog } from "@/components/create-client-dialog";
-import { Plus, Users } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { createFileRoute } from '@tanstack/react-router';
+import { ClientsTable } from '@/components/clients-table';
+import { CreateClientDialog } from '@/components/create-client-dialog';
+import { Plus, Users } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
-export const Route = createFileRoute("/_authed/clients/")({
+export const Route = createFileRoute('/_authed/clients/')({
   component: RouteComponent,
 });
 

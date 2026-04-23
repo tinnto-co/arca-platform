@@ -1,8 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { LoginForm } from "@/components/login-form";
-import z from "zod";
+import { createFileRoute } from '@tanstack/react-router';
+import { LoginForm } from '@/components/login-form';
+import z from 'zod';
 
-export const Route = createFileRoute("/login")({
+export const Route = createFileRoute('/login')({
   component: LoginPage,
   validateSearch: z.object({
     redirect: z.string().optional(),

@@ -1,118 +1,139 @@
-import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
+import { createServerFn } from '@tanstack/react-start';
+import { z } from 'zod';
+import {
+  getSessionWithOrg,
+  assertCanWrite,
+  getMemberRole,
+} from '@/actions/helpers';
 
-import { GoogleGenAI, Schema } from "@google/genai";
+import { GoogleGenAI, type Schema } from '@google/genai';
 
 const ai = new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY!,
+  apiKey: process.env.GEMINI_API_KEY!,
 });
 
 /* =========================
    INPUT
 ========================= */
 const scanSchema = z.object({
-    fileBase64: z.string().min(1),
+  fileBase64: z.string().min(1),
 });
 
 /* =========================
    OUTPUT
 ========================= */
 const movementSchema = z.object({
-    fecha: z.string(),
-    tipo: z.enum(["ingreso", "egreso"]),
-    monto: z.string(),
-    infoExtra: z.string(),
+  fecha: z.string(),
+  tipo: z.enum(['ingreso', 'egreso']),
+  monto: z.string(),
+  infoExtra: z.string(),
 });
 
 const outputSchema = z.object({
-    banco: z.string(),
-    saldo_inicial: z.string(),
-    saldo_final: z.string(),
-    ingresos: z.array(movementSchema),
-    egresos: z.array(movementSchema),
+  banco: z.string(),
+  saldo_inicial: z.string(),
+  saldo_final: z.string(),
+  ingresos: z.array(movementSchema),
+  egresos: z.array(movementSchema),
 });
 
 /* =========================
    SERVER FN
 ========================= */
 export const scanBankStatement = createServerFn({
-    method: "POST",
+  method: 'POST',
 })
-    .inputValidator(scanSchema)
-    .handler(async (ctx) => {
-        const { fileBase64 } = ctx.data;
+  .inputValidator(scanSchema)
+  .handler(async (ctx) => {
+    await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
 
-        // Construir schema optimizado manualmente según mejores prácticas de Gemini
-        const optimizedSchema: Schema = {
-            type: "OBJECT",
+    const { fileBase64 } = ctx.data;
+
+    // Construir schema optimizado manualmente según mejores prácticas de Gemini
+    const optimizedSchema: Schema = {
+      type: 'OBJECT',
+      properties: {
+        banco: {
+          type: 'STRING',
+        },
+        saldo_inicial: {
+          type: 'STRING',
+        },
+        saldo_final: {
+          type: 'STRING',
+        },
+        ingresos: {
+          type: 'ARRAY',
+          items: {
+            type: 'OBJECT',
             properties: {
-                banco: {
-                    type: "STRING",
-                },
-                saldo_inicial: {
-                    type: "STRING",
-                },
-                saldo_final: {
-                    type: "STRING",
-                },
-                ingresos: {
-                    type: "ARRAY",
-                    items: {
-                        type: "OBJECT",
-                        properties: {
-                            fecha: {
-                                type: "STRING",
-                            },
-                            tipo: {
-                                type: "STRING",
-                                enum: ["ingreso", "egreso"],
-                            },
-                            monto: {
-                                type: "STRING",
-                            },
-                            infoExtra: {
-                                type: "STRING",
-                            },
-                        },
-                        required: ["fecha", "tipo", "monto", "infoExtra"],
-                    },
-                },
-                egresos: {
-                    type: "ARRAY",
-                    items: {
-                        type: "OBJECT",
-                        properties: {
-                            fecha: {
-                                type: "STRING",
-                            },
-                            tipo: {
-                                type: "STRING",
-                                enum: ["ingreso", "egreso"],
-                            },
-                            monto: {
-                                type: "STRING",
-                            },
-                            infoExtra: {
-                                type: "STRING",
-                            },
-                        },
-                        required: ["fecha", "tipo", "monto", "infoExtra"],
-                    },
-                },
+              fecha: {
+                type: 'STRING',
+              },
+              tipo: {
+                type: 'STRING',
+                enum: ['ingreso', 'egreso'],
+              },
+              monto: {
+                type: 'STRING',
+              },
+              infoExtra: {
+                type: 'STRING',
+              },
             },
-            required: ["banco", "saldo_inicial", "saldo_final", "ingresos", "egresos"],
-            propertyOrdering: ["banco", "saldo_inicial", "saldo_final", "ingresos", "egresos"],
-        } as Schema;
+            required: ['fecha', 'tipo', 'monto', 'infoExtra'],
+          },
+        },
+        egresos: {
+          type: 'ARRAY',
+          items: {
+            type: 'OBJECT',
+            properties: {
+              fecha: {
+                type: 'STRING',
+              },
+              tipo: {
+                type: 'STRING',
+                enum: ['ingreso', 'egreso'],
+              },
+              monto: {
+                type: 'STRING',
+              },
+              infoExtra: {
+                type: 'STRING',
+              },
+            },
+            required: ['fecha', 'tipo', 'monto', 'infoExtra'],
+          },
+        },
+      },
+      required: [
+        'banco',
+        'saldo_inicial',
+        'saldo_final',
+        'ingresos',
+        'egresos',
+      ],
+      propertyOrdering: [
+        'banco',
+        'saldo_inicial',
+        'saldo_final',
+        'ingresos',
+        'egresos',
+      ],
+    } as Schema;
 
-        const response = await ai.models.generateContent({
-            model: "gemini-2.5-pro",
-            config: {
-                responseMimeType: "application/json",
-                responseJsonSchema: optimizedSchema,
-            },
-            contents: [
-                {
-                    text: `
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-pro',
+      config: {
+        responseMimeType: 'application/json',
+        responseJsonSchema: optimizedSchema,
+      },
+      contents: [
+        {
+          text: `
 Eres un extractor de datos bancarios especializado en extractos de cuenta corriente argentinos.
 
 ESTRUCTURA DEL DOCUMENTO:
@@ -221,127 +242,134 @@ REGLAS CRÍTICAS Y VALIDACIONES:
 - NO agregues texto, comentarios, ni explicaciones fuera del JSON
 - El JSON debe ser válido y parseable
 `,
-                },
-                {
-                    inlineData: {
-                        mimeType: "application/pdf",
-                        data: fileBase64,
-                    },
-                },
-            ],
-        });
+        },
+        {
+          inlineData: {
+            mimeType: 'application/pdf',
+            data: fileBase64,
+          },
+        },
+      ],
+    });
 
-        if (!response.text) {
-            throw new Error("Gemini no devolvió texto");
-        }
+    if (!response.text) {
+      throw new Error('Gemini no devolvió texto');
+    }
 
-        const raw = JSON.parse(response.text);
+    const raw = JSON.parse(response.text);
 
-        console.log(response);
+    console.log(response);
 
-        console.log(raw);
+    console.log(raw);
 
-        /* =========================
+    /* =========================
         NORMALIZACIÓN DE PROPIEDADES
         ========================= */
-        // Convierte camelCase a snake_case para las propiedades principales
-        const normalizeKeys = (obj: any): any => {
-            if (Array.isArray(obj)) {
-                return obj.map(normalizeKeys);
-            }
-            if (obj !== null && typeof obj === 'object') {
-                const normalized: any = {};
-                for (const [key, value] of Object.entries(obj)) {
-                    // Mapeo explícito de variantes comunes
-                    let normalizedKey = key;
-                    if (key === 'saldoInicial' || key === 'saldo_inicial') {
-                        normalizedKey = 'saldo_inicial';
-                    } else if (key === 'saldoFinal' || key === 'saldo_final') {
-                        normalizedKey = 'saldo_final';
-                    } else if (key === 'saldoinicial') {
-                        normalizedKey = 'saldo_inicial';
-                    } else if (key === 'saldofinal') {
-                        normalizedKey = 'saldo_final';
-                    }
-                    normalized[normalizedKey] = normalizeKeys(value);
-                }
-                return normalized;
-            }
-            return obj;
-        };
+    // Convierte camelCase a snake_case para las propiedades principales
+    const normalizeKeys = (obj: any): any => {
+      if (Array.isArray(obj)) {
+        return obj.map(normalizeKeys);
+      }
+      if (obj !== null && typeof obj === 'object') {
+        const normalized: any = {};
+        for (const [key, value] of Object.entries(obj)) {
+          // Mapeo explícito de variantes comunes
+          let normalizedKey = key;
+          if (key === 'saldoInicial' || key === 'saldo_inicial') {
+            normalizedKey = 'saldo_inicial';
+          } else if (key === 'saldoFinal' || key === 'saldo_final') {
+            normalizedKey = 'saldo_final';
+          } else if (key === 'saldoinicial') {
+            normalizedKey = 'saldo_inicial';
+          } else if (key === 'saldofinal') {
+            normalizedKey = 'saldo_final';
+          }
+          normalized[normalizedKey] = normalizeKeys(value);
+        }
+        return normalized;
+      }
+      return obj;
+    };
 
-        const rawNormalized = normalizeKeys(raw);
+    const rawNormalized = normalizeKeys(raw);
 
-        /* =========================
+    /* =========================
         NORMALIZACIÓN DEFENSIVA
         ========================= */
-        const parseFlatMovements = (
-            arr: any[],
-            tipo: "ingreso" | "egreso"
-        ): Array<{ fecha: string; tipo: "ingreso" | "egreso"; monto: string; infoExtra: string }> => {
-            const result: Array<{ fecha: string; tipo: "ingreso" | "egreso"; monto: string; infoExtra: string }> = [];
+    const parseFlatMovements = (
+      arr: any[],
+      tipo: 'ingreso' | 'egreso'
+    ): {
+      fecha: string;
+      tipo: 'ingreso' | 'egreso';
+      monto: string;
+      infoExtra: string;
+    }[] => {
+      const result: {
+        fecha: string;
+        tipo: 'ingreso' | 'egreso';
+        monto: string;
+        infoExtra: string;
+      }[] = [];
 
-            if (!Array.isArray(arr)) {
-                return result;
+      if (!Array.isArray(arr)) {
+        return result;
+      }
+
+      for (const item of arr) {
+        // Si el item es un string JSON, parsearlo
+        if (typeof item === 'string') {
+          try {
+            const parsed = JSON.parse(item);
+            if (parsed && typeof parsed === 'object') {
+              result.push({
+                fecha: String(parsed.fecha ?? ''),
+                tipo,
+                monto: String(parsed.monto ?? ''),
+                infoExtra: String(parsed.infoExtra ?? ''),
+              });
             }
-
-            for (const item of arr) {
-                // Si el item es un string JSON, parsearlo
-                if (typeof item === 'string') {
-                    try {
-                        const parsed = JSON.parse(item);
-                        if (parsed && typeof parsed === 'object') {
-                            result.push({
-                                fecha: String(parsed.fecha ?? ""),
-                                tipo,
-                                monto: String(parsed.monto ?? ""),
-                                infoExtra: String(parsed.infoExtra ?? ""),
-                            });
-                        }
-                    } catch (e) {
-                        // Si no es JSON válido, ignorar
-                        continue;
-                    }
-                }
-                // Si el item es un objeto directamente
-                else if (item && typeof item === 'object') {
-                    result.push({
-                        fecha: String(item.fecha ?? ""),
-                        tipo,
-                        monto: String(item.monto ?? ""),
-                        infoExtra: String(item.infoExtra ?? ""),
-                    });
-                }
-                // Si es un array plano (formato antiguo), intentar parsearlo
-                else if (Array.isArray(item) && item.length >= 8) {
-                    const obj: any = {};
-                    for (let j = 0; j < item.length; j += 2) {
-                        if (j + 1 < item.length) {
-                            obj[item[j]] = item[j + 1];
-                        }
-                    }
-                    result.push({
-                        fecha: String(obj.fecha ?? ""),
-                        tipo,
-                        monto: String(obj.monto ?? ""),
-                        infoExtra: String(obj.infoExtra ?? ""),
-                    });
-                }
+          } catch (e) {
+            // Si no es JSON válido, ignorar
+            continue;
+          }
+        }
+        // Si el item es un objeto directamente
+        else if (item && typeof item === 'object') {
+          result.push({
+            fecha: String(item.fecha ?? ''),
+            tipo,
+            monto: String(item.monto ?? ''),
+            infoExtra: String(item.infoExtra ?? ''),
+          });
+        }
+        // Si es un array plano (formato antiguo), intentar parsearlo
+        else if (Array.isArray(item) && item.length >= 8) {
+          const obj: any = {};
+          for (let j = 0; j < item.length; j += 2) {
+            if (j + 1 < item.length) {
+              obj[item[j]] = item[j + 1];
             }
+          }
+          result.push({
+            fecha: String(obj.fecha ?? ''),
+            tipo,
+            monto: String(obj.monto ?? ''),
+            infoExtra: String(obj.infoExtra ?? ''),
+          });
+        }
+      }
 
-            return result;
-        };
+      return result;
+    };
 
+    const normalized = {
+      banco: String(rawNormalized.banco ?? ''),
+      saldo_inicial: String(rawNormalized.saldo_inicial ?? ''),
+      saldo_final: String(rawNormalized.saldo_final ?? ''),
+      ingresos: parseFlatMovements(rawNormalized.ingresos ?? [], 'ingreso'),
+      egresos: parseFlatMovements(rawNormalized.egresos ?? [], 'egreso'),
+    };
 
-        const normalized = {
-            banco: String(rawNormalized.banco ?? ""),
-            saldo_inicial: String(rawNormalized.saldo_inicial ?? ""),
-            saldo_final: String(rawNormalized.saldo_final ?? ""),
-            ingresos: parseFlatMovements(rawNormalized.ingresos ?? [], "ingreso"),
-            egresos: parseFlatMovements(rawNormalized.egresos ?? [], "egreso"),
-        };
-
-
-        return outputSchema.parse(normalized);
-
-    });
+    return outputSchema.parse(normalized);
+  });

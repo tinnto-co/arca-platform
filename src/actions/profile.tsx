@@ -1,18 +1,16 @@
-import { createServerFn } from "@tanstack/react-start";
-import { getRequestHeaders } from "@tanstack/react-start/server";
-import z from "zod";
-import { db } from "@/lib/db";
-import { profile, client } from "@/drizzle/schema";
-import { auth } from "@/lib/auth";
-import { eq } from "drizzle-orm";
+import { createServerFn } from '@tanstack/react-start';
+import z from 'zod';
+import { db } from '@/lib/db';
+import { profile, client } from '@/drizzle/schema';
+import { getSessionWithOrg } from '@/actions/helpers';
+import { eq, and } from 'drizzle-orm';
 
 export const getProfile = createServerFn({
-  method: "GET",
+  method: 'GET',
 })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
 
     // Get profile with client information
     const [profileData] = await db
@@ -33,7 +31,7 @@ export const getProfile = createServerFn({
       .where(eq(profile.id, ctx.data.id))
       .limit(1);
 
-    if (!profileData) throw new Error("Perfil no encontrado");
+    if (!profileData) throw new Error('Perfil no encontrado');
 
     // Verify the client belongs to the user
     if (profileData.clientId) {
@@ -43,11 +41,42 @@ export const getProfile = createServerFn({
         .where(eq(client.id, profileData.clientId))
         .limit(1);
 
-      if (!clientData || clientData.userId !== session.user.id) {
-        throw new Error("No autorizado");
+      if (!clientData || clientData.organizationId !== orgId) {
+        throw new Error('No autorizado');
       }
     }
 
     return profileData;
   });
 
+export const updateProfileLiquidaSueldos = createServerFn({
+  method: 'POST',
+})
+  .inputValidator(z.object({ profileId: z.string(), liquidaSueldos: z.boolean() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+
+    // Verificar que el perfil pertenece a un cliente de la organización
+    const [profileData] = await db
+      .select({ id: profile.id, clientId: profile.client })
+      .from(profile)
+      .where(eq(profile.id, ctx.data.profileId))
+      .limit(1);
+
+    if (!profileData) throw new Error('Perfil no encontrado');
+
+    const [clientData] = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(and(eq(client.id, profileData.clientId!), eq(client.organizationId, orgId)))
+      .limit(1);
+
+    if (!clientData) throw new Error('No autorizado');
+
+    await db
+      .update(profile)
+      .set({ liquidaSueldos: ctx.data.liquidaSueldos, updatedAt: new Date() })
+      .where(eq(profile.id, ctx.data.profileId));
+
+    return { success: true };
+  });

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   AlertCircle,
   AlertTriangle,
@@ -15,8 +15,8 @@ import {
   FileWarning,
   Search,
   ArrowRight,
-} from "lucide-react";
-import { useNavigate } from "@tanstack/react-router";
+} from 'lucide-react';
+import { useNavigate } from '@tanstack/react-router';
 
 import {
   Table,
@@ -25,28 +25,28 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
+} from '@/components/ui/table';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+} from '@/components/ui/dropdown-menu';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from '@/components/ui/dialog';
 import {
   Pagination,
   PaginationContent,
@@ -54,26 +54,26 @@ import {
   PaginationLink,
   PaginationNext,
   PaginationPrevious,
-} from "@/components/ui/pagination";
-import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
+} from '@/components/ui/pagination';
+import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   getJobs,
   getJobLogs,
-  JobStatus,
-  JobType,
+  type JobStatus,
+  type JobType,
   type JobRow,
   type JobsResponse,
   type JobLogRow,
-} from "@/actions/job";
-import { getClients } from "@/actions/client";
+} from '@/actions/job';
+import { getClients } from '@/actions/client';
 
 export function JobsTable() {
   const navigate = useNavigate();
-  const [statusFilter, setStatusFilter] = useState<"all" | JobStatus>("all");
-  const [typeFilter, setTypeFilter] = useState<"all" | JobType>("all");
-  const [clientFilter, setClientFilter] = useState<string>("all");
-  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<'all' | JobStatus>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | JobType>('all');
+  const [clientFilter, setClientFilter] = useState<string>('all');
+  const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedJob, setSelectedJob] = useState<JobRow | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -82,23 +82,23 @@ export function JobsTable() {
   const pageSize = 20;
 
   const { data: clients = [] } = useQuery({
-    queryKey: ["clients"],
+    queryKey: ['clients'],
     queryFn: () => getClients(),
   });
 
   const { data, isLoading } = useQuery<JobsResponse>({
-    queryKey: ["jobs", currentPage, statusFilter, typeFilter, clientFilter],
+    queryKey: ['jobs', currentPage, statusFilter, typeFilter, clientFilter],
     queryFn: async (): Promise<JobsResponse> => {
       const response = await getJobs({
         data: {
           page: currentPage,
           limit: pageSize,
-          clientId: clientFilter === "all" ? undefined : clientFilter,
-          status: statusFilter === "all" ? undefined : statusFilter,
-          type: typeFilter === "all" ? undefined : typeFilter,
+          clientId: clientFilter === 'all' ? undefined : clientFilter,
+          status: statusFilter === 'all' ? undefined : statusFilter,
+          type: typeFilter === 'all' ? undefined : typeFilter,
         },
       });
-      return response as JobsResponse;
+      return response;
     },
   });
 
@@ -107,38 +107,35 @@ export function JobsTable() {
     const term = searchTerm.toLowerCase();
     return (
       job.id.toLowerCase().includes(term) ||
-      (job.clientName ?? "").toLowerCase().includes(term) ||
+      (job.clientName ?? '').toLowerCase().includes(term) ||
       job.type.toLowerCase().includes(term)
     );
   });
 
   const totalPages = data?.totalPages ?? 1;
 
-  const {
-    data: jobLogs = [],
-    isLoading: logsLoading,
-  } = useQuery<JobLogRow[]>({
-    queryKey: ["job-logs", selectedJob?.id],
+  const { data: jobLogs = [], isLoading: logsLoading } = useQuery<JobLogRow[]>({
+    queryKey: ['job-logs', selectedJob?.id],
     queryFn: async (): Promise<JobLogRow[]> => {
       if (!selectedJob?.id) return [];
       const logs = await getJobLogs({
         data: { jobId: selectedJob.id, limit: 200 },
       });
-      return logs as JobLogRow[];
+      return logs;
     },
     enabled: !!selectedJob?.id && logsOpen,
   });
 
   const formatDateTime = (value: string | Date | null | undefined) => {
-    if (!value) return "-";
-    const dateObj = typeof value === "string" ? new Date(value) : value;
-    if (Number.isNaN(dateObj.getTime())) return "-";
-    return dateObj.toLocaleString("es-ES", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
+    if (!value) return '-';
+    const dateObj = typeof value === 'string' ? new Date(value) : value;
+    if (Number.isNaN(dateObj.getTime())) return '-';
+    return dateObj.toLocaleString('es-ES', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
     });
   };
 
@@ -146,43 +143,44 @@ export function JobsTable() {
     startedAt: string | Date | null,
     finishedAt: string | Date | null
   ) => {
-    if (!startedAt || !finishedAt) return "-";
+    if (!startedAt || !finishedAt) return '-';
     const start = new Date(startedAt);
     const end = new Date(finishedAt);
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return "-";
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()))
+      return '-';
     const diffMs = end.getTime() - start.getTime();
     const minutes = diffMs / 1000 / 60;
-    if (minutes < 1) return "<1 min";
+    if (minutes < 1) return '<1 min';
     return `${minutes.toFixed(1)} min`;
   };
 
   const renderStatusBadge = (status: JobStatus, progress: number | null) => {
     const baseClass =
-      "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium";
+      'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium';
 
     switch (status) {
-      case "pending":
+      case 'pending':
         return (
           <span className={`${baseClass} bg-amber-100 text-amber-900`}>
             <Clock className="h-3 w-3" />
             Pendiente
           </span>
         );
-      case "running":
+      case 'running':
         return (
           <span className={`${baseClass} bg-blue-100 text-blue-900`}>
             <Loader2 className="h-3 w-3 animate-spin" />
-            En progreso {typeof progress === "number" ? `(${progress}%)` : ""}
+            En progreso {typeof progress === 'number' ? `(${progress}%)` : ''}
           </span>
         );
-      case "failed":
+      case 'failed':
         return (
           <span className={`${baseClass} bg-red-100 text-red-900`}>
             <AlertCircle className="h-3 w-3" />
             Fallido
           </span>
         );
-      case "finished":
+      case 'finished':
         return (
           <span className={`${baseClass} bg-emerald-100 text-emerald-900`}>
             <CheckCircle2 className="h-3 w-3" />
@@ -196,39 +194,39 @@ export function JobsTable() {
 
   const renderTypeBadge = (type: JobType) => {
     const baseClass =
-      "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium";
+      'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium';
 
     switch (type) {
-      case "comprobantes":
-      case "comprobantes_full":
+      case 'comprobantes':
+      case 'comprobantes_full':
         return (
           <span className={`${baseClass} bg-sky-100 text-sky-900`}>
             <Receipt className="h-3 w-3" />
-            {type === "comprobantes" ? "Comprobantes" : "Comprobantes full"}
+            {type === 'comprobantes' ? 'Comprobantes' : 'Comprobantes full'}
           </span>
         );
-      case "iva":
+      case 'iva':
         return (
           <span className={`${baseClass} bg-purple-100 text-purple-900`}>
             <FileWarning className="h-3 w-3" />
             IVA
           </span>
         );
-      case "notificaciones":
+      case 'notificaciones':
         return (
           <span className={`${baseClass} bg-indigo-100 text-indigo-900`}>
             <Bell className="h-3 w-3" />
             Notificaciones
           </span>
         );
-      case "deuda":
+      case 'deuda':
         return (
           <span className={`${baseClass} bg-rose-100 text-rose-900`}>
             <AlertCircle className="h-3 w-3" />
             Deuda
           </span>
         );
-      case "vencimientos":
+      case 'vencimientos':
         return (
           <span className={`${baseClass} bg-teal-100 text-teal-900`}>
             <CalendarClock className="h-3 w-3" />
@@ -252,7 +250,7 @@ export function JobsTable() {
 
   const handleGoToClient = (job: JobRow) => {
     navigate({
-      to: "/clients/$clientId",
+      to: '/clients/$clientId',
       params: { clientId: job.clientId },
     });
   };
@@ -294,7 +292,7 @@ export function JobsTable() {
           <Select
             value={statusFilter}
             onValueChange={(value) => {
-              setStatusFilter(value as "all" | JobStatus);
+              setStatusFilter(value as 'all' | JobStatus);
               setCurrentPage(1);
             }}
           >
@@ -313,7 +311,7 @@ export function JobsTable() {
           <Select
             value={typeFilter}
             onValueChange={(value) => {
-              setTypeFilter(value as "all" | JobType);
+              setTypeFilter(value as 'all' | JobType);
               setCurrentPage(1);
             }}
           >
@@ -323,7 +321,9 @@ export function JobsTable() {
             <SelectContent>
               <SelectItem value="all">Todos los tipos</SelectItem>
               <SelectItem value="comprobantes">Comprobantes</SelectItem>
-              <SelectItem value="comprobantes_full">Comprobantes full</SelectItem>
+              <SelectItem value="comprobantes_full">
+                Comprobantes full
+              </SelectItem>
               <SelectItem value="iva">IVA</SelectItem>
               <SelectItem value="notificaciones">Notificaciones</SelectItem>
               <SelectItem value="deuda">Deuda</SelectItem>
@@ -337,10 +337,10 @@ export function JobsTable() {
             variant="outline"
             size="sm"
             onClick={() => {
-              setSearchTerm("");
-              setClientFilter("all");
-              setStatusFilter("all");
-              setTypeFilter("all");
+              setSearchTerm('');
+              setClientFilter('all');
+              setStatusFilter('all');
+              setTypeFilter('all');
               setCurrentPage(1);
             }}
           >
@@ -398,7 +398,9 @@ export function JobsTable() {
                     )}
                   </TableCell>
                   <TableCell>{renderTypeBadge(job.type)}</TableCell>
-              <TableCell>{renderStatusBadge(job.status, job.progress)}</TableCell>
+                  <TableCell>
+                    {renderStatusBadge(job.status, job.progress)}
+                  </TableCell>
                   <TableCell>{formatDateTime(job.createdAt)}</TableCell>
                   <TableCell>
                     {getDurationMinutes(job.startedAt, job.finishedAt)}
@@ -412,7 +414,9 @@ export function JobsTable() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleViewDetails(job)}>
+                        <DropdownMenuItem
+                          onClick={() => handleViewDetails(job)}
+                        >
                           <Search className="mr-2 h-4 w-4" />
                           Ver detalle del job
                         </DropdownMenuItem>
@@ -443,8 +447,8 @@ export function JobsTable() {
                   onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
                   className={
                     currentPage === 1
-                      ? "pointer-events-none opacity-50"
-                      : "cursor-pointer"
+                      ? 'pointer-events-none opacity-50'
+                      : 'cursor-pointer'
                   }
                 />
               </PaginationItem>
@@ -465,7 +469,9 @@ export function JobsTable() {
                     <>
                       {showEllipsis && (
                         <PaginationItem key={`ellipsis-${page}`}>
-                          <span className="px-2 text-muted-foreground">...</span>
+                          <span className="px-2 text-muted-foreground">
+                            ...
+                          </span>
                         </PaginationItem>
                       )}
                       <PaginationItem key={page}>
@@ -488,8 +494,8 @@ export function JobsTable() {
                   }
                   className={
                     currentPage === totalPages
-                      ? "pointer-events-none opacity-50"
-                      : "cursor-pointer"
+                      ? 'pointer-events-none opacity-50'
+                      : 'cursor-pointer'
                   }
                 />
               </PaginationItem>
@@ -525,7 +531,7 @@ export function JobsTable() {
                     Cliente
                   </p>
                   <p className="text-sm font-semibold">
-                    {selectedJob.clientName ?? "Cliente desconocido"}
+                    {selectedJob.clientName ?? 'Cliente desconocido'}
                   </p>
                   <p className="text-xs text-muted-foreground font-mono">
                     {selectedJob.clientId}
@@ -537,14 +543,17 @@ export function JobsTable() {
                     Duración
                   </p>
                   <p className="text-sm">
-                    {getDurationMinutes(selectedJob.startedAt, selectedJob.finishedAt)}
+                    {getDurationMinutes(
+                      selectedJob.startedAt,
+                      selectedJob.finishedAt
+                    )}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {selectedJob.startedAt && selectedJob.finishedAt
                       ? `${formatDateTime(selectedJob.startedAt)} → ${formatDateTime(
                           selectedJob.finishedAt
                         )}`
-                      : "Sin información completa de tiempos"}
+                      : 'Sin información completa de tiempos'}
                   </p>
                 </div>
 
@@ -573,11 +582,11 @@ export function JobsTable() {
                   <p
                     className={`mt-1 text-sm rounded-md px-2 py-1 ${
                       selectedJob.failedReason
-                        ? "bg-red-50 text-red-800 border border-red-100"
-                        : "text-muted-foreground bg-muted"
+                        ? 'bg-red-50 text-red-800 border border-red-100'
+                        : 'text-muted-foreground bg-muted'
                     }`}
                   >
-                    {selectedJob.failedReason || "Sin errores reportados"}
+                    {selectedJob.failedReason || 'Sin errores reportados'}
                   </p>
                 </div>
               </div>
@@ -597,33 +606,35 @@ export function JobsTable() {
                   )}
                 </div>
 
-                {!selectedJob.result || Object.keys(selectedJob.result).length === 0 ? (
+                {!selectedJob.result ||
+                Object.keys(selectedJob.result).length === 0 ? (
                   <div className="border rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
                     Sin resultado aún.
                   </div>
                 ) : (
                   <ScrollArea className="h-48 border rounded-md bg-muted/40 p-2">
                     <div className="space-y-1 text-xs">
-                      {Object.entries(selectedJob.result).map(([key, value]) => (
-                        <div
-                          key={key}
-                          className="flex items-start justify-between gap-4 border-b last:border-b-0 border-border/40 pb-1.5"
-                        >
-                          <span className="font-medium text-foreground min-w-[120px]">
-                            {key}
-                          </span>
-                          <span className="text-muted-foreground text-right flex-1 break-words">
-                            {typeof value === "object"
-                              ? JSON.stringify(value)
-                              : String(value)}
-                          </span>
-                        </div>
-                      ))}
+                      {Object.entries(selectedJob.result).map(
+                        ([key, value]) => (
+                          <div
+                            key={key}
+                            className="flex items-start justify-between gap-4 border-b last:border-b-0 border-border/40 pb-1.5"
+                          >
+                            <span className="font-medium text-foreground min-w-[120px]">
+                              {key}
+                            </span>
+                            <span className="text-muted-foreground text-right flex-1 break-words">
+                              {typeof value === 'object'
+                                ? JSON.stringify(value)
+                                : String(value)}
+                            </span>
+                          </div>
+                        )
+                      )}
                     </div>
                   </ScrollArea>
                 )}
               </div>
-
             </div>
           )}
         </DialogContent>
@@ -665,33 +676,27 @@ export function JobsTable() {
                   {jobLogs.map((log) => {
                     const level = log.level.toLowerCase();
                     let colorClasses =
-                      "border-slate-200 bg-white text-slate-900";
+                      'border-slate-200 bg-white text-slate-900';
                     let icon = <Info className="h-3.5 w-3.5 text-slate-500" />;
 
-                    if (level === "info") {
+                    if (level === 'info') {
+                      colorClasses = 'border-blue-100 bg-blue-50 text-blue-900';
+                      icon = <Info className="h-3.5 w-3.5 text-blue-500" />;
+                    } else if (level === 'warn') {
                       colorClasses =
-                        "border-blue-100 bg-blue-50 text-blue-900";
-                      icon = (
-                        <Info className="h-3.5 w-3.5 text-blue-500" />
-                      );
-                    } else if (level === "warn") {
-                      colorClasses =
-                        "border-amber-100 bg-amber-50 text-amber-900";
+                        'border-amber-100 bg-amber-50 text-amber-900';
                       icon = (
                         <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
                       );
-                    } else if (level === "error") {
-                      colorClasses =
-                        "border-red-100 bg-red-50 text-red-900";
+                    } else if (level === 'error') {
+                      colorClasses = 'border-red-100 bg-red-50 text-red-900';
                       icon = (
                         <AlertCircle className="h-3.5 w-3.5 text-red-500" />
                       );
-                    } else if (level === "debug") {
+                    } else if (level === 'debug') {
                       colorClasses =
-                        "border-slate-200 bg-slate-50 text-slate-900";
-                      icon = (
-                        <Bug className="h-3.5 w-3.5 text-slate-500" />
-                      );
+                        'border-slate-200 bg-slate-50 text-slate-900';
+                      icon = <Bug className="h-3.5 w-3.5 text-slate-500" />;
                     }
 
                     return (
@@ -709,12 +714,15 @@ export function JobsTable() {
                               {formatDateTime(log.createdAt)}
                             </span>
                           </div>
-                          <p className="text-[11px] leading-snug">{log.message}</p>
-                          {log.context && Object.keys(log.context).length > 0 && (
-                            <pre className="mt-1 text-[10px] text-muted-foreground bg-background/60 rounded px-2 py-1 whitespace-pre-wrap break-words">
-                              {JSON.stringify(log.context, null, 2)}
-                            </pre>
-                          )}
+                          <p className="text-[11px] leading-snug">
+                            {log.message}
+                          </p>
+                          {log.context &&
+                            Object.keys(log.context).length > 0 && (
+                              <pre className="mt-1 text-[10px] text-muted-foreground bg-background/60 rounded px-2 py-1 whitespace-pre-wrap break-words">
+                                {JSON.stringify(log.context, null, 2)}
+                              </pre>
+                            )}
                         </div>
                       </div>
                     );
@@ -728,4 +736,3 @@ export function JobsTable() {
     </div>
   );
 }
-
