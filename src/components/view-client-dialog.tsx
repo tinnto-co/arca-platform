@@ -1,7 +1,7 @@
-import * as React from "react";
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { User, Mail, Phone, MapPin, Calendar } from "lucide-react";
+import * as React from 'react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { User, Mail, Phone, MapPin, Calendar } from 'lucide-react';
 
 import {
   Dialog,
@@ -10,11 +10,11 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { getClient } from "@/actions/client";
-import { CredentialsTable } from "./credentials-table";
+} from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { getClient } from '@/actions/client';
+import { CredentialsTable } from './credentials-table';
 
 interface ViewClientDialogProps {
   clientId: string;
@@ -28,17 +28,17 @@ export function ViewClientDialog({
   const [open, setOpen] = useState(false);
 
   const { data: client, isLoading } = useQuery({
-    queryKey: ["client", clientId],
+    queryKey: ['client', clientId],
     queryFn: () => getClient({ data: { id: clientId } }),
     enabled: open,
   });
 
   const getTypeLabel = (type: string) => {
     switch (type) {
-      case "individual":
-        return "Individual";
-      case "company":
-        return "Empresa";
+      case 'individual':
+        return 'Individual';
+      case 'company':
+        return 'Empresa';
       default:
         return type;
     }
@@ -46,11 +46,11 @@ export function ViewClientDialog({
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case "active":
+      case 'active':
         return <Badge variant="default">Activo</Badge>;
-      case "inactive":
+      case 'inactive':
         return <Badge variant="secondary">Inactivo</Badge>;
-      case "pending":
+      case 'pending':
         return <Badge variant="outline">Pendiente</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
@@ -131,11 +131,11 @@ export function ViewClientDialog({
                     </span>
                     <span className="text-sm ml-2">
                       {new Date(client.registeredAt).toLocaleDateString(
-                        "es-ES",
+                        'es-ES',
                         {
-                          year: "numeric",
-                          month: "long",
-                          day: "numeric",
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric',
                         }
                       )}
                     </span>
@@ -148,10 +148,10 @@ export function ViewClientDialog({
                       Última actualización:
                     </span>
                     <span className="text-sm ml-2">
-                      {new Date(client.updatedAt).toLocaleDateString("es-ES", {
-                        year: "numeric",
-                        month: "long",
-                        day: "numeric",
+                      {new Date(client.updatedAt).toLocaleDateString('es-ES', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
                       })}
                     </span>
                   </div>

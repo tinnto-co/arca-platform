@@ -1,16 +1,16 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import z from "zod";
+import { useEffect, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import z from 'zod';
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from '@/components/ui/dialog';
 import {
   Form,
   FormControl,
@@ -18,34 +18,38 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { createEmpleado, listCategoriasByConvenio } from "@/actions/sueldos";
-import { toast } from "sonner";
-import { format } from "date-fns";
+} from '@/components/ui/select';
+import { createEmpleado, listCategoriasByConvenio } from '@/actions/sueldos';
+import { toast } from 'sonner';
+import { format } from 'date-fns';
 
 const schema = z.object({
-  nombre: z.string().min(1, "Requerido"),
-  apellido: z.string().min(1, "Requerido"),
-  cuilCuil: z.string().min(1, "CUIT/CUIL requerido"),
-  fechaIngreso: z.string().min(1, "Requerido"),
-  convenioId: z.string().uuid("Seleccione convenio"),
-  categoriaId: z.string().uuid("Seleccione categoría"),
-  tipoJornada: z.enum(["full_time", "part_time", "reducida"]),
+  nombre: z.string().min(1, 'Requerido'),
+  apellido: z.string().min(1, 'Requerido'),
+  cuilCuil: z.string().min(1, 'CUIT/CUIL requerido'),
+  fechaIngreso: z.string().min(1, 'Requerido'),
+  convenioId: z.string().uuid('Seleccione convenio'),
+  categoriaId: z.string().uuid('Seleccione categoría'),
+  tipoJornada: z.enum(['full_time', 'part_time', 'reducida']),
+  legajo: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof schema>;
 
-type Convenio = { id: string; nombre: string };
-type Empleado = {
+interface Convenio {
+  id: string;
+  nombre: string;
+}
+interface Empleado {
   id: string;
   nombre: string;
   apellido: string;
@@ -54,12 +58,15 @@ type Empleado = {
   convenioId: string;
   categoriaId: string;
   tipoJornada: string;
-};
+  legajo?: string | null;
+}
 
 interface EmpleadoFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   clientId: string;
+  /** Opcional; si no se pasa, el servidor elige un perfil que liquide sueldos. */
+  profileId?: string;
   convenios: Convenio[];
   editId: string | null;
   empleado?: Empleado;
@@ -70,35 +77,41 @@ export function EmpleadoFormDialog({
   open,
   onOpenChange,
   clientId,
+  profileId,
   convenios,
   editId,
   empleado,
   onSuccess,
 }: EmpleadoFormDialogProps) {
-  const [categorias, setCategorias] = useState<{ id: string; codigo: string; nombre: string }[]>([]);
+  const [categorias, setCategorias] = useState<
+    { id: string; codigo: string; nombre: string }[]
+  >([]);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      nombre: "",
-      apellido: "",
-      cuilCuil: "",
-      fechaIngreso: format(new Date(), "yyyy-MM-dd"),
-      convenioId: "",
-      categoriaId: "",
-      tipoJornada: "full_time",
+      nombre: '',
+      apellido: '',
+      cuilCuil: '',
+      fechaIngreso: format(new Date(), 'yyyy-MM-dd'),
+      convenioId: '',
+      categoriaId: '',
+      tipoJornada: 'full_time',
+      legajo: '',
     },
   });
 
-  const convenioId = form.watch("convenioId");
+  const convenioId = form.watch('convenioId');
 
   useEffect(() => {
     if (!convenioId || !clientId) {
       setCategorias([]);
-      form.setValue("categoriaId", "");
+      form.setValue('categoriaId', '');
       return;
     }
-    listCategoriasByConvenio({ data: { convenioId, clientId } }).then(setCategorias);
+    listCategoriasByConvenio({ data: { convenioId, clientId } }).then(
+      setCategorias
+    );
   }, [convenioId, clientId, form]);
 
   useEffect(() => {
@@ -107,35 +120,47 @@ export function EmpleadoFormDialog({
         nombre: empleado.nombre,
         apellido: empleado.apellido,
         cuilCuil: empleado.cuilCuil,
-        fechaIngreso: format(new Date(empleado.fechaIngreso), "yyyy-MM-dd"),
+        fechaIngreso: format(new Date(empleado.fechaIngreso), 'yyyy-MM-dd'),
         convenioId: empleado.convenioId,
         categoriaId: empleado.categoriaId,
-        tipoJornada: empleado.tipoJornada as "full_time" | "part_time" | "reducida",
+        tipoJornada: empleado.tipoJornada as
+          | 'full_time'
+          | 'part_time'
+          | 'reducida',
+        legajo: empleado.legajo ?? '',
       });
     } else if (open && !editId) {
       form.reset({
-        nombre: "",
-        apellido: "",
-        cuilCuil: "",
-        fechaIngreso: format(new Date(), "yyyy-MM-dd"),
-        convenioId: convenios[0]?.id ?? "",
-        categoriaId: "",
-        tipoJornada: "full_time",
+        nombre: '',
+        apellido: '',
+        cuilCuil: '',
+        fechaIngreso: format(new Date(), 'yyyy-MM-dd'),
+        convenioId: convenios[0]?.id ?? '',
+        categoriaId: '',
+        tipoJornada: 'full_time',
+        legajo: '',
       });
     }
   }, [empleado, open, editId, convenios, form]);
 
   const onSubmit = async (values: FormValues) => {
     if (editId) {
-      toast.info("Use el menú Editar para actualizar. Por ahora solo alta.");
+      toast.info('Use el menú Editar para actualizar. Por ahora solo alta.');
       return;
     }
     try {
-      await createEmpleado({ data: { ...values, clientId } });
-      toast.success("Empleado creado");
+      await createEmpleado({
+        data: {
+          ...values,
+          clientId,
+          profileId,
+          legajo: values.legajo?.trim() || null,
+        },
+      });
+      toast.success('Empleado creado');
       onSuccess();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Error al crear");
+      toast.error(e instanceof Error ? e.message : 'Error al crear');
     }
   };
 
@@ -143,7 +168,9 @@ export function EmpleadoFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{editId ? "Editar empleado" : "Nuevo empleado"}</DialogTitle>
+          <DialogTitle>
+            {editId ? 'Editar empleado' : 'Nuevo empleado'}
+          </DialogTitle>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -183,7 +210,11 @@ export function EmpleadoFormDialog({
                   <FormItem>
                     <FormLabel>CUIT/CUIL</FormLabel>
                     <FormControl>
-                      <Input {...field} placeholder="20-12345678-9" className="w-full" />
+                      <Input
+                        {...field}
+                        placeholder="20-12345678-9"
+                        className="w-full"
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -191,18 +222,31 @@ export function EmpleadoFormDialog({
               />
               <FormField
                 control={form.control}
-                name="fechaIngreso"
+                name="legajo"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Fecha de ingreso</FormLabel>
+                    <FormLabel>Legajo</FormLabel>
                     <FormControl>
-                      <Input type="date" {...field} className="w-full" />
+                      <Input {...field} placeholder="Opcional" className="w-full" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
             </div>
+            <FormField
+              control={form.control}
+              name="fechaIngreso"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Fecha de ingreso</FormLabel>
+                  <FormControl>
+                    <Input type="date" {...field} className="w-full max-w-xs" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
@@ -276,10 +320,14 @@ export function EmpleadoFormDialog({
               )}
             />
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+              >
                 Cancelar
               </Button>
-              <Button type="submit">{editId ? "Guardar" : "Crear"}</Button>
+              <Button type="submit">{editId ? 'Guardar' : 'Crear'}</Button>
             </DialogFooter>
           </form>
         </Form>

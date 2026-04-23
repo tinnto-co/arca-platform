@@ -1,9 +1,9 @@
-import * as React from "react";
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { format } from "date-fns";
-import { es } from "date-fns/locale";
-import { MoreHorizontal, Plus, Edit, Trash2, Eye, EyeOff } from "lucide-react";
+import * as React from 'react';
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
+import { MoreHorizontal, Plus, Edit, Trash2, Eye, EyeOff } from 'lucide-react';
 
 import {
   Table,
@@ -12,22 +12,22 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
-import { Button } from "@/components/ui/button";
+} from '@/components/ui/table';
+import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Badge } from "@/components/ui/badge";
+} from '@/components/ui/dropdown-menu';
+import { Badge } from '@/components/ui/badge';
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
+} from '@/components/ui/card';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,11 +37,11 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+} from '@/components/ui/alert-dialog';
 
-import { getCredentials, deleteCredential } from "@/actions/credential";
-import { CreateCredentialDialog } from "./create-credential-dialog";
-import { EditCredentialDialog } from "./edit-credential-dialog";
+import { getCredentials, deleteCredential } from '@/actions/credential';
+import { CreateCredentialDialog } from './create-credential-dialog';
+import { EditCredentialDialog } from './edit-credential-dialog';
 
 interface CredentialsTableProps {
   clientId: string;
@@ -59,14 +59,14 @@ export function CredentialsTable({ clientId }: CredentialsTableProps) {
   const queryClient = useQueryClient();
 
   const { data: credentials, isLoading } = useQuery({
-    queryKey: ["credentials", clientId],
+    queryKey: ['credentials', clientId],
     queryFn: () => getCredentials({ data: { clientId } }),
   });
 
   const deleteCredentialMutation = useMutation({
     mutationFn: deleteCredential,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["credentials", clientId] });
+      queryClient.invalidateQueries({ queryKey: ['credentials', clientId] });
       setDeleteDialogOpen(false);
       setCredentialToDelete(null);
     },
@@ -92,8 +92,8 @@ export function CredentialsTable({ clientId }: CredentialsTableProps) {
 
   const getProviderLabel = (provider: string) => {
     switch (provider) {
-      case "arca":
-        return "Arca";
+      case 'arca':
+        return 'Arca';
       default:
         return provider;
     }
@@ -101,7 +101,7 @@ export function CredentialsTable({ clientId }: CredentialsTableProps) {
 
   const getProviderBadge = (provider: string) => {
     switch (provider) {
-      case "arca":
+      case 'arca':
         return <Badge variant="default">Arca</Badge>;
       default:
         return <Badge variant="outline">{provider}</Badge>;
@@ -184,7 +184,7 @@ export function CredentialsTable({ clientId }: CredentialsTableProps) {
                           <span>
                             {showPasswords[credential.id]
                               ? credential.data.password
-                              : "••••••••"}
+                              : '••••••••'}
                           </span>
                           <Button
                             variant="ghost"
@@ -203,7 +203,7 @@ export function CredentialsTable({ clientId }: CredentialsTableProps) {
                         </div>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {format(new Date(credential.createdAt), "dd/MM/yyyy", {
+                        {format(new Date(credential.createdAt), 'dd/MM/yyyy', {
                           locale: es,
                         })}
                       </TableCell>

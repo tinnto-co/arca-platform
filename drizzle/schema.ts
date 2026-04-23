@@ -9,11 +9,19 @@ import {
   uuid,
   integer,
   pgEnum,
+  foreignKey,
 } from "drizzle-orm/pg-core";
+import { user, organization } from "./auth";
 
+export { user, organization };
 
 // Job enums
-export const jobStatusEnum = pgEnum("job_status", ["pending", "running", "failed", "finished"]);
+export const jobStatusEnum = pgEnum("job_status", [
+  "pending",
+  "running",
+  "failed",
+  "finished",
+]);
 export const jobTypeEnum = pgEnum("job_type", [
   "iva",
   "comprobantes",
@@ -23,106 +31,11 @@ export const jobTypeEnum = pgEnum("job_type", [
   "vencimientos",
 ]);
 
-// Organization enums
-export const organizationRoleEnum = pgEnum("organization_role", ["admin", "user"]);
-export const organizationInviteStatusEnum = pgEnum("organization_invite_status", [
-  "pending",
-  "accepted",
-  "expired",
-  "revoked",
-]);
-
-// User table must be defined before client to allow references
-export const user = pgTable("user", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  email: text("email").notNull().unique(),
-  emailVerified: boolean("email_verified").default(false).notNull(),
-  image: text("image"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at")
-    .defaultNow()
-    .$onUpdate(() => /* @__PURE__ */ new Date())
-    .notNull(),
-  isAnonymous: boolean("is_anonymous"),
-  role: text("role"),
-  banned: boolean("banned").default(false),
-  banReason: text("ban_reason"),
-  banExpires: timestamp("ban_expires"),
-  changedPassword: boolean("changed_password"),
-});
-
-export const organization = pgTable("organization", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  name: text("name").notNull(),
-  slug: text("slug"),
-  isActive: boolean("is_active").notNull().default(true),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at")
-    .defaultNow()
-    .$onUpdate(() => /* @__PURE__ */ new Date())
-    .notNull(),
-});
-
-export const organizationUser = pgTable("organization_user", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  organizationId: uuid("organization_id")
-    .notNull()
-    .references(() => organization.id, { onDelete: "cascade" }),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  role: organizationRoleEnum("role").notNull().default("user"),
-  invitedByUserId: text("invited_by_user_id").references(() => user.id, {
-    onDelete: "set null",
-  }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at")
-    .defaultNow()
-    .$onUpdate(() => /* @__PURE__ */ new Date())
-    .notNull(),
-});
-
-export const organizationInvite = pgTable(
-  "organization_invite",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    organizationId: uuid("organization_id")
-      .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
-    email: text("email").notNull(),
-    role: organizationRoleEnum("role").notNull(),
-    token: text("token").notNull(),
-    status: organizationInviteStatusEnum("status").notNull().default("pending"),
-    invitedByUserId: text("invited_by_user_id").references(() => user.id, {
-      onDelete: "set null",
-    }),
-    acceptedByUserId: text("accepted_by_user_id").references(() => user.id, {
-      onDelete: "set null",
-    }),
-    expiresAt: timestamp("expires_at").notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at")
-      .defaultNow()
-      .$onUpdate(() => /* @__PURE__ */ new Date())
-      .notNull(),
-  },
-  (table) => [
-    unique("organization_invite_token_unique").on(table.token),
-    unique("organization_invite_org_email_status_unique").on(
-      table.organizationId,
-      table.email,
-      table.status,
-    ),
-  ],
-);
-
 export const client = pgTable("client", {
   id: uuid("id").primaryKey().defaultRandom(),
-  organizationId: uuid("organization_id").references(() => organization.id, {
-    onDelete: "cascade",
-  }),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => organization.id, { onDelete: "cascade" }),
   userId: text("user_id")
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),
@@ -135,6 +48,11 @@ export const client = pgTable("client", {
   password: text("password").notNull().default(""),
   image: text("image").default(""),
   status: text("status").notNull().default("active"),
+  convenioMultilateral: boolean("convenio_multilateral").notNull().default(false),
+  regimenLocal: boolean("regimen_local").notNull().default(false),
+  fiscalCondition: text("fiscal_condition"),
+  liquidaSueldos: boolean("liquida_sueldos").notNull().default(false),
+  cuitEmpresa: text("cuit_empresa").notNull().default(""),
   hasErrors: boolean("has_errors").default(false).notNull(),
   errorMessage: text("error_message").default(""),
   registeredAt: timestamp("registered_at").notNull(),
@@ -154,10 +72,128 @@ export const profile = pgTable("profile", {
   phone: text("phone").notNull(),
   email: text("email").notNull(),
   status: text("status").notNull(),
+  liquidaSueldos: boolean("liquida_sueldos").notNull().default(false),
   scrapedAt: timestamp("scraped_at"),
+  /** Firma digital del empleador (data URL base64) para impresión de recibos. */
+  firmaDigitalEmpleador: text("firma_digital_empleador"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+/**
+ * Convenios colectivos de trabajo (CCT) obtenidos desde AFIP -
+ * "Simplificación Registral - Empleadores".
+ * Se persiste por `profile_id` y `cct`.
+ */
+export const afipEmpleadoresConvenio = pgTable(
+  "afip_empleadores_convenio",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profile.id, { onDelete: "cascade" }),
+    cct: text("cct").notNull(),
+    actividad: text("actividad").notNull(),
+    signatarios: text("signatarios").notNull(),
+    fechaNovedad: text("fecha_novedad").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("afip_empleadores_convenio_profile_id_cct_unique").on(
+      table.profileId,
+      table.cct
+    ),
+  ]
+);
+
+/**
+ * Conceptos AFIP para el servicio "Simplificación Registral - Empleadores".
+ * Se mapean por `profile_id` y `concepto_afip_id`.
+ */
+export const lsdConceptoAfip = pgTable(
+  "lsd_concepto_afip",
+  {
+    id: uuid("id").primaryKey().defaultRandom().notNull(),
+    codigoAfip: text("codigo_afip").notNull(),
+    descripcion: text("descripcion").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [unique("lsd_concepto_afip_codigo_afip_unique").on(table.codigoAfip)]
+);
+
+export const lsdPerfilConcepto = pgTable(
+  "lsd_perfil_concepto",
+  {
+    id: uuid("id").primaryKey().defaultRandom().notNull(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profile.id, { onDelete: "cascade" }),
+    conceptoAfipId: uuid("concepto_afip_id")
+      .notNull()
+      .references(() => lsdConceptoAfip.id, { onDelete: "cascade" }),
+    codigoContribuyente: text("codigo_contribuyente").notNull(),
+    descripcionContribuyente: text("descripcion_contribuyente").notNull(),
+    marcaRepetible: boolean("marca_repetible").default(false).notNull(),
+    aportesSipa: boolean("aportes_sipa").default(false).notNull(),
+    contribucionesSipa: boolean("contribuciones_sipa").default(false).notNull(),
+    aportesInssjyp: boolean("aportes_inssjyp").default(false).notNull(),
+    contribucionesInssjyp: boolean("contribuciones_inssjyp").default(false).notNull(),
+    aportesObraSocial: boolean("aportes_obra_social").default(false).notNull(),
+    contribucionesObraSocial: boolean("contribuciones_obra_social").default(false).notNull(),
+    aportesFsr: boolean("aportes_fsr").default(false).notNull(),
+    contribucionesFsr: boolean("contribuciones_fsr").default(false).notNull(),
+    aportesRenatea: boolean("aportes_renatea").default(false).notNull(),
+    contribucionesRenatea: boolean("contribuciones_renatea").default(false).notNull(),
+    contribucionesAaff: boolean("contribuciones_aaff").default(false).notNull(),
+    contribucionesFne: boolean("contribuciones_fne").default(false).notNull(),
+    contribucionesLrt: boolean("contribuciones_lrt").default(false).notNull(),
+    aportesDiferenciales: boolean("aportes_diferenciales").default(false).notNull(),
+    aportesEspeciales: boolean("aportes_especiales").default(false).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("lsd_perfil_concepto_profile_id_codigo_contribuyente_unique").on(
+      table.profileId,
+      table.codigoContribuyente
+    ),
+  ]
+);
+
+export const conceptoSos = pgTable(
+  "concepto_sos",
+  {
+    id: uuid("id").primaryKey().defaultRandom().notNull(),
+    codigo: text("codigo").notNull(),
+    nombre: text("nombre").notNull(),
+    codigoAfip: text("codigo_afip").notNull(),
+    conceptoAfipId: uuid("concepto_afip_id").references(() => lsdConceptoAfip.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [unique("concepto_sos_codigo_unique").on(table.codigo)]
+);
+
+export const conceptoSosProfile = pgTable(
+  "concepto_sos_profile",
+  {
+    id: uuid("id").primaryKey().defaultRandom().notNull(),
+    conceptoId: uuid("concepto_id")
+      .notNull()
+      .references(() => conceptoSos.id, { onDelete: "cascade" }),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profile.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("concepto_sos_profile_concepto_profile_unique").on(table.conceptoId, table.profileId),
+  ]
+);
 
 export const credential = pgTable("credential", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -252,7 +288,20 @@ export const invoice = pgTable("invoice", {
   other_taxes: numeric("other_taxes").notNull(),
   totalIVA: numeric("total_iva").notNull(),
   amount: numeric("amount").notNull(),
-});
+
+}, (table) => [
+  foreignKey({
+    columns: [table.client],
+    foreignColumns: [client.id],
+    name: "invoice_client_id_client_id_fk"
+  }).onDelete("cascade"),
+  foreignKey({
+    columns: [table.profile],
+    foreignColumns: [profile.id],
+    name: "invoice_profile_id_profile_id_fk"
+  }).onDelete("cascade"),
+  unique("invoice_client_auth_type_unique").on(table.client, table.authorizationNumber, table.type),
+]);
 
 export const dueDate = pgTable("due_date", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -289,41 +338,6 @@ export const debt = pgTable("debt", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-export const session = pgTable("session", {
-  id: text("id").primaryKey(),
-  expiresAt: timestamp("expires_at").notNull(),
-  token: text("token").notNull().unique(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at")
-    .$onUpdate(() => /* @__PURE__ */ new Date())
-    .notNull(),
-  ipAddress: text("ip_address"),
-  userAgent: text("user_agent"),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  impersonatedBy: text("impersonated_by"),
-});
-
-export const account = pgTable("account", {
-  id: text("id").primaryKey(),
-  accountId: text("account_id").notNull(),
-  providerId: text("provider_id").notNull(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  accessToken: text("access_token"),
-  refreshToken: text("refresh_token"),
-  idToken: text("id_token"),
-  accessTokenExpiresAt: timestamp("access_token_expires_at"),
-  refreshTokenExpiresAt: timestamp("refresh_token_expires_at"),
-  scope: text("scope"),
-  password: text("password"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at")
-    .$onUpdate(() => /* @__PURE__ */ new Date())
-    .notNull(),
-});
 
 export const movements = pgTable("movements", {
   id: text("id").primaryKey(),
@@ -452,6 +466,14 @@ export const fiscalEntity = pgTable(
 
 // ========== MÓDULO SUELDOS / LIQUIDACIÓN ==========
 
+/** Catálogo nacional de obras sociales (códigos legacy / AFIP). */
+export const obraSocial = pgTable("obra_social", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  codigo: text("codigo").notNull().unique(),
+  nombre: text("nombre").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const payrollConvenioTipoJornadaEnum = pgEnum("payroll_tipo_jornada", [
   "full_time",
   "part_time",
@@ -465,6 +487,7 @@ export const payrollConvenio = pgTable("payroll_convenio", {
     .notNull()
     .references(() => client.id, { onDelete: "cascade" }),
   nombre: text("nombre").notNull(),
+  cctCodigo: text("cct_codigo"),
   descripcion: text("descripcion"),
   activo: boolean("activo").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -499,6 +522,14 @@ export const payrollEscala = pgTable("payroll_escala", {
   vigenciaDesde: timestamp("vigencia_desde", { mode: "date" }).notNull(),
   vigenciaHasta: timestamp("vigencia_hasta", { mode: "date" }),
   montoBasico: numeric("monto_basico", { precision: 12, scale: 2 }).notNull(),
+  montoNoRemunerativo: numeric("monto_no_remunerativo", {
+    precision: 12,
+    scale: 2,
+  })
+    .default("0")
+    .notNull(),
+  periodoLabel: text("periodo_label"),
+  fuente: text("fuente"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
     .defaultNow()
@@ -506,11 +537,12 @@ export const payrollEscala = pgTable("payroll_escala", {
     .notNull(),
 });
 
-/** Tipo de concepto: remunerativo, no remunerativo, descuento */
+/** Tipo de concepto: remunerativo, no remunerativo, descuento, retención */
 export const payrollConceptoTipoEnum = pgEnum("payroll_concepto_tipo", [
   "remunerativo",
   "no_remunerativo",
   "descuento",
+  "retencion",
 ]);
 
 /** Base de cálculo para fórmulas */
@@ -523,6 +555,72 @@ export const payrollConceptoBaseEnum = pgEnum("payroll_concepto_base", [
   "neto",
   "fijo",
   "custom",
+]);
+
+/** Catálogo global de conceptos SOS con metadata de fórmula (base, divisores). */
+export const conceptosCompletosSos = pgTable("conceptos_completos_sos", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  numeroSos: integer("numero_sos").notNull().unique(),
+  codigoAfip: text("codigo_afip"),
+  nombre: text("nombre").notNull(),
+  tieneMemo: boolean("tiene_memo").default(false),
+  tieneCantidad: boolean("tiene_cantidad").default(false),
+  tienePct: boolean("tiene_pct").default(false),
+  tieneImpConceptoNro: boolean("tiene_imp_concepto_nro").default(false),
+  tieneImporte: boolean("tiene_importe").default(false),
+  tieneImpMin: boolean("tiene_imp_min").default(false),
+  tieneImpMax: boolean("tiene_imp_max").default(false),
+  /** Base de cálculo SOS (ej. 'sueldo', 'sub1_9', 'importe_fijo'). */
+  baseColumna: text("base_columna"),
+  /** Divisor de horas normales (1 = no divide, >1 = divide por N horas). */
+  divHsNorm: integer("div_hs_norm").default(1),
+  /** Divisor de días (1, 25 o 30). */
+  divCantidad: integer("div_cantidad").default(1),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().$onUpdate(() => new Date()).notNull(),
+});
+
+/** Columna base de fórmula al estilo SOS (el usuario elige una sola) */
+export const payrollBaseColumnaEnum = pgEnum("payroll_base_columna", [
+  "valHora",
+  "sueldoLegajo",
+  "sueldo",
+  "sub1_9",
+  "sub1_19",
+  "sub1_26",
+  "sub1_39",
+  "sub1_199",
+  "sub411_469",
+  "sub1_199_plus_411_469",
+  "importe_fijo",
+  "ref_concepto",
+]);
+
+/** Tipo de empleador para LSD */
+export const payrollTipoEmpleadorEnum = pgEnum("payroll_tipo_empleador", [
+  "dec814_inc_a",
+  "dec814_inc_b",
+  "dec814_inc_c",
+]);
+
+/** Situación de revista del empleado en el período */
+export const payrollSituacionRevistaEnum = pgEnum("payroll_situacion_revista", [
+  "activo",
+  "licencia_enfermedad",
+  "licencia_maternidad",
+  "licencia_sin_goce",
+  "suspendido_con_goce",
+  "suspendido_sin_goce",
+  "vacaciones",
+  "accidente_trabajo",
+  "baja_despido",
+  "baja_fallecimiento",
+  "baja_otras",
+  "ilt_primeros_10",
+  "ilt_once_o_mas",
+  "reserva_puesto",
+  "excedencia",
+  "otro",
 ]);
 
 /** Conceptos salariales configurables (fórmula, %, monto fijo, base) — por cliente */
@@ -543,6 +641,22 @@ export const payrollConcepto = pgTable("payroll_concepto", {
   activo: boolean("activo").default(true).notNull(),
   vigenciaDesde: timestamp("vigencia_desde", { mode: "date" }),
   vigenciaHasta: timestamp("vigencia_hasta", { mode: "date" }),
+  /** Número de concepto SOS (1-620). Permite mapear al catálogo estándar. */
+  numeroSos: integer("numero_sos"),
+  /** Código ARCA de 6 dígitos para el LSD (ej. "810000"). */
+  codigoArca: text("codigo_arca"),
+  /** Columna base al estilo SOS (alternativa más precisa que baseCalculo). */
+  baseColumna: payrollBaseColumnaEnum("base_columna"),
+  /** Divisor de cantidad (ej. 30 para sueldo diario, 25 para feriados). Default 1. */
+  divCantidad: numeric("div_cantidad", { precision: 8, scale: 4 }).default("1"),
+  /** Si divide además por las horas mensuales normales del empleado. */
+  divHsNorm: boolean("div_hs_norm").default(false).notNull(),
+  /** Importe mínimo (piso del resultado). */
+  impMin: numeric("imp_min", { precision: 12, scale: 2 }),
+  /** Importe máximo (techo del resultado). */
+  impMax: numeric("imp_max", { precision: 12, scale: 2 }),
+  /** Referencia a otro concepto cuyo resultado se usa como base. */
+  refConceptoId: uuid("ref_concepto_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
     .defaultNow()
@@ -550,107 +664,205 @@ export const payrollConcepto = pgTable("payroll_concepto", {
     .notNull(),
 });
 
-/** Empleados del módulo de sueldos (por cliente) */
-export const payrollEmployee = pgTable("payroll_employee", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  clientId: uuid("client_id")
-    .notNull()
-    .references(() => client.id, { onDelete: "cascade" }),
-  nombre: text("nombre").notNull(),
-  apellido: text("apellido").notNull(),
-  cuilCuil: text("cuil_cuil").notNull(),
-  fechaIngreso: timestamp("fecha_ingreso", { mode: "date" }).notNull(),
-  convenioId: uuid("convenio_id")
-    .notNull()
-    .references(() => payrollConvenio.id, { onDelete: "restrict" }),
-  categoriaId: uuid("categoria_id")
-    .notNull()
-    .references(() => payrollConvenioCategoria.id, { onDelete: "restrict" }),
-  tipoJornada: payrollConvenioTipoJornadaEnum("tipo_jornada").notNull().default("full_time"),
-  activo: boolean("activo").default(true).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at")
-    .defaultNow()
-    .$onUpdate(() => new Date())
-    .notNull(),
-});
+/** Empleados del perfil que liquida sueldos — fuente de verdad unificada (importados + manuales) */
+export const liquidacionImportEmpleado = pgTable(
+  "liquidacion_import_empleado",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profile.id, { onDelete: "cascade" }),
+    cuil: text("cuil").notNull(),
+    legajo: text("legajo").notNull(),
+    nombre: text("nombre").notNull(),
+    fechaAlta: timestamp("fecha_alta", { mode: "date" }),
+    fechaBaja: timestamp("fecha_baja", { mode: "date" }),
+    modoContrato: text("modo_contrato"),
+    /** Categoría en texto libre (tal como viene del archivo importado). */
+    categoria: text("categoria"),
+    origen: text("origen").notNull().default("import"),
+    // --- Campos operativos (completados al dar de alta o al vincular al convenio) ---
+    convenioId: uuid("convenio_id")
+      .references(() => payrollConvenio.id, { onDelete: "restrict" }),
+    categoriaId: uuid("categoria_id")
+      .references(() => payrollConvenioCategoria.id, { onDelete: "restrict" }),
+    tipoJornada: payrollConvenioTipoJornadaEnum("tipo_jornada").default("full_time"),
+    tipoEmpleador: payrollTipoEmpleadorEnum("tipo_empleador"),
+    /** Descripción del puesto. Para LSD debe ir sin tildes ni ñ. */
+    tarea: text("tarea"),
+    /** Horas mensuales normales. Base para cálculo de valor hora. */
+    horasMensualesNormales: integer("horas_mensuales_normales"),
+    /** Días mensuales normales. Base para proporcional. Default 30. */
+    diasMensualesNormales: integer("dias_mensuales_normales").default(30),
+    /** Override del valor hora (alternativa al básico del convenio). */
+    valorHora: numeric("valor_hora", { precision: 12, scale: 2 }),
+    /** Override del sueldo básico (alternativa al básico del convenio). */
+    valorSueldo: numeric("valor_sueldo", { precision: 12, scale: 2 }),
+    /** Porcentaje adicional de aporte de Seguridad Social (si aplica). */
+    porcentajeAporteAdicionalSS: numeric("porcentaje_aporte_adicional_ss", { precision: 5, scale: 4 }),
+    /** Datos de pago por defecto del legajo (recibo toma estos valores si la cabecera del período está vacía). */
+    lugarPago: text("lugar_pago"),
+    formaPago: text("forma_pago"),
+    cbu: text("cbu"),
+    banco: text("banco"),
+    activo: boolean("activo").default(true).notNull(),
+    // --- Datos demográficos y de legajo (fuente: planilla Excel SOS) ---
+    nacionalidad: text("nacionalidad"),
+    fechaNacimiento: timestamp("fecha_nacimiento", { mode: "date" }),
+    conyuge: integer("conyuge"),
+    hijos: integer("hijos"),
+    adherentes: integer("adherentes"),
+    sexo: text("sexo"),
+    domicilio: text("domicilio"),
+    localidad: text("localidad"),
+    codigoPostal: text("codigo_postal"),
+    provincia: text("provincia"),
+    codigoModalidadContratacion: text("codigo_modalidad_contratacion"),
+    situacion: text("situacion"),
+    codigoSituacion: text("codigo_situacion"),
+    zona: text("zona"),
+    codigoZona: text("codigo_zona"),
+    condicion: text("condicion"),
+    codigoCondicion: text("codigo_condicion"),
+    actividad: text("actividad"),
+    codigoActividad: text("codigo_actividad"),
+    siniestrado: text("siniestrado"),
+    codigoSiniestrado: text("codigo_siniestrado"),
+    observaciones: text("observaciones"),
+    obraSocialId: uuid("obra_social_id").references(() => obraSocial.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    unique("liquidacion_import_empleado_profile_id_cuil_unique").on(
+      table.profileId,
+      table.cuil,
+    ),
+  ],
+);
 
-/** Conceptos asignados individualmente al empleado (comisiones, bonos fijos, etc.) */
-export const payrollEmpleadoConcepto = pgTable("payroll_empleado_concepto", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  empleadoId: uuid("empleado_id")
-    .notNull()
-    .references(() => payrollEmployee.id, { onDelete: "cascade" }),
-  conceptoId: uuid("concepto_id")
-    .notNull()
-    .references(() => payrollConcepto.id, { onDelete: "cascade" }),
-  /** Valor adicional para la fórmula (ej. % comisión propio, monto fijo) */
-  valorAdicional: numeric("valor_adicional", { precision: 12, scale: 2 }).default("0"),
-  vigenciaDesde: timestamp("vigencia_desde", { mode: "date" }),
-  vigenciaHasta: timestamp("vigencia_hasta", { mode: "date" }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at")
-    .defaultNow()
-    .$onUpdate(() => new Date())
-    .notNull(),
-});
+/** Recibos por empleado y período — fuente de verdad unificada (importados + generados) */
+export const liquidacionImportRecibo = pgTable(
+  "liquidacion_import_recibo",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    empleadoId: uuid("empleado_id")
+      .notNull()
+      .references(() => liquidacionImportEmpleado.id, { onDelete: "cascade" }),
+    periodo: text("periodo").notNull(), // "YYYY-MM"
+    /** Tipo de recibo: sueldo, anticipo, SAC, vacaciones, despido, comisiones, etc. */
+    tipo: text("tipo").notNull(),
+    fecha: timestamp("fecha", { mode: "date" }),
+    // --- Totales ---
+    /** Básico del período. */
+    basico: numeric("basico", { precision: 12, scale: 2 }),
+    /** Total de haberes remunerativos. */
+    haberes: numeric("haberes", { precision: 14, scale: 2 }).notNull(),
+    noRemunerativo: numeric("no_remunerativo", { precision: 14, scale: 2 }).notNull(),
+    descuentos: numeric("descuentos", { precision: 14, scale: 2 }).notNull(),
+    retenciones: numeric("retenciones", { precision: 14, scale: 2 }).notNull(),
+    neto: numeric("neto", { precision: 14, scale: 2 }).notNull(),
+    // --- Campos del recibo generado ---
+    /** 0 = mes completo, 1 = primera quincena, 2 = segunda quincena. */
+    quincena: text("quincena"),
+    obraSocialId: uuid("obra_social_id").references(() => obraSocial.id, { onDelete: "set null" }),
+    fechaPago: timestamp("fecha_pago", { mode: "date" }),
+    lugarPago: text("lugar_pago"),
+    /** efectivo | cheque | acreditacion */
+    formaPago: text("forma_pago"),
+    cbu: text("cbu"),
+    banco: text("banco"),
+    /** Período de cargas depositado, ej. "2026 / 02". */
+    periodoCargas: text("periodo_cargas"),
+    fechaDepositoCargas: timestamp("fecha_deposito_cargas", { mode: "date" }),
+    situacionRevista: payrollSituacionRevistaEnum("situacion_revista"),
+    observacionInterna: text("observacion_interna"),
+    observacionRecibo: text("observacion_recibo"),
+    /** Override manual de Remuneración 4 y 8 (base OS) para LSD. */
+    rem4y8Override: numeric("rem4y8_override", { precision: 14, scale: 2 }),
+    /** Override manual de Remuneración 9 (base ART) para LSD. */
+    rem9Override: numeric("rem9_override", { precision: 14, scale: 2 }),
+    /** Porcentaje adicional de contribución SS para tareas diferenciales. */
+    contribucionTareaDiferencial: numeric("contribucion_tarea_diferencial", { precision: 5, scale: 4 }),
+    /** Importe a detraer según Ley 27430. */
+    importeADetraerLey27430: numeric("importe_a_detraer_ley27430", { precision: 12, scale: 2 }),
+    /** Contribución adicional OS para completar el mínimo. */
+    contribucionAdicionalOS: numeric("contribucion_adicional_os", { precision: 12, scale: 2 }),
+    /** true cuando el recibo fue confirmado y se muestra en la solapa Recibo. */
+    reciboConfirmado: boolean("recibo_confirmado").default(false),
+    calculadoAt: timestamp("calculado_at"),
+    /** "import" para recibos históricos del LSD, "generado" para los creados en el sistema. */
+    origen: text("origen").notNull().default("import"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    unique("liquidacion_import_recibo_empleado_periodo_tipo_unique").on(
+      table.empleadoId,
+      table.periodo,
+      table.tipo,
+    ),
+  ],
+);
 
-/** Novedades mensuales (horas extra, bonos, comisiones del mes, etc.) */
-export const payrollNovedad = pgTable("payroll_novedad", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  empleadoId: uuid("empleado_id")
-    .notNull()
-    .references(() => payrollEmployee.id, { onDelete: "cascade" }),
-  conceptoId: uuid("concepto_id")
-    .notNull()
-    .references(() => payrollConcepto.id, { onDelete: "cascade" }),
-  periodo: text("periodo").notNull(), // "YYYY-MM"
-  valor: numeric("valor", { precision: 12, scale: 2 }).notNull(),
-  cantidad: numeric("cantidad", { precision: 10, scale: 2 }), // ej. horas extra
-  detalle: text("detalle"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at")
-    .defaultNow()
-    .$onUpdate(() => new Date())
-    .notNull(),
-});
-
-/** Cabecera de liquidación por empleado y período */
-export const payrollLiquidacion = pgTable("payroll_liquidacion", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  empleadoId: uuid("empleado_id")
-    .notNull()
-    .references(() => payrollEmployee.id, { onDelete: "cascade" }),
-  periodo: text("periodo").notNull(), // "YYYY-MM"
-  basico: numeric("basico", { precision: 12, scale: 2 }).notNull(),
-  totalRemunerativo: numeric("total_remunerativo", { precision: 12, scale: 2 }).notNull(),
-  totalNoRemunerativo: numeric("total_no_remunerativo", { precision: 12, scale: 2 }).default("0").notNull(),
-  totalDescuentos: numeric("total_descuentos", { precision: 12, scale: 2 }).notNull(),
-  neto: numeric("neto", { precision: 12, scale: 2 }).notNull(),
-  /** Solo se muestran en la solapa Recibo cuando es true (tras "Confirmar recibo" en Simulador) */
-  reciboConfirmado: boolean("recibo_confirmado").default(false).notNull(),
-  calculadoAt: timestamp("calculado_at").defaultNow().notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at")
-    .defaultNow()
-    .$onUpdate(() => new Date())
-    .notNull(),
-});
-
-/** Detalle por concepto de cada liquidación */
-export const payrollLiquidacionDetalle = pgTable("payroll_liquidacion_detalle", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  liquidacionId: uuid("liquidacion_id")
-    .notNull()
-    .references(() => payrollLiquidacion.id, { onDelete: "cascade" }),
-  conceptoId: uuid("concepto_id")
-    .notNull()
-    .references(() => payrollConcepto.id, { onDelete: "cascade" }),
-  monto: numeric("monto", { precision: 12, scale: 2 }).notNull(),
-  cantidad: numeric("cantidad", { precision: 10, scale: 2 }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at")
-    .defaultNow()
-    .$onUpdate(() => new Date())
-    .notNull(),
-});
+/** Valores por código de concepto en cada recibo — fuente de verdad unificada (importados + generados) */
+export const liquidacionImportConceptoValor = pgTable(
+  "liquidacion_import_concepto_valor",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    reciboId: uuid("recibo_id")
+      .notNull()
+      .references(() => liquidacionImportRecibo.id, { onDelete: "cascade" }),
+    /** Código de concepto LSD (ej: "810000"). Presente en importados y generados. */
+    codigo: text("codigo").notNull(),
+    /** Importe resultante del concepto. */
+    monto: numeric("monto", { precision: 14, scale: 2 }).notNull(),
+    // --- Campos del archivo LSD importado ---
+    /** Cantidad (días, horas, unidades) tal como viene en el LSD. */
+    cantidad: numeric("cantidad", { precision: 10, scale: 2 }),
+    /** Porcentaje tal como viene en el LSD. */
+    porcentaje: numeric("porcentaje", { precision: 8, scale: 4 }),
+    /** Importe del concepto número referenciado en el LSD. */
+    importeConceptoNumero: numeric("importe_concepto_numero", { precision: 14, scale: 2 }),
+    /** Importe base antes de aplicar mínimo/máximo. */
+    importe: numeric("importe", { precision: 14, scale: 2 }),
+    /** Importe mínimo tal como viene en el LSD. */
+    importeMinimo: numeric("importe_minimo", { precision: 14, scale: 2 }),
+    /** Importe máximo tal como viene en el LSD. */
+    importeMaximo: numeric("importe_maximo", { precision: 14, scale: 2 }),
+    // --- Campos para recibos generados en el sistema ---
+    /** FK al concepto configurado. Null para registros importados del LSD. */
+    conceptoId: uuid("concepto_id").references(() => payrollConcepto.id, { onDelete: "set null" }),
+    /**
+     * Tipo según el motor al persistir (remunerativo | no_remunerativo | descuento | retencion).
+     * Permite columnas correctas en el recibo aunque falle el join al concepto de nómina.
+     */
+    tipoLiquidacion: text("tipo_liquidacion"),
+    /** Override manual del resultado: si está seteado, saltea el cálculo del motor. */
+    importeOverride: numeric("importe_override", { precision: 14, scale: 2 }),
+    /** Si el concepto está activo (habilitado) en este recibo. */
+    activoEnRecibo: boolean("activo_en_recibo").default(true),
+    /** Nota personalizada para este concepto en este recibo. */
+    memo: text("memo"),
+    /** Porcentaje efectivamente usado en el cálculo (auditoría). */
+    pctUsado: numeric("pct_usado", { precision: 8, scale: 4 }),
+    /** Base efectivamente usada en el cálculo (auditoría). */
+    baseUsada: numeric("base_usada", { precision: 14, scale: 2 }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    unique("liquidacion_import_concepto_valor_recibo_id_codigo_unique").on(
+      table.reciboId,
+      table.codigo,
+    ),
+  ],
+);

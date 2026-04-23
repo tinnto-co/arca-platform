@@ -1,9 +1,9 @@
-import path from "node:path";
+import path from 'node:path';
 
 // Configuration
 const SERVER_PORT = Number(process.env.PORT ?? 3000);
-const CLIENT_DIRECTORY = "./dist/client";
-const SERVER_ENTRY_POINT = "./dist/server/server.js";
+const CLIENT_DIRECTORY = './dist/client';
+const SERVER_ENTRY_POINT = './dist/server/server.js';
 
 // Logging utilities for professional output
 const log = {
@@ -30,35 +30,35 @@ const MAX_PRELOAD_BYTES = Number(
 );
 
 // Parse comma-separated include patterns (no defaults)
-const INCLUDE_PATTERNS = (process.env.ASSET_PRELOAD_INCLUDE_PATTERNS ?? "")
-  .split(",")
+const INCLUDE_PATTERNS = (process.env.ASSET_PRELOAD_INCLUDE_PATTERNS ?? '')
+  .split(',')
   .map((s) => s.trim())
   .filter(Boolean)
   .map((pattern: string) => convertGlobToRegExp(pattern));
 
 // Parse comma-separated exclude patterns (no defaults)
-const EXCLUDE_PATTERNS = (process.env.ASSET_PRELOAD_EXCLUDE_PATTERNS ?? "")
-  .split(",")
+const EXCLUDE_PATTERNS = (process.env.ASSET_PRELOAD_EXCLUDE_PATTERNS ?? '')
+  .split(',')
   .map((s) => s.trim())
   .filter(Boolean)
   .map((pattern: string) => convertGlobToRegExp(pattern));
 
 // Verbose logging flag
-const VERBOSE = process.env.ASSET_PRELOAD_VERBOSE_LOGGING === "true";
+const VERBOSE = process.env.ASSET_PRELOAD_VERBOSE_LOGGING === 'true';
 
 // Optional ETag feature
 const ENABLE_ETAG =
-  (process.env.ASSET_PRELOAD_ENABLE_ETAG ?? "true") === "true";
+  (process.env.ASSET_PRELOAD_ENABLE_ETAG ?? 'true') === 'true';
 
 // Optional Gzip feature
 const ENABLE_GZIP =
-  (process.env.ASSET_PRELOAD_ENABLE_GZIP ?? "true") === "true";
+  (process.env.ASSET_PRELOAD_ENABLE_GZIP ?? 'true') === 'true';
 const GZIP_MIN_BYTES = Number(process.env.ASSET_PRELOAD_GZIP_MIN_SIZE ?? 1024); // 1KB
 const GZIP_TYPES = (
   process.env.ASSET_PRELOAD_GZIP_MIME_TYPES ??
-  "text/,application/javascript,application/json,application/xml,image/svg+xml"
+  'text/,application/javascript,application/json,application/xml,image/svg+xml'
 )
-  .split(",")
+  .split(',')
   .map((v) => v.trim())
   .filter(Boolean);
 
@@ -69,9 +69,9 @@ const GZIP_TYPES = (
 function convertGlobToRegExp(globPattern: string): RegExp {
   // Escape regex special chars except *, then replace * with .*
   const escapedPattern = globPattern
-    .replace(/[-/\\^$+?.()|[\]{}]/g, "\\$&")
-    .replace(/\*/g, ".*");
-  return new RegExp(`^${escapedPattern}$`, "i");
+    .replace(/[-/\\^$+?.()|[\]{}]/g, '\\$&')
+    .replace(/\*/g, '.*');
+  return new RegExp(`^${escapedPattern}$`, 'i');
 }
 
 /**
@@ -138,7 +138,7 @@ function isFileEligibleForPreloading(relativePath: string): boolean {
  */
 function isMimeTypeCompressible(mimeType: string): boolean {
   return GZIP_TYPES.some((type) =>
-    type.endsWith("/") ? mimeType.startsWith(type) : mimeType === type
+    type.endsWith('/') ? mimeType.startsWith(type) : mimeType === type
   );
 }
 
@@ -167,14 +167,14 @@ function createResponseHandler(
 ): (req: Request) => Response {
   return (req: Request) => {
     const headers: Record<string, string> = {
-      "Content-Type": asset.type,
-      "Cache-Control": asset.immutable
-        ? "public, max-age=31536000, immutable"
-        : "public, max-age=3600",
+      'Content-Type': asset.type,
+      'Cache-Control': asset.immutable
+        ? 'public, max-age=31536000, immutable'
+        : 'public, max-age=3600',
     };
 
     if (ENABLE_ETAG && asset.etag) {
-      const ifNone = req.headers.get("if-none-match");
+      const ifNone = req.headers.get('if-none-match');
       if (ifNone && ifNone === asset.etag) {
         return new Response(null, {
           status: 304,
@@ -187,15 +187,15 @@ function createResponseHandler(
     if (
       ENABLE_GZIP &&
       asset.gz &&
-      req.headers.get("accept-encoding")?.includes("gzip")
+      req.headers.get('accept-encoding')?.includes('gzip')
     ) {
-      headers["Content-Encoding"] = "gzip";
-      headers["Content-Length"] = String(asset.gz.byteLength);
+      headers['Content-Encoding'] = 'gzip';
+      headers['Content-Length'] = String(asset.gz.byteLength);
       const gzCopy = new Uint8Array(asset.gz);
       return new Response(gzCopy, { status: 200, headers });
     }
 
-    headers["Content-Length"] = String(asset.raw.byteLength);
+    headers['Content-Length'] = String(asset.raw.byteLength);
     const rawCopy = new Uint8Array(asset.raw);
     return new Response(rawCopy, { status: 200, headers });
   };
@@ -205,13 +205,13 @@ function createResponseHandler(
  * Create composite glob pattern from include patterns
  */
 function createCompositeGlobPattern(): Bun.Glob {
-  const raw = (process.env.ASSET_PRELOAD_INCLUDE_PATTERNS ?? "")
-    .split(",")
+  const raw = (process.env.ASSET_PRELOAD_INCLUDE_PATTERNS ?? '')
+    .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
-  if (raw.length === 0) return new Bun.Glob("**/*");
+  if (raw.length === 0) return new Bun.Glob('**/*');
   if (raw.length === 1) return new Bun.Glob(raw[0]);
-  return new Bun.Glob(`{${raw.join(",")}}`);
+  return new Bun.Glob(`{${raw.join(',')}}`);
 }
 
 /**
@@ -233,12 +233,12 @@ async function initializeStaticRoutes(
     );
     if (INCLUDE_PATTERNS.length > 0) {
       console.log(
-        `Include patterns: ${process.env.ASSET_PRELOAD_INCLUDE_PATTERNS ?? ""}`
+        `Include patterns: ${process.env.ASSET_PRELOAD_INCLUDE_PATTERNS ?? ''}`
       );
     }
     if (EXCLUDE_PATTERNS.length > 0) {
       console.log(
-        `Exclude patterns: ${process.env.ASSET_PRELOAD_EXCLUDE_PATTERNS ?? ""}`
+        `Exclude patterns: ${process.env.ASSET_PRELOAD_EXCLUDE_PATTERNS ?? ''}`
       );
     }
   }
@@ -263,7 +263,7 @@ async function initializeStaticRoutes(
         const metadata: AssetMetadata = {
           route,
           size: file.size,
-          type: file.type || "application/octet-stream",
+          type: file.type || 'application/octet-stream',
         };
 
         // Determine if file should be preloaded
@@ -293,8 +293,8 @@ async function initializeStaticRoutes(
             const fileOnDemand = Bun.file(filepath);
             return new Response(fileOnDemand, {
               headers: {
-                "Content-Type": metadata.type,
-                "Cache-Control": "public, max-age=3600",
+                'Content-Type': metadata.type,
+                'Cache-Control': 'public, max-age=3600',
               },
             });
           };
@@ -302,7 +302,7 @@ async function initializeStaticRoutes(
           skipped.push(metadata);
         }
       } catch (error: unknown) {
-        if (error instanceof Error && error.name !== "EISDIR") {
+        if (error instanceof Error && error.name !== 'EISDIR') {
           log.error(`Failed to load ${filepath}: ${error.message}`);
         }
       }
@@ -343,9 +343,9 @@ async function initializeStaticRoutes(
       };
 
       if (loaded.length > 0) {
-        console.log("\n📁 Preloaded into memory:");
+        console.log('\n📁 Preloaded into memory:');
         console.log(
-          "Path                                          │    Size │ Gzip Size"
+          'Path                                          │    Size │ Gzip Size'
         );
         loaded
           .sort((a, b) => a.route.localeCompare(b.route))
@@ -359,9 +359,9 @@ async function initializeStaticRoutes(
       }
 
       if (skipped.length > 0) {
-        console.log("\n💾 Served on-demand:");
+        console.log('\n💾 Served on-demand:');
         console.log(
-          "Path                                          │    Size │ Gzip Size"
+          'Path                                          │    Size │ Gzip Size'
         );
         skipped
           .sort((a, b) => a.route.localeCompare(b.route))
@@ -381,29 +381,29 @@ async function initializeStaticRoutes(
         const allFiles = [...loaded, ...skipped].sort((a, b) =>
           a.route.localeCompare(b.route)
         );
-        console.log("\n📊 Detailed file information:");
+        console.log('\n📊 Detailed file information:');
         console.log(
-          "Status       │ Path                            │ MIME Type                    │ Reason"
+          'Status       │ Path                            │ MIME Type                    │ Reason'
         );
         allFiles.forEach((file) => {
           const isPreloaded = loaded.includes(file);
-          const status = isPreloaded ? "MEMORY" : "ON-DEMAND";
+          const status = isPreloaded ? 'MEMORY' : 'ON-DEMAND';
           const reason =
             !isPreloaded && file.size > MAX_PRELOAD_BYTES
-              ? "too large"
+              ? 'too large'
               : !isPreloaded
-                ? "filtered"
-                : "preloaded";
+                ? 'filtered'
+                : 'preloaded';
           const route =
             file.route.length > 30
-              ? file.route.substring(0, 27) + "..."
+              ? file.route.substring(0, 27) + '...'
               : file.route;
           console.log(
             `${status.padEnd(12)} │ ${route.padEnd(30)} │ ${file.type.padEnd(28)} │ ${reason.padEnd(10)}`
           );
         });
       } else {
-        console.log("\n📊 No files found to display");
+        console.log('\n📊 No files found to display');
       }
     }
 
@@ -414,7 +414,7 @@ async function initializeStaticRoutes(
         `Preloaded ${String(loaded.length)} files (${(totalPreloadedBytes / 1024 / 1024).toFixed(2)} MB) into memory`
       );
     } else {
-      log.info("No files preloaded into memory");
+      log.info('No files preloaded into memory');
     }
 
     if (skipped.length > 0) {
@@ -437,7 +437,7 @@ async function initializeStaticRoutes(
  * Initialize the server
  */
 async function initializeServer() {
-  log.header("Starting Production Server");
+  log.header('Starting Production Server');
 
   // Load TanStack Start server handler
   let handler: { fetch: (request: Request) => Response | Promise<Response> };
@@ -446,7 +446,7 @@ async function initializeServer() {
       default: { fetch: (request: Request) => Response | Promise<Response> };
     };
     handler = serverModule.default;
-    log.success("TanStack Start application handler initialized");
+    log.success('TanStack Start application handler initialized');
   } catch (error) {
     log.error(`Failed to load server handler: ${String(error)}`);
     process.exit(1);
@@ -464,12 +464,12 @@ async function initializeServer() {
       ...routes,
 
       // Fallback to TanStack Start handler for all other routes
-      "/*": (req: Request) => {
+      '/*': (req: Request) => {
         try {
           return handler.fetch(req);
         } catch (error) {
           log.error(`Server handler error: ${String(error)}`);
-          return new Response("Internal Server Error", { status: 500 });
+          return new Response('Internal Server Error', { status: 500 });
         }
       },
     },
@@ -479,7 +479,7 @@ async function initializeServer() {
       log.error(
         `Uncaught server error: ${error instanceof Error ? error.message : String(error)}`
       );
-      return new Response("Internal Server Error", { status: 500 });
+      return new Response('Internal Server Error', { status: 500 });
     },
   });
 

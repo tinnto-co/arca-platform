@@ -1,19 +1,23 @@
-import { createServerFn } from "@tanstack/react-start";
-import { getRequestHeaders } from "@tanstack/react-start/server";
-import z from "zod";
-import { db } from "@/lib/db";
+import { createServerFn } from '@tanstack/react-start';
+import z from 'zod';
+import { db } from '@/lib/db';
 import {
   notification,
   client,
   profile,
   invoiceAttachment,
   document,
-} from "@/drizzle/schema";
-import { auth } from "@/lib/auth";
-import { eq, desc, and, gte, lte, sql, inArray } from "drizzle-orm";
+} from '@/drizzle/schema';
+import {
+  getSessionWithOrg,
+  assertCanWrite,
+  getMemberRole,
+  getOrgClientIds,
+} from '@/actions/helpers';
+import { eq, desc, and, gte, lte, sql, inArray } from 'drizzle-orm';
 
 export const getNotifications = createServerFn({
-  method: "GET",
+  method: 'GET',
 })
   .inputValidator(
     z.object({
@@ -28,21 +32,38 @@ export const getNotifications = createServerFn({
     })
   )
   .handler(async (ctx) => {
-    console.log(ctx.data);
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
+    const orgClientIds = await getOrgClientIds(orgId);
 
-    const { page, limit, clientFilter, dateFrom, dateTo, profileId, opened } = ctx.data;
+    const { page, limit, clientFilter, dateFrom, dateTo, profileId, opened } =
+      ctx.data;
     const offset = (page - 1) * limit;
 
-    // Build where conditions
-    const conditions = [];
+    if (orgClientIds.length === 0) {
+      return {
+        notifications: [],
+        totalCount: 0,
+        totalPages: 0,
+        currentPage: page,
+      };
+    }
 
-    if (clientFilter && clientFilter !== "all") {
+    // Build where conditions (always scoped to active organization via clients)
+    const conditions = [inArray(notification.client, orgClientIds)];
+
+    if (clientFilter && clientFilter !== 'all') {
+      if (!orgClientIds.includes(clientFilter)) {
+        return {
+          notifications: [],
+          totalCount: 0,
+          totalPages: 0,
+          currentPage: page,
+        };
+      }
       conditions.push(eq(notification.client, clientFilter));
     }
 
-    if (profileId && profileId !== "all") {
+    if (profileId && profileId !== 'all') {
       conditions.push(eq(notification.profile, profileId));
     }
 
@@ -58,8 +79,7 @@ export const getNotifications = createServerFn({
       conditions.push(eq(notification.opened, opened));
     }
 
-    const whereCondition =
-      conditions.length > 0 ? and(...conditions) : undefined;
+    const whereCondition = and(...conditions);
 
     // Get total count for pagination
     const [{ count }] = await db
@@ -93,7 +113,6 @@ export const getNotifications = createServerFn({
       .orderBy(desc(notification.publicationDate))
       .limit(limit)
       .offset(offset);
-    console.log(notifications);
     return {
       notifications,
       totalCount: count,
@@ -103,14 +122,16 @@ export const getNotifications = createServerFn({
   });
 
 export const getNotification = createServerFn({
-  method: "GET",
+  method: 'GET',
 })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
+    const orgClientIds = await getOrgClientIds(orgId);
+    if (orgClientIds.length === 0)
+      throw new Error('Notificación no encontrada');
 
-    // Get notification with client and profile data
+    // Get notification with client and profile data (only if client belongs to org)
     const [notificationData] = await db
       .select({
         id: notification.id,
@@ -127,10 +148,15 @@ export const getNotification = createServerFn({
       })
       .from(notification)
       .leftJoin(client, eq(notification.client, client.id))
-      .where(eq(notification.id, ctx.data.id))
+      .where(
+        and(
+          eq(notification.id, ctx.data.id),
+          inArray(notification.client, orgClientIds)
+        )
+      )
       .limit(1);
 
-    if (!notificationData) throw new Error("Notificación no encontrada");
+    if (!notificationData) throw new Error('Notificación no encontrada');
 
     // Get attachments for this notification
     const attachments = await db
@@ -154,12 +180,25 @@ export const getNotification = createServerFn({
   });
 
 export const getNotificationAttachments = createServerFn({
-  method: "GET",
+  method: 'GET',
 })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
+    const orgClientIds = await getOrgClientIds(orgId);
+    if (orgClientIds.length === 0) return [];
+
+    const [n] = await db
+      .select({ id: notification.id })
+      .from(notification)
+      .where(
+        and(
+          eq(notification.id, ctx.data.id),
+          inArray(notification.client, orgClientIds)
+        )
+      )
+      .limit(1);
+    if (!n) return [];
 
     const attachments = await db
       .select({
@@ -179,22 +218,24 @@ export const getNotificationAttachments = createServerFn({
   });
 
 export const createNotification = createServerFn({
-  method: "POST",
+  method: 'POST',
 })
   .inputValidator(
     z.object({
-      externalId: z.string().min(1, "El ID externo es requerido"),
-      clientId: z.string().uuid("ID de cliente inválido"),
-      profileId: z.string().uuid("ID de perfil inválido").optional(),
-      message: z.string().min(1, "El mensaje es requerido"),
+      externalId: z.string().min(1, 'El ID externo es requerido'),
+      clientId: z.string().uuid('ID de cliente inválido'),
+      profileId: z.string().uuid('ID de perfil inválido').optional(),
+      message: z.string().min(1, 'El mensaje es requerido'),
       expirationDate: z.string().transform((str) => new Date(str)),
       publicationDate: z.string().transform((str) => new Date(str)),
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
 
+    const orgClientIds = await getOrgClientIds(orgId);
     const {
       externalId,
       clientId,
@@ -203,6 +244,10 @@ export const createNotification = createServerFn({
       expirationDate,
       publicationDate,
     } = ctx.data;
+
+    if (!orgClientIds.includes(clientId)) {
+      throw new Error('El cliente no pertenece a la organización activa');
+    }
 
     const [newNotification] = await db
       .insert(notification)
@@ -216,29 +261,31 @@ export const createNotification = createServerFn({
       })
       .returning();
 
-    if (!newNotification) throw new Error("Error al crear la notificación");
+    if (!newNotification) throw new Error('Error al crear la notificación');
 
     return newNotification;
   });
 
 export const updateNotification = createServerFn({
-  method: "POST",
+  method: 'POST',
 })
   .inputValidator(
     z.object({
       id: z.string(),
-      externalId: z.string().min(1, "El ID externo es requerido"),
-      clientId: z.string().uuid("ID de cliente inválido"),
-      profileId: z.string().uuid("ID de perfil inválido").optional(),
-      message: z.string().min(1, "El mensaje es requerido"),
+      externalId: z.string().min(1, 'El ID externo es requerido'),
+      clientId: z.string().uuid('ID de cliente inválido'),
+      profileId: z.string().uuid('ID de perfil inválido').optional(),
+      message: z.string().min(1, 'El mensaje es requerido'),
       expirationDate: z.string().transform((str) => new Date(str)),
       publicationDate: z.string().transform((str) => new Date(str)),
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
 
+    const orgClientIds = await getOrgClientIds(orgId);
     const {
       id,
       externalId,
@@ -248,6 +295,10 @@ export const updateNotification = createServerFn({
       expirationDate,
       publicationDate,
     } = ctx.data;
+
+    if (!orgClientIds.includes(clientId)) {
+      throw new Error('El cliente no pertenece a la organización activa');
+    }
 
     const [updatedNotification] = await db
       .update(notification)
@@ -260,29 +311,30 @@ export const updateNotification = createServerFn({
         publicationDate,
         updatedAt: new Date(),
       })
-      .where(eq(notification.id, id))
+      .where(
+        and(eq(notification.id, id), inArray(notification.client, orgClientIds))
+      )
       .returning();
 
     if (!updatedNotification)
-      throw new Error("Error al actualizar la notificación");
+      throw new Error('Error al actualizar la notificación');
 
     return updatedNotification;
   });
 
 export const markNotificationOpened = createServerFn({
-  method: "POST",
+  method: 'POST',
 })
   .inputValidator(z.object({ id: z.string().uuid() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
 
     const userClients = await db
       .select({ id: client.id })
       .from(client)
-      .where(eq(client.userId, session.user.id));
+      .where(eq(client.organizationId, orgId));
     const userClientIds = userClients.map((c) => c.id);
-    if (userClientIds.length === 0) throw new Error("Unauthorized");
+    if (userClientIds.length === 0) throw new Error('Unauthorized');
 
     const [updated] = await db
       .update(notification)
@@ -295,25 +347,36 @@ export const markNotificationOpened = createServerFn({
       )
       .returning();
 
-    if (!updated) throw new Error("Notificación no encontrada o sin acceso");
+    if (!updated) throw new Error('Notificación no encontrada o sin acceso');
     return { opened: true };
   });
 
 export const deleteNotification = createServerFn({
-  method: "POST",
+  method: 'POST',
 })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const orgClientIds = await getOrgClientIds(orgId);
+    if (orgClientIds.length === 0) {
+      throw new Error('Error al eliminar la notificación');
+    }
 
     const [deletedNotification] = await db
       .delete(notification)
-      .where(eq(notification.id, ctx.data.id))
+      .where(
+        and(
+          eq(notification.id, ctx.data.id),
+          inArray(notification.client, orgClientIds)
+        )
+      )
       .returning();
 
     if (!deletedNotification)
-      throw new Error("Error al eliminar la notificación");
+      throw new Error('Error al eliminar la notificación');
 
     return { success: true };
   });

@@ -1,19 +1,32 @@
-import { createServerFn } from "@tanstack/react-start";
-import { getRequestHeaders } from "@tanstack/react-start/server";
-import z from "zod";
-import { db } from "@/lib/db";
+import { createServerFn } from '@tanstack/react-start';
+import z from 'zod';
+import { db } from '@/lib/db';
 import {
   invoice,
   client,
   invoiceAttachment,
   document,
   profile,
-} from "@/drizzle/schema";
-import { auth } from "@/lib/auth";
-import { eq, desc, asc, and, gte, lte, sql, inArray, isNull } from "drizzle-orm";
+} from '@/drizzle/schema';
+import {
+  getSessionWithOrg,
+  assertCanWrite,
+  getMemberRole,
+} from '@/actions/helpers';
+import {
+  eq,
+  desc,
+  asc,
+  and,
+  gte,
+  lte,
+  sql,
+  inArray,
+  isNull,
+} from 'drizzle-orm';
 
 export const getInvoices = createServerFn({
-  method: "GET",
+  method: 'GET',
 })
   .inputValidator(
     z.object({
@@ -26,13 +39,12 @@ export const getInvoices = createServerFn({
       typeFilter: z.string().optional(),
       directionFilter: z.string().optional(),
       search: z.string().optional(),
-      sortBy: z.enum(["amount", "emitionDate"]).optional(),
-      sortOrder: z.enum(["asc", "desc"]).optional(),
+      sortBy: z.enum(['amount', 'emitionDate']).optional(),
+      sortOrder: z.enum(['asc', 'desc']).optional(),
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
 
     const {
       page,
@@ -49,11 +61,11 @@ export const getInvoices = createServerFn({
     } = ctx.data;
     const offset = (page - 1) * limit;
 
-    // Get clients associated with the current user
+    // Get clients associated with the current organization
     const userClients = await db
       .select({ id: client.id })
       .from(client)
-      .where(eq(client.userId, session.user.id));
+      .where(eq(client.organizationId, orgId));
 
     const userClientIds = userClients.map((c) => c.id);
 
@@ -71,14 +83,14 @@ export const getInvoices = createServerFn({
       inArray(invoice.client, userClientIds), // Filter by user's clients
     ];
 
-    if (clientFilter && clientFilter !== "all") {
+    if (clientFilter && clientFilter !== 'all') {
       // Verify the client belongs to the user
       if (userClientIds.includes(clientFilter)) {
         conditions.push(eq(invoice.client, clientFilter));
       }
     }
 
-    if (profileFilter && profileFilter !== "all") {
+    if (profileFilter && profileFilter !== 'all') {
       // Verify profile belongs to one of user's clients
       const [profileRow] = await db
         .select({ id: profile.id })
@@ -97,18 +109,22 @@ export const getInvoices = createServerFn({
 
     if (dateFrom) {
       // Interpretar como inicio del día en UTC para no cambiar de día por zona horaria
-      conditions.push(gte(invoice.emitionDate, new Date(`${dateFrom}T00:00:00.000Z`)));
+      conditions.push(
+        gte(invoice.emitionDate, new Date(`${dateFrom}T00:00:00.000Z`))
+      );
     }
 
     if (dateTo) {
       // Incluir todo el último día (hasta 23:59:59.999 UTC)
-      conditions.push(lte(invoice.emitionDate, new Date(`${dateTo}T23:59:59.999Z`)));
+      conditions.push(
+        lte(invoice.emitionDate, new Date(`${dateTo}T23:59:59.999Z`))
+      );
     }
 
-    if (typeFilter && typeFilter !== "all") {
+    if (typeFilter && typeFilter !== 'all') {
       // El tipo en BD puede ser el código ("1", "6") o la etiqueta AFIP ("Factura A (1)", "Factura B (6)").
       // Usar regex para que "(1)" no coincida con "(11)": el código debe estar entre paréntesis al final.
-      const safeCode = /^\d+$/.test(typeFilter) ? typeFilter : "";
+      const safeCode = /^\d+$/.test(typeFilter) ? typeFilter : '';
       const regexPattern = safeCode ? `\\(${safeCode}\\)$` : null;
       if (regexPattern) {
         conditions.push(
@@ -119,7 +135,7 @@ export const getInvoices = createServerFn({
       }
     }
 
-    if (directionFilter && directionFilter !== "all") {
+    if (directionFilter && directionFilter !== 'all') {
       conditions.push(eq(invoice.direction, directionFilter));
     }
 
@@ -175,12 +191,12 @@ export const getInvoices = createServerFn({
       .leftJoin(profile, eq(invoice.profile, profile.id))
       .where(whereCondition)
       .orderBy(
-        sortBy === "amount"
-          ? sortOrder === "asc"
+        sortBy === 'amount'
+          ? sortOrder === 'asc'
             ? asc(invoice.amount)
             : desc(invoice.amount)
-          : sortBy === "emitionDate"
-            ? sortOrder === "asc"
+          : sortBy === 'emitionDate'
+            ? sortOrder === 'asc'
               ? asc(invoice.emitionDate)
               : desc(invoice.emitionDate)
             : desc(invoice.emitionDate)
@@ -197,7 +213,7 @@ export const getInvoices = createServerFn({
   });
 
 export const getClientMultilateralSummary = createServerFn({
-  method: "GET",
+  method: 'GET',
 })
   .inputValidator(
     z.object({
@@ -208,25 +224,24 @@ export const getClientMultilateralSummary = createServerFn({
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
 
     const { clientId, profileId, dateFrom, dateTo } = ctx.data;
 
-    // Verificar que el cliente pertenece al usuario
+    // Verificar que el cliente pertenece a la organización
     const [clientRow] = await db
       .select({ id: client.id })
       .from(client)
-      .where(and(eq(client.id, clientId), eq(client.userId, session.user.id)))
+      .where(and(eq(client.id, clientId), eq(client.organizationId, orgId)))
       .limit(1);
 
     if (!clientRow) {
-      throw new Error("Cliente no encontrado o no autorizado");
+      throw new Error('Cliente no encontrado o no autorizado');
     }
 
     // Si se pasa profileId, verificar que pertenezca a este cliente
     let profileFilter: string | undefined;
-    if (profileId && profileId !== "all") {
+    if (profileId && profileId !== 'all') {
       const [profileRow] = await db
         .select({ id: profile.id })
         .from(profile)
@@ -239,7 +254,7 @@ export const getClientMultilateralSummary = createServerFn({
 
     const conditions = [
       eq(invoice.client, clientId),
-      eq(invoice.direction, "Outbound"),
+      eq(invoice.direction, 'Outbound'),
       profileFilter ? eq(invoice.profile, profileFilter) : sql`true`,
     ];
     if (dateFrom) {
@@ -253,8 +268,11 @@ export const getClientMultilateralSummary = createServerFn({
 
     // Tipos AFIP que son Nota de Crédito: restan del total (3=N.Crédito A, 8=N.Crédito B, 13=N.Crédito C).
     // También consideramos tipo que contenga "Crédito" por si viene con texto desde el CSV.
-    const isCreditNote =
-      sql`(${invoice.type} in ('3', '8', '13') or ${invoice.type}::text ilike '%Crédito%')`;
+    const isCreditNote = sql`(${invoice.type} in ('3', '8', '13') or ${invoice.type}::text ilike '%Crédito%')`;
+    // En facturación tipo C no hay IVA discriminado, por lo que la base imponible
+    // se toma desde el total del comprobante (amount).
+    const isTypeC = sql`(${invoice.type} in ('11', '12', '13', '15', '16', '211', '212', '213'))`;
+    const baseForMultilateral = sql`(case when ${isTypeC} then (${invoice.amount}::numeric) else (${invoice.amountTaxed}::numeric) end)`;
 
     // Agrupar invoices outbound por provincia: total IVA y base imponible son NETOS
     // (facturas y notas de débito suman; notas de crédito restan).
@@ -263,7 +281,7 @@ export const getClientMultilateralSummary = createServerFn({
         receiptProvince: invoice.receiptProvince,
         invoiceCount: sql<number>`count(*)::int`,
         totalIVA: sql<string>`(coalesce(sum(case when ${isCreditNote} then -(${invoice.totalIVA}::numeric) else (${invoice.totalIVA}::numeric) end), 0))::text`,
-        totalTaxed: sql<string>`(coalesce(sum(case when ${isCreditNote} then -(${invoice.amountTaxed}::numeric) else (${invoice.amountTaxed}::numeric) end), 0))::text`,
+        totalTaxed: sql<string>`(coalesce(sum(case when ${isCreditNote} then -(${baseForMultilateral}) else (${baseForMultilateral}) end), 0))::text`,
       })
       .from(invoice)
       .where(and(...conditions))
@@ -273,7 +291,7 @@ export const getClientMultilateralSummary = createServerFn({
   });
 
 export const getClientMultilateralInvoices = createServerFn({
-  method: "GET",
+  method: 'GET',
 })
   .inputValidator(
     z.object({
@@ -285,25 +303,24 @@ export const getClientMultilateralInvoices = createServerFn({
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
 
     const { clientId, receiptProvince, profileId, dateFrom, dateTo } = ctx.data;
 
-    // Verificar que el cliente pertenece al usuario
+    // Verificar que el cliente pertenece a la organización
     const [clientRow] = await db
       .select({ id: client.id })
       .from(client)
-      .where(and(eq(client.id, clientId), eq(client.userId, session.user.id)))
+      .where(and(eq(client.id, clientId), eq(client.organizationId, orgId)))
       .limit(1);
 
     if (!clientRow) {
-      throw new Error("Cliente no encontrado o no autorizado");
+      throw new Error('Cliente no encontrado o no autorizado');
     }
 
     // Si se pasa profileId, verificar que pertenezca a este cliente
     let profileFilter: string | undefined;
-    if (profileId && profileId !== "all") {
+    if (profileId && profileId !== 'all') {
       const [profileRow] = await db
         .select({ id: profile.id })
         .from(profile)
@@ -316,12 +333,12 @@ export const getClientMultilateralInvoices = createServerFn({
 
     const conditions = [
       eq(invoice.client, clientId),
-      eq(invoice.direction, "Outbound"),
+      eq(invoice.direction, 'Outbound'),
       profileFilter ? eq(invoice.profile, profileFilter) : sql`true`,
     ];
 
     if (receiptProvince !== undefined) {
-      if (receiptProvince === null || receiptProvince === "") {
+      if (receiptProvince === null || receiptProvince === '') {
         conditions.push(isNull(invoice.receiptProvince));
       } else {
         conditions.push(eq(invoice.receiptProvince, receiptProvince));
@@ -352,6 +369,7 @@ export const getClientMultilateralInvoices = createServerFn({
         recipientIdentityNumber: invoice.recipientIdentityNumber,
         currency: invoice.currency,
         amountTaxed: invoice.amountTaxed,
+        baseImponible: sql<string>`(case when ${invoice.type} in ('11', '12', '13', '15', '16', '211', '212', '213') then (${invoice.amount}::numeric)::text else (${invoice.amountTaxed}::numeric)::text end)`,
         totalIVA: invoice.totalIVA,
         amount: invoice.amount,
       })
@@ -363,23 +381,22 @@ export const getClientMultilateralInvoices = createServerFn({
   });
 
 export const getInvoice = createServerFn({
-  method: "GET",
+  method: 'GET',
 })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
 
-    // Get clients associated with the current user
+    // Get clients associated with the current organization
     const userClients = await db
       .select({ id: client.id })
       .from(client)
-      .where(eq(client.userId, session.user.id));
+      .where(eq(client.organizationId, orgId));
 
     const userClientIds = userClients.map((c) => c.id);
 
     if (userClientIds.length === 0) {
-      throw new Error("Factura no encontrada");
+      throw new Error('Factura no encontrada');
     }
 
     // Get invoice with client data, ensuring it belongs to user's clients
@@ -432,7 +449,7 @@ export const getInvoice = createServerFn({
       )
       .limit(1);
 
-    if (!invoiceData) throw new Error("Factura no encontrada");
+    if (!invoiceData) throw new Error('Factura no encontrada');
 
     // Get attachments for this invoice (using notification table as reference)
     // Note: invoiceAttachment references notification, not invoice directly
@@ -458,18 +475,17 @@ export const getInvoice = createServerFn({
   });
 
 export const getInvoiceAttachments = createServerFn({
-  method: "GET",
+  method: 'GET',
 })
   .inputValidator(z.object({ invoiceId: z.string() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
 
-    // Get clients associated with the current user
+    // Get clients associated with the current organization
     const userClients = await db
       .select({ id: client.id })
       .from(client)
-      .where(eq(client.userId, session.user.id));
+      .where(eq(client.organizationId, orgId));
 
     const userClientIds = userClients.map((c) => c.id);
 
@@ -490,7 +506,7 @@ export const getInvoiceAttachments = createServerFn({
       .limit(1);
 
     if (!invoiceData) {
-      throw new Error("Factura no encontrada");
+      throw new Error('Factura no encontrada');
     }
 
     // Get attachments for this invoice
@@ -512,7 +528,7 @@ export const getInvoiceAttachments = createServerFn({
   });
 
 export const createInvoice = createServerFn({
-  method: "POST",
+  method: 'POST',
 })
   .inputValidator(
     z.object({
@@ -553,23 +569,21 @@ export const createInvoice = createServerFn({
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
 
-    // Verify client belongs to user
+    // Verify client belongs to organization
     const [clientData] = await db
       .select({ id: client.id })
       .from(client)
       .where(
-        and(
-          eq(client.id, ctx.data.clientId),
-          eq(client.userId, session.user.id)
-        )
+        and(eq(client.id, ctx.data.clientId), eq(client.organizationId, orgId))
       )
       .limit(1);
 
     if (!clientData) {
-      throw new Error("Cliente no encontrado o no autorizado");
+      throw new Error('Cliente no encontrado o no autorizado');
     }
 
     // Verify profile belongs to client if provided
@@ -586,7 +600,7 @@ export const createInvoice = createServerFn({
         .limit(1);
 
       if (!profileData) {
-        throw new Error("Perfil no encontrado o no pertenece al cliente");
+        throw new Error('Perfil no encontrado o no pertenece al cliente');
       }
     }
 
@@ -611,22 +625,22 @@ export const createInvoice = createServerFn({
         amount: ctx.data.amount,
         client: ctx.data.clientId,
         profile: ctx.data.profileId || null,
-        amountIVA0: ctx.data.amountIVA0 || "0",
-        IVA25: ctx.data.IVA25 || "0",
-        amountIVA25: ctx.data.amountIVA25 || "0",
-        IVA5: ctx.data.IVA5 || "0",
-        amountIVA5: ctx.data.amountIVA5 || "0",
-        IVA105: ctx.data.IVA105 || "0",
-        amountIVA105: ctx.data.amountIVA105 || "0",
-        IVA21: ctx.data.IVA21 || "0",
-        amountIVA21: ctx.data.amountIVA21 || "0",
-        IVA27: ctx.data.IVA27 || "0",
-        amountIVA27: ctx.data.amountIVA27 || "0",
-        amountTaxed: ctx.data.amountTaxed || "0",
-        amountNoTaxed: ctx.data.amountNoTaxed || "0",
-        amountExempt: ctx.data.amountExempt || "0",
-        other_taxes: ctx.data.other_taxes || "0",
-        totalIVA: ctx.data.totalIVA || "0",
+        amountIVA0: ctx.data.amountIVA0 || '0',
+        IVA25: ctx.data.IVA25 || '0',
+        amountIVA25: ctx.data.amountIVA25 || '0',
+        IVA5: ctx.data.IVA5 || '0',
+        amountIVA5: ctx.data.amountIVA5 || '0',
+        IVA105: ctx.data.IVA105 || '0',
+        amountIVA105: ctx.data.amountIVA105 || '0',
+        IVA21: ctx.data.IVA21 || '0',
+        amountIVA21: ctx.data.amountIVA21 || '0',
+        IVA27: ctx.data.IVA27 || '0',
+        amountIVA27: ctx.data.amountIVA27 || '0',
+        amountTaxed: ctx.data.amountTaxed || '0',
+        amountNoTaxed: ctx.data.amountNoTaxed || '0',
+        amountExempt: ctx.data.amountExempt || '0',
+        other_taxes: ctx.data.other_taxes || '0',
+        totalIVA: ctx.data.totalIVA || '0',
       })
       .returning();
 
@@ -634,7 +648,7 @@ export const createInvoice = createServerFn({
   });
 
 export const updateInvoice = createServerFn({
-  method: "POST",
+  method: 'POST',
 })
   .inputValidator(
     z.object({
@@ -676,19 +690,20 @@ export const updateInvoice = createServerFn({
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
 
-    // Get clients associated with the current user
+    // Get clients associated with the current organization
     const userClients = await db
       .select({ id: client.id })
       .from(client)
-      .where(eq(client.userId, session.user.id));
+      .where(eq(client.organizationId, orgId));
 
     const userClientIds = userClients.map((c) => c.id);
 
     if (userClientIds.length === 0) {
-      throw new Error("Factura no encontrada");
+      throw new Error('Factura no encontrada');
     }
 
     // Verify invoice belongs to user's clients
@@ -701,13 +716,13 @@ export const updateInvoice = createServerFn({
       .limit(1);
 
     if (!existingInvoice) {
-      throw new Error("Factura no encontrada o no autorizada");
+      throw new Error('Factura no encontrada o no autorizada');
     }
 
     // Verify new client belongs to user if provided
     if (ctx.data.clientId && ctx.data.clientId !== existingInvoice.clientId) {
       if (!userClientIds.includes(ctx.data.clientId)) {
-        throw new Error("Cliente no autorizado");
+        throw new Error('Cliente no autorizado');
       }
     }
 
@@ -727,7 +742,7 @@ export const updateInvoice = createServerFn({
           .limit(1);
 
         if (!profileData) {
-          throw new Error("Perfil no encontrado o no pertenece al cliente");
+          throw new Error('Perfil no encontrado o no pertenece al cliente');
         }
       }
     }
@@ -788,23 +803,24 @@ export const updateInvoice = createServerFn({
   });
 
 export const deleteInvoice = createServerFn({
-  method: "POST",
+  method: 'POST',
 })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
 
-    // Get clients associated with the current user
+    // Get clients associated with the current organization
     const userClients = await db
       .select({ id: client.id })
       .from(client)
-      .where(eq(client.userId, session.user.id));
+      .where(eq(client.organizationId, orgId));
 
     const userClientIds = userClients.map((c) => c.id);
 
     if (userClientIds.length === 0) {
-      throw new Error("Factura no encontrada");
+      throw new Error('Factura no encontrada');
     }
 
     // Verify invoice belongs to user's clients
@@ -817,7 +833,7 @@ export const deleteInvoice = createServerFn({
       .limit(1);
 
     if (!existingInvoice) {
-      throw new Error("Factura no encontrada o no autorizada");
+      throw new Error('Factura no encontrada o no autorizada');
     }
 
     await db.delete(invoice).where(eq(invoice.id, ctx.data.id));
@@ -826,27 +842,24 @@ export const deleteInvoice = createServerFn({
   });
 
 export const getInvoiceTotalsByClient = createServerFn({
-  method: "GET",
+  method: 'GET',
 }).handler(async () => {
-  const session = await auth.api.getSession({ headers: getRequestHeaders() });
-  if (!session?.user?.id) throw new Error("Unauthorized");
+  const { orgId } = await getSessionWithOrg();
 
-  if (process.env.NODE_ENV === "development") {
-    console.log("[getInvoiceTotalsByClient] called", {
-      userId: session.user.id,
-    });
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[getInvoiceTotalsByClient] called');
   }
 
-  // Get clients associated with the current user
+  // Get clients associated with the current organization
   const userClients = await db
     .select({ id: client.id })
     .from(client)
-    // .where(eq(client.userId, session.user.id));
+    .where(eq(client.organizationId, orgId));
 
   const userClientIds = userClients.map((c) => c.id);
 
-  if (process.env.NODE_ENV === "development") {
-    console.log("[getInvoiceTotalsByClient] user clients", {
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[getInvoiceTotalsByClient] user clients', {
       count: userClientIds.length,
       sampleIds: userClientIds.slice(0, 5),
     });
@@ -868,8 +881,8 @@ export const getInvoiceTotalsByClient = createServerFn({
     .from(invoice)
     .where(inArray(invoice.client, userClientIds));
 
-  if (process.env.NODE_ENV === "development") {
-    console.log("[getInvoiceTotalsByClient] raw invoices", {
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[getInvoiceTotalsByClient] raw invoices', {
       count: invoices.length,
       sample: invoices.slice(0, 5),
     });
@@ -887,25 +900,25 @@ export const getInvoiceTotalsByClient = createServerFn({
     }
 
     // Convert amount to number (it's stored as string in numeric type)
-    let amount = parseFloat(inv.amount || "0");
+    let amount = parseFloat(inv.amount || '0');
 
     // If currency is USD, convert to ARS using the currency rate
-    if (inv.currency?.toUpperCase() === "USD") {
-      const rate = parseFloat(inv.currencyRate || "1");
+    if (inv.currency?.toUpperCase() === 'USD') {
+      const rate = parseFloat(inv.currencyRate || '1');
       amount = amount * rate;
     }
 
     // Add to the appropriate direction
     const direction = inv.direction?.toLowerCase();
-    if (direction === "outbound") {
+    if (direction === 'outbound') {
       totalsByClient[inv.clientId].outbound += amount;
-    } else if (direction === "inbound") {
+    } else if (direction === 'inbound') {
       totalsByClient[inv.clientId].inbound += amount;
     }
   });
 
-  if (process.env.NODE_ENV === "development") {
-    console.log("[getInvoiceTotalsByClient] totalsByClient summary", {
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[getInvoiceTotalsByClient] totalsByClient summary', {
       clientsWithTotals: Object.keys(totalsByClient).length,
       sample: Object.entries(totalsByClient)
         .slice(0, 5)
@@ -917,7 +930,7 @@ export const getInvoiceTotalsByClient = createServerFn({
 });
 
 export const getInvoicesByProfile = createServerFn({
-  method: "GET",
+  method: 'GET',
 })
   .inputValidator(
     z.object({
@@ -927,17 +940,16 @@ export const getInvoicesByProfile = createServerFn({
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
 
     const { profileId, page, limit } = ctx.data;
     const offset = (page - 1) * limit;
 
-    // Get clients associated with the current user
+    // Get clients associated with the current organization
     const userClients = await db
       .select({ id: client.id })
       .from(client)
-      .where(eq(client.userId, session.user.id));
+      .where(eq(client.organizationId, orgId));
 
     const userClientIds = userClients.map((c) => c.id);
 
@@ -960,7 +972,7 @@ export const getInvoicesByProfile = createServerFn({
       .limit(1);
 
     if (!profileData) {
-      throw new Error("Perfil no encontrado o no autorizado");
+      throw new Error('Perfil no encontrado o no autorizado');
     }
 
     // Build where conditions
@@ -1021,7 +1033,7 @@ export const getInvoicesByProfile = createServerFn({
   });
 
 export const getInvoicesByProfileInRange = createServerFn({
-  method: "GET",
+  method: 'GET',
 })
   .inputValidator(
     z.object({
@@ -1032,16 +1044,15 @@ export const getInvoicesByProfileInRange = createServerFn({
   )
   .handler(async (ctx) => {
     try {
-      const session = await auth.api.getSession({ headers: getRequestHeaders() });
-      if (!session?.user?.id) throw new Error("Unauthorized");
+      const { orgId } = await getSessionWithOrg();
 
       const { profileId, dateFrom, dateTo } = ctx.data;
 
-      // Get clients associated with the current user
+      // Get clients associated with the current organization
       const userClients = await db
         .select({ id: client.id })
         .from(client)
-        .where(eq(client.userId, session.user.id));
+        .where(eq(client.organizationId, orgId));
 
       const userClientIds = userClients.map((c) => c.id);
 
@@ -1059,7 +1070,7 @@ export const getInvoicesByProfileInRange = createServerFn({
         .limit(1);
 
       if (!profileData) {
-        throw new Error("Perfil no encontrado o no autorizado");
+        throw new Error('Perfil no encontrado o no autorizado');
       }
 
       const whereCondition = and(
@@ -1077,31 +1088,48 @@ export const getInvoicesByProfileInRange = createServerFn({
 
       return invoicesInRange;
     } catch (error: any) {
-      console.error("[getInvoicesByProfileInRange] error:", error);
+      console.error('[getInvoicesByProfileInRange] error:', error);
       throw new Error(
         error?.message ||
-          "No se pudieron obtener las facturas para el perfil y rango seleccionados"
+          'No se pudieron obtener las facturas para el perfil y rango seleccionados'
       );
     }
   });
 
 // Tipos A según AFIP (Factura A, Nota Débito/Crédito A, Recibo A, etc.)
 const INVOICE_TYPES_A = [
-  "1", "2", "3", "4",
-  "51", "52", "53", "54",
-  "201", "202", "203",
+  '1',
+  '2',
+  '3',
+  '4',
+  '51',
+  '52',
+  '53',
+  '54',
+  '201',
+  '202',
+  '203',
 ];
 
 // Tipos B según AFIP (Factura B, Nota Débito B, Nota Crédito B)
-const INVOICE_TYPES_B = ["6", "7", "8"];
+const INVOICE_TYPES_B = ['6', '7', '8'];
 
 // Tipos Nota de Crédito (AFIP): restan del total (no suman)
 const CREDIT_NOTE_TYPES = [
-  "3", "8", "13", "21", "53", "114", "197", "203", "208", "213",
+  '3',
+  '8',
+  '13',
+  '21',
+  '53',
+  '114',
+  '197',
+  '203',
+  '208',
+  '213',
 ];
 
 export const getInvoiceStatsByProfile = createServerFn({
-  method: "GET",
+  method: 'GET',
 })
   .inputValidator(
     z.object({
@@ -1111,16 +1139,15 @@ export const getInvoiceStatsByProfile = createServerFn({
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
 
     const { profileId, dateFrom, dateTo } = ctx.data;
 
-    // Get clients associated with the current user
+    // Get clients associated with the current organization
     const userClients = await db
       .select({ id: client.id })
       .from(client)
-      .where(eq(client.userId, session.user.id));
+      .where(eq(client.organizationId, orgId));
 
     const userClientIds = userClients.map((c) => c.id);
 
@@ -1159,7 +1186,7 @@ export const getInvoiceStatsByProfile = createServerFn({
       .limit(1);
 
     if (!profileData) {
-      throw new Error("Perfil no encontrado o no autorizado");
+      throw new Error('Perfil no encontrado o no autorizado');
     }
 
     const conditions = [
@@ -1197,11 +1224,11 @@ export const getInvoiceStatsByProfile = createServerFn({
     // Ventas Outbound tipo A: Neto A 21% = amountIVA21, Neto A 10,5% = amountIVA105
     const invoicesForIvaA = invoices.filter((inv) => {
       const direction = inv.direction?.toLowerCase();
-      const type = inv.type ?? "";
-      return direction === "outbound" && INVOICE_TYPES_A.includes(type);
+      const type = inv.type ?? '';
+      return direction === 'outbound' && INVOICE_TYPES_A.includes(type);
     });
     console.log(
-      "[getInvoiceStatsByProfile] invoices usados para IVA 21% e IVA 10,5% (ventas tipo A):",
+      '[getInvoiceStatsByProfile] invoices usados para IVA 21% e IVA 10,5% (ventas tipo A):',
       JSON.stringify(
         invoicesForIvaA.map((inv) => ({
           id: inv.id,
@@ -1220,39 +1247,44 @@ export const getInvoiceStatsByProfile = createServerFn({
     let netoA105 = 0;
     invoicesForIvaA.forEach((inv) => {
       const rate =
-        inv.currency?.toUpperCase() === "USD"
-          ? parseFloat(inv.currencyRate || "1")
+        inv.currency?.toUpperCase() === 'USD'
+          ? parseFloat(inv.currencyRate || '1')
           : 1;
-      const sign = CREDIT_NOTE_TYPES.includes(inv.type ?? "") ? -1 : 1;
-      netoA21 += sign * parseFloat(inv.amountIVA21 || "0") * rate;
-      netoA105 += sign * parseFloat(inv.amountIVA105 || "0") * rate;
+      const sign = CREDIT_NOTE_TYPES.includes(inv.type ?? '') ? -1 : 1;
+      netoA21 += sign * parseFloat(inv.amountIVA21 || '0') * rate;
+      netoA105 += sign * parseFloat(inv.amountIVA105 || '0') * rate;
     });
 
     // Ventas Outbound tipo B: totalAmountB = suma de (base + impuesto) por alícuota. NC restan, Factura/ND suman. USD con rate.
     const invoicesForIvaB = invoices.filter((inv) => {
       const direction = inv.direction?.toLowerCase();
-      const type = inv.type ?? "";
-      return direction === "outbound" && INVOICE_TYPES_B.includes(type);
+      const type = inv.type ?? '';
+      return direction === 'outbound' && INVOICE_TYPES_B.includes(type);
     });
     let totalAmountB21 = 0;
     let totalAmountB105 = 0;
     let totalAmountB27 = 0;
     invoicesForIvaB.forEach((inv) => {
       const rate =
-        inv.currency?.toUpperCase() === "USD"
-          ? parseFloat(inv.currencyRate || "1")
+        inv.currency?.toUpperCase() === 'USD'
+          ? parseFloat(inv.currencyRate || '1')
           : 1;
-      const sign = CREDIT_NOTE_TYPES.includes(inv.type ?? "") ? -1 : 1;
-      const base21 = parseFloat(inv.amountIVA21 || "0") + parseFloat(inv.IVA21 || "0");
-      const base105 = parseFloat(inv.amountIVA105 || "0") + parseFloat(inv.IVA105 || "0");
-      const base27 = parseFloat(inv.amountIVA27 || "0") + parseFloat(inv.IVA27 || "0");
+      const sign = CREDIT_NOTE_TYPES.includes(inv.type ?? '') ? -1 : 1;
+      const base21 =
+        parseFloat(inv.amountIVA21 || '0') + parseFloat(inv.IVA21 || '0');
+      const base105 =
+        parseFloat(inv.amountIVA105 || '0') + parseFloat(inv.IVA105 || '0');
+      const base27 =
+        parseFloat(inv.amountIVA27 || '0') + parseFloat(inv.IVA27 || '0');
       totalAmountB21 += sign * base21 * rate;
       totalAmountB105 += sign * base105 * rate;
       totalAmountB27 += sign * base27 * rate;
     });
 
     // Compras (inbound): netos gravados por alícuota 27%, 21%, 10,5%, 5%, 2,5%. A y B juntos. NC restan, ND y facturas suman.
-    const invoicesInbound = invoices.filter((inv) => inv.direction?.toLowerCase() === "inbound");
+    const invoicesInbound = invoices.filter(
+      (inv) => inv.direction?.toLowerCase() === 'inbound'
+    );
     let netoInbound27 = 0;
     let netoInbound21 = 0;
     let netoInbound105 = 0;
@@ -1260,19 +1292,23 @@ export const getInvoiceStatsByProfile = createServerFn({
     let netoInbound25 = 0;
     invoicesInbound.forEach((inv) => {
       const rate =
-        inv.currency?.toUpperCase() === "USD"
-          ? parseFloat(inv.currencyRate || "1")
+        inv.currency?.toUpperCase() === 'USD'
+          ? parseFloat(inv.currencyRate || '1')
           : 1;
-      const sign = CREDIT_NOTE_TYPES.includes(inv.type ?? "") ? -1 : 1;
-      netoInbound27 += sign * parseFloat(inv.amountIVA27 || "0") * rate;
-      netoInbound21 += sign * parseFloat(inv.amountIVA21 || "0") * rate;
-      netoInbound105 += sign * parseFloat(inv.amountIVA105 || "0") * rate;
-      netoInbound5 += sign * parseFloat(inv.amountIVA5 || "0") * rate;
-      netoInbound25 += sign * parseFloat(inv.amountIVA25 || "0") * rate;
+      const sign = CREDIT_NOTE_TYPES.includes(inv.type ?? '') ? -1 : 1;
+      netoInbound27 += sign * parseFloat(inv.amountIVA27 || '0') * rate;
+      netoInbound21 += sign * parseFloat(inv.amountIVA21 || '0') * rate;
+      netoInbound105 += sign * parseFloat(inv.amountIVA105 || '0') * rate;
+      netoInbound5 += sign * parseFloat(inv.amountIVA5 || '0') * rate;
+      netoInbound25 += sign * parseFloat(inv.amountIVA25 || '0') * rate;
     });
 
     const netoGravadoCompras =
-      netoInbound27 + netoInbound21 + netoInbound105 + netoInbound5 + netoInbound25;
+      netoInbound27 +
+      netoInbound21 +
+      netoInbound105 +
+      netoInbound5 +
+      netoInbound25;
 
     // Exento, IVA 0%, No gravado: suma en todos los comprobantes (nota de crédito resta)
     let totalAmountExempt = 0;
@@ -1280,13 +1316,13 @@ export const getInvoiceStatsByProfile = createServerFn({
     let totalAmountNoTaxed = 0;
     invoices.forEach((inv) => {
       const rate =
-        inv.currency?.toUpperCase() === "USD"
-          ? parseFloat(inv.currencyRate || "1")
+        inv.currency?.toUpperCase() === 'USD'
+          ? parseFloat(inv.currencyRate || '1')
           : 1;
-      const sign = CREDIT_NOTE_TYPES.includes(inv.type ?? "") ? -1 : 1;
-      totalAmountExempt += sign * parseFloat(inv.amountExempt || "0") * rate;
-      totalAmountIVA0 += sign * parseFloat(inv.amountIVA0 || "0") * rate;
-      totalAmountNoTaxed += sign * parseFloat(inv.amountNoTaxed || "0") * rate;
+      const sign = CREDIT_NOTE_TYPES.includes(inv.type ?? '') ? -1 : 1;
+      totalAmountExempt += sign * parseFloat(inv.amountExempt || '0') * rate;
+      totalAmountIVA0 += sign * parseFloat(inv.amountIVA0 || '0') * rate;
+      totalAmountNoTaxed += sign * parseFloat(inv.amountNoTaxed || '0') * rate;
     });
 
     // Crédito Fiscal Compras = (neto21 * 0.21) + (neto105 * 0.105) + (neto27 * 0.27) + (neto5 * 0.05) + (neto25 * 0.025)
@@ -1309,26 +1345,26 @@ export const getInvoiceStatsByProfile = createServerFn({
 
     invoices.forEach((inv) => {
       // Convert amount to number
-      let amount = parseFloat(inv.amount || "0");
+      let amount = parseFloat(inv.amount || '0');
 
       // If currency is USD, convert to ARS using the currency rate
-      if (inv.currency?.toUpperCase() === "USD") {
-        const rate = parseFloat(inv.currencyRate || "1");
+      if (inv.currency?.toUpperCase() === 'USD') {
+        const rate = parseFloat(inv.currencyRate || '1');
         amount = amount * rate;
       }
 
       // Notas de crédito restan del total (no suman)
-      const isCreditNote = CREDIT_NOTE_TYPES.includes(inv.type ?? "");
+      const isCreditNote = CREDIT_NOTE_TYPES.includes(inv.type ?? '');
       const signedAmount = isCreditNote ? -amount : amount;
 
       const direction = inv.direction?.toLowerCase();
       const date = new Date(inv.emitionDate);
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 
       // Calculate totals
-      if (direction === "outbound") {
+      if (direction === 'outbound') {
         totalOutbound += signedAmount;
-      } else if (direction === "inbound") {
+      } else if (direction === 'inbound') {
         totalInbound += signedAmount;
       }
 
@@ -1336,14 +1372,14 @@ export const getInvoiceStatsByProfile = createServerFn({
       if (!monthlyDataMap[monthKey]) {
         monthlyDataMap[monthKey] = { outbound: 0, inbound: 0 };
       }
-      if (direction === "outbound") {
+      if (direction === 'outbound') {
         monthlyDataMap[monthKey].outbound += signedAmount;
-      } else if (direction === "inbound") {
+      } else if (direction === 'inbound') {
         monthlyDataMap[monthKey].inbound += signedAmount;
       }
 
       // Type distribution (notas de crédito restan)
-      const type = inv.type || "unknown";
+      const type = inv.type || 'unknown';
       if (!typeDistributionMap[type]) {
         typeDistributionMap[type] = 0;
       }

@@ -1,26 +1,26 @@
-import "dotenv/config";
-import axios from "axios";
-import { sql } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { client } from "@/drizzle/schema";
+import 'dotenv/config';
+import axios from 'axios';
+import { sql } from 'drizzle-orm';
+import { db } from '@/lib/db';
+import { client } from '@/drizzle/schema';
 
 const JOBS_API_URL =
   process.env.SCRAPPER_JOBS_URL ||
   process.env.BACKEND_API_URL ||
-  "http://localhost:3002";
+  'http://localhost:3002';
 
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLL_ATTEMPTS = 300; // ~15 min por job
 
-type JobType = "comprobantes_full" | "iva";
-type JobState = "pending" | "running" | "failed" | "finished";
+type JobType = 'comprobantes_full' | 'iva';
+type JobState = 'pending' | 'running' | 'failed' | 'finished';
 
-type JobApiResponse = {
+interface JobApiResponse {
   id: string;
   status: JobState;
   result?: unknown;
   failedReason?: string | null;
-};
+}
 
 function hasFlag(flag: string): boolean {
   return process.argv.includes(flag);
@@ -34,8 +34,10 @@ function readArgValue(name: string): string | undefined {
 
 async function waitForJob(jobId: string): Promise<JobApiResponse> {
   for (let i = 0; i < MAX_POLL_ATTEMPTS; i++) {
-    const { data } = await axios.get<JobApiResponse>(`${JOBS_API_URL}/api/jobs/${jobId}`);
-    if (data.status === "finished" || data.status === "failed") {
+    const { data } = await axios.get<JobApiResponse>(
+      `${JOBS_API_URL}/api/jobs/${jobId}`
+    );
+    if (data.status === 'finished' || data.status === 'failed') {
       return data;
     }
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
@@ -43,31 +45,37 @@ async function waitForJob(jobId: string): Promise<JobApiResponse> {
   throw new Error(`Tiempo de espera agotado para el job ${jobId}`);
 }
 
-async function runJobForClient(clientId: string, jobType: JobType): Promise<void> {
-  const { data: createdJob } = await axios.post<{ id: string }>(`${JOBS_API_URL}/api/jobs`, {
-    type: jobType,
-    clientId,
-  });
+async function runJobForClient(
+  clientId: string,
+  jobType: JobType
+): Promise<void> {
+  const { data: createdJob } = await axios.post<{ id: string }>(
+    `${JOBS_API_URL}/api/jobs`,
+    {
+      type: jobType,
+      clientId,
+    }
+  );
 
   const result = await waitForJob(createdJob.id);
-  if (result.status === "failed") {
+  if (result.status === 'failed') {
     throw new Error(result.failedReason || `Error en job ${jobType}`);
   }
 }
 
 async function main() {
-  const runIva = hasFlag("--with-iva");
-  const onlyClientId = readArgValue("--client-id");
+  const runIva = hasFlag('--with-iva');
+  const onlyClientId = readArgValue('--client-id');
 
   if (!process.env.DATABASE_URL) {
-    throw new Error("Falta DATABASE_URL en el entorno.");
+    throw new Error('Falta DATABASE_URL en el entorno.');
   }
 
-  console.log("[rebuild-client-invoices] Iniciando proceso secuencial...");
+  console.log('[rebuild-client-invoices] Iniciando proceso secuencial...');
   console.log(`[rebuild-client-invoices] Jobs API: ${JOBS_API_URL}`);
   console.log(
     `[rebuild-client-invoices] Modo jobs: ${
-      runIva ? "comprobantes_full + iva" : "solo comprobantes_full"
+      runIva ? 'comprobantes_full + iva' : 'solo comprobantes_full'
     }`
   );
 
@@ -83,7 +91,7 @@ async function main() {
         .orderBy(client.createdAt);
 
   if (clients.length === 0) {
-    console.log("[rebuild-client-invoices] No hay clientes para procesar.");
+    console.log('[rebuild-client-invoices] No hay clientes para procesar.');
     return;
   }
 
@@ -97,14 +105,16 @@ async function main() {
 
     try {
       // SQL pedido: DELETE FROM invoice WHERE client_id = '...'
-      await db.execute(sql`DELETE FROM invoice WHERE client_id = ${current.id}`);
+      await db.execute(
+        sql`DELETE FROM invoice WHERE client_id = ${current.id}`
+      );
       console.log(`${prefix} -> invoices borrados`);
 
-      await runJobForClient(current.id, "comprobantes_full");
+      await runJobForClient(current.id, 'comprobantes_full');
       console.log(`${prefix} -> job comprobantes_full OK`);
 
       if (runIva) {
-        await runJobForClient(current.id, "iva");
+        await runJobForClient(current.id, 'iva');
         console.log(`${prefix} -> job iva OK`);
       }
 
@@ -123,6 +133,6 @@ async function main() {
 
 main().catch((error) => {
   const message = error instanceof Error ? error.message : String(error);
-  console.error("[rebuild-client-invoices] Error fatal:", message);
+  console.error('[rebuild-client-invoices] Error fatal:', message);
   process.exit(1);
 });

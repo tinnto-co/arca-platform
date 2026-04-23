@@ -1,0 +1,273 @@
+﻿postgres://postgres:o1qdc9ZZFvzaPZ2MguML6263LcB0aeQTUTqAWs5Utc2kyYJuTIJo2Sz33wvMYtQy@5.78.132.83:5438/postgres
+[
+  {
+    "clientName": "KASUR LIPAT",
+    "cuit": "30717679136",
+    "filePath": "C:\\Users\\Brian\\Downloads\\SOS_empresas_legajos\\SOS_empresas_legajos\\Mr Factory Couch SA\\30-71767913-6_legajos (1).xls",
+    "excelFilas": 4,
+    "empleadosBD": 0,
+    "matches": 0,
+    "sinMatch": 4,
+    "motivoPrincipal": "No hay empleados cargados en liquidacion_import_empleado para este perfil (no hay a qui├®n matchear)."
+  },
+  {
+    "clientName": "Mugiwaras",
+    "cuit": "33718399799",
+    "filePath": "C:\\Users\\Brian\\Downloads\\SOS_empresas_legajos\\Ureshi Group S.A.\\33-71839979-9_legajos.xls",
+    "excelFilas": 5,
+    "empleadosBD": 0,
+    "matches": 0,
+    "sinMatch": 5,
+    "motivoPrincipal": "No hay empleados cargados en liquidacion_import_empleado para este perfil (no hay a qui├®n matchear)."
+  },
+  {
+    "clientName": "Termomecanica Valtri",
+    "cuit": "30716025752",
+    "filePath": "C:\\Users\\Brian\\Downloads\\SOS_empresas_legajos\\Termomecanica Valtri S.a\\30-71602575-2_legajos.xls",
+    "excelFilas": 25,
+    "empleadosBD": 0,
+    "matches": 0,
+    "sinMatch": 25,
+    "motivoPrincipal": "No hay empleados cargados en liquidacion_import_empleado para este perfil (no hay a qui├®n matchear)."
+  },
+  {
+    "clientName": "Zahrarh SA",
+    "cuit": "30718084209",
+    "filePath": "C:\\Users\\Brian\\Downloads\\SOS_empresas_legajos\\Zahrah S.A.\\30-71808420-9_legajos.xls",
+    "excelFilas": 9,
+    "empleadosBD": 0,
+    "matches": 0,
+    "sinMatch": 9,
+    "motivoPrincipal": "No hay empleados cargados en liquidacion_import_empleado para este perfil (no hay a qui├®n matchear)."
+  },
+  {
+    "clientName": "Admip Srl",
+    "cuit": "30707920056",
+    "filePath": "C:\\Users\\Brian\\Downloads\\SOS_empresas_legajos\\SOS_empresas_legajos\\Admip SRL\\30-70792005-6_legajos.xls",
+    "excelFilas": 3,
+    "empleadosBD": 2,
+    "matches": 2,
+    "sinMatch": 1,
+    "motivoPrincipal": "Solo algunas filas del Excel encontraron match por CUIL/Legajo; hay legajos adicionales que no existen en BD."
+  },
+  {
+    "clientName": "Artzeinu",
+    "cuit": "30719153255",
+    "filePath": "C:\\Users\\Brian\\Downloads\\SOS_empresas_legajos\\SOS_empresas_legajos\\Artzeinu x2 S.A_\\30-71915325-5_legajos.xls",
+    "excelFilas": 4,
+    "empleadosBD": 3,
+    "matches": 3,
+    "sinMatch": 1,
+    "motivoPrincipal": "Solo algunas filas del Excel encontraron match por CUIL/Legajo; hay legajos adicionales que no existen en BD."
+  },
+  {
+    "clientName": "Brique Construcciones Srl",
+    "cuit": "30715944029",
+    "filePath": "C:\\Users\\Brian\\Downloads\\SOS_empresas_legajos\\SOS_empresas_legajos\\Brique Construcciones S.R_\\30-71594402-9_legajos.xls",
+    "excelFilas": 20,
+    "empleadosBD": 2,
+    "matches": 2,
+    "sinMatch": 18,
+    "motivoPrincipal": "Solo algunas filas del Excel encontraron match por CUIL/Legajo; hay legajos adicionales que no existen en BD."
+  },
+  {
+    "clientName": "Carballo Fabian Alberto",
+    "cuit": "20180955454",
+    "filePath": "C:\\Users\\Brian\\Downloads\\SOS_empresas_legajos\\SOS_empresas_legajos\\Carballo Fabian Alberto\\20-18095545-4_legajos.xls",
+    "excelFilas": 2,
+    "empleadosBD": 1,
+    "matches": 1,
+    "sinMatch": 1,
+    "motivoPrincipal": "Solo algunas filas del Excel encontraron match por CUIL/Legajo; hay legajos adicionales que no existen en BD."
+  },
+  {
+    "clientName": "Chirin Srl",
+    "cuit": "30718161394",
+    "filePath": "C:\\Users\\Brian\\Downloads\\SOS_empresas_legajos\\SOS_empresas_legajos\\Chirin\\30-71816139-4_legajos.xls",
+    "excelFilas": 3,
+    "empleadosBD": 2,
+    "matches": 2,
+    "sinMatch": 1,
+    "motivoPrincipal": "Solo algunas filas del Excel encontraron match por CUIL/Legajo; hay legajos adicionales que no existen en BD."
+  },
+  {
+    "clientName": "E-Presis SA",
+    "cuit": "30717548767",
+    "filePath": "C:\\Users\\Brian\\Downloads\\SOS_empresas_legajos\\SOS_empresas_legajos\\Messenger & Consulting SA\\30-71754876-7_legajos.xls",
+    "excelFilas": 10,
+    "empleadosBD": 6,
+    "matches": 7,
+    "sinMatch": 3,
+    "motivoPrincipal": "Solo algunas filas del Excel encontraron match por CUIL/Legajo; hay legajos adicionales que no existen en BD."
+  },
+  {
+    "clientName": "E-Presis SA",
+    "cuit": "30717554864",
+    "filePath": "C:\\Users\\Brian\\Downloads\\SOS_empresas_legajos\\SOS_empresas_legajos\\E-presis S.A_\\30-71755486-4_legajos (1).xls",
+    "excelFilas": 14,
+    "empleadosBD": 9,
+    "matches": 9,
+    "sinMatch": 5,
+    "motivoPrincipal": "Solo algunas filas del Excel encontraron match por CUIL/Legajo; hay legajos adicionales que no existen en BD."
+  },
+  {
+    "clientName": "GB  Metal",
+    "cuit": "30718074785",
+    "filePath": "C:\\Users\\Brian\\Downloads\\SOS_empresas_legajos\\SOS_empresas_legajos\\Gastrotecno S.A_\\30-71807478-5_legajos.xls",
+    "excelFilas": 4,
+    "empleadosBD": 3,
+    "matches": 3,
+    "sinMatch": 1,
+    "motivoPrincipal": "Solo algunas filas del Excel encontraron match por CUIL/Legajo; hay legajos adicionales que no existen en BD."
+  },
+  {
+    "clientName": "GB  Metal",
+    "cuit": "30716135124",
+    "filePath": "C:\\Users\\Brian\\Downloads\\SOS_empresas_legajos\\SOS_empresas_legajos\\Gb Metal SA\\30-71613512-4_legajos.xls",
+    "excelFilas": 10,
+    "empleadosBD": 7,
+    "matches": 7,
+    "sinMatch": 3,
+    "motivoPrincipal": "Solo algunas filas del Excel encontraron match por CUIL/Legajo; hay legajos adicionales que no existen en BD."
+  },
+  {
+    "clientName": "GB Bazar SA",
+    "cuit": "30716206404",
+    "filePath": "C:\\Users\\Brian\\Downloads\\SOS_empresas_legajos\\SOS_empresas_legajos\\Gb Bazar SA\\30-71620640-4_legajos.xls",
+    "excelFilas": 14,
+    "empleadosBD": 2,
+    "matches": 2,
+    "sinMatch": 12,
+    "motivoPrincipal": "Solo algunas filas del Excel encontraron match por CUIL/Legajo; hay legajos adicionales que no existen en BD."
+  },
+  {
+    "clientName": "Green Safety",
+    "cuit": "30718394682",
+    "filePath": "C:\\Users\\Brian\\Downloads\\SOS_empresas_legajos\\SOS_empresas_legajos\\Green Safety\\30-71839468-2_legajos.xls",
+    "excelFilas": 2,
+    "empleadosBD": 1,
+    "matches": 1,
+    "sinMatch": 1,
+    "motivoPrincipal": "Solo algunas filas del Excel encontraron match por CUIL/Legajo; hay legajos adicionales que no existen en BD."
+  },
+  {
+    "clientName": "Green Safety",
+    "cuit": "30715433490",
+    "filePath": "C:\\Users\\Brian\\Downloads\\SOS_empresas_legajos\\SOS_empresas_legajos\\Semeca Ingenieria SRL\\30-71543349-0_legajos.xls",
+    "excelFilas": 3,
+    "empleadosBD": 1,
+    "matches": 1,
+    "sinMatch": 2,
+    "motivoPrincipal": "Solo algunas filas del Excel encontraron match por CUIL/Legajo; hay legajos adicionales que no existen en BD."
+  },
+  {
+    "clientName": "Khiro SA",
+    "cuit": "30717680568",
+    "filePath": "C:\\Users\\Brian\\Downloads\\SOS_empresas_legajos\\SOS_empresas_legajos\\Khiro S.A_\\30-71768056-8_legajos.xls",
+    "excelFilas": 6,
+    "empleadosBD": 3,
+    "matches": 3,
+    "sinMatch": 3,
+    "motivoPrincipal": "Solo algunas filas del Excel encontraron match por CUIL/Legajo; hay legajos adicionales que no existen en BD."
+  },
+  {
+    "clientName": "Master Kids SA",
+    "cuit": "30718524551",
+    "filePath": "C:\\Users\\Brian\\Downloads\\SOS_empresas_legajos\\SOS_empresas_legajos\\Master Kids S.A_\\30-71852455-1_legajos.xls",
+    "excelFilas": 12,
+    "empleadosBD": 7,
+    "matches": 7,
+    "sinMatch": 5,
+    "motivoPrincipal": "Solo algunas filas del Excel encontraron match por CUIL/Legajo; hay legajos adicionales que no existen en BD."
+  },
+  {
+    "clientName": "Melman Pablo",
+    "cuit": "30714871508",
+    "filePath": "C:\\Users\\Brian\\Downloads\\SOS_empresas_legajos\\SOS_empresas_legajos\\Smart Solution SRL\\30-71487150-8_legajos (1).xls",
+    "excelFilas": 5,
+    "empleadosBD": 3,
+    "matches": 3,
+    "sinMatch": 2,
+    "motivoPrincipal": "Solo algunas filas del Excel encontraron match por CUIL/Legajo; hay legajos adicionales que no existen en BD."
+  },
+  {
+    "clientName": "Minhashamaim SA",
+    "cuit": "30718310519",
+    "filePath": "C:\\Users\\Brian\\Downloads\\SOS_empresas_legajos\\SOS_empresas_legajos\\Sabenumitubeja S.A_\\30-71831051-9_legajos.xls",
+    "excelFilas": 6,
+    "empleadosBD": 5,
+    "matches": 5,
+    "sinMatch": 1,
+    "motivoPrincipal": "Solo algunas filas del Excel encontraron match por CUIL/Legajo; hay legajos adicionales que no existen en BD."
+  },
+  {
+    "clientName": "Momel Srl",
+    "cuit": "30714871087",
+    "filePath": "C:\\Users\\Brian\\Downloads\\SOS_empresas_legajos\\SOS_empresas_legajos\\Momel S.r.l\\30-71487108-7_legajos.xls",
+    "excelFilas": 4,
+    "empleadosBD": 2,
+    "matches": 2,
+    "sinMatch": 2,
+    "motivoPrincipal": "Solo algunas filas del Excel encontraron match por CUIL/Legajo; hay legajos adicionales que no existen en BD."
+  },
+  {
+    "clientName": "Mr Almohada Factory",
+    "cuit": "33718009419",
+    "filePath": "C:\\Users\\Brian\\Downloads\\SOS_empresas_legajos\\SOS_empresas_legajos\\Mr Almohada Factory S.A_\\33-71800941-9_legajos.xls",
+    "excelFilas": 5,
+    "empleadosBD": 3,
+    "matches": 3,
+    "sinMatch": 2,
+    "motivoPrincipal": "Solo algunas filas del Excel encontraron match por CUIL/Legajo; hay legajos adicionales que no existen en BD."
+  },
+  {
+    "clientName": "Ngvs SA",
+    "cuit": "30717786986",
+    "filePath": "C:\\Users\\Brian\\Downloads\\SOS_empresas_legajos\\SOS_empresas_legajos\\Ngvs\\30-71778698-6_legajos.xls",
+    "excelFilas": 53,
+    "empleadosBD": 11,
+    "matches": 14,
+    "sinMatch": 39,
+    "motivoPrincipal": "Solo algunas filas del Excel encontraron match por CUIL/Legajo; hay legajos adicionales que no existen en BD."
+  },
+  {
+    "clientName": "Pahue Technologies SA",
+    "cuit": "30719105056",
+    "filePath": "C:\\Users\\Brian\\Downloads\\SOS_empresas_legajos\\SOS_empresas_legajos\\Pahue Technologies SA\\30-71910505-6_legajos.xls",
+    "excelFilas": 3,
+    "empleadosBD": 2,
+    "matches": 2,
+    "sinMatch": 1,
+    "motivoPrincipal": "Solo algunas filas del Excel encontraron match por CUIL/Legajo; hay legajos adicionales que no existen en BD."
+  },
+  {
+    "clientName": "Rojot SA",
+    "cuit": "30716753251",
+    "filePath": "C:\\Users\\Brian\\Downloads\\SOS_empresas_legajos\\SOS_empresas_legajos\\Rojot S.A_\\30-71675325-1_legajos.xls",
+    "excelFilas": 2,
+    "empleadosBD": 1,
+    "matches": 1,
+    "sinMatch": 1,
+    "motivoPrincipal": "Solo algunas filas del Excel encontraron match por CUIL/Legajo; hay legajos adicionales que no existen en BD."
+  },
+  {
+    "clientName": "Salem Jos├®",
+    "cuit": "20127571083",
+    "filePath": "C:\\Users\\Brian\\Downloads\\SOS_empresas_legajos\\SOS_empresas_legajos\\Salem, Jose Edgardo\\20-12757108-3_legajos.xls",
+    "excelFilas": 6,
+    "empleadosBD": 4,
+    "matches": 4,
+    "sinMatch": 2,
+    "motivoPrincipal": "Solo algunas filas del Excel encontraron match por CUIL/Legajo; hay legajos adicionales que no existen en BD."
+  },
+  {
+    "clientName": "Sigana SA",
+    "cuit": "30718149874",
+    "filePath": "C:\\Users\\Brian\\Downloads\\SOS_empresas_legajos\\SOS_empresas_legajos\\Sigana S.A_\\30-71814987-4_legajos.xls",
+    "excelFilas": 3,
+    "empleadosBD": 2,
+    "matches": 2,
+    "sinMatch": 1,
+    "motivoPrincipal": "Solo algunas filas del Excel encontraron match por CUIL/Legajo; hay legajos adicionales que no existen en BD."
+  }
+]

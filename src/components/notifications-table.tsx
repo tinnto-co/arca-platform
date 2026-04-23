@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Eye,
   Trash2,
@@ -7,8 +7,8 @@ import {
   Search,
   Download,
   FileText,
-} from "lucide-react";
-import { toast } from "sonner";
+} from 'lucide-react';
+import { toast } from 'sonner';
 
 import {
   Table,
@@ -17,13 +17,13 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
+} from '@/components/ui/table';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from '@/components/ui/dropdown-menu';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,22 +33,22 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+} from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from '@/components/ui/dialog';
 import {
   Pagination,
   PaginationContent,
@@ -56,13 +56,14 @@ import {
   PaginationLink,
   PaginationNext,
   PaginationPrevious,
-} from "@/components/ui/pagination";
+} from '@/components/ui/pagination';
 import {
   getNotifications,
   deleteNotification,
   getNotification,
-} from "@/actions/notification";
-import { getClients } from "@/actions/client";
+} from '@/actions/notification';
+import { getClients } from '@/actions/client';
+import { userQuery } from '../lib/user-query';
 
 interface NotificationData {
   id: string;
@@ -79,14 +80,18 @@ interface NotificationData {
 
 export function NotificationsTable() {
   const queryClient = useQueryClient();
+  const { data: user } = useQuery(userQuery);
+  const orgKey =
+    (user as { activeOrganizationId?: string | null } | null | undefined)
+      ?.activeOrganizationId ?? '__pending__';
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [notificationToDelete, setNotificationToDelete] = useState<
     string | null
   >(null);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [clientFilter, setClientFilter] = useState<string>("all");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [searchTerm, setSearchTerm] = useState('');
+  const [clientFilter, setClientFilter] = useState<string>('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [selectedNotification, setSelectedNotification] =
@@ -97,14 +102,15 @@ export function NotificationsTable() {
 
   // Get clients for filter dropdown
   const { data: clients = [] } = useQuery({
-    queryKey: ["clients"],
+    queryKey: ['clients'],
     queryFn: () => getClients(),
   });
 
   // Get notifications
   const { data: notificationsData, isLoading } = useQuery({
     queryKey: [
-      "notifications",
+      'notifications',
+      orgKey,
       currentPage,
       clientFilter,
       dateFrom,
@@ -116,7 +122,7 @@ export function NotificationsTable() {
         data: {
           page: currentPage,
           limit: pageSize,
-          clientFilter: clientFilter === "all" ? undefined : clientFilter,
+          clientFilter: clientFilter === 'all' ? undefined : clientFilter,
           dateFrom: dateFrom || undefined,
           dateTo: dateTo || undefined,
           search: searchTerm || undefined,
@@ -128,13 +134,13 @@ export function NotificationsTable() {
   const deleteMutation = useMutation({
     mutationFn: deleteNotification,
     onSuccess: () => {
-      toast.success("Notificación eliminada correctamente");
-      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      toast.success('Notificaci?n eliminada correctamente');
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
       setDeleteDialogOpen(false);
       setNotificationToDelete(null);
     },
     onError: (error) => {
-      toast.error("Error al eliminar la notificación");
+      toast.error('Error al eliminar la notificaci?n');
       console.error(error);
     },
   });
@@ -148,7 +154,7 @@ export function NotificationsTable() {
       const details = await getNotification({ data: { id: notification.id } });
       setNotificationDetails(details);
     } catch (error) {
-      toast.error("Error al cargar los detalles de la notificación");
+      toast.error('Error al cargar los detalles de la notificaci?n');
       console.error(error);
     }
   };
@@ -165,23 +171,23 @@ export function NotificationsTable() {
   };
 
   const handleDownloadAttachment = (url: string, filename: string) => {
-    const link = document.createElement("a");
+    const link = document.createElement('a');
     link.href = url;
     link.download = filename;
-    link.target = "_blank";
+    link.target = '_blank';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
   const formatDate = (date: Date | string) => {
-    const dateObj = typeof date === "string" ? new Date(date) : date;
-    return dateObj.toLocaleDateString("es-ES", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
+    const dateObj = typeof date === 'string' ? new Date(date) : date;
+    return dateObj.toLocaleDateString('es-ES', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
     });
   };
 
@@ -242,8 +248,8 @@ export function NotificationsTable() {
             <TableRow>
               <TableHead>Cliente</TableHead>
               <TableHead>Mensaje</TableHead>
-              <TableHead>Fecha Publicación</TableHead>
-              <TableHead>Fecha Expiración</TableHead>
+              <TableHead>Fecha Publicaci?n</TableHead>
+              <TableHead>Fecha Expiraci?n</TableHead>
               <TableHead className="text-right">Acciones</TableHead>
             </TableRow>
           </TableHeader>
@@ -330,8 +336,8 @@ export function NotificationsTable() {
                   onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
                   className={
                     currentPage === 1
-                      ? "pointer-events-none opacity-50"
-                      : "cursor-pointer"
+                      ? 'pointer-events-none opacity-50'
+                      : 'cursor-pointer'
                   }
                 />
               </PaginationItem>
@@ -357,8 +363,8 @@ export function NotificationsTable() {
                   }
                   className={
                     currentPage === totalPages
-                      ? "pointer-events-none opacity-50"
-                      : "cursor-pointer"
+                      ? 'pointer-events-none opacity-50'
+                      : 'cursor-pointer'
                   }
                 />
               </PaginationItem>
@@ -371,7 +377,7 @@ export function NotificationsTable() {
       <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[80vh]">
           <DialogHeader>
-            <DialogTitle>Detalles de la Notificación</DialogTitle>
+            <DialogTitle>Detalles de la Notificaci?n</DialogTitle>
           </DialogHeader>
 
           {selectedNotification && (
@@ -386,12 +392,12 @@ export function NotificationsTable() {
                 <div>
                   <label className="text-sm font-medium">Cliente</label>
                   <p className="text-sm text-muted-foreground">
-                    {selectedNotification.clientName || "Sin cliente"}
+                    {selectedNotification.clientName || 'Sin cliente'}
                   </p>
                 </div>
                 <div>
                   <label className="text-sm font-medium">
-                    Fecha de Publicación
+                    Fecha de Publicaci?n
                   </label>
                   <p className="text-sm text-muted-foreground">
                     {formatDate(selectedNotification.publicationDate)}
@@ -399,7 +405,7 @@ export function NotificationsTable() {
                 </div>
                 <div>
                   <label className="text-sm font-medium">
-                    Fecha de Expiración
+                    Fecha de Expiraci?n
                   </label>
                   <p className="text-sm text-muted-foreground">
                     {formatDate(selectedNotification.expirationDate)}
@@ -467,10 +473,10 @@ export function NotificationsTable() {
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
+            <AlertDialogTitle>?Est?s seguro?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta acción no se puede deshacer. Se eliminará permanentemente la
-              notificación.
+              Esta acci?n no se puede deshacer. Se eliminar? permanentemente la
+              notificaci?n.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

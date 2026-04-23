@@ -1,18 +1,16 @@
-import { createServerFn } from "@tanstack/react-start";
-import { getRequestHeaders } from "@tanstack/react-start/server";
-import z from "zod";
-import { db } from "@/lib/db";
-import { profile, client } from "@/drizzle/schema";
-import { auth } from "@/lib/auth";
-import { eq } from "drizzle-orm";
+import { createServerFn } from '@tanstack/react-start';
+import z from 'zod';
+import { db } from '@/lib/db';
+import { profile, client } from '@/drizzle/schema';
+import { getSessionWithOrg } from '@/actions/helpers';
+import { eq } from 'drizzle-orm';
 
 export const getProfile = createServerFn({
-  method: "GET",
+  method: 'GET',
 })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error("Unauthorized");
+    const { orgId } = await getSessionWithOrg();
 
     // Get profile with client information
     const [profileData] = await db
@@ -33,7 +31,7 @@ export const getProfile = createServerFn({
       .where(eq(profile.id, ctx.data.id))
       .limit(1);
 
-    if (!profileData) throw new Error("Perfil no encontrado");
+    if (!profileData) throw new Error('Perfil no encontrado');
 
     // Verify the client belongs to the user
     if (profileData.clientId) {
@@ -43,11 +41,10 @@ export const getProfile = createServerFn({
         .where(eq(client.id, profileData.clientId))
         .limit(1);
 
-      if (!clientData || clientData.userId !== session.user.id) {
-        throw new Error("No autorizado");
+      if (!clientData || clientData.organizationId !== orgId) {
+        throw new Error('No autorizado');
       }
     }
 
     return profileData;
   });
-
