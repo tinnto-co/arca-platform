@@ -4,7 +4,7 @@
  * Permite modificar fórmulas sin cambiar código.
  */
 
-export type PayrollFormulaContext = {
+export interface PayrollFormulaContext {
   basico?: number;
   antiguedad?: number; // años
   bruto?: number;
@@ -16,23 +16,27 @@ export type PayrollFormulaContext = {
   presentismo?: number;
   comisiones?: number;
   bonos?: number;
+  cantidad?: number;
+  porcentaje?: number; // % ingresado manualmente en el concepto
+  valor?: number;
   [key: string]: number | undefined;
-};
+}
 
 const ALLOWED_VARS = new Set([
-  "basico",
-  "antiguedad",
-  "bruto",
-  "totalRemunerativo",
-  "totalNoRemunerativo",
-  "totalDescuentos",
-  "neto",
-  "horasExtra",
-  "presentismo",
-  "comisiones",
-  "bonos",
-  "cantidad",
-  "valor",
+  'basico',
+  'antiguedad',
+  'bruto',
+  'totalRemunerativo',
+  'totalNoRemunerativo',
+  'totalDescuentos',
+  'neto',
+  'horasExtra',
+  'presentismo',
+  'comisiones',
+  'bonos',
+  'cantidad',
+  'porcentaje',
+  'valor',
 ]);
 
 /**
@@ -55,6 +59,32 @@ export function evaluatePayrollFormula(
   return evaluate(parsed, context);
 }
 
+export type PayrollFormulaEvalResult = {
+  ok: boolean;
+  value: number;
+  error?: string;
+};
+
+/**
+ * Evaluación estricta: nunca lanza excepción y reporta error de fórmula.
+ */
+export function evaluatePayrollFormulaStrict(
+  formula: string,
+  context: PayrollFormulaContext
+): PayrollFormulaEvalResult {
+  try {
+    const value = evaluatePayrollFormula(formula, context);
+    if (!Number.isFinite(value)) {
+      return { ok: false, value: 0, error: 'Resultado no finito en fórmula' };
+    }
+    return { ok: true, value };
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : 'Error desconocido de fórmula';
+    return { ok: false, value: 0, error: message };
+  }
+}
+
 function tokenize(expr: string): string[] {
   const tokens: string[] = [];
   let i = 0;
@@ -69,8 +99,8 @@ function tokenize(expr: string): string[] {
       i++;
       continue;
     }
-    if (/\d/.test(c) || (c === "." && /\d/.test(expr[i + 1]))) {
-      let num = "";
+    if (/\d/.test(c) || (c === '.' && /\d/.test(expr[i + 1]))) {
+      let num = '';
       while (i < expr.length && /[\d.]/.test(expr[i])) {
         num += expr[i];
         i++;
@@ -79,7 +109,7 @@ function tokenize(expr: string): string[] {
       continue;
     }
     if (/[a-zA-Z_]/.test(c)) {
-      let name = "";
+      let name = '';
       while (i < expr.length && /[a-zA-Z0-9_]/.test(expr[i])) {
         name += expr[i];
         i++;
@@ -93,10 +123,10 @@ function tokenize(expr: string): string[] {
 }
 
 type AST =
-  | { type: "number"; value: number }
-  | { type: "var"; name: string }
-  | { type: "binop"; op: string; left: AST; right: AST }
-  | { type: "unary"; op: string; arg: AST };
+  | { type: 'number'; value: number }
+  | { type: 'var'; name: string }
+  | { type: 'binop'; op: string; left: AST; right: AST }
+  | { type: 'unary'; op: string; arg: AST };
 
 let tokenIndex = 0;
 
@@ -106,9 +136,9 @@ function parseExpression(tokens: string[]): AST {
     let left = parseTerm();
     while (tokenIndex < tokens.length) {
       const t = tokens[tokenIndex];
-      if (t === "+" || t === "-") {
+      if (t === '+' || t === '-') {
         tokenIndex++;
-        left = { type: "binop", op: t, left, right: parseTerm() };
+        left = { type: 'binop', op: t, left, right: parseTerm() };
       } else break;
     }
     return left;
@@ -117,37 +147,38 @@ function parseExpression(tokens: string[]): AST {
     let left = parseFactor();
     while (tokenIndex < tokens.length) {
       const t = tokens[tokenIndex];
-      if (t === "*" || t === "/") {
+      if (t === '*' || t === '/') {
         tokenIndex++;
-        left = { type: "binop", op: t, left, right: parseFactor() };
+        left = { type: 'binop', op: t, left, right: parseFactor() };
       } else break;
     }
     return left;
   }
   function parseFactor(): AST {
-    if (tokenIndex >= tokens.length) return { type: "number", value: 0 };
+    if (tokenIndex >= tokens.length) return { type: 'number', value: 0 };
     const t = tokens[tokenIndex];
-    if (t === "(") {
+    if (t === '(') {
       tokenIndex++;
       const inner = parseExpr();
-      if (tokenIndex < tokens.length && tokens[tokenIndex] === ")") tokenIndex++;
+      if (tokenIndex < tokens.length && tokens[tokenIndex] === ')')
+        tokenIndex++;
       return inner;
     }
-    if (t === "-" || t === "+") {
+    if (t === '-' || t === '+') {
       tokenIndex++;
       const arg = parseFactor();
-      return { type: "unary", op: t, arg };
+      return { type: 'unary', op: t, arg };
     }
     if (/^\d*\.?\d+$/.test(t)) {
       tokenIndex++;
-      return { type: "number", value: parseFloat(t) };
+      return { type: 'number', value: parseFloat(t) };
     }
     if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(t)) {
       if (!ALLOWED_VARS.has(t)) {
         throw new Error(`Variable no permitida en fórmula: ${t}`);
       }
       tokenIndex++;
-      return { type: "var", name: t };
+      return { type: 'var', name: t };
     }
     throw new Error(`Token inválido en fórmula: ${t}`);
   }
@@ -156,24 +187,29 @@ function parseExpression(tokens: string[]): AST {
 
 function evaluate(node: AST, context: PayrollFormulaContext): number {
   switch (node.type) {
-    case "number":
+    case 'number':
       return node.value;
-    case "var": {
+    case 'var': {
       const v = context[node.name];
-      return typeof v === "number" ? v : 0;
+      return typeof v === 'number' ? v : 0;
     }
-    case "unary":
-      if (node.op === "-") return -evaluate(node.arg, context);
+    case 'unary':
+      if (node.op === '-') return -evaluate(node.arg, context);
       return evaluate(node.arg, context);
-    case "binop": {
+    case 'binop': {
       const l = evaluate(node.left, context);
       const r = evaluate(node.right, context);
       switch (node.op) {
-        case "+": return l + r;
-        case "-": return l - r;
-        case "*": return l * r;
-        case "/": return r === 0 ? 0 : l / r;
-        default: return 0;
+        case '+':
+          return l + r;
+        case '-':
+          return l - r;
+        case '*':
+          return l * r;
+        case '/':
+          return r === 0 ? 0 : l / r;
+        default:
+          return 0;
       }
     }
     default:

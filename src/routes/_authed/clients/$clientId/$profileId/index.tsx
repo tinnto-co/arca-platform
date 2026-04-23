@@ -1,7 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { ProfileDetailPage } from "@/components/profile-detail-page";
+import { createFileRoute } from '@tanstack/react-router';
+import { ProfileDetailPage } from '@/components/profile-detail-page';
 
-export const Route = createFileRoute("/_authed/clients/$clientId/$profileId/")({
+export const Route = createFileRoute('/_authed/clients/$clientId/$profileId/')({
   component: RouteComponent,
 });
 

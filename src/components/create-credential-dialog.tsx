@@ -1,10 +1,10 @@
-import * as React from "react";
-import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
-import { Plus } from "lucide-react";
+import * as React from 'react';
+import { useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
+import { Plus } from 'lucide-react';
 
 import {
   Dialog,
@@ -13,7 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog";
+} from '@/components/ui/dialog';
 import {
   Form,
   FormControl,
@@ -21,24 +21,24 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { useToast } from "@/hooks/use-toast";
+} from '@/components/ui/select';
+import { useToast } from '@/hooks/use-toast';
 
-import { createCredential } from "@/actions/credential";
+import { createCredential } from '@/actions/credential';
 
 const credentialSchema = z.object({
-  provider: z.string().min(1, "El proveedor es requerido"),
-  cuit: z.string().min(1, "El CUIT es requerido"),
-  password: z.string().min(1, "La contraseña es requerida"),
+  provider: z.string().min(1, 'El proveedor es requerido'),
+  cuit: z.string().min(1, 'El CUIT es requerido'),
+  password: z.string().min(1, 'La contraseña es requerida'),
 });
 
 type CredentialFormValues = z.infer<typeof credentialSchema>;
@@ -59,28 +59,28 @@ export function CreateCredentialDialog({
   const form = useForm<CredentialFormValues>({
     resolver: zodResolver(credentialSchema),
     defaultValues: {
-      provider: "arca",
-      cuit: "",
-      password: "",
+      provider: 'arca',
+      cuit: '',
+      password: '',
     },
   });
 
   const createCredentialMutation = useMutation({
     mutationFn: createCredential,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["credentials", clientId] });
+      queryClient.invalidateQueries({ queryKey: ['credentials', clientId] });
       form.reset();
       setOpen(false);
       toast({
-        title: "Credencial creada",
-        description: "La credencial se ha creado exitosamente.",
+        title: 'Credencial creada',
+        description: 'La credencial se ha creado exitosamente.',
       });
     },
     onError: (error: any) => {
       toast({
-        title: "Error",
-        description: error.message || "Error al crear la credencial",
-        variant: "destructive",
+        title: 'Error',
+        description: error.message || 'Error al crear la credencial',
+        variant: 'destructive',
       });
     },
   });
@@ -181,7 +181,7 @@ export function CreateCredentialDialog({
                 type="submit"
                 disabled={createCredentialMutation.isPending}
               >
-                {createCredentialMutation.isPending ? "Creando..." : "Crear"}
+                {createCredentialMutation.isPending ? 'Creando...' : 'Crear'}
               </Button>
             </div>
           </form>

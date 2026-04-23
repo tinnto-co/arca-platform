@@ -1,10 +1,10 @@
-import * as React from "react";
-import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
-import { Edit } from "lucide-react";
+import * as React from 'react';
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
+import { Edit } from 'lucide-react';
 
 import {
   Dialog,
@@ -13,7 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog";
+} from '@/components/ui/dialog';
 import {
   Form,
   FormControl,
@@ -21,24 +21,24 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { useToast } from "@/hooks/use-toast";
+} from '@/components/ui/select';
+import { useToast } from '@/hooks/use-toast';
 
-import { getCredential, updateCredential } from "@/actions/credential";
+import { getCredential, updateCredential } from '@/actions/credential';
 
 const credentialSchema = z.object({
-  provider: z.string().min(1, "El proveedor es requerido"),
-  cuit: z.string().min(1, "El CUIT es requerido"),
-  password: z.string().min(1, "La contraseña es requerida"),
+  provider: z.string().min(1, 'El proveedor es requerido'),
+  cuit: z.string().min(1, 'El CUIT es requerido'),
+  password: z.string().min(1, 'La contraseña es requerida'),
 });
 
 type CredentialFormValues = z.infer<typeof credentialSchema>;
@@ -59,7 +59,7 @@ export function EditCredentialDialog({
   const queryClient = useQueryClient();
 
   const { data: credential, isLoading } = useQuery({
-    queryKey: ["credential", credentialId],
+    queryKey: ['credential', credentialId],
     queryFn: () => getCredential({ data: { id: credentialId } }),
     enabled: open,
   });
@@ -67,9 +67,9 @@ export function EditCredentialDialog({
   const form = useForm<CredentialFormValues>({
     resolver: zodResolver(credentialSchema),
     defaultValues: {
-      provider: "arca",
-      cuit: "",
-      password: "",
+      provider: 'arca',
+      cuit: '',
+      password: '',
     },
   });
 
@@ -78,8 +78,8 @@ export function EditCredentialDialog({
     if (credential) {
       form.reset({
         provider: credential.provider,
-        cuit: credential.data.cuit || "",
-        password: "", // Don't pre-fill password for security
+        cuit: credential.data.cuit || '',
+        password: '', // Don't pre-fill password for security
       });
     }
   }, [credential, form]);
@@ -87,20 +87,20 @@ export function EditCredentialDialog({
   const updateCredentialMutation = useMutation({
     mutationFn: updateCredential,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["credentials", clientId] });
-      queryClient.invalidateQueries({ queryKey: ["credential", credentialId] });
+      queryClient.invalidateQueries({ queryKey: ['credentials', clientId] });
+      queryClient.invalidateQueries({ queryKey: ['credential', credentialId] });
       form.reset();
       setOpen(false);
       toast({
-        title: "Credencial actualizada",
-        description: "La credencial se ha actualizado exitosamente.",
+        title: 'Credencial actualizada',
+        description: 'La credencial se ha actualizado exitosamente.',
       });
     },
     onError: (error: any) => {
       toast({
-        title: "Error",
-        description: error.message || "Error al actualizar la credencial",
-        variant: "destructive",
+        title: 'Error',
+        description: error.message || 'Error al actualizar la credencial',
+        variant: 'destructive',
       });
     },
   });
@@ -204,8 +204,8 @@ export function EditCredentialDialog({
                   disabled={updateCredentialMutation.isPending}
                 >
                   {updateCredentialMutation.isPending
-                    ? "Actualizando..."
-                    : "Actualizar"}
+                    ? 'Actualizando...'
+                    : 'Actualizar'}
                 </Button>
               </div>
             </form>

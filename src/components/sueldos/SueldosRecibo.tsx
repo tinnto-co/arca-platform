@@ -1,146 +1,381 @@
-"use client";
+'use client';
 
-import { useState, useMemo, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { format } from "date-fns";
-import { es } from "date-fns/locale";
-import { FileText, FileDown } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
+import { FileText } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { listLiquidacionesByPeriodo, getReciboDetalle, getPayrollEmployerConfig } from "@/actions/sueldos";
-import { montoEnLetras } from "@/lib/numero-a-letras";
-import { Button } from "@/components/ui/button";
+} from '@/components/ui/select';
 import {
-  getPeriodoMesAnterior,
-  getPeriodoMesActual,
-} from "@/lib/payroll-period-rules";
+  listLiquidacionesByPeriodo,
+  getReciboDetalle,
+} from '@/actions/sueldos';
+import { getClient } from '@/actions/client';
+import { legajoParaMostrar } from '@/lib/legajo';
 
 const now = new Date();
-const ANOS = Array.from({ length: 6 }, (_, i) => now.getFullYear() - i);
+const ANOS = Array.from({ length: 8 }, (_, i) => now.getFullYear() - i);
 const MESES = Array.from({ length: 12 }, (_, i) => ({
-  value: String(i + 1).padStart(2, "0"),
-  label: format(new Date(2000, i, 1), "MMMM", { locale: es }),
+  value: String(i + 1).padStart(2, '0'),
+  label: format(new Date(2000, i, 1), 'MMMM', { locale: es }),
 }));
 
 interface SueldosReciboProps {
   clientId: string;
-  reciboPreload?: { periodo: string; liquidacionId: string } | null;
-  onPreloadApplied?: () => void;
+  profileId: string;
 }
 
-const periodoActual = getPeriodoMesActual();
-const [PERIODO_INICIAL_ANO, PERIODO_INICIAL_MES] = getPeriodoMesAnterior().split("-");
-
-export function SueldosRecibo({
-  clientId,
-  reciboPreload,
-  onPreloadApplied,
-}: SueldosReciboProps) {
-  const [ano, setAno] = useState(PERIODO_INICIAL_ANO);
-  const [mes, setMes] = useState(PERIODO_INICIAL_MES);
-  const periodo = useMemo(() => `${ano}-${mes}`, [ano, mes]);
-  const [liquidacionId, setLiquidacionId] = useState("");
-
-  /** Solo meses anteriores al en curso: para el año seleccionado, filtrar meses */
-  const mesesDisponibles = useMemo(() => {
-    const anoActual = now.getFullYear();
-    const mesEnCurso = now.getMonth() + 1; // 1-indexed
-    if (Number(ano) === anoActual) {
-      return MESES.slice(0, mesEnCurso - 1);
-    }
-    return MESES;
-  }, [ano]);
-
-  useEffect(() => {
-    if (!reciboPreload) return;
-    const periodoPreload = reciboPreload.periodo;
-    if (periodoPreload >= periodoActual) return;
-    const [a, m] = periodoPreload.split("-");
-    setAno(a);
-    setMes(m);
-    setLiquidacionId(reciboPreload.liquidacionId);
-    onPreloadApplied?.();
-  }, [reciboPreload, onPreloadApplied]);
-
-  useEffect(() => {
-    if (periodo >= periodoActual) {
-      const [a, m] = getPeriodoMesAnterior().split("-");
-      setAno(a);
-      setMes(m);
-      setLiquidacionId("");
-    }
-  }, [periodo, periodoActual]);
-
-  const { data: liquidaciones = [] } = useQuery({
-    queryKey: ["liquidaciones", clientId, periodo, "recibo"],
-    queryFn: () =>
-      listLiquidacionesByPeriodo({
-        data: { clientId, periodo, soloRecibosConfirmados: true },
-      }),
-    enabled: !!clientId,
-  });
-
-  const { data: recibo, isLoading } = useQuery({
-    queryKey: ["recibo", liquidacionId],
-    queryFn: () => getReciboDetalle({ data: { liquidacionId, clientId } }),
-    enabled: !!liquidacionId && !!clientId,
-  });
-
-  const { data: employerConfig } = useQuery({
-    queryKey: ["payroll-employer-config", clientId],
-    queryFn: () => getPayrollEmployerConfig({ data: { clientId } }),
-    enabled: !!clientId,
-  });
-
-  const options = liquidaciones.map((l) => ({
-    id: l.liquidacion.id,
-    label: `${l.empleado.apellido}, ${l.empleado.nombre}`,
-  }));
-
-  const handleImprimirPdf = () => {
-    const cleanup = () => {
-      document.body.classList.remove("recibo-print-mode");
-      window.removeEventListener("afterprint", cleanup);
-    };
-    window.addEventListener("afterprint", cleanup);
-    document.body.classList.add("recibo-print-mode");
-    window.print();
+function tipoReciboLabel(tipo: string | null): string {
+  if (!tipo) return 'Sueldo';
+  const byTipo: Record<string, string> = {
+    sueldo: 'Sueldo',
+    anticipo: 'Anticipo',
+    SAC: 'SAC',
+    vacaciones: 'Vacaciones',
+    despido: 'Liquidación final',
+    comisiones: 'Comisiones',
+    desempleo: 'Fondo de desempleo',
+    varios: 'Varios',
   };
+  return byTipo[tipo] ?? tipo;
+}
+
+function quincenaLabel(q: string | null): string {
+  if (q === '1') return '1ra quincena';
+  if (q === '2') return '2da quincena';
+  return 'Mes completo';
+}
+
+function moneyFmt(v: string | number | null | undefined): string {
+  if (v === null || v === undefined || v === '') return '—';
+  const n = typeof v === 'number' ? v : Number(v);
+  if (Number.isNaN(n)) return '—';
+  return n.toLocaleString('es-AR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+/** Suma montos de líneas de detalle (mismo criterio que la grilla del recibo). */
+function sumaMontosDetalle(
+  rows: Array<{ detalle: { monto: string | null | undefined } }>
+): number {
+  return rows.reduce((acc, r) => {
+    const n = Number(r.detalle.monto ?? 0);
+    return acc + (Number.isFinite(n) ? n : 0);
+  }, 0);
+}
+
+function redondearPesos(n: number): number {
+  return Math.round((Number.isFinite(n) ? n : 0) * 100) / 100;
+}
+
+function esCategoriaGerente(v: string | null | undefined): boolean {
+  if (!v) return false;
+  return v.trim().toLowerCase().includes('gerente');
+}
+
+function basicoDesdeDetalle(
+  rows: Array<{
+    detalle: { codigo: string; monto: string | null };
+    concepto?: { numeroSos?: number | null; nombre?: string | null } | null;
+    conceptoSos?: { codigo?: string | null; nombre?: string | null } | null;
+  }>
+): number {
+  for (const r of rows) {
+    const numSos = r.concepto?.numeroSos ?? null;
+    const codDet = (r.detalle.codigo ?? '').trim();
+    const codSos = (r.conceptoSos?.codigo ?? '').trim();
+    const nombre = `${r.concepto?.nombre ?? ''} ${r.conceptoSos?.nombre ?? ''}`
+      .trim()
+      .toLowerCase();
+    const esBasico =
+      numSos === 1 ||
+      codDet === '1' ||
+      codSos === '1' ||
+      nombre.includes('sueldo basico') ||
+      nombre.includes('sueldo básico');
+    if (!esBasico) continue;
+    const monto = Number(r.detalle.monto ?? 0);
+    if (Number.isFinite(monto) && monto > 0) return monto;
+  }
+  return 0;
+}
+
+function dateFmt(d: Date | string | null | undefined): string {
+  if (d === null || d === undefined || d === '') return '—';
+  const date = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(date.getTime())) return '—';
+  return format(date, 'dd/MM/yyyy');
+}
+
+function formaPagoLabel(v: string | null | undefined): string {
+  if (!v) return '—';
+  const s = String(v).trim().toLowerCase();
+  /** Códigos SOS / import (1–4), por si el dato llega sin normalizar del servidor. */
+  if (s === '1' || s === 'efectivo') return 'Efectivo';
+  if (s === '2' || s === 'acreditacion' || s === 'acreditación') {
+    return 'Acreditación';
+  }
+  if (s === '3' || s === 'cheque') return 'Cheque';
+  if (s === '4' || s === 'otro' || s === 'otros') return 'Otro';
+  const by: Record<string, string> = {
+    efectivo: 'Efectivo',
+    cheque: 'Cheque',
+    acreditacion: 'Acreditación',
+  };
+  return by[s] ?? String(v);
+}
+
+/** Lectura defensiva: serialización puede exponer camelCase o snake_case; fechas como string ISO. */
+function strU(v: unknown): string | undefined {
+  if (v === null || v === undefined) return undefined;
+  const s = String(v).trim();
+  return s.length === 0 ? undefined : s;
+}
+
+function bancoLabel(v: string | null | undefined): string {
+  const s = strU(v);
+  if (!s) return '—';
+  if (s === '_otro banco') return 'Otro banco';
+  return s;
+}
+
+/** Ignora guiones / placeholders que no son datos reales (import o celdas vacías). */
+function valorCabeceraLegible(v: unknown): string | null {
+  const s = strU(v);
+  if (!s) return null;
+  if (s === '—' || s === '-' || s === '–') return null;
+  const lower = s.toLowerCase();
+  if (lower === 'n/a' || lower === 's/d' || lower === 's.d.') return null;
+  return s;
+}
+
+function pickCabecera(liquidacion: Record<string, unknown>) {
+  const fechaPagoRaw = liquidacion.fechaPago ?? liquidacion.fecha_pago ?? null;
+  const fechaLiqRaw = liquidacion.fecha ?? null;
+  const lugar =
+    valorCabeceraLegible(liquidacion.lugarPago) ??
+    valorCabeceraLegible(liquidacion.lugar_pago) ??
+    null;
+  const bancoVal = valorCabeceraLegible(liquidacion.banco);
+  const forma =
+    valorCabeceraLegible(liquidacion.formaPago) ??
+    valorCabeceraLegible(liquidacion.forma_pago) ??
+    null;
+  const cbuVal = valorCabeceraLegible(liquidacion.cbu);
+  /** Si falta fecha de pago pero hay fecha de liquidación, mostrar esa. */
+  const fechaPagoParaMostrar = fechaPagoRaw ?? fechaLiqRaw;
+  return {
+    lugarPago: lugar,
+    banco: bancoVal,
+    formaPago: forma,
+    cbu: cbuVal,
+    fechaPagoParaMostrar,
+  };
+}
+
+type CabeceraPago = ReturnType<typeof pickCabecera>;
+
+/** Completa con datos del legajo (empleado) cuando el recibo no trae cabecera útil. */
+function completarCabeceraConLegajo(
+  cab: CabeceraPago,
+  empleado: {
+    lugarPago?: string | null;
+    formaPago?: string | null;
+    cbu?: string | null;
+    banco?: string | null;
+  }
+): CabeceraPago {
+  return {
+    ...cab,
+    lugarPago: cab.lugarPago ?? valorCabeceraLegible(empleado.lugarPago),
+    banco: cab.banco ?? valorCabeceraLegible(empleado.banco),
+    formaPago: cab.formaPago ?? valorCabeceraLegible(empleado.formaPago),
+    cbu: cab.cbu ?? valorCabeceraLegible(empleado.cbu),
+  };
+}
+
+// ─── Número a letras (pesos argentinos) ─────────────────────────────────────
+const UNIDADES = [
+  '', 'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve',
+  'diez', 'once', 'doce', 'trece', 'catorce', 'quince', 'dieciséis', 'diecisiete',
+  'dieciocho', 'diecinueve',
+];
+const DECENAS = [
+  '', 'diez', 'veinte', 'treinta', 'cuarenta', 'cincuenta', 'sesenta', 'setenta',
+  'ochenta', 'noventa',
+];
+const CENTENAS = [
+  '', 'ciento', 'doscientos', 'trescientos', 'cuatrocientos', 'quinientos',
+  'seiscientos', 'setecientos', 'ochocientos', 'novecientos',
+];
+
+function cientos(n: number): string {
+  if (n === 100) return 'cien';
+  const c = Math.floor(n / 100);
+  const resto = n % 100;
+  const parteC = CENTENAS[c] ?? '';
+  if (resto === 0) return parteC;
+  if (resto < 20) return `${parteC} ${UNIDADES[resto]}`.trim();
+  const d = Math.floor(resto / 10);
+  const u = resto % 10;
+  const parteD = DECENAS[d] ?? '';
+  const parteU = u > 0 ? ` y ${UNIDADES[u]}` : '';
+  return `${parteC} ${parteD}${parteU}`.trim();
+}
+
+function miles(n: number): string {
+  if (n < 1000) return cientos(n);
+  const m = Math.floor(n / 1000);
+  const resto = n % 1000;
+  const parteM = m === 1 ? 'mil' : `${cientos(m)} mil`;
+  if (resto === 0) return parteM;
+  return `${parteM} ${cientos(resto)}`;
+}
+
+function millones(n: number): string {
+  if (n < 1_000_000) return miles(n);
+  const m = Math.floor(n / 1_000_000);
+  const resto = n % 1_000_000;
+  const parteM =
+    m === 1 ? 'un millón' : `${miles(m)} millones`;
+  if (resto === 0) return parteM;
+  return `${parteM} ${miles(resto)}`;
+}
+
+function pesoEnLetras(valor: string | number | null | undefined): string {
+  if (!valor) return 'cero pesos';
+  const n = typeof valor === 'number' ? valor : Number(valor);
+  if (Number.isNaN(n) || n < 0) return '—';
+  const entero = Math.floor(n);
+  const cents = Math.round((n - entero) * 100);
+  const parteEntera = entero === 0 ? 'cero' : millones(entero);
+  const sufijo = entero === 1 ? 'peso' : 'pesos';
+  if (cents === 0) return `${parteEntera} ${sufijo}`;
+  return `${parteEntera} ${sufijo} con ${cents}/100`;
+}
+// ────────────────────────────────────────────────────────────────────────────
+
+type ConceptoTipo =
+  | 'remunerativo'
+  | 'no_remunerativo'
+  | 'descuento'
+  | 'retencion';
+
+function clasificarTipo(tipo: string | null | undefined): ConceptoTipo {
+  if (tipo === 'remunerativo') return 'remunerativo';
+  if (tipo === 'no_remunerativo') return 'no_remunerativo';
+  if (tipo === 'retencion') return 'retencion';
+  return 'descuento';
+}
+
+/**
+ * Columna del recibo (SOS Contador): el servidor calcula `tipoColumna` por rango 1–599 / ARCA.
+ * Va antes que `tipoLiquidacion` (motor) para no pisar la regla de columnas del recibo.
+ */
+function columnaConcepto(d: {
+  tipoColumna?: ConceptoTipo;
+  detalle?: { tipoLiquidacion?: string | null };
+  concepto?: { tipo?: string | null } | null;
+}): ConceptoTipo {
+  if (
+    d.tipoColumna === 'remunerativo' ||
+    d.tipoColumna === 'no_remunerativo' ||
+    d.tipoColumna === 'descuento' ||
+    d.tipoColumna === 'retencion'
+  ) {
+    return d.tipoColumna;
+  }
+  const tl = d.detalle?.tipoLiquidacion;
+  if (
+    tl === 'remunerativo' ||
+    tl === 'no_remunerativo' ||
+    tl === 'descuento' ||
+    tl === 'retencion'
+  ) {
+    return tl;
+  }
+  return clasificarTipo(d.concepto?.tipo ?? null);
+}
+
+// ─── Celda de la grilla del documento ───────────────────────────────────────
+function DocCell({
+  label,
+  value,
+  className = '',
+}: {
+  label: string;
+  value: string | React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`flex flex-col px-2 py-1 ${className}`}>
+      <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </span>
+      <span className="mt-0.5 text-sm font-medium leading-tight">{value || '—'}</span>
+    </div>
+  );
+}
+
+export function SueldosRecibo({ clientId, profileId }: SueldosReciboProps) {
+  const [ano, setAno] = useState(String(now.getFullYear()));
+  const [mes, setMes] = useState(String(now.getMonth() + 1).padStart(2, '0'));
+  const periodo = useMemo(() => `${ano}-${mes}`, [ano, mes]);
+  const [reciboId, setReciboId] = useState('');
+
+  const { data: clientData } = useQuery({
+    queryKey: ['client', clientId],
+    queryFn: () => getClient({ data: { id: clientId } }),
+    enabled: !!clientId,
+  });
+
+  const { data: recibosPeriodo = [], isLoading: loadingList } = useQuery({
+    queryKey: ['liquidaciones-recibo', clientId, profileId, periodo],
+    queryFn: () =>
+      listLiquidacionesByPeriodo({ data: { clientId, profileId, periodo } }),
+    enabled: !!clientId && !!profileId,
+  });
+
+  const { data: detalle, isLoading: loadingDetalle } = useQuery({
+    queryKey: ['recibo-detalle', reciboId, clientId],
+    queryFn: () =>
+      getReciboDetalle({ data: { liquidacionId: reciboId, clientId } }),
+    enabled: !!reciboId && !!clientId,
+  });
 
   return (
-    <div className="space-y-6">
-      <Card className="print:hidden">
+    <div className="w-full min-w-0 max-w-full space-y-6">
+      {/* ── Selectores ────────────────────────────────────────────────────── */}
+      <Card>
         <CardHeader>
-          <CardTitle>Recibo de sueldo</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <FileText className="h-5 w-5" />
+            Recibos liquidados
+          </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Seleccione período y empleado para ver el recibo.
+            Seleccioná período y recibo para ver el detalle de la liquidación.
           </p>
         </CardHeader>
         <CardContent className="flex flex-wrap items-end gap-4">
-          <p className="text-xs text-muted-foreground w-full">
-            Solo se muestran meses anteriores al en curso.
-          </p>
           <div>
             <label className="mb-2 block text-sm font-medium">Año</label>
             <Select
               value={ano}
               onValueChange={(v) => {
                 setAno(v);
-                setLiquidacionId("");
-                const mesEnCurso = now.getMonth() + 1;
-                const anoActual = now.getFullYear();
-                if (Number(v) === anoActual && Number(mes) >= mesEnCurso) {
-                  setMes(String(mesEnCurso - 1).padStart(2, "0"));
-                }
+                setReciboId('');
               }}
             >
-              <SelectTrigger className="w-[100px]">
+              <SelectTrigger className="w-[120px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -154,12 +389,18 @@ export function SueldosRecibo({
           </div>
           <div>
             <label className="mb-2 block text-sm font-medium">Mes</label>
-            <Select value={mes} onValueChange={(v) => { setMes(v); setLiquidacionId(""); }}>
-              <SelectTrigger className="w-[140px]">
+            <Select
+              value={mes}
+              onValueChange={(v) => {
+                setMes(v);
+                setReciboId('');
+              }}
+            >
+              <SelectTrigger className="w-[160px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {mesesDisponibles.map((m) => (
+                {MESES.map((m) => (
                   <SelectItem key={m.value} value={m.value}>
                     {m.label}
                   </SelectItem>
@@ -168,285 +409,381 @@ export function SueldosRecibo({
             </Select>
           </div>
           <div>
-            <label className="mb-2 block text-sm font-medium">Empleado</label>
-            <Select value={liquidacionId} onValueChange={setLiquidacionId}>
-              <SelectTrigger className="w-[280px]">
-                <SelectValue placeholder="Seleccione liquidación" />
+            <label className="mb-2 block text-sm font-medium">Recibo</label>
+            <Select value={reciboId} onValueChange={setReciboId}>
+              <SelectTrigger className="w-[min(100%,320px)] max-w-[320px]">
+                <SelectValue
+                  placeholder={
+                    loadingList ? 'Cargando…' : 'Seleccioná un recibo'
+                  }
+                />
               </SelectTrigger>
               <SelectContent>
-                {options.map((o) => (
-                  <SelectItem key={o.id} value={o.id}>
-                    {o.label}
+                {recibosPeriodo.map((r) => (
+                  <SelectItem
+                    key={r.liquidacion.id}
+                    value={r.liquidacion.id}
+                  >
+                    {`${r.empleado.nombre} · ${tipoReciboLabel(r.liquidacion.tipo)}`}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
-          {liquidacionId && (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleImprimirPdf}
-              className="print:hidden"
-            >
-              <FileDown className="mr-2 h-4 w-4" />
-              Imprimir PDF
-            </Button>
-          )}
         </CardContent>
       </Card>
 
-      {liquidacionId && (
-        <div className="space-y-6">
-          {isLoading ? (
-            <Card className="min-w-[420px] max-w-2xl">
+      {/* ── Recibo ────────────────────────────────────────────────────────── */}
+      {reciboId && (
+        <>
+          {loadingDetalle ? (
+            <Card>
               <CardContent className="py-8">
                 <p className="text-muted-foreground">Cargando…</p>
               </CardContent>
             </Card>
-          ) : !recibo ? (
-            <Card className="min-w-[420px] max-w-2xl">
+          ) : !detalle ? (
+            <Card>
               <CardContent className="py-8">
-                <p className="text-muted-foreground">No se encontró el recibo.</p>
+                <p className="text-muted-foreground">
+                  No se encontró el recibo.
+                </p>
               </CardContent>
             </Card>
           ) : (
-            <div
-              id="recibo-print-area"
-              className="recibo-print-area grid gap-8 w-full grid-cols-1 md:grid-cols-[minmax(420px,1fr)_minmax(420px,1fr)] overflow-x-auto print:grid-cols-1 print:gap-0 print:overflow-visible"
-            >
-              <ReciboContent
-                recibo={recibo}
-                periodo={periodo}
-                tituloEjemplar="Ejemplar empleado"
-                imprimirTotalRedondeado={employerConfig?.imprimirTotalRedondeado ?? false}
-                firmaEmpleadorUrl={employerConfig?.firmaEmpleadorUrl ?? null}
-              />
-              <ReciboContent
-                recibo={recibo}
-                periodo={periodo}
-                tituloEjemplar="Ejemplar empleador"
-                imprimirTotalRedondeado={employerConfig?.imprimirTotalRedondeado ?? false}
-                firmaEmpleadorUrl={employerConfig?.firmaEmpleadorUrl ?? null}
-              />
-            </div>
+            <ReciboDocumento detalle={detalle} clientData={clientData ?? null} />
           )}
-        </div>
+        </>
       )}
     </div>
   );
 }
 
-function ReciboContent({
-  recibo,
-  periodo,
-  tituloEjemplar,
-  imprimirTotalRedondeado = false,
-  firmaEmpleadorUrl = null,
+// ─── Componente del documento recibo ────────────────────────────────────────
+type DetalleType = NonNullable<
+  Awaited<ReturnType<typeof getReciboDetalle>>
+>;
+type ClientData = Awaited<ReturnType<typeof getClient>>;
+
+function ReciboDocumento({
+  detalle,
+  clientData,
 }: {
-  recibo: {
-    liquidacion: {
-      totalRemunerativo: string;
-      totalNoRemunerativo: string | null;
-      totalDescuentos: string;
-      neto: string;
-    };
-    empleado: { apellido: string; nombre: string; cuilCuil: string };
-    convenio: { nombre: string };
-    categoria: { nombre: string };
-    detalles: {
-      detalle: { id: string; monto: string; cantidad: string | null };
-      concepto: {
-        codigo: string;
-        nombre: string;
-        tipo: "remunerativo" | "no_remunerativo" | "descuento";
-        formula?: string;
-      };
-    }[];
-  };
-  periodo: string;
-  tituloEjemplar: "Ejemplar empleado" | "Ejemplar empleador";
-  imprimirTotalRedondeado?: boolean;
-  firmaEmpleadorUrl?: string | null;
+  detalle: DetalleType;
+  clientData: ClientData | null;
 }) {
-  const liq = recibo.liquidacion;
-  const netoNum = Number(liq.neto);
-  const netoDisplay = imprimirTotalRedondeado ? Math.round(netoNum) : netoNum;
-  const emp = recibo.empleado;
-  const isEjemplarEmpleador = tituloEjemplar === "Ejemplar empleador";
-  // periodo viene del filtro como "YYYY-MM"
-  const [anio, mes] = periodo.split("-");
-  const periodoLabel = format(
-    new Date(parseInt(anio, 10), parseInt(mes, 10) - 1, 1),
-    "MMMM yyyy",
-    { locale: es }
+  const {
+    liquidacion,
+    empleado,
+    convenio,
+    categoria,
+    obraSocial,
+    detalles,
+    basicoCalculado,
+    basicoEscalaCategoria,
+  } = detalle;
+
+  const basicoCalculadoNum = Number(basicoCalculado ?? 0);
+  const basicoEscalaNum = Number(basicoEscalaCategoria ?? 0);
+  const basicoLiquidacionNum = Number(liquidacion.basico ?? 0);
+  const basicoDetalleNum = basicoDesdeDetalle(detalles);
+  const esGerente =
+    esCategoriaGerente(categoria?.nombre) || esCategoriaGerente(empleado.categoria);
+  const mostrarBasicoEscalaGerente =
+    esGerente &&
+    Number.isFinite(basicoCalculadoNum) &&
+    basicoCalculadoNum <= 0 &&
+    Number.isFinite(basicoEscalaNum) &&
+    basicoEscalaNum > 0;
+  const basicoMostrado = mostrarBasicoEscalaGerente
+    ? basicoEscalaNum
+    : esGerente && basicoCalculadoNum <= 0
+      ? basicoLiquidacionNum > 0
+        ? basicoLiquidacionNum
+        : basicoDetalleNum > 0
+          ? basicoDetalleNum
+          : basicoCalculado
+      : basicoCalculado;
+
+  // Clasificar conceptos por tipo (solo los activos)
+  const conceptosActivos = detalles.filter((d) => d.detalle.activoEnRecibo);
+  const haberesCon = conceptosActivos.filter(
+    (d) => columnaConcepto(d) === 'remunerativo'
+  );
+  const haberesSin = conceptosActivos.filter(
+    (d) => columnaConcepto(d) === 'no_remunerativo'
+  );
+  const descuentos = conceptosActivos.filter(
+    (d) => columnaConcepto(d) === 'descuento'
+  );
+  const retenciones = conceptosActivos.filter(
+    (d) => columnaConcepto(d) === 'retencion'
   );
 
-  /** Devuelve el texto para la columna Cantidad: días (básico), % presentismo, % descuentos, o cantidad de novedad */
-  function cantidadLabel(
-    d: (typeof recibo.detalles)[number]
-  ): string {
-    const codigo = d.concepto.codigo?.toUpperCase() ?? "";
-    const formula = d.concepto.formula ?? "";
-    const cant = d.detalle.cantidad != null ? Number(d.detalle.cantidad) : null;
+  // Filas de la tabla: unimos los 4 grupos en orden
+  const filas = [
+    ...haberesCon.map((d) => ({ ...d, col: 'hab' as const })),
+    ...descuentos.map((d) => ({ ...d, col: 'desc' as const })),
+    ...retenciones.map((d) => ({ ...d, col: 'ret' as const })),
+    ...haberesSin.map((d) => ({ ...d, col: 'noRem' as const })),
+  ];
 
-    if (codigo === "BASICO") return "30"; // días trabajados del mes
-    if (codigo === "PRES") return "8,33%";
-    if (d.concepto.tipo === "descuento" && formula) {
-      const match = formula.match(/0\.\d+/);
-      if (match) {
-        const pct = parseFloat(match[0]) * 100;
-        return pct % 1 === 0 ? `${Math.round(pct)}%` : `${pct.toFixed(2).replace(/\.?0+$/, "")}%`;
-      }
-    }
-    if (cant != null && !Number.isNaN(cant) && cant !== 0)
-      return String(cant);
-    return "";
-  }
+  /**
+   * Totales por columna = suma de las filas visibles (reglas SOS / tipoColumna).
+   * No usar solo liquidacion.haberes/descuentos/…: el motor puede clasificar distinto
+   * y quedar en 0 en el encabezado aunque haya importes en la grilla.
+   */
+  const totalHaberes = redondearPesos(sumaMontosDetalle(haberesCon));
+  const totalDescuentos = redondearPesos(sumaMontosDetalle(descuentos));
+  const totalRetenciones = redondearPesos(sumaMontosDetalle(retenciones));
+  const totalNoRemunerativo = redondearPesos(sumaMontosDetalle(haberesSin));
+  const neto = redondearPesos(
+    totalHaberes +
+      totalNoRemunerativo -
+      totalDescuentos -
+      totalRetenciones
+  );
 
-  /** Quita del nombre del concepto la parte entre paréntesis con porcentaje (ej. "Jubilación (11%)" → "Jubilación") */
-  const nombreSinParentesis = (nombre: string) =>
-    nombre.replace(/\s*\([^)]*%[^)]*\)\s*$/, "").trim();
-
-  const filas = recibo.detalles.map((d) => {
-    const monto = Number(d.detalle.monto);
-    const tipo = d.concepto.tipo;
-    return {
-      id: d.detalle.id,
-      nombre: nombreSinParentesis(d.concepto.nombre),
-      cantidadTexto: cantidadLabel(d),
-      remunerativo: tipo === "remunerativo" ? monto : 0,
-      noRemunerativo: tipo === "no_remunerativo" ? monto : 0,
-      descuentos: tipo === "descuento" ? monto : 0,
-    };
-  });
-
-  const totalRemunerativo = filas.reduce((acc, f) => acc + f.remunerativo, 0);
-  const totalNoRemunerativo = filas.reduce((acc, f) => acc + f.noRemunerativo, 0);
-  const totalDescuentos = filas.reduce((acc, f) => acc + f.descuentos, 0);
+  const cab = completarCabeceraConLegajo(
+    pickCabecera(liquidacion as unknown as Record<string, unknown>),
+    empleado
+  );
 
   return (
-    <Card className="recibo-sheet min-w-[420px] max-w-2xl w-full print:max-w-none print:min-w-0 print:break-inside-avoid flex-shrink-0 print:overflow-visible">
-      <CardContent className="p-6 font-sans print:shadow-none print:overflow-visible">
-        <div className="space-y-6">
-          <div className="border-b pb-4">
-            <h2 className="text-lg font-bold">Recibo de haberes</h2>
-            <p className="text-muted-foreground capitalize">{periodoLabel}</p>
-            <p className="mt-1 text-sm font-medium text-muted-foreground">
-              {tituloEjemplar}
-            </p>
-          </div>
-      <div className="grid gap-2 text-sm">
-        <div className="flex justify-between">
-          <span className="text-muted-foreground">Empleado</span>
-          <span>{emp.apellido}, {emp.nombre}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-muted-foreground">CUIT/CUIL</span>
-          <span>{emp.cuilCuil}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-muted-foreground">Convenio</span>
-          <span>{recibo.convenio.nombre}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-muted-foreground">Categoría</span>
-          <span>{recibo.categoria.nombre}</span>
-        </div>
-      </div>
+    <div className="w-full overflow-x-auto">
+      <div className="min-w-[700px] rounded-md border border-border bg-background text-sm shadow-sm">
 
-      <div className="space-y-2 border-t pt-4">
-        <h3 className="font-semibold">Detalle de conceptos</h3>
-        <div className="overflow-x-auto rounded-md border print:overflow-visible">
-          <table className="w-full text-xs md:text-sm print:text-sm table-fixed">
-            <colgroup>
-              <col className="w-[30%]" />
-              <col className="w-[12%]" />
-              <col className="w-[18%]" />
-              <col className="w-[18%]" />
-              <col className="w-[22%]" />
-            </colgroup>
-            <thead className="bg-muted/60">
-              <tr className="border-b text-muted-foreground">
-                <th className="px-2 py-1 text-left whitespace-nowrap">Concepto</th>
-                <th className="px-2 py-1 text-center whitespace-nowrap">Cantidad</th>
-                <th className="px-2 py-1 text-right whitespace-nowrap">Remunerativo</th>
-                <th className="px-2 py-1 text-right whitespace-nowrap">No remunerativo</th>
-                <th className="px-2 py-1 text-right whitespace-nowrap">Descuentos</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filas.map((f) => (
-                <tr key={f.id} className="border-b last:border-b-0">
-                  <td className="px-2 py-1 whitespace-nowrap">{f.nombre}</td>
-                  <td className="px-2 py-1 text-center whitespace-nowrap">{f.cantidadTexto}</td>
-                  <td className="px-2 py-1 text-right whitespace-nowrap">
-                    {f.remunerativo !== 0
-                      ? `$${f.remunerativo.toLocaleString("es-AR", { minimumFractionDigits: 2 })}`
-                      : ""}
-                  </td>
-                  <td className="px-2 py-1 text-right whitespace-nowrap">
-                    {f.noRemunerativo !== 0
-                      ? `$${f.noRemunerativo.toLocaleString("es-AR", { minimumFractionDigits: 2 })}`
-                      : ""}
-                  </td>
-                  <td className="px-2 py-1 text-right whitespace-nowrap">
-                    {f.descuentos !== 0
-                      ? `- $${f.descuentos.toLocaleString("es-AR", { minimumFractionDigits: 2 })}`
-                      : ""}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="bg-muted/40 font-semibold">
-                <td className="px-2 py-1 text-left whitespace-nowrap">Totales</td>
-                <td className="px-2 py-1" />
-                <td className="px-2 py-1 text-right whitespace-nowrap">
-                  {`$${totalRemunerativo.toLocaleString("es-AR", { minimumFractionDigits: 2 })}`}
-                </td>
-                <td className="px-2 py-1 text-right whitespace-nowrap">
-                  {`$${totalNoRemunerativo.toLocaleString("es-AR", { minimumFractionDigits: 2 })}`}
-                </td>
-                <td className="px-2 py-1 text-right whitespace-nowrap">
-                  {`- $${totalDescuentos.toLocaleString("es-AR", { minimumFractionDigits: 2 })}`}
-                </td>
-              </tr>
-              <tr className="border-t-2 border-foreground/20 font-bold">
-                <td className="px-2 py-2 text-left whitespace-nowrap" colSpan={4}>
-                  Neto a cobrar
-                </td>
-                <td className="px-2 py-2 text-right whitespace-nowrap">
-                  ${netoDisplay.toLocaleString("es-AR", { minimumFractionDigits: imprimirTotalRedondeado ? 0 : 2 })}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </div>
-
-        <div className="mt-16 pt-10">
-          <div className="flex flex-col items-end gap-2">
-            {isEjemplarEmpleador && firmaEmpleadorUrl ? (
-              <img
-                src={firmaEmpleadorUrl}
-                alt="Firma del empleador"
-                className="h-[3rem] w-56 object-contain object-right border-b-2 border-foreground"
-              />
-            ) : (
-              <div className="min-h-[3rem] w-56 border-b-2 border-foreground" aria-hidden />
+        {/* ── ENCABEZADO ──────────────────────────────────────────────────── */}
+        <div className="grid grid-cols-2 border-b border-border">
+          {/* Empresa (izquierda) */}
+          <div className="flex flex-col justify-center gap-1 border-r border-border px-5 py-4">
+            <span className="text-xl font-bold leading-tight">
+              {clientData?.name ?? '—'}
+            </span>
+            {clientData?.address && (
+              <span className="text-sm text-muted-foreground">
+                {clientData.address}
+              </span>
             )}
-            <span className="text-xs text-muted-foreground">
-              Firma {isEjemplarEmpleador ? "del empleador" : "del empleado"}
+            <span className="text-sm font-medium text-muted-foreground">
+              CUIT: {clientData?.identityNumber ?? '—'}
             </span>
           </div>
-          <p className="mt-6 text-sm break-words">
-            <span className="text-muted-foreground">Son: </span>
-            <span className="font-medium">{montoEnLetras(netoDisplay)}</span>
-          </p>
+          {/* Título + grilla pago (derecha) */}
+          <div className="flex flex-col">
+            <div className="border-b border-border px-4 py-2 text-center">
+              <span className="text-base font-bold uppercase tracking-widest">
+                Recibo de Haberes
+              </span>
+              <span className="ml-3 text-sm font-medium text-muted-foreground">
+                — {tipoReciboLabel(liquidacion.tipo)}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 divide-x divide-border">
+              <DocCell label="Período a pagar" value={liquidacion.periodo} />
+              <DocCell label="Fecha de pago" value={dateFmt(cab.fechaPagoParaMostrar)} />
+              <DocCell label="Lugar de pago" value={cab.lugarPago ?? '—'} />
+              <DocCell
+                label="Banco"
+                value={bancoLabel(cab.banco)}
+                className="border-t border-border"
+              />
+              <DocCell
+                label="Forma de pago"
+                value={formaPagoLabel(cab.formaPago)}
+                className="border-t border-border"
+              />
+              <DocCell
+                label="CBU / Cuenta"
+                value={cab.cbu ?? '—'}
+                className="border-t border-border"
+              />
+            </div>
+          </div>
         </div>
+
+        {/* ── FILA 1 EMPLEADO: Categoría | Tipo de liquidación ───────────── */}
+        <div className="grid grid-cols-2 divide-x divide-border border-b border-border">
+          <DocCell label="Categoría" value={categoria?.nombre ?? '—'} />
+          <DocCell
+            label="Tipo de liquidación"
+            value={`${tipoReciboLabel(liquidacion.tipo)} — ${quincenaLabel(liquidacion.quincena)}`}
+          />
         </div>
-      </CardContent>
-    </Card>
+
+        {/* ── FILA 2 EMPLEADO: Legajo | Apellido y Nombre | Ingreso | CUIL | Básico */}
+        <div className="grid grid-cols-[100px_1fr_120px_160px_140px] divide-x divide-border border-b border-border">
+          <DocCell
+            label="Legajo"
+            value={legajoParaMostrar(
+              empleado.legajo ?? detalle.importLegajo ?? null
+            )}
+          />
+          <DocCell
+            label="Apellido y Nombres"
+            value={empleado.nombre}
+          />
+          <DocCell
+            label="Fecha de ingreso"
+            value={dateFmt(empleado.fechaAlta)}
+          />
+          <DocCell label="CUIL" value={empleado.cuil} />
+          <DocCell label="Sueldo básico" value={`$${moneyFmt(basicoMostrado)}`} />
+        </div>
+
+        {/* ── FILA 3 EMPLEADO: Convenio | Modalidad | Obra Social ─────────── */}
+        <div className="grid grid-cols-3 divide-x divide-border border-b border-border">
+          <DocCell
+            label="Convenio"
+            value={
+              convenio
+                ? convenio.cctCodigo
+                  ? `${convenio.nombre} (CCT ${convenio.cctCodigo})`
+                  : convenio.nombre
+                : '—'
+            }
+          />
+          <DocCell
+            label="Modalidad"
+            value={empleado.tipoJornada === 'full_time' ? 'Tiempo completo' : 'Tiempo parcial'}
+          />
+          <DocCell
+            label="Obra social"
+            value={
+              obraSocial
+                ? `${obraSocial.codigo} ${obraSocial.nombre}`
+                : '—'
+            }
+          />
+        </div>
+
+        {/* ── TABLA DE CONCEPTOS ──────────────────────────────────────────── */}
+        <table className="w-full border-collapse">
+          <thead>
+            <tr className="border-b border-border bg-muted/40 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <th className="w-[70px] px-2 py-2 text-left">Código</th>
+              <th className="px-2 py-2 text-left">Descripción del concepto</th>
+              <th className="w-[70px] px-2 py-2 text-right">Cant.</th>
+              <th className="w-[70px] px-2 py-2 text-right">%</th>
+              <th className="w-[140px] border-l border-border px-2 py-2 text-right">
+                Haberes
+              </th>
+              <th className="w-[140px] border-l border-border px-2 py-2 text-right">
+                Descuentos
+              </th>
+              <th className="w-[140px] border-l border-border px-2 py-2 text-right">
+                Retenciones
+              </th>
+              <th className="w-[140px] border-l border-border px-2 py-2 text-right">
+                No remunerativo
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/50">
+            {filas.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={8}
+                  className="px-2 py-4 text-center text-sm text-muted-foreground"
+                >
+                  Sin conceptos cargados
+                </td>
+              </tr>
+            ) : (
+              filas.map(({ detalle: det, concepto, conceptoAfip, conceptoSos, col }) => (
+                <tr key={det.id} className="hover:bg-muted/20">
+                  <td className="px-2 py-1 font-mono text-xs text-muted-foreground">
+                    {det.codigo}
+                  </td>
+                  <td className="px-2 py-1">
+                    {concepto?.nombre ??
+                      conceptoAfip?.descripcion ??
+                      conceptoSos?.nombre ??
+                      det.codigo}
+                  </td>
+                  <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">
+                    {det.cantidad ? moneyFmt(det.cantidad) : '—'}
+                  </td>
+                  <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">
+                    {det.porcentaje ? moneyFmt(det.porcentaje) : '—'}
+                  </td>
+                  <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                    {col === 'hab' ? moneyFmt(det.monto) : ''}
+                  </td>
+                  <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                    {col === 'desc' ? moneyFmt(det.monto) : ''}
+                  </td>
+                  <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                    {col === 'ret' ? moneyFmt(det.monto) : ''}
+                  </td>
+                  <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                    {col === 'noRem' ? moneyFmt(det.monto) : ''}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+          {/* ── Fila de totales ─────────────────────────────────────────── */}
+          <tfoot>
+            <tr className="border-t-2 border-border bg-muted/30 font-semibold">
+              <td colSpan={4} className="px-2 py-2 uppercase tracking-wide text-xs">
+                Totales
+              </td>
+              <td className="border-l border-border px-2 py-2 text-right tabular-nums">
+                {moneyFmt(totalHaberes)}
+              </td>
+              <td className="border-l border-border px-2 py-2 text-right tabular-nums">
+                {moneyFmt(totalDescuentos)}
+              </td>
+              <td className="border-l border-border px-2 py-2 text-right tabular-nums">
+                {moneyFmt(totalRetenciones)}
+              </td>
+              <td className="border-l border-border px-2 py-2 text-right tabular-nums">
+                {moneyFmt(totalNoRemunerativo)}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+
+        {/* ── NETO ────────────────────────────────────────────────────────── */}
+        <div className="flex items-center justify-between border-t-2 border-border bg-muted/10 px-4 py-3">
+          <span className="text-sm text-muted-foreground">
+            Son{' '}
+            <span className="font-medium capitalize text-foreground">
+              {pesoEnLetras(neto)}
+            </span>
+          </span>
+          <span className="text-base font-bold">
+            Total neto: ${moneyFmt(neto)}
+          </span>
+        </div>
+
+        {/* ── OBSERVACIÓN ─────────────────────────────────────────────────── */}
+        {liquidacion.observacionRecibo && (
+          <div className="border-t border-border px-4 py-2">
+            <span className="text-xs font-semibold uppercase text-muted-foreground">
+              Observación:
+            </span>{' '}
+            <span className="text-sm">{liquidacion.observacionRecibo}</span>
+          </div>
+        )}
+
+        {/* ── FIRMAS ──────────────────────────────────────────────────────── */}
+        <div className="grid grid-cols-2 divide-x divide-border border-t border-border">
+          <div className="flex flex-col items-center gap-8 px-8 py-6">
+            <div className="h-12 w-full" />
+            <div className="w-full border-t border-foreground/40 pt-1 text-center text-xs uppercase tracking-widest text-muted-foreground">
+              Firma y sello del empleador
+            </div>
+          </div>
+          <div className="flex flex-col items-center gap-8 px-8 py-6">
+            <div className="h-12 w-full" />
+            <div className="w-full border-t border-foreground/40 pt-1 text-center text-xs uppercase tracking-widest text-muted-foreground">
+              Firma del empleado
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

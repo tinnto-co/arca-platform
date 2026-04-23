@@ -1,4 +1,4 @@
-import * as React from "react";
+import * as React from 'react';
 import {
   BadgeCheck,
   Bell,
@@ -14,6 +14,7 @@ import {
   Plus,
   PlusCircle,
   Search,
+  Settings,
   Table,
   Users,
   Box,
@@ -25,7 +26,7 @@ import {
   Receipt,
   Mail,
   FileText,
-} from "lucide-react";
+} from 'lucide-react';
 
 import {
   Sidebar,
@@ -41,7 +42,7 @@ import {
   SidebarRail,
   SidebarTrigger,
   useSidebar,
-} from "@/components/ui/sidebar";
+} from '@/components/ui/sidebar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -51,31 +52,24 @@ import {
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuTrigger,
-} from "./ui/dropdown-menu";
-import { authClient } from "@/lib/auth-client";
-import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
-import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
-import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
-import { getUser } from "@/actions/user";
-import { CreateClientDialog } from "./create-client-dialog";
+} from './ui/dropdown-menu';
+import { authClient } from '@/lib/auth-client';
+import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
+import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
+import { Link, useLocation, useNavigate } from '@tanstack/react-router';
+import { useState, useEffect } from 'react';
+import { CreateClientDialog } from './create-client-dialog';
+import { OrgSwitcher } from './org-switcher';
+import { userQuery } from '../lib/user-query';
 
-export const userQuery = {
-  queryKey: ["user"],
-  queryFn: async () => {
-    const response = await getUser();
-    return response;
-  },
-};
+export { userQuery };
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { isMobile } = useSidebar();
-  // const { data: activeOrganization } = useSuspenseQuery(
-  //   activeOrganizationQuery
-  // );
-
   const [loading, setLoading] = useState(false);
   const { data: user } = useSuspenseQuery(userQuery);
+  const isOwner = user?.organizationRole === 'owner';
+  const isViewer = user?.organizationRole === 'viewer';
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [open, setOpen] = useState(true);
@@ -92,47 +86,49 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   //   queryFn: () => [],
   // });
   const { data: monitors = [] } = useQuery({
-    queryKey: ["monitors"],
+    queryKey: ['monitors'],
     queryFn: () => [],
   });
 
-  // const { data: activeOrganization } = authClient.useActiveOrganization();
   return (
     <>
       {/* Dialogs for Quick Create */}
 
       <Sidebar collapsible="icon" variant="floating" {...props}>
         <SidebarHeader>
-          <div className="flex items-center justify-center gap-2">
-            {open && (
-              <p className="text-lg font-bold text-white px-2">GESTION ARCA</p>
-            )}
-            <SidebarTrigger onClick={() => setOpen(!open)} className="-ml-1 text-white/80 hover:text-white hover:bg-white/10" />
+          <OrgSwitcher />
+          <div className="flex items-center justify-end">
+            <SidebarTrigger
+              onClick={() => setOpen(!open)}
+              className="-ml-1 text-white/80 hover:text-white hover:bg-white/10"
+            />
           </div>
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>
             <SidebarMenu>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <SidebarMenuButton className="bg-gradient-to-r from-[#139ed9] to-[#0e7eb0] text-white hover:from-[#3db8e8] hover:to-[#139ed9] active:from-[#0e7eb0] active:to-[#0a6a96] duration-200 ease-linear">
-                    <PlusCircle />
-                    Crear nuevo
-                  </SidebarMenuButton>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-56" align="start">
-                  <CreateClientDialog>
-                    <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                      <User className="mr-2" />
-                      Cliente
-                    </DropdownMenuItem>
-                  </CreateClientDialog>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              {!isViewer && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <SidebarMenuButton className="bg-gradient-to-r from-[#139ed9] to-[#0e7eb0] text-white hover:from-[#3db8e8] hover:to-[#139ed9] active:from-[#0e7eb0] active:to-[#0a6a96] duration-200 ease-linear">
+                      <PlusCircle />
+                      Crear nuevo
+                    </SidebarMenuButton>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="w-56" align="start">
+                    <CreateClientDialog>
+                      <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                        <User className="mr-2" />
+                        Cliente
+                      </DropdownMenuItem>
+                    </CreateClientDialog>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
 
               <SidebarMenuItem>
                 <Link to="/">
-                  <SidebarMenuButton isActive={pathname === "/"}>
+                  <SidebarMenuButton isActive={pathname === '/'}>
                     <Home />
                     Home
                   </SidebarMenuButton>
@@ -152,7 +148,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <SidebarMenuItem>
                 <Link to="/clients">
                   <SidebarMenuButton
-                    isActive={pathname === "/clients"}
+                    isActive={pathname === '/clients'}
                     tooltip="Clientes"
                   >
                     <User />
@@ -163,7 +159,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <SidebarMenuItem>
                 <Link to="/notifications">
                   <SidebarMenuButton
-                    isActive={pathname === "/notifications"}
+                    isActive={pathname === '/notifications'}
                     tooltip="Notificaciones"
                   >
                     <Mail />
@@ -171,21 +167,21 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>
-{/*               <SidebarMenuItem>
+              <SidebarMenuItem>
                 <Link to="/jobs">
                   <SidebarMenuButton
-                    isActive={pathname === "/jobs"}
+                    isActive={pathname === '/jobs'}
                     tooltip="Jobs"
                   >
                     <Loader2 />
                     <span>Jobs</span>
                   </SidebarMenuButton>
                 </Link>
-              </SidebarMenuItem> */}
+              </SidebarMenuItem>
               <SidebarMenuItem>
                 <Link to="/invoices">
                   <SidebarMenuButton
-                    isActive={pathname === "/invoices"}
+                    isActive={pathname === '/invoices'}
                     tooltip="Facturas"
                   >
                     <Receipt />
@@ -196,7 +192,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <SidebarMenuItem>
                 <Link to="/sueldos">
                   <SidebarMenuButton
-                    isActive={pathname === "/sueldos"}
+                    isActive={pathname === '/sueldos'}
                     tooltip="Sueldos"
                   >
                     <DollarSign />
@@ -204,7 +200,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>
-{/*               <SidebarMenuItem>
+              {/*               <SidebarMenuItem>
                 <span className="cursor-not-allowed opacity-50 pointer-events-none flex w-full items-center gap-2">
                   <SidebarMenuButton
                     isActive={false}
@@ -221,6 +217,19 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
         <SidebarFooter>
           <SidebarMenu>
+            {isOwner && (
+              <SidebarMenuItem>
+                <Link to="/admin">
+                  <SidebarMenuButton
+                    isActive={pathname === '/admin'}
+                    tooltip="Administración"
+                  >
+                    <Settings />
+                    <span>Administración</span>
+                  </SidebarMenuButton>
+                </Link>
+              </SidebarMenuItem>
+            )}
             <SidebarMenuItem>
               <div className="flex items-center gap-2">
                 <DropdownMenu>
@@ -233,8 +242,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                         {user?.image && (
                           <AvatarImage src={user?.image} alt={user?.name} />
                         )}
-                        <AvatarFallback className="rounded-lg">
-                          {user?.name?.slice(0, 2).toUpperCase()}
+                        <AvatarFallback className="rounded-lg text-base font-semibold text-[#232c50]">
+                          {user?.name?.slice(0, 2)}
                         </AvatarFallback>
                       </Avatar>
                       <div className="grid flex-1 text-left text-sm leading-tight">
@@ -248,7 +257,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent
                     className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg"
-                    side={isMobile ? "bottom" : "right"}
+                    side={isMobile ? 'bottom' : 'right'}
                     align="end"
                     sideOffset={4}
                   >
@@ -297,7 +306,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                     <DropdownMenuItem
                       onClick={async () => {
                         await authClient.signOut();
-                        navigate({ to: "/login" });
+                        navigate({ to: '/login' });
                       }}
                     >
                       <LogOut />

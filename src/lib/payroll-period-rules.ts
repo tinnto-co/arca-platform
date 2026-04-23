@@ -7,7 +7,7 @@
 /** Período en curso (YYYY-MM) */
 export function getPeriodoMesActual(): string {
   const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
 /** Mes anterior al en curso (YYYY-MM) — único período liquidable */
@@ -18,7 +18,7 @@ export function getPeriodoMesAnterior(): string {
   if (month === 0) {
     return `${year - 1}-12`;
   }
-  return `${year}-${String(month).padStart(2, "0")}`;
+  return `${year}-${String(month).padStart(2, '0')}`;
 }
 
 /**
