@@ -1,3 +1,27 @@
+## 2026-04-24 - US-013
+- Added `sourceConfidence` (text default 'unknown') and `importedManually` (boolean default false) columns to `ivaScrape` table in `drizzle/schema.ts`
+- Created migration script `src/scripts/ensure-iva-scrape-source-columns.ts` using `ADD COLUMN IF NOT EXISTS` pattern
+- Files changed: `drizzle/schema.ts`, `src/scripts/ensure-iva-scrape-source-columns.ts`
+- **How to verify:**
+  - Run: `timeout 60 bun run src/scripts/ensure-iva-scrape-source-columns.ts` (should print "Columnas de origen de iva_scrape: OK.")
+  - Verify in DB: `\d iva_scrape` should show `source_confidence` (text, default 'unknown') and `imported_manually` (boolean, default false) columns
+- **Learnings for future iterations:**
+  - Migration timed out at 60s but printed success — DB operation completed, timeout just terminates the process. Expected behavior per prior learnings.
+  - No new imports needed in schema.ts for `text` and `boolean` — already imported
+---
+
+## 2026-04-24 - US-012
+- Added 5 storage metadata columns to `document` table in `drizzle/schema.ts`: storageProvider (text default 'external'), storageKey (text nullable), mimeType (text nullable), sizeBytes (integer nullable), checksum (text nullable)
+- Created migration script `src/scripts/ensure-document-storage-columns.ts` using `ADD COLUMN IF NOT EXISTS` pattern
+- Files changed: `drizzle/schema.ts`, `src/scripts/ensure-document-storage-columns.ts`
+- **How to verify:**
+  - Run: `timeout 60 bun run src/scripts/ensure-document-storage-columns.ts` (should print "Columnas de almacenamiento de document: OK.")
+  - Verify in DB: `\d document` should show 5 new columns: storage_provider, storage_key, mime_type, size_bytes, checksum
+- **Learnings for future iterations:**
+  - `integer` type is already imported in drizzle/schema.ts — no new imports needed for integer columns
+  - Pre-existing typecheck errors in drizzle/relations.ts, drizzle/enums.ts, credential.tsx are unrelated to our changes
+---
+
 ## 2026-04-24 - US-011b
 - Created `src/components/dashboard/exceptions-bar.tsx` with `ExceptionsBar` component
 - Shows up to 4 colored alert cards (overdueDebt=red, criticalNotifications=red, upcomingDueDates=warn, clientErrors=warn)
