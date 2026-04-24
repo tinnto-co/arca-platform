@@ -8,6 +8,7 @@ import {
   debt,
   dueDate,
   notification,
+  document as documentTable,
 } from '@/drizzle/schema';
 import {
   getAuthSession,
@@ -97,10 +98,7 @@ export const getClientPortalDashboard = createServerFn({ method: 'GET' })
               })
               .from(debt)
               .where(
-                and(
-                  eq(debt.client, data.clientId),
-                  eq(debt.status, 'open')
-                )
+                and(eq(debt.client, data.clientId), eq(debt.status, 'open'))
               )
               .orderBy(desc(debt.dueDate))
               .limit(5)
@@ -286,13 +284,14 @@ export const getClientPortalRequests = createServerFn({ method: 'GET' })
         status: clientRequest.status,
         dueAt: clientRequest.dueAt,
         completedAt: clientRequest.completedAt,
+        metadata: clientRequest.metadata,
         createdAt: clientRequest.createdAt,
       })
       .from(clientRequest)
       .where(and(...conditions))
       .orderBy(desc(clientRequest.createdAt));
 
-    return requests;
+    return requests as any;
   });
 
 export const completeClientRequest = createServerFn({ method: 'POST' })
@@ -337,7 +336,9 @@ export const listClientRequests = createServerFn({ method: 'GET' })
     const [clientRow] = await db
       .select({ id: client.id })
       .from(client)
-      .where(and(eq(client.id, data.clientId), eq(client.organizationId, orgId)))
+      .where(
+        and(eq(client.id, data.clientId), eq(client.organizationId, orgId))
+      )
       .limit(1);
     if (!clientRow) throw new Error('Cliente no encontrado');
 
@@ -346,7 +347,7 @@ export const listClientRequests = createServerFn({ method: 'GET' })
       conditions.push(eq(clientRequest.status, data.status));
     }
 
-    return await db
+    const rows = await db
       .select({
         id: clientRequest.id,
         organizationId: clientRequest.organizationId,
@@ -359,11 +360,13 @@ export const listClientRequests = createServerFn({ method: 'GET' })
         status: clientRequest.status,
         dueAt: clientRequest.dueAt,
         completedAt: clientRequest.completedAt,
+        metadata: clientRequest.metadata,
         createdAt: clientRequest.createdAt,
       })
       .from(clientRequest)
       .where(and(...conditions))
       .orderBy(desc(clientRequest.createdAt));
+    return rows as any;
   });
 
 export const createClientRequest = createServerFn({ method: 'POST' })
@@ -385,7 +388,9 @@ export const createClientRequest = createServerFn({ method: 'POST' })
     const [clientRow] = await db
       .select({ id: client.id })
       .from(client)
-      .where(and(eq(client.id, data.clientId), eq(client.organizationId, orgId)))
+      .where(
+        and(eq(client.id, data.clientId), eq(client.organizationId, orgId))
+      )
       .limit(1);
     if (!clientRow) throw new Error('Cliente no encontrado');
 
@@ -419,6 +424,107 @@ export const createClientRequest = createServerFn({ method: 'POST' })
     return created;
   });
 
+export const uploadDocumentForRequest = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      requestId: z.string().uuid(),
+      fileName: z.string().min(1),
+      mimeType: z.string().min(1),
+      sizeBytes: z.number().int().positive(),
+      base64Data: z.string().min(1),
+    })
+  )
+  .handler(async ({ data }) => {
+    const session = await getAuthSession();
+    const userId = session.user.id;
+
+    const [request] = await db
+      .select({
+        id: clientRequest.id,
+        clientId: clientRequest.clientId,
+        status: clientRequest.status,
+      })
+      .from(clientRequest)
+      .where(eq(clientRequest.id, data.requestId))
+      .limit(1);
+
+    if (!request) throw new Error('Solicitud no encontrada');
+    if (request.status !== 'open') throw new Error('La solicitud no está abierta');
+
+    const access = await getClientPortalAccess(userId, request.clientId);
+    if (!access.canUploadDocuments) {
+      throw new Error('No tienes permiso para subir documentos');
+    }
+
+    const dataUrl = `data:${data.mimeType};base64,${data.base64Data}`;
+    const [doc] = await db
+      .insert(documentTable)
+      .values({
+        client: request.clientId,
+        type: 'uploaded',
+        name: data.fileName,
+        url: dataUrl,
+        storageProvider: 'upload',
+        storageKey: data.fileName,
+        mimeType: data.mimeType,
+        sizeBytes: data.sizeBytes,
+      })
+      .returning({ id: documentTable.id });
+
+    await db
+      .update(clientRequest)
+      .set({
+        metadata: {
+          documentId: doc.id,
+          documentName: data.fileName,
+          documentMimeType: data.mimeType,
+          uploadedAt: new Date().toISOString(),
+          uploadedByUserId: userId,
+        } as any,
+      })
+      .where(eq(clientRequest.id, data.requestId));
+
+    return { documentId: doc.id, success: true };
+  });
+
+export const getRequestDocument = createServerFn({ method: 'GET' })
+  .inputValidator(z.object({ requestId: z.string().uuid() }))
+  .handler(async ({ data }) => {
+    const { orgId } = await getSessionWithOrg();
+
+    const [requestRow] = await db
+      .select({ id: clientRequest.id, metadata: clientRequest.metadata })
+      .from(clientRequest)
+      .innerJoin(client, eq(client.id, clientRequest.clientId))
+      .where(
+        and(
+          eq(clientRequest.id, data.requestId),
+          eq(client.organizationId, orgId)
+        )
+      )
+      .limit(1);
+
+    if (!requestRow) throw new Error('Solicitud no encontrada');
+
+    const meta = requestRow.metadata as { documentId?: string } | null;
+    if (!meta?.documentId) return null;
+
+    const [doc] = await db
+      .select({
+        id: documentTable.id,
+        name: documentTable.name,
+        url: documentTable.url,
+        mimeType: documentTable.mimeType,
+        sizeBytes: documentTable.sizeBytes,
+        createdAt: documentTable.createdAt,
+      })
+      .from(documentTable)
+      .where(eq(documentTable.id, meta.documentId))
+      .limit(1);
+
+    return doc ?? null;
+  });
+
 export const updateClientRequestStatus = createServerFn({ method: 'POST' })
   .inputValidator(
     z.object({
@@ -433,7 +539,10 @@ export const updateClientRequestStatus = createServerFn({ method: 'POST' })
 
     // Validate request belongs to org
     const [existing] = await db
-      .select({ id: clientRequest.id, organizationId: clientRequest.organizationId })
+      .select({
+        id: clientRequest.id,
+        organizationId: clientRequest.organizationId,
+      })
       .from(clientRequest)
       .where(eq(clientRequest.id, data.requestId))
       .limit(1);
