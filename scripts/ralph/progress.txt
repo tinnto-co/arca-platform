@@ -42,6 +42,20 @@ Started: Fri Apr 24 16:44:39 -03 2026
   - Always verify git log before re-implementing — the story may already be committed
 ---
 
+## 2026-04-24 - US-004
+- Added 7 columns to `notification` table in `drizzle/schema.ts`: severity (text default 'unclassified'), category (text nullable), ai_summary (text nullable), ai_classified_at (timestamp nullable), assigned_to_user_id (text FK user ON DELETE SET NULL), resolved_at (timestamp nullable), resolved_by_user_id (text FK user ON DELETE SET NULL)
+- Added index `idx_notification_severity` on (client_id, severity)
+- Created migration script `src/scripts/ensure-notification-enrichment-columns.ts`
+- Files changed: `drizzle/schema.ts`, `src/scripts/ensure-notification-enrichment-columns.ts`
+- **How to verify:**
+  - Run: `timeout 60 bun run src/scripts/ensure-notification-enrichment-columns.ts` (should print "Columnas de enriquecimiento de notification: OK.")
+  - Verify in DB: `\d notification` should show the 7 new columns and the new index
+- **Learnings for future iterations:**
+  - FK references to `user` table use `text` type (not uuid) — `text("field").references(() => user.id, { onDelete: "set null" })`
+  - Index added inline in the pgTable second argument array alongside existing indexes
+  - Pre-existing typecheck/lint errors in credential.tsx, sueldos.ts, relations.ts — not related to our changes
+---
+
 ## 2026-04-24 - US-001
 - Added `managed_by_study` (boolean default true), `disabled_at` (timestamp nullable), `disabled_reason` (text nullable), `profile_type` (text default 'unknown') columns to the `profile` table in `drizzle/schema.ts`
 - Created migration script `src/scripts/ensure-profile-enrichment-columns.ts` following the pattern in `ensure-empleado-legajo-extra-columns.ts`

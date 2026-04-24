@@ -59,7 +59,7 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 1. Severities: critical, medium, low, informational, unclassified. Categories: requerimiento, inspeccion, deuda, intimacion, comunicacion_general, vencimiento, otro"
     },
     {
