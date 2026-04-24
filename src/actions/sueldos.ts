@@ -18,6 +18,7 @@ import {
   liquidacionImportRecibo,
   liquidacionImportConceptoValor,
   obraSocial,
+  employeeEvent,
 } from '@/drizzle/schema';
 import {
   getSessionWithOrg,
@@ -3483,4 +3484,74 @@ export const getReciboDetalle = createServerFn({ method: 'GET' })
       detalles,
     };
     return JSON.parse(JSON.stringify(payload)) as typeof payload;
+  });
+
+/** Helper: validates an employee belongs to the calling user's org. */
+async function ensureEmpleadoBelongsToOrg(
+  empleadoId: string,
+  orgId: string
+): Promise<void> {
+  const [row] = await db
+    .select({ id: liquidacionImportEmpleado.id })
+    .from(liquidacionImportEmpleado)
+    .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+    .innerJoin(client, eq(profile.client, client.id))
+    .where(
+      and(
+        eq(liquidacionImportEmpleado.id, empleadoId),
+        eq(client.organizationId, orgId)
+      )
+    )
+    .limit(1);
+  if (!row) throw new Error('Empleado no encontrado o no autorizado');
+}
+
+export const createEmployeeEvent = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      empleadoId: z.string().uuid(),
+      type: z.string(),
+      title: z.string(),
+      eventDate: z.string(),
+      description: z.string().optional(),
+      affectsPayroll: z.boolean().optional(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureEmpleadoBelongsToOrg(ctx.data.empleadoId, orgId);
+    const [row] = await db
+      .insert(employeeEvent)
+      .values({
+        empleadoId: ctx.data.empleadoId,
+        type: ctx.data.type,
+        title: ctx.data.title,
+        eventDate: new Date(ctx.data.eventDate),
+        description: ctx.data.description,
+        affectsPayroll: ctx.data.affectsPayroll ?? false,
+        createdByUserId: userId,
+      })
+      .returning();
+    return row as any;
+  });
+
+export const listEmployeeEvents = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      empleadoId: z.string().uuid(),
+      limit: z.number().int().min(1).max(200).optional(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureEmpleadoBelongsToOrg(ctx.data.empleadoId, orgId);
+    const rows = await db
+      .select()
+      .from(employeeEvent)
+      .where(eq(employeeEvent.empleadoId, ctx.data.empleadoId))
+      .orderBy(desc(employeeEvent.eventDate))
+      .limit(ctx.data.limit ?? 50);
+    return rows as any;
   });
