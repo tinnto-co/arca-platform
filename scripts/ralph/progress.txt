@@ -1,3 +1,24 @@
+## 2026-04-24 - US-030
+- Added `getBalanceConfig(clientId)` and `upsertBalanceConfig(clientId, data)` server functions to `src/actions/client.tsx`
+- Added `clientBalanceConfig` import to the schema imports in client.tsx
+- `getBalanceConfig` fetches the config for a client (validates client belongs to org); returns null if not configured
+- `upsertBalanceConfig` uses `onConflictDoUpdate` on the unique `clientId` column to insert or update
+- In `src/components/client-detail-page.tsx`, added "Cierre de ejercicio" card as Row 3 in the resumen tab
+- Card has: month selector (1–12), day selector (1–31), optional presentation due days input, alert days before (comma-separated text input)
+- State syncs from fetched config via `useEffect`; Save button calls `upsertBalanceConfigMutation`; shows current config date after save
+- Files changed: `src/actions/client.tsx`, `src/components/client-detail-page.tsx`
+- **How to verify:**
+  - Run `bun run dev`, navigate to any client detail page (`/clients/$clientId`)
+  - In the "Resumen" tab, scroll to the new "Cierre de ejercicio" card at the bottom
+  - Set month/day (e.g. Diciembre / 31), optionally fill presentation days and alert days
+  - Click "Guardar" → toast "Configuración guardada" appears; the card shows "Cierre: 31/12"
+  - Reload the page — the saved values are pre-loaded from the DB
+- **Learnings for future iterations:**
+  - `clientBalanceConfig.clientId` is the unique conflict target for `onConflictDoUpdate` — single column, not array
+  - `jsonb()` fields return `unknown` type; cast server fn return with `as ... & { alertDaysBefore: number[] } | null` to fix TS errors without `as any`
+  - `useEffect` syncing state from a query result is the pattern used to populate form fields from server data in this codebase
+---
+
 ## 2026-04-24 - US-029
 - Created `src/routes/_authed/alerts/index.tsx` with full alert inbox page
 - Added `AlertTriangle` NavItem in `src/components/app-sidebar.tsx` with open alert count badge
