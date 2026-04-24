@@ -13,7 +13,8 @@ export default defineConfig({
     ],
     watch: {
       usePolling: true,
-      interval: 100,
+      interval: 300,
+      ignored: ["**/src/routeTree.gen.ts"],
     },
   },
   optimizeDeps: {
@@ -31,6 +32,9 @@ export default defineConfig({
       "use-file-picker",
       "react-lite-youtube-embed",
       "react-tweet",
+      "ai",
+      "@ai-sdk/google",
+      "@ai-sdk/react",
     ],
   },
   plugins: [

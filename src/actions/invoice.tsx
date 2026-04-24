@@ -24,6 +24,7 @@ import {
   inArray,
   isNull,
 } from 'drizzle-orm';
+import { CREDIT_NOTE_TYPES, calcularIvaDesdeFacturas } from '@/lib/iva-calc';
 
 export const getInvoices = createServerFn({
   method: 'GET',
@@ -1091,42 +1092,12 @@ export const getInvoicesByProfileInRange = createServerFn({
       console.error('[getInvoicesByProfileInRange] error:', error);
       throw new Error(
         error?.message ||
-          'No se pudieron obtener las facturas para el perfil y rango seleccionados'
+        'No se pudieron obtener las facturas para el perfil y rango seleccionados'
       );
     }
   });
 
-// Tipos A según AFIP (Factura A, Nota Débito/Crédito A, Recibo A, etc.)
-const INVOICE_TYPES_A = [
-  '1',
-  '2',
-  '3',
-  '4',
-  '51',
-  '52',
-  '53',
-  '54',
-  '201',
-  '202',
-  '203',
-];
-
-// Tipos B según AFIP (Factura B, Nota Débito B, Nota Crédito B)
-const INVOICE_TYPES_B = ['6', '7', '8'];
-
-// Tipos Nota de Crédito (AFIP): restan del total (no suman)
-const CREDIT_NOTE_TYPES = [
-  '3',
-  '8',
-  '13',
-  '21',
-  '53',
-  '114',
-  '197',
-  '203',
-  '208',
-  '213',
-];
+// INVOICE_TYPES_A, INVOICE_TYPES_B, CREDIT_NOTE_TYPES — imported from @/lib/iva-calc
 
 export const getInvoiceStatsByProfile = createServerFn({
   method: 'GET',
@@ -1221,94 +1192,20 @@ export const getInvoiceStatsByProfile = createServerFn({
       .from(invoice)
       .where(and(...conditions));
 
-    // Ventas Outbound tipo A: Neto A 21% = amountIVA21, Neto A 10,5% = amountIVA105
-    const invoicesForIvaA = invoices.filter((inv) => {
-      const direction = inv.direction?.toLowerCase();
-      const type = inv.type ?? '';
-      return direction === 'outbound' && INVOICE_TYPES_A.includes(type);
-    });
-    console.log(
-      '[getInvoiceStatsByProfile] invoices usados para IVA 21% e IVA 10,5% (ventas tipo A):',
-      JSON.stringify(
-        invoicesForIvaA.map((inv) => ({
-          id: inv.id,
-          direction: inv.direction,
-          type: inv.type,
-          emitionDate: inv.emitionDate,
-          amountIVA21: inv.amountIVA21,
-          amountIVA105: inv.amountIVA105,
-        })),
-        null,
-        2
-      )
-    );
-
-    let netoA21 = 0;
-    let netoA105 = 0;
-    invoicesForIvaA.forEach((inv) => {
-      const rate =
-        inv.currency?.toUpperCase() === 'USD'
-          ? parseFloat(inv.currencyRate || '1')
-          : 1;
-      const sign = CREDIT_NOTE_TYPES.includes(inv.type ?? '') ? -1 : 1;
-      netoA21 += sign * parseFloat(inv.amountIVA21 || '0') * rate;
-      netoA105 += sign * parseFloat(inv.amountIVA105 || '0') * rate;
-    });
-
-    // Ventas Outbound tipo B: totalAmountB = suma de (base + impuesto) por alícuota. NC restan, Factura/ND suman. USD con rate.
-    const invoicesForIvaB = invoices.filter((inv) => {
-      const direction = inv.direction?.toLowerCase();
-      const type = inv.type ?? '';
-      return direction === 'outbound' && INVOICE_TYPES_B.includes(type);
-    });
-    let totalAmountB21 = 0;
-    let totalAmountB105 = 0;
-    let totalAmountB27 = 0;
-    invoicesForIvaB.forEach((inv) => {
-      const rate =
-        inv.currency?.toUpperCase() === 'USD'
-          ? parseFloat(inv.currencyRate || '1')
-          : 1;
-      const sign = CREDIT_NOTE_TYPES.includes(inv.type ?? '') ? -1 : 1;
-      const base21 =
-        parseFloat(inv.amountIVA21 || '0') + parseFloat(inv.IVA21 || '0');
-      const base105 =
-        parseFloat(inv.amountIVA105 || '0') + parseFloat(inv.IVA105 || '0');
-      const base27 =
-        parseFloat(inv.amountIVA27 || '0') + parseFloat(inv.IVA27 || '0');
-      totalAmountB21 += sign * base21 * rate;
-      totalAmountB105 += sign * base105 * rate;
-      totalAmountB27 += sign * base27 * rate;
-    });
-
-    // Compras (inbound): netos gravados por alícuota 27%, 21%, 10,5%, 5%, 2,5%. A y B juntos. NC restan, ND y facturas suman.
-    const invoicesInbound = invoices.filter(
-      (inv) => inv.direction?.toLowerCase() === 'inbound'
-    );
-    let netoInbound27 = 0;
-    let netoInbound21 = 0;
-    let netoInbound105 = 0;
-    let netoInbound5 = 0;
-    let netoInbound25 = 0;
-    invoicesInbound.forEach((inv) => {
-      const rate =
-        inv.currency?.toUpperCase() === 'USD'
-          ? parseFloat(inv.currencyRate || '1')
-          : 1;
-      const sign = CREDIT_NOTE_TYPES.includes(inv.type ?? '') ? -1 : 1;
-      netoInbound27 += sign * parseFloat(inv.amountIVA27 || '0') * rate;
-      netoInbound21 += sign * parseFloat(inv.amountIVA21 || '0') * rate;
-      netoInbound105 += sign * parseFloat(inv.amountIVA105 || '0') * rate;
-      netoInbound5 += sign * parseFloat(inv.amountIVA5 || '0') * rate;
-      netoInbound25 += sign * parseFloat(inv.amountIVA25 || '0') * rate;
-    });
-
-    const netoGravadoCompras =
-      netoInbound27 +
-      netoInbound21 +
-      netoInbound105 +
-      netoInbound5 +
-      netoInbound25;
+    const {
+      netoA21,
+      netoA105,
+      totalAmountB21,
+      totalAmountB105,
+      totalAmountB27,
+      netoInbound21,
+      netoInbound105,
+      netoInbound27,
+      netoInbound5,
+      netoInbound25,
+      netoGravadoCompras,
+      creditoFiscalCompras,
+    } = calcularIvaDesdeFacturas(invoices);
 
     // Exento, IVA 0%, No gravado: suma en todos los comprobantes (nota de crédito resta)
     let totalAmountExempt = 0;
@@ -1324,15 +1221,6 @@ export const getInvoiceStatsByProfile = createServerFn({
       totalAmountIVA0 += sign * parseFloat(inv.amountIVA0 || '0') * rate;
       totalAmountNoTaxed += sign * parseFloat(inv.amountNoTaxed || '0') * rate;
     });
-
-    // Crédito Fiscal Compras = (neto21 * 0.21) + (neto105 * 0.105) + (neto27 * 0.27) + (neto5 * 0.05) + (neto25 * 0.025)
-    // Nota: El Ajuste se suma en el frontend (viene de mock por ahora)
-    const creditoFiscalCompras =
-      netoInbound21 * 0.21 +
-      netoInbound105 * 0.105 +
-      netoInbound27 * 0.27 +
-      netoInbound5 * 0.05 +
-      netoInbound25 * 0.025;
 
     // Calculate totals
     let totalOutbound = 0;

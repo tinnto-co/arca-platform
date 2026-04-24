@@ -17,6 +17,7 @@ import {
   Check,
   Building,
   User,
+  Bot,
 } from 'lucide-react';
 
 import { Sidebar, SidebarRail, useSidebar } from '@/components/ui/sidebar';
@@ -304,6 +305,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <NavItem to="/invoices" icon={FileText} label="Facturas" />
           <NavItem to="/sueldos" icon={DollarSign} label="Sueldos" />
           <NavItem to="/vencimientos" icon={Calendar} label="Vencimientos" />
+          <NavItem to="/chat" icon={Bot} label="Chats" />
 
           <NavGroupLabel>Cuenta</NavGroupLabel>
 

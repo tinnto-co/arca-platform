@@ -4,10 +4,12 @@ import {
   setActiveOrganization,
 } from '@/actions/user';
 import { AppSidebar } from '@/components/app-sidebar';
+import { AgentInput } from '@/components/agent/AgentInput';
 import { MobileNavbar } from '@/components/mobile-navbar';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { OrgSwitchProvider } from '@/contexts/org-switch-context';
-import { createFileRoute, Outlet, redirect } from '@tanstack/react-router';
+import { createFileRoute, Outlet, redirect, useRouterState } from '@tanstack/react-router';
+import { cn } from '@/lib/utils';
 
 export const Route = createFileRoute('/_authed')({
   component: RouteComponent,
@@ -31,15 +33,23 @@ export const Route = createFileRoute('/_authed')({
 });
 
 function RouteComponent() {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const isChatRoute = pathname.startsWith('/chat/');
 
   return (
     <OrgSwitchProvider>
       <SidebarProvider defaultOpen={true} className="h-svh">
         <AppSidebar />
         <SidebarInset className="min-h-0 overflow-y-auto">
-          <div className="bg-[var(--arca-bg)] min-w-0 pb-20 md:pb-0">
+          <div
+            className={cn(
+              'min-w-0',
+              isChatRoute ? 'h-full overflow-hidden' : 'bg-[var(--arca-bg)] pb-20 md:pb-0'
+            )}
+          >
             <Outlet />
           </div>
+          {!isChatRoute && <AgentInput />}
         </SidebarInset>
         <MobileNavbar />
       </SidebarProvider>
