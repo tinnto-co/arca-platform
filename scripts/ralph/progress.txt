@@ -1,3 +1,30 @@
+## 2026-04-24 - US-035
+- Added studio-side server functions to `src/actions/client-portal.tsx`: `listClientRequests`, `createClientRequest`, `updateClientRequestStatus`
+  - All use `getSessionWithOrg()` + validate client belongs to org; `createClientRequest` and `updateClientRequestStatus` also call `assertCanWrite(role)`
+  - Explicit column selects (no `metadata`) to avoid `unknown` vs `{}` type conflicts with jsonb
+- Added "Solicitudes" tab to `src/components/client-detail-page.tsx`
+  - Tab trigger with ClipboardList icon added to the tab bar
+  - Tab content: status filter dropdown, "Nueva solicitud" button, requests table with status badges, Completar/Cancelar/Reabrir action buttons
+  - State: `solicitudesStatusFilter`, `newRequestDialogOpen`, form fields for new request (title, description, type, dueAt)
+  - `listClientRequests` query + `createClientRequest` and `updateClientRequestStatus` mutations wired in
+  - Dialog for creating new requests with title, description, type selector, optional due date
+  - Type `RequestRow` defined inline to work around TanStack Query's `unknown` inference with jsonb
+- Created `src/routes/_client/portal/solicitudes/index.tsx` — portal-facing requests page
+  - Filter bar (Pendientes / Completadas / Todas), list of requests with status badges, type, due date, completed date
+  - "Completar" button per open request calls `completeClientRequest`, invalidates portal dashboard query
+- Files changed: `src/actions/client-portal.tsx`, `src/components/client-detail-page.tsx`, `src/routes/_client/portal/solicitudes/index.tsx` (new), `src/routeTree.gen.ts`
+- **How to verify:**
+  - Run `bun run dev`
+  - Navigate to any client detail page (`/clients/$clientId`) → new "Solicitudes" tab appears in tab bar
+  - In Solicitudes tab: click "Nueva solicitud" → dialog opens; fill title + type + optional due date → click "Crear solicitud" → row appears in the table
+  - Row shows status badge "Abierta"; click "Completar" → status updates to "Completada"; click "Reabrir" → back to "Abierta"
+  - As a portal user at `/portal/solicitudes`: pending requests appear; click "Completar" → request disappears from Pendientes filter
+- **Learnings for future iterations:**
+  - jsonb columns in Drizzle return `metadata: unknown`; this causes TanStack server function type errors when using `select()` without specifying columns — use explicit column selects to exclude jsonb fields
+  - `useQuery` data types as `unknown` when server function return contains `unknown` — define a local `type RequestRow = {...}` and cast the default: `= [] as RequestRow[]`
+  - `updateClientRequestStatus` sets `completedAt: null` when status is not 'completed', preserving correctness for reopen/cancel flows
+---
+
 ## 2026-04-24 - US-034
 - Created `src/routes/_client/portal/index.tsx` — client portal dashboard page at `/portal`
 - Shows: greeting with client name, 4 summary cards (vencimientos, deudas, notificaciones, solicitudes), next 3 due dates panel, open debts panel, pending requests panel, unread notifications count panel
