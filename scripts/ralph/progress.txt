@@ -1,3 +1,25 @@
+## 2026-04-24 - US-021
+- Added `payroll_preview_receipt` tool in `src/routes/api/agent.ts`
+- Added imports: `payrollEscala`, `payrollConvenioCategoria`, `payrollConcepto` from schema; `or` from drizzle-orm; `differenceInYears` from date-fns; `evaluatePayrollFormulaStrict` from `@/lib/payroll-formula`
+- Tool accepts: `clientName`, `employeeName`, `periodo` (YYYY-MM)
+- Flow: find client → find active employee (fechaBaja IS NULL) → get basico from payrollEscala (vigenciaDesde <= period AND vigenciaHasta IS NULL OR >= period) → get conceptos → run formula evaluation loop in-memory → return totals
+- Returns structured JSON: `{ empleado, cuil, categoria, cliente, periodo, basico, haberes, noRemunerativo, descuentos, retenciones, neto, conceptos: [...], nota }`
+- Does NOT persist anything to DB — uses `dbReadonly` throughout
+- Updated agent system prompt to mention `payroll_preview_receipt`
+- Files changed: `src/routes/api/agent.ts`
+- **How to verify:**
+  - Run `bun run dev`, open `/chat/<id>`
+  - Ask "¿Cuánto cobraría [empleado] de [cliente] en [mes] YYYY?" → agent calls `payroll_preview_receipt`
+  - Response shows basico, haberes, descuentos, retenciones, neto and concept breakdown
+  - No new rows created in liquidacion_import_recibo table
+- **Learnings for future iterations:**
+  - `payrollEscala` vigency check: `lte(vigenciaDesde, periodoDate)` AND `or(isNull(vigenciaHasta), gte(vigenciaHasta, periodoDate))` — need to import `or` from drizzle-orm
+  - `differenceInYears` is the right function from date-fns for seniority calculation (same as sueldos.ts)
+  - `evaluatePayrollFormulaStrict` never throws — always returns `{ ok, value, error }`
+  - Formula context must be updated incrementally (totalRemunerativo, neto, etc.) so each concept can reference accumulated values from previous concepts
+  - `payrollConcepto.clientId` uses `clientId` naming (consistent with `job.clientId`) unlike most other tables that use `.client`
+---
+
 ## 2026-04-24 - US-020
 - Added `get_profile_status` tool in `src/routes/api/agent.ts`
 - Added `liquidacionImportEmpleado` to schema imports

@@ -338,7 +338,7 @@
         "Typecheck passes"
       ],
       "priority": 23,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 2. See calcularLiquidacion in src/actions/sueldos.ts"
     },
     {
