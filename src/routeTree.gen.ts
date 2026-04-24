@@ -14,6 +14,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthedRouteRouteImport } from './routes/_authed/route'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
 import { Route as InviteInvitationIdRouteImport } from './routes/invite.$invitationId'
+import { Route as ApiAgentRouteImport } from './routes/api/agent'
 import { Route as AuthedSueldosIndexRouteImport } from './routes/_authed/sueldos/index'
 import { Route as AuthedScan_pdfIndexRouteImport } from './routes/_authed/scan_pdf/index'
 import { Route as AuthedProductsIndexRouteImport } from './routes/_authed/products/index'
@@ -24,6 +25,7 @@ import { Route as AuthedClientsIndexRouteImport } from './routes/_authed/clients
 import { Route as AuthedAdminIndexRouteImport } from './routes/_authed/admin/index'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AuthedProductsIdRouteImport } from './routes/_authed/products/$id'
+import { Route as AuthedChatIdRouteImport } from './routes/_authed/chat/$id'
 import { Route as AuthedClientsClientIdIndexRouteImport } from './routes/_authed/clients/$clientId/index'
 import { Route as AuthedClientsClientIdProfileIdIndexRouteImport } from './routes/_authed/clients/$clientId/$profileId/index'
 
@@ -49,6 +51,11 @@ const AuthedIndexRoute = AuthedIndexRouteImport.update({
 const InviteInvitationIdRoute = InviteInvitationIdRouteImport.update({
   id: '/invite/$invitationId',
   path: '/invite/$invitationId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAgentRoute = ApiAgentRouteImport.update({
+  id: '/api/agent',
+  path: '/api/agent',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthedSueldosIndexRoute = AuthedSueldosIndexRouteImport.update({
@@ -102,6 +109,11 @@ const AuthedProductsIdRoute = AuthedProductsIdRouteImport.update({
   path: '/products/$id',
   getParentRoute: () => AuthedRouteRoute,
 } as any)
+const AuthedChatIdRoute = AuthedChatIdRouteImport.update({
+  id: '/chat/$id',
+  path: '/chat/$id',
+  getParentRoute: () => AuthedRouteRoute,
+} as any)
 const AuthedClientsClientIdIndexRoute =
   AuthedClientsClientIdIndexRouteImport.update({
     id: '/clients/$clientId/',
@@ -119,7 +131,9 @@ export interface FileRoutesByFullPath {
   '/': typeof AuthedIndexRoute
   '/login': typeof LoginRoute
   '/no-organization': typeof NoOrganizationRoute
+  '/api/agent': typeof ApiAgentRoute
   '/invite/$invitationId': typeof InviteInvitationIdRoute
+  '/chat/$id': typeof AuthedChatIdRoute
   '/products/$id': typeof AuthedProductsIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/admin/': typeof AuthedAdminIndexRoute
@@ -136,8 +150,10 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/no-organization': typeof NoOrganizationRoute
+  '/api/agent': typeof ApiAgentRoute
   '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/': typeof AuthedIndexRoute
+  '/chat/$id': typeof AuthedChatIdRoute
   '/products/$id': typeof AuthedProductsIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/admin': typeof AuthedAdminIndexRoute
@@ -156,8 +172,10 @@ export interface FileRoutesById {
   '/_authed': typeof AuthedRouteRouteWithChildren
   '/login': typeof LoginRoute
   '/no-organization': typeof NoOrganizationRoute
+  '/api/agent': typeof ApiAgentRoute
   '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/_authed/': typeof AuthedIndexRoute
+  '/_authed/chat/$id': typeof AuthedChatIdRoute
   '/_authed/products/$id': typeof AuthedProductsIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/_authed/admin/': typeof AuthedAdminIndexRoute
@@ -177,7 +195,9 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/no-organization'
+    | '/api/agent'
     | '/invite/$invitationId'
+    | '/chat/$id'
     | '/products/$id'
     | '/api/auth/$'
     | '/admin/'
@@ -194,8 +214,10 @@ export interface FileRouteTypes {
   to:
     | '/login'
     | '/no-organization'
+    | '/api/agent'
     | '/invite/$invitationId'
     | '/'
+    | '/chat/$id'
     | '/products/$id'
     | '/api/auth/$'
     | '/admin'
@@ -213,8 +235,10 @@ export interface FileRouteTypes {
     | '/_authed'
     | '/login'
     | '/no-organization'
+    | '/api/agent'
     | '/invite/$invitationId'
     | '/_authed/'
+    | '/_authed/chat/$id'
     | '/_authed/products/$id'
     | '/api/auth/$'
     | '/_authed/admin/'
@@ -233,6 +257,7 @@ export interface RootRouteChildren {
   AuthedRouteRoute: typeof AuthedRouteRouteWithChildren
   LoginRoute: typeof LoginRoute
   NoOrganizationRoute: typeof NoOrganizationRoute
+  ApiAgentRoute: typeof ApiAgentRoute
   InviteInvitationIdRoute: typeof InviteInvitationIdRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
@@ -272,6 +297,13 @@ declare module '@tanstack/react-router' {
       path: '/invite/$invitationId'
       fullPath: '/invite/$invitationId'
       preLoaderRoute: typeof InviteInvitationIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/agent': {
+      id: '/api/agent'
+      path: '/api/agent'
+      fullPath: '/api/agent'
+      preLoaderRoute: typeof ApiAgentRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authed/sueldos/': {
@@ -344,6 +376,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedProductsIdRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
+    '/_authed/chat/$id': {
+      id: '/_authed/chat/$id'
+      path: '/chat/$id'
+      fullPath: '/chat/$id'
+      preLoaderRoute: typeof AuthedChatIdRouteImport
+      parentRoute: typeof AuthedRouteRoute
+    }
     '/_authed/clients/$clientId/': {
       id: '/_authed/clients/$clientId/'
       path: '/clients/$clientId'
@@ -363,6 +402,7 @@ declare module '@tanstack/react-router' {
 
 interface AuthedRouteRouteChildren {
   AuthedIndexRoute: typeof AuthedIndexRoute
+  AuthedChatIdRoute: typeof AuthedChatIdRoute
   AuthedProductsIdRoute: typeof AuthedProductsIdRoute
   AuthedAdminIndexRoute: typeof AuthedAdminIndexRoute
   AuthedClientsIndexRoute: typeof AuthedClientsIndexRoute
@@ -378,6 +418,7 @@ interface AuthedRouteRouteChildren {
 
 const AuthedRouteRouteChildren: AuthedRouteRouteChildren = {
   AuthedIndexRoute: AuthedIndexRoute,
+  AuthedChatIdRoute: AuthedChatIdRoute,
   AuthedProductsIdRoute: AuthedProductsIdRoute,
   AuthedAdminIndexRoute: AuthedAdminIndexRoute,
   AuthedClientsIndexRoute: AuthedClientsIndexRoute,
@@ -400,6 +441,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthedRouteRoute: AuthedRouteRouteWithChildren,
   LoginRoute: LoginRoute,
   NoOrganizationRoute: NoOrganizationRoute,
+  ApiAgentRoute: ApiAgentRoute,
   InviteInvitationIdRoute: InviteInvitationIdRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }

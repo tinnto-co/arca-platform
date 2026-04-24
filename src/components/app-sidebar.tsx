@@ -3,6 +3,7 @@ import {
   BadgeCheck,
   Bell,
   BookOpen,
+  Bot,
   ChevronsUpDown,
   CreditCard,
   DollarSign,
@@ -200,6 +201,17 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>
+              <SidebarMenuItem>
+                <Link to="/chat/$id" params={{ id: crypto.randomUUID() }}>
+                  <SidebarMenuButton
+                    isActive={pathname.startsWith('/chat/')}
+                    tooltip="Chats"
+                  >
+                    <Bot />
+                    <span>Chats</span>
+                  </SidebarMenuButton>
+                </Link>
+              </SidebarMenuItem>
               {/*               <SidebarMenuItem>
                 <span className="cursor-not-allowed opacity-50 pointer-events-none flex w-full items-center gap-2">
                   <SidebarMenuButton
@@ -304,9 +316,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                     {/* </DropdownMenuGroup> */}
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
-                      onClick={async () => {
-                        await authClient.signOut();
-                        navigate({ to: '/login' });
+                      onClick={() => {
+                        void authClient.signOut().then(() => {
+                          navigate({ to: '/login' });
+                        });
                       }}
                     >
                       <LogOut />
