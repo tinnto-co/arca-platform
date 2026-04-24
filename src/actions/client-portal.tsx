@@ -9,7 +9,12 @@ import {
   dueDate,
   notification,
 } from '@/drizzle/schema';
-import { getAuthSession } from '@/actions/helpers';
+import {
+  getAuthSession,
+  getSessionWithOrg,
+  getMemberRole,
+  assertCanWrite,
+} from '@/actions/helpers';
 import { eq, and, isNull, gte, asc, desc } from 'drizzle-orm';
 
 /**
@@ -311,6 +316,136 @@ export const completeClientRequest = createServerFn({ method: 'POST' })
     await db
       .update(clientRequest)
       .set({ status: 'completed', completedAt: new Date() })
+      .where(eq(clientRequest.id, data.requestId));
+
+    return { success: true };
+  });
+
+// ── Studio-side server functions ─────────────────────────────────────────────
+
+export const listClientRequests = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      status: z.string().optional(),
+    })
+  )
+  .handler(async ({ data }) => {
+    const { orgId } = await getSessionWithOrg();
+
+    // Validate client belongs to org
+    const [clientRow] = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(and(eq(client.id, data.clientId), eq(client.organizationId, orgId)))
+      .limit(1);
+    if (!clientRow) throw new Error('Cliente no encontrado');
+
+    const conditions = [eq(clientRequest.clientId, data.clientId)];
+    if (data.status) {
+      conditions.push(eq(clientRequest.status, data.status));
+    }
+
+    return await db
+      .select({
+        id: clientRequest.id,
+        organizationId: clientRequest.organizationId,
+        clientId: clientRequest.clientId,
+        profileId: clientRequest.profileId,
+        requestedByUserId: clientRequest.requestedByUserId,
+        title: clientRequest.title,
+        description: clientRequest.description,
+        type: clientRequest.type,
+        status: clientRequest.status,
+        dueAt: clientRequest.dueAt,
+        completedAt: clientRequest.completedAt,
+        createdAt: clientRequest.createdAt,
+      })
+      .from(clientRequest)
+      .where(and(...conditions))
+      .orderBy(desc(clientRequest.createdAt));
+  });
+
+export const createClientRequest = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      title: z.string().min(1),
+      description: z.string().optional(),
+      type: z.string().min(1),
+      dueAt: z.string().optional(),
+    })
+  )
+  .handler(async ({ data }) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    // Validate client belongs to org
+    const [clientRow] = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(and(eq(client.id, data.clientId), eq(client.organizationId, orgId)))
+      .limit(1);
+    if (!clientRow) throw new Error('Cliente no encontrado');
+
+    const [created] = await db
+      .insert(clientRequest)
+      .values({
+        organizationId: orgId,
+        clientId: data.clientId,
+        requestedByUserId: userId,
+        title: data.title,
+        description: data.description ?? null,
+        type: data.type,
+        status: 'open',
+        dueAt: data.dueAt ? new Date(data.dueAt) : null,
+      })
+      .returning({
+        id: clientRequest.id,
+        organizationId: clientRequest.organizationId,
+        clientId: clientRequest.clientId,
+        profileId: clientRequest.profileId,
+        requestedByUserId: clientRequest.requestedByUserId,
+        title: clientRequest.title,
+        description: clientRequest.description,
+        type: clientRequest.type,
+        status: clientRequest.status,
+        dueAt: clientRequest.dueAt,
+        completedAt: clientRequest.completedAt,
+        createdAt: clientRequest.createdAt,
+      });
+
+    return created;
+  });
+
+export const updateClientRequestStatus = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      requestId: z.string().uuid(),
+      status: z.string().min(1),
+    })
+  )
+  .handler(async ({ data }) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    // Validate request belongs to org
+    const [existing] = await db
+      .select({ id: clientRequest.id, organizationId: clientRequest.organizationId })
+      .from(clientRequest)
+      .where(eq(clientRequest.id, data.requestId))
+      .limit(1);
+    if (!existing || existing.organizationId !== orgId) {
+      throw new Error('Solicitud no encontrada');
+    }
+
+    const completedAt = data.status === 'completed' ? new Date() : null;
+
+    await db
+      .update(clientRequest)
+      .set({ status: data.status, completedAt })
       .where(eq(clientRequest.id, data.requestId));
 
     return { success: true };

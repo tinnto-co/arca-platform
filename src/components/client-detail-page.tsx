@@ -19,6 +19,8 @@ import {
   X,
   Search,
   BookOpen,
+  ClipboardList,
+  Plus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -68,6 +70,11 @@ import {
 } from '@/actions/notification';
 import { updateProfileManagement } from '@/actions/profile';
 import { scrapSingleJob, updateDebtStatus } from '@/actions/client';
+import {
+  listClientRequests,
+  createClientRequest,
+  updateClientRequestStatus,
+} from '@/actions/client-portal';
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
 import {
@@ -419,6 +426,67 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   const [balanceDay, setBalanceDay] = useState<string>('31');
   const [balancePresentationDays, setBalancePresentationDays] = useState<string>('');
   const [balanceAlertDays, setBalanceAlertDays] = useState<string>('60,30,15,7');
+
+  // Solicitudes state
+  const [solicitudesStatusFilter, setSolicitudesStatusFilter] = useState<string>('');
+  const [newRequestDialogOpen, setNewRequestDialogOpen] = useState(false);
+  const [newRequestTitle, setNewRequestTitle] = useState('');
+  const [newRequestDescription, setNewRequestDescription] = useState('');
+  const [newRequestType, setNewRequestType] = useState('general');
+  const [newRequestDueAt, setNewRequestDueAt] = useState('');
+
+  type RequestRow = {
+    id: string;
+    organizationId: string;
+    clientId: string;
+    profileId: string | null;
+    requestedByUserId: string | null;
+    title: string;
+    description: string | null;
+    type: string;
+    status: string;
+    dueAt: Date | null;
+    completedAt: Date | null;
+    createdAt: Date;
+  };
+  const { data: clientRequestsData = [] as RequestRow[], refetch: refetchRequests } = useQuery({
+    queryKey: ['clientRequests', clientId, solicitudesStatusFilter],
+    queryFn: () => listClientRequests({ data: { clientId, status: solicitudesStatusFilter || undefined } }),
+    enabled: !!clientId,
+  });
+
+  const createRequestMutation = useMutation({
+    mutationFn: () =>
+      createClientRequest({
+        data: {
+          clientId,
+          title: newRequestTitle,
+          description: newRequestDescription || undefined,
+          type: newRequestType,
+          dueAt: newRequestDueAt || undefined,
+        },
+      }),
+    onSuccess: () => {
+      refetchRequests();
+      setNewRequestDialogOpen(false);
+      setNewRequestTitle('');
+      setNewRequestDescription('');
+      setNewRequestType('general');
+      setNewRequestDueAt('');
+      toast.success('Solicitud creada');
+    },
+    onError: () => toast.error('Error al crear solicitud'),
+  });
+
+  const updateRequestStatusMutation = useMutation({
+    mutationFn: (vars: { requestId: string; status: string }) =>
+      updateClientRequestStatus({ data: vars }),
+    onSuccess: () => {
+      refetchRequests();
+      toast.success('Estado actualizado');
+    },
+    onError: () => toast.error('Error al actualizar estado'),
+  });
 
   const { data: balanceConfig } = useQuery({
     queryKey: ['balanceConfig', clientId],
@@ -1636,6 +1704,10 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
               <TabsTrigger value="convenio-multilateral" className={tabTriggerCls()}>
                 <MapPin className="h-[14px] w-[14px]" />
                 Convenio Multilateral
+              </TabsTrigger>
+              <TabsTrigger value="solicitudes" className={tabTriggerCls()}>
+                <ClipboardList className="h-[14px] w-[14px]" />
+                Solicitudes
               </TabsTrigger>
             </TabsList>
           </div>
@@ -4089,6 +4161,199 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
               )}
             </div>
           </TabsContent>
+
+          {/* Solicitudes Tab */}
+          <TabsContent value="solicitudes" className="mt-4">
+            <div className="space-y-4">
+              {/* Header row */}
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Select value={solicitudesStatusFilter || 'all'} onValueChange={(v) => setSolicitudesStatusFilter(v === 'all' ? '' : v)}>
+                    <SelectTrigger className="h-8 gap-1.5 px-3 text-[12px] border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] bg-[var(--arca-surface)] min-w-[130px]">
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">Estado</span>
+                      <SelectValue placeholder="Todos" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos</SelectItem>
+                      <SelectItem value="open">Abierta</SelectItem>
+                      <SelectItem value="completed">Completada</SelectItem>
+                      <SelectItem value="cancelled">Cancelada</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => setNewRequestDialogOpen(true)}
+                  className="bg-[var(--arca-ink)] hover:bg-black text-white text-[12.5px] h-8 px-3 rounded-[var(--arca-r-md)] shrink-0 gap-1.5"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Nueva solicitud
+                </Button>
+              </div>
+
+              {/* Requests list */}
+              <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] overflow-hidden">
+                <div className="px-[20px] py-[14px] border-b border-[var(--arca-border)] flex items-center gap-2">
+                  <ClipboardList className="h-3.5 w-3.5 shrink-0 text-[var(--arca-ink-3)]" />
+                  <span className="text-[13px] font-semibold text-[var(--arca-ink)]">Solicitudes al cliente</span>
+                  {clientRequestsData.length > 0 && (
+                    <span className="text-[11px] font-mono text-[var(--arca-ink-4)]">{clientRequestsData.length}</span>
+                  )}
+                </div>
+                {clientRequestsData.length === 0 ? (
+                  <div className="flex items-center justify-center h-24 text-[13px] text-[var(--arca-ink-4)]">
+                    No hay solicitudes registradas
+                  </div>
+                ) : (
+                  <table className="w-full border-collapse text-[12.5px]">
+                    <thead>
+                      <tr className="bg-[var(--arca-surface-2)]">
+                        {(['Título', 'Tipo', 'Estado', 'Vencimiento', 'Creada', 'Acciones'] as const).map((h) => (
+                          <th key={h} className="px-[14px] py-[9px] text-left text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] border-b border-[var(--arca-border)] whitespace-nowrap">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {clientRequestsData.map((req, i) => {
+                        const statusColors: Record<string, { bg: string; color: string; label: string }> = {
+                          open: { bg: 'var(--arca-accent-warn-bg)', color: 'var(--arca-accent-warn)', label: 'Abierta' },
+                          completed: { bg: 'var(--arca-accent-pos-bg)', color: 'var(--arca-accent-pos)', label: 'Completada' },
+                          cancelled: { bg: 'var(--arca-surface-2)', color: 'var(--arca-ink-3)', label: 'Cancelada' },
+                        };
+                        const sc = statusColors[req.status] ?? statusColors['open'];
+                        return (
+                          <tr
+                            key={req.id}
+                            className={`border-b border-[var(--arca-border)] last:border-b-0 ${i % 2 === 1 ? 'bg-[var(--arca-surface-2)]' : ''}`}
+                          >
+                            <td className="px-[14px] py-[10px]">
+                              <p className="font-medium text-[var(--arca-ink)]">{req.title}</p>
+                              {req.description && (
+                                <p className="text-[11px] text-[var(--arca-ink-3)] mt-0.5 max-w-[280px] truncate">{req.description}</p>
+                              )}
+                            </td>
+                            <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)]">{req.type}</td>
+                            <td className="px-[14px] py-[10px]">
+                              <span
+                                className="inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                                style={{ background: sc.bg, color: sc.color }}
+                              >
+                                {sc.label}
+                              </span>
+                            </td>
+                            <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)] whitespace-nowrap">
+                              {req.dueAt
+                                ? new Date(req.dueAt as unknown as string).toLocaleDateString('es-AR')
+                                : '—'}
+                            </td>
+                            <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)] whitespace-nowrap">
+                              {new Date(req.createdAt as unknown as string).toLocaleDateString('es-AR')}
+                            </td>
+                            <td className="px-[14px] py-[10px]">
+                              <div className="flex items-center gap-1.5">
+                                {req.status === 'open' && (
+                                  <>
+                                    <button
+                                      onClick={() => updateRequestStatusMutation.mutate({ requestId: req.id, status: 'completed' })}
+                                      className="text-[11px] text-[var(--arca-accent-pos)] hover:underline font-medium"
+                                    >
+                                      Completar
+                                    </button>
+                                    <span className="text-[var(--arca-border-strong)]">·</span>
+                                    <button
+                                      onClick={() => updateRequestStatusMutation.mutate({ requestId: req.id, status: 'cancelled' })}
+                                      className="text-[11px] text-[var(--arca-ink-3)] hover:underline"
+                                    >
+                                      Cancelar
+                                    </button>
+                                  </>
+                                )}
+                                {req.status !== 'open' && (
+                                  <button
+                                    onClick={() => updateRequestStatusMutation.mutate({ requestId: req.id, status: 'open' })}
+                                    className="text-[11px] text-[var(--arca-accent-primary)] hover:underline"
+                                  >
+                                    Reabrir
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            {/* Nueva solicitud dialog */}
+            <Dialog open={newRequestDialogOpen} onOpenChange={setNewRequestDialogOpen}>
+              <DialogContent className="sm:max-w-[480px]">
+                <DialogHeader>
+                  <DialogTitle>Nueva solicitud al cliente</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-3 pt-2">
+                  <div>
+                    <label className="text-[12px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-[0.06em]">Título *</label>
+                    <Input
+                      value={newRequestTitle}
+                      onChange={(e) => setNewRequestTitle(e.target.value)}
+                      placeholder="Ej. Enviar balance del ejercicio"
+                      className="mt-1 h-9 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[12px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-[0.06em]">Descripción</label>
+                    <Input
+                      value={newRequestDescription}
+                      onChange={(e) => setNewRequestDescription(e.target.value)}
+                      placeholder="Instrucciones o contexto adicional"
+                      className="mt-1 h-9 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[12px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-[0.06em]">Tipo</label>
+                    <Select value={newRequestType} onValueChange={setNewRequestType}>
+                      <SelectTrigger className="mt-1 h-9 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="general">General</SelectItem>
+                        <SelectItem value="document">Documento</SelectItem>
+                        <SelectItem value="information">Información</SelectItem>
+                        <SelectItem value="signature">Firma</SelectItem>
+                        <SelectItem value="payment">Pago</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="text-[12px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-[0.06em]">Fecha límite</label>
+                    <Input
+                      type="date"
+                      value={newRequestDueAt}
+                      onChange={(e) => setNewRequestDueAt(e.target.value)}
+                      className="mt-1 h-9 text-sm"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button variant="outline" size="sm" onClick={() => setNewRequestDialogOpen(false)}>
+                      Cancelar
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={!newRequestTitle.trim() || createRequestMutation.isPending}
+                      onClick={() => createRequestMutation.mutate()}
+                      className="bg-[var(--arca-ink)] hover:bg-black text-white"
+                    >
+                      {createRequestMutation.isPending ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Creando…</> : 'Crear solicitud'}
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </TabsContent>
+
         </div>{/* end content area */}
       </Tabs>
 
