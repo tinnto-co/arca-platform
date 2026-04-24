@@ -348,7 +348,8 @@ HERRAMIENTAS DISPONIBLES
 - get_client_summary: USÁ ESTE TOOL cuando te pregunten sobre el estado general de un cliente. Devuelve datos del cliente, perfiles, notificaciones abiertas, deudas vencidas, próximos vencimientos y últimos scrapeos.
 - get_open_notifications: USÁ ESTE TOOL cuando te pregunten sobre notificaciones abiertas, alertas del fisco, o notificaciones críticas. Acepta filtro por cliente y/o severidad.
 - get_debts: USÁ ESTE TOOL cuando te pregunten sobre deudas fiscales, deudas con AFIP, montos adeudados, deudas vencidas o por estado. Acepta filtro por cliente, estado (open/in_plan/paid/disputed) y límite.
-- executeQuery: para cualquier consulta SQL general (clientes, facturas, vencimientos, nómina).
+- get_due_dates: USÁ ESTE TOOL cuando te pregunten sobre vencimientos fiscales próximos, obligaciones fiscales, vencimientos pendientes o completados. Acepta filtro por cliente, días hacia adelante e incluir completados.
+- executeQuery: para cualquier consulta SQL general (clientes, facturas, nómina).
 - getIvaPosition: USÁ SIEMPRE ESTE TOOL para consultas sobre IVA, posición IVA, saldo IVA, crédito/débito fiscal.
   - El parámetro displayMonth es el mes que el usuario quiere ver (ej: "Marzo 2026" → "03/2026"). El tool internamente usa el mes anterior para consultar iva_scrape.
   - NUNCA respondas "no hay datos para X mes" desde la memoria de la conversación. Siempre volvé a llamar al tool con el displayMonth específico que pide el usuario.
@@ -638,6 +639,87 @@ HERRAMIENTAS DISPONIBLES
                       totalDeuda: totalDebt.toFixed(2),
                       estado: d.status,
                       intimada: d.isIntimated,
+                      cliente: d.clientName,
+                    };
+                  }),
+                };
+              },
+            }),
+            get_due_dates: tool({
+              description:
+                'Obtiene los vencimientos fiscales próximos. Filtrá opcionalmente por cliente, cantidad de días hacia adelante e incluir/excluir completados.',
+              inputSchema: z.object({
+                clientName: z.string().optional().describe('Nombre del cliente (búsqueda parcial). Si no se especifica, devuelve vencimientos de todos los clientes.'),
+                days_ahead: z.number().int().min(1).max(365).default(30).describe('Cantidad de días hacia adelante a consultar (default: 30)'),
+                include_completed: z.boolean().default(false).describe('Incluir vencimientos ya completados (default: false)'),
+              }),
+              execute: async ({ clientName, days_ahead, include_completed }) => {
+                const allOrgClients = await dbReadonly
+                  .select({ id: client.id, name: client.name })
+                  .from(client)
+                  .where(eq(client.organizationId, orgId));
+
+                if (allOrgClients.length === 0)
+                  return { dueDates: [], total: 0 };
+
+                let clientIds = allOrgClients.map((c) => c.id);
+                let resolvedClientName: string | undefined;
+
+                if (clientName) {
+                  const matched = allOrgClients.filter((c) =>
+                    c.name.toLowerCase().includes(clientName.toLowerCase())
+                  );
+                  if (matched.length === 0)
+                    return { error: `No encontré clientes con nombre "${clientName}"` };
+                  if (matched.length > 1)
+                    return { error: 'Más de un cliente coincide', options: matched.map((c) => c.name) };
+                  clientIds = [matched[0].id];
+                  resolvedClientName = matched[0].name;
+                }
+
+                const now = new Date();
+                const futureDate = new Date(now.getTime() + days_ahead * 24 * 60 * 60 * 1000);
+
+                const conditions: any[] = [
+                  inArray(dueDate.client, clientIds),
+                  gte(dueDate.dueDate, now),
+                  lte(dueDate.dueDate, futureDate),
+                ];
+
+                if (!include_completed) {
+                  conditions.push(isNull(dueDate.completedAt));
+                }
+
+                const rows = await dbReadonly
+                  .select({
+                    id: dueDate.id,
+                    tax: dueDate.tax,
+                    concept: dueDate.concept,
+                    period: dueDate.period,
+                    dueDateVal: dueDate.dueDate,
+                    completedAt: dueDate.completedAt,
+                    clientName: client.name,
+                  })
+                  .from(dueDate)
+                  .leftJoin(client, eq(dueDate.client, client.id))
+                  .where(and(...conditions))
+                  .orderBy(dueDate.dueDate)
+                  .limit(100);
+
+                return {
+                  cliente: resolvedClientName ?? 'Todos los clientes',
+                  total: rows.length,
+                  dueDates: rows.map((d) => {
+                    const msUntilDue = (d.dueDateVal?.getTime() ?? 0) - now.getTime();
+                    const daysUntilDue = Math.ceil(msUntilDue / (1000 * 60 * 60 * 24));
+                    return {
+                      id: d.id,
+                      impuesto: d.tax,
+                      concepto: d.concept,
+                      periodo: d.period,
+                      vencimiento: d.dueDateVal?.toISOString() ?? null,
+                      completadoEl: d.completedAt?.toISOString() ?? null,
+                      diasHastaVencimiento: daysUntilDue,
                       cliente: d.clientName,
                     };
                   }),
