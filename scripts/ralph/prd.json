@@ -322,7 +322,7 @@
         "Typecheck passes"
       ],
       "priority": 22,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 2. Depends on US-001 profile columns"
     },
     {

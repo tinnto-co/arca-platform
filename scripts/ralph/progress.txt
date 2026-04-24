@@ -1,3 +1,23 @@
+## 2026-04-24 - US-020
+- Added `get_profile_status` tool in `src/routes/api/agent.ts`
+- Added `liquidacionImportEmpleado` to schema imports
+- Accepts: `clientName` (required), `profileName` (optional)
+- Per profile: runs 4 parallel queries: last IVA scrape, open notification count, active employee count (fechaBaja IS NULL), last finished jobs per type
+- Returns: `{ cliente, perfiles: [{ perfil, cuit, estado, administradoPorEstudio, tipoPerfil, liquidaSueldos, ultimoScrapeo, ultimoIvaScrape, notificacionesAbiertas, empleadosActivos, ultimosScrapeos }] }`
+- Updated agent system prompt to mention `get_profile_status`
+- Files changed: `src/routes/api/agent.ts`
+- **How to verify:**
+  - Run `bun run dev`, open `/chat/<id>`
+  - Ask "¿Cuál es el estado del perfil de [cliente]?" → agent calls `get_profile_status`
+  - Ask "¿El perfil [perfil] de [cliente] está actualizado?" → agent calls with profileName filter
+  - Response shows IVA scrape, notificaciones abiertas, empleados activos, tipo de perfil
+- **Learnings for future iterations:**
+  - `liquidacionImportEmpleado.profileId` (not `.profile`) — this table uses standard naming unlike other tables that use `.client` for FK
+  - Active employees: `isNull(liquidacionImportEmpleado.fechaBaja)` — no `activo` boolean on this table, only fechaBaja
+  - `notification.profile` is the FK column (not profileId) — consistent with other tables using `.client` pattern
+  - `job.clientId` is the FK column on job table (inconsistent with other tables using `.client`)
+---
+
 ## 2026-04-24 - US-019
 - Added `get_due_dates` tool in `src/routes/api/agent.ts`
 - Accepts: `clientName` (optional), `days_ahead` (default 30, max 365), `include_completed` (default false)
