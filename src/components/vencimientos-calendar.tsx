@@ -1,13 +1,15 @@
 import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ChevronLeft,
   ChevronRight,
   Clock,
   AlertTriangle,
-  FileText,
+  CheckCircle2,
+  Circle,
 } from 'lucide-react';
 import { getCalendarDueDates } from '@/actions/dashboard';
+import { markDueDateCompleted } from '@/actions/client';
 import { cn } from '@/lib/utils';
 
 /* ─── Types ─── */
@@ -20,6 +22,7 @@ interface CalendarEvent {
   kind: 'due' | 'debt';
   clientName: string | null;
   balance?: string;
+  completedAt?: Date | null;
 }
 
 /* ─── Helpers ─── */
@@ -68,6 +71,7 @@ function buildCalendarGrid(year: number, month: number): Date[] {
 
 export function VencimientosCalendar() {
   const today = new Date();
+  const queryClient = useQueryClient();
   const [currentMonth, setCurrentMonth] = useState(
     () => new Date(today.getFullYear(), today.getMonth(), 1)
   );
@@ -82,12 +86,14 @@ export function VencimientosCalendar() {
   const fetchFrom = gridDays[0];
   const fetchTo = gridDays[gridDays.length - 1];
 
+  const calendarQueryKey = [
+    'calendarDueDates',
+    fetchFrom.toISOString(),
+    fetchTo.toISOString(),
+  ];
+
   const { data, isLoading } = useQuery({
-    queryKey: [
-      'calendarDueDates',
-      fetchFrom.toISOString(),
-      fetchTo.toISOString(),
-    ],
+    queryKey: calendarQueryKey,
     queryFn: () =>
       getCalendarDueDates({
         data: {
@@ -95,6 +101,14 @@ export function VencimientosCalendar() {
           to: fetchTo.toISOString(),
         },
       }),
+  });
+
+  const completeMutation = useMutation({
+    mutationFn: ({ id, completed }: { id: string; completed: boolean }) =>
+      markDueDateCompleted({ data: { id, completed } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: calendarQueryKey });
+    },
   });
 
   // Map events by day key
@@ -113,6 +127,7 @@ export function VencimientosCalendar() {
         subtitle: dd.concept || '',
         kind: 'due',
         clientName: dd.clientName,
+        completedAt: dd.completedAt ? new Date(dd.completedAt) : null,
       });
       map.set(key, list);
     }
@@ -229,52 +244,73 @@ export function VencimientosCalendar() {
               </div>
             ) : (
               <div className="space-y-1">
-                {selectedEvents.map((ev) => (
-                  <div
-                    key={ev.id}
-                    className={cn(
-                      'rounded-[var(--arca-r-md)] p-3 border',
-                      ev.kind === 'due'
-                        ? 'border-[var(--arca-accent-info-bg)] bg-[var(--arca-accent-info-bg)]'
-                        : 'border-[var(--arca-accent-neg-bg)] bg-[var(--arca-accent-neg-bg)]'
-                    )}
-                  >
-                    <div className="flex items-start gap-2.5">
-                      <div
-                        className={cn(
-                          'w-6 h-6 rounded-[5px] inline-flex items-center justify-center shrink-0 mt-0.5',
-                          ev.kind === 'due'
-                            ? 'bg-[var(--arca-accent-info)] text-white'
-                            : 'bg-[var(--arca-accent-neg)] text-white'
-                        )}
-                      >
+                {selectedEvents.map((ev) => {
+                  const isCompleted = ev.kind === 'due' && !!ev.completedAt;
+                  return (
+                    <div
+                      key={ev.id}
+                      className={cn(
+                        'rounded-[var(--arca-r-md)] p-3 border',
+                        isCompleted
+                          ? 'border-[var(--arca-accent-pos-bg)] bg-[var(--arca-accent-pos-bg)] opacity-70'
+                          : ev.kind === 'due'
+                            ? 'border-[var(--arca-accent-info-bg)] bg-[var(--arca-accent-info-bg)]'
+                            : 'border-[var(--arca-accent-neg-bg)] bg-[var(--arca-accent-neg-bg)]'
+                      )}
+                    >
+                      <div className="flex items-start gap-2.5">
                         {ev.kind === 'due' ? (
-                          <FileText className="w-3 h-3" />
+                          <button
+                            onClick={() =>
+                              completeMutation.mutate({ id: ev.id, completed: !isCompleted })
+                            }
+                            disabled={completeMutation.isPending}
+                            className="shrink-0 mt-0.5 cursor-pointer text-[var(--arca-ink-3)] hover:text-[var(--arca-accent-pos)] transition-colors"
+                            title={isCompleted ? 'Marcar como pendiente' : 'Marcar como completado'}
+                          >
+                            {isCompleted ? (
+                              <CheckCircle2 className="w-5 h-5 text-[var(--arca-accent-pos)]" />
+                            ) : (
+                              <Circle className="w-5 h-5" />
+                            )}
+                          </button>
                         ) : (
-                          <AlertTriangle className="w-3 h-3" />
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="text-[13px] font-semibold text-[var(--arca-ink)] leading-tight">
-                          {ev.title}
-                        </div>
-                        {ev.subtitle && (
-                          <div className="text-[11.5px] text-[var(--arca-ink-3)] mt-0.5 truncate">
-                            {ev.subtitle}
+                          <div className="w-6 h-6 rounded-[5px] inline-flex items-center justify-center shrink-0 mt-0.5 bg-[var(--arca-accent-neg)] text-white">
+                            <AlertTriangle className="w-3 h-3" />
                           </div>
                         )}
-                        <div className="text-[11px] text-[var(--arca-ink-4)] mt-1">
-                          {ev.clientName || 'General'}
-                          {ev.balance && (
-                            <span className="ml-2 font-semibold text-[var(--arca-accent-neg-fg)]">
-                              $ {parseFloat(ev.balance).toLocaleString('es-AR')}
-                            </span>
+                        <div className="min-w-0 flex-1">
+                          <div
+                            className={cn(
+                              'text-[13px] font-semibold text-[var(--arca-ink)] leading-tight',
+                              isCompleted && 'line-through text-[var(--arca-ink-3)]'
+                            )}
+                          >
+                            {ev.title}
+                          </div>
+                          {ev.subtitle && (
+                            <div
+                              className={cn(
+                                'text-[11.5px] text-[var(--arca-ink-3)] mt-0.5 truncate',
+                                isCompleted && 'line-through'
+                              )}
+                            >
+                              {ev.subtitle}
+                            </div>
                           )}
+                          <div className="text-[11px] text-[var(--arca-ink-4)] mt-1">
+                            {ev.clientName || 'General'}
+                            {ev.balance && (
+                              <span className="ml-2 font-semibold text-[var(--arca-accent-neg-fg)]">
+                                $ {parseFloat(ev.balance).toLocaleString('es-AR')}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -366,22 +402,27 @@ export function VencimientosCalendar() {
                 {/* Event dots / pills */}
                 {events.length > 0 && (
                   <div className="mt-0.5 flex flex-col gap-0.5">
-                    {events.slice(0, 2).map((ev) => (
-                      <div
-                        key={ev.id}
-                        className={cn(
-                          'text-[9.5px] font-medium leading-tight px-1 py-px rounded truncate',
-                          ev.kind === 'due' && !isPast &&
-                          'bg-[var(--arca-accent-info-bg)] text-[var(--arca-accent-info-fg)]',
-                          ev.kind === 'due' && isPast &&
-                          'bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]',
-                          ev.kind === 'debt' &&
-                          'bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]'
-                        )}
-                      >
-                        {ev.title}
-                      </div>
-                    ))}
+                    {events.slice(0, 2).map((ev) => {
+                      const evCompleted = ev.kind === 'due' && !!ev.completedAt;
+                      return (
+                        <div
+                          key={ev.id}
+                          className={cn(
+                            'text-[9.5px] font-medium leading-tight px-1 py-px rounded truncate',
+                            evCompleted &&
+                            'bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)] line-through',
+                            !evCompleted && ev.kind === 'due' && !isPast &&
+                            'bg-[var(--arca-accent-info-bg)] text-[var(--arca-accent-info-fg)]',
+                            !evCompleted && ev.kind === 'due' && isPast &&
+                            'bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]',
+                            ev.kind === 'debt' &&
+                            'bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]'
+                          )}
+                        >
+                          {ev.title}
+                        </div>
+                      );
+                    })}
                     {events.length > 2 && (
                       <span className="text-[9px] text-[var(--arca-ink-4)] px-1">
                         +{events.length - 2} más

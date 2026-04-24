@@ -528,6 +528,7 @@ export const getCalendarDueDates = createServerFn({ method: 'GET' })
           dueDate: dueDate.dueDate,
           clientId: dueDate.client,
           clientName: client.name,
+          completedAt: dueDate.completedAt,
         })
         .from(dueDate)
         .leftJoin(client, eq(dueDate.client, client.id))
