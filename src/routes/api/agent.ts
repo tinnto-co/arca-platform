@@ -11,7 +11,7 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { db, dbReadonly } from '@/lib/db';
-import { agentConversation, agentMessage, agentRun, ivaScrape, profile, client, invoice, notification, debt, dueDate, job } from '@/drizzle/schema';
+import { agentConversation, agentMessage, agentRun, ivaScrape, profile, client, invoice, notification, debt, dueDate, job, liquidacionImportEmpleado } from '@/drizzle/schema';
 import { eq, and, sql, ilike, gte, lte, isNull, isNotNull, lt, desc, inArray } from 'drizzle-orm';
 import {
   INVOICE_TYPES_A,
@@ -349,6 +349,7 @@ HERRAMIENTAS DISPONIBLES
 - get_open_notifications: USÁ ESTE TOOL cuando te pregunten sobre notificaciones abiertas, alertas del fisco, o notificaciones críticas. Acepta filtro por cliente y/o severidad.
 - get_debts: USÁ ESTE TOOL cuando te pregunten sobre deudas fiscales, deudas con AFIP, montos adeudados, deudas vencidas o por estado. Acepta filtro por cliente, estado (open/in_plan/paid/disputed) y límite.
 - get_due_dates: USÁ ESTE TOOL cuando te pregunten sobre vencimientos fiscales próximos, obligaciones fiscales, vencimientos pendientes o completados. Acepta filtro por cliente, días hacia adelante e incluir completados.
+- get_profile_status: USÁ ESTE TOOL cuando te pregunten sobre el estado de un perfil fiscal: IVA, notificaciones, empleados activos, tipo de perfil, scraping. Acepta clientName y profileName opcional.
 - executeQuery: para cualquier consulta SQL general (clientes, facturas, nómina).
 - getIvaPosition: USÁ SIEMPRE ESTE TOOL para consultas sobre IVA, posición IVA, saldo IVA, crédito/débito fiscal.
   - El parámetro displayMonth es el mes que el usuario quiere ver (ej: "Marzo 2026" → "03/2026"). El tool internamente usa el mes anterior para consultar iva_scrape.
@@ -723,6 +724,125 @@ HERRAMIENTAS DISPONIBLES
                       cliente: d.clientName,
                     };
                   }),
+                };
+              },
+            }),
+            get_profile_status: tool({
+              description:
+                'Obtiene el estado fiscal de un perfil: datos del perfil, último scrape IVA, notificaciones abiertas, empleados activos y fechas de último scraping.',
+              inputSchema: z.object({
+                clientName: z.string().describe('Nombre del cliente (búsqueda parcial)'),
+                profileName: z.string().optional().describe('Nombre del perfil (búsqueda parcial). Si no se especifica, devuelve todos los perfiles del cliente.'),
+              }),
+              execute: async ({ clientName, profileName }) => {
+                const matchingClients = await dbReadonly
+                  .select({ id: client.id, name: client.name })
+                  .from(client)
+                  .where(and(eq(client.organizationId, orgId), ilike(client.name, `%${clientName}%`)));
+
+                if (matchingClients.length === 0)
+                  return { error: `No encontré clientes con nombre "${clientName}"` };
+                if (matchingClients.length > 1)
+                  return { error: 'Más de un cliente coincide', options: matchingClients.map((c) => c.name) };
+
+                const foundClient = matchingClients[0];
+
+                const profileWhere = profileName
+                  ? and(eq(profile.client, foundClient.id), ilike(profile.name, `%${profileName}%`))
+                  : eq(profile.client, foundClient.id);
+
+                const profiles = await dbReadonly
+                  .select({
+                    id: profile.id,
+                    name: profile.name,
+                    identityNumber: profile.identityNumber,
+                    status: profile.status,
+                    managedByStudy: profile.managedByStudy,
+                    profileType: profile.profileType,
+                    liquidaSueldos: profile.liquidaSueldos,
+                    scrapedAt: profile.scrapedAt,
+                  })
+                  .from(profile)
+                  .where(profileWhere);
+
+                if (profiles.length === 0)
+                  return { error: `No se encontraron perfiles para ${foundClient.name}` };
+
+                const results = [];
+                for (const p of profiles) {
+                  const [
+                    lastIvaScrape,
+                    openNotifCount,
+                    activeEmpCount,
+                    lastScrapes,
+                  ] = await Promise.all([
+                    dbReadonly
+                      .select({
+                        periodoFiscal: ivaScrape.periodoFiscal,
+                        ok: ivaScrape.ok,
+                        debitoFiscal: ivaScrape.debitoFiscal,
+                        creditoFiscal: ivaScrape.creditoFiscal,
+                        saldoTecnico: ivaScrape.saldoTecnicoFavorContribuyente,
+                      })
+                      .from(ivaScrape)
+                      .where(eq(ivaScrape.profileId, p.id))
+                      .orderBy(desc(ivaScrape.periodoFiscal))
+                      .limit(1),
+
+                    dbReadonly
+                      .select({ count: sql<number>`count(*)` })
+                      .from(notification)
+                      .where(
+                        and(
+                          eq(notification.profile, p.id),
+                          isNotNull(notification.profile),
+                          isNull(notification.resolvedAt),
+                        )
+                      ),
+
+                    dbReadonly
+                      .select({ count: sql<number>`count(*)` })
+                      .from(liquidacionImportEmpleado)
+                      .where(
+                        and(
+                          eq(liquidacionImportEmpleado.profileId, p.id),
+                          isNull(liquidacionImportEmpleado.fechaBaja),
+                        )
+                      ),
+
+                    dbReadonly
+                      .select({ type: job.type, finishedAt: job.finishedAt })
+                      .from(job)
+                      .where(and(eq(job.clientId, foundClient.id), eq(job.status, 'finished')))
+                      .orderBy(desc(job.finishedAt))
+                      .limit(30),
+                  ]);
+
+                  const lastScrapesByType: Record<string, string | null> = {};
+                  for (const j of lastScrapes) {
+                    if (!lastScrapesByType[j.type]) {
+                      lastScrapesByType[j.type] = j.finishedAt?.toISOString() ?? null;
+                    }
+                  }
+
+                  results.push({
+                    perfil: p.name,
+                    cuit: p.identityNumber,
+                    estado: p.status,
+                    administradoPorEstudio: p.managedByStudy,
+                    tipoPerfil: p.profileType,
+                    liquidaSueldos: p.liquidaSueldos,
+                    ultimoScrapeo: p.scrapedAt?.toISOString() ?? null,
+                    ultimoIvaScrape: lastIvaScrape[0] ?? null,
+                    notificacionesAbiertas: openNotifCount[0]?.count ?? 0,
+                    empleadosActivos: activeEmpCount[0]?.count ?? 0,
+                    ultimosScrapeos: lastScrapesByType,
+                  });
+                }
+
+                return {
+                  cliente: foundClient.name,
+                  perfiles: results,
                 };
               },
             }),
