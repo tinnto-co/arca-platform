@@ -1,3 +1,28 @@
+## 2026-04-24 - US-029
+- Created `src/routes/_authed/alerts/index.tsx` with full alert inbox page
+- Added `AlertTriangle` NavItem in `src/components/app-sidebar.tsx` with open alert count badge
+- Added `type` filter to `listAlerts` in `src/actions/alert.tsx`
+- Page includes: filter bar (status, severity, type, client), alert list with SeverityBadge, type chip, title, description, client name, source entity type, time ago
+- Each alert row has: Assign (inline member select dropdown), Resolve (mutates to resolved), View source (href to relevant page based on alert type)
+- `getSourceHref` maps alert types to routes: overdue_debt→/clients/$id, critical_notification→/notifications, upcoming_due_date→/vencimientos, scraper_error→/jobs
+- Sidebar queries open alerts with `staleTime: 60_000` to avoid excessive requests
+- Files changed: `src/routes/_authed/alerts/index.tsx` (new), `src/actions/alert.tsx`, `src/components/app-sidebar.tsx`
+- **How to verify:**
+  - Run `bun run dev`, look at sidebar — new "Alertas" item appears below Vencimientos with red count badge if open alerts exist
+  - Navigate to /alerts — see filter bar and alert list
+  - Use filters (status, severity, type, client) to narrow down alerts
+  - On an alert row: click "Asignar" → inline member select appears; pick a member → alert updates
+  - Click "Resolver" → alert disappears from "Abiertas" filter view
+  - Click "Ver" → navigates to the source page (e.g. /notifications for a critical_notification alert)
+  - Switch status filter to "Resueltas" to see resolved alerts (grayed out)
+- **Learnings for future iterations:**
+  - `listAlerts` returns `as any` — cast to typed interface in the component for clean usage
+  - Alert `type` field needed its own filter added to `listAlerts` inputValidator (was missing)
+  - `relativeTime` and `ArcaCard` are both exported from `@/components/dashboard/shared` — usable across routes
+  - For "View source" navigation with dynamic paths, use `<a href={...}>` rather than TanStack Router `<Link>` to avoid TS route-string constraints
+  - Sidebar count badge uses `urgentCount` prop on NavItem — already supported by existing component
+---
+
 ## 2026-04-24 - US-028
 - Created `src/lib/risk-engine.ts` with `calculateRiskScore(profileId, period)` and `generateRiskSnapshots(orgId, period)`
 - `calculateRiskScore` computes score 0-100 across 6 factors: overdue debt (30%), critical notifications (20%), upcoming due dates (15%), months without invoices (15%), IVA status (10%), scraper errors (10%)
