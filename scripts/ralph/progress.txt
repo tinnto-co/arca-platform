@@ -1,3 +1,21 @@
+## 2026-04-24 - US-028
+- Created `src/lib/risk-engine.ts` with `calculateRiskScore(profileId, period)` and `generateRiskSnapshots(orgId, period)`
+- `calculateRiskScore` computes score 0-100 across 6 factors: overdue debt (30%), critical notifications (20%), upcoming due dates (15%), months without invoices (15%), IVA status (10%), scraper errors (10%)
+- Risk levels: low < 25, medium 25-50, high 50-75, critical > 75
+- `generateRiskSnapshots` iterates all org profiles and upserts into `profile_risk_snapshot` via `onConflictDoUpdate` on (profileId, period)
+- Files changed: `src/lib/risk-engine.ts`
+- **How to verify:**
+  - Import `calculateRiskScore` in any server context and call with a valid `profileId` and `period` like `"2026-03"`
+  - Returns `{ score, riskLevel, factors }` with component scores summing to total
+  - Import `generateRiskSnapshots(orgId, "2026-03")` — inserts/updates rows in `profile_risk_snapshot`
+  - Re-running `generateRiskSnapshots` for same period updates existing rows (no duplicates)
+- **Learnings for future iterations:**
+  - `onConflictDoUpdate` with `target: [col1, col2]` works in Drizzle ORM for multi-column unique constraints
+  - `invoice.profile` is the FK column name on the invoice table (not `invoice.profileId`) — matches the `.client` naming pattern of other tables
+  - `ivaScrape.periodoFiscal` stores periods in the format from the scraper — use whatever format the caller passes consistently
+  - `sql<number>\`COUNT(*)\`` pattern used for aggregations to match codebase convention (not `count()` from drizzle-orm)
+---
+
 ## 2026-04-24 - US-027
 - Created `src/lib/alert-generator.ts` with `generateAlerts(orgId)` function
 - Scans 4 sources: overdue open debts (dueDate < now), critical unresolved notifications, upcoming due dates within 7 days (not completed), clients with hasErrors=true
