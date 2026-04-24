@@ -35,6 +35,38 @@ import { getClients, getClientProfiles } from '@/actions/client';
 import { cn } from '@/lib/utils';
 import { userQuery } from '../lib/user-query';
 
+const SEVERITY_ORDER: Record<string, number> = {
+  critical: 0,
+  medium: 1,
+  low: 2,
+  informational: 3,
+  unclassified: 4,
+};
+
+function SeverityBadge({ severity }: { severity: string | null }) {
+  if (!severity || severity === 'unclassified') return null;
+  const styles: Record<string, string> = {
+    critical: 'bg-red-100 text-red-700',
+    medium: 'bg-orange-100 text-orange-700',
+    low: 'bg-blue-100 text-blue-700',
+    informational: 'bg-gray-100 text-gray-600',
+  };
+  const labels: Record<string, string> = {
+    critical: 'Crítica',
+    medium: 'Media',
+    low: 'Baja',
+    informational: 'Info',
+  };
+  const cls = styles[severity] ?? 'bg-gray-100 text-gray-500';
+  return (
+    <span
+      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold shrink-0 ${cls}`}
+    >
+      {labels[severity] ?? severity}
+    </span>
+  );
+}
+
 interface NotificationData {
   id: string;
   externalId: string;
@@ -48,6 +80,9 @@ interface NotificationData {
   profileId?: string | null;
   profileName?: string | null;
   profileIdentityNumber?: string | null;
+  severity?: string | null;
+  category?: string | null;
+  aiSummary?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -81,6 +116,7 @@ export function NotificationsView({
     clientIdProp ?? 'all'
   );
   const [profileFilter, setProfileFilter] = useState<string>('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [selectedNotificationId, setSelectedNotificationId] = useState<
     string | null
   >(initialNotificationId ?? null);
@@ -122,9 +158,10 @@ export function NotificationsView({
         orgKey,
         clientIdProp,
         effectiveProfileFilter,
+        categoryFilter,
         searchTerm,
       ]
-      : ['notifications', orgKey, 1, clientFilter, '', '', searchTerm],
+      : ['notifications', orgKey, 1, clientFilter, '', '', categoryFilter, searchTerm],
     queryFn: () =>
       getNotifications({
         data: {
@@ -134,6 +171,7 @@ export function NotificationsView({
             effectiveClientFilter === 'all' ? undefined : effectiveClientFilter,
           profileId: effectiveProfileFilter,
           search: searchTerm || undefined,
+          category: categoryFilter === 'all' ? undefined : categoryFilter,
         },
       }),
   });
@@ -277,13 +315,17 @@ export function NotificationsView({
   };
 
   const rawNotifications = notificationsData?.notifications || [];
-  const notifications = clientIdProp
-    ? // En el detalle de cliente: solo mostrar notificaciones con perfil asociado
-    rawNotifications.filter(
+  const filteredNotifications = clientIdProp
+    ? rawNotifications.filter(
       (n: any) => n.profileName || n.profileIdentityNumber
     )
-    : // En la vista global: solo mostrar notificaciones con cliente asociado
-    rawNotifications.filter((n: any) => n.clientName || n.clientId);
+    : rawNotifications.filter((n: any) => n.clientName || n.clientId);
+  const notifications = [...filteredNotifications].sort((a: any, b: any) => {
+    const sa = SEVERITY_ORDER[a.severity ?? 'unclassified'] ?? 4;
+    const sb = SEVERITY_ORDER[b.severity ?? 'unclassified'] ?? 4;
+    if (sa !== sb) return sa - sb;
+    return new Date(b.publicationDate).getTime() - new Date(a.publicationDate).getTime();
+  });
 
   return (
     <div
@@ -353,6 +395,23 @@ export function NotificationsView({
                 disabled={loadingProfiles || profiles.length === 0}
               />
             )}
+            <SearchableSelect
+              options={[
+                { value: 'all', label: 'Todas las categorías' },
+                { value: 'requerimiento', label: 'Requerimiento' },
+                { value: 'intimacion', label: 'Intimación' },
+                { value: 'deuda', label: 'Deuda' },
+                { value: 'vencimiento', label: 'Vencimiento' },
+                { value: 'comunicacion_general', label: 'Comunicación' },
+                { value: 'inspeccion', label: 'Inspección' },
+                { value: 'otro', label: 'Otro' },
+              ]}
+              value={categoryFilter}
+              onValueChange={setCategoryFilter}
+              placeholder="Filtrar por categoría"
+              searchPlaceholder="Buscar categoría..."
+              width="100%"
+            />
           </div>
 
           {/* Notifications List */}
@@ -405,7 +464,13 @@ export function NotificationsView({
                                 'Sin perfil'
                                 : notification.clientName || 'Sin cliente'}
                             </p>
+                            <SeverityBadge severity={(notification as any).severity ?? null} />
                           </div>
+                          {(notification as any).aiSummary ? (
+                            <p className="text-xs text-muted-foreground italic line-clamp-1 mb-1">
+                              {(notification as any).aiSummary}
+                            </p>
+                          ) : null}
                           <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
                             {notification.message}
                           </p>

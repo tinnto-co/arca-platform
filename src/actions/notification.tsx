@@ -31,14 +31,23 @@ export const getNotifications = createServerFn({
       profileId: z.string().optional(),
       search: z.string().optional(),
       opened: z.boolean().optional(),
+      category: z.string().optional(),
     })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const orgClientIds = await getOrgClientIds(orgId);
 
-    const { page, limit, clientFilter, dateFrom, dateTo, profileId, opened } =
-      ctx.data;
+    const {
+      page,
+      limit,
+      clientFilter,
+      dateFrom,
+      dateTo,
+      profileId,
+      opened,
+      category,
+    } = ctx.data;
     const offset = (page - 1) * limit;
 
     if (orgClientIds.length === 0) {
@@ -81,6 +90,10 @@ export const getNotifications = createServerFn({
       conditions.push(eq(notification.opened, opened));
     }
 
+    if (category && category !== 'all') {
+      conditions.push(eq(notification.category, category));
+    }
+
     const whereCondition = and(...conditions);
 
     // Get total count for pagination
@@ -105,6 +118,9 @@ export const getNotifications = createServerFn({
         profileId: notification.profile,
         profileName: profile.name,
         profileIdentityNumber: profile.identityNumber,
+        severity: notification.severity,
+        category: notification.category,
+        aiSummary: notification.aiSummary,
         createdAt: notification.createdAt,
         updatedAt: notification.updatedAt,
       })
