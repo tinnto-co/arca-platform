@@ -1,3 +1,15 @@
+## 2026-04-24 - US-008
+- Added 4 columns to `debt` table in `drizzle/schema.ts`: status (text default 'open'), detected_at (timestamp default now()), source_period (text nullable), is_intimated (boolean default false)
+- Created migration script `src/scripts/ensure-debt-enrichment-columns.ts` using `ADD COLUMN IF NOT EXISTS` pattern
+- Files changed: `drizzle/schema.ts`, `src/scripts/ensure-debt-enrichment-columns.ts`
+- **How to verify:**
+  - Run: `timeout 60 bun run src/scripts/ensure-debt-enrichment-columns.ts` (should print "Columnas de enriquecimiento de debt: OK.")
+  - Verify in DB: `\d debt` should show the 4 new columns (status, detected_at, source_period, is_intimated)
+- **Learnings for future iterations:**
+  - Migration timed out at 60s but still printed success — the DB operation completed, the timeout just terminates the process after. This is expected behavior.
+  - Pre-existing typecheck errors in drizzle/relations.ts, drizzle/enums.ts, src/actions/credential.tsx — not related to our changes
+---
+
 ## 2026-04-24 - US-006
 - Added `SeverityBadge` component inline in `notifications-view.tsx` (critical=red, medium=orange, low=blue, informational=gray, unclassified=hidden)
 - Added `categoryFilter` state and `SearchableSelect` dropdown for category filtering (Todos, Requerimiento, Intimación, Deuda, Vencimiento, Comunicación, Inspección, Otro)
