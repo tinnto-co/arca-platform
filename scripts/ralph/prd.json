@@ -14,7 +14,7 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 0. Follow existing pattern in src/scripts/ensure-empleado-legajo-extra-columns.ts"
     },
     {

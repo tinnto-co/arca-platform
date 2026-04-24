@@ -1,0 +1,22 @@
+## Codebase Patterns
+- Migration scripts live in `src/scripts/` and use `ADD COLUMN IF NOT EXISTS` via `db.execute(sql.raw(...))` for idempotent migrations
+- Pre-existing TS errors exist in some `src/scripts/` files (map-import-empleados, report-unmatched, etc.) — these are not related to our changes
+- TypeScript check: `bunx tsc --noEmit` (no `typecheck` script in package.json)
+- Migration pattern requires `DATABASE_URL` env var and uses `dotenv/config` import
+
+# Ralph Progress Log
+Started: Fri Apr 24 16:44:39 -03 2026
+---
+
+## 2026-04-24 - US-001
+- Added `managed_by_study` (boolean default true), `disabled_at` (timestamp nullable), `disabled_reason` (text nullable), `profile_type` (text default 'unknown') columns to the `profile` table in `drizzle/schema.ts`
+- Created migration script `src/scripts/ensure-profile-enrichment-columns.ts` following the pattern in `ensure-empleado-legajo-extra-columns.ts`
+- Files changed: `drizzle/schema.ts`, `src/scripts/ensure-profile-enrichment-columns.ts`
+- **How to verify:**
+  - Run: `bun run src/scripts/ensure-profile-enrichment-columns.ts` (should print "Columnas de enriquecimiento de perfil: OK.")
+  - Verify in DB: `\d profile` should show the 4 new columns
+- **Learnings for future iterations:**
+  - Migration scripts use `db.execute(sql.raw(stmt))` from drizzle-orm, importing `sql` and `db`
+  - `dotenv/config` must be imported first in scripts
+  - Pre-existing TS errors in unrelated script files should not block our work
+---
