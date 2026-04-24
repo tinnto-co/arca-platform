@@ -74,7 +74,7 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 1. Uses GEMINI_API_KEY env var. See src/lib/payroll-cron.ts for existing Gemini usage pattern"
     },
     {

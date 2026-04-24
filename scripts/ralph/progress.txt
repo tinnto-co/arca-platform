@@ -1,3 +1,20 @@
+## 2026-04-24 - US-005
+- Added `classifyWithGemini(message)` internal helper in `src/actions/notification.tsx` that calls Gemini Flash with a structured JSON response schema to classify severity, category, and generate ai_summary
+- Added `classifyNotification` server function (POST, canWrite required): validates org ownership, calls Gemini, updates notification row (severity, category, aiSummary, aiClassifiedAt), logs to data_source_event with source='ai', action='classified'
+- Added `classifyUnclassifiedNotifications` server function (POST, canWrite required): fetches all notifications with severity='unclassified' AND aiClassifiedAt IS NULL for the org, classifies each one, returns { classified, errors } counts
+- Added imports: `GoogleGenAI` from `@google/genai`, `dataSourceEvent` from schema, `isNull` from drizzle-orm
+- Files changed: `src/actions/notification.tsx`
+- **How to verify:**
+  - Run `bun run dev`, ensure GEMINI_API_KEY is set in .env
+  - Call `classifyNotification({ id: '<notification-uuid>' })` from a component or via server function — notification row should update with severity/category/ai_summary
+  - Call `classifyUnclassifiedNotifications()` — all unclassified notifications for the org get classified in batch
+  - Verify data_source_event table gets a row with source='ai', action='classified', entity_type='notification'
+- **Learnings for future iterations:**
+  - Gemini pattern: `new GoogleGenAI({ apiKey })`, then `ai.models.generateContent({ model: 'gemini-2.0-flash', contents: [...], config: { responseMimeType: 'application/json', responseSchema: {...} } })`
+  - dataSourceEvent insert: `clientId: notif.clientId ?? undefined` (not null — drizzle expects undefined for optional FK fields)
+  - classifyUnclassifiedNotifications uses `isNull(notification.aiClassifiedAt)` AND `eq(notification.severity, 'unclassified')` to avoid re-classifying already-processed notifications
+---
+
 ## Codebase Patterns
 - Migration scripts live in `src/scripts/` and use `ADD COLUMN IF NOT EXISTS` via `db.execute(sql.raw(...))` for idempotent migrations
 - Pre-existing TS errors exist in some `src/scripts/` files (map-import-empleados, report-unmatched, etc.) — these are not related to our changes
