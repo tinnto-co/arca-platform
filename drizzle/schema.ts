@@ -222,6 +222,11 @@ export const document = pgTable("document", {
   type: text("type").notNull(),
   name: text("name").notNull(),
   url: text("url").notNull(),
+  storageProvider: text("storage_provider").notNull().default("external"),
+  storageKey: text("storage_key"),
+  mimeType: text("mime_type"),
+  sizeBytes: integer("size_bytes"),
+  checksum: text("checksum"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
