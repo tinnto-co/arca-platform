@@ -9,6 +9,8 @@ import type { UIMessage } from 'ai';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
+  ChevronDown,
+  ChevronRight,
   Loader2,
   MessageSquarePlus,
   MessagesSquare,
@@ -98,6 +100,15 @@ function ChatPage() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [chatsPopoverOpen, setChatsPopoverOpen] = useState(false);
   const chatsPopoverRef = useRef<HTMLDivElement>(null);
+  const [expandedToolCalls, setExpandedToolCalls] = useState<Set<string>>(new Set());
+  const toggleToolCalls = (msgId: string) => {
+    setExpandedToolCalls((prev) => {
+      const next = new Set(prev);
+      if (next.has(msgId)) next.delete(msgId);
+      else next.add(msgId);
+      return next;
+    });
+  };
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -295,18 +306,41 @@ function ChatPage() {
     if (convId === id) handleNewConversation();
   };
 
+  const toolCallDescriptions: Record<string, string> = {
+    get_client_summary: 'Resumen del cliente',
+    get_open_notifications: 'Notificaciones abiertas',
+    get_debts: 'Deudas fiscales',
+    get_due_dates: 'Vencimientos fiscales',
+    get_profile_status: 'Estado del perfil',
+    payroll_preview_receipt: 'Preview de liquidación',
+    getIvaPosition: 'Posición IVA',
+    executeQuery: 'Consulta SQL',
+  };
+
   const mergedMessages = chat.messages.reduce<
-    { role: string; text: string; id: string; createdAt?: Date }[]
+    { role: string; text: string; id: string; createdAt?: Date; toolCalls?: { toolName: string; args: unknown }[] }[]
   >((acc, message) => {
     const text =
       message.parts
         ?.filter((p) => p.type === 'text')
         .map((p) => ('text' in p ? p.text : ''))
         .join('') ?? String((message as any).content ?? '');
+
+    const toolCallParts = (message.parts ?? []).filter((p) => p.type === 'tool-invocation');
+    const toolCalls = toolCallParts.length > 0
+      ? toolCallParts.map((p) => ({
+          toolName: (p as any).toolInvocation?.toolName ?? '',
+          args: (p as any).toolInvocation?.args ?? {},
+        }))
+      : undefined;
+
     if (!text) return acc;
     const prev = acc[acc.length - 1];
     if (prev?.role === 'assistant' && message.role === 'assistant') {
       prev.text = prev.text + '\n\n' + text;
+      if (toolCalls) {
+        prev.toolCalls = [...(prev.toolCalls ?? []), ...toolCalls];
+      }
       return acc;
     }
     return [
@@ -316,6 +350,7 @@ function ChatPage() {
         text,
         id: message.id,
         createdAt: (message as unknown as { createdAt?: Date }).createdAt,
+        toolCalls,
       },
     ];
   }, []);
@@ -605,6 +640,32 @@ function ChatPage() {
                     </div>
                   ) : (
                     <div className="text-sm leading-relaxed text-foreground">
+                      {msg.toolCalls && msg.toolCalls.length > 0 && (
+                        <div className="mb-2">
+                          <button
+                            onClick={() => toggleToolCalls(msg.id)}
+                            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                          >
+                            {expandedToolCalls.has(msg.id)
+                              ? <ChevronDown className="h-3 w-3" />
+                              : <ChevronRight className="h-3 w-3" />
+                            }
+                            Fuentes consultadas ({msg.toolCalls.length})
+                          </button>
+                          {expandedToolCalls.has(msg.id) && (
+                            <div className="mt-1.5 rounded-md border border-border bg-muted/40 px-3 py-2 space-y-1">
+                              {msg.toolCalls.map((tc, i) => (
+                                <div key={i} className="flex items-center gap-2 text-xs text-muted-foreground">
+                                  <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]">
+                                    {tc.toolName}
+                                  </span>
+                                  <span>{toolCallDescriptions[tc.toolName] ?? tc.toolName}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                       <ReactMarkdown
                         remarkPlugins={[remarkGfm]}
                         components={{
