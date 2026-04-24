@@ -1,3 +1,22 @@
+## 2026-04-24 - US-018
+- Added `get_debts` tool in `src/routes/api/agent.ts`
+- Accepts: `clientName` (optional, partial ILIKE match), `status` (optional enum: open/in_plan/paid/disputed), `limit` (default 20, max 200)
+- Resolves client IDs from org, filters `debt` joined with `client`, applies optional status filter
+- Returns structured JSON: `{ cliente, total, debts: [{ id, impuesto, concepto, periodo, vencimiento, capital, interesesResarcitorios, interesesPunitorios, totalDeuda, estado, intimada, cliente }] }`
+- `totalDeuda` computed as `balance + compensatoryInterest + punitiveInterest`
+- Updated agent system prompt to mention `get_debts`
+- Files changed: `src/routes/api/agent.ts`
+- **How to verify:**
+  - Run `bun run dev`, open `/chat/<id>`
+  - Ask "¿Qué deudas tiene [cliente]?" → agent should call `get_debts` with clientName
+  - Ask "¿Hay deudas abiertas en la org?" → agent calls `get_debts` without clientName
+  - Ask "Mostrá las deudas en plan de pagos" → agent calls `get_debts` with status='in_plan'
+- **Learnings for future iterations:**
+  - `debt.client` is the FK column name (not `debt.clientId`) — matches the pattern used by other tables (notification.client, dueDate.client)
+  - `inArray(debt.client, clientIds)` requires `as any` cast when mixed with `eq()` in a typed conditions array — or just use an untyped array like the `get_open_notifications` pattern
+  - `balance`, `compensatoryInterest`, `punitiveInterest` come as strings from Drizzle `numeric` columns — use `parseFloat()` to compute totals
+---
+
 ## 2026-04-24 - US-017
 - Added `get_open_notifications` tool in `src/routes/api/agent.ts`
 - Accepts: `clientName` (optional, partial ILIKE match), `severity` (optional enum), `limit` (default 10, max 100)
