@@ -1,3 +1,23 @@
+## 2026-04-24 - US-019
+- Added `get_due_dates` tool in `src/routes/api/agent.ts`
+- Accepts: `clientName` (optional), `days_ahead` (default 30, max 365), `include_completed` (default false)
+- Resolves client IDs from org, filters `due_date` joined with `client`, applies date range and optional completedAt filter
+- Returns structured JSON: `{ cliente, total, dueDates: [{ id, impuesto, concepto, periodo, vencimiento, completadoEl, diasHastaVencimiento, cliente }] }`
+- `diasHastaVencimiento` computed as ceil((dueDate - now) / ms_per_day)
+- Sorted by dueDate ascending
+- Updated agent system prompt to mention `get_due_dates`
+- Files changed: `src/routes/api/agent.ts`
+- **How to verify:**
+  - Run `bun run dev`, open `/chat/<id>`
+  - Ask "¿Cuáles son los próximos vencimientos de [cliente]?" → agent calls `get_due_dates` with clientName
+  - Ask "¿Hay vencimientos en los próximos 7 días?" → agent calls `get_due_dates` with days_ahead=7
+  - Ask "Mostrame todos los vencimientos incluyendo los completados" → agent calls with include_completed=true
+- **Learnings for future iterations:**
+  - `dueDate.dueDate` is the column field and also the table import — use `dueDateVal` alias in select to avoid naming collision
+  - `gte(dueDate.dueDate, now)` filters to upcoming vencimientos — no need for `isNull(completedAt)` when include_completed=false (handled separately)
+  - Same `inArray` pattern as `get_debts`: use `any[]` for conditions array to avoid type complexity
+---
+
 ## 2026-04-24 - US-018
 - Added `get_debts` tool in `src/routes/api/agent.ts`
 - Accepts: `clientName` (optional, partial ILIKE match), `status` (optional enum: open/in_plan/paid/disputed), `limit` (default 20, max 200)
