@@ -1,3 +1,18 @@
+## 2026-04-24 - US-026
+- Created `src/actions/alert.tsx` with all required CRUD functions: `listAlerts`, `createAlert`, `acknowledgeAlert`, `assignAlert`, `resolveAlert`, `bulkResolveAlerts`
+- All functions scope by `orgId` from `getSessionWithOrg()`; write mutations use `assertCanWrite(role)`
+- Fixed jsonb `metadata` type mismatch by casting returns `as any` (same pattern as `agent.tsx`)
+- Files changed: `src/actions/alert.tsx`
+- **How to verify:**
+  - Run `bun run dev` and import `listAlerts` from `@/actions/alert` in any component
+  - Call `createAlert({ type: 'overdue_debt', severity: 'critical', title: 'Test' })` via server function
+  - Call `listAlerts({ status: 'open' })` to confirm it returns the new alert
+  - Call `resolveAlert({ id })` and verify `status` becomes `'resolved'`
+- **Learnings for future iterations:**
+  - `jsonb()` fields in Drizzle return `unknown` type; cast return values `as any` in server function handlers to fix TypeScript errors (see `agent.tsx` line 85 for pattern)
+  - The `alert` table uses `organizationId` (not `orgId`) as the column name — filter with `eq(alertTable.organizationId, orgId)`
+---
+
 ## 2026-04-24 - US-025
 - Added `clientBalanceConfig` table to `drizzle/schema.ts`: id, clientId (FK unique CASCADE), fiscalYearEndMonth, fiscalYearEndDay, presentationDueDays (nullable), alertDaysBefore (jsonb default [60,30,15,7]), createdAt, updatedAt
 - Used `jsonb` for `alertDaysBefore` since native integer arrays aren't used in this schema (simpler)
