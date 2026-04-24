@@ -34,6 +34,32 @@
   - classifyUnclassifiedNotifications uses `isNull(notification.aiClassifiedAt)` AND `eq(notification.severity, 'unclassified')` to avoid re-classifying already-processed notifications
 ---
 
+## 2026-04-24 - US-007
+- Added `listOrgMembersForAssignment` server function in `src/actions/notification.tsx` — accessible to all org members (not just owners, unlike `getOrgMembers` in admin.tsx)
+- Added `assignNotification(id, userId)` server function (POST, canWrite): sets `assignedToUserId`, accepts null to unassign
+- Added `resolveNotification(id)` server function (POST, canWrite): sets `resolvedAt` and `resolvedByUserId` from session
+- Added `unresolveNotification(id)` server function (POST, canWrite): clears `resolvedAt` and `resolvedByUserId`
+- Updated `getNotifications` to: accept `onlyUnresolved` filter (adds `isNull(resolvedAt)` condition), return `assignedToUserId`, `resolvedAt`, `resolvedByUserId` fields
+- In `notifications-view.tsx`:
+  - Added "Solo sin resolver" toggle button filter in left panel (highlights primary when active)
+  - Resolved notifications show with `opacity-50` muted style in the list
+  - Right panel detail section: "Asignar a" dropdown (SearchableSelect with org members, includes "Sin asignar") + "Resolver"/"Reabrir" button
+  - Added `assignMutation`, `resolveMutation`, `unresolveMutation` mutations
+  - Added `orgMembers` query using `listOrgMembersForAssignment`
+- Files changed: `src/actions/notification.tsx`, `src/components/notifications-view.tsx`
+- **How to verify:**
+  - Run `bun run dev`, navigate to /notifications
+  - Select a notification — right panel shows "Asignar a" dropdown and "Resolver" button
+  - Assign to a team member: dropdown updates, member saved
+  - Click "Resolver": button changes to "Reabrir", notification becomes muted in list
+  - Toggle "Solo sin resolver" in left panel: resolved notifications disappear from list
+  - Click "Reabrir": notification returns to open state
+- **Learnings for future iterations:**
+  - `getOrgMembers` in `src/actions/admin.tsx` requires `requireOwner()` — cannot be used for general member lookups; created `listOrgMembersForAssignment` in notification.tsx instead using `getSessionWithOrg()`
+  - `resolvedByUserId` is set from `userId` returned by `getSessionWithOrg()` — no extra session lookup needed
+  - `isNull()` from drizzle-orm is used for `WHERE col IS NULL` conditions
+---
+
 ## Codebase Patterns
 - Migration scripts live in `src/scripts/` and use `ADD COLUMN IF NOT EXISTS` via `db.execute(sql.raw(...))` for idempotent migrations
 - Pre-existing TS errors exist in some `src/scripts/` files (map-import-empleados, report-unmatched, etc.) — these are not related to our changes
