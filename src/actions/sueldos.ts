@@ -19,6 +19,7 @@ import {
   liquidacionImportConceptoValor,
   obraSocial,
   employeeEvent,
+  payrollPeriodNovelty,
 } from '@/drizzle/schema';
 import {
   getSessionWithOrg,
@@ -3554,4 +3555,77 @@ export const listEmployeeEvents = createServerFn({ method: 'GET' })
       .orderBy(desc(employeeEvent.eventDate))
       .limit(ctx.data.limit ?? 50);
     return rows as any;
+  });
+
+export const createNovelty = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      empleadoId: z.string().uuid(),
+      periodo: z.string(),
+      type: z.string(),
+      quantity: z.number().optional(),
+      amount: z.number().optional(),
+      description: z.string().optional(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureEmpleadoBelongsToOrg(ctx.data.empleadoId, orgId);
+    const [row] = await db
+      .insert(payrollPeriodNovelty)
+      .values({
+        empleadoId: ctx.data.empleadoId,
+        periodo: ctx.data.periodo,
+        type: ctx.data.type,
+        quantity: ctx.data.quantity !== undefined ? String(ctx.data.quantity) : null,
+        amount: ctx.data.amount !== undefined ? String(ctx.data.amount) : null,
+        description: ctx.data.description,
+      })
+      .returning();
+    return row as any;
+  });
+
+export const listNovelties = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      empleadoId: z.string().uuid(),
+      periodo: z.string(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureEmpleadoBelongsToOrg(ctx.data.empleadoId, orgId);
+    const rows = await db
+      .select()
+      .from(payrollPeriodNovelty)
+      .where(
+        and(
+          eq(payrollPeriodNovelty.empleadoId, ctx.data.empleadoId),
+          eq(payrollPeriodNovelty.periodo, ctx.data.periodo)
+        )
+      )
+      .orderBy(asc(payrollPeriodNovelty.createdAt));
+    return rows as any;
+  });
+
+export const deleteNovelty = createServerFn({ method: 'POST' })
+  .inputValidator(z.object({ id: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    // Verify novelty belongs to org via empleado chain
+    const [novelty] = await db
+      .select({ empleadoId: payrollPeriodNovelty.empleadoId })
+      .from(payrollPeriodNovelty)
+      .where(eq(payrollPeriodNovelty.id, ctx.data.id))
+      .limit(1);
+    if (!novelty) throw new Error('Novedad no encontrada');
+    await ensureEmpleadoBelongsToOrg(novelty.empleadoId, orgId);
+    await db
+      .delete(payrollPeriodNovelty)
+      .where(eq(payrollPeriodNovelty.id, ctx.data.id));
+    return { success: true };
   });
