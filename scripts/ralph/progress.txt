@@ -1,3 +1,22 @@
+## 2026-04-24 - US-041
+- Added `createEmployeeEvent` and `listEmployeeEvents` server functions to `src/actions/sueldos.ts`
+- Added `employeeEvent` to schema imports in sueldos.ts
+- Added `ensureEmpleadoBelongsToOrg(empleadoId, orgId)` private helper: joins `liquidacionImportEmpleado` → `profile` → `client` and checks `client.organizationId = orgId`
+- `createEmployeeEvent`: POST, requires canWrite, validates empleado belongs to org, inserts into `employee_event`, sets `createdByUserId` from session
+- `listEmployeeEvents`: GET, validates empleado belongs to org, returns events ordered by `eventDate` desc, limit defaults to 50
+- Both return `as any` to avoid jsonb `metadata: unknown` vs `{}` type mismatch (same pattern as credential.tsx, agent.tsx)
+- Files changed: `src/actions/sueldos.ts`
+- **How to verify:**
+  - Run `bun run dev`
+  - Call `createEmployeeEvent({ empleadoId: '<uuid>', type: 'ausencia', title: 'Ausencia por enfermedad', eventDate: '2026-04-01' })` — inserts a row in `employee_event`
+  - Call `listEmployeeEvents({ empleadoId: '<uuid>' })` — returns array of events sorted by date desc
+  - Calling with an empleado from a different org throws "Empleado no encontrado o no autorizado"
+- **Learnings for future iterations:**
+  - `ensureEmpleadoBelongsToOrg` validates via JOIN chain: `liquidacionImportEmpleado` → `profile` (via `profileId`) → `client` (via `profile.client`) → check `client.organizationId = orgId`
+  - `liquidacionImportEmpleado.profileId` uses `.profileId` naming (not `.profile`) — different from the `.client` pattern used on older tables
+  - Return `as any` for functions that include jsonb columns in their return type
+---
+
 ## 2026-04-24 - US-039
 - Added `payrollReceiptTemplate` table to `drizzle/schema.ts` with all required columns: id, profileId (FK CASCADE to profile), name, receiptType (default 'sueldo'), conceptIds (jsonb), active (bool default true), createdAt
 - Created `src/scripts/ensure-payroll-receipt-template-table.ts` migration script (idempotent, uses CREATE TABLE IF NOT EXISTS)
@@ -756,4 +775,18 @@ Started: Fri Apr 24 16:44:39 -03 2026
   - `clientUserAccess` unique constraint is on `(clientId, userId)` — validate with `and(eq(userId), eq(clientId))`
   - `clientRequest.clientId` uses `clientId` naming (not `.client`) — consistent with `clientBalanceConfig.clientId` pattern for newer tables
   - `dueDate.client`, `debt.client`, `notification.client` are all `.client` (not `.clientId`) — older tables use this pattern
+---
+
+## 2026-04-24 - US-040
+- Added `fechaAntiguedadReconocida` (timestamp nullable) column to `liquidacionImportEmpleado` in `drizzle/schema.ts`
+- Created `src/scripts/ensure-fecha-antiguedad-reconocida.ts` migration script using ADD COLUMN IF NOT EXISTS pattern
+- Ran migration script — output: "Columna fecha_antiguedad_reconocida en liquidacion_import_empleado: OK." (exit 124 expected)
+- Updated seniority calculation in `src/actions/sueldos.ts`: now prefers `fechaAntiguedadReconocida` over `fechaAlta` when present (`fechaBaseAntiguedad = emp.fechaAntiguedadReconocida ?? emp.fechaAlta ?? periodoDate`)
+- Files changed: `drizzle/schema.ts`, `src/actions/sueldos.ts`, `src/scripts/ensure-fecha-antiguedad-reconocida.ts` (new)
+- **How to verify:**
+  - Run: `docker exec arca-local-db psql -U arca -d arca -c '\d liquidacion_import_empleado'` — confirm `fecha_antiguedad_reconocida` column exists
+  - Or: `timeout 60 bun run src/scripts/ensure-fecha-antiguedad-reconocida.ts` — prints "Columna fecha_antiguedad_reconocida en liquidacion_import_empleado: OK."
+  - For seniority: set `fecha_antiguedad_reconocida` on an employee with a different `fecha_alta` and verify the payroll preview uses the recognized date
+- **Learnings for future iterations:**
+  - All pre-existing typecheck errors are in legacy scripts — not regressions from our changes
 ---
