@@ -248,10 +248,18 @@ export const notification = pgTable("notification", {
   expirationDate: timestamp("expiration_date").notNull(),
   publicationDate: timestamp("publication_date").notNull(),
   opened: boolean("opened").default(false).notNull(),
+  severity: text("severity").default("unclassified").notNull(),
+  category: text("category"),
+  aiSummary: text("ai_summary"),
+  aiClassifiedAt: timestamp("ai_classified_at"),
+  assignedToUserId: text("assigned_to_user_id").references(() => user.id, { onDelete: "set null" }),
+  resolvedAt: timestamp("resolved_at"),
+  resolvedByUserId: text("resolved_by_user_id").references(() => user.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   index('idx_notification_client_opened').on(table.client, table.opened),
+  index('idx_notification_severity').on(table.client, table.severity),
 ]);
 
 export const invoice = pgTable("invoice", {
