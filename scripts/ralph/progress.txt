@@ -227,6 +227,26 @@
   - `clientId` and `profileId` are nullable on `agentRun` — useful for future stories that detect client context from user input
 ---
 
+## 2026-04-24 - US-016
+- Added `get_client_summary` tool in `src/routes/api/agent.ts`
+- Tool accepts `clientName` (string, partial ILIKE match), scoped to `orgId`
+- Runs 5 parallel Drizzle queries via `Promise.all`: profile count, open notification count, overdue debt count + total balance, upcoming due dates (next 30 days, not completed), last finished job per type
+- Returns structured JSON: cliente (datos generales), perfiles, notificaciones, deudas, proximosVencimientos, ultimosScrapeos
+- Added imports: `notification`, `debt`, `dueDate`, `job` from schema; `isNull`, `isNotNull`, `lt`, `desc` from drizzle-orm
+- Updated agent system prompt to mention the new tool
+- Files changed: `src/routes/api/agent.ts`
+- **How to verify:**
+  - Run `bun run dev`, open `/chat/<id>`, ask "¿Cuál es el estado de [nombre_cliente]?"
+  - Agent should call `get_client_summary` and return a structured summary with profile count, open notifications, overdue debts, upcoming due dates, and last scrape timestamps
+  - Verify scope: tool only returns data for clients in the calling user's organization
+- **Learnings for future iterations:**
+  - All table FK columns are named `client` (not `clientId`) in schema except for `job` which uses `clientId` — double-check per table
+  - `sql<number>` template is the codebase pattern for COUNT aggregations; `sql<string>` for SUM (PostgreSQL returns numerics as strings)
+  - `isNotNull()` from drizzle-orm works for `WHERE col IS NOT NULL` — same pattern as `isNull()`
+  - Agent tool names with underscores (`get_client_summary`) work fine; camelCase also works
+  - Pre-existing TS errors in agent.ts: unused imports (INVOICE_TYPES_A/B, CREDIT_NOTE_TYPES) and unused destructure vars (netoIn5, netoIn25) — not introduced by our changes
+---
+
 ## Codebase Patterns
 - Migration scripts live in `src/scripts/` and use `ADD COLUMN IF NOT EXISTS` via `db.execute(sql.raw(...))` for idempotent migrations
 - Pre-existing TS errors exist in some `src/scripts/` files (map-import-empleados, report-unmatched, etc.) — these are not related to our changes
