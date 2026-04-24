@@ -1,3 +1,22 @@
+## 2026-04-24 - US-011a
+- Added `getExceptionsSummary` server function in `src/actions/dashboard.tsx`
+- Runs 4 parallel COUNT queries: overdue open debts, critical unresolved notifications, upcoming due dates within 3 days not completed, clients with hasErrors=true
+- Returns `{ overdueDebtCount, criticalNotificationCount, upcomingDueDateCount, clientErrorCount }`
+- Added `isNull` import from drizzle-orm
+- Files changed: `src/actions/dashboard.tsx`
+- **How to verify:**
+  - Import and call `getExceptionsSummary()` from any dashboard component
+  - Returns 4 counts scoped to the calling user's org
+  - `overdueDebtCount`: debts with status='open' AND dueDate <= today
+  - `criticalNotificationCount`: notifications with severity='critical' AND resolvedAt IS NULL
+  - `upcomingDueDateCount`: due dates within next 3 days AND completedAt IS NULL
+  - `clientErrorCount`: clients with hasErrors=true
+- **Learnings for future iterations:**
+  - All 4 queries run in parallel via `Promise.all` for efficiency
+  - Early return pattern when `userClientIds.length === 0` avoids unnecessary DB hits
+  - `clientErrorCount` queries directly on `client` table with `eq(client.organizationId, orgId)` — no need to filter via `inArray(clientIds)` since we already have orgId
+---
+
 ## 2026-04-24 - US-010b
 - Updated `getCalendarDueDates` in `src/actions/dashboard.tsx` to return `completedAt` for due dates
 - Updated `src/components/vencimientos-calendar.tsx`:
