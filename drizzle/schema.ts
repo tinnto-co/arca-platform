@@ -883,6 +883,28 @@ export const liquidacionImportConceptoValor = pgTable(
   ],
 );
 
+/**
+ * Audit trail for every important data point, tracing its origin
+ * (scraper job, manual entry, AI classification, import).
+ * Source values: 'scraper', 'manual', 'ai', 'import'
+ * Action values: 'created', 'updated', 'classified'
+ */
+export const dataSourceEvent = pgTable("data_source_event", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  clientId: uuid("client_id").references(() => client.id, { onDelete: "cascade" }),
+  profileId: uuid("profile_id").references(() => profile.id, { onDelete: "cascade" }),
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id").notNull(),
+  source: text("source").notNull(),
+  sourceJobId: uuid("source_job_id").references(() => job.id, { onDelete: "set null" }),
+  action: text("action").notNull(),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const agentConversation = pgTable("agent_conversation", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: text("organization_id")
