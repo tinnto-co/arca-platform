@@ -978,3 +978,32 @@ export const agentRun = pgTable("agent_run", {
   startedAt: timestamp("started_at").defaultNow().notNull(),
   finishedAt: timestamp("finished_at"),
 });
+
+/**
+ * Centralized alert table for risks from different sources.
+ * Types: overdue_debt, critical_notification, upcoming_due_date, scraper_error, balance_due_soon, missing_activity
+ */
+export const alert = pgTable("alert", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  clientId: uuid("client_id").references(() => client.id, { onDelete: "cascade" }),
+  profileId: uuid("profile_id").references(() => profile.id, { onDelete: "set null" }),
+  type: text("type").notNull(),
+  severity: text("severity").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  sourceEntityType: text("source_entity_type"),
+  sourceEntityId: text("source_entity_id"),
+  status: text("status").notNull().default("open"),
+  assignedToUserId: text("assigned_to_user_id").references(() => user.id, { onDelete: "set null" }),
+  dueAt: timestamp("due_at"),
+  resolvedAt: timestamp("resolved_at"),
+  resolvedByUserId: text("resolved_by_user_id").references(() => user.id, { onDelete: "set null" }),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_alert_org_status").on(table.organizationId, table.status),
+]);
