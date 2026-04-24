@@ -195,7 +195,7 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 13,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 1. Use Arca tokens. Uses getExceptionsSummary from US-011a"
     },
     {

@@ -1,3 +1,21 @@
+## 2026-04-24 - US-011b
+- Created `src/components/dashboard/exceptions-bar.tsx` with `ExceptionsBar` component
+- Shows up to 4 colored alert cards (overdueDebt=red, criticalNotifications=red, upcomingDueDates=warn, clientErrors=warn)
+- Cards only render when count > 0; if all counts are 0, component returns null
+- Each card is a `<Link>` navigating to: debts→/clients, notifications→/notifications, vencimientos→/vencimientos, errors→/clients
+- Wired into `src/routes/_authed/index.tsx` between `<DashboardGreeting>` and `<KpiCardsRow>`
+- Files changed: `src/components/dashboard/exceptions-bar.tsx`, `src/routes/_authed/index.tsx`
+- **How to verify:**
+  - Run `bun run dev`, go to the dashboard (/)
+  - If there are overdue debts, critical notifications, upcoming due dates, or clients with errors: colored alert cards appear below the greeting
+  - Click a card → navigates to the relevant page
+  - Cards only appear for non-zero counts
+- **Learnings for future iterations:**
+  - `getExceptionsSummary` returns immediately; wrap in `useQuery` with `staleTime: 60_000` to avoid excessive re-fetching
+  - Arca color tokens used: `--arca-accent-neg` / `--arca-accent-neg-bg` for red, `--arca-accent-warn` / `--arca-accent-warn-bg` for orange
+  - TanStack Router `<Link to="...">` requires string literal paths that match registered routes
+---
+
 ## 2026-04-24 - US-011a
 - Added `getExceptionsSummary` server function in `src/actions/dashboard.tsx`
 - Runs 4 parallel COUNT queries: overdue open debts, critical unresolved notifications, upcoming due dates within 3 days not completed, clients with hasErrors=true
