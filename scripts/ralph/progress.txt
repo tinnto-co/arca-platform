@@ -1,3 +1,26 @@
+## 2026-04-24 - US-009
+- Added `updateDebtStatus` server function in `src/actions/client.tsx` (POST, canWrite required): validates org ownership via JOIN with client table, updates status and isIntimated on the debt row
+- Updated debt table in `src/components/client-detail-page.tsx`:
+  - Added "Gestión" column header alongside existing "Estado"
+  - Per-row: `<select>` dropdown with options Abierta/En plan/Pagada/Disputada (calls `updateDebtStatusMutation`)
+  - Per-row: "Intimada" toggle button (orange when active, neutral when not)
+  - Row background color-coded: open+overdue=red tint, intimated=orange tint, paid=green tint, in_plan=gray tint
+  - Status badge updated: shows Pagada/En plan/Disputada/Vencida/Abierta with matching colors
+  - Orange "Intimada" badge shown inline next to status badge when isIntimated=true
+- Added `updateDebtStatusMutation` useMutation hook in component
+- Files changed: `src/actions/client.tsx`, `src/components/client-detail-page.tsx`
+- **How to verify:**
+  - Run `bun run dev`, go to any client page → Deudas tab
+  - Each debt row now has a status dropdown (Abierta/En plan/Pagada/Disputada) and "Intimada" toggle button
+  - Change a debt to "Pagada" → row turns green tinted; to "En plan" → row turns gray; to an overdue open debt → row turns red tinted
+  - Click "Intimada" button → row turns orange tinted, orange "Intimada" badge appears next to status badge
+  - Mutations invalidate `['clientDebts', clientId]` query key, so UI refreshes automatically
+- **Learnings for future iterations:**
+  - Debt validation: JOIN `debt` with `client` using `innerJoin` to verify `client.organizationId = orgId` before mutating
+  - Row color-coding uses inline `style={{ background: ... }}` with rgba values since Tailwind dynamic classes aren't supported
+  - `debt.isIntimated` and `debt.status` come directly from the schema (added in US-008) — no casting needed on schema side
+---
+
 ## 2026-04-24 - US-008
 - Added 4 columns to `debt` table in `drizzle/schema.ts`: status (text default 'open'), detected_at (timestamp default now()), source_period (text nullable), is_intimated (boolean default false)
 - Created migration script `src/scripts/ensure-debt-enrichment-columns.ts` using `ADD COLUMN IF NOT EXISTS` pattern
