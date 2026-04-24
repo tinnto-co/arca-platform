@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as NoOrganizationRouteImport } from './routes/no-organization'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as ClientRouteRouteImport } from './routes/_client/route'
 import { Route as AuthedRouteRouteImport } from './routes/_authed/route'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
 import { Route as InviteInvitationIdRouteImport } from './routes/invite.$invitationId'
@@ -39,6 +40,10 @@ const NoOrganizationRoute = NoOrganizationRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ClientRouteRoute = ClientRouteRouteImport.update({
+  id: '/_client',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthedRouteRoute = AuthedRouteRouteImport.update({
@@ -185,6 +190,7 @@ export interface FileRoutesByTo {
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
+  '/_client': typeof ClientRouteRoute
   '/_authed': typeof AuthedRouteRouteWithChildren
   '/login': typeof LoginRoute
   '/no-organization': typeof NoOrganizationRoute
@@ -254,6 +260,7 @@ export interface FileRouteTypes {
     | '/clients/$clientId/$profileId'
   id:
     | '__root__'
+    | '/_client'
     | '/_authed'
     | '/login'
     | '/no-organization'
@@ -278,6 +285,7 @@ export interface FileRouteTypes {
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
+  ClientRouteRoute: typeof ClientRouteRoute
   AuthedRouteRoute: typeof AuthedRouteRouteWithChildren
   LoginRoute: typeof LoginRoute
   NoOrganizationRoute: typeof NoOrganizationRoute
@@ -300,6 +308,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_client': {
+      id: '/_client'
+      path: ''
+      fullPath: ''
+      preLoaderRoute: typeof ClientRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authed': {
@@ -480,6 +495,7 @@ const AuthedRouteRouteWithChildren = AuthedRouteRoute._addFileChildren(
 )
 
 const rootRouteChildren: RootRouteChildren = {
+  ClientRouteRoute: ClientRouteRoute,
   AuthedRouteRoute: AuthedRouteRouteWithChildren,
   LoginRoute: LoginRoute,
   NoOrganizationRoute: NoOrganizationRoute,
