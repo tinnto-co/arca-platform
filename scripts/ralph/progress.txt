@@ -1,3 +1,16 @@
+## 2026-04-24 - US-038
+- Added `payrollPeriodNovelty` table to `drizzle/schema.ts` with all required columns: id, empleadoId (FK CASCADE to liquidacion_import_empleado), periodo, type, quantity (numeric 10,2 nullable), amount (numeric 14,2 nullable), description, appliedToReciboId (FK SET NULL to liquidacion_import_recibo nullable), status (default 'pending'), createdAt
+- Created `src/scripts/ensure-payroll-period-novelty-table.ts` migration script (idempotent, uses CREATE TABLE IF NOT EXISTS)
+- Ran migration script — output: "Tabla payroll_period_novelty: OK." (timeout exit code 124 expected)
+- Files changed: `drizzle/schema.ts`, `src/scripts/ensure-payroll-period-novelty-table.ts` (new)
+- **How to verify:**
+  - Run: `docker exec arca-local-db psql -U arca -d arca -c '\d payroll_period_novelty'` to confirm table with all columns
+  - Or: `timeout 60 bun run src/scripts/ensure-payroll-period-novelty-table.ts` — prints "Tabla payroll_period_novelty: OK."
+- **Learnings for future iterations:**
+  - `appliedToReciboId` references `liquidacion_import_recibo` — SQL table name is `liquidacion_import_recibo` (underscore prefix pattern)
+  - All pre-existing typecheck errors (drizzle/relations.ts, credential.tsx, sueldos.ts, dashboard.tsx) are unrelated to our changes
+---
+
 ## 2026-04-24 - US-037
 - Added `employeeEvent` table to `drizzle/schema.ts` with all required columns: id, empleadoId (FK CASCADE to liquidacion_import_empleado), type, title, description, eventDate, affectsPayroll (default false), metadata (jsonb), createdByUserId (FK nullable to user), createdAt
 - Created `src/scripts/ensure-employee-event-table.ts` migration script (idempotent, uses CREATE TABLE IF NOT EXISTS)
