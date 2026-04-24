@@ -1108,6 +1108,18 @@ export const payrollPeriodNovelty = pgTable("payroll_period_novelty", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const payrollReceiptTemplate = pgTable("payroll_receipt_template", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  profileId: uuid("profile_id")
+    .notNull()
+    .references(() => profile.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  receiptType: text("receipt_type").notNull().default("sueldo"),
+  conceptIds: jsonb("concept_ids"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const clientRequest = pgTable("client_request", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: text("organization_id")
