@@ -1121,6 +1121,85 @@ export const payrollReceiptTemplate = pgTable("payroll_receipt_template", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+/**
+ * Bank account per client/profile for reconciliation.
+ */
+export const bankAccount = pgTable("bank_account", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => client.id, { onDelete: "cascade" }),
+  profileId: uuid("profile_id").references(() => profile.id, { onDelete: "set null" }),
+  bankName: text("bank_name").notNull(),
+  accountNumber: text("account_number"),
+  currency: text("currency").notNull().default("ARS"),
+  alias: text("alias"),
+  cbu: text("cbu"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/**
+ * Bank transactions imported for reconciliation.
+ * direction values: 'credit', 'debit'
+ */
+export const bankTransaction = pgTable("bank_transaction", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  bankAccountId: uuid("bank_account_id")
+    .notNull()
+    .references(() => bankAccount.id, { onDelete: "cascade" }),
+  transactionDate: timestamp("transaction_date").notNull(),
+  description: text("description"),
+  amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+  direction: text("direction").notNull(),
+  counterpartyName: text("counterparty_name"),
+  counterpartyIdentityNumber: text("counterparty_identity_number"),
+  externalId: text("external_id"),
+  rawData: jsonb("raw_data"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/**
+ * Matches between bank transactions and invoices.
+ * match_type values: 'auto', 'manual'
+ */
+export const bankInvoiceMatch = pgTable("bank_invoice_match", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  bankTransactionId: uuid("bank_transaction_id")
+    .notNull()
+    .references(() => bankTransaction.id, { onDelete: "cascade" }),
+  invoiceId: uuid("invoice_id")
+    .notNull()
+    .references(() => invoice.id, { onDelete: "cascade" }),
+  matchType: text("match_type").notNull(),
+  confidence: numeric("confidence", { precision: 5, scale: 2 }),
+  reviewedByUserId: text("reviewed_by_user_id").references(() => user.id, { onDelete: "set null" }),
+  reviewedAt: timestamp("reviewed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/**
+ * Classification of financial movements for accounting and tax analysis.
+ * source_type values: 'bank_transaction', 'invoice', 'movement'
+ * classified_by values: 'system', 'user', 'ai'
+ */
+export const financialMovementClassification = pgTable("financial_movement_classification", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sourceType: text("source_type").notNull(),
+  sourceId: uuid("source_id").notNull(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => client.id, { onDelete: "cascade" }),
+  profileId: uuid("profile_id").references(() => profile.id, { onDelete: "set null" }),
+  category: text("category").notNull(),
+  isBusinessRelated: boolean("is_business_related").notNull().default(true),
+  isTaxRelevant: boolean("is_tax_relevant").notNull().default(true),
+  isCashflowReal: boolean("is_cashflow_real").notNull().default(true),
+  notes: text("notes"),
+  classifiedBy: text("classified_by").notNull().default("system"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const clientRequest = pgTable("client_request", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: text("organization_id")
