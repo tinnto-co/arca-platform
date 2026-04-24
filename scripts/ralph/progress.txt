@@ -195,6 +195,23 @@
   - `isNull()` from drizzle-orm is used for `WHERE col IS NULL` conditions
 ---
 
+## 2026-04-24 - US-014
+- Added 4 columns to `agentMessage` table in `drizzle/schema.ts`: metadata (jsonb nullable), toolCalls (jsonb nullable), citations (jsonb nullable), confidence (text nullable)
+- Created migration script `src/scripts/ensure-agent-message-columns.ts` using `ADD COLUMN IF NOT EXISTS` pattern
+- Updated `onFinish` callback in `src/routes/api/agent.ts`: extracts tool-invocation parts from assistant messages into `toolCalls` array, builds `metadata` object with stepCount/toolCallCount, persists both on the assistant `agentMessage` row
+- Updated `getConversationMessages` in `src/actions/agent.tsx` to explicitly select all columns including the new ones; used `return rows as any` to satisfy TanStack server function type inference (jsonb → `unknown` vs `{}` mismatch)
+- Files changed: `drizzle/schema.ts`, `src/scripts/ensure-agent-message-columns.ts`, `src/routes/api/agent.ts`, `src/actions/agent.tsx`
+- **How to verify:**
+  - Run: `timeout 60 bun run src/scripts/ensure-agent-message-columns.ts` (prints "Columnas de agent_message: OK.")
+  - Verify in DB: `\d agent_message` should show `metadata`, `tool_calls`, `citations`, `confidence` columns
+  - Run `bun run dev`, open the chat at `/chat/<id>`, ask a question that triggers tool use (e.g. "¿Cuánto facturó [cliente] este mes?")
+  - Query: `SELECT tool_calls, metadata FROM agent_message WHERE role = 'assistant' ORDER BY created_at DESC LIMIT 1` — should show tool_calls array and metadata with stepCount
+- **Learnings for future iterations:**
+  - `jsonb` columns in Drizzle return `unknown` type; TanStack server fn inference expects `{}` — fix with `return rows as any` rather than fighting the type system
+  - Tool-invocation parts in AI SDK UIMessages have `type: 'tool-invocation'` with nested `toolInvocation.toolName` and `toolInvocation.args`
+  - `as any` cast in agent.tsx is the same pattern that credential.tsx effectively needs but hasn't been fixed — acceptable workaround
+---
+
 ## Codebase Patterns
 - Migration scripts live in `src/scripts/` and use `ADD COLUMN IF NOT EXISTS` via `db.execute(sql.raw(...))` for idempotent migrations
 - Pre-existing TS errors exist in some `src/scripts/` files (map-import-empleados, report-unmatched, etc.) — these are not related to our changes
