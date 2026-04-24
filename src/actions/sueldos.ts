@@ -1154,7 +1154,7 @@ export const listEmpleados = createServerFn({ method: 'GET' })
         payrollConvenioCategoria,
         eq(liquidacionImportEmpleado.categoriaId, payrollConvenioCategoria.id)
       )
-      .where(eq(profile.client, ctx.data.clientId))
+      .where(and(eq(profile.client, ctx.data.clientId), eq(profile.managedByStudy, true)))
       .orderBy(liquidacionImportEmpleado.nombre);
     return rows;
   });

@@ -63,6 +63,7 @@ import {
   getNotifications,
   markNotificationOpened,
 } from '@/actions/notification';
+import { updateProfileManagement } from '@/actions/profile';
 import { scrapSingleJob } from '@/actions/client';
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
@@ -70,7 +71,9 @@ import {
   Clock,
   CalendarCheck,
   CalendarX,
-  Loader2
+  Loader2,
+  EyeOff,
+  Eye,
 } from 'lucide-react';
 import {
   Table,
@@ -382,6 +385,18 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
       queryClient.invalidateQueries({
         queryKey: ['unreadNotifications', orgKey, clientId],
       });
+    },
+  });
+
+  const toggleProfileManagementMutation = useMutation({
+    mutationFn: (vars: { profileId: string; managedByStudy: boolean }) =>
+      updateProfileManagement({ data: vars }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['clientProfiles', clientId] });
+      toast.success('Perfil actualizado');
+    },
+    onError: () => {
+      toast.error('Error al actualizar el perfil');
     },
   });
   const ivaResumeRef = useRef<RenderIvaResumeRef>(null);
@@ -1609,29 +1624,49 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                         const warningCuits = lastNotificacionesJob?.notificationFetchWarningCuits ?? [];
                         const isWarning = warningCuits.some((c) => normCuit(c) === normCuit(prof.identityNumber ?? ''));
                         const isSelected = effectiveResumenProfileId === prof.id;
+                        const isUnmanaged = prof.managedByStudy === false;
                         const initials = (prof.name || prof.identityNumber || '?')
                           .split(' ').slice(0, 2).map((w: string) => w[0]).join('').toUpperCase();
                         return (
-                          <button
-                            key={prof.id}
-                            onClick={() => setResumenProfileId(prof.id)}
-                            className={cn(
-                              'inline-flex items-center gap-[7px] px-[9px] py-[5px] rounded-[var(--arca-r-pill)] text-[11.5px] font-medium border transition-all',
-                              isSelected
-                                ? 'bg-[var(--arca-ink)] text-[#F7F6F2] border-[var(--arca-ink)]'
-                                : isWarning
-                                  ? 'bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)] border-[var(--arca-accent-warn)]/30'
-                                  : 'bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)] border-[var(--arca-border)] hover:text-[var(--arca-ink)]'
-                            )}
-                          >
-                            <span className={cn(
-                              'w-4 h-4 rounded-[4px] inline-flex items-center justify-center text-[8.5px] font-bold text-white shrink-0',
-                              isSelected ? 'bg-white/10' : 'bg-[#1E3460]'
-                            )}>
-                              {initials}
-                            </span>
-                            {prof.name || prof.identityNumber}
-                          </button>
+                          <div key={prof.id} className="relative group">
+                            <button
+                              onClick={() => setResumenProfileId(prof.id)}
+                              className={cn(
+                                'inline-flex items-center gap-[7px] px-[9px] py-[5px] rounded-[var(--arca-r-pill)] text-[11.5px] font-medium border transition-all',
+                                isUnmanaged
+                                  ? 'opacity-50 bg-[var(--arca-surface-2)] text-[var(--arca-ink-4)] border-[var(--arca-border)]'
+                                  : isSelected
+                                    ? 'bg-[var(--arca-ink)] text-[#F7F6F2] border-[var(--arca-ink)]'
+                                    : isWarning
+                                      ? 'bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)] border-[var(--arca-accent-warn)]/30'
+                                      : 'bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)] border-[var(--arca-border)] hover:text-[var(--arca-ink)]'
+                              )}
+                            >
+                              <span className={cn(
+                                'w-4 h-4 rounded-[4px] inline-flex items-center justify-center text-[8.5px] font-bold text-white shrink-0',
+                                isUnmanaged ? 'bg-[var(--arca-ink-4)]' : isSelected ? 'bg-white/10' : 'bg-[#1E3460]'
+                              )}>
+                                {initials}
+                              </span>
+                              {prof.name || prof.identityNumber}
+                              {isUnmanaged && (
+                                <span className="ml-1 text-[10px] font-semibold text-[var(--arca-ink-4)]">No administrado</span>
+                              )}
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleProfileManagementMutation.mutate({
+                                  profileId: prof.id,
+                                  managedByStudy: !prof.managedByStudy,
+                                });
+                              }}
+                              title={isUnmanaged ? 'Marcar como administrado' : 'Marcar como no administrado'}
+                              className="absolute -top-1 -right-1 hidden group-hover:flex items-center justify-center w-4 h-4 rounded-full bg-[var(--arca-surface)] border border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors shadow-sm"
+                            >
+                              {isUnmanaged ? <Eye className="w-2.5 h-2.5" /> : <EyeOff className="w-2.5 h-2.5" />}
+                            </button>
+                          </div>
                         );
                       })}
                     </div>
@@ -1652,7 +1687,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                       </div>
                     )}
                     {selectedResumenProfile && (
-                      <div className="pt-[6px] border-t border-[var(--arca-border)] flex items-center">
+                      <div className="pt-[6px] border-t border-[var(--arca-border)] flex items-center gap-3">
                         <Link
                           to="/clients/$clientId/$profileId"
                           params={{ clientId, profileId: selectedResumenProfile.id }}
@@ -1660,6 +1695,12 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                         >
                           Ver perfil completo →
                         </Link>
+                        <div className="flex-1" />
+                        {selectedResumenProfile.managedByStudy === false && (
+                          <span className="text-[11px] font-medium text-[var(--arca-ink-4)] bg-[var(--arca-surface-2)] border border-[var(--arca-border)] px-2 py-0.5 rounded-full">
+                            No administrado
+                          </span>
+                        )}
                       </div>
                     )}
                   </>
