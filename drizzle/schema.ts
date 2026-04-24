@@ -955,3 +955,26 @@ export const agentMessage = pgTable("agent_message", {
   confidence: text("confidence"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+export const agentRun = pgTable("agent_run", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  conversationId: uuid("conversation_id")
+    .notNull()
+    .references(() => agentConversation.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  clientId: uuid("client_id").references(() => client.id, { onDelete: "set null" }),
+  profileId: uuid("profile_id").references(() => profile.id, { onDelete: "set null" }),
+  status: text("status").notNull().default("running"),
+  intent: text("intent"),
+  input: text("input").notNull(),
+  output: text("output"),
+  toolTrace: jsonb("tool_trace"),
+  error: text("error"),
+  startedAt: timestamp("started_at").defaultNow().notNull(),
+  finishedAt: timestamp("finished_at"),
+});

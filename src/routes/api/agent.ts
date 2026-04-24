@@ -11,7 +11,7 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { db, dbReadonly } from '@/lib/db';
-import { agentConversation, agentMessage, ivaScrape, profile, client, invoice } from '@/drizzle/schema';
+import { agentConversation, agentMessage, agentRun, ivaScrape, profile, client, invoice } from '@/drizzle/schema';
 import { eq, and, sql, ilike, gte, lte } from 'drizzle-orm';
 import {
   INVOICE_TYPES_A,
@@ -262,6 +262,18 @@ export const Route = createFileRoute('/api/agent')({
             })
             .onConflictDoNothing();
         }
+
+        // Crear registro de ejecución del agente
+        const [agentRunRow] = await db
+          .insert(agentRun)
+          .values({
+            conversationId,
+            userId,
+            organizationId: orgId,
+            input: userText,
+            status: 'running',
+          })
+          .returning({ id: agentRun.id });
 
         // Historial de la conversación
         const prevMessages = await db
@@ -630,8 +642,33 @@ HERRAMIENTAS DISPONIBLES
                   metadata,
                 });
               }
+
+              // Update agent_run with completion data
+              if (agentRunRow?.id) {
+                await db
+                  .update(agentRun)
+                  .set({
+                    status: 'finished',
+                    output: assistantText || null,
+                    toolTrace: toolCalls.length > 0 ? toolCalls : null,
+                    finishedAt: new Date(),
+                  })
+                  .where(eq(agentRun.id, agentRunRow.id));
+              }
             } catch (err) {
               console.error('[agent] persist error:', err);
+              // Mark run as failed if we have a run ID
+              if (agentRunRow?.id) {
+                await db
+                  .update(agentRun)
+                  .set({
+                    status: 'failed',
+                    error: String(err),
+                    finishedAt: new Date(),
+                  })
+                  .where(eq(agentRun.id, agentRunRow.id))
+                  .catch(() => {});
+              }
             }
           },
         });
