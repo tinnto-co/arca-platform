@@ -1,3 +1,18 @@
+## 2026-04-24 - US-023
+- Added `alert` table to `drizzle/schema.ts` with all required fields: id, organizationId (FK org CASCADE), clientId (FK client CASCADE nullable), profileId (FK profile SET NULL nullable), type, severity, title, description, sourceEntityType, sourceEntityId, status (default 'open'), assignedToUserId (FK user SET NULL nullable), dueAt, resolvedAt, resolvedByUserId (FK user SET NULL nullable), metadata (jsonb nullable), createdAt, updatedAt
+- Added `idx_alert_org_status` index on (organizationId, status)
+- Created migration script `src/scripts/ensure-alert-table.ts` using `CREATE TABLE IF NOT EXISTS` pattern
+- Migration ran successfully (timeout at 60s as expected)
+- Files changed: `drizzle/schema.ts`, `src/scripts/ensure-alert-table.ts`
+- **How to verify:**
+  - Run: `timeout 60 bun run src/scripts/ensure-alert-table.ts` (prints "Tabla alert: OK.")
+  - Verify in DB: `\d alert` should show all columns and `\d idx_alert_org_status` for the index
+- **Learnings for future iterations:**
+  - `alert` is a reserved word in some SQL dialects but PostgreSQL handles quoted table names fine
+  - `clientId` uses CASCADE delete (alert disappears when client is deleted), `profileId` uses SET NULL
+  - `assignedToUserId` and `resolvedByUserId` both reference user table with SET NULL on delete
+---
+
 ## 2026-04-24 - US-022
 - Added `toolCallDescriptions` mapping tool names to human-readable descriptions
 - Extended `mergedMessages` type to include `toolCalls?: { toolName, args }[]` extracted from `tool-invocation` parts

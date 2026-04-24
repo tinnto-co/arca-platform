@@ -367,7 +367,7 @@
         "Typecheck passes"
       ],
       "priority": 25,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 3. Alert types: overdue_debt, critical_notification, upcoming_due_date, scraper_error, balance_due_soon, missing_activity"
     },
     {
