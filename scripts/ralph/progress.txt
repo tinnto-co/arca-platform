@@ -1,3 +1,24 @@
+## 2026-04-24 - US-022
+- Added `toolCallDescriptions` mapping tool names to human-readable descriptions
+- Extended `mergedMessages` type to include `toolCalls?: { toolName, args }[]` extracted from `tool-invocation` parts
+- Added `expandedToolCalls` state (Set<string>) and `toggleToolCalls` function to track collapsed/expanded per message
+- Added "Fuentes consultadas" collapsible section above ReactMarkdown in assistant messages:
+  - Only shown when `msg.toolCalls` is non-empty
+  - Toggle button with ChevronRight/ChevronDown icon and count
+  - Expanded: shows gray box with each tool as `{ monospace code tag } description` rows
+- Added `ChevronDown`, `ChevronRight` to lucide imports
+- Files changed: `src/routes/_authed/chat/$id.tsx`
+- **How to verify:**
+  - Run `bun run dev`, open `/chat/<id>`, ask a question that triggers tool use (e.g. "¿Cuál es el estado de [cliente]?")
+  - After the response appears: look for "Fuentes consultadas (N)" link above the message text
+  - Click it: gray box expands showing the tool names used (e.g. `get_client_summary` → "Resumen del cliente")
+  - Click again to collapse
+- **Learnings for future iterations:**
+  - Tool invocation parts have `type: 'tool-invocation'` with nested `toolInvocation.toolName` and `toolInvocation.args`
+  - `(p as any).toolInvocation?.toolName` is needed because AIMessage parts types don't include toolInvocation in their union
+  - Messages with only tool-invocation parts and no text parts return empty `text` → the current `if (!text) return acc` guard skips them; tool calls are accumulated correctly when the next text part arrives in the merged loop
+---
+
 ## 2026-04-24 - US-021
 - Added `payroll_preview_receipt` tool in `src/routes/api/agent.ts`
 - Added imports: `payrollEscala`, `payrollConvenioCategoria`, `payrollConcepto` from schema; `or` from drizzle-orm; `differenceInYears` from date-fns; `evaluatePayrollFormulaStrict` from `@/lib/payroll-formula`
