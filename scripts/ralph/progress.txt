@@ -1,3 +1,25 @@
+## 2026-04-24 - US-042
+- Added expandable timeline section per employee in `src/components/sueldos/SueldosEmpleados.tsx`
+- Added `EmpleadoTimeline` sub-component: fetches events via `listEmployeeEvents`, shows vertical timeline with color-coded type badges, date, title, description, and "Afecta liquidación" indicator
+- Added `EVENT_TYPES` constant and `EVENT_TYPE_COLORS` map (9 types with Arca color tokens)
+- Each employee row now has a ChevronRight/ChevronDown toggle button in a new column; click expands the timeline below
+- "Agregar evento" button (within timeline) opens a dialog with: type selector, date picker, title input, description textarea, affects_payroll Switch toggle
+- `crearEvento` mutation calls `createEmployeeEvent`, then invalidates the per-employee events query
+- Files changed: `src/components/sueldos/SueldosEmpleados.tsx`
+- **How to verify:**
+  - Run `bun run dev`, navigate to Sueldos → select a client/profile → Empleados tab
+  - Each row now has a ChevronRight icon button on the rightmost column
+  - Click it: a timeline section expands below that employee (shows "Sin eventos registrados." if none)
+  - Click "Agregar evento": dialog opens with type selector, date picker, title, description, and "Afecta liquidación" toggle
+  - Fill in and click "Guardar" → event appears in the timeline with color-coded badge
+  - Re-collapse and re-expand: events persist (fetched from DB)
+- **Learnings for future iterations:**
+  - React.Fragment with key prop is required when returning multiple sibling `<tr>` elements from a map — `<>...</>` shorthand doesn't accept a key
+  - `EmpleadoTimeline` is a sub-component that makes its own query per employee — only fires when the row is expanded (lazy loading pattern)
+  - `colSpan={11}` needed for the expanded row since we now have 11 columns (added one for expand toggle)
+  - `useQuery` inside a sub-component with `queryKey: ['employee-events', empleadoId]` ensures proper cache isolation per employee
+---
+
 ## 2026-04-24 - US-041
 - Added `createEmployeeEvent` and `listEmployeeEvents` server functions to `src/actions/sueldos.ts`
 - Added `employeeEvent` to schema imports in sueldos.ts
