@@ -12,7 +12,7 @@ import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { db, dbReadonly } from '@/lib/db';
 import { agentConversation, agentMessage, agentRun, ivaScrape, profile, client, invoice, notification, debt, dueDate, job } from '@/drizzle/schema';
-import { eq, and, sql, ilike, gte, lte, isNull, isNotNull, lt, desc } from 'drizzle-orm';
+import { eq, and, sql, ilike, gte, lte, isNull, isNotNull, lt, desc, inArray } from 'drizzle-orm';
 import {
   INVOICE_TYPES_A,
   INVOICE_TYPES_B,
@@ -346,6 +346,7 @@ REGLAS AL ESCRIBIR QUERIES
 
 HERRAMIENTAS DISPONIBLES
 - get_client_summary: USÁ ESTE TOOL cuando te pregunten sobre el estado general de un cliente. Devuelve datos del cliente, perfiles, notificaciones abiertas, deudas vencidas, próximos vencimientos y últimos scrapeos.
+- get_open_notifications: USÁ ESTE TOOL cuando te pregunten sobre notificaciones abiertas, alertas del fisco, o notificaciones críticas. Acepta filtro por cliente y/o severidad.
 - executeQuery: para cualquier consulta SQL general (clientes, facturas, deudas, vencimientos, nómina).
 - getIvaPosition: USÁ SIEMPRE ESTE TOOL para consultas sobre IVA, posición IVA, saldo IVA, crédito/débito fiscal.
   - El parámetro displayMonth es el mes que el usuario quiere ver (ej: "Marzo 2026" → "03/2026"). El tool internamente usa el mes anterior para consultar iva_scrape.
@@ -477,6 +478,82 @@ HERRAMIENTAS DISPONIBLES
                     detalle: d.detail,
                   })),
                   ultimosScrapeos: lastScrapesByType,
+                };
+              },
+            }),
+            get_open_notifications: tool({
+              description:
+                'Obtiene las notificaciones abiertas (no resueltas) del domicilio fiscal electrónico. Filtrá opcionalmente por cliente, severidad (critical, medium, low, informational, unclassified) y límite de resultados.',
+              inputSchema: z.object({
+                clientName: z.string().optional().describe('Nombre del cliente (búsqueda parcial). Si no se especifica, devuelve notificaciones de todos los clientes de la org.'),
+                severity: z.enum(['critical', 'medium', 'low', 'informational', 'unclassified']).optional().describe('Filtrar por severidad'),
+                limit: z.number().int().min(1).max(100).default(10).describe('Cantidad máxima de resultados (default: 10)'),
+              }),
+              execute: async ({ clientName, severity, limit }) => {
+                // Resolve client IDs scoped to org
+                const allOrgClients = await dbReadonly
+                  .select({ id: client.id, name: client.name })
+                  .from(client)
+                  .where(eq(client.organizationId, orgId));
+
+                if (allOrgClients.length === 0)
+                  return { notifications: [], total: 0 };
+
+                let clientIds = allOrgClients.map((c) => c.id);
+                let resolvedClientName: string | undefined;
+
+                if (clientName) {
+                  const matched = allOrgClients.filter((c) =>
+                    c.name.toLowerCase().includes(clientName.toLowerCase())
+                  );
+                  if (matched.length === 0)
+                    return { error: `No encontré clientes con nombre "${clientName}"` };
+                  if (matched.length > 1)
+                    return { error: 'Más de un cliente coincide', options: matched.map((c) => c.name) };
+                  clientIds = [matched[0].id];
+                  resolvedClientName = matched[0].name;
+                }
+
+                const conditions = [
+                  inArray(notification.client, clientIds),
+                  isNotNull(notification.profile),
+                  isNull(notification.resolvedAt),
+                ];
+
+                if (severity) {
+                  conditions.push(eq(notification.severity, severity));
+                }
+
+                const rows = await dbReadonly
+                  .select({
+                    id: notification.id,
+                    message: notification.message,
+                    severity: notification.severity,
+                    category: notification.category,
+                    aiSummary: notification.aiSummary,
+                    publicationDate: notification.publicationDate,
+                    opened: notification.opened,
+                    clientName: client.name,
+                  })
+                  .from(notification)
+                  .leftJoin(client, eq(notification.client, client.id))
+                  .where(and(...conditions))
+                  .orderBy(desc(notification.publicationDate))
+                  .limit(limit);
+
+                return {
+                  cliente: resolvedClientName ?? 'Todos los clientes',
+                  total: rows.length,
+                  notifications: rows.map((n) => ({
+                    id: n.id,
+                    mensaje: n.message,
+                    severidad: n.severity,
+                    categoria: n.category ?? null,
+                    resumen: n.aiSummary ?? null,
+                    fechaPublicacion: n.publicationDate?.toISOString() ?? null,
+                    leida: n.opened,
+                    cliente: n.clientName,
+                  })),
                 };
               },
             }),
