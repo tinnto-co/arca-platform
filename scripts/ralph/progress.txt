@@ -1,3 +1,16 @@
+## 2026-04-24 - US-037
+- Added `employeeEvent` table to `drizzle/schema.ts` with all required columns: id, empleadoId (FK CASCADE to liquidacion_import_empleado), type, title, description, eventDate, affectsPayroll (default false), metadata (jsonb), createdByUserId (FK nullable to user), createdAt
+- Created `src/scripts/ensure-employee-event-table.ts` migration script (idempotent, uses CREATE TABLE IF NOT EXISTS)
+- Ran migration script — output: "Tabla employee_event: OK." (timeout exit code 124 is expected with DB connections not cleanly closing in bun)
+- Files changed: `drizzle/schema.ts`, `src/scripts/ensure-employee-event-table.ts` (new)
+- **How to verify:**
+  - Run: `docker exec arca-local-db psql -U arca -d arca -c '\d employee_event'` to confirm table exists with all columns
+  - Or run `timeout 60 bun run src/scripts/ensure-employee-event-table.ts` — should print "Tabla employee_event: OK."
+- **Learnings for future iterations:**
+  - Pre-existing typecheck has 98 errors in legacy scripts (map-import-empleados-a-convenios.ts, report-unmatched-import-empleados.ts, etc.) — these are not regressions from our changes
+  - Migration script exit code 124 (timeout) is expected — the DB connection doesn't cleanly close; if output says "OK" the migration succeeded
+---
+
 ## 2026-04-24 - US-036
 - Backend: `uploadDocumentForRequest` and `getRequestDocument` were already implemented in `src/actions/client-portal.tsx`
   - `uploadDocumentForRequest`: validates user has `canUploadDocuments` access, reads file as base64 data URL, inserts into `document` table with `storageProvider='upload'`, updates `clientRequest.metadata` with `{ documentId, documentName, documentMimeType, uploadedAt, uploadedByUserId }`

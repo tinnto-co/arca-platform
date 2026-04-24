@@ -1072,6 +1072,24 @@ export const clientUserAccess = pgTable("client_user_access", {
  * Types: document, information, signature, other
  * Status: open, in_progress, completed, cancelled
  */
+/** Employee event legajo history */
+export const employeeEvent = pgTable("employee_event", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  empleadoId: uuid("empleado_id")
+    .notNull()
+    .references(() => liquidacionImportEmpleado.id, { onDelete: "cascade" }),
+  type: text("type").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  eventDate: timestamp("event_date").notNull(),
+  affectsPayroll: boolean("affects_payroll").notNull().default(false),
+  metadata: jsonb("metadata"),
+  createdByUserId: text("created_by_user_id").references(() => user.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const clientRequest = pgTable("client_request", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: text("organization_id")

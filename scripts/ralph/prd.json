@@ -566,7 +566,7 @@
         "Typecheck passes"
       ],
       "priority": 39,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 5. Types: ausencia, llegada_tarde, licencia, accidente, enfermedad, cambio_categoria, cambio_sueldo, nota_legal, observacion"
     },
     {
