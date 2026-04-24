@@ -1090,6 +1090,24 @@ export const employeeEvent = pgTable("employee_event", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const payrollPeriodNovelty = pgTable("payroll_period_novelty", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  empleadoId: uuid("empleado_id")
+    .notNull()
+    .references(() => liquidacionImportEmpleado.id, { onDelete: "cascade" }),
+  periodo: text("periodo").notNull(),
+  type: text("type").notNull(),
+  quantity: numeric("quantity", { precision: 10, scale: 2 }),
+  amount: numeric("amount", { precision: 14, scale: 2 }),
+  description: text("description"),
+  appliedToReciboId: uuid("applied_to_recibo_id").references(
+    () => liquidacionImportRecibo.id,
+    { onDelete: "set null" }
+  ),
+  status: text("status").notNull().default("pending"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const clientRequest = pgTable("client_request", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: text("organization_id")
