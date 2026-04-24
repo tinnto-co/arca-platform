@@ -585,3 +585,27 @@ Started: Fri Apr 24 16:44:39 -03 2026
   - `dotenv/config` must be imported first in scripts
   - Pre-existing TS errors in unrelated script files should not block our work
 ---
+
+## 2026-04-24 - US-032
+- Created `src/actions/client-portal.tsx` with all required server functions:
+  - `getClientPortalDashboard(clientId)`: returns client data, next 3 due dates, open debts (if permitted), unread notification count, pending requests, and permission flags
+  - `getClientPortalDebts(clientId)`: returns full debt list (throws if `canViewDebts=false`)
+  - `getClientPortalDueDates(clientId, includeCompleted?)`: returns due dates, optionally including completed ones
+  - `getClientPortalNotifications(clientId, limit?)`: returns open (non-resolved) notifications
+  - `getClientPortalRequests(clientId, status?)`: returns client requests, optionally filtered by status
+  - `completeClientRequest(requestId)`: marks a request as completed (validates user access first)
+- All functions call `getAuthSession()` and validate the calling user has a `clientUserAccess` row via internal `getClientPortalAccess()` helper
+- Permission flags respected: `canViewDebts` gates debt queries in dashboard and `getClientPortalDebts`
+- Files changed: `src/actions/client-portal.tsx` (new)
+- **How to verify:**
+  - Run `bun run dev`
+  - Import and call `getClientPortalDashboard({ clientId })` from any component where the user has a `client_user_access` row — returns structured dashboard data
+  - Call without a `client_user_access` row → throws "Acceso denegado al portal del cliente"
+  - Call `getClientPortalDebts({ clientId })` with a user where `canViewDebts=false` → throws permission error
+  - Call `completeClientRequest({ requestId })` → request status becomes 'completed' in DB
+- **Learnings for future iterations:**
+  - `getAuthSession()` (not `getSessionWithOrg()`) is the right helper for portal functions — portal users may not have an active org (they are client users)
+  - `clientUserAccess` unique constraint is on `(clientId, userId)` — validate with `and(eq(userId), eq(clientId))`
+  - `clientRequest.clientId` uses `clientId` naming (not `.client`) — consistent with `clientBalanceConfig.clientId` pattern for newer tables
+  - `dueDate.client`, `debt.client`, `notification.client` are all `.client` (not `.clientId`) — older tables use this pattern
+---
