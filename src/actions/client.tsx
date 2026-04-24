@@ -986,3 +986,37 @@ export const getRunningJobByType = createServerFn({
       progress: runningJob.progress,
     };
   });
+
+export const markDueDateCompleted = createServerFn({
+  method: 'POST',
+})
+  .inputValidator(
+    z.object({
+      id: z.string().uuid(),
+      completed: z.boolean(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    // Validate due_date belongs to this org via client
+    const [existing] = await db
+      .select({ id: dueDate.id })
+      .from(dueDate)
+      .innerJoin(client, eq(dueDate.client, client.id))
+      .where(and(eq(dueDate.id, ctx.data.id), eq(client.organizationId, orgId)));
+
+    if (!existing) throw new Error('Vencimiento no encontrado o sin acceso');
+
+    await db
+      .update(dueDate)
+      .set({
+        completedAt: ctx.data.completed ? new Date() : null,
+        completedByUserId: ctx.data.completed ? userId : null,
+      })
+      .where(eq(dueDate.id, ctx.data.id));
+
+    return { ok: true };
+  });

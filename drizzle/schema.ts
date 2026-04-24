@@ -335,6 +335,8 @@ export const dueDate = pgTable("due_date", {
   quotaNumber: numeric("quota_number").notNull().default("0"),
   dueDate: timestamp("due_date").notNull().default(new Date()),
   detail: text("detail").notNull().default(""),
+  completedAt: timestamp("completed_at"),
+  completedByUserId: text("completed_by_user_id").references(() => user.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
