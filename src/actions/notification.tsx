@@ -1,5 +1,6 @@
 import { createServerFn } from '@tanstack/react-start';
 import z from 'zod';
+import { GoogleGenAI } from '@google/genai';
 import { db } from '@/lib/db';
 import {
   notification,
@@ -7,6 +8,7 @@ import {
   profile,
   invoiceAttachment,
   document,
+  dataSourceEvent,
 } from '@/drizzle/schema';
 import {
   getSessionWithOrg,
@@ -14,7 +16,7 @@ import {
   getMemberRole,
   getOrgClientIds,
 } from '@/actions/helpers';
-import { eq, desc, and, gte, lte, sql, inArray } from 'drizzle-orm';
+import { eq, desc, and, gte, lte, sql, inArray, isNull } from 'drizzle-orm';
 
 export const getNotifications = createServerFn({
   method: 'GET',
@@ -425,3 +427,195 @@ export const deleteNotification = createServerFn({
 
     return { success: true };
   });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AI Classification helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface ClassificationResult {
+  severity: string;
+  category: string;
+  ai_summary: string;
+}
+
+async function classifyWithGemini(
+  message: string
+): Promise<ClassificationResult> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY no configurada');
+
+  const ai = new GoogleGenAI({ apiKey });
+
+  const prompt = `Sos un clasificador de notificaciones fiscales de AFIP Argentina.
+Analizá el siguiente mensaje de notificación y determiná su severidad, categoría y generá un resumen breve en español.
+
+Severidades disponibles:
+- critical: requiere acción urgente (intimaciones, inspecciones activas, deudas con embargo)
+- medium: requiere acción en los próximos días (requerimientos, vencimientos próximos)
+- low: informativo con plazo holgado (notificaciones preventivas, comunicaciones de baja urgencia)
+- informational: sin acción requerida (acuse de recibo, confirmaciones, informativos generales)
+
+Categorías disponibles:
+- requerimiento: AFIP requiere documentación o información
+- inspeccion: proceso de inspección o auditoría
+- deuda: deuda impositiva o previsional
+- intimacion: intimación formal o carta documento
+- comunicacion_general: comunicación informativa general
+- vencimiento: aviso de vencimiento de obligación
+- otro: no encaja en ninguna categoría anterior
+
+Mensaje de notificación:
+${message}`;
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.0-flash',
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: 'OBJECT',
+        properties: {
+          severity: { type: 'STRING' },
+          category: { type: 'STRING' },
+          ai_summary: { type: 'STRING' },
+        },
+        required: ['severity', 'category', 'ai_summary'],
+      },
+    },
+  });
+
+  const text = response.text ?? '';
+  if (!text) throw new Error('Gemini no devolvió respuesta');
+
+  return JSON.parse(text) as ClassificationResult;
+}
+
+export const classifyNotification = createServerFn({
+  method: 'POST',
+})
+  .inputValidator(z.object({ id: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const orgClientIds = await getOrgClientIds(orgId);
+    if (orgClientIds.length === 0) throw new Error('Notificación no encontrada');
+
+    const [notif] = await db
+      .select({
+        id: notification.id,
+        message: notification.message,
+        clientId: notification.client,
+        profileId: notification.profile,
+      })
+      .from(notification)
+      .where(
+        and(
+          eq(notification.id, ctx.data.id),
+          inArray(notification.client, orgClientIds)
+        )
+      )
+      .limit(1);
+
+    if (!notif) throw new Error('Notificación no encontrada');
+
+    const result = await classifyWithGemini(notif.message);
+
+    const now = new Date();
+    const [updated] = await db
+      .update(notification)
+      .set({
+        severity: result.severity,
+        category: result.category,
+        aiSummary: result.ai_summary,
+        aiClassifiedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(notification.id, notif.id))
+      .returning();
+
+    await db.insert(dataSourceEvent).values({
+      organizationId: orgId,
+      clientId: notif.clientId ?? undefined,
+      profileId: notif.profileId ?? undefined,
+      entityType: 'notification',
+      entityId: notif.id,
+      source: 'ai',
+      action: 'classified',
+      metadata: {
+        severity: result.severity,
+        category: result.category,
+      },
+    });
+
+    return updated;
+  });
+
+export const classifyUnclassifiedNotifications = createServerFn({
+  method: 'POST',
+}).handler(async () => {
+  const { orgId } = await getSessionWithOrg();
+  const role = await getMemberRole();
+  assertCanWrite(role);
+
+  const orgClientIds = await getOrgClientIds(orgId);
+  if (orgClientIds.length === 0) return { classified: 0, errors: 0 };
+
+  const unclassified = await db
+    .select({
+      id: notification.id,
+      message: notification.message,
+      clientId: notification.client,
+      profileId: notification.profile,
+    })
+    .from(notification)
+    .where(
+      and(
+        inArray(notification.client, orgClientIds),
+        eq(notification.severity, 'unclassified'),
+        isNull(notification.aiClassifiedAt)
+      )
+    );
+
+  let classified = 0;
+  let errors = 0;
+  const now = new Date();
+
+  for (const notif of unclassified) {
+    try {
+      const result = await classifyWithGemini(notif.message);
+
+      await db
+        .update(notification)
+        .set({
+          severity: result.severity,
+          category: result.category,
+          aiSummary: result.ai_summary,
+          aiClassifiedAt: now,
+          updatedAt: now,
+        })
+        .where(eq(notification.id, notif.id));
+
+      await db.insert(dataSourceEvent).values({
+        organizationId: orgId,
+        clientId: notif.clientId ?? undefined,
+        profileId: notif.profileId ?? undefined,
+        entityType: 'notification',
+        entityId: notif.id,
+        source: 'ai',
+        action: 'classified',
+        metadata: {
+          severity: result.severity,
+          category: result.category,
+        },
+      });
+
+      classified++;
+    } catch {
+      errors++;
+    }
+  }
+
+  return { classified, errors };
+});
