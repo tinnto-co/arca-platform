@@ -14,6 +14,7 @@ export const listAlerts = createServerFn({ method: 'GET' })
     z.object({
       status: z.string().optional(),
       severity: z.string().optional(),
+      type: z.string().optional(),
       clientId: z.string().uuid().optional(),
       limit: z.number().int().min(1).max(200).default(50),
     })
@@ -30,6 +31,9 @@ export const listAlerts = createServerFn({ method: 'GET' })
     }
     if (ctx.data.severity) {
       conditions.push(eq(alertTable.severity, ctx.data.severity) as any);
+    }
+    if (ctx.data.type) {
+      conditions.push(eq(alertTable.type, ctx.data.type) as any);
     }
     if (ctx.data.clientId) {
       conditions.push(eq(alertTable.clientId, ctx.data.clientId) as any);

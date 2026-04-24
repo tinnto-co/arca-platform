@@ -18,6 +18,7 @@ import {
   Building,
   User,
   Bot,
+  AlertTriangle,
 } from 'lucide-react';
 
 import { Sidebar, SidebarRail, useSidebar } from '@/components/ui/sidebar';
@@ -38,6 +39,7 @@ import { useOrgSwitch } from '@/contexts/org-switch-context';
 import { useQueryClient } from '@tanstack/react-query';
 import { userQuery } from '../lib/user-query';
 import { getPendingNotificationsCount } from '@/actions/dashboard';
+import { listAlerts } from '@/actions/alert';
 import { cn } from '@/lib/utils';
 
 export { userQuery };
@@ -123,6 +125,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     queryFn: () => getPendingNotificationsCount(),
   });
   const notifCount = notifData?.count ?? 0;
+
+  const { data: openAlerts = [] } = useQuery({
+    queryKey: ['alerts', 'open', '', '', ''],
+    queryFn: () => listAlerts({ data: { status: 'open', limit: 99 } }),
+    staleTime: 60_000,
+  });
+  const openAlertsCount = (openAlerts as unknown[]).length;
 
   const displayName = user?.organizationName ?? activeOrg?.name ?? 'Workspace';
   const displaySlug = user?.organizationSlug ?? activeOrg?.slug ?? '';
@@ -305,6 +314,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <NavItem to="/invoices" icon={FileText} label="Facturas" />
           <NavItem to="/sueldos" icon={DollarSign} label="Sueldos" />
           <NavItem to="/vencimientos" icon={Calendar} label="Vencimientos" />
+          <NavItem
+            to="/alerts"
+            icon={AlertTriangle}
+            label="Alertas"
+            urgentCount={openAlertsCount}
+          />
           <NavItem to="/chat" icon={Bot} label="Chats" />
 
           <NavGroupLabel>Cuenta</NavGroupLabel>
