@@ -1,3 +1,15 @@
+## 2026-04-24 - US-039
+- Added `payrollReceiptTemplate` table to `drizzle/schema.ts` with all required columns: id, profileId (FK CASCADE to profile), name, receiptType (default 'sueldo'), conceptIds (jsonb), active (bool default true), createdAt
+- Created `src/scripts/ensure-payroll-receipt-template-table.ts` migration script (idempotent, uses CREATE TABLE IF NOT EXISTS)
+- Ran migration script — output: "Tabla payroll_receipt_template: OK." (exit 124 expected)
+- Files changed: `drizzle/schema.ts`, `src/scripts/ensure-payroll-receipt-template-table.ts` (new)
+- **How to verify:**
+  - Run: `docker exec arca-local-db psql -U arca -d arca -c '\d payroll_receipt_template'` to confirm table with all columns
+  - Or: `timeout 60 bun run src/scripts/ensure-payroll-receipt-template-table.ts` — prints "Tabla payroll_receipt_template: OK."
+- **Learnings for future iterations:**
+  - All pre-existing typecheck errors are in legacy scripts — not regressions
+---
+
 ## 2026-04-24 - US-038
 - Added `payrollPeriodNovelty` table to `drizzle/schema.ts` with all required columns: id, empleadoId (FK CASCADE to liquidacion_import_empleado), periodo, type, quantity (numeric 10,2 nullable), amount (numeric 14,2 nullable), description, appliedToReciboId (FK SET NULL to liquidacion_import_recibo nullable), status (default 'pending'), createdAt
 - Created `src/scripts/ensure-payroll-period-novelty-table.ts` migration script (idempotent, uses CREATE TABLE IF NOT EXISTS)
