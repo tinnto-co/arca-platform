@@ -8,6 +8,27 @@
 Started: Fri Apr 24 16:44:39 -03 2026
 ---
 
+## 2026-04-24 - US-003
+- Added `updateProfileManagement` server function in `src/actions/profile.tsx` (POST, canWrite required): validates org ownership, sets `managedByStudy`, `disabledAt`, `disabledReason`
+- Added `managedByStudy = true` filter to `listEmpleados` in `src/actions/sueldos.ts` to exclude unmanaged profiles from payroll module
+- Updated "Perfiles Asociados" section in `src/components/client-detail-page.tsx`:
+  - Profile badges wrapped in `div.relative.group` to show hover toggle button (EyeOff/Eye icon)
+  - Unmanaged profiles rendered with 50% opacity and "No administrado" label
+  - Selected profile detail footer shows "No administrado" badge when applicable
+  - Toggle button calls `toggleProfileManagementMutation` with inverted `managedByStudy` value
+- Files changed: `src/actions/profile.tsx`, `src/actions/sueldos.ts`, `src/components/client-detail-page.tsx`
+- **How to verify:**
+  - Run `bun run dev`, go to any client page
+  - In "Perfiles Asociados" section, hover over a profile badge — a small eye-off icon appears
+  - Click it: the profile turns grey/opaque and shows "No administrado"
+  - Click the eye icon again to re-enable
+  - Go to the Sueldos module for the same client — the disabled profile's employees should no longer appear in `listEmpleados`
+- **Learnings for future iterations:**
+  - The "perfiles tab" in client-detail-page is actually the "resumen" tab's "Perfiles Asociados" card (not a dedicated tab)
+  - Large files like client-detail-page.tsx require Python script for replacements when indentation is tricky for the Edit tool
+  - Pre-existing TS errors in credential.tsx, sueldos.ts(1665), and app-sidebar.tsx should be ignored (not introduced by our changes)
+---
+
 ## 2026-04-24 - US-002
 - Added `dataSourceEvent` table to `drizzle/schema.ts` with all required fields: id, organization_id (FK org), client_id (FK client nullable), profile_id (FK profile nullable), entity_type, entity_id, source, source_job_id (FK job nullable), action, metadata (jsonb nullable), created_at
 - Created migration script `src/scripts/ensure-data-source-event-table.ts` using `CREATE TABLE IF NOT EXISTS` pattern

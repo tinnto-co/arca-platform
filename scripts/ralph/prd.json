@@ -44,7 +44,7 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 0. Uses managed_by_study column from US-001"
     },
     {
