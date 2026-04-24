@@ -1,3 +1,32 @@
+## 2026-04-24 - US-044
+- Added `payrollReceiptTemplate` import and 3 new server functions to `src/actions/sueldos.ts`:
+  - `createReceiptTemplate(profileId, name, receiptType, conceptIds)`: POST, requires canWrite, validates profile belongs to org, inserts template with jsonb conceptIds
+  - `listReceiptTemplates(profileId)`: GET, validates profile belongs to org, returns active templates ordered by createdAt
+  - `deleteReceiptTemplate(id)`: POST, requires canWrite, fetches template to get profileId, validates org ownership, deletes
+- Added private `ensureProfileBelongsToOrg(profileId, orgId)` helper — joins `profile → client` and checks `client.organizationId = orgId`
+- Updated `src/components/sueldos/SueldosSimulador.tsx`:
+  - Added `listReceiptTemplates`, `createReceiptTemplate`, `deleteReceiptTemplate` imports
+  - Added `ReceiptTemplate` interface and `useQuery` for template list (keyed on profileId)
+  - "Usar template" dropdown appears when templates exist in manual mode — filters concept list to template's concept codes
+  - Delete (trash) button removes selected template and resets selection
+  - "Guardar como template" button opens a dialog to name the template; saves current visible concepts as conceptIds
+  - `saveTemplate` mutation calls `createReceiptTemplate` and invalidates `receipt-templates` query
+  - `removeTemplate` mutation calls `deleteReceiptTemplate` and invalidates query
+- Files changed: `src/actions/sueldos.ts`, `src/components/sueldos/SueldosSimulador.tsx`
+- **How to verify:**
+  - Run `bun run dev`, navigate to Sueldos → select a client/profile → Simulador tab
+  - Choose "Carga manual" option and submit the form to reach the concepts table
+  - "Guardar como template" button appears at bottom-right; click it → dialog opens asking for template name → save
+  - Template now appears in "Usar template…" dropdown; selecting it filters the concepts table to only the saved codes
+  - Trash button (red) next to the dropdown removes the selected template
+  - Verify via DB: `docker exec arca-local-db psql -U arca -d arca -c 'SELECT * FROM payroll_receipt_template LIMIT 5'`
+- **Learnings for future iterations:**
+  - `payrollReceiptTemplate` has `conceptIds jsonb` — store as `string[]` (concept codes), return `as any` to avoid TS jsonb `unknown` type issues (same pattern as `employeeEvent`, `credential.tsx`)
+  - For profile-scoped templates, validate org ownership by joining `profile → client` via `profile.client` (not `profile.clientId`) and checking `client.organizationId = orgId`
+  - `useQuery<ReceiptTemplate[]>` with explicit type parameter + `as Promise<ReceiptTemplate[]>` cast is the pattern when server fn returns `any`
+  - The "Usar template" dropdown uses `Select` from shadcn — import from `@/components/ui/select`
+---
+
 ## 2026-04-24 - US-043
 - Added `payrollPeriodNovelty` import to `src/actions/sueldos.ts`
 - Implemented `createNovelty`: POST, requires canWrite, validates empleado belongs to org, inserts row with empleadoId, periodo, type, quantity, amount, description
