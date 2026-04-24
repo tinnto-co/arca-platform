@@ -1,3 +1,29 @@
+## 2026-04-24 - US-046
+- Created `src/actions/bank.tsx` with all 7 bank reconciliation server functions:
+  - `createBankAccount`: POST, requires canWrite, validates client belongs to org, inserts bank account
+  - `listBankAccounts(clientId)`: GET, validates client belongs to org, returns active accounts ordered by createdAt
+  - `importBankTransactions(bankAccountId, transactions[])`: POST, requires canWrite, deduplicates by externalId, bulk inserts transactions
+  - `listBankTransactions(bankAccountId, from?, to?)`: GET, returns transactions with their match status (joined from bankInvoiceMatch)
+  - `autoMatchTransactions(bankAccountId)`: POST, requires canWrite; matches unmatched transactions to invoices by amount (< 1 peso tolerance) + date proximity (5 days) + counterparty CUIT (bonus confidence); inserts auto matches with confidence score
+  - `manualMatchTransaction(transactionId, invoiceId)`: POST, requires canWrite; removes existing match, inserts manual match with confidence 100.00 and reviewedByUserId
+  - `getReconciliationSummary(clientId)`: GET; returns totalTransactions, matchedTransactions, unmatchedTransactions, matchRate, totalCredit, totalDebit, accountCount
+- All functions validate org ownership via `ensureBankAccountBelongsToOrg` helper (JOIN bankAccount → client → organizationId)
+- Auto-matching confidence: 50 base (amount + date match) + 40 for CUIT match + up to 10 for date proximity bonus
+- Files changed: `src/actions/bank.tsx` (new)
+- **How to verify:**
+  - Run `bun run dev`
+  - Call `createBankAccount({ clientId: '<uuid>', bankName: 'Banco Nación', currency: 'ARS' })` — inserts into bank_account
+  - Call `listBankAccounts({ clientId: '<uuid>' })` — returns list of active accounts
+  - Call `importBankTransactions({ bankAccountId: '<uuid>', transactions: [{ transactionDate: '2026-04-01', amount: '1000.00', direction: 'credit' }] })` — inserts transaction, returns `{ imported: 1, skipped: 0 }`
+  - Call `autoMatchTransactions({ bankAccountId: '<uuid>' })` — matches transactions to invoices, returns `{ matched: N }`
+  - Call `getReconciliationSummary({ clientId: '<uuid>' })` — returns counts and totals
+- **Learnings for future iterations:**
+  - Zod v4 (used in this project) requires 2 args for `z.record()`: `z.record(z.string(), z.unknown())` — not `z.record(z.unknown())`
+  - Drizzle tables don't have `.as()` for aliases — use `innerJoin` directly or raw SQL `sql\`...\`` for complex aliased queries
+  - `inArray()` with a nullable column (`text nullable`) works fine in Drizzle — no casting needed
+  - Auto-matching with confidence score: amount tolerance < 1 unit is a practical threshold for Argentine peso amounts
+---
+
 ## 2026-04-24 - US-045
 - Added 4 bank reconciliation tables to `drizzle/schema.ts`:
   - `bankAccount`: per-client bank accounts with bank_name, account_number, currency, alias, cbu, active
