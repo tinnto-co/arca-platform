@@ -212,6 +212,21 @@
   - `as any` cast in agent.tsx is the same pattern that credential.tsx effectively needs but hasn't been fixed — acceptable workaround
 ---
 
+## 2026-04-24 - US-015
+- Added `agentRun` table to `drizzle/schema.ts` with all required fields: id, conversationId (FK agentConversation), userId (FK user), organizationId (FK organization), clientId (FK client nullable), profileId (FK profile nullable), status (text default 'running'), intent, input, output, toolTrace (jsonb), error, startedAt (timestamp default now()), finishedAt (timestamp nullable)
+- Created migration script `src/scripts/ensure-agent-run-table.ts` using `CREATE TABLE IF NOT EXISTS` pattern
+- Updated `src/routes/api/agent.ts`: inserted `agentRun` row before streaming (status='running'), updated it on `onFinish` with status='finished', output, toolTrace, finishedAt; marks status='failed' with error on exception
+- Files changed: `drizzle/schema.ts`, `src/scripts/ensure-agent-run-table.ts`, `src/routes/api/agent.ts`
+- **How to verify:**
+  - Run: `timeout 60 bun run src/scripts/ensure-agent-run-table.ts` (prints "Tabla agent_run: OK.")
+  - Verify in DB: `\d agent_run` should show all columns including status, input, output, tool_trace, started_at, finished_at
+  - Run `bun run dev`, open `/chat/<id>`, send a message — query `SELECT status, input, output, tool_trace FROM agent_run ORDER BY started_at DESC LIMIT 1` should show a finished row with tool_trace data
+- **Learnings for future iterations:**
+  - `agentRunRow` is returned from `.returning({ id: agentRun.id })` — must destructure as `const [agentRunRow]` from the insert
+  - The `agentRunRow` variable is closed over in `onFinish` callback — declaring it before the streaming call works correctly
+  - `clientId` and `profileId` are nullable on `agentRun` — useful for future stories that detect client context from user input
+---
+
 ## Codebase Patterns
 - Migration scripts live in `src/scripts/` and use `ADD COLUMN IF NOT EXISTS` via `db.execute(sql.raw(...))` for idempotent migrations
 - Pre-existing TS errors exist in some `src/scripts/` files (map-import-empleados, report-unmatched, etc.) — these are not related to our changes
