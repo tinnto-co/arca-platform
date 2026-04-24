@@ -1,3 +1,13 @@
+## 2026-04-24 - US-024
+- Added `profileRiskSnapshot` table to `drizzle/schema.ts`: id, profileId (FK profile CASCADE), period, score (numeric 5,2), riskLevel, factors (jsonb), createdAt
+- Unique constraint on (profileId, period) for upsert pattern
+- Created migration script `src/scripts/ensure-profile-risk-snapshot-table.ts`
+- Migration ran successfully
+- Files changed: `drizzle/schema.ts`, `src/scripts/ensure-profile-risk-snapshot-table.ts`
+- **How to verify:**
+  - Run: `timeout 60 bun run src/scripts/ensure-profile-risk-snapshot-table.ts` (prints "Tabla profile_risk_snapshot: OK.")
+---
+
 ## 2026-04-24 - US-023
 - Added `alert` table to `drizzle/schema.ts` with all required fields: id, organizationId (FK org CASCADE), clientId (FK client CASCADE nullable), profileId (FK profile SET NULL nullable), type, severity, title, description, sourceEntityType, sourceEntityId, status (default 'open'), assignedToUserId (FK user SET NULL nullable), dueAt, resolvedAt, resolvedByUserId (FK user SET NULL nullable), metadata (jsonb nullable), createdAt, updatedAt
 - Added `idx_alert_org_status` index on (organizationId, status)
