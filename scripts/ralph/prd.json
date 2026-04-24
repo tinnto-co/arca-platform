@@ -1,0 +1,830 @@
+{
+  "project": "ARCAR Platform",
+  "branchName": "ralph/arcar-full-implementation",
+  "description": "Full implementation of ARCAR platform phases 0-9: normalization, core fiscal, AI assistant, alerts/risk, client portal, sueldos PRO, bank reconciliation, accounting, analytics, and modularization",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add classification columns to profile table",
+      "description": "As a developer, I need profile enrichment columns so that the system can distinguish managed vs unmanaged profiles and classify profile types.",
+      "acceptanceCriteria": [
+        "Add columns to profile in drizzle/schema.ts: managed_by_study (boolean default true), disabled_at (timestamp nullable), disabled_reason (text nullable), profile_type (text default 'unknown')",
+        "Create migration script src/scripts/ensure-profile-enrichment-columns.ts using ADD COLUMN IF NOT EXISTS pattern (same as ensure-empleado-legajo-extra-columns.ts)",
+        "Run migration script successfully against local DB",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Phase 0. Follow existing pattern in src/scripts/ensure-empleado-legajo-extra-columns.ts"
+    },
+    {
+      "id": "US-002",
+      "title": "Create data_source_event audit trail table",
+      "description": "As a developer, I need an audit trail table so that every important data point can be traced to its origin (scrape job, manual entry, AI classification).",
+      "acceptanceCriteria": [
+        "Add dataSourceEvent table to drizzle/schema.ts with: id (uuid PK), organization_id (text FK org), client_id (uuid FK client nullable), profile_id (uuid FK profile nullable), entity_type (text), entity_id (text), source (text), source_job_id (uuid FK job nullable), action (text), metadata (jsonb nullable), created_at (timestamp)",
+        "Create migration script src/scripts/ensure-data-source-event-table.ts",
+        "Run migration script successfully",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Phase 0. Source values: 'scraper', 'manual', 'ai', 'import'. Action values: 'created', 'updated', 'classified'"
+    },
+    {
+      "id": "US-003",
+      "title": "UI to disable unmanaged profiles",
+      "description": "As a studio operator, I want to mark profiles as not managed by this studio so that unmanaged profiles don't clutter the operational view.",
+      "acceptanceCriteria": [
+        "In client detail perfiles tab (src/components/client-detail-page.tsx), add toggle/button per profile to set managed_by_study = false",
+        "Create server function updateProfileManagement in src/actions/profile.tsx (POST, requires canWrite)",
+        "Disabled profiles show greyed out with 'No administrado' badge",
+        "Disabled profiles are excluded from sueldos module queries in src/actions/sueldos.ts",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Phase 0. Uses managed_by_study column from US-001"
+    },
+    {
+      "id": "US-004",
+      "title": "Add severity and category columns to notification table",
+      "description": "As a developer, I need notification classification columns so that notifications can be prioritized by severity and filtered by category.",
+      "acceptanceCriteria": [
+        "Add columns to notification in drizzle/schema.ts: severity (text default 'unclassified'), category (text nullable), ai_summary (text nullable), ai_classified_at (timestamp nullable), assigned_to_user_id (text FK user nullable), resolved_at (timestamp nullable), resolved_by_user_id (text FK user nullable)",
+        "Create migration script src/scripts/ensure-notification-enrichment-columns.ts",
+        "Add index idx_notification_severity on (client_id, severity)",
+        "Run migration script successfully",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Phase 1. Severities: critical, medium, low, informational, unclassified. Categories: requerimiento, inspeccion, deuda, intimacion, comunicacion_general, vencimiento, otro"
+    },
+    {
+      "id": "US-005",
+      "title": "AI notification classification with Gemini",
+      "description": "As a studio operator, I want notifications automatically classified by severity and category so that critical items surface immediately.",
+      "acceptanceCriteria": [
+        "Create server function classifyNotification in src/actions/notification.tsx that sends notification message to Gemini Flash with prompt to classify severity and category and generate ai_summary",
+        "Function updates notification row with severity, category, ai_summary, ai_classified_at",
+        "Create server function classifyUnclassifiedNotifications that batches all unclassified notifications for an org",
+        "Log classification to data_source_event with source='ai'",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "Phase 1. Uses GEMINI_API_KEY env var. See src/lib/payroll-cron.ts for existing Gemini usage pattern"
+    },
+    {
+      "id": "US-006",
+      "title": "Notification severity badges and category filter in UI",
+      "description": "As a studio operator, I want to see notification severity badges and filter by category so I can focus on critical items first.",
+      "acceptanceCriteria": [
+        "In src/components/notifications-view.tsx, show severity badge (critical=red, medium=orange, low=blue, informational=gray) next to each notification",
+        "Add category filter dropdown (Todos, Requerimiento, Intimacion, Deuda, Vencimiento, Comunicacion, Otro)",
+        "Sort notifications by severity (critical first) within each date group",
+        "Show ai_summary as subtitle when available",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "Phase 1. Reuse StatusTag from src/components/dashboard/shared.tsx for severity badges"
+    },
+    {
+      "id": "US-007",
+      "title": "Notification assignment and resolution workflow",
+      "description": "As a studio operator, I want to assign notifications to team members and mark them as resolved so that nothing falls through the cracks.",
+      "acceptanceCriteria": [
+        "Create server functions assignNotification(id, userId) and resolveNotification(id) in src/actions/notification.tsx",
+        "In notification detail panel (right side of notifications-view.tsx), add 'Asignar a' dropdown with org members and 'Resolver' button",
+        "Resolved notifications show with muted style",
+        "Add filter toggle: 'Solo sin resolver'",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Phase 1. Use getOrgMembers from src/actions/admin.tsx for member list"
+    },
+    {
+      "id": "US-008",
+      "title": "Add status and intimation columns to debt table",
+      "description": "As a developer, I need debt enrichment columns so that debts can be tracked as open, in-plan, paid, or disputed.",
+      "acceptanceCriteria": [
+        "Add columns to debt in drizzle/schema.ts: status (text default 'open'), detected_at (timestamp default now()), source_period (text nullable), is_intimated (boolean default false)",
+        "Create migration script src/scripts/ensure-debt-enrichment-columns.ts",
+        "Run migration script successfully",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "Phase 1. Status values: open, in_plan, paid, disputed"
+    },
+    {
+      "id": "US-009",
+      "title": "Debt status management UI in client detail",
+      "description": "As a studio operator, I want to change debt status and flag intimations so I can track resolution progress.",
+      "acceptanceCriteria": [
+        "In client detail debt tab (src/components/client-detail-page.tsx), add status dropdown per debt row: Abierta, En plan, Pagada, Disputada",
+        "Add 'Intimada' toggle/badge per debt row",
+        "Create server function updateDebtStatus(id, status, is_intimated) in src/actions/client.tsx",
+        "Color-code debt rows by status (red=open+overdue, orange=intimated, green=paid, gray=in_plan)",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": "Phase 1"
+    },
+    {
+      "id": "US-010a",
+      "title": "Add completed columns to due_date table",
+      "description": "As a developer, I need completion tracking on due dates so they can become actionable tasks.",
+      "acceptanceCriteria": [
+        "Add columns to due_date in drizzle/schema.ts: completed_at (timestamp nullable), completed_by_user_id (text FK user nullable)",
+        "Create migration script and run it",
+        "Create server function markDueDateCompleted(id) in src/actions/client.tsx",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": "Phase 1. Schema + backend only"
+    },
+    {
+      "id": "US-010b",
+      "title": "Due date completion toggle in calendar UI",
+      "description": "As a studio operator, I want to mark due dates as completed in the calendar view.",
+      "acceptanceCriteria": [
+        "In src/components/vencimientos-calendar.tsx, add checkbox per event in the detail panel",
+        "Completed events show with strikethrough text",
+        "In calendar grid, completed days show green dot instead of blue/red pill",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": "Phase 1. Uses markDueDateCompleted from US-010a"
+    },
+    {
+      "id": "US-011a",
+      "title": "Exceptions summary server function",
+      "description": "As a developer, I need an exceptions summary endpoint so the dashboard can show critical items.",
+      "acceptanceCriteria": [
+        "Create server function getExceptionsSummary in src/actions/dashboard.tsx returning: overdueDebtCount, criticalNotificationCount, upcomingDueDateCount (within 3 days), clientErrorCount",
+        "Reuse existing query patterns from getDashboardStats, getOverdueDebts, getPendingNotificationsCount",
+        "Scope by orgId via getSessionWithOrg()",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": "Phase 1. Backend only"
+    },
+    {
+      "id": "US-011b",
+      "title": "Exception widgets on dashboard UI",
+      "description": "As a studio operator, I want to see critical exceptions at the top of the dashboard.",
+      "acceptanceCriteria": [
+        "Add ExceptionsBar component in src/components/dashboard/ showing up to 4 colored alert cards",
+        "Each card: clickable, navigates to relevant page (debts, notifications, vencimientos, clients)",
+        "Cards only appear when count > 0",
+        "Wire into src/routes/_authed/index.tsx between DashboardGreeting and KpiCardsRow",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": "Phase 1. Use Arca tokens. Uses getExceptionsSummary from US-011a"
+    },
+    {
+      "id": "US-012",
+      "title": "Add storage metadata columns to document table",
+      "description": "As a developer, I need document storage metadata so files can be migrated to private storage later.",
+      "acceptanceCriteria": [
+        "Add columns to document in drizzle/schema.ts: storage_provider (text default 'external'), storage_key (text nullable), mime_type (text nullable), size_bytes (integer nullable), checksum (text nullable)",
+        "Create migration script and run it",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": "Phase 1"
+    },
+    {
+      "id": "US-013",
+      "title": "Add source confidence columns to iva_scrape table",
+      "description": "As a developer, I need IVA source tracking so that scraped vs manual values are distinguishable.",
+      "acceptanceCriteria": [
+        "Add columns to iva_scrape in drizzle/schema.ts: source_confidence (text default 'unknown'), imported_manually (boolean default false)",
+        "Create migration script and run it",
+        "Typecheck passes"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": "Phase 1"
+    },
+    {
+      "id": "US-014",
+      "title": "Add metadata and tool_calls columns to agent_message",
+      "description": "As a developer, I need agent message enrichment so that AI responses can be audited.",
+      "acceptanceCriteria": [
+        "Add columns to agent_message in drizzle/schema.ts: metadata (jsonb nullable), tool_calls (jsonb nullable), citations (jsonb nullable), confidence (text nullable)",
+        "Create migration script and run it",
+        "In src/routes/api/agent.ts, update onFinish callback to persist tool_calls and metadata from step results into the agent_message row",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": "Phase 2"
+    },
+    {
+      "id": "US-015",
+      "title": "Create agent_run execution tracking table",
+      "description": "As a developer, I need execution tracking so each AI invocation can be audited separately.",
+      "acceptanceCriteria": [
+        "Add agentRun table to drizzle/schema.ts: id (uuid PK), conversation_id (uuid FK agent_conversation), user_id (text FK user), organization_id (text FK organization), client_id (uuid FK client nullable), profile_id (uuid FK profile nullable), status (text default 'running'), intent (text nullable), input (text), output (text nullable), tool_trace (jsonb nullable), error (text nullable), started_at (timestamp default now()), finished_at (timestamp nullable)",
+        "Create migration script and run it",
+        "In src/routes/api/agent.ts, create agent_run record at request start and update on completion",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": "Phase 2"
+    },
+    {
+      "id": "US-016",
+      "title": "Agent tool: get_client_summary",
+      "description": "As an AI agent, I need a get_client_summary tool to answer questions about a client's overall status.",
+      "acceptanceCriteria": [
+        "Add get_client_summary tool in src/routes/api/agent.ts accepting clientName (string)",
+        "Tool finds client by name (ILIKE), fetches: client data, profile count, open notification count, overdue debt count + total balance, upcoming due dates (next 30 days), last scrape timestamps per job type",
+        "Returns structured JSON, not raw SQL",
+        "Scope enforced: only clients where client.organizationId = orgId",
+        "Typecheck passes"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": "Phase 2. Use Drizzle queries not raw SQL"
+    },
+    {
+      "id": "US-017",
+      "title": "Agent tool: get_open_notifications",
+      "description": "As an AI agent, I need a get_open_notifications tool to answer questions about critical notifications.",
+      "acceptanceCriteria": [
+        "Add get_open_notifications tool in src/routes/api/agent.ts accepting clientName (optional), severity (optional), limit (default 10)",
+        "Reuse query logic from getNotifications in src/actions/notification.tsx",
+        "Returns: id, message, severity, category, ai_summary, clientName, publicationDate, opened",
+        "Scope enforced via orgId",
+        "Typecheck passes"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": "Phase 2"
+    },
+    {
+      "id": "US-018",
+      "title": "Agent tool: get_debts",
+      "description": "As an AI agent, I need a get_debts tool to answer questions about tax debts.",
+      "acceptanceCriteria": [
+        "Add get_debts tool in src/routes/api/agent.ts accepting clientName (optional), status (optional), limit (default 20)",
+        "Returns: tax, concept, period, dueDate, balance, compensatoryInterest, punitiveInterest, status, is_intimated, clientName, total_debt (balance + compensatory + punitive)",
+        "Scope enforced via orgId",
+        "Typecheck passes"
+      ],
+      "priority": 20,
+      "passes": false,
+      "notes": "Phase 2"
+    },
+    {
+      "id": "US-019",
+      "title": "Agent tool: get_due_dates",
+      "description": "As an AI agent, I need a get_due_dates tool to answer about upcoming fiscal obligations.",
+      "acceptanceCriteria": [
+        "Add get_due_dates tool in src/routes/api/agent.ts accepting clientName (optional), days_ahead (default 30), include_completed (default false)",
+        "Returns: tax, concept, dueDate, completed_at, clientName, days_until_due",
+        "Sort by dueDate ascending",
+        "Scope enforced via orgId",
+        "Typecheck passes"
+      ],
+      "priority": 21,
+      "passes": false,
+      "notes": "Phase 2"
+    },
+    {
+      "id": "US-020",
+      "title": "Agent tool: get_profile_status",
+      "description": "As an AI agent, I need a get_profile_status tool to answer about a fiscal profile's health.",
+      "acceptanceCriteria": [
+        "Add get_profile_status tool in src/routes/api/agent.ts accepting clientName, profileName (optional)",
+        "Returns: profile data, managed_by_study, profile_type, last IVA scrape summary, open notifications count, active employee count, last scrape dates",
+        "Scope enforced via orgId",
+        "Typecheck passes"
+      ],
+      "priority": 22,
+      "passes": false,
+      "notes": "Phase 2. Depends on US-001 profile columns"
+    },
+    {
+      "id": "US-021",
+      "title": "Agent tool: payroll_preview_receipt",
+      "description": "As an AI agent, I need a payroll_preview_receipt tool to show salary calculation previews.",
+      "acceptanceCriteria": [
+        "Add payroll_preview_receipt tool in src/routes/api/agent.ts accepting clientName, employeeName, periodo (YYYY-MM)",
+        "Finds employee, fetches convenio + escala, runs calcularLiquidacion logic in dry-run mode",
+        "Returns: basico, haberes, noRemunerativo, descuentos, retenciones, neto, concept breakdown",
+        "Does NOT persist anything to DB",
+        "Scope enforced via orgId",
+        "Typecheck passes"
+      ],
+      "priority": 23,
+      "passes": false,
+      "notes": "Phase 2. See calcularLiquidacion in src/actions/sueldos.ts"
+    },
+    {
+      "id": "US-022",
+      "title": "Show tool calls and citations in chat UI",
+      "description": "As a studio operator, I want to see what data the AI queried so I can trust responses.",
+      "acceptanceCriteria": [
+        "In src/routes/_authed/chat/$id.tsx, after assistant messages with tool_calls in metadata, show collapsible 'Fuentes consultadas' section",
+        "Each tool call shows: tool name, brief description of what was queried",
+        "Style as subtle gray box below message content",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 24,
+      "passes": false,
+      "notes": "Phase 2. Depends on US-014 for tool_calls data"
+    },
+    {
+      "id": "US-023",
+      "title": "Create alert table",
+      "description": "As a developer, I need a centralized alert table for risks from different sources.",
+      "acceptanceCriteria": [
+        "Add alert table to drizzle/schema.ts: id (uuid PK), organization_id (text FK), client_id (uuid FK nullable), profile_id (uuid FK nullable), type (text), severity (text), title (text), description (text nullable), source_entity_type (text nullable), source_entity_id (text nullable), status (text default 'open'), assigned_to_user_id (text FK user nullable), due_at (timestamp nullable), resolved_at (timestamp nullable), resolved_by_user_id (text FK user nullable), metadata (jsonb nullable), created_at (timestamp), updated_at (timestamp)",
+        "Add index on (organization_id, status)",
+        "Create migration script and run it",
+        "Typecheck passes"
+      ],
+      "priority": 25,
+      "passes": false,
+      "notes": "Phase 3. Alert types: overdue_debt, critical_notification, upcoming_due_date, scraper_error, balance_due_soon, missing_activity"
+    },
+    {
+      "id": "US-024",
+      "title": "Create profile_risk_snapshot table",
+      "description": "As a developer, I need periodic risk snapshots to track risk trends over time.",
+      "acceptanceCriteria": [
+        "Add profileRiskSnapshot table: id (uuid PK), profile_id (uuid FK), period (text), score (numeric 5,2), risk_level (text), factors (jsonb), created_at (timestamp). Unique on (profile_id, period)",
+        "Create migration script and run it",
+        "Typecheck passes"
+      ],
+      "priority": 26,
+      "passes": false,
+      "notes": "Phase 3. risk_level values: low, medium, high, critical"
+    },
+    {
+      "id": "US-025",
+      "title": "Create client_balance_config table",
+      "description": "As a developer, I need balance config for fiscal year end dates per client.",
+      "acceptanceCriteria": [
+        "Add clientBalanceConfig table: id (uuid PK), client_id (uuid FK unique), fiscal_year_end_month (integer), fiscal_year_end_day (integer), presentation_due_days (integer nullable), alert_days_before (integer[] default ARRAY[60,30,15,7]), created_at (timestamp), updated_at (timestamp)",
+        "Create migration script and run it",
+        "Typecheck passes"
+      ],
+      "priority": 27,
+      "passes": false,
+      "notes": "Phase 3"
+    },
+    {
+      "id": "US-026",
+      "title": "Alert CRUD server functions",
+      "description": "As a developer, I need alert server functions for creating, listing, assigning, and resolving alerts.",
+      "acceptanceCriteria": [
+        "Create src/actions/alert.tsx with: listAlerts(status?, severity?, clientId?, limit), createAlert(...), acknowledgeAlert(id), assignAlert(id, userId), resolveAlert(id), bulkResolveAlerts(ids[])",
+        "All functions call getSessionWithOrg() and scope by orgId",
+        "Write mutations require assertCanWrite(role)",
+        "Typecheck passes"
+      ],
+      "priority": 28,
+      "passes": false,
+      "notes": "Phase 3"
+    },
+    {
+      "id": "US-027",
+      "title": "Alert generation pipeline",
+      "description": "As a developer, I need automatic alert generation from overdue debts, critical notifications, and approaching due dates.",
+      "acceptanceCriteria": [
+        "Create src/lib/alert-generator.ts with generateAlerts(orgId) that scans: debts with status='open' and dueDate < today, notifications with severity='critical' and resolved_at IS NULL, due_dates within 7 days and completed_at IS NULL, clients with hasErrors=true",
+        "Creates corresponding alert records for each finding",
+        "Deduplicates: no duplicate open alerts for same (type, source_entity_type, source_entity_id, status='open')",
+        "Typecheck passes"
+      ],
+      "priority": 29,
+      "passes": false,
+      "notes": "Phase 3. Depends on US-004 (notification severity), US-008 (debt status), US-010a (due_date completed)"
+    },
+    {
+      "id": "US-028",
+      "title": "Risk scoring engine",
+      "description": "As a developer, I need risk scoring so each profile gets a periodic assessment.",
+      "acceptanceCriteria": [
+        "Create src/lib/risk-engine.ts with calculateRiskScore(profileId, period) computing score 0-100 based on: overdue debt (30%), critical notifications (20%), upcoming due dates (15%), months without invoices (15%), IVA projected (10%), scraper errors (10%)",
+        "Returns: score, risk_level (low <25, medium 25-50, high 50-75, critical >75), factors jsonb",
+        "Create generateRiskSnapshots(orgId, period) that runs scoring for all profiles and inserts into profile_risk_snapshot",
+        "Typecheck passes"
+      ],
+      "priority": 30,
+      "passes": false,
+      "notes": "Phase 3"
+    },
+    {
+      "id": "US-029",
+      "title": "Alert inbox UI page",
+      "description": "As a studio operator, I want a centralized alert inbox to see all risks and act on them.",
+      "acceptanceCriteria": [
+        "Create route src/routes/_authed/alerts/index.tsx",
+        "Add 'Alertas' NavItem in src/components/app-sidebar.tsx with AlertTriangle icon and urgent count badge",
+        "Page shows: filter bar (severity, type, status, client), alert list with severity badge, title, client name, source, time ago",
+        "Each alert has: Assign, Resolve, View source actions",
+        "Use Arca design tokens (ArcaCard, StatusTag, PageHeader)",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 31,
+      "passes": false,
+      "notes": "Phase 3"
+    },
+    {
+      "id": "US-030",
+      "title": "Balance config UI in client detail",
+      "description": "As a studio operator, I want to configure fiscal year end dates per client.",
+      "acceptanceCriteria": [
+        "In client detail Info tab, add 'Cierre de ejercicio' section with month/day pickers and alert days config",
+        "Create server functions getBalanceConfig(clientId) and upsertBalanceConfig(clientId, data) in src/actions/client.tsx",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 32,
+      "passes": false,
+      "notes": "Phase 3"
+    },
+    {
+      "id": "US-031",
+      "title": "Create client portal tables",
+      "description": "As a developer, I need client portal tables for scoped access and studio requests.",
+      "acceptanceCriteria": [
+        "Add clientUserAccess table: id (uuid PK), client_id (uuid FK), user_id (text FK), role (text default 'client_viewer'), can_upload_documents (bool default true), can_view_debts (bool default true), can_view_iva (bool default true), can_view_payroll (bool default false), can_chat_ai (bool default true), created_at (timestamp). Unique (client_id, user_id)",
+        "Add clientRequest table: id (uuid PK), organization_id (text FK), client_id (uuid FK), profile_id (uuid FK nullable), requested_by_user_id (text FK nullable), title (text), description (text nullable), type (text), status (text default 'open'), due_at (timestamp nullable), completed_at (timestamp nullable), metadata (jsonb nullable), created_at (timestamp)",
+        "Create migration scripts and run them",
+        "Typecheck passes"
+      ],
+      "priority": 33,
+      "passes": false,
+      "notes": "Phase 4"
+    },
+    {
+      "id": "US-032",
+      "title": "Client portal backend server functions",
+      "description": "As a developer, I need client portal server functions for scoped data access.",
+      "acceptanceCriteria": [
+        "Create src/actions/client-portal.tsx with: getClientPortalDashboard(clientId), getClientPortalDebts(clientId), getClientPortalDueDates(clientId), getClientPortalNotifications(clientId), getClientPortalRequests(clientId), completeClientRequest(requestId)",
+        "All functions validate calling user has clientUserAccess row for the client",
+        "Respect permission flags (can_view_debts, can_view_iva, etc.)",
+        "Typecheck passes"
+      ],
+      "priority": 34,
+      "passes": false,
+      "notes": "Phase 4"
+    },
+    {
+      "id": "US-033",
+      "title": "Client portal auth guard layout",
+      "description": "As a developer, I need a separate auth layout for client users with limited UI.",
+      "acceptanceCriteria": [
+        "Create route layout src/routes/_client/route.tsx checking: user has session, user has clientUserAccess row, resolves clientId",
+        "Client layout has simplified sidebar (no admin, no sueldos, no jobs)",
+        "Create helper getClientPortalSession() in src/actions/helpers.ts",
+        "Typecheck passes"
+      ],
+      "priority": 35,
+      "passes": false,
+      "notes": "Phase 4"
+    },
+    {
+      "id": "US-034",
+      "title": "Client portal dashboard page",
+      "description": "As a client user, I want a simple dashboard showing my fiscal status at a glance.",
+      "acceptanceCriteria": [
+        "Create route src/routes/_client/index.tsx with: greeting, next due dates (3), open debts summary, unread notifications count, pending requests",
+        "Use Arca design tokens",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 36,
+      "passes": false,
+      "notes": "Phase 4"
+    },
+    {
+      "id": "US-035",
+      "title": "Studio-to-client request management",
+      "description": "As a studio operator, I want to send requests to clients and track pending items.",
+      "acceptanceCriteria": [
+        "Create server functions createClientRequest, listClientRequests, updateClientRequestStatus in src/actions/client-portal.tsx",
+        "In client detail page, add 'Solicitudes' tab with request list and 'Nueva solicitud' button",
+        "Client portal shows pending requests with 'Completar' button",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 37,
+      "passes": false,
+      "notes": "Phase 4"
+    },
+    {
+      "id": "US-036",
+      "title": "Document upload for client portal",
+      "description": "As a client user, I want to upload documents requested by the studio.",
+      "acceptanceCriteria": [
+        "In client portal requests view, add file upload for requests of type 'document'",
+        "Store uploaded file in document table with storage_provider='upload'",
+        "Link document to client_request via metadata jsonb",
+        "Studio can see uploaded documents in request detail",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 38,
+      "passes": false,
+      "notes": "Phase 4"
+    },
+    {
+      "id": "US-037",
+      "title": "Create employee_event table",
+      "description": "As a developer, I need an employee event table for legajo history tracking.",
+      "acceptanceCriteria": [
+        "Add employeeEvent table to drizzle/schema.ts: id (uuid PK), empleado_id (uuid FK CASCADE), type (text), title (text), description (text nullable), event_date (timestamp), affects_payroll (bool default false), metadata (jsonb nullable), created_by_user_id (text FK nullable), created_at (timestamp)",
+        "Create migration script and run it",
+        "Typecheck passes"
+      ],
+      "priority": 39,
+      "passes": false,
+      "notes": "Phase 5. Types: ausencia, llegada_tarde, licencia, accidente, enfermedad, cambio_categoria, cambio_sueldo, nota_legal, observacion"
+    },
+    {
+      "id": "US-038",
+      "title": "Create payroll_period_novelty table",
+      "description": "As a developer, I need a novelties table for monthly payroll adjustments.",
+      "acceptanceCriteria": [
+        "Add payrollPeriodNovelty table: id (uuid PK), empleado_id (uuid FK CASCADE), periodo (text), type (text), quantity (numeric 10,2 nullable), amount (numeric 14,2 nullable), description (text nullable), applied_to_recibo_id (uuid FK nullable), status (text default 'pending'), created_at (timestamp)",
+        "Create migration script and run it",
+        "Typecheck passes"
+      ],
+      "priority": 40,
+      "passes": false,
+      "notes": "Phase 5"
+    },
+    {
+      "id": "US-039",
+      "title": "Create payroll_receipt_template table",
+      "description": "As a developer, I need receipt templates for reusable concept configurations.",
+      "acceptanceCriteria": [
+        "Add payrollReceiptTemplate table: id (uuid PK), profile_id (uuid FK CASCADE), name (text), receipt_type (text default 'sueldo'), concept_ids (jsonb), active (bool default true), created_at (timestamp)",
+        "Create migration script and run it",
+        "Typecheck passes"
+      ],
+      "priority": 41,
+      "passes": false,
+      "notes": "Phase 5"
+    },
+    {
+      "id": "US-040",
+      "title": "Add fecha_antiguedad_reconocida to employee",
+      "description": "As a developer, I need recognized seniority date for employees who kept seniority across companies.",
+      "acceptanceCriteria": [
+        "Add fecha_antiguedad_reconocida (timestamp nullable) to liquidacionImportEmpleado in drizzle/schema.ts",
+        "Create migration script and run it",
+        "In src/actions/sueldos.ts, update seniority calculation to prefer fecha_antiguedad_reconocida over fecha_alta when present",
+        "Typecheck passes"
+      ],
+      "priority": 42,
+      "passes": false,
+      "notes": "Phase 5"
+    },
+    {
+      "id": "US-041",
+      "title": "Employee event CRUD server functions",
+      "description": "As a studio operator, I want to register legajo events with dates and audit trail.",
+      "acceptanceCriteria": [
+        "Create server functions in src/actions/sueldos.ts: createEmployeeEvent(empleadoId, type, title, eventDate, description?, affectsPayroll?), listEmployeeEvents(empleadoId, limit?)",
+        "Validate empleado belongs to org via ensureClientBelongsToOrg pattern",
+        "Typecheck passes"
+      ],
+      "priority": 43,
+      "passes": false,
+      "notes": "Phase 5"
+    },
+    {
+      "id": "US-042",
+      "title": "Employee legajo timeline UI",
+      "description": "As a studio operator, I want to see employee event history as a timeline.",
+      "acceptanceCriteria": [
+        "In src/components/sueldos/SueldosEmpleados.tsx, add expandable section per employee showing event timeline",
+        "Timeline shows: date, type badge (color-coded), title, description",
+        "'Agregar evento' button opens dialog with type selector, date picker, title, description, affects_payroll toggle",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 44,
+      "passes": false,
+      "notes": "Phase 5"
+    },
+    {
+      "id": "US-043",
+      "title": "Monthly novelty CRUD server functions",
+      "description": "As a studio operator, I want to register monthly payroll novelties.",
+      "acceptanceCriteria": [
+        "Create server functions: createNovelty(empleadoId, periodo, type, quantity?, amount?, description?), listNovelties(empleadoId, periodo), deleteNovelty(id)",
+        "Typecheck passes"
+      ],
+      "priority": 45,
+      "passes": false,
+      "notes": "Phase 5"
+    },
+    {
+      "id": "US-044",
+      "title": "Receipt template CRUD and generation from template",
+      "description": "As a studio operator, I want to save and reuse receipt templates.",
+      "acceptanceCriteria": [
+        "Create server functions: createReceiptTemplate(profileId, name, receiptType, conceptIds), listReceiptTemplates(profileId), deleteReceiptTemplate(id)",
+        "In SueldosSimulador, add 'Usar template' dropdown that pre-loads concept list",
+        "Add 'Guardar como template' button after configuring concepts",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 46,
+      "passes": false,
+      "notes": "Phase 5"
+    },
+    {
+      "id": "US-045",
+      "title": "Create bank reconciliation tables",
+      "description": "As a developer, I need bank account and transaction tables for reconciliation.",
+      "acceptanceCriteria": [
+        "Add bankAccount table: id (uuid PK), client_id (uuid FK CASCADE), profile_id (uuid FK nullable), bank_name (text), account_number (text nullable), currency (text default 'ARS'), alias (text nullable), cbu (text nullable), active (bool default true), created_at (timestamp)",
+        "Add bankTransaction table: id (uuid PK), bank_account_id (uuid FK CASCADE), transaction_date (timestamp), description (text nullable), amount (numeric 14,2), direction (text), counterparty_name (text nullable), counterparty_identity_number (text nullable), external_id (text nullable), raw_data (jsonb nullable), created_at (timestamp)",
+        "Add bankInvoiceMatch table: id (uuid PK), bank_transaction_id (uuid FK CASCADE), invoice_id (uuid FK CASCADE), match_type (text), confidence (numeric 5,2 nullable), reviewed_by_user_id (text FK nullable), reviewed_at (timestamp nullable), created_at (timestamp)",
+        "Add financialMovementClassification table: id (uuid PK), source_type (text), source_id (uuid), client_id (uuid FK CASCADE), profile_id (uuid FK nullable), category (text), is_business_related (bool default true), is_tax_relevant (bool default true), is_cashflow_real (bool default true), notes (text nullable), classified_by (text default 'system'), created_at (timestamp)",
+        "Create migration scripts and run them",
+        "Typecheck passes"
+      ],
+      "priority": 47,
+      "passes": false,
+      "notes": "Phase 6"
+    },
+    {
+      "id": "US-046",
+      "title": "Bank reconciliation backend",
+      "description": "As a developer, I need bank reconciliation server functions.",
+      "acceptanceCriteria": [
+        "Create src/actions/bank.tsx with: createBankAccount, listBankAccounts(clientId), importBankTransactions(bankAccountId, transactions[]), listBankTransactions(bankAccountId, from?, to?), autoMatchTransactions(bankAccountId), manualMatchTransaction(transactionId, invoiceId), getReconciliationSummary(clientId)",
+        "Auto-matching: match by amount + date proximity + counterparty CUIT vs invoice CUIT",
+        "All functions scope by orgId",
+        "Typecheck passes"
+      ],
+      "priority": 48,
+      "passes": false,
+      "notes": "Phase 6"
+    },
+    {
+      "id": "US-047",
+      "title": "Bank reconciliation UI page",
+      "description": "As a studio operator, I want a bank reconciliation module.",
+      "acceptanceCriteria": [
+        "Create route src/routes/_authed/bank/index.tsx",
+        "Add 'Banco' NavItem in sidebar with Landmark icon",
+        "Page shows: bank account selector, transaction list with matched/unmatched indicator, matching UI, summary stats",
+        "Use Arca design tokens",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 49,
+      "passes": false,
+      "notes": "Phase 6"
+    },
+    {
+      "id": "US-048",
+      "title": "Create accounting tables",
+      "description": "As a developer, I need chart of accounts and journal entry tables for formal bookkeeping.",
+      "acceptanceCriteria": [
+        "Add accountingAccount table: id (uuid PK), client_id (uuid FK CASCADE), code (text), name (text), type (text), parent_id (uuid FK self nullable), active (bool default true), created_at (timestamp). Unique (client_id, code)",
+        "Add journalEntry table: id (uuid PK), client_id (uuid FK CASCADE), profile_id (uuid FK nullable), entry_date (timestamp), description (text nullable), source_type (text nullable), source_id (uuid nullable), status (text default 'draft'), created_by_user_id (text FK nullable), created_at (timestamp)",
+        "Add journalEntryLine table: id (uuid PK), journal_entry_id (uuid FK CASCADE), account_id (uuid FK RESTRICT), debit (numeric 14,2 default 0), credit (numeric 14,2 default 0), description (text nullable)",
+        "Create migration scripts and run them",
+        "Typecheck passes"
+      ],
+      "priority": 50,
+      "passes": false,
+      "notes": "Phase 7. Account types: asset, liability, equity, income, expense"
+    },
+    {
+      "id": "US-049",
+      "title": "Accounting backend server functions",
+      "description": "As a developer, I need accounting functions for chart of accounts and journal entries.",
+      "acceptanceCriteria": [
+        "Create src/actions/accounting.tsx with: listAccounts(clientId), createAccount(clientId, code, name, type, parentId?), updateAccount(id, name, active), createJournalEntry(clientId, entryDate, description, lines[]), listJournalEntries(clientId, from?, to?), getJournalEntry(id), getLedger(clientId, accountId, from?, to?), getTrialBalance(clientId, from, to)",
+        "Validate every entry: sum of debits must equal sum of credits",
+        "All functions scope by orgId",
+        "Typecheck passes"
+      ],
+      "priority": 51,
+      "passes": false,
+      "notes": "Phase 7"
+    },
+    {
+      "id": "US-050",
+      "title": "Accounting UI page",
+      "description": "As a studio operator, I want an accounting module with chart of accounts, journal entries, and reports.",
+      "acceptanceCriteria": [
+        "Create route src/routes/_authed/accounting/index.tsx",
+        "Add 'Contabilidad' NavItem in sidebar with BookOpen icon",
+        "Tabs: Plan de cuentas (tree view), Asientos (list + create), Mayor (account ledger), Balance (trial balance table)",
+        "Journal entry form: date, description, dynamic lines (account picker, debit/credit), total validation",
+        "Use Arca design tokens",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 52,
+      "passes": false,
+      "notes": "Phase 7"
+    },
+    {
+      "id": "US-051",
+      "title": "Create tax_projection table",
+      "description": "As a developer, I need a tax projection table for estimated vs actual tracking.",
+      "acceptanceCriteria": [
+        "Add taxProjection table: id (uuid PK), profile_id (uuid FK CASCADE), period (text), tax (text), projected_amount (numeric 14,2), confidence (text nullable), factors (jsonb nullable), generated_at (timestamp default now()). Unique (profile_id, period, tax)",
+        "Create migration script and run it",
+        "Typecheck passes"
+      ],
+      "priority": 53,
+      "passes": false,
+      "notes": "Phase 8"
+    },
+    {
+      "id": "US-052",
+      "title": "Analytics backend server functions",
+      "description": "As a developer, I need analytics functions for projections and ratios.",
+      "acceptanceCriteria": [
+        "Create src/actions/analytics.tsx with: generateIvaProjection(profileId, period), getRatios(clientId, from, to), getClientsAtRisk(orgId), getExecutiveSummary(orgId)",
+        "Typecheck passes"
+      ],
+      "priority": 54,
+      "passes": false,
+      "notes": "Phase 8"
+    },
+    {
+      "id": "US-053",
+      "title": "Analytics UI page",
+      "description": "As a studio operator, I want an analytics dashboard with projections and ratios.",
+      "acceptanceCriteria": [
+        "Create route src/routes/_authed/analytics/index.tsx",
+        "Add 'Analytics' NavItem in sidebar with BarChart2 icon",
+        "Sections: IVA projection per client, client risk ranking, business ratios, executive summary cards",
+        "Use Arca design tokens and Recharts",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 55,
+      "passes": false,
+      "notes": "Phase 8"
+    },
+    {
+      "id": "US-054",
+      "title": "Feature flag system table and helper",
+      "description": "As a developer, I need feature flags to enable/disable modules per organization.",
+      "acceptanceCriteria": [
+        "Add organizationModule table: id (uuid PK), organization_id (text FK), module (text), enabled (bool default false), enabled_at (timestamp nullable), created_at (timestamp). Unique (organization_id, module)",
+        "Create helper isModuleEnabled(orgId, module) in src/actions/helpers.ts",
+        "Create migration script and run it",
+        "Typecheck passes"
+      ],
+      "priority": 56,
+      "passes": false,
+      "notes": "Phase 9. Modules: sueldos, banco, contabilidad, analytics, portal_cliente, ai_agent"
+    },
+    {
+      "id": "US-055",
+      "title": "Module gating in sidebar and routes",
+      "description": "As a developer, I need module gating so disabled modules are hidden.",
+      "acceptanceCriteria": [
+        "In src/components/app-sidebar.tsx, conditionally show nav items based on enabled modules",
+        "In route beforeLoad for gated routes, check module is enabled; redirect to / if not",
+        "Create admin UI in /admin settings tab to toggle modules per org",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 57,
+      "passes": false,
+      "notes": "Phase 9"
+    }
+  ]
+}

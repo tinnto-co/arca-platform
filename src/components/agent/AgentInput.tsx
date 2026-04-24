@@ -1,15 +1,23 @@
-import { Send, Sparkles } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
+import {
+  PromptInput,
+  PromptInputBody,
+  PromptInputTextarea,
+  PromptInputFooter,
+  PromptInputTools,
+  PromptInputSubmit,
+  type PromptInputMessage,
+} from '@/components/ai-elements/prompt-input';
 
 export function AgentInput() {
   const [value, setValue] = useState('');
   const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const text = value.trim();
-    if (!text) return;
+  const handleSubmit = (message: PromptInputMessage) => {
+    const text = message.text?.trim();
+    if (!text) return
     const id = crypto.randomUUID();
     setValue('');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -18,25 +26,30 @@ export function AgentInput() {
 
   return (
     <div className="pointer-events-none sticky bottom-0 left-0 right-0 p-3 pb-20 md:pb-3 z-10">
-      <form
-        onSubmit={handleSubmit}
-        className="pointer-events-auto mx-auto flex max-w-2xl items-center gap-2 rounded-xl border border-border bg-white/80 px-4 py-2.5 shadow-lg backdrop-blur-md"
-      >
-        <Sparkles className="h-4 w-4 shrink-0 text-[#139ed9]" />
-        <input
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder="Preguntale al asistente sobre tus clientes..."
-          className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-        />
-        <button
-          type="submit"
-          disabled={!value.trim()}
-          className="shrink-0 rounded-lg bg-[#232c50] p-1.5 text-white transition-colors hover:bg-[#139ed9] disabled:cursor-not-allowed disabled:opacity-40"
+      <div className="pointer-events-auto mx-auto max-w-2xl">
+        <PromptInput
+          onSubmit={handleSubmit}
+          className="shadow-lg backdrop-blur-md bg-white/80 border-[var(--arca-border-strong)]"
         >
-          <Send className="h-4 w-4" />
-        </button>
-      </form>
+          <PromptInputBody>
+            <PromptInputTextarea
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder="Preguntale al asistente sobre tus clientes..."
+              className="!min-h-[36px] !max-h-[100px] text-sm"
+            />
+          </PromptInputBody>
+          <PromptInputFooter>
+            <PromptInputTools>
+              <div className="flex items-center gap-1.5 text-[var(--arca-ink-3)]">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span className="text-[11px] font-medium">Arca AI</span>
+              </div>
+            </PromptInputTools>
+            <PromptInputSubmit />
+          </PromptInputFooter>
+        </PromptInput>
+      </div>
     </div>
   );
 }
