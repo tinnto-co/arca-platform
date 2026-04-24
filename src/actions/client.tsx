@@ -568,6 +568,38 @@ export const getClientDebts = createServerFn({
     return debts;
   });
 
+export const updateDebtStatus = createServerFn({
+  method: 'POST',
+})
+  .inputValidator(
+    z.object({
+      id: z.string().uuid(),
+      status: z.enum(['open', 'in_plan', 'paid', 'disputed']),
+      isIntimated: z.boolean(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    // Validate debt belongs to this org via client
+    const [existing] = await db
+      .select({ id: debt.id, clientId: debt.client })
+      .from(debt)
+      .innerJoin(client, eq(debt.client, client.id))
+      .where(and(eq(debt.id, ctx.data.id), eq(client.organizationId, orgId)));
+
+    if (!existing) throw new Error('Deuda no encontrada o sin acceso');
+
+    await db
+      .update(debt)
+      .set({ status: ctx.data.status, isIntimated: ctx.data.isIntimated })
+      .where(eq(debt.id, ctx.data.id));
+
+    return { ok: true };
+  });
+
 export const getClientDueDates = createServerFn({
   method: 'GET',
 })

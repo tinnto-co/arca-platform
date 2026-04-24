@@ -64,7 +64,7 @@ import {
   markNotificationOpened,
 } from '@/actions/notification';
 import { updateProfileManagement } from '@/actions/profile';
-import { scrapSingleJob } from '@/actions/client';
+import { scrapSingleJob, updateDebtStatus } from '@/actions/client';
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
 import {
@@ -399,6 +399,18 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
       toast.error('Error al actualizar el perfil');
     },
   });
+  const updateDebtStatusMutation = useMutation({
+    mutationFn: (vars: { id: string; status: 'open' | 'in_plan' | 'paid' | 'disputed'; isIntimated: boolean }) =>
+      updateDebtStatus({ data: vars }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['clientDebts', clientId] });
+      toast.success('Deuda actualizada');
+    },
+    onError: () => {
+      toast.error('Error al actualizar la deuda');
+    },
+  });
+
   const ivaResumeRef = useRef<RenderIvaResumeRef>(null);
   const ivaSelectedYear = ivaResumenDateRange.from.getFullYear();
   const ivaSelectedMonth = ivaResumenDateRange.from.getMonth();
@@ -2142,6 +2154,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                           <th key={h} className="px-[14px] py-[9px] text-right text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] border-b border-[var(--arca-border)] whitespace-nowrap">{h}</th>
                         ))}
                         <th className="px-[14px] py-[9px] text-left text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] border-b border-[var(--arca-border)] whitespace-nowrap">Estado</th>
+                        <th className="px-[14px] py-[9px] text-left text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] border-b border-[var(--arca-border)] whitespace-nowrap">Gestión</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2151,13 +2164,25 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                         const intP = Number(debt.punitiveInterest || 0);
                         const today = new Date(); today.setHours(0, 0, 0, 0);
                         const due = new Date(debt.dueDate); due.setHours(0, 0, 0, 0);
-                        const status = balance === 0 ? 'ok' : due < today ? 'late' : 'pend';
+                        const debtStatus = (debt.status ?? 'open') as 'open' | 'in_plan' | 'paid' | 'disputed';
+                        const isIntimated = debt.isIntimated ?? false;
+                        const isOverdue = due < today && balance > 0;
+                        // Row background: red=open+overdue, orange=intimated, green=paid, gray=in_plan, default=disputed
+                        const rowBg = debtStatus === 'paid'
+                          ? 'rgba(34,197,94,0.06)'
+                          : debtStatus === 'in_plan'
+                            ? 'rgba(148,163,184,0.10)'
+                            : isIntimated
+                              ? 'rgba(249,115,22,0.08)'
+                              : isOverdue
+                                ? 'rgba(239,68,68,0.07)'
+                                : i % 2 === 1 ? 'var(--arca-bg)' : undefined;
                         const fmtD = (v: number) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 }).format(v);
                         return (
                           <tr
                             key={debt.id}
-                            className="border-b border-[var(--arca-border)] hover:bg-[var(--arca-surface-2)] transition-colors cursor-default"
-                            style={{ background: i % 2 === 1 ? 'var(--arca-bg)' : undefined }}
+                            className="border-b border-[var(--arca-border)] hover:brightness-95 transition-colors cursor-default"
+                            style={{ background: rowBg }}
                           >
                             <td className="px-[14px] py-[10px] whitespace-nowrap text-[var(--arca-ink)] font-medium" title={debt.tax || '-'}>{debt.tax || '-'}</td>
                             <td className="px-[14px] py-[10px] whitespace-nowrap text-[var(--arca-ink-2)]" title={debt.concept || '-'}>{debt.concept || '-'}</td>
@@ -2167,12 +2192,48 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                             <td className={cn('px-[14px] py-[10px] whitespace-nowrap text-right font-mono tabular-nums', intC === 0 ? 'text-[var(--arca-ink-4)]' : 'text-[var(--arca-accent-warn-fg)]')}>{fmtD(intC)}</td>
                             <td className="px-[14px] py-[10px] whitespace-nowrap text-right font-mono tabular-nums text-[var(--arca-ink-4)]">{fmtD(intP)}</td>
                             <td className="px-[14px] py-[10px] whitespace-nowrap">
-                              {status === 'ok'
-                                ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)]">Saldada</span>
-                                : status === 'late'
-                                  ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]">Vencida</span>
-                                  : <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]">Pendiente</span>
+                              {debtStatus === 'paid'
+                                ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)]">Pagada</span>
+                                : debtStatus === 'in_plan'
+                                  ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[rgba(148,163,184,0.25)] text-[var(--arca-ink-3)]">En plan</span>
+                                  : debtStatus === 'disputed'
+                                    ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[rgba(139,92,246,0.15)] text-[rgba(139,92,246,0.9)]">Disputada</span>
+                                    : isOverdue
+                                      ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]">Vencida</span>
+                                      : <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]">Abierta</span>
                               }
+                              {isIntimated && (
+                                <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9.5px] font-semibold bg-orange-100 text-orange-700">Intimada</span>
+                              )}
+                            </td>
+                            <td className="px-[14px] py-[10px] whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                <select
+                                  value={debtStatus}
+                                  onChange={(e) => {
+                                    const newStatus = e.target.value as 'open' | 'in_plan' | 'paid' | 'disputed';
+                                    updateDebtStatusMutation.mutate({ id: debt.id, status: newStatus, isIntimated });
+                                  }}
+                                  className="text-[11.5px] border border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] bg-[var(--arca-surface)] px-2 py-1 text-[var(--arca-ink)] cursor-pointer"
+                                >
+                                  <option value="open">Abierta</option>
+                                  <option value="in_plan">En plan</option>
+                                  <option value="paid">Pagada</option>
+                                  <option value="disputed">Disputada</option>
+                                </select>
+                                <button
+                                  onClick={() => updateDebtStatusMutation.mutate({ id: debt.id, status: debtStatus, isIntimated: !isIntimated })}
+                                  className={cn(
+                                    'text-[11px] font-semibold px-2 py-1 rounded-[var(--arca-r-md)] border transition-colors',
+                                    isIntimated
+                                      ? 'bg-orange-100 text-orange-700 border-orange-300 hover:bg-orange-200'
+                                      : 'bg-[var(--arca-surface)] text-[var(--arca-ink-3)] border-[var(--arca-border-strong)] hover:bg-[var(--arca-surface-2)]'
+                                  )}
+                                  title={isIntimated ? 'Quitar intimación' : 'Marcar como intimada'}
+                                >
+                                  Intimada
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );
