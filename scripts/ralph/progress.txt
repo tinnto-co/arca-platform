@@ -1,3 +1,26 @@
+## 2026-04-24 - US-034
+- Created `src/routes/_client/portal/index.tsx` — client portal dashboard page at `/portal`
+- Shows: greeting with client name, 4 summary cards (vencimientos, deudas, notificaciones, solicitudes), next 3 due dates panel, open debts panel, pending requests panel, unread notifications count panel
+- Uses Arca design tokens: `--arca-accent-primary`, `--arca-accent-neg`, `--arca-accent-pos`, `--arca-accent-warn`, `--arca-surface`, `--arca-border`, `--arca-shadow-sm`, `--arca-ink`, `--arca-ink-3`
+- Gets `clientId` from parent route context via `Route.useRouteContext() as { clientId: string; access: ... }`
+- Calls `getClientPortalDashboard({ data: { clientId } })` with `staleTime: 60_000`
+- Date values from server functions must be cast with `as unknown as string` before passing to `new Date()` (server returns `Date` type but wire-serializes to string)
+- Also updated `src/routeTree.gen.ts` via `bunx @tanstack/router-cli generate` — CLI now succeeds because `_client` has a child route; auto-picked up `alerts` route from US-029 too
+- Files changed: `src/routes/_client/portal/index.tsx` (new), `src/routeTree.gen.ts`
+- **How to verify:**
+  - Run `bun run dev`
+  - Insert a `client_user_access` row for your user: `INSERT INTO client_user_access (id, client_id, user_id) VALUES (gen_random_uuid(), '<clientUuid>', '<userId>')`
+  - Navigate to `/portal` — the simplified sidebar appears with "Portal del Cliente" header
+  - Dashboard shows: greeting with client name, summary cards row, next 3 due dates card, open debts card, pending requests card (if any)
+  - If `canViewDebts=true` on the access row, debts card appears; otherwise it's hidden
+  - Summary cards show green/amber/red colors based on counts
+- **Learnings for future iterations:**
+  - `bunx @tanstack/router-cli generate` succeeds once `_client` has at least one child route — run it before manually editing routeTree.gen.ts
+  - Child route uses `Route.useRouteContext() as { clientId: string }` to access parent `beforeLoad` return value
+  - Date fields from Drizzle server functions come typed as `Date` but wire-serialized as strings — cast with `as unknown as string` when passing to `new Date()`
+  - `_client/portal/index.tsx` is the actual file path (not `_client/index.tsx`) because the sidebar links use `/portal` prefix, not the root
+---
+
 ## 2026-04-24 - US-033
 - Created `src/routes/_client/route.tsx` — pathless layout for client portal users
   - `beforeLoad` calls `getClientPortalSession()` and redirects to `/login` if user has no `clientUserAccess` row
