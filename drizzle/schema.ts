@@ -980,6 +980,24 @@ export const agentRun = pgTable("agent_run", {
 });
 
 /**
+ * Periodic risk snapshots per profile for tracking risk trends over time.
+ * risk_level values: low, medium, high, critical
+ */
+export const profileRiskSnapshot = pgTable("profile_risk_snapshot", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  profileId: uuid("profile_id")
+    .notNull()
+    .references(() => profile.id, { onDelete: "cascade" }),
+  period: text("period").notNull(),
+  score: numeric("score", { precision: 5, scale: 2 }).notNull(),
+  riskLevel: text("risk_level").notNull(),
+  factors: jsonb("factors"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  unique("profile_risk_snapshot_profile_id_period_unique").on(table.profileId, table.period),
+]);
+
+/**
  * Centralized alert table for risks from different sources.
  * Types: overdue_debt, critical_notification, upcoming_due_date, scraper_error, balance_due_soon, missing_activity
  */
