@@ -356,6 +356,10 @@ export const debt = pgTable("debt", {
   balance: numeric("balance").notNull().default("0"),
   compensatoryInterest: numeric("compensatory_interest").notNull().default("0"),
   punitiveInterest: numeric("punitive_interest").notNull().default("0"),
+  status: text("status").notNull().default("open"),
+  detectedAt: timestamp("detected_at").defaultNow().notNull(),
+  sourcePeriod: text("source_period"),
+  isIntimated: boolean("is_intimated").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
