@@ -1,3 +1,22 @@
+## 2026-04-24 - US-045
+- Added 4 bank reconciliation tables to `drizzle/schema.ts`:
+  - `bankAccount`: per-client bank accounts with bank_name, account_number, currency, alias, cbu, active
+  - `bankTransaction`: transactions per bank account with transaction_date, amount, direction, counterparty info, external_id, raw_data
+  - `bankInvoiceMatch`: matches between bank transactions and invoices with match_type, confidence, reviewed_by_user_id
+  - `financialMovementClassification`: movement classification with source_type/source_id, category, is_business_related, is_tax_relevant, is_cashflow_real, classified_by
+- Created `src/scripts/ensure-bank-reconciliation-tables.ts` migration script (idempotent, uses CREATE TABLE IF NOT EXISTS for all 4 tables)
+- Ran migration script — all 4 tables OK (exit 124 expected)
+- Files changed: `drizzle/schema.ts`, `src/scripts/ensure-bank-reconciliation-tables.ts` (new)
+- **How to verify:**
+  - Run: `docker exec arca-local-db psql -U arca -d arca -c '\d bank_account'` to confirm table with all columns
+  - Run: `docker exec arca-local-db psql -U arca -d arca -c '\dt bank_%'` to see all 3 bank tables
+  - Or: `timeout 60 bun run src/scripts/ensure-bank-reconciliation-tables.ts` — prints OK for each table
+- **Learnings for future iterations:**
+  - `bankInvoiceMatch` references `invoice` table — verified it exists as `export const invoice` in schema.ts
+  - All 4 tables can be created in a single migration script, each with its own `db.execute(sql.raw(...))` call for clarity
+  - Pre-existing typecheck errors are only in legacy scripts (map-import-empleados-a-convenios.ts, report-unmatched-import-empleados.ts, etc.) — not regressions
+---
+
 ## 2026-04-24 - US-044
 - Added `payrollReceiptTemplate` import and 3 new server functions to `src/actions/sueldos.ts`:
   - `createReceiptTemplate(profileId, name, receiptType, conceptIds)`: POST, requires canWrite, validates profile belongs to org, inserts template with jsonb conceptIds
