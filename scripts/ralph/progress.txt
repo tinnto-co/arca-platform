@@ -1,3 +1,26 @@
+## 2026-04-24 - US-010b
+- Updated `getCalendarDueDates` in `src/actions/dashboard.tsx` to return `completedAt` for due dates
+- Updated `src/components/vencimientos-calendar.tsx`:
+  - Added `useMutation` + `useQueryClient` imports; imported `markDueDateCompleted` from `@/actions/client`
+  - Added `completedAt` field to `CalendarEvent` interface
+  - Populated `completedAt` when building events map from due dates
+  - In detail panel: replaced icon div with toggle button (Circle/CheckCircle2) for `due` events; title and subtitle show `line-through` when completed; completed rows use green tinted background with opacity-70
+  - In calendar grid: each event pill shows green background with strikethrough when `completedAt` is set
+  - `completeMutation` invalidates `calendarQueryKey` on success for instant UI refresh
+- Files changed: `src/actions/dashboard.tsx`, `src/components/vencimientos-calendar.tsx`
+- **How to verify:**
+  - Run `bun run dev`, go to the Vencimientos page (calendar view)
+  - Click on a day with due dates in the detail panel on the left
+  - Each due date shows a circle icon button — click it to mark as completed
+  - Completed item: title/subtitle show strikethrough, background turns green, icon becomes a filled CheckCircle2
+  - Calendar grid pill for that event turns green with strikethrough
+  - Click the CheckCircle2 again to unmark (toggle back to pending)
+- **Learnings for future iterations:**
+  - `getCalendarDueDates` returns both dueDates and debts — only dueDates have completion; debts still show AlertTriangle icon unchanged
+  - Query invalidation uses the exact same key array (`calendarQueryKey`) — ensure `fetchFrom`/`fetchTo` are stable references (they are, derived from `gridDays` memo)
+  - `arca-accent-pos` CSS vars used for green: `--arca-accent-pos-bg`, `--arca-accent-pos-fg` — consistent with other status colors in the codebase
+---
+
 ## 2026-04-24 - US-010a
 - Added `completedAt` (timestamp nullable) and `completedByUserId` (text FK user set null) columns to `dueDate` table in `drizzle/schema.ts`
 - Created migration script `src/scripts/ensure-due-date-completion-columns.ts` using `ADD COLUMN IF NOT EXISTS` pattern
