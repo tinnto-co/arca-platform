@@ -1,3 +1,16 @@
+## 2026-04-24 - US-031
+- Added `clientUserAccess` table to `drizzle/schema.ts`: id, clientId (FK client CASCADE), userId (FK user CASCADE), role (default 'client_viewer'), canUploadDocuments, canViewDebts, canViewIva, canViewPayroll (default false), canChatAi, createdAt. Unique on (clientId, userId)
+- Added `clientRequest` table to `drizzle/schema.ts`: id, organizationId (FK org CASCADE), clientId (FK client CASCADE), profileId (FK profile SET NULL nullable), requestedByUserId (FK user SET NULL nullable), title, description, type, status (default 'open'), dueAt, completedAt, metadata (jsonb nullable), createdAt
+- Created migration script `src/scripts/ensure-client-portal-tables.ts` using `CREATE TABLE IF NOT EXISTS` pattern for both tables
+- Files changed: `drizzle/schema.ts`, `src/scripts/ensure-client-portal-tables.ts`
+- **How to verify:**
+  - Run: `timeout 60 bun run src/scripts/ensure-client-portal-tables.ts` (prints "Tablas client_user_access y client_request: OK.")
+  - Verify in DB: `\d client_user_access` and `\d client_request` should show all columns
+- **Learnings for future iterations:**
+  - `clientUserAccess` uses a multi-column unique constraint defined in the table's second argument (array of constraints)
+  - `clientRequest` does NOT have an `updatedAt` column (PRD spec didn't require it)
+---
+
 ## 2026-04-24 - US-030
 - Added `getBalanceConfig(clientId)` and `upsertBalanceConfig(clientId, data)` server functions to `src/actions/client.tsx`
 - Added `clientBalanceConfig` import to the schema imports in client.tsx
