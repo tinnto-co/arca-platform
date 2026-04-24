@@ -79,6 +79,11 @@ export const profile = pgTable("profile", {
   scrapedAt: timestamp("scraped_at"),
   /** Firma digital del empleador (data URL base64) para impresión de recibos. */
   firmaDigitalEmpleador: text("firma_digital_empleador"),
+  /** Indica si este perfil es administrado por el estudio. */
+  managedByStudy: boolean("managed_by_study").notNull().default(true),
+  disabledAt: timestamp("disabled_at"),
+  disabledReason: text("disabled_reason"),
+  profileType: text("profile_type").notNull().default("unknown"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
