@@ -1043,3 +1043,51 @@ export const alert = pgTable("alert", {
 }, (table) => [
   index("idx_alert_org_status").on(table.organizationId, table.status),
 ]);
+
+/**
+ * Client portal access control: scoped access per client user.
+ * Controls which sections a client user can view.
+ */
+export const clientUserAccess = pgTable("client_user_access", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => client.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  role: text("role").notNull().default("client_viewer"),
+  canUploadDocuments: boolean("can_upload_documents").notNull().default(true),
+  canViewDebts: boolean("can_view_debts").notNull().default(true),
+  canViewIva: boolean("can_view_iva").notNull().default(true),
+  canViewPayroll: boolean("can_view_payroll").notNull().default(false),
+  canChatAi: boolean("can_chat_ai").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  unique("client_user_access_client_id_user_id_unique").on(table.clientId, table.userId),
+]);
+
+/**
+ * Studio-to-client requests: tasks or document requests sent to client portal users.
+ * Types: document, information, signature, other
+ * Status: open, in_progress, completed, cancelled
+ */
+export const clientRequest = pgTable("client_request", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => client.id, { onDelete: "cascade" }),
+  profileId: uuid("profile_id").references(() => profile.id, { onDelete: "set null" }),
+  requestedByUserId: text("requested_by_user_id").references(() => user.id, { onDelete: "set null" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  type: text("type").notNull(),
+  status: text("status").notNull().default("open"),
+  dueAt: timestamp("due_at"),
+  completedAt: timestamp("completed_at"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
