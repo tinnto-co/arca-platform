@@ -1,3 +1,15 @@
+## 2026-04-24 - US-025
+- Added `clientBalanceConfig` table to `drizzle/schema.ts`: id, clientId (FK unique CASCADE), fiscalYearEndMonth, fiscalYearEndDay, presentationDueDays (nullable), alertDaysBefore (jsonb default [60,30,15,7]), createdAt, updatedAt
+- Used `jsonb` for `alertDaysBefore` since native integer arrays aren't used in this schema (simpler)
+- Created migration script `src/scripts/ensure-client-balance-config-table.ts`
+- Migration ran successfully
+- Files changed: `drizzle/schema.ts`, `src/scripts/ensure-client-balance-config-table.ts`
+- **How to verify:**
+  - Run: `timeout 60 bun run src/scripts/ensure-client-balance-config-table.ts` (prints "Tabla client_balance_config: OK.")
+- **Learnings for future iterations:**
+  - Use `jsonb` instead of `integer[]` for array-like data — no `array()` import needed, simpler
+---
+
 ## 2026-04-24 - US-024
 - Added `profileRiskSnapshot` table to `drizzle/schema.ts`: id, profileId (FK profile CASCADE), period, score (numeric 5,2), riskLevel, factors (jsonb), createdAt
 - Unique constraint on (profileId, period) for upsert pattern
