@@ -347,7 +347,8 @@ REGLAS AL ESCRIBIR QUERIES
 HERRAMIENTAS DISPONIBLES
 - get_client_summary: USÁ ESTE TOOL cuando te pregunten sobre el estado general de un cliente. Devuelve datos del cliente, perfiles, notificaciones abiertas, deudas vencidas, próximos vencimientos y últimos scrapeos.
 - get_open_notifications: USÁ ESTE TOOL cuando te pregunten sobre notificaciones abiertas, alertas del fisco, o notificaciones críticas. Acepta filtro por cliente y/o severidad.
-- executeQuery: para cualquier consulta SQL general (clientes, facturas, deudas, vencimientos, nómina).
+- get_debts: USÁ ESTE TOOL cuando te pregunten sobre deudas fiscales, deudas con AFIP, montos adeudados, deudas vencidas o por estado. Acepta filtro por cliente, estado (open/in_plan/paid/disputed) y límite.
+- executeQuery: para cualquier consulta SQL general (clientes, facturas, vencimientos, nómina).
 - getIvaPosition: USÁ SIEMPRE ESTE TOOL para consultas sobre IVA, posición IVA, saldo IVA, crédito/débito fiscal.
   - El parámetro displayMonth es el mes que el usuario quiere ver (ej: "Marzo 2026" → "03/2026"). El tool internamente usa el mes anterior para consultar iva_scrape.
   - NUNCA respondas "no hay datos para X mes" desde la memoria de la conversación. Siempre volvé a llamar al tool con el displayMonth específico que pide el usuario.
@@ -554,6 +555,92 @@ HERRAMIENTAS DISPONIBLES
                     leida: n.opened,
                     cliente: n.clientName,
                   })),
+                };
+              },
+            }),
+            get_debts: tool({
+              description:
+                'Obtiene las deudas fiscales de los clientes. Filtrá opcionalmente por cliente, estado (open, in_plan, paid, disputed) y límite de resultados.',
+              inputSchema: z.object({
+                clientName: z.string().optional().describe('Nombre del cliente (búsqueda parcial). Si no se especifica, devuelve deudas de todos los clientes de la org.'),
+                status: z.enum(['open', 'in_plan', 'paid', 'disputed']).optional().describe('Filtrar por estado de la deuda'),
+                limit: z.number().int().min(1).max(200).default(20).describe('Cantidad máxima de resultados (default: 20)'),
+              }),
+              execute: async ({ clientName, status, limit }) => {
+                // Resolve client IDs scoped to org
+                const allOrgClients = await dbReadonly
+                  .select({ id: client.id, name: client.name })
+                  .from(client)
+                  .where(eq(client.organizationId, orgId));
+
+                if (allOrgClients.length === 0)
+                  return { debts: [], total: 0 };
+
+                let clientIds = allOrgClients.map((c) => c.id);
+                let resolvedClientName: string | undefined;
+
+                if (clientName) {
+                  const matched = allOrgClients.filter((c) =>
+                    c.name.toLowerCase().includes(clientName.toLowerCase())
+                  );
+                  if (matched.length === 0)
+                    return { error: `No encontré clientes con nombre "${clientName}"` };
+                  if (matched.length > 1)
+                    return { error: 'Más de un cliente coincide', options: matched.map((c) => c.name) };
+                  clientIds = [matched[0].id];
+                  resolvedClientName = matched[0].name;
+                }
+
+                const conditions: ReturnType<typeof eq>[] = [
+                  inArray(debt.client, clientIds) as any,
+                ];
+                if (status) {
+                  conditions.push(eq(debt.status, status) as any);
+                }
+
+                const rows = await dbReadonly
+                  .select({
+                    id: debt.id,
+                    tax: debt.tax,
+                    concept: debt.concept,
+                    period: debt.period,
+                    dueDate: debt.dueDate,
+                    balance: debt.balance,
+                    compensatoryInterest: debt.compensatoryInterest,
+                    punitiveInterest: debt.punitiveInterest,
+                    status: debt.status,
+                    isIntimated: debt.isIntimated,
+                    clientName: client.name,
+                  })
+                  .from(debt)
+                  .leftJoin(client, eq(debt.client, client.id))
+                  .where(and(...conditions))
+                  .orderBy(desc(debt.dueDate))
+                  .limit(limit);
+
+                return {
+                  cliente: resolvedClientName ?? 'Todos los clientes',
+                  total: rows.length,
+                  debts: rows.map((d) => {
+                    const totalDebt =
+                      parseFloat(d.balance ?? '0') +
+                      parseFloat(d.compensatoryInterest ?? '0') +
+                      parseFloat(d.punitiveInterest ?? '0');
+                    return {
+                      id: d.id,
+                      impuesto: d.tax,
+                      concepto: d.concept,
+                      periodo: d.period,
+                      vencimiento: d.dueDate?.toISOString() ?? null,
+                      capital: d.balance,
+                      interesesResarcitorios: d.compensatoryInterest,
+                      interesesPunitorios: d.punitiveInterest,
+                      totalDeuda: totalDebt.toFixed(2),
+                      estado: d.status,
+                      intimada: d.isIntimated,
+                      cliente: d.clientName,
+                    };
+                  }),
                 };
               },
             }),
