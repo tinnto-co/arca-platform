@@ -9,6 +9,7 @@ import { FlujoCajaCard } from '@/components/dashboard/flujo-caja-card';
 import { ClientesTable } from '@/components/dashboard/clientes-table';
 import { VencimientosList } from '@/components/dashboard/vencimientos-list';
 import { ActividadFeed } from '@/components/dashboard/actividad-feed';
+import { ExceptionsBar } from '@/components/dashboard/exceptions-bar';
 
 export const Route = createFileRoute('/_authed/')(({
   component: DashboardPage,
@@ -37,6 +38,7 @@ function DashboardPage() {
       <DashboardTopbar activePeriod={activePeriod} onPeriodChange={handlePeriodChange} />
       <div className="p-[28px_36px_60px] max-w-[1440px]">
         <DashboardGreeting dateRange={dateRange} onDateRangeChange={handleDateRangeChange} />
+        <ExceptionsBar />
         <KpiCardsRow from={dateRange.from} to={dateRange.to} />
         <MiniKpiCardsRow from={dateRange.from} to={dateRange.to} />
 
