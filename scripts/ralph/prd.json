@@ -28,7 +28,7 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 0. Source values: 'scraper', 'manual', 'ai', 'import'. Action values: 'created', 'updated', 'classified'"
     },
     {

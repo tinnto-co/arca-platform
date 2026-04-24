@@ -8,6 +8,19 @@
 Started: Fri Apr 24 16:44:39 -03 2026
 ---
 
+## 2026-04-24 - US-002
+- Added `dataSourceEvent` table to `drizzle/schema.ts` with all required fields: id, organization_id (FK org), client_id (FK client nullable), profile_id (FK profile nullable), entity_type, entity_id, source, source_job_id (FK job nullable), action, metadata (jsonb nullable), created_at
+- Created migration script `src/scripts/ensure-data-source-event-table.ts` using `CREATE TABLE IF NOT EXISTS` pattern
+- Both files were already committed in `c24a998`; this entry marks the PRD as passing
+- Files changed: `drizzle/schema.ts`, `src/scripts/ensure-data-source-event-table.ts`
+- **How to verify:**
+  - Run: `timeout 60 bun run src/scripts/ensure-data-source-event-table.ts` (should print "Tabla data_source_event: OK.")
+  - Verify in DB: `\d data_source_event` should show all 10 columns
+- **Learnings for future iterations:**
+  - Pre-existing typecheck errors exist in `drizzle/relations.ts` (column naming camelCase mismatches) and `src/actions/credential.tsx` — these are not related to our changes
+  - Always verify git log before re-implementing — the story may already be committed
+---
+
 ## 2026-04-24 - US-001
 - Added `managed_by_study` (boolean default true), `disabled_at` (timestamp nullable), `disabled_reason` (text nullable), `profile_type` (text default 'unknown') columns to the `profile` table in `drizzle/schema.ts`
 - Created migration script `src/scripts/ensure-profile-enrichment-columns.ts` following the pattern in `ensure-empleado-legajo-extra-columns.ts`
