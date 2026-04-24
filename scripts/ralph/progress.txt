@@ -1,3 +1,35 @@
+## 2026-04-24 - US-036
+- Backend: `uploadDocumentForRequest` and `getRequestDocument` were already implemented in `src/actions/client-portal.tsx`
+  - `uploadDocumentForRequest`: validates user has `canUploadDocuments` access, reads file as base64 data URL, inserts into `document` table with `storageProvider='upload'`, updates `clientRequest.metadata` with `{ documentId, documentName, documentMimeType, uploadedAt, uploadedByUserId }`
+  - `getRequestDocument`: studio-side, validates org ownership, fetches document by `metadata.documentId`
+- Portal UI (`src/routes/_client/portal/solicitudes/index.tsx`):
+  - Added `PortalRequest` typed interface with `metadata?: { documentId?, documentName? }`
+  - Added `uploadMutation` that reads file via `FileReader.readAsDataURL`, strips prefix, calls `uploadDocumentForRequest`
+  - Hidden `<input type="file">` triggered by "Subir documento" button per request
+  - For `type === 'document'` open requests: shows "Subir documento" button or "✓ Documento enviado" when already uploaded
+  - For other open requests: shows "Completar" button
+  - Uploaded doc name shown as a badge in the request card
+- Studio UI (`src/components/client-detail-page.tsx`):
+  - Added `metadata?: { documentId?, documentName? }` to `RequestRow` interface
+  - Added `Paperclip` icon in title cell when request has attached document
+  - Added document file name subtitle below title when document is attached
+  - Added `getRequestDocument` import and "Doc" download button in actions column
+  - Download: fetches doc on click, creates `<a>` element with data URL href and `download` attribute
+- Files changed: `src/routes/_client/portal/solicitudes/index.tsx`, `src/components/client-detail-page.tsx`, `src/actions/client-portal.tsx`
+- **How to verify:**
+  - Run `bun run dev`
+  - As a portal user: go to `/portal/solicitudes` — find a request with `type=document` and status `open`
+  - Click "Subir documento" → file picker opens → select any file → "Documento enviado" indicator appears
+  - Reload: document badge persists (stored in DB via metadata)
+  - As a studio user: go to client detail → Solicitudes tab → request that has a document shows Paperclip icon + filename + "Doc" download link
+  - Click "Doc" → file downloads to browser
+- **Learnings for future iterations:**
+  - `FileReader.readAsDataURL` returns `data:mime;base64,DATA` — strip prefix with `result.split(',')[1]` to get raw base64
+  - `document.url` stores the full data URL; creating `<a href={url} download={name}>` and calling `.click()` triggers download without a server round-trip
+  - `useQuery` generic inference doesn't narrow `data` type even with a typed default — use `const typed: Type[] = (raw as Type[]) ?? []` pattern after the query
+  - `metadata` in `RequestRow` must be explicitly typed in the interface (not just `unknown`) for accessing nested fields without `as any`
+---
+
 ## 2026-04-24 - US-035
 - Added studio-side server functions to `src/actions/client-portal.tsx`: `listClientRequests`, `createClientRequest`, `updateClientRequestStatus`
   - All use `getSessionWithOrg()` + validate client belongs to org; `createClientRequest` and `updateClientRequestStatus` also call `assertCanWrite(role)`
