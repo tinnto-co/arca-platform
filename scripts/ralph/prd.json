@@ -421,7 +421,7 @@
         "Typecheck passes"
       ],
       "priority": 29,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 3. Depends on US-004 (notification severity), US-008 (debt status), US-010a (due_date completed)"
     },
     {

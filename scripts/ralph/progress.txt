@@ -1,3 +1,20 @@
+## 2026-04-24 - US-027
+- Created `src/lib/alert-generator.ts` with `generateAlerts(orgId)` function
+- Scans 4 sources: overdue open debts (dueDate < now), critical unresolved notifications, upcoming due dates within 7 days (not completed), clients with hasErrors=true
+- Deduplicates using a Set of fingerprints: `${type}:${sourceEntityType}:${sourceEntityId}` — loads existing open alerts first, then skips any already covered
+- Alert severities: overdue_debt=high, critical_notification=critical, upcoming_due_date=medium, scraper_error=high
+- Files changed: `src/lib/alert-generator.ts`
+- **How to verify:**
+  - Import and call `generateAlerts(orgId)` from any server context (e.g., a test server function)
+  - Returns `{ created: N }` where N is the number of new alerts inserted
+  - Re-running with same org produces `{ created: 0 }` (deduplication working)
+  - Check `alert` table: new rows with correct type, severity, sourceEntityType, sourceEntityId
+- **Learnings for future iterations:**
+  - `debt.client`, `notification.client`, `dueDate.client` are the FK column names (not `.clientId`) — use `inArray(debt.client, clientIds)` etc.
+  - Deduplication loads existing open alerts once then uses in-memory Set — avoids N+1 queries
+  - `alert.$inferInsert` is the correct type for insert values with Drizzle
+---
+
 ## 2026-04-24 - US-026
 - Created `src/actions/alert.tsx` with all required CRUD functions: `listAlerts`, `createAlert`, `acknowledgeAlert`, `assignAlert`, `resolveAlert`, `bulkResolveAlerts`
 - All functions scope by `orgId` from `getSessionWithOrg()`; write mutations use `assertCanWrite(role)`
