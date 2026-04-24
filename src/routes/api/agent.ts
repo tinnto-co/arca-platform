@@ -11,8 +11,10 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { db, dbReadonly } from '@/lib/db';
-import { agentConversation, agentMessage, agentRun, ivaScrape, profile, client, invoice, notification, debt, dueDate, job, liquidacionImportEmpleado } from '@/drizzle/schema';
-import { eq, and, sql, ilike, gte, lte, isNull, isNotNull, lt, desc, inArray } from 'drizzle-orm';
+import { agentConversation, agentMessage, agentRun, ivaScrape, profile, client, invoice, notification, debt, dueDate, job, liquidacionImportEmpleado, payrollEscala, payrollConvenioCategoria, payrollConcepto } from '@/drizzle/schema';
+import { eq, and, sql, ilike, gte, lte, isNull, isNotNull, lt, desc, inArray, or } from 'drizzle-orm';
+import { differenceInYears } from 'date-fns';
+import { evaluatePayrollFormulaStrict } from '@/lib/payroll-formula';
 import {
   INVOICE_TYPES_A,
   INVOICE_TYPES_B,
@@ -350,6 +352,7 @@ HERRAMIENTAS DISPONIBLES
 - get_debts: USÁ ESTE TOOL cuando te pregunten sobre deudas fiscales, deudas con AFIP, montos adeudados, deudas vencidas o por estado. Acepta filtro por cliente, estado (open/in_plan/paid/disputed) y límite.
 - get_due_dates: USÁ ESTE TOOL cuando te pregunten sobre vencimientos fiscales próximos, obligaciones fiscales, vencimientos pendientes o completados. Acepta filtro por cliente, días hacia adelante e incluir completados.
 - get_profile_status: USÁ ESTE TOOL cuando te pregunten sobre el estado de un perfil fiscal: IVA, notificaciones, empleados activos, tipo de perfil, scraping. Acepta clientName y profileName opcional.
+- payroll_preview_receipt: USÁ ESTE TOOL cuando te pidan una previsualización o simulación de sueldo de un empleado. Calcula básico, haberes, descuentos, retenciones y neto sin persistir nada.
 - executeQuery: para cualquier consulta SQL general (clientes, facturas, nómina).
 - getIvaPosition: USÁ SIEMPRE ESTE TOOL para consultas sobre IVA, posición IVA, saldo IVA, crédito/débito fiscal.
   - El parámetro displayMonth es el mes que el usuario quiere ver (ej: "Marzo 2026" → "03/2026"). El tool internamente usa el mes anterior para consultar iva_scrape.
@@ -843,6 +846,166 @@ HERRAMIENTAS DISPONIBLES
                 return {
                   cliente: foundClient.name,
                   perfiles: results,
+                };
+              },
+            }),
+            payroll_preview_receipt: tool({
+              description:
+                'Previsualiza el cálculo de un recibo de sueldo para un empleado en un período dado. No persiste nada en la base de datos.',
+              inputSchema: z.object({
+                clientName: z.string().describe('Nombre del cliente (búsqueda parcial)'),
+                employeeName: z.string().describe('Nombre del empleado (búsqueda parcial)'),
+                periodo: z.string().describe('Período de la liquidación en formato YYYY-MM (ej: "2026-03")'),
+              }),
+              execute: async ({ clientName, employeeName, periodo }) => {
+                // 1. Find client
+                const matchingClients = await dbReadonly
+                  .select({ id: client.id, name: client.name })
+                  .from(client)
+                  .where(and(eq(client.organizationId, orgId), ilike(client.name, `%${clientName}%`)));
+
+                if (matchingClients.length === 0)
+                  return { error: `No encontré clientes con nombre "${clientName}"` };
+                if (matchingClients.length > 1)
+                  return { error: 'Más de un cliente coincide', options: matchingClients.map((c) => c.name) };
+
+                const foundClient = matchingClients[0];
+
+                // 2. Find employee within the client's profiles
+                const employees = await dbReadonly
+                  .select({
+                    id: liquidacionImportEmpleado.id,
+                    nombre: liquidacionImportEmpleado.nombre,
+                    cuil: liquidacionImportEmpleado.cuil,
+                    fechaAlta: liquidacionImportEmpleado.fechaAlta,
+                    categoriaId: liquidacionImportEmpleado.categoriaId,
+                    convenioId: liquidacionImportEmpleado.convenioId,
+                  })
+                  .from(liquidacionImportEmpleado)
+                  .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+                  .where(
+                    and(
+                      eq(profile.client, foundClient.id),
+                      ilike(liquidacionImportEmpleado.nombre, `%${employeeName}%`),
+                      isNull(liquidacionImportEmpleado.fechaBaja),
+                    )
+                  )
+                  .limit(5);
+
+                if (employees.length === 0)
+                  return { error: `No encontré empleados activos con nombre "${employeeName}" en ${foundClient.name}` };
+                if (employees.length > 1)
+                  return { error: 'Más de un empleado coincide', options: employees.map((e) => e.nombre) };
+
+                const emp = employees[0];
+
+                if (!emp.categoriaId || !emp.convenioId)
+                  return { error: `El empleado ${emp.nombre} no tiene convenio/categoría configurada para liquidar.` };
+
+                // 3. Get basico from payrollEscala (most recent vigente for the period)
+                const periodoDate = new Date(periodo + '-01');
+                const escalaRows = await dbReadonly
+                  .select({ montoBasico: payrollEscala.montoBasico, vigenciaDesde: payrollEscala.vigenciaDesde })
+                  .from(payrollEscala)
+                  .where(
+                    and(
+                      eq(payrollEscala.categoriaId, emp.categoriaId),
+                      lte(payrollEscala.vigenciaDesde, periodoDate),
+                      or(isNull(payrollEscala.vigenciaHasta), gte(payrollEscala.vigenciaHasta, periodoDate)),
+                    )
+                  )
+                  .orderBy(desc(payrollEscala.vigenciaDesde))
+                  .limit(1);
+
+                const basico = parseFloat(escalaRows[0]?.montoBasico ?? '0');
+                if (basico === 0)
+                  return { error: `No hay escala salarial vigente para el período ${periodo} del empleado ${emp.nombre}.` };
+
+                // 4. Get category name
+                const [catRow] = await dbReadonly
+                  .select({ nombre: payrollConvenioCategoria.nombre })
+                  .from(payrollConvenioCategoria)
+                  .where(eq(payrollConvenioCategoria.id, emp.categoriaId))
+                  .limit(1);
+
+                // 5. Get conceptos for the client
+                const conceptos = await dbReadonly
+                  .select({
+                    id: payrollConcepto.id,
+                    codigo: payrollConcepto.codigo,
+                    nombre: payrollConcepto.nombre,
+                    tipo: payrollConcepto.tipo,
+                    formula: payrollConcepto.formula,
+                    orden: payrollConcepto.orden,
+                    activo: payrollConcepto.activo,
+                  })
+                  .from(payrollConcepto)
+                  .where(eq(payrollConcepto.clientId, foundClient.id))
+                  .orderBy(payrollConcepto.orden);
+
+                // 6. Run dry-run calculation
+                const añosAntiguedad = differenceInYears(periodoDate, emp.fechaAlta ?? periodoDate);
+
+                const context = {
+                  basico,
+                  antiguedad: añosAntiguedad,
+                  bruto: basico,
+                  totalRemunerativo: 0,
+                  totalNoRemunerativo: 0,
+                  totalDescuentos: 0,
+                  neto: 0,
+                  horasExtra: 0,
+                  presentismo: 0,
+                  comisiones: 0,
+                  bonos: 0,
+                };
+
+                const detalles: { codigo: string; nombre: string; tipo: string; monto: number }[] = [];
+                let totalRemunerativo = 0;
+                let totalNoRemunerativo = 0;
+                let totalDescuentos = 0;
+                let totalRetenciones = 0;
+
+                for (const con of conceptos) {
+                  if (!con.activo) continue;
+                  const result = evaluatePayrollFormulaStrict(con.formula, context);
+                  const monto = result.ok ? Math.round(result.value * 100) / 100 : 0;
+                  if (monto === 0) continue;
+
+                  detalles.push({ codigo: con.codigo, nombre: con.nombre, tipo: con.tipo, monto });
+
+                  if (con.tipo === 'remunerativo') {
+                    totalRemunerativo += monto;
+                    context.totalRemunerativo = totalRemunerativo;
+                    context.bruto = totalRemunerativo;
+                  } else if (con.tipo === 'no_remunerativo') {
+                    totalNoRemunerativo += monto;
+                    context.totalNoRemunerativo = totalNoRemunerativo;
+                  } else if (con.tipo === 'descuento') {
+                    totalDescuentos += monto;
+                    context.totalDescuentos = totalDescuentos;
+                  } else if (con.tipo === 'retencion') {
+                    totalRetenciones += monto;
+                  }
+                  context.neto = totalRemunerativo + totalNoRemunerativo - totalDescuentos - totalRetenciones;
+                }
+
+                const neto = Math.round((totalRemunerativo + totalNoRemunerativo - totalDescuentos - totalRetenciones) * 100) / 100;
+
+                return {
+                  empleado: emp.nombre,
+                  cuil: emp.cuil,
+                  categoria: catRow?.nombre ?? 'Sin categoría',
+                  cliente: foundClient.name,
+                  periodo,
+                  basico: basico.toFixed(2),
+                  haberes: totalRemunerativo.toFixed(2),
+                  noRemunerativo: totalNoRemunerativo.toFixed(2),
+                  descuentos: totalDescuentos.toFixed(2),
+                  retenciones: totalRetenciones.toFixed(2),
+                  neto: neto.toFixed(2),
+                  conceptos: detalles,
+                  nota: 'Este es un preview calculado en tiempo real. No se persiste en la base de datos.',
                 };
               },
             }),
