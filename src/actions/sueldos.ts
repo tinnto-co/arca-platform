@@ -20,6 +20,7 @@ import {
   obraSocial,
   employeeEvent,
   payrollPeriodNovelty,
+  payrollReceiptTemplate,
 } from '@/drizzle/schema';
 import {
   getSessionWithOrg,
@@ -2450,7 +2451,8 @@ async function calcularUnaLiquidacion(
       id: liquidacionImportEmpleado.id,
       categoriaId: liquidacionImportEmpleado.categoriaId,
       fechaAlta: liquidacionImportEmpleado.fechaAlta,
-      fechaAntiguedadReconocida: liquidacionImportEmpleado.fechaAntiguedadReconocida,
+      fechaAntiguedadReconocida:
+        liquidacionImportEmpleado.fechaAntiguedadReconocida,
       convenioId: liquidacionImportEmpleado.convenioId,
       lugarPago: liquidacionImportEmpleado.lugarPago,
       formaPago: liquidacionImportEmpleado.formaPago,
@@ -2470,7 +2472,8 @@ async function calcularUnaLiquidacion(
 
   const periodoDate = parseISO(periodo + '-01');
   const basico = await getBasicoVigenteInternal(emp.categoriaId!, periodo);
-  const fechaBaseAntiguedad = emp.fechaAntiguedadReconocida ?? emp.fechaAlta ?? periodoDate;
+  const fechaBaseAntiguedad =
+    emp.fechaAntiguedadReconocida ?? emp.fechaAlta ?? periodoDate;
   const añosAntiguedad = differenceInYears(periodoDate, fechaBaseAntiguedad);
 
   const conceptos = await db
@@ -3579,7 +3582,8 @@ export const createNovelty = createServerFn({ method: 'POST' })
         empleadoId: ctx.data.empleadoId,
         periodo: ctx.data.periodo,
         type: ctx.data.type,
-        quantity: ctx.data.quantity !== undefined ? String(ctx.data.quantity) : null,
+        quantity:
+          ctx.data.quantity !== undefined ? String(ctx.data.quantity) : null,
         amount: ctx.data.amount !== undefined ? String(ctx.data.amount) : null,
         description: ctx.data.description,
       })
@@ -3627,5 +3631,81 @@ export const deleteNovelty = createServerFn({ method: 'POST' })
     await db
       .delete(payrollPeriodNovelty)
       .where(eq(payrollPeriodNovelty.id, ctx.data.id));
+    return { success: true };
+  });
+
+// ── Receipt templates ──────────────────────────────────────────────────────────
+
+async function ensureProfileBelongsToOrg(profileId: string, orgId: string) {
+  const [row] = await db
+    .select({ id: profile.id })
+    .from(profile)
+    .innerJoin(client, eq(profile.client, client.id))
+    .where(and(eq(profile.id, profileId), eq(client.organizationId, orgId)))
+    .limit(1);
+  if (!row) throw new Error('Perfil no encontrado o no autorizado');
+}
+
+export const createReceiptTemplate = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      profileId: z.string().uuid(),
+      name: z.string().min(1),
+      receiptType: z.string().default('sueldo'),
+      conceptIds: z.array(z.string()),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureProfileBelongsToOrg(ctx.data.profileId, orgId);
+    const [row] = await db
+      .insert(payrollReceiptTemplate)
+      .values({
+        profileId: ctx.data.profileId,
+        name: ctx.data.name,
+        receiptType: ctx.data.receiptType,
+        conceptIds: ctx.data.conceptIds,
+        active: true,
+      })
+      .returning();
+    return row as any;
+  });
+
+export const listReceiptTemplates = createServerFn({ method: 'GET' })
+  .inputValidator(z.object({ profileId: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureProfileBelongsToOrg(ctx.data.profileId, orgId);
+    const rows = await db
+      .select()
+      .from(payrollReceiptTemplate)
+      .where(
+        and(
+          eq(payrollReceiptTemplate.profileId, ctx.data.profileId),
+          eq(payrollReceiptTemplate.active, true)
+        )
+      )
+      .orderBy(asc(payrollReceiptTemplate.createdAt));
+    return rows as any;
+  });
+
+export const deleteReceiptTemplate = createServerFn({ method: 'POST' })
+  .inputValidator(z.object({ id: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    const [tmpl] = await db
+      .select({ profileId: payrollReceiptTemplate.profileId })
+      .from(payrollReceiptTemplate)
+      .where(eq(payrollReceiptTemplate.id, ctx.data.id))
+      .limit(1);
+    if (!tmpl) throw new Error('Template no encontrado');
+    await ensureProfileBelongsToOrg(tmpl.profileId, orgId);
+    await db
+      .delete(payrollReceiptTemplate)
+      .where(eq(payrollReceiptTemplate.id, ctx.data.id));
     return { success: true };
   });
