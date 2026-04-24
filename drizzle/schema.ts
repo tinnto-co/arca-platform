@@ -980,6 +980,24 @@ export const agentRun = pgTable("agent_run", {
 });
 
 /**
+ * Fiscal year end date configuration per client for balance alerts.
+ */
+export const clientBalanceConfig = pgTable("client_balance_config", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  clientId: uuid("client_id")
+    .notNull()
+    .unique()
+    .references(() => client.id, { onDelete: "cascade" }),
+  fiscalYearEndMonth: integer("fiscal_year_end_month").notNull(),
+  fiscalYearEndDay: integer("fiscal_year_end_day").notNull(),
+  presentationDueDays: integer("presentation_due_days"),
+  /** Days before fiscal year end to send alerts. Stored as JSON array, e.g. [60, 30, 15, 7] */
+  alertDaysBefore: jsonb("alert_days_before").default([60, 30, 15, 7]),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+/**
  * Periodic risk snapshots per profile for tracking risk trends over time.
  * risk_level values: low, medium, high, critical
  */
