@@ -713,6 +713,7 @@ export const liquidacionImportEmpleado = pgTable(
     legajo: text("legajo").notNull(),
     nombre: text("nombre").notNull(),
     fechaAlta: timestamp("fecha_alta", { mode: "date" }),
+    fechaAntiguedadReconocida: timestamp("fecha_antiguedad_reconocida", { mode: "date" }),
     fechaBaja: timestamp("fecha_baja", { mode: "date" }),
     modoContrato: text("modo_contrato"),
     /** Categoría en texto libre (tal como viene del archivo importado). */

@@ -1154,7 +1154,12 @@ export const listEmpleados = createServerFn({ method: 'GET' })
         payrollConvenioCategoria,
         eq(liquidacionImportEmpleado.categoriaId, payrollConvenioCategoria.id)
       )
-      .where(and(eq(profile.client, ctx.data.clientId), eq(profile.managedByStudy, true)))
+      .where(
+        and(
+          eq(profile.client, ctx.data.clientId),
+          eq(profile.managedByStudy, true)
+        )
+      )
       .orderBy(liquidacionImportEmpleado.nombre);
     return rows;
   });
@@ -2443,6 +2448,7 @@ async function calcularUnaLiquidacion(
       id: liquidacionImportEmpleado.id,
       categoriaId: liquidacionImportEmpleado.categoriaId,
       fechaAlta: liquidacionImportEmpleado.fechaAlta,
+      fechaAntiguedadReconocida: liquidacionImportEmpleado.fechaAntiguedadReconocida,
       convenioId: liquidacionImportEmpleado.convenioId,
       lugarPago: liquidacionImportEmpleado.lugarPago,
       formaPago: liquidacionImportEmpleado.formaPago,
@@ -2462,10 +2468,8 @@ async function calcularUnaLiquidacion(
 
   const periodoDate = parseISO(periodo + '-01');
   const basico = await getBasicoVigenteInternal(emp.categoriaId!, periodo);
-  const añosAntiguedad = differenceInYears(
-    periodoDate,
-    emp.fechaAlta ?? periodoDate
-  );
+  const fechaBaseAntiguedad = emp.fechaAntiguedadReconocida ?? emp.fechaAlta ?? periodoDate;
+  const añosAntiguedad = differenceInYears(periodoDate, fechaBaseAntiguedad);
 
   const conceptos = await db
     .select()
