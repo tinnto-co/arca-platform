@@ -10,6 +10,7 @@ import {
   dueDate,
   ivaScrape,
   job,
+  clientBalanceConfig,
 } from '@/drizzle/schema';
 import { auth } from '@/lib/auth';
 import {
@@ -1017,6 +1018,71 @@ export const markDueDateCompleted = createServerFn({
         completedByUserId: ctx.data.completed ? userId : null,
       })
       .where(eq(dueDate.id, ctx.data.id));
+
+    return { ok: true };
+  });
+
+export const getBalanceConfig = createServerFn({ method: 'GET' })
+  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+
+    const [c] = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(and(eq(client.id, ctx.data.clientId), eq(client.organizationId, orgId)));
+    if (!c) throw new Error('Cliente no encontrado o sin acceso');
+
+    const [config] = await db
+      .select()
+      .from(clientBalanceConfig)
+      .where(eq(clientBalanceConfig.clientId, ctx.data.clientId));
+
+    return (config ?? null) as typeof config & { alertDaysBefore: number[] } | null;
+  });
+
+export const upsertBalanceConfig = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearEndMonth: z.number().int().min(1).max(12),
+      fiscalYearEndDay: z.number().int().min(1).max(31),
+      presentationDueDays: z.number().int().nullable().optional(),
+      alertDaysBefore: z.array(z.number().int()).optional(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const { clientId, fiscalYearEndMonth, fiscalYearEndDay, presentationDueDays, alertDaysBefore } = ctx.data;
+
+    const [c] = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(and(eq(client.id, clientId), eq(client.organizationId, orgId)));
+    if (!c) throw new Error('Cliente no encontrado o sin acceso');
+
+    await db
+      .insert(clientBalanceConfig)
+      .values({
+        clientId,
+        fiscalYearEndMonth,
+        fiscalYearEndDay,
+        presentationDueDays: presentationDueDays ?? null,
+        alertDaysBefore: alertDaysBefore ?? [60, 30, 15, 7],
+      })
+      .onConflictDoUpdate({
+        target: clientBalanceConfig.clientId,
+        set: {
+          fiscalYearEndMonth,
+          fiscalYearEndDay,
+          presentationDueDays: presentationDueDays ?? null,
+          alertDaysBefore: alertDaysBefore ?? [60, 30, 15, 7],
+          updatedAt: new Date(),
+        },
+      });
 
     return { ok: true };
   });

@@ -18,6 +18,7 @@ import {
   Download,
   X,
   Search,
+  BookOpen,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -39,6 +40,8 @@ import {
   getClientIvaCredit,
   getLastJobByType,
   getRunningJobByType,
+  getBalanceConfig,
+  upsertBalanceConfig,
 } from '@/actions/client';
 import {
   Select,
@@ -408,6 +411,45 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     },
     onError: () => {
       toast.error('Error al actualizar la deuda');
+    },
+  });
+
+  // Balance config state
+  const [balanceMonth, setBalanceMonth] = useState<string>('12');
+  const [balanceDay, setBalanceDay] = useState<string>('31');
+  const [balancePresentationDays, setBalancePresentationDays] = useState<string>('');
+  const [balanceAlertDays, setBalanceAlertDays] = useState<string>('60,30,15,7');
+
+  const { data: balanceConfig } = useQuery({
+    queryKey: ['balanceConfig', clientId],
+    queryFn: () => getBalanceConfig({ data: { clientId } }),
+    enabled: !!clientId,
+  });
+
+  // Sync form state when config loads
+  useEffect(() => {
+    if (balanceConfig) {
+      setBalanceMonth(String(balanceConfig.fiscalYearEndMonth));
+      setBalanceDay(String(balanceConfig.fiscalYearEndDay));
+      setBalancePresentationDays(balanceConfig.presentationDueDays != null ? String(balanceConfig.presentationDueDays) : '');
+      const days = balanceConfig.alertDaysBefore;
+      setBalanceAlertDays(Array.isArray(days) ? (days as number[]).join(',') : '60,30,15,7');
+    }
+  }, [balanceConfig]);
+
+  const upsertBalanceConfigMutation = useMutation({
+    mutationFn: (vars: {
+      fiscalYearEndMonth: number;
+      fiscalYearEndDay: number;
+      presentationDueDays: number | null;
+      alertDaysBefore: number[];
+    }) => upsertBalanceConfig({ data: { clientId, ...vars } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['balanceConfig', clientId] });
+      toast.success('Configuración guardada');
+    },
+    onError: () => {
+      toast.error('Error al guardar la configuración');
     },
   });
 
@@ -1933,6 +1975,93 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                       </div>
                     ))}
                   </div>
+                )}
+              </div>
+            </div>
+
+            {/* Row 3: Cierre de ejercicio */}
+            <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_20px] flex flex-col gap-[14px]">
+              <div className="flex items-center gap-2">
+                <BookOpen className="h-3.5 w-3.5 shrink-0 text-[var(--arca-ink-3)]" />
+                <span className="text-[13px] font-semibold text-[var(--arca-ink)]">Cierre de ejercicio</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-[14px]">
+                <div className="flex flex-col gap-[6px]">
+                  <label className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)]">Mes de cierre</label>
+                  <select
+                    value={balanceMonth}
+                    onChange={(e) => setBalanceMonth(e.target.value)}
+                    className="h-8 rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-2 text-[12.5px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-navy-700)]"
+                  >
+                    {['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map((m, i) => (
+                      <option key={i + 1} value={String(i + 1)}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-[6px]">
+                  <label className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)]">Día de cierre</label>
+                  <select
+                    value={balanceDay}
+                    onChange={(e) => setBalanceDay(e.target.value)}
+                    className="h-8 rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-2 text-[12.5px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-navy-700)]"
+                  >
+                    {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                      <option key={d} value={String(d)}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-[6px]">
+                  <label className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)]">Días para presentación</label>
+                  <input
+                    type="number"
+                    min={0}
+                    placeholder="Opcional"
+                    value={balancePresentationDays}
+                    onChange={(e) => setBalancePresentationDays(e.target.value)}
+                    className="h-8 rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-2 text-[12.5px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-navy-700)]"
+                  />
+                </div>
+                <div className="flex flex-col gap-[6px]">
+                  <label className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)]">Alertas (días antes)</label>
+                  <input
+                    type="text"
+                    placeholder="60,30,15,7"
+                    value={balanceAlertDays}
+                    onChange={(e) => setBalanceAlertDays(e.target.value)}
+                    className="h-8 rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-2 text-[12.5px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-navy-700)]"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  disabled={upsertBalanceConfigMutation.isPending}
+                  onClick={() => {
+                    const month = parseInt(balanceMonth, 10);
+                    const day = parseInt(balanceDay, 10);
+                    const presentationDays = balancePresentationDays ? parseInt(balancePresentationDays, 10) : null;
+                    const alertDays = balanceAlertDays
+                      .split(',')
+                      .map((s) => parseInt(s.trim(), 10))
+                      .filter((n) => !isNaN(n) && n > 0);
+                    if (isNaN(month) || isNaN(day)) {
+                      toast.error('Mes y día son obligatorios');
+                      return;
+                    }
+                    upsertBalanceConfigMutation.mutate({
+                      fiscalYearEndMonth: month,
+                      fiscalYearEndDay: day,
+                      presentationDueDays: presentationDays,
+                      alertDaysBefore: alertDays.length > 0 ? alertDays : [60, 30, 15, 7],
+                    });
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--arca-r-md)] text-[12px] font-semibold bg-[var(--arca-ink)] text-[#F7F6F2] hover:bg-[var(--arca-ink)]/90 transition-colors disabled:opacity-50"
+                >
+                  {upsertBalanceConfigMutation.isPending ? 'Guardando...' : 'Guardar'}
+                </button>
+                {balanceConfig && (
+                  <span className="text-[11px] text-[var(--arca-ink-4)]">
+                    Cierre: {balanceConfig.fiscalYearEndDay}/{balanceConfig.fiscalYearEndMonth}
+                  </span>
                 )}
               </div>
             </div>
