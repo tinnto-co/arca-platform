@@ -1,3 +1,19 @@
+## 2026-04-24 - US-010a
+- Added `completedAt` (timestamp nullable) and `completedByUserId` (text FK user set null) columns to `dueDate` table in `drizzle/schema.ts`
+- Created migration script `src/scripts/ensure-due-date-completion-columns.ts` using `ADD COLUMN IF NOT EXISTS` pattern
+- Added `markDueDateCompleted(id, completed)` server function in `src/actions/client.tsx` (POST, canWrite required): validates org ownership via JOIN with client table, sets completedAt/completedByUserId when completing, clears them when un-completing
+- Files changed: `drizzle/schema.ts`, `src/scripts/ensure-due-date-completion-columns.ts`, `src/actions/client.tsx`
+- **How to verify:**
+  - Run: `timeout 60 bun run src/scripts/ensure-due-date-completion-columns.ts` (should print "Columnas de completitud de due_date: OK.")
+  - Verify in DB: `\d due_date` should show `completed_at` and `completed_by_user_id` columns
+  - Call `markDueDateCompleted({ id: '<uuid>', completed: true })` — row should have completedAt set and completedByUserId set to calling user's ID
+  - Call `markDueDateCompleted({ id: '<uuid>', completed: false })` — row should have both fields cleared to null
+- **Learnings for future iterations:**
+  - `markDueDateCompleted` accepts `completed: boolean` to toggle — this enables an unmark action (US-010b will need this for the toggle UI)
+  - `getSessionWithOrg()` returns `userId` directly — no extra lookup needed for completedByUserId
+  - Due date ownership validated by JOINing with client table and checking `client.organizationId = orgId`
+---
+
 ## 2026-04-24 - US-009
 - Added `updateDebtStatus` server function in `src/actions/client.tsx` (POST, canWrite required): validates org ownership via JOIN with client table, updates status and isIntimated on the debt row
 - Updated debt table in `src/components/client-detail-page.tsx`:
