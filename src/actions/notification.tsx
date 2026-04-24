@@ -10,6 +10,7 @@ import {
   document,
   dataSourceEvent,
 } from '@/drizzle/schema';
+import { member, user } from '@/drizzle/auth';
 import {
   getSessionWithOrg,
   assertCanWrite,
@@ -32,6 +33,7 @@ export const getNotifications = createServerFn({
       search: z.string().optional(),
       opened: z.boolean().optional(),
       category: z.string().optional(),
+      onlyUnresolved: z.boolean().optional(),
     })
   )
   .handler(async (ctx) => {
@@ -47,6 +49,7 @@ export const getNotifications = createServerFn({
       profileId,
       opened,
       category,
+      onlyUnresolved,
     } = ctx.data;
     const offset = (page - 1) * limit;
 
@@ -94,6 +97,10 @@ export const getNotifications = createServerFn({
       conditions.push(eq(notification.category, category));
     }
 
+    if (onlyUnresolved) {
+      conditions.push(isNull(notification.resolvedAt));
+    }
+
     const whereCondition = and(...conditions);
 
     // Get total count for pagination
@@ -121,6 +128,9 @@ export const getNotifications = createServerFn({
         severity: notification.severity,
         category: notification.category,
         aiSummary: notification.aiSummary,
+        assignedToUserId: notification.assignedToUserId,
+        resolvedAt: notification.resolvedAt,
+        resolvedByUserId: notification.resolvedByUserId,
         createdAt: notification.createdAt,
         updatedAt: notification.updatedAt,
       })
@@ -442,6 +452,115 @@ export const deleteNotification = createServerFn({
       throw new Error('Error al eliminar la notificación');
 
     return { success: true };
+  });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Assignment & Resolution
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const listOrgMembersForAssignment = createServerFn({
+  method: 'GET',
+}).handler(async () => {
+  const { orgId } = await getSessionWithOrg();
+
+  const members = await db
+    .select({
+      userId: user.id,
+      name: user.name,
+      email: user.email,
+    })
+    .from(member)
+    .innerJoin(user, eq(member.userId, user.id))
+    .where(eq(member.organizationId, orgId));
+
+  return members;
+});
+
+export const assignNotification = createServerFn({
+  method: 'POST',
+})
+  .inputValidator(
+    z.object({
+      id: z.string().uuid(),
+      userId: z.string().nullable(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const orgClientIds = await getOrgClientIds(orgId);
+    if (orgClientIds.length === 0) throw new Error('Notificación no encontrada');
+
+    const [updated] = await db
+      .update(notification)
+      .set({ assignedToUserId: ctx.data.userId, updatedAt: new Date() })
+      .where(
+        and(
+          eq(notification.id, ctx.data.id),
+          inArray(notification.client, orgClientIds)
+        )
+      )
+      .returning();
+
+    if (!updated) throw new Error('Notificación no encontrada');
+    return updated;
+  });
+
+export const resolveNotification = createServerFn({
+  method: 'POST',
+})
+  .inputValidator(z.object({ id: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const orgClientIds = await getOrgClientIds(orgId);
+    if (orgClientIds.length === 0) throw new Error('Notificación no encontrada');
+
+    const now = new Date();
+    const [updated] = await db
+      .update(notification)
+      .set({ resolvedAt: now, resolvedByUserId: userId, updatedAt: now })
+      .where(
+        and(
+          eq(notification.id, ctx.data.id),
+          inArray(notification.client, orgClientIds)
+        )
+      )
+      .returning();
+
+    if (!updated) throw new Error('Notificación no encontrada');
+    return updated;
+  });
+
+export const unresolveNotification = createServerFn({
+  method: 'POST',
+})
+  .inputValidator(z.object({ id: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const orgClientIds = await getOrgClientIds(orgId);
+    if (orgClientIds.length === 0) throw new Error('Notificación no encontrada');
+
+    const [updated] = await db
+      .update(notification)
+      .set({ resolvedAt: null, resolvedByUserId: null, updatedAt: new Date() })
+      .where(
+        and(
+          eq(notification.id, ctx.data.id),
+          inArray(notification.client, orgClientIds)
+        )
+      )
+      .returning();
+
+    if (!updated) throw new Error('Notificación no encontrada');
+    return updated;
   });
 
 // ─────────────────────────────────────────────────────────────────────────────

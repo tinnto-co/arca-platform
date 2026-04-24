@@ -8,6 +8,9 @@ import {
   User,
   Trash2,
   CheckCheck,
+  CheckCircle,
+  XCircle,
+  UserCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -30,6 +33,10 @@ import {
   markNotificationOpened,
   markNotificationUnread,
   markAllNotificationsRead,
+  assignNotification,
+  resolveNotification,
+  unresolveNotification,
+  listOrgMembersForAssignment,
 } from '@/actions/notification';
 import { getClients, getClientProfiles } from '@/actions/client';
 import { cn } from '@/lib/utils';
@@ -83,6 +90,9 @@ interface NotificationData {
   severity?: string | null;
   category?: string | null;
   aiSummary?: string | null;
+  assignedToUserId?: string | null;
+  resolvedAt?: Date | null;
+  resolvedByUserId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -117,6 +127,7 @@ export function NotificationsView({
   );
   const [profileFilter, setProfileFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [onlyUnresolved, setOnlyUnresolved] = useState(false);
   const [selectedNotificationId, setSelectedNotificationId] = useState<
     string | null
   >(initialNotificationId ?? null);
@@ -159,9 +170,10 @@ export function NotificationsView({
         clientIdProp,
         effectiveProfileFilter,
         categoryFilter,
+        onlyUnresolved,
         searchTerm,
       ]
-      : ['notifications', orgKey, 1, clientFilter, '', '', categoryFilter, searchTerm],
+      : ['notifications', orgKey, 1, clientFilter, '', '', categoryFilter, onlyUnresolved, searchTerm],
     queryFn: () =>
       getNotifications({
         data: {
@@ -172,6 +184,7 @@ export function NotificationsView({
           profileId: effectiveProfileFilter,
           search: searchTerm || undefined,
           category: categoryFilter === 'all' ? undefined : categoryFilter,
+          onlyUnresolved: onlyUnresolved || undefined,
         },
       }),
   });
@@ -181,6 +194,12 @@ export function NotificationsView({
     queryKey: ['notification', orgKey, selectedNotificationId],
     queryFn: () => getNotification({ data: { id: selectedNotificationId! } }),
     enabled: !!selectedNotificationId,
+  });
+
+  // Get org members for assignment dropdown
+  const { data: orgMembers = [] } = useQuery({
+    queryKey: ['orgMembersForAssignment', orgKey],
+    queryFn: () => listOrgMembersForAssignment(),
   });
 
   const invalidateNotificationQueries = () => {
@@ -243,6 +262,34 @@ export function NotificationsView({
           : 'No hay notificaciones sin leer'
       );
     },
+  });
+
+  const assignMutation = useMutation({
+    mutationFn: (vars: { id: string; userId: string | null }) =>
+      assignNotification({ data: vars }),
+    onSuccess: () => {
+      invalidateNotificationQueries();
+      toast.success('Notificación asignada');
+    },
+    onError: () => toast.error('Error al asignar la notificación'),
+  });
+
+  const resolveMutation = useMutation({
+    mutationFn: (id: string) => resolveNotification({ data: { id } }),
+    onSuccess: () => {
+      invalidateNotificationQueries();
+      toast.success('Notificación resuelta');
+    },
+    onError: () => toast.error('Error al resolver la notificación'),
+  });
+
+  const unresolveMutation = useMutation({
+    mutationFn: (id: string) => unresolveNotification({ data: { id } }),
+    onSuccess: () => {
+      invalidateNotificationQueries();
+      toast.success('Notificación reabierta');
+    },
+    onError: () => toast.error('Error al reabrir la notificación'),
   });
 
   const handleNotificationClick = (notification: {
@@ -412,6 +459,17 @@ export function NotificationsView({
               searchPlaceholder="Buscar categoría..."
               width="100%"
             />
+            <button
+              onClick={() => setOnlyUnresolved((v) => !v)}
+              className={cn(
+                'text-xs px-3 py-1.5 rounded border transition-colors w-full text-left',
+                onlyUnresolved
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-background text-muted-foreground border-border hover:bg-muted'
+              )}
+            >
+              Solo sin resolver
+            </button>
           </div>
 
           {/* Notifications List */}
@@ -437,7 +495,8 @@ export function NotificationsView({
                         'p-4 cursor-pointer hover:bg-muted/50 transition-colors',
                         selectedNotificationId === notification.id &&
                         'bg-muted border-l-4 border-l-primary',
-                        notification.opened === false && 'bg-primary/5'
+                        notification.opened === false && 'bg-primary/5',
+                        (notification as any).resolvedAt && 'opacity-50'
                       )}
                     >
                       <div className="flex items-start justify-between gap-2">
@@ -549,6 +608,53 @@ export function NotificationsView({
               {/* Content */}
               <div className="flex-1 overflow-y-auto p-6">
                 <div className="space-y-6">
+                  {/* Assignment & Resolution actions */}
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <div className="flex items-center gap-2 flex-1 min-w-[180px]">
+                      <UserCheck className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <SearchableSelect
+                        options={[
+                          { value: '__none__', label: 'Sin asignar' },
+                          ...orgMembers.map((m) => ({
+                            value: m.userId,
+                            label: m.name || m.email,
+                          })),
+                        ]}
+                        value={(selectedNotification as any).assignedToUserId ?? '__none__'}
+                        onValueChange={(val) =>
+                          assignMutation.mutate({
+                            id: selectedNotification.id,
+                            userId: val === '__none__' ? null : val,
+                          })
+                        }
+                        placeholder="Asignar a..."
+                        searchPlaceholder="Buscar miembro..."
+                        width="100%"
+                      />
+                    </div>
+                    {(selectedNotification as any).resolvedAt ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => unresolveMutation.mutate(selectedNotification.id)}
+                        disabled={unresolveMutation.isPending}
+                      >
+                        <XCircle className="h-4 w-4 mr-1" />
+                        Reabrir
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() => resolveMutation.mutate(selectedNotification.id)}
+                        disabled={resolveMutation.isPending}
+                      >
+                        <CheckCircle className="h-4 w-4 mr-1" />
+                        Resolver
+                      </Button>
+                    )}
+                  </div>
+
                   {/* Message */}
                   <div>
                     <h3 className="text-sm font-semibold mb-2">Mensaje</h3>
