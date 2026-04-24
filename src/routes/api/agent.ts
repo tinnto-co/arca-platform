@@ -592,8 +592,9 @@ HERRAMIENTAS DISPONIBLES
 
               // Combinar TODO el texto de TODOS los mensajes assistant en uno solo.
               // Así se evita perder párrafos cuando el tool loop genera múltiples pasos.
-              const assistantText = finishedMessages
-                .filter((m) => m.role === 'assistant')
+              const assistantMessages = finishedMessages.filter((m) => m.role === 'assistant');
+
+              const assistantText = assistantMessages
                 .flatMap((m) =>
                   (m.parts ?? [])
                     .filter((p: any) => p.type === 'text')
@@ -602,11 +603,31 @@ HERRAMIENTAS DISPONIBLES
                 .filter(Boolean)
                 .join('\n\n');
 
+              // Extract tool calls from all assistant message parts
+              const toolCalls = assistantMessages
+                .flatMap((m) =>
+                  (m.parts ?? [])
+                    .filter((p: any) => p.type === 'tool-invocation')
+                    .map((p: any) => ({
+                      toolName: p.toolInvocation?.toolName ?? p.toolName,
+                      args: p.toolInvocation?.args ?? p.args,
+                      state: p.toolInvocation?.state ?? p.state,
+                    }))
+                )
+                .filter((tc) => tc.toolName);
+
+              const metadata = {
+                stepCount: assistantMessages.length,
+                toolCallCount: toolCalls.length,
+              };
+
               if (assistantText) {
                 await db.insert(agentMessage).values({
                   conversationId,
                   role: 'assistant',
                   content: assistantText,
+                  toolCalls: toolCalls.length > 0 ? toolCalls : null,
+                  metadata,
                 });
               }
             } catch (err) {

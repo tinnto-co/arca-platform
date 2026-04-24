@@ -949,5 +949,9 @@ export const agentMessage = pgTable("agent_message", {
     .references(() => agentConversation.id, { onDelete: "cascade" }),
   role: text("role").notNull(),
   content: text("content").notNull(),
+  metadata: jsonb("metadata"),
+  toolCalls: jsonb("tool_calls"),
+  citations: jsonb("citations"),
+  confidence: text("confidence"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
