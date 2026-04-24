@@ -1,3 +1,22 @@
+## 2026-04-24 - US-006
+- Added `SeverityBadge` component inline in `notifications-view.tsx` (critical=red, medium=orange, low=blue, informational=gray, unclassified=hidden)
+- Added `categoryFilter` state and `SearchableSelect` dropdown for category filtering (Todos, Requerimiento, Intimación, Deuda, Vencimiento, Comunicación, Inspección, Otro)
+- Updated `getNotifications` in `src/actions/notification.tsx` to accept `category` filter param and return `severity`, `category`, `aiSummary` fields in select
+- Added severity-based sort: critical(0) > medium(1) > low(2) > informational(3) > unclassified(4), secondary sort by publicationDate desc
+- Shows `aiSummary` as italic subtitle below the profile/client name when available
+- Files changed: `src/actions/notification.tsx`, `src/components/notifications-view.tsx`
+- **How to verify:**
+  - Run `bun run dev`, navigate to /notifications
+  - Notifications with AI classification should show colored severity badge (red=critical, orange=medium, blue=low) next to the client name
+  - Category dropdown appears below client/profile filter — selecting a category filters the list
+  - Notifications are sorted by severity (critical first) within date groups
+  - If any notification has ai_summary, it shows as italic text below the badge row
+- **Learnings for future iterations:**
+  - `getNotifications` query key includes `categoryFilter` — remember to invalidate with matching key structure when mutating notifications
+  - Severity sort is client-side (after fetch) to avoid complicating the SQL ORDER BY
+  - `(notification as any).severity` cast needed because `NotificationData` interface is unused but the actual runtime data is typed from server fn return
+---
+
 ## 2026-04-24 - US-005
 - Added `classifyWithGemini(message)` internal helper in `src/actions/notification.tsx` that calls Gemini Flash with a structured JSON response schema to classify severity, category, and generate ai_summary
 - Added `classifyNotification` server function (POST, canWrite required): validates org ownership, calls Gemini, updates notification row (severity, category, aiSummary, aiClassifiedAt), logs to data_source_event with source='ai', action='classified'

@@ -90,7 +90,7 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 1. Reuse StatusTag from src/components/dashboard/shared.tsx for severity badges"
     },
     {
