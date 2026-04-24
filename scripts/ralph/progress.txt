@@ -1,3 +1,22 @@
+## 2026-04-24 - US-043
+- Added `payrollPeriodNovelty` import to `src/actions/sueldos.ts`
+- Implemented `createNovelty`: POST, requires canWrite, validates empleado belongs to org, inserts row with empleadoId, periodo, type, quantity, amount, description
+- Implemented `listNovelties`: GET, validates empleado belongs to org, returns novelties filtered by empleadoId + periodo ordered by createdAt asc
+- Implemented `deleteNovelty`: POST, requires canWrite, fetches novelty to get empleadoId, validates org ownership via `ensureEmpleadoBelongsToOrg`, then deletes
+- Numeric values (quantity, amount) are stored as strings via `String()` to satisfy Drizzle's `numeric` column type
+- Files changed: `src/actions/sueldos.ts`
+- **How to verify:**
+  - Run `bun run dev`
+  - Call `createNovelty({ empleadoId: '<uuid>', periodo: '2026-04', type: 'ausencia', quantity: 1 })` — inserts a row in `payroll_period_novelty`
+  - Call `listNovelties({ empleadoId: '<uuid>', periodo: '2026-04' })` — returns array of novelties for that period
+  - Call `deleteNovelty({ id: '<uuid>' })` — removes the row; calling with a novelty from another org throws "Empleado no encontrado o no autorizado"
+  - Verify in DB: `docker exec arca-local-db psql -U arca -d arca -c 'SELECT * FROM payroll_period_novelty LIMIT 5'`
+- **Learnings for future iterations:**
+  - Drizzle `numeric` columns expect `string | null`, not `number | null` — use `String(value)` when inserting numeric JS values
+  - `deleteNovelty` needs a two-step approach: first fetch the novelty to get `empleadoId`, then validate org ownership, then delete — cannot short-circuit without fetching first
+  - `ensureEmpleadoBelongsToOrg` is the reusable org-scoping helper for all operations touching `liquidacionImportEmpleado`-derived data
+---
+
 ## 2026-04-24 - US-042
 - Added expandable timeline section per employee in `src/components/sueldos/SueldosEmpleados.tsx`
 - Added `EmpleadoTimeline` sub-component: fetches events via `listEmployeeEvents`, shows vertical timeline with color-coded type badges, date, title, description, and "Afecta liquidación" indicator
