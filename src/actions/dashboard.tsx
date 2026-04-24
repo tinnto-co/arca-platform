@@ -3,7 +3,7 @@ import z from 'zod';
 import { db } from '@/lib/db';
 import { client, invoice, debt, dueDate, notification } from '@/drizzle/schema';
 import { eq, and, gte, lte, sql, inArray } from 'drizzle-orm';
-import { getSessionWithOrg, getOrgClientIds } from '@/actions/helpers';
+import { getSessionWithOrg } from '@/actions/helpers';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -12,6 +12,14 @@ function parseDateParam(s: string | undefined, fallback: Date): Date {
   const d = new Date(s);
   return isNaN(d.getTime()) ? fallback : d;
 }
+
+// Drizzle expression: amount converted to ARS (USD × rate, else as-is)
+// Uses LOWER() for case-insensitive currency comparison (DB values may be 'USD', 'usd', etc.)
+const arsAmount = sql<number>`CASE
+  WHEN LOWER(${invoice.currency}) = 'usd'
+  THEN CAST(${invoice.amount} AS DECIMAL) * CAST(${invoice.cureencyRate} AS DECIMAL)
+  ELSE CAST(${invoice.amount} AS DECIMAL)
+END`;
 
 // ── getDashboardStats ──────────────────────────────────────────────────────
 
@@ -59,73 +67,69 @@ export const getDashboardStats = createServerFn({ method: 'GET' })
     );
     currentTo.setHours(23, 59, 59, 999);
 
-    // Previous period: same duration, ending 1ms before currentFrom
+    // Previous period: same duration ending just before currentFrom
     const rangeMs = currentTo.getTime() - currentFrom.getTime();
     const previousTo = new Date(currentFrom.getTime() - 1);
     const previousFrom = new Date(previousTo.getTime() - rangeMs);
 
-    const allInvoices = await db
-      .select({
-        direction: invoice.direction,
-        amount: invoice.amount,
-        currency: invoice.currency,
-        currencyRate: invoice.cureencyRate,
-        emitionDate: invoice.emitionDate,
-      })
-      .from(invoice)
-      .where(inArray(invoice.client, userClientIds));
+    // Run all 3 aggregate queries in parallel
+    const [currentStats, previousStats, totalStats] = await Promise.all([
+      // Current period aggregation (SQL-level, no full table scan)
+      db
+        .select({
+          sales: sql<number>`COALESCE(SUM(CASE WHEN LOWER(${invoice.direction}) = 'outbound' THEN ${arsAmount} ELSE 0 END), 0)`,
+          purchases: sql<number>`COALESCE(SUM(CASE WHEN LOWER(${invoice.direction}) = 'inbound' THEN ${arsAmount} ELSE 0 END), 0)`,
+          invoiceCount: sql<number>`COUNT(*)`,
+        })
+        .from(invoice)
+        .where(
+          and(
+            inArray(invoice.client, userClientIds),
+            gte(invoice.emitionDate, currentFrom),
+            lte(invoice.emitionDate, currentTo)
+          )
+        ),
 
-    let totalSales = 0;
-    let totalPurchases = 0;
-    let monthlySales = 0;
-    let monthlyPurchases = 0;
-    let previousMonthSales = 0;
-    let previousMonthPurchases = 0;
+      // Previous period aggregation
+      db
+        .select({
+          sales: sql<number>`COALESCE(SUM(CASE WHEN LOWER(${invoice.direction}) = 'outbound' THEN ${arsAmount} ELSE 0 END), 0)`,
+          purchases: sql<number>`COALESCE(SUM(CASE WHEN LOWER(${invoice.direction}) = 'inbound' THEN ${arsAmount} ELSE 0 END), 0)`,
+        })
+        .from(invoice)
+        .where(
+          and(
+            inArray(invoice.client, userClientIds),
+            gte(invoice.emitionDate, previousFrom),
+            lte(invoice.emitionDate, previousTo)
+          )
+        ),
 
-    allInvoices.forEach((inv) => {
-      let amount = parseFloat(inv.amount || '0');
-      if (inv.currency?.toUpperCase() === 'USD') {
-        const rate = parseFloat(inv.currencyRate || '1');
-        amount = amount * rate;
-      }
+      // All-time totals for mini KPIs
+      db
+        .select({
+          totalSales: sql<number>`COALESCE(SUM(CASE WHEN LOWER(${invoice.direction}) = 'outbound' THEN ${arsAmount} ELSE 0 END), 0)`,
+          totalPurchases: sql<number>`COALESCE(SUM(CASE WHEN LOWER(${invoice.direction}) = 'inbound' THEN ${arsAmount} ELSE 0 END), 0)`,
+          totalInvoices: sql<number>`COUNT(*)`,
+        })
+        .from(invoice)
+        .where(inArray(invoice.client, userClientIds)),
+    ]);
 
-      const direction = inv.direction?.toLowerCase();
-      const invoiceDate = new Date(inv.emitionDate);
-
-      if (direction === 'outbound') {
-        totalSales += amount;
-        if (invoiceDate >= currentFrom && invoiceDate <= currentTo) {
-          monthlySales += amount;
-        }
-        if (invoiceDate >= previousFrom && invoiceDate <= previousTo) {
-          previousMonthSales += amount;
-        }
-      } else if (direction === 'inbound') {
-        totalPurchases += amount;
-        if (invoiceDate >= currentFrom && invoiceDate <= currentTo) {
-          monthlyPurchases += amount;
-        }
-        if (invoiceDate >= previousFrom && invoiceDate <= previousTo) {
-          previousMonthPurchases += amount;
-        }
-      }
-    });
-
-    const monthlyInvoices = allInvoices.filter((inv) => {
-      const d = new Date(inv.emitionDate);
-      return d >= currentFrom && d <= currentTo;
-    }).length;
+    const cur = currentStats[0];
+    const prev = previousStats[0];
+    const total = totalStats[0];
 
     return {
       totalClients: userClientIds.length,
-      totalSales,
-      totalPurchases,
-      totalInvoices: allInvoices.length,
-      monthlySales,
-      monthlyPurchases,
-      monthlyInvoices,
-      previousMonthSales,
-      previousMonthPurchases,
+      totalSales: Number(total?.totalSales ?? 0),
+      totalPurchases: Number(total?.totalPurchases ?? 0),
+      totalInvoices: Number(total?.totalInvoices ?? 0),
+      monthlySales: Number(cur?.sales ?? 0),
+      monthlyPurchases: Number(cur?.purchases ?? 0),
+      monthlyInvoices: Number(cur?.invoiceCount ?? 0),
+      previousMonthSales: Number(prev?.sales ?? 0),
+      previousMonthPurchases: Number(prev?.purchases ?? 0),
     };
   });
 
@@ -152,19 +156,19 @@ export const getMonthlyEvolution = createServerFn({ method: 'GET' })
     if (userClientIds.length === 0) return [];
 
     const now = new Date();
+    const monthCount = ctx.data.months ?? 6;
 
-    // Determine range
     const to = parseDateParam(
       ctx.data.to,
       new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
     );
-    const monthCount = ctx.data.months ?? 6;
     const from = parseDateParam(
       ctx.data.from,
       new Date(to.getFullYear(), to.getMonth() - (monthCount - 1), 1)
     );
 
-    const allInvoices = await db
+    // Fetch only invoices in the date range (key optimization vs full table scan)
+    const invoicesInRange = await db
       .select({
         direction: invoice.direction,
         amount: invoice.amount,
@@ -173,7 +177,13 @@ export const getMonthlyEvolution = createServerFn({ method: 'GET' })
         emitionDate: invoice.emitionDate,
       })
       .from(invoice)
-      .where(inArray(invoice.client, userClientIds));
+      .where(
+        and(
+          inArray(invoice.client, userClientIds),
+          gte(invoice.emitionDate, from),
+          lte(invoice.emitionDate, to)
+        )
+      );
 
     // Build monthly buckets from `from` to `to`
     const buckets: { year: number; month: number; outbound: number; inbound: number }[] = [];
@@ -184,7 +194,7 @@ export const getMonthlyEvolution = createServerFn({ method: 'GET' })
       cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
     }
 
-    allInvoices.forEach((inv) => {
+    invoicesInRange.forEach((inv) => {
       let amount = parseFloat(inv.amount || '0');
       if (inv.currency?.toUpperCase() === 'USD') {
         amount = amount * parseFloat(inv.currencyRate || '1');
@@ -396,7 +406,7 @@ export const getTopClients = createServerFn({ method: 'GET' })
     const clientInvoices = await db
       .select({
         clientId: invoice.client,
-        totalAmount: sql<string>`SUM(CAST(${invoice.amount} AS DECIMAL))`,
+        totalAmount: sql<string>`SUM(${invoice.amount}::numeric)`,
         invoiceCount: sql<number>`COUNT(*)`,
         lastActivity: sql<string>`MAX(${invoice.createdAt})`,
       })
@@ -409,23 +419,23 @@ export const getTopClients = createServerFn({ method: 'GET' })
         )
       )
       .groupBy(invoice.client)
-      .orderBy(sql`SUM(CAST(${invoice.amount} AS DECIMAL)) DESC`)
+      .orderBy(sql`SUM(${invoice.amount}::numeric) DESC`)
       .limit(ctx.data.limit);
-
-    const clientMap = new Map(userClients.map((c) => [c.id, c]));
 
     const overdueDebts = await db
       .select({
         clientId: debt.client,
         overdueCount: sql<number>`COUNT(*)`,
-        maxOverdueDays: sql<number>`MAX(EXTRACT(DAY FROM NOW() - ${debt.dueDate}))`,
+        maxOverdueDays: sql<number>`MAX(EXTRACT(EPOCH FROM NOW() - ${debt.dueDate}::timestamptz) / 86400)`,
       })
       .from(debt)
       .where(
         and(inArray(debt.client, userClientIds), lte(debt.dueDate, new Date()))
       )
-      .groupBy(debt.client);
+      .groupBy(debt.client)
+      .catch(() => [] as { clientId: string | null; overdueCount: number; maxOverdueDays: number }[]);
 
+    const clientMap = new Map(userClients.map((c) => [c.id, c]));
     const overdueMap = new Map(overdueDebts.map((d) => [d.clientId, d]));
 
     return clientInvoices.map((ci) => {
@@ -484,3 +494,72 @@ export const getPendingNotificationsCount = createServerFn({
 
   return { count: result?.count ?? 0 };
 });
+
+// ── getCalendarDueDates ──────────────────────────────────────────────────
+
+export const getCalendarDueDates = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      from: z.string(),
+      to: z.string(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+
+    const userClients = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(eq(client.organizationId, orgId));
+
+    const userClientIds = userClients.map((c) => c.id);
+    if (userClientIds.length === 0) return { dueDates: [], debts: [] };
+
+    const from = new Date(ctx.data.from);
+    const to = new Date(ctx.data.to);
+    to.setHours(23, 59, 59, 999);
+
+    const [dueDates, debts] = await Promise.all([
+      db
+        .select({
+          id: dueDate.id,
+          tax: dueDate.tax,
+          concept: dueDate.concept,
+          dueDate: dueDate.dueDate,
+          clientId: dueDate.client,
+          clientName: client.name,
+        })
+        .from(dueDate)
+        .leftJoin(client, eq(dueDate.client, client.id))
+        .where(
+          and(
+            inArray(dueDate.client, userClientIds),
+            gte(dueDate.dueDate, from),
+            lte(dueDate.dueDate, to)
+          )
+        )
+        .orderBy(dueDate.dueDate),
+      db
+        .select({
+          id: debt.id,
+          tax: debt.tax,
+          concept: debt.concept,
+          dueDate: debt.dueDate,
+          balance: debt.balance,
+          clientId: debt.client,
+          clientName: client.name,
+        })
+        .from(debt)
+        .leftJoin(client, eq(debt.client, client.id))
+        .where(
+          and(
+            inArray(debt.client, userClientIds),
+            gte(debt.dueDate, from),
+            lte(debt.dueDate, to)
+          )
+        )
+        .orderBy(debt.dueDate),
+    ]);
+
+    return { dueDates, debts };
+  });

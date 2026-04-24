@@ -99,6 +99,12 @@ export function ClientsTable() {
       accessorKey: 'hasErrors',
       header: 'Estado',
       enableSorting: false,
+      filterFn: (row, _columnId, filterValue) => {
+        if (!filterValue) return true;
+        if (filterValue === 'error') return row.original.hasErrors === true;
+        if (filterValue === 'ok') return row.original.hasErrors !== true;
+        return true;
+      },
       cell: ({ row }) =>
         row.original.hasErrors ? (
           <Tooltip>
@@ -205,12 +211,11 @@ export function ClientsTable() {
         searchPlaceholder="Buscar por nombre, CUIT..."
         filters={[
           {
-            columnId: 'status',
+            columnId: 'hasErrors',
             label: 'Estado',
             options: [
-              { label: 'Activo', value: 'active' },
-              { label: 'Inactivo', value: 'inactive' },
-              { label: 'Pendiente', value: 'pending' },
+              { label: 'Sin errores', value: 'ok' },
+              { label: 'Con errores', value: 'error' },
             ],
           },
         ]}

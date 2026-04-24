@@ -30,7 +30,7 @@ import {
 } from './ui/dropdown-menu';
 import { authClient } from '@/lib/auth-client';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
-import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate } from '@tanstack/react-router';
 import { CreateClientDialog } from './create-client-dialog';
 import { useOrgSwitch } from '@/contexts/org-switch-context';
@@ -108,7 +108,7 @@ function NavGroupLabel({ children }: { children: React.ReactNode }) {
 /* ─── Main sidebar ─── */
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { isMobile } = useSidebar();
-  const { data: user } = useSuspenseQuery(userQuery);
+  const { data: user } = useQuery(userQuery);
   const { data: activeOrg } = authClient.useActiveOrganization();
   const { data: organizations } = authClient.useListOrganizations();
   const { runOrgSwitch } = useOrgSwitch();
@@ -303,6 +303,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <NavItem to="/jobs" icon={Clock} label="Trabajos" />
           <NavItem to="/invoices" icon={FileText} label="Facturas" />
           <NavItem to="/sueldos" icon={DollarSign} label="Sueldos" />
+          <NavItem to="/vencimientos" icon={Calendar} label="Vencimientos" />
 
           <NavGroupLabel>Cuenta</NavGroupLabel>
 

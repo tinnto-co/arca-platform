@@ -9,7 +9,15 @@ import {
 import appCss from '@/styles/app.css?url';
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
 import { Toaster } from '@/components/ui/sonner';
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,         // 30s — no refetch si datos son frescos
+      gcTime: 5 * 60_000,        // 5min — mantener en cache
+      refetchOnWindowFocus: false, // no refetch al volver al tab
+    },
+  },
+});
 export const Route = createRootRoute({
   notFoundComponent: () => (
     <div className="flex items-center justify-center h-screen">

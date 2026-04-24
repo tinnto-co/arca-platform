@@ -8,7 +8,6 @@ import { MobileNavbar } from '@/components/mobile-navbar';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { OrgSwitchProvider } from '@/contexts/org-switch-context';
 import { createFileRoute, Outlet, redirect } from '@tanstack/react-router';
-import { Suspense } from 'react';
 
 export const Route = createFileRoute('/_authed')({
   component: RouteComponent,
@@ -36,9 +35,7 @@ function RouteComponent() {
   return (
     <OrgSwitchProvider>
       <SidebarProvider defaultOpen={true} className="h-svh">
-        <Suspense fallback={<div>Loading...</div>}>
-          <AppSidebar />
-        </Suspense>
+        <AppSidebar />
         <SidebarInset className="min-h-0 overflow-y-auto">
           <div className="bg-[var(--arca-bg)] min-w-0 pb-20 md:pb-0">
             <Outlet />

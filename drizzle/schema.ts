@@ -1,5 +1,6 @@
 import {
   boolean,
+  index,
   jsonb,
   numeric,
   pgTable,
@@ -58,7 +59,9 @@ export const client = pgTable("client", {
   registeredAt: timestamp("registered_at").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => [
+  index('idx_client_org').on(table.organizationId),
+]);
 
 export const profile = pgTable("profile", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -242,7 +245,9 @@ export const notification = pgTable("notification", {
   opened: boolean("opened").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => [
+  index('idx_notification_client_opened').on(table.client, table.opened),
+]);
 
 export const invoice = pgTable("invoice", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -301,6 +306,8 @@ export const invoice = pgTable("invoice", {
     name: "invoice_profile_id_profile_id_fk"
   }).onDelete("cascade"),
   unique("invoice_client_auth_type_unique").on(table.client, table.authorizationNumber, table.type),
+  index('idx_invoice_client').on(table.client),
+  index('idx_invoice_client_date').on(table.client, table.emitionDate),
 ]);
 
 export const dueDate = pgTable("due_date", {
@@ -317,7 +324,9 @@ export const dueDate = pgTable("due_date", {
   detail: text("detail").notNull().default(""),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => [
+  index('idx_duedate_client_date').on(table.client, table.dueDate),
+]);
 
 export const debt = pgTable("debt", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -336,7 +345,9 @@ export const debt = pgTable("debt", {
   punitiveInterest: numeric("punitive_interest").notNull().default("0"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => [
+  index('idx_debt_client_date').on(table.client, table.dueDate),
+]);
 
 
 export const movements = pgTable("movements", {
