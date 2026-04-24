@@ -351,6 +351,51 @@ export const markNotificationOpened = createServerFn({
     return { opened: true };
   });
 
+export const markNotificationUnread = createServerFn({
+  method: 'POST',
+})
+  .inputValidator(z.object({ id: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const orgClientIds = await getOrgClientIds(orgId);
+    if (orgClientIds.length === 0) throw new Error('Unauthorized');
+
+    const [updated] = await db
+      .update(notification)
+      .set({ opened: false, updatedAt: new Date() })
+      .where(
+        and(
+          eq(notification.id, ctx.data.id),
+          inArray(notification.client, orgClientIds)
+        )
+      )
+      .returning();
+
+    if (!updated) throw new Error('Notificación no encontrada o sin acceso');
+    return { opened: false };
+  });
+
+export const markAllNotificationsRead = createServerFn({
+  method: 'POST',
+}).handler(async () => {
+  const { orgId } = await getSessionWithOrg();
+  const orgClientIds = await getOrgClientIds(orgId);
+  if (orgClientIds.length === 0) return { count: 0 };
+
+  const updated = await db
+    .update(notification)
+    .set({ opened: true, updatedAt: new Date() })
+    .where(
+      and(
+        inArray(notification.client, orgClientIds),
+        eq(notification.opened, false)
+      )
+    )
+    .returning({ id: notification.id });
+
+  return { count: updated.length };
+});
+
 export const deleteNotification = createServerFn({
   method: 'POST',
 })

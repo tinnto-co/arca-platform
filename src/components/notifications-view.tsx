@@ -2,10 +2,12 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Mail,
+  MailOpen,
   Search,
   Calendar,
   User,
   Trash2,
+  CheckCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -26,6 +28,8 @@ import {
   deleteNotification,
   getNotification,
   markNotificationOpened,
+  markNotificationUnread,
+  markAllNotificationsRead,
 } from '@/actions/notification';
 import { getClients, getClientProfiles } from '@/actions/client';
 import { cn } from '@/lib/utils';
@@ -178,6 +182,28 @@ export function NotificationsView({
     mutationFn: (id: string) => markNotificationOpened({ data: { id } }),
     onSuccess: () => {
       invalidateNotificationQueries();
+      queryClient.invalidateQueries({ queryKey: ['pendingNotificationsCount'] });
+    },
+  });
+
+  const markUnreadMutation = useMutation({
+    mutationFn: (id: string) => markNotificationUnread({ data: { id } }),
+    onSuccess: () => {
+      invalidateNotificationQueries();
+      queryClient.invalidateQueries({ queryKey: ['pendingNotificationsCount'] });
+    },
+  });
+
+  const markAllReadMutation = useMutation({
+    mutationFn: () => markAllNotificationsRead(),
+    onSuccess: (result) => {
+      invalidateNotificationQueries();
+      queryClient.invalidateQueries({ queryKey: ['pendingNotificationsCount'] });
+      toast.success(
+        result.count > 0
+          ? `${result.count} notificación(es) marcadas como leídas`
+          : 'No hay notificaciones sin leer'
+      );
     },
   });
 
@@ -278,14 +304,25 @@ export function NotificationsView({
         <div className="w-1/3 border-r flex flex-col bg-muted/30 min-w-0">
           {/* Search and Filters */}
           <div className="p-4 border-b space-y-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar notificaciones..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar notificaciones..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => markAllReadMutation.mutate()}
+                disabled={markAllReadMutation.isPending}
+                title="Marcar todas como leídas"
+              >
+                <CheckCheck className="h-4 w-4" />
+              </Button>
             </div>
             {!clientIdProp ? (
               <SearchableSelect
@@ -379,6 +416,24 @@ export function NotificationsView({
                             </span>
                           </div>
                         </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (notification.opened) {
+                              markUnreadMutation.mutate(notification.id);
+                            } else {
+                              markOpenedMutation.mutate(notification.id);
+                            }
+                          }}
+                          className="shrink-0 p-1 rounded hover:bg-muted transition-colors"
+                          title={notification.opened ? 'Marcar como no leída' : 'Marcar como leída'}
+                        >
+                          {notification.opened ? (
+                            <Mail className="h-3.5 w-3.5 text-muted-foreground" />
+                          ) : (
+                            <MailOpen className="h-3.5 w-3.5 text-muted-foreground" />
+                          )}
+                        </button>
                       </div>
                     </div>
                   ))}

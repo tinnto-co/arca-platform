@@ -383,7 +383,7 @@ export const getTopClients = createServerFn({ method: 'GET' })
       .select({
         id: client.id,
         name: client.name,
-        cuit: client.cuit,
+        cuit: client.identityNumber,
       })
       .from(client)
       .where(eq(client.organizationId, orgId));
