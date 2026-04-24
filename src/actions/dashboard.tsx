@@ -2,7 +2,7 @@ import { createServerFn } from '@tanstack/react-start';
 import z from 'zod';
 import { db } from '@/lib/db';
 import { client, invoice, debt, dueDate, notification } from '@/drizzle/schema';
-import { eq, and, gte, lte, sql, inArray } from 'drizzle-orm';
+import { eq, and, gte, lte, sql, inArray, isNull } from 'drizzle-orm';
 import { getSessionWithOrg } from '@/actions/helpers';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -564,3 +564,91 @@ export const getCalendarDueDates = createServerFn({ method: 'GET' })
 
     return { dueDates, debts };
   });
+
+// ── getExceptionsSummary ───────────────────────────────────────────────────
+
+export const getExceptionsSummary = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    const { orgId } = await getSessionWithOrg();
+
+    const userClients = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(eq(client.organizationId, orgId));
+
+    const userClientIds = userClients.map((c) => c.id);
+
+    if (userClientIds.length === 0) {
+      return {
+        overdueDebtCount: 0,
+        criticalNotificationCount: 0,
+        upcomingDueDateCount: 0,
+        clientErrorCount: 0,
+      };
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const threeDaysFromNow = new Date(today);
+    threeDaysFromNow.setDate(today.getDate() + 3);
+    threeDaysFromNow.setHours(23, 59, 59, 999);
+
+    const [overdueDebts, criticalNotifs, upcomingDueDates, clientErrors] =
+      await Promise.all([
+        // Overdue open debts: status='open' and dueDate < today
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(debt)
+          .where(
+            and(
+              inArray(debt.client, userClientIds),
+              eq(debt.status, 'open'),
+              lte(debt.dueDate, today)
+            )
+          ),
+
+        // Critical unresolved notifications
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(notification)
+          .where(
+            and(
+              inArray(notification.client, userClientIds),
+              eq(notification.severity, 'critical'),
+              isNull(notification.resolvedAt)
+            )
+          ),
+
+        // Upcoming due dates within 3 days that are not completed
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(dueDate)
+          .where(
+            and(
+              inArray(dueDate.client, userClientIds),
+              gte(dueDate.dueDate, today),
+              lte(dueDate.dueDate, threeDaysFromNow),
+              isNull(dueDate.completedAt)
+            )
+          ),
+
+        // Clients with errors
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(client)
+          .where(
+            and(
+              eq(client.organizationId, orgId),
+              eq(client.hasErrors, true)
+            )
+          ),
+      ]);
+
+    return {
+      overdueDebtCount: Number(overdueDebts[0]?.count ?? 0),
+      criticalNotificationCount: Number(criticalNotifs[0]?.count ?? 0),
+      upcomingDueDateCount: Number(upcomingDueDates[0]?.count ?? 0),
+      clientErrorCount: Number(clientErrors[0]?.count ?? 0),
+    };
+  }
+);
