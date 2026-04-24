@@ -1,3 +1,23 @@
+## 2026-04-24 - US-017
+- Added `get_open_notifications` tool in `src/routes/api/agent.ts`
+- Accepts: `clientName` (optional, partial ILIKE match), `severity` (optional enum), `limit` (default 10, max 100)
+- Resolves client IDs from org, filters `notification` joined with `client`, applies `profile IS NOT NULL` and `resolvedAt IS NULL` conditions
+- Returns structured JSON: `{ cliente, total, notifications: [{ id, mensaje, severidad, categoria, resumen, fechaPublicacion, leida, cliente }] }`
+- Added `inArray` to drizzle-orm imports
+- Updated agent system prompt to mention `get_open_notifications`
+- Files changed: `src/routes/api/agent.ts`
+- **How to verify:**
+  - Run `bun run dev`, open `/chat/<id>`
+  - Ask "¿Cuáles son las notificaciones críticas de [cliente]?" → agent should call `get_open_notifications` with severity='critical'
+  - Ask "¿Hay notificaciones sin resolver?" → agent should return open notifications across all clients
+  - Ask "Mostrame las últimas 5 notificaciones de [cliente]" → tool called with limit=5
+- **Learnings for future iterations:**
+  - `inArray(notification.client, clientIds)` is used instead of a JOIN with `orgId` filter — because client IDs are already resolved to org scope
+  - `isNotNull(notification.profile)` is required per schema convention (NULL profile = notification from another org's scrape)
+  - `isNull(notification.resolvedAt)` filters to only open/unresolved notifications
+  - For optional clientName filtering: load all org clients first, then filter in-memory with `.toLowerCase().includes()` for case-insensitive partial match
+---
+
 ## 2026-04-24 - US-013
 - Added `sourceConfidence` (text default 'unknown') and `importedManually` (boolean default false) columns to `ivaScrape` table in `drizzle/schema.ts`
 - Created migration script `src/scripts/ensure-iva-scrape-source-columns.ts` using `ADD COLUMN IF NOT EXISTS` pattern
