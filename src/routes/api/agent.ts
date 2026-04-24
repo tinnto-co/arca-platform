@@ -11,8 +11,8 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { db, dbReadonly } from '@/lib/db';
-import { agentConversation, agentMessage, agentRun, ivaScrape, profile, client, invoice } from '@/drizzle/schema';
-import { eq, and, sql, ilike, gte, lte } from 'drizzle-orm';
+import { agentConversation, agentMessage, agentRun, ivaScrape, profile, client, invoice, notification, debt, dueDate, job } from '@/drizzle/schema';
+import { eq, and, sql, ilike, gte, lte, isNull, isNotNull, lt, desc } from 'drizzle-orm';
 import {
   INVOICE_TYPES_A,
   INVOICE_TYPES_B,
@@ -345,12 +345,141 @@ REGLAS AL ESCRIBIR QUERIES
 7. Si la pregunta no puede responderse con los datos disponibles, respondé: "No tengo información suficiente en la base de datos para responder eso."
 
 HERRAMIENTAS DISPONIBLES
+- get_client_summary: USÁ ESTE TOOL cuando te pregunten sobre el estado general de un cliente. Devuelve datos del cliente, perfiles, notificaciones abiertas, deudas vencidas, próximos vencimientos y últimos scrapeos.
 - executeQuery: para cualquier consulta SQL general (clientes, facturas, deudas, vencimientos, nómina).
 - getIvaPosition: USÁ SIEMPRE ESTE TOOL para consultas sobre IVA, posición IVA, saldo IVA, crédito/débito fiscal.
   - El parámetro displayMonth es el mes que el usuario quiere ver (ej: "Marzo 2026" → "03/2026"). El tool internamente usa el mes anterior para consultar iva_scrape.
   - NUNCA respondas "no hay datos para X mes" desde la memoria de la conversación. Siempre volvé a llamar al tool con el displayMonth específico que pide el usuario.
   - Devuelve datos de todos los perfiles con totales al final. Para filtrar a uno específico, pasá profileName.`,
           tools: {
+            get_client_summary: tool({
+              description:
+                'Obtiene un resumen completo del estado de un cliente: datos generales, cantidad de perfiles, notificaciones abiertas, deudas vencidas, próximos vencimientos (30 días) y últimas actualizaciones de scraping por tipo. Usá este tool cuando te pregunten sobre el estado general de un cliente.',
+              inputSchema: z.object({
+                clientName: z.string().describe('Nombre del cliente (búsqueda parcial, case-insensitive)'),
+              }),
+              execute: async ({ clientName }) => {
+                const matchingClients = await dbReadonly
+                  .select({
+                    id: client.id,
+                    name: client.name,
+                    identityNumber: client.identityNumber,
+                    fiscalCondition: client.fiscalCondition,
+                    status: client.status,
+                    hasErrors: client.hasErrors,
+                    liquidaSueldos: client.liquidaSueldos,
+                    registeredAt: client.registeredAt,
+                  })
+                  .from(client)
+                  .where(and(eq(client.organizationId, orgId), ilike(client.name, `%${clientName}%`)));
+
+                if (matchingClients.length === 0)
+                  return { error: `No encontré clientes con nombre "${clientName}"` };
+                if (matchingClients.length > 1)
+                  return { error: 'Más de un cliente coincide', options: matchingClients.map((c) => c.name) };
+
+                const foundClient = matchingClients[0];
+                const clientId = foundClient.id;
+                const now = new Date();
+                const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+                const [
+                  profileCountResult,
+                  notificationCountResult,
+                  debtResult,
+                  upcomingDueDates,
+                  lastScrapes,
+                ] = await Promise.all([
+                  dbReadonly
+                    .select({ count: sql<number>`count(*)` })
+                    .from(profile)
+                    .where(eq(profile.client, clientId)),
+
+                  dbReadonly
+                    .select({ count: sql<number>`count(*)` })
+                    .from(notification)
+                    .where(
+                      and(
+                        eq(notification.client, clientId),
+                        isNotNull(notification.profile),
+                        isNull(notification.resolvedAt),
+                      )
+                    ),
+
+                  dbReadonly
+                    .select({
+                      count: sql<number>`count(*)`,
+                      totalBalance: sql<string>`COALESCE(SUM(${debt.balance}::numeric + ${debt.compensatoryInterest}::numeric + ${debt.punitiveInterest}::numeric), 0)`,
+                    })
+                    .from(debt)
+                    .where(
+                      and(
+                        eq(debt.client, clientId),
+                        eq(debt.status, 'open'),
+                        lt(debt.dueDate, now),
+                      )
+                    ),
+
+                  dbReadonly
+                    .select({
+                      tax: dueDate.tax,
+                      concept: dueDate.concept,
+                      dueAt: dueDate.dueDate,
+                      detail: dueDate.detail,
+                    })
+                    .from(dueDate)
+                    .where(
+                      and(
+                        eq(dueDate.client, clientId),
+                        isNull(dueDate.completedAt),
+                        gte(dueDate.dueDate, now),
+                        lte(dueDate.dueDate, in30Days),
+                      )
+                    )
+                    .orderBy(dueDate.dueDate)
+                    .limit(20),
+
+                  dbReadonly
+                    .select({ type: job.type, finishedAt: job.finishedAt })
+                    .from(job)
+                    .where(and(eq(job.clientId, clientId), eq(job.status, 'finished')))
+                    .orderBy(desc(job.finishedAt))
+                    .limit(50),
+                ]);
+
+                const lastScrapesByType: Record<string, string | null> = {};
+                for (const j of lastScrapes) {
+                  if (!lastScrapesByType[j.type]) {
+                    lastScrapesByType[j.type] = j.finishedAt?.toISOString() ?? null;
+                  }
+                }
+
+                return {
+                  cliente: {
+                    nombre: foundClient.name,
+                    cuit: foundClient.identityNumber,
+                    condicionFiscal: foundClient.fiscalCondition,
+                    estado: foundClient.status,
+                    tieneErrores: foundClient.hasErrors,
+                    liquidaSueldos: foundClient.liquidaSueldos,
+                    fechaAlta: foundClient.registeredAt?.toISOString() ?? null,
+                  },
+                  perfiles: { total: profileCountResult[0]?.count ?? 0 },
+                  notificaciones: { abiertas: notificationCountResult[0]?.count ?? 0 },
+                  deudas: {
+                    vencidasAbiertas: debtResult[0]?.count ?? 0,
+                    totalDeuda: debtResult[0]?.totalBalance ?? '0',
+                  },
+                  proximosVencimientos: upcomingDueDates.map((d) => ({
+                    impuesto: d.tax,
+                    concepto: d.concept,
+                    fecha: d.dueAt?.toISOString() ?? null,
+                    detalle: d.detail,
+                  })),
+                  ultimosScrapeos: lastScrapesByType,
+                };
+              },
+            }),
             executeQuery: tool({
               description:
                 'Ejecuta una query SQL SELECT sobre la base de datos. Usá el schema del system prompt para construir la query correcta con los JOINs y filtros necesarios.',
