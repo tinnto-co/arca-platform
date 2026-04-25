@@ -1,3 +1,18 @@
+## 2026-04-24 - US-051
+- Added `taxProjection` table to `drizzle/schema.ts`:
+  - Columns: id (uuid PK), profile_id (uuid FK CASCADE), period (text), tax (text), projected_amount (numeric 14,2), confidence (text nullable), factors (jsonb nullable), generated_at (timestamp default now())
+  - Unique constraint on (profile_id, period, tax)
+- Created `src/scripts/ensure-tax-projection-table.ts` migration script (idempotent, CREATE TABLE IF NOT EXISTS)
+- Ran migration script — table created OK (exit 124 expected)
+- Files changed: `drizzle/schema.ts`, `src/scripts/ensure-tax-projection-table.ts` (new)
+- **How to verify:**
+  - Run: `docker exec arca-local-db psql -U arca -d arca -c '\d tax_projection'` to confirm table with all columns
+  - Or: `timeout 60 bun run src/scripts/ensure-tax-projection-table.ts` — prints "Tabla tax_projection: OK."
+- **Learnings for future iterations:**
+  - Pre-existing typecheck errors in legacy scripts (map-import-empleados-a-convenios.ts, report-unmatched-import-empleados.ts, etc.) are not regressions — confirmed pattern
+  - Migration script exit 124 with output "OK" means the script ran successfully before the timeout killed the DB connection cleanup
+---
+
 ## 2026-04-24 - US-047
 - Created `src/routes/_authed/bank/index.tsx` — bank reconciliation UI page
   - Client selector dropdown at top
