@@ -842,6 +842,33 @@
   - `numeric` default values must be quoted strings in Drizzle: `.default("0")` not `.default(0)`
 ---
 
+## 2026-04-24 - US-049
+- Created `src/actions/accounting.tsx` with all 8 accounting server functions:
+  - `listAccounts(clientId)`: GET, returns chart of accounts ordered by code
+  - `createAccount(clientId, code, name, type, parentId?)`: POST, requires canWrite, validates client and optional parent belong to org, inserts account
+  - `updateAccount(id, name?, active?)`: POST, requires canWrite, validates account belongs to org, updates name and/or active flag
+  - `createJournalEntry(clientId, entryDate, description, lines[])`: POST, requires canWrite, validates double-entry balance (sum debits = sum credits, tolerance 0.001), validates all accounts belong to client, inserts entry + lines atomically
+  - `listJournalEntries(clientId, from?, to?)`: GET, returns entries ordered by date desc
+  - `getJournalEntry(id)`: GET, returns entry + lines joined with account code/name/type
+  - `getLedger(clientId, accountId, from?, to?)`: GET, returns all lines for a specific account joined with entry metadata + totals
+  - `getTrialBalance(clientId, from, to)`: GET, returns all active accounts with aggregated debit/credit totals + grand totals
+- All functions call `getSessionWithOrg()` and scope via org ownership
+- Private helpers: `ensureClientBelongsToOrg`, `ensureAccountBelongsToOrg`, `ensureJournalEntryBelongsToOrg`
+- Files changed: `src/actions/accounting.tsx` (new)
+- **How to verify:**
+  - Run `bun run dev`
+  - Call `createAccount({ clientId: '<uuid>', code: '1.1.01', name: 'Caja', type: 'asset' })` — inserts into accounting_account
+  - Call `listAccounts({ clientId: '<uuid>' })` — returns accounts ordered by code
+  - Call `createJournalEntry({ clientId: '<uuid>', entryDate: '2026-04-01', lines: [{ accountId: '<debitAccId>', debit: 1000, credit: 0 }, { accountId: '<creditAccId>', debit: 0, credit: 1000 }] })` — inserts entry + 2 lines
+  - Try with unbalanced lines (debit ≠ credit) → throws "El asiento no está balanceado: ..."
+  - Call `getTrialBalance({ clientId: '<uuid>', from: '2026-01-01', to: '2026-12-31' })` — returns all accounts with totals
+- **Learnings for future iterations:**
+  - Double-entry validation: use `Math.abs(totalDebit - totalCredit) > 0.001` tolerance to avoid floating-point issues
+  - `leftJoin` in trial balance allows accounts with zero activity to appear (important for full chart of accounts view)
+  - Account-per-line validation (checking each line's accountId belongs to the client) is O(n) queries — acceptable for typical journal entry sizes (2-20 lines)
+  - `sql<string>\`COALESCE(SUM(...)::numeric, 0)\`` used in trial balance — returns string from PostgreSQL, parse with `parseFloat()` in UI
+---
+
 ## Codebase Patterns
 - Migration scripts live in `src/scripts/` and use `ADD COLUMN IF NOT EXISTS` via `db.execute(sql.raw(...))` for idempotent migrations
 - Pre-existing TS errors exist in some `src/scripts/` files (map-import-empleados, report-unmatched, etc.) — these are not related to our changes
