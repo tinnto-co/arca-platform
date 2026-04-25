@@ -20,6 +20,7 @@ import {
   Bot,
   AlertTriangle,
   Landmark,
+  BookOpen,
 } from 'lucide-react';
 
 import { Sidebar, SidebarRail, useSidebar } from '@/components/ui/sidebar';
@@ -322,6 +323,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             urgentCount={openAlertsCount}
           />
           <NavItem to="/bank" icon={Landmark} label="Banco" />
+          <NavItem to="/accounting" icon={BookOpen} label="Contabilidad" />
           <NavItem to="/chat" icon={Bot} label="Chats" />
 
           <NavGroupLabel>Cuenta</NavGroupLabel>
