@@ -1283,3 +1283,22 @@ export const journalEntryLine = pgTable("journal_entry_line", {
   credit: numeric("credit", { precision: 14, scale: 2 }).notNull().default("0"),
   description: text("description"),
 });
+
+/**
+ * Tax projections per profile and period for estimated vs actual tracking.
+ * Unique on (profile_id, period, tax).
+ */
+export const taxProjection = pgTable("tax_projection", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  profileId: uuid("profile_id")
+    .notNull()
+    .references(() => profile.id, { onDelete: "cascade" }),
+  period: text("period").notNull(),
+  tax: text("tax").notNull(),
+  projectedAmount: numeric("projected_amount", { precision: 14, scale: 2 }).notNull(),
+  confidence: text("confidence"),
+  factors: jsonb("factors"),
+  generatedAt: timestamp("generated_at").defaultNow().notNull(),
+}, (table) => [
+  unique("tax_projection_profile_id_period_tax_unique").on(table.profileId, table.period, table.tax),
+]);
