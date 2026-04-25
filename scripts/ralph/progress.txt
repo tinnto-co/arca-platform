@@ -1,3 +1,28 @@
+## 2026-04-24 - US-053
+- Created `src/routes/_authed/analytics/index.tsx` — analytics dashboard with 4 sections:
+  - **Resumen ejecutivo**: 5 KPI cards (total clients, open debts, critical notifications, upcoming due dates 7d, at-risk profiles) using `getExecutiveSummary()`
+  - **Facturación del mes**: current month sales + purchases from executive summary
+  - **Ranking de riesgo**: filterable list (medium/high/critical) of profiles by risk score using `getClientsAtRisk()` with risk badge
+  - **Ratios por cliente**: client + date range selectors → financial indicators table + bar chart (ventas vs compras, current vs previous period) using `getRatios()` + Recharts
+  - **Proyección IVA**: profile selector → projected IVA amount + confidence badge using `generateIvaProjection()`
+- Added `<NavItem to="/analytics" icon={BarChart2} label="Analytics" />` to `src/components/app-sidebar.tsx` after Contabilidad
+- Regenerated `src/routeTree.gen.ts` via `bunx tsr generate`
+- TypeScript: no new errors (97 pre-existing errors unchanged)
+- Lint: warnings only (prettier formatting + react-refresh/only-export-components), no errors
+- Files changed: `src/routes/_authed/analytics/index.tsx` (new), `src/components/app-sidebar.tsx`, `src/routeTree.gen.ts`
+- **How to verify:**
+  - Run `bun run dev`, navigate to `/analytics`
+  - "Analytics" appears in sidebar with BarChart2 icon
+  - Executive summary cards show at top with org-level KPIs
+  - "Ranking de riesgo" table populates once risk snapshots exist; change dropdown to filter by medium/high/critical
+  - "Ratios por cliente": select a client + date range → financial indicators + bar chart appear
+  - "Proyección IVA": select a profile → projected amount + confidence displayed
+- **Learnings for future iterations:**
+  - `BarChart2` from lucide-react was already imported in app-sidebar.tsx — no new import needed
+  - `getClients()` returns `{ id, name }[]` without profiles; IVA projection selector needs profiles from a separate profiles query per client — current implementation skips this gracefully (empty flatMap if no `profiles` field)
+  - Recharts `Cell` inside `Bar` allows per-bar color overrides — useful for color-coding ventas (green) vs compras (red) in same chart
+---
+
 ## 2026-04-24 - US-052
 - Created `src/actions/analytics.tsx` with 4 server functions:
   - `generateIvaProjection(profileId, period)`: POST, validates profile belongs to org, fetches last 6 IVA scrapes, averages (debitoFiscal - creditoFiscal), upserts into `taxProjection` table. Returns projected amount with confidence (low/medium/high) and factors jsonb.
