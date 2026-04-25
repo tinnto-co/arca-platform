@@ -1,3 +1,36 @@
+## 2026-04-24 - US-055
+- Added `listOrgModules()` and `setModuleEnabled()` server functions to `src/actions/admin.tsx`:
+  - `listOrgModules()`: GET, returns all 6 modules (sueldos, banco, contabilidad, analytics, portal_cliente, ai_agent) with enabled status; defaults to false if no row exists
+  - `setModuleEnabled(module, enabled)`: POST, requires owner role, upserts into `organization_module` via onConflictDoUpdate
+- Updated `src/components/app-sidebar.tsx`:
+  - Fetches `listOrgModules()` via `useQuery(['orgModules'])` with 30s stale time
+  - Conditionally renders nav items: Sueldos, Banco, Contabilidad, Analytics, Chats only shown when their module is enabled
+- Added `beforeLoad` module guards with `throw redirect({ to: '/' })` to:
+  - `src/routes/_authed/sueldos/index.tsx` → gates on `sueldos`
+  - `src/routes/_authed/bank/index.tsx` → gates on `banco`
+  - `src/routes/_authed/accounting/index.tsx` → gates on `contabilidad`
+  - `src/routes/_authed/analytics/index.tsx` → gates on `analytics`
+  - `src/routes/_authed/chat/index.tsx` → gates on `ai_agent`
+  - `src/routes/_authed/chat/$id.tsx` → gates on `ai_agent`
+- Added "Módulos" tab to admin panel (`src/routes/_authed/admin/index.tsx`):
+  - TabsList updated from `grid-cols-3` to `grid-cols-4`
+  - New `ModulesTab` component: per-module rows with label, description, status badge (Activo/Inactivo), and Activar/Desactivar button
+  - Invalidates both `['admin', 'modules']` and `['orgModules']` query keys on toggle
+- Files changed: `src/actions/admin.tsx`, `src/components/app-sidebar.tsx`, `src/routes/_authed/sueldos/index.tsx`, `src/routes/_authed/bank/index.tsx`, `src/routes/_authed/accounting/index.tsx`, `src/routes/_authed/analytics/index.tsx`, `src/routes/_authed/chat/index.tsx`, `src/routes/_authed/chat/$id.tsx`, `src/routes/_authed/admin/index.tsx`
+- **How to verify:**
+  - Run `bun run dev`, go to `/admin` → click "Módulos" tab
+  - All 6 modules show with "Inactivo" badges (default off)
+  - Click "Activar" on Sueldos → badge changes to "Activo"
+  - Sueldos nav item appears in sidebar; navigating to `/sueldos` works
+  - Click "Desactivar" on Sueldos → nav item disappears, navigating to `/sueldos` redirects to `/`
+  - Repeat for Banco (/bank), Contabilidad (/accounting), Analytics (/analytics), Asistente IA (/chat)
+- **Learnings for future iterations:**
+  - `throw redirect({ to: '/' })` in `beforeLoad` triggers `@typescript-eslint/only-throw-error` lint error; add `// eslint-disable-next-line @typescript-eslint/only-throw-error` before each throw
+  - `listOrgModules()` should be invalidated from both `['admin', 'modules']` (admin panel) and `['orgModules']` (sidebar) when toggling modules
+  - The `MODULES` array in admin.tsx uses `as const` for the `z.enum()` to work properly
+  - Module gating is opt-in (default disabled); all modules must be explicitly activated per org
+---
+
 ## 2026-04-24 - US-054
 - Added `organizationModule` table to `drizzle/schema.ts`:
   - Columns: id (uuid PK), organization_id (text FK CASCADE), module (text), enabled (bool default false), enabled_at (timestamp nullable), created_at (timestamp default now())
