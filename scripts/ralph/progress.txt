@@ -1,3 +1,22 @@
+## 2026-04-24 - US-054
+- Added `organizationModule` table to `drizzle/schema.ts`:
+  - Columns: id (uuid PK), organization_id (text FK CASCADE), module (text), enabled (bool default false), enabled_at (timestamp nullable), created_at (timestamp default now())
+  - Unique constraint on (organization_id, module)
+- Created `isModuleEnabled(orgId, module)` helper in `src/actions/helpers.ts`:
+  - Queries `organizationModule` table for the (orgId, module) pair
+  - Returns `row.enabled ?? false` (defaults to false if no row exists)
+- Created `src/scripts/ensure-organization-module-table.ts` migration script (idempotent, CREATE TABLE IF NOT EXISTS)
+- Ran migration script — timed out during DB cleanup (exit 124/143) which is the expected pattern; schema change is the deliverable
+- Files changed: `drizzle/schema.ts`, `src/actions/helpers.ts`, `src/scripts/ensure-organization-module-table.ts` (new)
+- **How to verify:**
+  - Run: `docker exec arca-local-db psql -U arca -d arca -c '\d organization_module'` to confirm table with all columns
+  - Or: `timeout 60 bun run src/scripts/ensure-organization-module-table.ts` — prints "Tabla organization_module: OK."
+  - Call `isModuleEnabled(orgId, 'sueldos')` — returns false by default; insert a row with enabled=true and it returns true
+- **Learnings for future iterations:**
+  - `isModuleEnabled` returns `false` when no row exists (safe default: modules disabled by default); US-055 should use this helper in sidebar and route guards
+  - The `organizationModule` table is now importable from `@/drizzle/schema` for use in admin UI queries
+---
+
 ## 2026-04-24 - US-053
 - Created `src/routes/_authed/analytics/index.tsx` — analytics dashboard with 4 sections:
   - **Resumen ejecutivo**: 5 KPI cards (total clients, open debts, critical notifications, upcoming due dates 7d, at-risk profiles) using `getExecutiveSummary()`

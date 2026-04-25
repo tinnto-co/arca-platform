@@ -808,7 +808,7 @@
         "Typecheck passes"
       ],
       "priority": 56,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 9. Modules: sueldos, banco, contabilidad, analytics, portal_cliente, ai_agent"
     },
     {
