@@ -1,8 +1,10 @@
 import {
   createFileRoute,
+  redirect,
   useNavigate,
   useRouterState,
 } from '@tanstack/react-router';
+import { listOrgModules } from '@/actions/admin';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
 import type { UIMessage } from 'ai';
@@ -33,6 +35,13 @@ import {
 import { cn } from '@/lib/utils';
 
 export const Route = createFileRoute('/_authed/chat/$id')({
+  beforeLoad: async () => {
+    const modules = await listOrgModules();
+    const enabled =
+      modules.find((m) => m.module === 'ai_agent')?.enabled ?? false;
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    if (!enabled) throw redirect({ to: '/' });
+  },
   component: ChatPage,
 });
 
@@ -100,7 +109,9 @@ function ChatPage() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [chatsPopoverOpen, setChatsPopoverOpen] = useState(false);
   const chatsPopoverRef = useRef<HTMLDivElement>(null);
-  const [expandedToolCalls, setExpandedToolCalls] = useState<Set<string>>(new Set());
+  const [expandedToolCalls, setExpandedToolCalls] = useState<Set<string>>(
+    new Set()
+  );
   const toggleToolCalls = (msgId: string) => {
     setExpandedToolCalls((prev) => {
       const next = new Set(prev);
@@ -119,7 +130,7 @@ function ChatPage() {
   const initialSentForIdRef = useRef<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
   const chat = useChat({
     id,
     messages: [],
@@ -318,7 +329,13 @@ function ChatPage() {
   };
 
   const mergedMessages = chat.messages.reduce<
-    { role: string; text: string; id: string; createdAt?: Date; toolCalls?: { toolName: string; args: unknown }[] }[]
+    {
+      role: string;
+      text: string;
+      id: string;
+      createdAt?: Date;
+      toolCalls?: { toolName: string; args: unknown }[];
+    }[]
   >((acc, message) => {
     const text =
       message.parts
@@ -326,13 +343,16 @@ function ChatPage() {
         .map((p) => ('text' in p ? p.text : ''))
         .join('') ?? String((message as any).content ?? '');
 
-    const toolCallParts = (message.parts ?? []).filter((p) => p.type === 'tool-invocation');
-    const toolCalls = toolCallParts.length > 0
-      ? toolCallParts.map((p) => ({
-          toolName: (p as any).toolInvocation?.toolName ?? '',
-          args: (p as any).toolInvocation?.args ?? {},
-        }))
-      : undefined;
+    const toolCallParts = (message.parts ?? []).filter(
+      (p) => p.type === 'tool-invocation'
+    );
+    const toolCalls =
+      toolCallParts.length > 0
+        ? toolCallParts.map((p) => ({
+            toolName: (p as any).toolInvocation?.toolName ?? '',
+            args: (p as any).toolInvocation?.args ?? {},
+          }))
+        : undefined;
 
     if (!text) return acc;
     const prev = acc[acc.length - 1];
@@ -646,20 +666,27 @@ function ChatPage() {
                             onClick={() => toggleToolCalls(msg.id)}
                             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
                           >
-                            {expandedToolCalls.has(msg.id)
-                              ? <ChevronDown className="h-3 w-3" />
-                              : <ChevronRight className="h-3 w-3" />
-                            }
+                            {expandedToolCalls.has(msg.id) ? (
+                              <ChevronDown className="h-3 w-3" />
+                            ) : (
+                              <ChevronRight className="h-3 w-3" />
+                            )}
                             Fuentes consultadas ({msg.toolCalls.length})
                           </button>
                           {expandedToolCalls.has(msg.id) && (
                             <div className="mt-1.5 rounded-md border border-border bg-muted/40 px-3 py-2 space-y-1">
                               {msg.toolCalls.map((tc, i) => (
-                                <div key={i} className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <div
+                                  key={i}
+                                  className="flex items-center gap-2 text-xs text-muted-foreground"
+                                >
                                   <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]">
                                     {tc.toolName}
                                   </span>
-                                  <span>{toolCallDescriptions[tc.toolName] ?? tc.toolName}</span>
+                                  <span>
+                                    {toolCallDescriptions[tc.toolName] ??
+                                      tc.toolName}
+                                  </span>
                                 </div>
                               ))}
                             </div>

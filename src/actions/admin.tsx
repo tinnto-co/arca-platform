@@ -4,7 +4,9 @@ import z from 'zod';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { member, organization, user } from '@/drizzle/auth';
+import { organizationModule } from '@/drizzle/schema';
 import { eq, and } from 'drizzle-orm';
+import { getSessionWithOrg } from './helpers';
 
 async function requireOwner() {
   const session = await auth.api.getSession({ headers: getRequestHeaders() });
@@ -180,6 +182,65 @@ export const cancelInvitation = createServerFn({
       headers: getRequestHeaders(),
       body: { invitationId: ctx.data.invitationId },
     });
+
+    return { success: true };
+  });
+
+const MODULES = [
+  'sueldos',
+  'banco',
+  'contabilidad',
+  'analytics',
+  'portal_cliente',
+  'ai_agent',
+] as const;
+
+export type OrgModule = (typeof MODULES)[number];
+
+export const listOrgModules = createServerFn({
+  method: 'GET',
+}).handler(async () => {
+  const { orgId } = await getSessionWithOrg();
+
+  const rows = await db
+    .select()
+    .from(organizationModule)
+    .where(eq(organizationModule.organizationId, orgId as string));
+
+  return MODULES.map((m) => ({
+    module: m,
+    enabled: rows.find((r) => r.module === m)?.enabled ?? false,
+    enabledAt: rows.find((r) => r.module === m)?.enabledAt ?? null,
+  }));
+});
+
+export const setModuleEnabled = createServerFn({
+  method: 'POST',
+})
+  .inputValidator(
+    z.object({
+      module: z.enum(MODULES),
+      enabled: z.boolean(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await requireOwner();
+
+    await db
+      .insert(organizationModule)
+      .values({
+        organizationId: orgId,
+        module: ctx.data.module,
+        enabled: ctx.data.enabled,
+        enabledAt: ctx.data.enabled ? new Date() : null,
+      })
+      .onConflictDoUpdate({
+        target: [organizationModule.organizationId, organizationModule.module],
+        set: {
+          enabled: ctx.data.enabled,
+          enabledAt: ctx.data.enabled ? new Date() : null,
+        },
+      });
 
     return { success: true };
   });

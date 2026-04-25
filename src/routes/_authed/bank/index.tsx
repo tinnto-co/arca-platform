@@ -1,4 +1,5 @@
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, redirect } from '@tanstack/react-router';
+import { listOrgModules } from '@/actions/admin';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -24,6 +25,13 @@ import {
 import { toast } from 'sonner';
 
 export const Route = createFileRoute('/_authed/bank/')({
+  beforeLoad: async () => {
+    const modules = await listOrgModules();
+    const enabled =
+      modules.find((m) => m.module === 'banco')?.enabled ?? false;
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    if (!enabled) throw redirect({ to: '/' });
+  },
   component: BankPage,
 });
 
@@ -209,7 +217,8 @@ function TransactionItem({ tx }: { tx: TransactionRow }) {
           }}
         >
           {tx.matches[0].matchType === 'manual' ? 'Manual' : 'Auto'}
-          {tx.matches[0].confidence && ` ${Math.round(parseFloat(tx.matches[0].confidence))}%`}
+          {tx.matches[0].confidence &&
+            ` ${Math.round(parseFloat(tx.matches[0].confidence))}%`}
         </span>
       )}
 
@@ -245,10 +254,18 @@ function CreateAccountForm({
   const createMutation = useMutation({
     mutationFn: () =>
       createBankAccount({
-        data: { clientId, bankName, accountNumber: accountNumber || undefined, alias: alias || undefined, cbu: cbu || undefined },
+        data: {
+          clientId,
+          bankName,
+          accountNumber: accountNumber || undefined,
+          alias: alias || undefined,
+          cbu: cbu || undefined,
+        },
       }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['bankAccounts', clientId] });
+      void queryClient.invalidateQueries({
+        queryKey: ['bankAccounts', clientId],
+      });
       toast.success('Cuenta bancaria creada');
       setBankName('');
       setAccountNumber('');
@@ -266,7 +283,9 @@ function CreateAccountForm({
       </div>
       <div className="flex flex-wrap gap-2 items-end">
         <div className="flex flex-col gap-1">
-          <label className="text-[11px] text-[var(--arca-ink-3)]">Banco *</label>
+          <label className="text-[11px] text-[var(--arca-ink-3)]">
+            Banco *
+          </label>
           <input
             value={bankName}
             onChange={(e) => setBankName(e.target.value)}
@@ -275,7 +294,9 @@ function CreateAccountForm({
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-[11px] text-[var(--arca-ink-3)]">N° de cuenta</label>
+          <label className="text-[11px] text-[var(--arca-ink-3)]">
+            N° de cuenta
+          </label>
           <input
             value={accountNumber}
             onChange={(e) => setAccountNumber(e.target.value)}
@@ -354,12 +375,19 @@ function BankPage() {
 
   /* Auto-match */
   const autoMatchMutation = useMutation({
-    mutationFn: () => autoMatchTransactions({ data: { bankAccountId: accountId } }),
+    mutationFn: () =>
+      autoMatchTransactions({ data: { bankAccountId: accountId } }),
     onSuccess: (result) => {
       const r = result as { matched: number };
-      void queryClient.invalidateQueries({ queryKey: ['bankTransactions', accountId] });
-      void queryClient.invalidateQueries({ queryKey: ['bankSummary', clientId] });
-      toast.success(`${r.matched} transacción${r.matched !== 1 ? 'es' : ''} conciliada${r.matched !== 1 ? 's' : ''} automáticamente`);
+      void queryClient.invalidateQueries({
+        queryKey: ['bankTransactions', accountId],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ['bankSummary', clientId],
+      });
+      toast.success(
+        `${r.matched} transacción${r.matched !== 1 ? 'es' : ''} conciliada${r.matched !== 1 ? 's' : ''} automáticamente`
+      );
     },
     onError: () => toast.error('Error en la conciliación automática'),
   });
@@ -512,7 +540,9 @@ function BankPage() {
         <ArcaCard>
           <div className="flex flex-col items-center justify-center py-14 text-[var(--arca-ink-3)]">
             <Landmark className="w-8 h-8 mb-2 opacity-40" strokeWidth={1.5} />
-            <p className="text-[13px]">Seleccioná una cuenta para ver transacciones</p>
+            <p className="text-[13px]">
+              Seleccioná una cuenta para ver transacciones
+            </p>
           </div>
         </ArcaCard>
       ) : (

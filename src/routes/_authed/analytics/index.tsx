@@ -1,4 +1,5 @@
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, redirect } from '@tanstack/react-router';
+import { listOrgModules } from '@/actions/admin';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -36,6 +37,13 @@ import {
 } from '@/actions/analytics';
 
 export const Route = createFileRoute('/_authed/analytics/')({
+  beforeLoad: async () => {
+    const modules = await listOrgModules();
+    const enabled =
+      modules.find((m) => m.module === 'analytics')?.enabled ?? false;
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    if (!enabled) throw redirect({ to: '/' });
+  },
   component: AnalyticsPage,
 });
 

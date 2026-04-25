@@ -1,4 +1,5 @@
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, redirect } from '@tanstack/react-router';
+import { listOrgModules } from '@/actions/admin';
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -26,6 +27,13 @@ import { getClientsForSueldos } from '@/actions/client';
 import { PageHeader } from '@/components/shared/page-header';
 
 export const Route = createFileRoute('/_authed/sueldos/')({
+  beforeLoad: async () => {
+    const modules = await listOrgModules();
+    const enabled =
+      modules.find((m) => m.module === 'sueldos')?.enabled ?? false;
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    if (!enabled) throw redirect({ to: '/' });
+  },
   component: RouteComponent,
 });
 
@@ -93,13 +101,41 @@ function RouteComponent() {
             <TabsList className="flex h-auto w-full bg-transparent p-0 rounded-none gap-0 overflow-x-auto justify-start">
               {(
                 [
-                  { value: 'dashboard', icon: <LayoutDashboard className="h-[14px] w-[14px]" />, label: 'Dashboard' },
-                  { value: 'empleados', icon: <Users className="h-[14px] w-[14px]" />, label: 'Empleados' },
-                  { value: 'convenios', icon: <Building2 className="h-[14px] w-[14px]" />, label: 'Convenios' },
-                  { value: 'conceptos', icon: <Calculator className="h-[14px] w-[14px]" />, label: 'Conceptos' },
-                  { value: 'simulador', icon: <Sliders className="h-[14px] w-[14px]" />, label: 'Nuevo recibo' },
-                  { value: 'recibo', icon: <FileText className="h-[14px] w-[14px]" />, label: 'Recibo' },
-                  { value: 'firma-digital', icon: <PenLine className="h-[14px] w-[14px]" />, label: 'Firma Digital' },
+                  {
+                    value: 'dashboard',
+                    icon: <LayoutDashboard className="h-[14px] w-[14px]" />,
+                    label: 'Dashboard',
+                  },
+                  {
+                    value: 'empleados',
+                    icon: <Users className="h-[14px] w-[14px]" />,
+                    label: 'Empleados',
+                  },
+                  {
+                    value: 'convenios',
+                    icon: <Building2 className="h-[14px] w-[14px]" />,
+                    label: 'Convenios',
+                  },
+                  {
+                    value: 'conceptos',
+                    icon: <Calculator className="h-[14px] w-[14px]" />,
+                    label: 'Conceptos',
+                  },
+                  {
+                    value: 'simulador',
+                    icon: <Sliders className="h-[14px] w-[14px]" />,
+                    label: 'Nuevo recibo',
+                  },
+                  {
+                    value: 'recibo',
+                    icon: <FileText className="h-[14px] w-[14px]" />,
+                    label: 'Recibo',
+                  },
+                  {
+                    value: 'firma-digital',
+                    icon: <PenLine className="h-[14px] w-[14px]" />,
+                    label: 'Firma Digital',
+                  },
                 ] as const
               ).map((tab) => (
                 <TabsTrigger
@@ -108,7 +144,7 @@ function RouteComponent() {
                   className={cn(
                     'relative h-auto flex-none px-[14px] py-[10px] text-[13px] font-medium rounded-[8px_8px_0_0] border whitespace-nowrap gap-[7px] cursor-pointer',
                     'border-transparent text-[var(--arca-ink-3)] hover:bg-transparent hover:text-[var(--arca-ink)]',
-                    'data-[state=active]:bg-[var(--arca-surface)] data-[state=active]:border-[var(--arca-border)] data-[state=active]:[border-bottom-color:var(--arca-bg)] data-[state=active]:text-[var(--arca-ink)] data-[state=active]:font-semibold data-[state=active]:shadow-none data-[state=active]:top-px',
+                    'data-[state=active]:bg-[var(--arca-surface)] data-[state=active]:border-[var(--arca-border)] data-[state=active]:[border-bottom-color:var(--arca-bg)] data-[state=active]:text-[var(--arca-ink)] data-[state=active]:font-semibold data-[state=active]:shadow-none data-[state=active]:top-px'
                   )}
                 >
                   {tab.icon}

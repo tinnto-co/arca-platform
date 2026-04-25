@@ -42,6 +42,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { userQuery } from '../lib/user-query';
 import { getPendingNotificationsCount } from '@/actions/dashboard';
 import { listAlerts } from '@/actions/alert';
+import { listOrgModules } from '@/actions/admin';
 import { cn } from '@/lib/utils';
 
 export { userQuery };
@@ -134,6 +135,16 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     staleTime: 60_000,
   });
   const openAlertsCount = (openAlerts as unknown[]).length;
+
+  const { data: orgModules = [] } = useQuery({
+    queryKey: ['orgModules'],
+    queryFn: () => listOrgModules(),
+    staleTime: 30_000,
+  });
+  const isEnabled = (mod: string) =>
+    (orgModules as { module: string; enabled: boolean }[]).find(
+      (m) => m.module === mod
+    )?.enabled ?? false;
 
   const displayName = user?.organizationName ?? activeOrg?.name ?? 'Workspace';
   const displaySlug = user?.organizationSlug ?? activeOrg?.slug ?? '';
@@ -314,7 +325,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           />
           <NavItem to="/jobs" icon={Clock} label="Trabajos" />
           <NavItem to="/invoices" icon={FileText} label="Facturas" />
-          <NavItem to="/sueldos" icon={DollarSign} label="Sueldos" />
+          {isEnabled('sueldos') && (
+            <NavItem to="/sueldos" icon={DollarSign} label="Sueldos" />
+          )}
           <NavItem to="/vencimientos" icon={Calendar} label="Vencimientos" />
           <NavItem
             to="/alerts"
@@ -322,10 +335,18 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             label="Alertas"
             urgentCount={openAlertsCount}
           />
-          <NavItem to="/bank" icon={Landmark} label="Banco" />
-          <NavItem to="/accounting" icon={BookOpen} label="Contabilidad" />
-          <NavItem to="/analytics" icon={BarChart2} label="Analytics" />
-          <NavItem to="/chat" icon={Bot} label="Chats" />
+          {isEnabled('banco') && (
+            <NavItem to="/bank" icon={Landmark} label="Banco" />
+          )}
+          {isEnabled('contabilidad') && (
+            <NavItem to="/accounting" icon={BookOpen} label="Contabilidad" />
+          )}
+          {isEnabled('analytics') && (
+            <NavItem to="/analytics" icon={BarChart2} label="Analytics" />
+          )}
+          {isEnabled('ai_agent') && (
+            <NavItem to="/chat" icon={Bot} label="Chats" />
+          )}
 
           <NavGroupLabel>Cuenta</NavGroupLabel>
 
