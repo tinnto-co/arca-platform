@@ -1,3 +1,29 @@
+## 2026-04-24 - US-052
+- Created `src/actions/analytics.tsx` with 4 server functions:
+  - `generateIvaProjection(profileId, period)`: POST, validates profile belongs to org, fetches last 6 IVA scrapes, averages (debitoFiscal - creditoFiscal), upserts into `taxProjection` table. Returns projected amount with confidence (low/medium/high) and factors jsonb.
+  - `getRatios(clientId, from, to)`: GET, validates client belongs to org, computes totalSales, totalPurchases, invoiceCount, netPosition, salesPurchasesRatio, and period-over-period growth percentages.
+  - `getClientsAtRisk(period?, riskLevel?, limit?)`: GET, queries `profileRiskSnapshot` joined with profile+client for the given period (defaults to current month), filters by riskLevel (medium/high/critical), returns ordered by score desc.
+  - `getExecutiveSummary()`: GET, aggregates 6 parallel queries: managed profile count, open debt count+total, critical notification count, upcoming due date count (7 days), high/critical risk profile counts, current month sales/purchases.
+- All functions call `getSessionWithOrg()` and scope by orgId
+- Fixed lint: cast `orgId as string` in `eq()` calls to satisfy `@typescript-eslint/no-unsafe-argument`
+- Fixed lint: dot notation `riskMap.critical`, `riskMap.high` instead of bracket notation
+- TypeScript check: no new errors introduced (pre-existing errors in drizzle/relations.ts, credential.tsx, sueldos.ts remain)
+- Lint: analytics.tsx has only warnings (no errors) — total project errors reduced from 655 to 647
+- Files changed: `src/actions/analytics.tsx` (new)
+- **How to verify:**
+  - Run `bun run dev`
+  - Call `generateIvaProjection({ profileId: '<uuid>', period: '2026-04' })` — upserts into `tax_projection`, returns projected amount
+  - Call `getRatios({ clientId: '<uuid>', from: '2026-01-01', to: '2026-03-31' })` — returns sales/purchases + growth ratios
+  - Call `getClientsAtRisk({ riskLevel: 'high' })` — returns profiles with high/critical risk snapshots for current month
+  - Call `getExecutiveSummary()` — returns org-level KPIs
+  - Verify DB: `docker exec arca-local-db psql -U arca -d arca -c 'SELECT * FROM tax_projection LIMIT 5'`
+- **Learnings for future iterations:**
+  - `orgId` from `getSessionWithOrg()` is typed as `any` — always cast to `string` when passed to `eq()` to satisfy `@typescript-eslint/no-unsafe-argument`: `eq(client.organizationId, orgId as string)`
+  - `Object.fromEntries(riskResult.map(...))` creates a `{ [k: string]: number }` — use dot notation for string keys to satisfy ESLint dot-notation rule
+  - Server function handlers that return complex types with `Record<string, unknown>` need `as any` on the return to satisfy TanStack Start's `ServerFn` type inference
+  - `generateIvaProjection` uses `onConflictDoUpdate` with compound target `[taxProjection.profileId, taxProjection.period, taxProjection.tax]` — same pattern as `profileRiskSnapshot` upsert in risk-engine.ts
+---
+
 ## 2026-04-24 - US-051
 - Added `taxProjection` table to `drizzle/schema.ts`:
   - Columns: id (uuid PK), profile_id (uuid FK CASCADE), period (text), tax (text), projected_amount (numeric 14,2), confidence (text nullable), factors (jsonb nullable), generated_at (timestamp default now())
