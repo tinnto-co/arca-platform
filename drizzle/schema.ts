@@ -1219,3 +1219,67 @@ export const clientRequest = pgTable("client_request", {
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+/**
+ * Chart of accounts per client for formal bookkeeping.
+ * Account types: asset, liability, equity, income, expense
+ */
+export const accountingAccount = pgTable(
+  "accounting_account",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => client.id, { onDelete: "cascade" }),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    type: text("type").notNull(),
+    parentId: uuid("parent_id"),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("accounting_account_client_id_code_unique").on(table.clientId, table.code),
+    foreignKey({
+      columns: [table.parentId],
+      foreignColumns: [table.id],
+      name: "accounting_account_parent_id_fkey",
+    }).onDelete("set null"),
+  ],
+);
+
+/**
+ * Journal entries for double-entry bookkeeping.
+ * Status values: draft, posted, void
+ */
+export const journalEntry = pgTable("journal_entry", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => client.id, { onDelete: "cascade" }),
+  profileId: uuid("profile_id").references(() => profile.id, { onDelete: "set null" }),
+  entryDate: timestamp("entry_date").notNull(),
+  description: text("description"),
+  sourceType: text("source_type"),
+  sourceId: uuid("source_id"),
+  status: text("status").notNull().default("draft"),
+  createdByUserId: text("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/**
+ * Individual debit/credit lines within a journal entry.
+ * Sum of debits must equal sum of credits per entry.
+ */
+export const journalEntryLine = pgTable("journal_entry_line", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  journalEntryId: uuid("journal_entry_id")
+    .notNull()
+    .references(() => journalEntry.id, { onDelete: "cascade" }),
+  accountId: uuid("account_id")
+    .notNull()
+    .references(() => accountingAccount.id, { onDelete: "restrict" }),
+  debit: numeric("debit", { precision: 14, scale: 2 }).notNull().default("0"),
+  credit: numeric("credit", { precision: 14, scale: 2 }).notNull().default("0"),
+  description: text("description"),
+});
