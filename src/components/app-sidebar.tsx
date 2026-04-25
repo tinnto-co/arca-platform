@@ -324,6 +324,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           />
           <NavItem to="/bank" icon={Landmark} label="Banco" />
           <NavItem to="/accounting" icon={BookOpen} label="Contabilidad" />
+          <NavItem to="/analytics" icon={BarChart2} label="Analytics" />
           <NavItem to="/chat" icon={Bot} label="Chats" />
 
           <NavGroupLabel>Cuenta</NavGroupLabel>

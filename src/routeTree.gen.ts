@@ -27,6 +27,7 @@ import { Route as AuthedInvoicesIndexRouteImport } from './routes/_authed/invoic
 import { Route as AuthedClientsIndexRouteImport } from './routes/_authed/clients/index'
 import { Route as AuthedChatIndexRouteImport } from './routes/_authed/chat/index'
 import { Route as AuthedBankIndexRouteImport } from './routes/_authed/bank/index'
+import { Route as AuthedAnalyticsIndexRouteImport } from './routes/_authed/analytics/index'
 import { Route as AuthedAlertsIndexRouteImport } from './routes/_authed/alerts/index'
 import { Route as AuthedAdminIndexRouteImport } from './routes/_authed/admin/index'
 import { Route as AuthedAccountingIndexRouteImport } from './routes/_authed/accounting/index'
@@ -126,6 +127,11 @@ const AuthedBankIndexRoute = AuthedBankIndexRouteImport.update({
   path: '/bank/',
   getParentRoute: () => AuthedRouteRoute,
 } as any)
+const AuthedAnalyticsIndexRoute = AuthedAnalyticsIndexRouteImport.update({
+  id: '/analytics/',
+  path: '/analytics/',
+  getParentRoute: () => AuthedRouteRoute,
+} as any)
 const AuthedAlertsIndexRoute = AuthedAlertsIndexRouteImport.update({
   id: '/alerts/',
   path: '/alerts/',
@@ -187,6 +193,7 @@ export interface FileRoutesByFullPath {
   '/accounting/': typeof AuthedAccountingIndexRoute
   '/admin/': typeof AuthedAdminIndexRoute
   '/alerts/': typeof AuthedAlertsIndexRoute
+  '/analytics/': typeof AuthedAnalyticsIndexRoute
   '/bank/': typeof AuthedBankIndexRoute
   '/chat/': typeof AuthedChatIndexRoute
   '/clients/': typeof AuthedClientsIndexRoute
@@ -214,6 +221,7 @@ export interface FileRoutesByTo {
   '/accounting': typeof AuthedAccountingIndexRoute
   '/admin': typeof AuthedAdminIndexRoute
   '/alerts': typeof AuthedAlertsIndexRoute
+  '/analytics': typeof AuthedAnalyticsIndexRoute
   '/bank': typeof AuthedBankIndexRoute
   '/chat': typeof AuthedChatIndexRoute
   '/clients': typeof AuthedClientsIndexRoute
@@ -244,6 +252,7 @@ export interface FileRoutesById {
   '/_authed/accounting/': typeof AuthedAccountingIndexRoute
   '/_authed/admin/': typeof AuthedAdminIndexRoute
   '/_authed/alerts/': typeof AuthedAlertsIndexRoute
+  '/_authed/analytics/': typeof AuthedAnalyticsIndexRoute
   '/_authed/bank/': typeof AuthedBankIndexRoute
   '/_authed/chat/': typeof AuthedChatIndexRoute
   '/_authed/clients/': typeof AuthedClientsIndexRoute
@@ -273,6 +282,7 @@ export interface FileRouteTypes {
     | '/accounting/'
     | '/admin/'
     | '/alerts/'
+    | '/analytics/'
     | '/bank/'
     | '/chat/'
     | '/clients/'
@@ -300,6 +310,7 @@ export interface FileRouteTypes {
     | '/accounting'
     | '/admin'
     | '/alerts'
+    | '/analytics'
     | '/bank'
     | '/chat'
     | '/clients'
@@ -329,6 +340,7 @@ export interface FileRouteTypes {
     | '/_authed/accounting/'
     | '/_authed/admin/'
     | '/_authed/alerts/'
+    | '/_authed/analytics/'
     | '/_authed/bank/'
     | '/_authed/chat/'
     | '/_authed/clients/'
@@ -483,6 +495,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedBankIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
+    '/_authed/analytics/': {
+      id: '/_authed/analytics/'
+      path: '/analytics'
+      fullPath: '/analytics/'
+      preLoaderRoute: typeof AuthedAnalyticsIndexRouteImport
+      parentRoute: typeof AuthedRouteRoute
+    }
     '/_authed/alerts/': {
       id: '/_authed/alerts/'
       path: '/alerts'
@@ -556,6 +575,7 @@ interface AuthedRouteRouteChildren {
   AuthedAccountingIndexRoute: typeof AuthedAccountingIndexRoute
   AuthedAdminIndexRoute: typeof AuthedAdminIndexRoute
   AuthedAlertsIndexRoute: typeof AuthedAlertsIndexRoute
+  AuthedAnalyticsIndexRoute: typeof AuthedAnalyticsIndexRoute
   AuthedBankIndexRoute: typeof AuthedBankIndexRoute
   AuthedChatIndexRoute: typeof AuthedChatIndexRoute
   AuthedClientsIndexRoute: typeof AuthedClientsIndexRoute
@@ -577,6 +597,7 @@ const AuthedRouteRouteChildren: AuthedRouteRouteChildren = {
   AuthedAccountingIndexRoute: AuthedAccountingIndexRoute,
   AuthedAdminIndexRoute: AuthedAdminIndexRoute,
   AuthedAlertsIndexRoute: AuthedAlertsIndexRoute,
+  AuthedAnalyticsIndexRoute: AuthedAnalyticsIndexRoute,
   AuthedBankIndexRoute: AuthedBankIndexRoute,
   AuthedChatIndexRoute: AuthedChatIndexRoute,
   AuthedClientsIndexRoute: AuthedClientsIndexRoute,
