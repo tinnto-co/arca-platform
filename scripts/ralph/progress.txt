@@ -977,3 +977,29 @@ Started: Fri Apr 24 16:44:39 -03 2026
 - **Learnings for future iterations:**
   - All pre-existing typecheck errors are in legacy scripts — not regressions from our changes
 ---
+
+## 2026-04-24 - US-050
+- Created `src/routes/_authed/accounting/index.tsx` — full accounting UI page
+  - Client selector at top (shared state across all tabs)
+  - Tab bar: Plan de cuentas · Asientos · Mayor · Balance
+  - **Plan de cuentas tab**: tree view of accounts grouped by parent/child hierarchy with expand/collapse; "Nueva cuenta" inline form (code, name, type, parent account picker); per-row Activar/Desactivar toggle; TypeBadge color-coded by account type (asset/liability/equity/income/expense)
+  - **Asientos tab**: list of journal entries with date, description, status badge (Borrador/Confirmado); click-to-expand shows double-entry lines with account code + name + debit/credit; "Nuevo asiento" form with dynamic line rows, running totals, balance validation (debit ≠ credit shows red warning)
+  - **Mayor tab**: account selector + optional date range filter; ledger rows showing entry date, description, debit/credit columns; total row at bottom
+  - **Balance tab**: date range + Calcular button; trial balance table grouped by account type with subtotals and grand total; shows Sumas Debe/Haber and Saldo Deudor/Acreedor columns
+- Added `BookOpen` icon import and `<NavItem to="/accounting" icon={BookOpen} label="Contabilidad" />` to `src/components/app-sidebar.tsx`
+- Regenerated `src/routeTree.gen.ts` to include the new `/_authed/accounting/` route
+- Files changed: `src/routes/_authed/accounting/index.tsx` (new), `src/components/app-sidebar.tsx`, `src/routeTree.gen.ts`
+- **How to verify:**
+  - Run `bun run dev`, navigate to `/accounting`
+  - "Contabilidad" appears in sidebar with BookOpen icon
+  - Select a client → 4 tabs appear
+  - Plan de cuentas: click "Nueva cuenta" → enter código=1.1, nombre=Caja, tipo=Activo → Guardar → row appears in list
+  - Asientos: click "Nuevo asiento" → set date, add 2+ lines with accounts and balanced debit/credit → Guardar asiento; click an entry to expand and see lines
+  - Mayor: select account + date range → ledger rows appear with totals
+  - Balance: set date range → Calcular → trial balance table with grouped rows, subtotals, grand total
+- **Learnings for future iterations:**
+  - Inner function components defined inside another component trigger `react/prop-types` ESLint errors when the loop variable and the inner component's prop have the same name — rename the map callback variable (e.g., `account` → `acct`) to avoid the false positive
+  - `l.description ? l.description : undefined` triggers `prefer-nullish-coalescing` — just pass `l.description` directly if it's already `string | undefined` matching the optional parameter type
+  - `react-refresh/only-export-components` warnings appear for helper functions/interfaces exported alongside the route component — these are warnings, not errors; safe to leave as-is
+  - The `BalanceTab` uses `enabled: false` + manual `refetch()` pattern for on-demand queries (user clicks "Calcular") — same pattern works for any report that shouldn't auto-fetch
+---
