@@ -1302,3 +1302,24 @@ export const taxProjection = pgTable("tax_projection", {
 }, (table) => [
   unique("tax_projection_profile_id_period_tax_unique").on(table.profileId, table.period, table.tax),
 ]);
+
+/**
+ * Feature flags per organization to enable/disable modules.
+ * Modules: sueldos, banco, contabilidad, analytics, portal_cliente, ai_agent
+ */
+export const organizationModule = pgTable(
+  "organization_module",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    module: text("module").notNull(),
+    enabled: boolean("enabled").notNull().default(false),
+    enabledAt: timestamp("enabled_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("organization_module_org_id_module_unique").on(table.organizationId, table.module),
+  ],
+);

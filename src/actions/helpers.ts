@@ -2,7 +2,7 @@ import { auth } from '@/lib/auth';
 import { getRequestHeaders } from '@tanstack/react-start/server';
 import { db } from '@/lib/db';
 import { member } from '@/drizzle/auth';
-import { client, clientUserAccess } from '@/drizzle/schema';
+import { client, clientUserAccess, organizationModule } from '@/drizzle/schema';
 import { and, eq } from 'drizzle-orm';
 
 export async function getAuthSession() {
@@ -75,4 +75,23 @@ export async function getClientPortalSession() {
   }
 
   return { session, userId, clientId: access.clientId, access };
+}
+
+/**
+ * Returns true if the given module is enabled for the organization.
+ * Modules: sueldos, banco, contabilidad, analytics, portal_cliente, ai_agent
+ */
+export async function isModuleEnabled(orgId: string, module: string): Promise<boolean> {
+  const [row] = await db
+    .select({ enabled: organizationModule.enabled })
+    .from(organizationModule)
+    .where(
+      and(
+        eq(organizationModule.organizationId, orgId),
+        eq(organizationModule.module, module),
+      )
+    )
+    .limit(1);
+
+  return row?.enabled ?? false;
 }
