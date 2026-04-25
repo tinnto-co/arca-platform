@@ -1,3 +1,30 @@
+## 2026-04-24 - US-047
+- Created `src/routes/_authed/bank/index.tsx` — bank reconciliation UI page
+  - Client selector dropdown at top
+  - Bank account selector per selected client
+  - "Nueva cuenta" button + inline form to create bank accounts (bankName, accountNumber, alias, CBU)
+  - Summary stats cards: account count, total transactions, matched, pending, match rate, total credit/debit
+  - Transaction list with per-row matched/unmatched indicator (CheckCircle2 vs CircleDashed)
+  - Match type badge (Auto/Manual) with confidence percentage
+  - Color-coded amounts (credit=green, debit=red)
+  - "Auto-conciliar" button triggers autoMatchTransactions and shows matched count in toast
+- Added `Landmark` icon import and `<NavItem to="/bank" icon={Landmark} label="Banco" />` to `src/components/app-sidebar.tsx`
+- Regenerated `src/routeTree.gen.ts` to include the new `/_authed/bank/` route
+- Files changed: `src/routes/_authed/bank/index.tsx` (new), `src/components/app-sidebar.tsx`, `src/routeTree.gen.ts`
+- **How to verify:**
+  - Run `bun run dev`, navigate to `/bank`
+  - "Banco" appears in sidebar with Landmark icon
+  - Select a client → summary stats appear + account selector populates
+  - Click "Nueva cuenta" → inline form appears → enter banco name → save → account appears in dropdown
+  - Select an account → transaction list appears (empty if no transactions imported)
+  - If transactions exist: matched ones show green CheckCircle2, unmatched show gray CircleDashed
+  - "Auto-conciliar (N)" button appears when account is selected; clicking it triggers auto-matching
+- **Learnings for future iterations:**
+  - TanStack Router route tree must be regenerated after adding new routes: run `bunx tsr generate` or `bunx @tanstack/router-cli generate`
+  - `void queryClient.invalidateQueries(...)` is required to satisfy the `no-floating-promises` ESLint rule — always add `void` prefix
+  - Pre-existing `BarChart2` unused import in app-sidebar.tsx is a known non-regression error
+---
+
 ## 2026-04-24 - US-046
 - Created `src/actions/bank.tsx` with all 7 bank reconciliation server functions:
   - `createBankAccount`: POST, requires canWrite, validates client belongs to org, inserts bank account
