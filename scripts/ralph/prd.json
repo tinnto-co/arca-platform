@@ -722,7 +722,7 @@
         "Typecheck passes"
       ],
       "priority": 50,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 7. Account types: asset, liability, equity, income, expense"
     },
     {

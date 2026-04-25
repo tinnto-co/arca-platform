@@ -824,6 +824,24 @@
   - Pre-existing TS errors in agent.ts: unused imports (INVOICE_TYPES_A/B, CREDIT_NOTE_TYPES) and unused destructure vars (netoIn5, netoIn25) — not introduced by our changes
 ---
 
+## 2026-04-24 - US-048
+- Added 3 accounting tables to `drizzle/schema.ts`:
+  - `accountingAccount`: per-client chart of accounts with code, name, type, parent_id (self-referential FK via `foreignKey()`), active flag. Unique on (client_id, code)
+  - `journalEntry`: double-entry journal entries with entry_date, description, source_type/source_id, status (default 'draft'), created_by_user_id
+  - `journalEntryLine`: individual debit/credit lines per entry; references accountingAccount with ON DELETE RESTRICT
+- Created `src/scripts/ensure-accounting-tables.ts` migration script (idempotent, uses CREATE TABLE IF NOT EXISTS for all 3 tables)
+- Ran migration script — all 3 tables OK (exit 124 expected)
+- Files changed: `drizzle/schema.ts`, `src/scripts/ensure-accounting-tables.ts` (new)
+- **How to verify:**
+  - Run: `docker exec arca-local-db psql -U arca -d arca -c '\d accounting_account'` to confirm table with all columns including self-referential parent_id
+  - Run: `docker exec arca-local-db psql -U arca -d arca -c '\dt accounting_%'` to see all accounting tables
+  - Or: `timeout 60 bun run src/scripts/ensure-accounting-tables.ts` — prints OK for each table
+- **Learnings for future iterations:**
+  - Self-referential FK in Drizzle requires the `foreignKey()` helper in the table constraints array — `.references()` on the column itself doesn't work for the same table
+  - `ON DELETE RESTRICT` for `journalEntryLine.accountId` prevents deleting accounts that have journal lines (correct accounting behavior)
+  - `numeric` default values must be quoted strings in Drizzle: `.default("0")` not `.default(0)`
+---
+
 ## Codebase Patterns
 - Migration scripts live in `src/scripts/` and use `ADD COLUMN IF NOT EXISTS` via `db.execute(sql.raw(...))` for idempotent migrations
 - Pre-existing TS errors exist in some `src/scripts/` files (map-import-empleados, report-unmatched, etc.) — these are not related to our changes
