@@ -2,10 +2,17 @@
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Save } from 'lucide-react';
+import { Loader2, Save, FilePlus2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   getUltimoReciboImportado,
   listConceptosPlantillaManualSos,
@@ -80,9 +87,11 @@ type TipoReciboGuardar =
 
 interface FlowHeader {
   importEmpleadoId: string;
+  empleadoNombre: string;
   periodo: string;
   tipoRecibo: TipoReciboGuardar;
   copiarUltimoRecibo: boolean;
+  antiguedadAnios: number | null;
 }
 
 interface SueldosSimuladorProps {
@@ -124,8 +133,8 @@ export function SueldosSimulador({
     enabled: !!sosEmpleadoId,
   });
 
-  // Plantilla con todos los conceptos SOS (catálogo completo); se carga siempre
-  // que haya un flowHeader activo, tanto para modo manual como para copia.
+  // Plantilla con todos los conceptos SOS; se carga solo cuando flowHeader está seteado
+  // (es decir, después de que el usuario presionó "Agregar").
   const { data: plantillaManual = [], isLoading: loadingPlantilla } = useQuery(
     {
       queryKey: ['plantilla-manual-sos', clientId],
@@ -201,16 +210,17 @@ export function SueldosSimulador({
   // Para modo manual: muestra todos los conceptos SOS con valores vacíos.
   const conceptosFilas: ConceptoImportado[] = useMemo(() => {
     if (!flowHeader || plantillaManual.length === 0) return [];
+
+    let filas: ConceptoImportado[];
     if (isCopyMode && ultimoRecibo) {
       const ultimoByCode = new Map(
         ultimoRecibo.conceptos.map((c) => [c.codigo, c])
       );
       const plantillaCodes = new Set(plantillaManual.map((p) => p.codigo));
-      // Conceptos del último recibo con código fuera del catálogo (ej. > 699)
       const extras = ultimoRecibo.conceptos.filter(
         (c) => !plantillaCodes.has(c.codigo)
       );
-      return [
+      filas = [
         ...plantillaManual.map((p) => {
           const prev = ultimoByCode.get(p.codigo);
           if (!prev) return p;
@@ -227,8 +237,28 @@ export function SueldosSimulador({
         }),
         ...extras,
       ];
+    } else {
+      filas = plantillaManual;
     }
-    return plantillaManual;
+
+    // Valores fijos por concepto SOS (se aplican siempre, en cualquier modo)
+    const { antiguedadAnios } = flowHeader;
+    return filas.map((c) => {
+      const num = parseInt(c.codigo, 10);
+      if (num === 3) {
+        // Antigüedad: % siempre 1, cantidad = años completos desde fecha de ingreso
+        return {
+          ...c,
+          porcentaje: '1',
+          cantidad:
+            antiguedadAnios !== null ? String(antiguedadAnios) : c.cantidad,
+        };
+      }
+      if (num === 201) return { ...c, porcentaje: '11' }; // Jubilación
+      if (num === 202) return { ...c, porcentaje: '3' };  // Ley 19032
+      if (num === 203) return { ...c, porcentaje: '3' };  // Obra social
+      return c;
+    });
   }, [flowHeader, isCopyMode, plantillaManual, ultimoRecibo]);
 
   const plantillaKey = useMemo(
@@ -284,15 +314,19 @@ export function SueldosSimulador({
   const onFormSuccess = useCallback(
     (payload: {
       importEmpleadoId: string;
+      empleadoNombre: string;
       periodo: string;
       tipoRecibo: string;
       copiarUltimoRecibo: boolean;
+      antiguedadAnios: number | null;
     }) => {
       setFlowHeader({
         importEmpleadoId: payload.importEmpleadoId,
+        empleadoNombre: payload.empleadoNombre,
         periodo: payload.periodo,
         tipoRecibo: payload.tipoRecibo as TipoReciboGuardar,
         copiarUltimoRecibo: payload.copiarUltimoRecibo,
+        antiguedadAnios: payload.antiguedadAnios,
       });
       setSosEmpleadoId(
         payload.copiarUltimoRecibo ? payload.importEmpleadoId : null
@@ -302,6 +336,12 @@ export function SueldosSimulador({
     []
   );
 
+  const resetFlow = useCallback(() => {
+    setFlowHeader(null);
+    setSosEmpleadoId(null);
+    setTablaEdits({});
+  }, []);
+
   const puedeGuardar =
     !!flowHeader &&
     showTable &&
@@ -310,11 +350,50 @@ export function SueldosSimulador({
 
   return (
     <div className="space-y-6">
-      <ReciboFormulario
-        clientId={clientId}
-        profileId={profileId}
-        onSuccess={onFormSuccess}
-      />
+      {/* Formulario: visible solo mientras no hay cabecera creada */}
+      {!flowHeader && (
+        <ReciboFormulario
+          clientId={clientId}
+          profileId={profileId}
+          onSuccess={onFormSuccess}
+        />
+      )}
+
+      {/* Banner resumen + selector de origen + botón "Nuevo recibo" */}
+      {!!flowHeader && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="text-sm">
+              <span className="font-medium">{flowHeader.empleadoNombre}</span>
+              <span className="mx-2 text-muted-foreground">·</span>
+              <span className="text-muted-foreground">Período {flowHeader.periodo}</span>
+            </div>
+            <Select
+              value={flowHeader.copiarUltimoRecibo ? 'si' : 'no'}
+              onValueChange={(val) => {
+                const copiar = val === 'si';
+                setFlowHeader((prev) =>
+                  prev ? { ...prev, copiarUltimoRecibo: copiar } : null
+                );
+                setSosEmpleadoId(copiar ? flowHeader.importEmpleadoId : null);
+                setTablaEdits({});
+              }}
+            >
+              <SelectTrigger className="h-8 w-auto gap-1 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="no">Carga manual</SelectItem>
+                <SelectItem value="si">Copiar último recibo</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Button type="button" variant="outline" size="sm" onClick={resetFlow} className="gap-1.5">
+            <FilePlus2 className="h-4 w-4" />
+            Nuevo recibo
+          </Button>
+        </div>
+      )}
 
       {!!flowHeader && isLoadingTable && (
         <p className="text-sm text-muted-foreground flex items-center gap-2">
@@ -373,7 +452,7 @@ export function SueldosSimulador({
                 <div className="flex flex-col items-end gap-2">
                   {!permiteLiquidar && (
                     <span className="text-xs text-muted-foreground">
-                      Solo se puede guardar el mes anterior al en curso.
+                      No se puede guardar períodos futuros.
                     </span>
                   )}
                   <Button

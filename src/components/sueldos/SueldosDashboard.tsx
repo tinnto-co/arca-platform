@@ -405,7 +405,7 @@ export function SueldosDashboard({
         <div className="flex flex-col items-end gap-1">
           {!permiteLiquidar && (
             <span className="text-xs text-muted-foreground">
-              Solo se puede liquidar el mes anterior al en curso.
+              No se puede liquidar meses futuros.
             </span>
           )}
           <Button

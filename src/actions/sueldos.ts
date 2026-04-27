@@ -1560,7 +1560,7 @@ export const deleteManualEmpleado = createServerFn({ method: 'POST' })
     return { ok: true };
   });
 
-/** Empleados del perfil con su configuración de liquidación. */
+/** Empleados del perfil con su configuración de liquidación (solo activos). */
 export const listImportEmpleadosConConfig = createServerFn({ method: 'GET' })
   .inputValidator(
     z.object({ clientId: z.string().uuid(), profileId: z.string().uuid() })
@@ -1572,13 +1572,17 @@ export const listImportEmpleadosConConfig = createServerFn({ method: 'GET' })
     const rows = await db
       .select({
         empleado: liquidacionImportEmpleado,
+        obraSocialNombre: obraSocial.nombre,
+        obraSocialCodigo: obraSocial.codigo,
       })
       .from(liquidacionImportEmpleado)
       .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .leftJoin(obraSocial, eq(liquidacionImportEmpleado.obraSocialId, obraSocial.id))
       .where(
         and(
           eq(profile.client, ctx.data.clientId),
-          eq(liquidacionImportEmpleado.profileId, ctx.data.profileId)
+          eq(liquidacionImportEmpleado.profileId, ctx.data.profileId),
+          eq(liquidacionImportEmpleado.activo, true)
         )
       )
       .orderBy(
@@ -1870,7 +1874,7 @@ export const guardarReciboDesdeTabla = createServerFn({ method: 'POST' })
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     await ensureProfileBelongsToClient(ctx.data.profileId, ctx.data.clientId);
     if (!puedeLiquidarPeriodo(ctx.data.periodo)) {
-      throw new Error('Solo se puede liquidar el mes anterior al en curso.');
+      throw new Error('No se puede liquidar períodos futuros.');
     }
 
     const [empRow] = await db
@@ -2037,7 +2041,7 @@ export const createReciboHeader = createServerFn({ method: 'POST' })
     assertCanWrite(role);
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     if (!puedeLiquidarPeriodo(ctx.data.periodo)) {
-      throw new Error('Solo se puede liquidar el mes anterior al en curso.');
+      throw new Error('No se puede liquidar períodos futuros.');
     }
 
     const [empConfig] = await db
@@ -2937,7 +2941,7 @@ export const calcularLiquidacion = createServerFn({ method: 'POST' })
     assertCanWrite(role);
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     if (!puedeLiquidarPeriodo(ctx.data.periodo)) {
-      throw new Error('Solo se puede liquidar el mes anterior al en curso.');
+      throw new Error('No se puede liquidar períodos futuros.');
     }
     const [empConfig] = await db
       .select({ id: liquidacionImportEmpleado.id })
@@ -3006,7 +3010,7 @@ export const calcularLiquidacionMasiva = createServerFn({ method: 'POST' })
       .limit(1);
     const usaLsdReferencia = profileCfg?.usaLsdReferencia ?? false;
     if (!puedeLiquidarPeriodo(ctx.data.periodo)) {
-      throw new Error('Solo se puede liquidar el mes anterior al en curso.');
+      throw new Error('No se puede liquidar períodos futuros.');
     }
     const empleados = await db
       .select({
