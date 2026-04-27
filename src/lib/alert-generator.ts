@@ -1,11 +1,5 @@
 import { db } from '@/lib/db';
-import {
-  alert,
-  client,
-  debt,
-  notification,
-  dueDate,
-} from '@/drizzle/schema';
+import { alert, client, debt, notification, dueDate } from '@/drizzle/schema';
 import { and, eq, lt, isNull, gte, lte, inArray } from 'drizzle-orm';
 
 /**
@@ -17,9 +11,15 @@ import { and, eq, lt, isNull, gte, lte, inArray } from 'drizzle-orm';
  *
  * Deduplicates by (type, sourceEntityType, sourceEntityId) on open alerts.
  */
-export async function generateAlerts(orgId: string): Promise<{ created: number }> {
+export async function generateAlerts(
+  orgId: string
+): Promise<{ created: number }> {
   const orgClients = await db
-    .select({ id: client.id, name: client.name, errorMessage: client.errorMessage })
+    .select({
+      id: client.id,
+      name: client.name,
+      errorMessage: client.errorMessage,
+    })
     .from(client)
     .where(eq(client.organizationId, orgId));
 
@@ -41,7 +41,9 @@ export async function generateAlerts(orgId: string): Promise<{ created: number }
     .where(and(eq(alert.organizationId, orgId), eq(alert.status, 'open')));
 
   const existingFingerprints = new Set(
-    existingAlerts.map((a) => `${a.type}:${a.sourceEntityType}:${a.sourceEntityId}`)
+    existingAlerts.map(
+      (a) => `${a.type}:${a.sourceEntityType}:${a.sourceEntityId}`
+    )
   );
 
   const alertsToInsert: (typeof alert.$inferInsert)[] = [];
@@ -57,7 +59,13 @@ export async function generateAlerts(orgId: string): Promise<{ created: number }
   const overdueDebts = await db
     .select()
     .from(debt)
-    .where(and(inArray(debt.client, clientIds), eq(debt.status, 'open'), lt(debt.dueDate, now)));
+    .where(
+      and(
+        inArray(debt.client, clientIds),
+        eq(debt.status, 'open'),
+        lt(debt.dueDate, now)
+      )
+    );
 
   for (const d of overdueDebts) {
     maybeAdd(`overdue_debt:debt:${d.id}`, {

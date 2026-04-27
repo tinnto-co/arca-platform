@@ -21,7 +21,9 @@ async function main() {
     )
   );
 
-  console.log('Columna fecha_antiguedad_reconocida en liquidacion_import_empleado: OK.');
+  console.log(
+    'Columna fecha_antiguedad_reconocida en liquidacion_import_empleado: OK.'
+  );
 }
 
 main().catch((e) => {

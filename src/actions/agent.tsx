@@ -6,7 +6,11 @@ import { getSessionWithOrg } from '@/actions/helpers';
 import { eq, and, desc, ilike } from 'drizzle-orm';
 
 export const getAgentConversations = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ limit: z.number().optional(), offset: z.number().optional() }).optional())
+  .inputValidator(
+    z
+      .object({ limit: z.number().optional(), offset: z.number().optional() })
+      .optional()
+  )
   .handler(async ({ data }) => {
     const { orgId, userId } = await getSessionWithOrg();
     return db

@@ -66,7 +66,8 @@
       "Bash(cd \"C:\\\\Users\\\\Brian\\\\OneDrive\\\\Escritorio\\\\Proyectos\\\\arca-platform\" && ls drizzle/*.sql | sort)",
       "Bash(cd \"C:\\\\Users\\\\Brian\\\\OneDrive\\\\Escritorio\\\\Proyectos\\\\arca-platform\" && glab mr create --source-branch fix/alta-clientes --target-branch main --title \"Correccion del alta de clientes y Check de liquidacion de sueldos\" --description \"Fallaba el alta de cliente en produccion, asi que se lo corrigio. Tambien se agrego un check dentro de cada cliente para que se habilite para liquidar sueldos\" 2>&1)",
       "Bash(git add:*)",
-      "Bash(grep -rl:*)"
+      "Bash(grep -rl:*)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); [print\\(f''''US-{us[id]}: {us[title]} [{us.get\\(status,pending\\)}]''''\\) for us in d.get\\(''''user_stories'''',[]\\)]\")"
     ]
   }
 }

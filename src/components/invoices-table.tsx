@@ -1068,179 +1068,198 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
 
         {/* Table */}
         <Table className="table-fixed text-xs">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10 px-2">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-10 px-2">
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-navy-900)]"
+                  checked={
+                    (invoicesData?.invoices ?? []).length > 0 &&
+                    (invoicesData?.invoices ?? []).every((inv) =>
+                      selectedIds.has(inv.id)
+                    )
+                  }
+                  ref={(el) => {
+                    if (el)
+                      el.indeterminate =
+                        (invoicesData?.invoices ?? []).some((inv) =>
+                          selectedIds.has(inv.id)
+                        ) &&
+                        !(invoicesData?.invoices ?? []).every((inv) =>
+                          selectedIds.has(inv.id)
+                        );
+                  }}
+                  onChange={() =>
+                    toggleAllInvoices(
+                      (invoicesData?.invoices ?? []).map((inv) => inv.id)
+                    )
+                  }
+                />
+              </TableHead>
+              <TableHead className="w-[10%] px-2 py-2 align-top">
+                Tipo
+              </TableHead>
+              <TableHead className="w-[14%] px-2 py-2 align-top">
+                Cliente
+              </TableHead>
+              <TableHead className="w-[17%] px-2 py-2 align-top">
+                Emisor
+              </TableHead>
+              <TableHead className="w-[17%] px-2 py-2 align-top">
+                Destinatario
+              </TableHead>
+              <TableHead className="w-[9%] px-2 py-2 align-middle">
+                <button
+                  className="flex items-center gap-1 group text-white text-[11px] font-semibold"
+                  onClick={handleSortByDate}
+                >
+                  Fecha
+                  {sortBy === 'emitionDate' && sortOrder === 'asc' ? (
+                    <ArrowUp className="ml-1 h-3 w-3" />
+                  ) : sortBy === 'emitionDate' && sortOrder === 'desc' ? (
+                    <ArrowDown className="ml-1 h-3 w-3" />
+                  ) : (
+                    <ArrowUpDown className="ml-1 h-3 w-3 opacity-50 group-hover:opacity-100 transition-opacity" />
+                  )}
+                </button>
+              </TableHead>
+              <TableHead className="w-[14%] px-2 py-2 align-middle">
+                <button
+                  className="flex items-center gap-1 group text-white text-[11px] font-semibold"
+                  onClick={handleSortByAmount}
+                >
+                  Monto
+                  {sortBy === 'amount' && sortOrder === 'asc' ? (
+                    <ArrowUp className="ml-1 h-3 w-3" />
+                  ) : sortBy === 'amount' && sortOrder === 'desc' ? (
+                    <ArrowDown className="ml-1 h-3 w-3" />
+                  ) : (
+                    <ArrowUpDown className="ml-1 h-3 w-3 opacity-50 group-hover:opacity-100 transition-opacity" />
+                  )}
+                </button>
+              </TableHead>
+              <TableHead className="w-[14%] px-2 py-2 align-middle">
+                Dirección
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={8} className="h-24 text-center">
+                  Cargando facturas...
+                </TableCell>
+              </TableRow>
+            ) : invoicesData?.invoices.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={8} className="h-24 text-center">
+                  No se encontraron facturas.
+                </TableCell>
+              </TableRow>
+            ) : (
+              invoicesData?.invoices.map((invoice) => (
+                <TableRow
+                  key={invoice.id}
+                  onClick={() => handleViewInvoice(invoice)}
+                  className="cursor-pointer"
+                  data-state={
+                    selectedIds.has(invoice.id) ? 'selected' : undefined
+                  }
+                >
+                  <TableCell
+                    className="w-10 px-2"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <input
                       type="checkbox"
                       className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-navy-900)]"
-                      checked={(invoicesData?.invoices ?? []).length > 0 && (invoicesData?.invoices ?? []).every((inv) => selectedIds.has(inv.id))}
-                      ref={(el) => {
-                        if (el) el.indeterminate = (invoicesData?.invoices ?? []).some((inv) => selectedIds.has(inv.id)) && !(invoicesData?.invoices ?? []).every((inv) => selectedIds.has(inv.id));
-                      }}
-                      onChange={() => toggleAllInvoices((invoicesData?.invoices ?? []).map((inv) => inv.id))}
+                      checked={selectedIds.has(invoice.id)}
+                      onChange={() => toggleInvoiceRow(invoice.id)}
                     />
-                  </TableHead>
-                  <TableHead className="w-[10%] px-2 py-2 align-top">
-                    Tipo
-                  </TableHead>
-                  <TableHead className="w-[14%] px-2 py-2 align-top">
-                    Cliente
-                  </TableHead>
-                  <TableHead className="w-[17%] px-2 py-2 align-top">
-                    Emisor
-                  </TableHead>
-                  <TableHead className="w-[17%] px-2 py-2 align-top">
-                    Destinatario
-                  </TableHead>
-                  <TableHead className="w-[9%] px-2 py-2 align-middle">
-                    <button
-                      className="flex items-center gap-1 group text-white text-[11px] font-semibold"
-                      onClick={handleSortByDate}
-                    >
-                      Fecha
-                      {sortBy === 'emitionDate' && sortOrder === 'asc' ? (
-                        <ArrowUp className="ml-1 h-3 w-3" />
-                      ) : sortBy === 'emitionDate' && sortOrder === 'desc' ? (
-                        <ArrowDown className="ml-1 h-3 w-3" />
-                      ) : (
-                        <ArrowUpDown className="ml-1 h-3 w-3 opacity-50 group-hover:opacity-100 transition-opacity" />
-                      )}
-                    </button>
-                  </TableHead>
-                  <TableHead className="w-[14%] px-2 py-2 align-middle">
-                    <button
-                      className="flex items-center gap-1 group text-white text-[11px] font-semibold"
-                      onClick={handleSortByAmount}
-                    >
-                      Monto
-                      {sortBy === 'amount' && sortOrder === 'asc' ? (
-                        <ArrowUp className="ml-1 h-3 w-3" />
-                      ) : sortBy === 'amount' && sortOrder === 'desc' ? (
-                        <ArrowDown className="ml-1 h-3 w-3" />
-                      ) : (
-                        <ArrowUpDown className="ml-1 h-3 w-3 opacity-50 group-hover:opacity-100 transition-opacity" />
-                      )}
-                    </button>
-                  </TableHead>
-                  <TableHead className="w-[14%] px-2 py-2 align-middle">
-                    Dirección
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={8} className="h-24 text-center">
-                      Cargando facturas...
-                    </TableCell>
-                  </TableRow>
-                ) : invoicesData?.invoices.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={8} className="h-24 text-center">
-                      No se encontraron facturas.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  invoicesData?.invoices.map((invoice) => (
-                    <TableRow
-                      key={invoice.id}
-                      onClick={() => handleViewInvoice(invoice)}
-                      className="cursor-pointer"
-                      data-state={selectedIds.has(invoice.id) ? 'selected' : undefined}
-                    >
-                      <TableCell className="w-10 px-2" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-navy-900)]"
-                          checked={selectedIds.has(invoice.id)}
-                          onChange={() => toggleInvoiceRow(invoice.id)}
-                        />
-                      </TableCell>
-                      <TableCell className="w-[10%] px-2 py-2 align-top">
-                        <div className="truncate">
-                          {getTypeBadge(invoice.type)}
+                  </TableCell>
+                  <TableCell className="w-[10%] px-2 py-2 align-top">
+                    <div className="truncate">{getTypeBadge(invoice.type)}</div>
+                  </TableCell>
+                  <TableCell className="w-[15%] px-2 py-2 align-top">
+                    {invoice.clientName || invoice.profileName ? (
+                      <div className="space-y-0.5">
+                        <div
+                          className="font-medium truncate text-xs"
+                          title={invoice.clientName ?? undefined}
+                        >
+                          {invoice.clientName ?? '—'}
                         </div>
-                      </TableCell>
-                      <TableCell className="w-[15%] px-2 py-2 align-top">
-                        {invoice.clientName || invoice.profileName ? (
-                          <div className="space-y-0.5">
-                            <div
-                              className="font-medium truncate text-xs"
-                              title={invoice.clientName ?? undefined}
-                            >
-                              {invoice.clientName ?? '—'}
-                            </div>
-                            {invoice.profileName && (
-                              <div
-                                className="text-xs text-[var(--arca-ink-3)] truncate"
-                                title={invoice.profileName}
-                              >
-                                {invoice.profileName}
-                              </div>
-                            )}
-                            {invoice.clientEmail && (
-                              <div
-                                className="text-xs text-[var(--arca-ink-3)] truncate"
-                                title={invoice.clientEmail}
-                              >
-                                {invoice.clientEmail}
-                              </div>
-                            )}
+                        {invoice.profileName && (
+                          <div
+                            className="text-xs text-[var(--arca-ink-3)] truncate"
+                            title={invoice.profileName}
+                          >
+                            {invoice.profileName}
                           </div>
-                        ) : (
-                          <span className="text-[var(--arca-ink-3)] text-xs">
-                            Sin cliente
-                          </span>
                         )}
-                      </TableCell>
-                      <TableCell className="w-[18%] px-2 py-2 align-top">
-                        <div className="space-y-0.5">
-                          <div
-                            className="font-medium truncate text-xs"
-                            title={invoice.emitterName}
-                          >
-                            {invoice.emitterName}
-                          </div>
+                        {invoice.clientEmail && (
                           <div
                             className="text-xs text-[var(--arca-ink-3)] truncate"
-                            title={`${invoice.emitterIdentityType}: ${invoice.emitterIdentityNumber}`}
+                            title={invoice.clientEmail}
                           >
-                            {invoice.emitterIdentityType}:{' '}
-                            {invoice.emitterIdentityNumber}
+                            {invoice.clientEmail}
                           </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="w-[18%] px-2 py-2 align-top">
-                        <div className="space-y-0.5">
-                          <div
-                            className="font-medium truncate text-xs"
-                            title={invoice.recipientName}
-                          >
-                            {invoice.recipientName}
-                          </div>
-                          <div
-                            className="text-xs text-[var(--arca-ink-3)] truncate"
-                            title={`${invoice.recipientIdentityType}: ${invoice.recipientIdentityNumber}`}
-                          >
-                            {invoice.recipientIdentityType}:{' '}
-                            {invoice.recipientIdentityNumber}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="w-[9%] px-2 py-2 align-middle whitespace-nowrap">
-                        {formatDate(invoice.emitionDate)}
-                      </TableCell>
-                      <TableCell className="w-[15%] px-2 py-2 align-middle whitespace-nowrap font-medium">
-                        {formatCurrency(invoice.amount, invoice.currency)}
-                      </TableCell>
-                      <TableCell className="w-[15%] px-2 py-2 align-middle whitespace-nowrap">
-                        {getDirectionBadge(invoice.direction.toLowerCase())}
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-[var(--arca-ink-3)] text-xs">
+                        Sin cliente
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="w-[18%] px-2 py-2 align-top">
+                    <div className="space-y-0.5">
+                      <div
+                        className="font-medium truncate text-xs"
+                        title={invoice.emitterName}
+                      >
+                        {invoice.emitterName}
+                      </div>
+                      <div
+                        className="text-xs text-[var(--arca-ink-3)] truncate"
+                        title={`${invoice.emitterIdentityType}: ${invoice.emitterIdentityNumber}`}
+                      >
+                        {invoice.emitterIdentityType}:{' '}
+                        {invoice.emitterIdentityNumber}
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="w-[18%] px-2 py-2 align-top">
+                    <div className="space-y-0.5">
+                      <div
+                        className="font-medium truncate text-xs"
+                        title={invoice.recipientName}
+                      >
+                        {invoice.recipientName}
+                      </div>
+                      <div
+                        className="text-xs text-[var(--arca-ink-3)] truncate"
+                        title={`${invoice.recipientIdentityType}: ${invoice.recipientIdentityNumber}`}
+                      >
+                        {invoice.recipientIdentityType}:{' '}
+                        {invoice.recipientIdentityNumber}
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="w-[9%] px-2 py-2 align-middle whitespace-nowrap">
+                    {formatDate(invoice.emitionDate)}
+                  </TableCell>
+                  <TableCell className="w-[15%] px-2 py-2 align-middle whitespace-nowrap font-medium">
+                    {formatCurrency(invoice.amount, invoice.currency)}
+                  </TableCell>
+                  <TableCell className="w-[15%] px-2 py-2 align-middle whitespace-nowrap">
+                    {getDirectionBadge(invoice.direction.toLowerCase())}
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
         </Table>
 
         {/* Pagination */}
@@ -1563,7 +1582,9 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                           </span>
                         </div>
                         <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-[var(--arca-ink-3)]">IVA 5%:</span>
+                          <span className="text-[var(--arca-ink-3)]">
+                            IVA 5%:
+                          </span>
                           <span className="font-medium">
                             {formatCurrency(
                               invoiceDetails.IVA5,

@@ -38,7 +38,8 @@ export function ClientesTable({ from, to }: ClientesTableProps) {
 
   const { data: clients = [], isLoading } = useQuery({
     queryKey: ['topClients', fromStr, toStr],
-    queryFn: () => getTopClients({ data: { limit: 5, from: fromStr, to: toStr } }),
+    queryFn: () =>
+      getTopClients({ data: { limit: 5, from: fromStr, to: toStr } }),
   });
 
   return (

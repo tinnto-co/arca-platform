@@ -3,7 +3,15 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
-import { Plus, Trash2, RefreshCw, Wallet, ChevronDown, ChevronRight, CalendarClock } from 'lucide-react';
+import {
+  Plus,
+  Trash2,
+  RefreshCw,
+  Wallet,
+  ChevronDown,
+  ChevronRight,
+  CalendarClock,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Table,
@@ -132,25 +140,43 @@ const EVENT_TYPES = [
 ] as const;
 
 const EVENT_TYPE_COLORS: Record<string, { bg: string; text: string }> = {
-  ausencia: { bg: 'var(--arca-accent-warn-bg)', text: 'var(--arca-accent-warn)' },
-  llegada_tarde: { bg: 'var(--arca-accent-warn-bg)', text: 'var(--arca-accent-warn)' },
-  licencia: { bg: 'var(--arca-accent-info-bg, #e0f0ff)', text: 'var(--arca-accent-info, #1d6fa4)' },
-  accidente: { bg: 'var(--arca-accent-neg-bg)', text: 'var(--arca-accent-neg)' },
-  enfermedad: { bg: 'var(--arca-accent-neg-bg)', text: 'var(--arca-accent-neg)' },
+  ausencia: {
+    bg: 'var(--arca-accent-warn-bg)',
+    text: 'var(--arca-accent-warn)',
+  },
+  llegada_tarde: {
+    bg: 'var(--arca-accent-warn-bg)',
+    text: 'var(--arca-accent-warn)',
+  },
+  licencia: {
+    bg: 'var(--arca-accent-info-bg, #e0f0ff)',
+    text: 'var(--arca-accent-info, #1d6fa4)',
+  },
+  accidente: {
+    bg: 'var(--arca-accent-neg-bg)',
+    text: 'var(--arca-accent-neg)',
+  },
+  enfermedad: {
+    bg: 'var(--arca-accent-neg-bg)',
+    text: 'var(--arca-accent-neg)',
+  },
   cambio_categoria: { bg: '#f3e8ff', text: '#7c3aed' },
-  cambio_sueldo: { bg: 'var(--arca-accent-pos-bg)', text: 'var(--arca-accent-pos)' },
+  cambio_sueldo: {
+    bg: 'var(--arca-accent-pos-bg)',
+    text: 'var(--arca-accent-pos)',
+  },
   nota_legal: { bg: 'var(--arca-surface-2)', text: 'var(--arca-ink-2)' },
   observacion: { bg: 'var(--arca-surface-2)', text: 'var(--arca-ink-3)' },
 };
 
-type EmployeeEventRow = {
+interface EmployeeEventRow {
   id: string;
   type: string;
   title: string;
   description: string | null;
   eventDate: string | Date;
   affectsPayroll: boolean;
-};
+}
 
 function EmpleadoTimeline({
   empleadoId,
@@ -196,14 +222,13 @@ function EmpleadoTimeline({
       ) : (
         <div className="relative border-l-2 border-[var(--arca-border)] pl-4 space-y-3">
           {typedEvents.map((ev) => {
-            const colors = EVENT_TYPE_COLORS[ev.type] ?? EVENT_TYPE_COLORS.observacion;
+            const colors =
+              EVENT_TYPE_COLORS[ev.type] ?? EVENT_TYPE_COLORS.observacion;
             const label =
               EVENT_TYPES.find((t) => t.value === ev.type)?.label ?? ev.type;
             return (
               <div key={ev.id} className="relative">
-                <div
-                  className="absolute -left-[21px] mt-0.5 h-3 w-3 rounded-full border-2 border-[var(--arca-surface)] bg-[var(--arca-accent-primary)]"
-                />
+                <div className="absolute -left-[21px] mt-0.5 h-3 w-3 rounded-full border-2 border-[var(--arca-surface)] bg-[var(--arca-accent-primary)]" />
                 <div className="flex flex-wrap items-start gap-2">
                   <span
                     className="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium"
@@ -220,7 +245,9 @@ function EmpleadoTimeline({
                     </span>
                   )}
                 </div>
-                <p className="mt-0.5 text-sm text-[var(--arca-ink)]">{ev.title}</p>
+                <p className="mt-0.5 text-sm text-[var(--arca-ink)]">
+                  {ev.title}
+                </p>
                 {ev.description && (
                   <p className="mt-0.5 text-xs text-[var(--arca-ink-3)]">
                     {ev.description}
@@ -241,7 +268,9 @@ export function SueldosEmpleados({
 }: SueldosEmpleadosProps) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [expandedEmpleados, setExpandedEmpleados] = useState<Set<string>>(new Set());
+  const [expandedEmpleados, setExpandedEmpleados] = useState<Set<string>>(
+    new Set()
+  );
   const [addEventFor, setAddEventFor] = useState<string | null>(null);
   const [eventForm, setEventForm] = useState({
     type: 'observacion',
@@ -385,7 +414,8 @@ export function SueldosEmpleados({
           empleadoId: addEventFor,
           type: eventForm.type,
           title: eventForm.title,
-          eventDate: eventForm.eventDate || new Date().toISOString().slice(0, 10),
+          eventDate:
+            eventForm.eventDate || new Date().toISOString().slice(0, 10),
           description: eventForm.description || undefined,
           affectsPayroll: eventForm.affectsPayroll,
         },
@@ -394,12 +424,21 @@ export function SueldosEmpleados({
     onSuccess: () => {
       toast.success('Evento registrado');
       if (addEventFor) {
-        queryClient.invalidateQueries({ queryKey: ['employee-events', addEventFor] });
+        queryClient.invalidateQueries({
+          queryKey: ['employee-events', addEventFor],
+        });
       }
       setAddEventFor(null);
-      setEventForm({ type: 'observacion', title: '', description: '', eventDate: '', affectsPayroll: false });
+      setEventForm({
+        type: 'observacion',
+        title: '',
+        description: '',
+        eventDate: '',
+        affectsPayroll: false,
+      });
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : 'Error al guardar'),
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : 'Error al guardar'),
   });
 
   function toggleExpanded(id: string) {
@@ -723,7 +762,10 @@ export function SueldosEmpleados({
                             Baja
                           </Badge>
                         ) : (
-                          <Badge variant="default" className="whitespace-nowrap">
+                          <Badge
+                            variant="default"
+                            className="whitespace-nowrap"
+                          >
                             Activo
                           </Badge>
                         )}
@@ -787,7 +829,13 @@ export function SueldosEmpleados({
                             empleadoId={e.id}
                             onAdd={() => {
                               setAddEventFor(e.id);
-                              setEventForm({ type: 'observacion', title: '', description: '', eventDate: '', affectsPayroll: false });
+                              setEventForm({
+                                type: 'observacion',
+                                title: '',
+                                description: '',
+                                eventDate: '',
+                                affectsPayroll: false,
+                              });
                             }}
                           />
                         </TableCell>
@@ -958,7 +1006,9 @@ export function SueldosEmpleados({
                 id="ev-date"
                 type="date"
                 value={eventForm.eventDate}
-                onChange={(e) => setEventForm((f) => ({ ...f, eventDate: e.target.value }))}
+                onChange={(e) =>
+                  setEventForm((f) => ({ ...f, eventDate: e.target.value }))
+                }
               />
             </div>
             <div className="space-y-1">
@@ -966,7 +1016,9 @@ export function SueldosEmpleados({
               <Input
                 id="ev-title"
                 value={eventForm.title}
-                onChange={(e) => setEventForm((f) => ({ ...f, title: e.target.value }))}
+                onChange={(e) =>
+                  setEventForm((f) => ({ ...f, title: e.target.value }))
+                }
                 placeholder="Ej. Falta injustificada"
               />
             </div>
@@ -975,7 +1027,9 @@ export function SueldosEmpleados({
               <Textarea
                 id="ev-desc"
                 value={eventForm.description}
-                onChange={(e) => setEventForm((f) => ({ ...f, description: e.target.value }))}
+                onChange={(e) =>
+                  setEventForm((f) => ({ ...f, description: e.target.value }))
+                }
                 placeholder="Detalles opcionales…"
                 rows={3}
               />
@@ -984,7 +1038,9 @@ export function SueldosEmpleados({
               <Switch
                 id="ev-affects"
                 checked={eventForm.affectsPayroll}
-                onCheckedChange={(v) => setEventForm((f) => ({ ...f, affectsPayroll: v }))}
+                onCheckedChange={(v) =>
+                  setEventForm((f) => ({ ...f, affectsPayroll: v }))
+                }
               />
               <Label htmlFor="ev-affects" className="cursor-pointer">
                 Afecta liquidación

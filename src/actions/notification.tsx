@@ -491,7 +491,8 @@ export const assignNotification = createServerFn({
     assertCanWrite(role);
 
     const orgClientIds = await getOrgClientIds(orgId);
-    if (orgClientIds.length === 0) throw new Error('Notificación no encontrada');
+    if (orgClientIds.length === 0)
+      throw new Error('Notificación no encontrada');
 
     const [updated] = await db
       .update(notification)
@@ -518,7 +519,8 @@ export const resolveNotification = createServerFn({
     assertCanWrite(role);
 
     const orgClientIds = await getOrgClientIds(orgId);
-    if (orgClientIds.length === 0) throw new Error('Notificación no encontrada');
+    if (orgClientIds.length === 0)
+      throw new Error('Notificación no encontrada');
 
     const now = new Date();
     const [updated] = await db
@@ -546,7 +548,8 @@ export const unresolveNotification = createServerFn({
     assertCanWrite(role);
 
     const orgClientIds = await getOrgClientIds(orgId);
-    if (orgClientIds.length === 0) throw new Error('Notificación no encontrada');
+    if (orgClientIds.length === 0)
+      throw new Error('Notificación no encontrada');
 
     const [updated] = await db
       .update(notification)
@@ -635,7 +638,8 @@ export const classifyNotification = createServerFn({
     assertCanWrite(role);
 
     const orgClientIds = await getOrgClientIds(orgId);
-    if (orgClientIds.length === 0) throw new Error('Notificación no encontrada');
+    if (orgClientIds.length === 0)
+      throw new Error('Notificación no encontrada');
 
     const [notif] = await db
       .select({

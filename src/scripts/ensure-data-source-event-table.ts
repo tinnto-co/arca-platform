@@ -15,7 +15,8 @@ async function main() {
     process.exit(1);
   }
 
-  await db.execute(sql.raw(`
+  await db.execute(
+    sql.raw(`
     CREATE TABLE IF NOT EXISTS "data_source_event" (
       "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
       "organization_id" text NOT NULL REFERENCES "organization"("id") ON DELETE CASCADE,
@@ -29,7 +30,8 @@ async function main() {
       "metadata" jsonb,
       "created_at" timestamp DEFAULT now() NOT NULL
     )
-  `));
+  `)
+  );
 
   console.log('Tabla data_source_event: OK.');
 }

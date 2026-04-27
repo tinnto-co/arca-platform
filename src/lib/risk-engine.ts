@@ -79,7 +79,13 @@ export async function calculateRiskScore(
       ? db
           .select({ n: sql<number>`COUNT(*)` })
           .from(debt)
-          .where(and(eq(debt.client, clientId), eq(debt.status, 'open'), lt(debt.dueDate, now)))
+          .where(
+            and(
+              eq(debt.client, clientId),
+              eq(debt.status, 'open'),
+              lt(debt.dueDate, now)
+            )
+          )
           .then((r) => Number(r[0]?.n ?? 0))
       : Promise.resolve(0),
 
@@ -126,13 +132,21 @@ export async function calculateRiskScore(
     db
       .select({ ok: ivaScrape.ok })
       .from(ivaScrape)
-      .where(and(eq(ivaScrape.profileId, profileId), eq(ivaScrape.periodoFiscal, period)))
+      .where(
+        and(
+          eq(ivaScrape.profileId, profileId),
+          eq(ivaScrape.periodoFiscal, period)
+        )
+      )
       .limit(1)
       .then((r) => r[0] ?? null),
   ]);
 
   // 6. Months without invoices in the 3 months before the period (15% weight)
-  const monthsWithoutInvoices = await countMonthsWithoutInvoices(profileId, periodStart);
+  const monthsWithoutInvoices = await countMonthsWithoutInvoices(
+    profileId,
+    periodStart
+  );
 
   // --- Compute component scores ---
 
@@ -222,8 +236,16 @@ async function countMonthsWithoutInvoices(
 ): Promise<number> {
   let missing = 0;
   for (let i = 1; i <= 3; i++) {
-    const monthStart = new Date(periodStart.getFullYear(), periodStart.getMonth() - i, 1);
-    const monthEnd = new Date(periodStart.getFullYear(), periodStart.getMonth() - i + 1, 1);
+    const monthStart = new Date(
+      periodStart.getFullYear(),
+      periodStart.getMonth() - i,
+      1
+    );
+    const monthEnd = new Date(
+      periodStart.getFullYear(),
+      periodStart.getMonth() - i + 1,
+      1
+    );
     const n = await db
       .select({ n: sql<number>`COUNT(*)` })
       .from(invoice)

@@ -12,15 +12,7 @@ import {
   assertCanWrite,
   getMemberRole,
 } from '@/actions/helpers';
-import {
-  eq,
-  and,
-  desc,
-  gte,
-  lte,
-  sql,
-  asc,
-} from 'drizzle-orm';
+import { eq, and, desc, gte, lte, sql, asc } from 'drizzle-orm';
 
 /** Validate a client belongs to the calling user's org */
 async function ensureClientBelongsToOrg(
@@ -67,9 +59,7 @@ async function ensureJournalEntryBelongsToOrg(
     .select({ clientId: journalEntry.clientId })
     .from(journalEntry)
     .innerJoin(client, eq(client.id, journalEntry.clientId))
-    .where(
-      and(eq(journalEntry.id, entryId), eq(client.organizationId, orgId))
-    )
+    .where(and(eq(journalEntry.id, entryId), eq(client.organizationId, orgId)))
     .limit(1);
 
   if (!row) {
@@ -204,7 +194,9 @@ export const createJournalEntry = createServerFn({ method: 'POST' })
         .limit(1);
 
       if (!acc) {
-        throw new Error(`Cuenta ${line.accountId} no encontrada para este cliente`);
+        throw new Error(
+          `Cuenta ${line.accountId} no encontrada para este cliente`
+        );
       }
     }
 
@@ -317,7 +309,9 @@ export const getLedger = createServerFn({ method: 'GET' })
     const entryConditions = [eq(journalEntry.clientId, ctx.data.clientId)];
 
     if (ctx.data.from) {
-      entryConditions.push(gte(journalEntry.entryDate, new Date(ctx.data.from)));
+      entryConditions.push(
+        gte(journalEntry.entryDate, new Date(ctx.data.from))
+      );
     }
     if (ctx.data.to) {
       entryConditions.push(lte(journalEntry.entryDate, new Date(ctx.data.to)));
@@ -335,7 +329,10 @@ export const getLedger = createServerFn({ method: 'GET' })
         lineDescription: journalEntryLine.description,
       })
       .from(journalEntryLine)
-      .innerJoin(journalEntry, eq(journalEntry.id, journalEntryLine.journalEntryId))
+      .innerJoin(
+        journalEntry,
+        eq(journalEntry.id, journalEntryLine.journalEntryId)
+      )
       .where(
         and(
           eq(journalEntryLine.accountId, ctx.data.accountId),
@@ -345,7 +342,10 @@ export const getLedger = createServerFn({ method: 'GET' })
       .orderBy(asc(journalEntry.entryDate));
 
     const totalDebit = rows.reduce((s, r) => s + parseFloat(r.debit ?? '0'), 0);
-    const totalCredit = rows.reduce((s, r) => s + parseFloat(r.credit ?? '0'), 0);
+    const totalCredit = rows.reduce(
+      (s, r) => s + parseFloat(r.credit ?? '0'),
+      0
+    );
 
     return { accountId: ctx.data.accountId, rows, totalDebit, totalCredit };
   });
@@ -398,8 +398,14 @@ export const getTrialBalance = createServerFn({ method: 'GET' })
       )
       .orderBy(asc(accountingAccount.code));
 
-    const grandTotalDebit = rows.reduce((s, r) => s + parseFloat(r.totalDebit), 0);
-    const grandTotalCredit = rows.reduce((s, r) => s + parseFloat(r.totalCredit), 0);
+    const grandTotalDebit = rows.reduce(
+      (s, r) => s + parseFloat(r.totalDebit),
+      0
+    );
+    const grandTotalCredit = rows.reduce(
+      (s, r) => s + parseFloat(r.totalCredit),
+      0
+    );
 
     return { rows, grandTotalDebit, grandTotalCredit };
   });

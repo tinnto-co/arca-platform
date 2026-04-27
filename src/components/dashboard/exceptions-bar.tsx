@@ -13,7 +13,15 @@ interface ExceptionCardProps {
   icon: React.ReactNode;
 }
 
-function ExceptionCard({ count, label, description, href, colorVar, bgVar, icon }: ExceptionCardProps) {
+function ExceptionCard({
+  count,
+  label,
+  description,
+  href,
+  colorVar,
+  bgVar,
+  icon,
+}: ExceptionCardProps) {
   return (
     <Link
       to={href}
@@ -56,7 +64,12 @@ export function ExceptionsBar() {
 
   if (!data) return null;
 
-  const { overdueDebtCount, criticalNotificationCount, upcomingDueDateCount, clientErrorCount } = data;
+  const {
+    overdueDebtCount,
+    criticalNotificationCount,
+    upcomingDueDateCount,
+    clientErrorCount,
+  } = data;
 
   const cards = [
     {

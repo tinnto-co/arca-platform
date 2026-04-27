@@ -1,6 +1,19 @@
-import { getClientPortalSession } from '@/actions/helpers';
-import { createFileRoute, Outlet, redirect, Link, useLocation } from '@tanstack/react-router';
-import { Home, Calendar, Bell, FileText, ClipboardList, LogOut } from 'lucide-react';
+import { getPortalSession } from '@/actions/client-portal';
+import {
+  createFileRoute,
+  Outlet,
+  redirect,
+  Link,
+  useLocation,
+} from '@tanstack/react-router';
+import {
+  Home,
+  Calendar,
+  Bell,
+  FileText,
+  ClipboardList,
+  LogOut,
+} from 'lucide-react';
 import { authClient } from '@/lib/auth-client';
 import { cn } from '@/lib/utils';
 import { useNavigate } from '@tanstack/react-router';
@@ -9,7 +22,7 @@ export const Route = createFileRoute('/_client')({
   component: ClientPortalLayout,
   beforeLoad: async () => {
     try {
-      const portalSession = await getClientPortalSession();
+      const portalSession = await getPortalSession();
       return { clientId: portalSession.clientId, access: portalSession.access };
     } catch {
       throw redirect({ to: '/login' });
@@ -27,7 +40,8 @@ function NavItem({
   label: string;
 }) {
   const { pathname } = useLocation();
-  const isActive = to === '/portal' ? pathname === '/portal' : pathname.startsWith(to);
+  const isActive =
+    to === '/portal' ? pathname === '/portal' : pathname.startsWith(to);
 
   return (
     <Link
@@ -58,15 +72,29 @@ function ClientPortalLayout() {
       {/* Simplified sidebar */}
       <aside className="w-56 shrink-0 flex flex-col bg-[var(--arca-sidebar-bg)] border-r border-white/5 py-4 px-3 gap-1">
         <div className="px-2 mb-4">
-          <span className="text-white font-semibold text-sm tracking-tight">Portal del Cliente</span>
+          <span className="text-white font-semibold text-sm tracking-tight">
+            Portal del Cliente
+          </span>
         </div>
 
         <nav className="flex flex-col gap-0.5 flex-1">
           <NavItem to="/portal" icon={Home} label="Inicio" />
-          <NavItem to="/portal/vencimientos" icon={Calendar} label="Vencimientos" />
+          <NavItem
+            to="/portal/vencimientos"
+            icon={Calendar}
+            label="Vencimientos"
+          />
           <NavItem to="/portal/deudas" icon={FileText} label="Deudas" />
-          <NavItem to="/portal/notificaciones" icon={Bell} label="Notificaciones" />
-          <NavItem to="/portal/solicitudes" icon={ClipboardList} label="Solicitudes" />
+          <NavItem
+            to="/portal/notificaciones"
+            icon={Bell}
+            label="Notificaciones"
+          />
+          <NavItem
+            to="/portal/solicitudes"
+            icon={ClipboardList}
+            label="Solicitudes"
+          />
         </nav>
 
         <button

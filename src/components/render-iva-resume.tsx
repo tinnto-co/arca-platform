@@ -912,7 +912,9 @@ export const RenderIvaResume = React.forwardRef<
           ) : (
             <div
               className={`text-2xl font-bold tabular-nums truncate ${
-                saldoFinal < 0 ? 'text-[var(--arca-accent-neg)]' : 'text-[var(--arca-accent-pos-fg)]'
+                saldoFinal < 0
+                  ? 'text-[var(--arca-accent-neg)]'
+                  : 'text-[var(--arca-accent-pos-fg)]'
               }`}
             >
               {formatCurrency(saldoFinal)}

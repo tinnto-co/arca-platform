@@ -1,7 +1,12 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, CheckCircle2, UserCheck, ExternalLink } from 'lucide-react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  UserCheck,
+  ExternalLink,
+} from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { ArcaCard } from '@/components/dashboard/shared';
 import { relativeTime } from '@/components/dashboard/shared';
@@ -237,7 +242,13 @@ function AlertsPage() {
   const queryClient = useQueryClient();
 
   const { data: alertsRaw = [] } = useQuery({
-    queryKey: ['alerts', statusFilter, severityFilter, typeFilter, clientIdFilter],
+    queryKey: [
+      'alerts',
+      statusFilter,
+      severityFilter,
+      typeFilter,
+      clientIdFilter,
+    ],
     queryFn: () =>
       listAlerts({
         data: {

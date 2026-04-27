@@ -119,7 +119,9 @@ export function CreateClientDialog({ children }: CreateClientDialogProps) {
         {/* Header Button */}
         <div className="mb-6 relative">
           <h3 className="text-lg font-bold">Nuevo Cliente</h3>
-          <p className="text-sm text-muted-foreground">Todos los campos son obligatorios</p>
+          <p className="text-sm text-muted-foreground">
+            Todos los campos son obligatorios
+          </p>
           {/* <Button
             type="button"
             variant="secondary"

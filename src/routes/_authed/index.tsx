@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
-import { DashboardTopbar, periodToRange, type Period } from '@/components/dashboard/topbar';
+import {
+  DashboardTopbar,
+  periodToRange,
+  type Period,
+} from '@/components/dashboard/topbar';
 import { DashboardGreeting } from '@/components/dashboard/greeting';
 import { KpiCardsRow } from '@/components/dashboard/kpi-cards';
 import { MiniKpiCardsRow } from '@/components/dashboard/mini-kpi-cards';
@@ -11,16 +15,18 @@ import { VencimientosList } from '@/components/dashboard/vencimientos-list';
 import { ActividadFeed } from '@/components/dashboard/actividad-feed';
 import { ExceptionsBar } from '@/components/dashboard/exceptions-bar';
 
-export const Route = createFileRoute('/_authed/')(({
+export const Route = createFileRoute('/_authed/')({
   component: DashboardPage,
-}));
+});
 
 const DEFAULT_PERIOD: Period = '30d';
 
 function DashboardPage() {
-  const [activePeriod, setActivePeriod] = useState<Period | null>(DEFAULT_PERIOD);
-  const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>(
-    () => periodToRange(DEFAULT_PERIOD)
+  const [activePeriod, setActivePeriod] = useState<Period | null>(
+    DEFAULT_PERIOD
+  );
+  const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>(() =>
+    periodToRange(DEFAULT_PERIOD)
   );
 
   function handlePeriodChange(period: Period) {
@@ -35,9 +41,15 @@ function DashboardPage() {
 
   return (
     <>
-      <DashboardTopbar activePeriod={activePeriod} onPeriodChange={handlePeriodChange} />
+      <DashboardTopbar
+        activePeriod={activePeriod}
+        onPeriodChange={handlePeriodChange}
+      />
       <div className="p-[28px_36px_60px] max-w-[1440px]">
-        <DashboardGreeting dateRange={dateRange} onDateRangeChange={handleDateRangeChange} />
+        <DashboardGreeting
+          dateRange={dateRange}
+          onDateRangeChange={handleDateRangeChange}
+        />
         <ExceptionsBar />
         <KpiCardsRow from={dateRange.from} to={dateRange.to} />
         <MiniKpiCardsRow from={dateRange.from} to={dateRange.to} />

@@ -165,15 +165,25 @@ export function NotificationsView({
   const { data: notificationsData, isLoading } = useQuery({
     queryKey: clientIdProp
       ? [
-        'clientNotifications',
-        orgKey,
-        clientIdProp,
-        effectiveProfileFilter,
-        categoryFilter,
-        onlyUnresolved,
-        searchTerm,
-      ]
-      : ['notifications', orgKey, 1, clientFilter, '', '', categoryFilter, onlyUnresolved, searchTerm],
+          'clientNotifications',
+          orgKey,
+          clientIdProp,
+          effectiveProfileFilter,
+          categoryFilter,
+          onlyUnresolved,
+          searchTerm,
+        ]
+      : [
+          'notifications',
+          orgKey,
+          1,
+          clientFilter,
+          '',
+          '',
+          categoryFilter,
+          onlyUnresolved,
+          searchTerm,
+        ],
     queryFn: () =>
       getNotifications({
         data: {
@@ -239,7 +249,9 @@ export function NotificationsView({
     mutationFn: (id: string) => markNotificationOpened({ data: { id } }),
     onSuccess: () => {
       invalidateNotificationQueries();
-      queryClient.invalidateQueries({ queryKey: ['pendingNotificationsCount'] });
+      queryClient.invalidateQueries({
+        queryKey: ['pendingNotificationsCount'],
+      });
     },
   });
 
@@ -247,7 +259,9 @@ export function NotificationsView({
     mutationFn: (id: string) => markNotificationUnread({ data: { id } }),
     onSuccess: () => {
       invalidateNotificationQueries();
-      queryClient.invalidateQueries({ queryKey: ['pendingNotificationsCount'] });
+      queryClient.invalidateQueries({
+        queryKey: ['pendingNotificationsCount'],
+      });
     },
   });
 
@@ -255,7 +269,9 @@ export function NotificationsView({
     mutationFn: () => markAllNotificationsRead(),
     onSuccess: (result) => {
       invalidateNotificationQueries();
-      queryClient.invalidateQueries({ queryKey: ['pendingNotificationsCount'] });
+      queryClient.invalidateQueries({
+        queryKey: ['pendingNotificationsCount'],
+      });
       toast.success(
         result.count > 0
           ? `${result.count} notificación(es) marcadas como leídas`
@@ -364,14 +380,17 @@ export function NotificationsView({
   const rawNotifications = notificationsData?.notifications || [];
   const filteredNotifications = clientIdProp
     ? rawNotifications.filter(
-      (n: any) => n.profileName || n.profileIdentityNumber
-    )
+        (n: any) => n.profileName || n.profileIdentityNumber
+      )
     : rawNotifications.filter((n: any) => n.clientName || n.clientId);
   const notifications = [...filteredNotifications].sort((a: any, b: any) => {
     const sa = SEVERITY_ORDER[a.severity ?? 'unclassified'] ?? 4;
     const sb = SEVERITY_ORDER[b.severity ?? 'unclassified'] ?? 4;
     if (sa !== sb) return sa - sb;
-    return new Date(b.publicationDate).getTime() - new Date(a.publicationDate).getTime();
+    return (
+      new Date(b.publicationDate).getTime() -
+      new Date(a.publicationDate).getTime()
+    );
   });
 
   return (
@@ -494,7 +513,7 @@ export function NotificationsView({
                       className={cn(
                         'p-4 cursor-pointer hover:bg-muted/50 transition-colors',
                         selectedNotificationId === notification.id &&
-                        'bg-muted border-l-4 border-l-primary',
+                          'bg-muted border-l-4 border-l-primary',
                         notification.opened === false && 'bg-primary/5',
                         (notification as any).resolvedAt && 'opacity-50'
                       )}
@@ -519,11 +538,13 @@ export function NotificationsView({
                             >
                               {clientIdProp
                                 ? notification.profileName ||
-                                notification.profileIdentityNumber ||
-                                'Sin perfil'
+                                  notification.profileIdentityNumber ||
+                                  'Sin perfil'
                                 : notification.clientName || 'Sin cliente'}
                             </p>
-                            <SeverityBadge severity={(notification as any).severity ?? null} />
+                            <SeverityBadge
+                              severity={(notification as any).severity ?? null}
+                            />
                           </div>
                           {(notification as any).aiSummary ? (
                             <p className="text-xs text-muted-foreground italic line-clamp-1 mb-1">
@@ -550,7 +571,11 @@ export function NotificationsView({
                             }
                           }}
                           className="shrink-0 p-1 rounded hover:bg-muted transition-colors"
-                          title={notification.opened ? 'Marcar como no leída' : 'Marcar como leída'}
+                          title={
+                            notification.opened
+                              ? 'Marcar como no leída'
+                              : 'Marcar como leída'
+                          }
                         >
                           {notification.opened ? (
                             <Mail className="h-3.5 w-3.5 text-muted-foreground" />
@@ -579,7 +604,9 @@ export function NotificationsView({
                       <h2 className="text-xl font-semibold">
                         {selectedNotification.clientName || 'Sin cliente'}
                       </h2>
-                      <span className="font-light text-muted-foreground text-xs">ID Externo: {selectedNotification.externalId}</span>
+                      <span className="font-light text-muted-foreground text-xs">
+                        ID Externo: {selectedNotification.externalId}
+                      </span>
                     </div>
                     <div className="flex items-center gap-4 text-sm text-muted-foreground">
                       <div className="flex items-center gap-2">
@@ -620,7 +647,10 @@ export function NotificationsView({
                             label: m.name || m.email,
                           })),
                         ]}
-                        value={(selectedNotification as any).assignedToUserId ?? '__none__'}
+                        value={
+                          (selectedNotification as any).assignedToUserId ??
+                          '__none__'
+                        }
                         onValueChange={(val) =>
                           assignMutation.mutate({
                             id: selectedNotification.id,
@@ -636,7 +666,9 @@ export function NotificationsView({
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => unresolveMutation.mutate(selectedNotification.id)}
+                        onClick={() =>
+                          unresolveMutation.mutate(selectedNotification.id)
+                        }
                         disabled={unresolveMutation.isPending}
                       >
                         <XCircle className="h-4 w-4 mr-1" />
@@ -646,7 +678,9 @@ export function NotificationsView({
                       <Button
                         variant="default"
                         size="sm"
-                        onClick={() => resolveMutation.mutate(selectedNotification.id)}
+                        onClick={() =>
+                          resolveMutation.mutate(selectedNotification.id)
+                        }
                         disabled={resolveMutation.isPending}
                       >
                         <CheckCircle className="h-4 w-4 mr-1" />

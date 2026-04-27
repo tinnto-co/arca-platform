@@ -15,7 +15,8 @@ async function main() {
     process.exit(1);
   }
 
-  await db.execute(sql.raw(`
+  await db.execute(
+    sql.raw(`
     CREATE TABLE IF NOT EXISTS "agent_run" (
       "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
       "conversation_id" uuid NOT NULL REFERENCES "agent_conversation"("id") ON DELETE CASCADE,
@@ -32,7 +33,8 @@ async function main() {
       "started_at" timestamp DEFAULT now() NOT NULL,
       "finished_at" timestamp
     )
-  `));
+  `)
+  );
 
   console.log('Tabla agent_run: OK.');
 }

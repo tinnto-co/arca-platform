@@ -18,7 +18,10 @@ interface DashboardGreetingProps {
   onDateRangeChange: (range: { from: Date; to: Date }) => void;
 }
 
-export function DashboardGreeting({ dateRange, onDateRangeChange }: DashboardGreetingProps) {
+export function DashboardGreeting({
+  dateRange,
+  onDateRangeChange,
+}: DashboardGreetingProps) {
   const { data: user } = useQuery({
     queryKey: ['user'],
     queryFn: () => getUser(),

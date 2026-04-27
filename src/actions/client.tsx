@@ -1007,7 +1007,9 @@ export const markDueDateCompleted = createServerFn({
       .select({ id: dueDate.id })
       .from(dueDate)
       .innerJoin(client, eq(dueDate.client, client.id))
-      .where(and(eq(dueDate.id, ctx.data.id), eq(client.organizationId, orgId)));
+      .where(
+        and(eq(dueDate.id, ctx.data.id), eq(client.organizationId, orgId))
+      );
 
     if (!existing) throw new Error('Vencimiento no encontrado o sin acceso');
 
@@ -1030,7 +1032,9 @@ export const getBalanceConfig = createServerFn({ method: 'GET' })
     const [c] = await db
       .select({ id: client.id })
       .from(client)
-      .where(and(eq(client.id, ctx.data.clientId), eq(client.organizationId, orgId)));
+      .where(
+        and(eq(client.id, ctx.data.clientId), eq(client.organizationId, orgId))
+      );
     if (!c) throw new Error('Cliente no encontrado o sin acceso');
 
     const [config] = await db
@@ -1038,7 +1042,9 @@ export const getBalanceConfig = createServerFn({ method: 'GET' })
       .from(clientBalanceConfig)
       .where(eq(clientBalanceConfig.clientId, ctx.data.clientId));
 
-    return (config ?? null) as typeof config & { alertDaysBefore: number[] } | null;
+    return (config ?? null) as
+      | (typeof config & { alertDaysBefore: number[] })
+      | null;
   });
 
 export const upsertBalanceConfig = createServerFn({ method: 'POST' })
@@ -1056,7 +1062,13 @@ export const upsertBalanceConfig = createServerFn({ method: 'POST' })
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const { clientId, fiscalYearEndMonth, fiscalYearEndDay, presentationDueDays, alertDaysBefore } = ctx.data;
+    const {
+      clientId,
+      fiscalYearEndMonth,
+      fiscalYearEndDay,
+      presentationDueDays,
+      alertDaysBefore,
+    } = ctx.data;
 
     const [c] = await db
       .select({ id: client.id })

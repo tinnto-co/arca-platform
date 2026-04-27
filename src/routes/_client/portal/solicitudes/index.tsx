@@ -5,7 +5,15 @@ import {
   completeClientRequest,
   uploadDocumentForRequest,
 } from '@/actions/client-portal';
-import { ClipboardList, CheckCircle2, Clock, XCircle, Paperclip, Upload, Loader2 } from 'lucide-react';
+import {
+  ClipboardList,
+  CheckCircle2,
+  Clock,
+  XCircle,
+  Paperclip,
+  Upload,
+  Loader2,
+} from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { toast } from 'sonner';
@@ -57,7 +65,9 @@ function PortalSolicitudes() {
   const { clientId } = Route.useRouteContext();
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<string>('open');
-  const [uploadingRequestId, setUploadingRequestId] = useState<string | null>(null);
+  const [uploadingRequestId, setUploadingRequestId] = useState<string | null>(
+    null
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: requestsRaw, isLoading } = useQuery({
@@ -116,7 +126,9 @@ function PortalSolicitudes() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['portalRequests', clientId] });
-      queryClient.invalidateQueries({ queryKey: ['portalDashboard', clientId] });
+      queryClient.invalidateQueries({
+        queryKey: ['portalDashboard', clientId],
+      });
       setUploadingRequestId(null);
       toast.success('Documento enviado correctamente');
     },
@@ -263,7 +275,8 @@ function PortalSolicitudes() {
                         <span
                           className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full"
                           style={{
-                            background: 'var(--arca-accent-primary-bg, #e8f0fe)',
+                            background:
+                              'var(--arca-accent-primary-bg, #e8f0fe)',
                             color: 'var(--arca-accent-primary)',
                           }}
                         >
@@ -286,7 +299,9 @@ function PortalSolicitudes() {
                           </span>
                         ) : (
                           <button
-                            disabled={isUploadingThis || uploadMutation.isPending}
+                            disabled={
+                              isUploadingThis || uploadMutation.isPending
+                            }
                             onClick={() => handleUploadClick(req.id)}
                             className="text-[12px] font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5"
                             style={{
@@ -300,7 +315,9 @@ function PortalSolicitudes() {
                             ) : (
                               <Upload size={12} />
                             )}
-                            {isUploadingThis ? 'Subiendo...' : 'Subir documento'}
+                            {isUploadingThis
+                              ? 'Subiendo...'
+                              : 'Subir documento'}
                           </button>
                         )}
                       </>

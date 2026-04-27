@@ -57,15 +57,25 @@ export function SearchableSelect({
           style={{ width: widthClass }}
           className="inline-flex items-center justify-between gap-2 px-3 py-[7px] rounded-[var(--arca-r-md)] text-[13px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink)] hover:bg-[var(--arca-surface-2)] transition-colors duration-[120ms] disabled:opacity-50 disabled:pointer-events-none"
         >
-          <span className={cn('truncate', !selected && 'text-[var(--arca-ink-3)]')}>
+          <span
+            className={cn('truncate', !selected && 'text-[var(--arca-ink-3)]')}
+          >
             {selected ? selected.label : placeholder}
           </span>
           <ChevronsUpDown className="w-3.5 h-3.5 shrink-0 text-[var(--arca-ink-4)]" />
         </button>
       </PopoverTrigger>
-      <PopoverContent style={{ width: widthClass }} className="p-0" align={align} sideOffset={6}>
+      <PopoverContent
+        style={{ width: widthClass }}
+        className="p-0"
+        align={align}
+        sideOffset={6}
+      >
         <Command>
-          <CommandInput placeholder={searchPlaceholder} className="text-[13px]" />
+          <CommandInput
+            placeholder={searchPlaceholder}
+            className="text-[13px]"
+          />
           <CommandList className="max-h-[220px]">
             <CommandEmpty className="py-6 text-center text-[12.5px] text-[var(--arca-ink-3)]">
               {emptyMessage}

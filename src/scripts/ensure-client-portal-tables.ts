@@ -15,7 +15,8 @@ async function main() {
     process.exit(1);
   }
 
-  await db.execute(sql.raw(`
+  await db.execute(
+    sql.raw(`
     CREATE TABLE IF NOT EXISTS "client_user_access" (
       "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
       "client_id" uuid NOT NULL REFERENCES "client"("id") ON DELETE CASCADE,
@@ -29,9 +30,11 @@ async function main() {
       "created_at" timestamp DEFAULT now() NOT NULL,
       CONSTRAINT "client_user_access_client_id_user_id_unique" UNIQUE ("client_id", "user_id")
     )
-  `));
+  `)
+  );
 
-  await db.execute(sql.raw(`
+  await db.execute(
+    sql.raw(`
     CREATE TABLE IF NOT EXISTS "client_request" (
       "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
       "organization_id" text NOT NULL REFERENCES "organization"("id") ON DELETE CASCADE,
@@ -47,7 +50,8 @@ async function main() {
       "metadata" jsonb,
       "created_at" timestamp DEFAULT now() NOT NULL
     )
-  `));
+  `)
+  );
 
   console.log('Tablas client_user_access y client_request: OK.');
 }

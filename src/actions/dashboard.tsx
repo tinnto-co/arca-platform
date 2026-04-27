@@ -186,11 +186,21 @@ export const getMonthlyEvolution = createServerFn({ method: 'GET' })
       );
 
     // Build monthly buckets from `from` to `to`
-    const buckets: { year: number; month: number; outbound: number; inbound: number }[] = [];
+    const buckets: {
+      year: number;
+      month: number;
+      outbound: number;
+      inbound: number;
+    }[] = [];
     let cur = new Date(from.getFullYear(), from.getMonth(), 1);
     const endBucket = new Date(to.getFullYear(), to.getMonth(), 1);
     while (cur <= endBucket) {
-      buckets.push({ year: cur.getFullYear(), month: cur.getMonth(), outbound: 0, inbound: 0 });
+      buckets.push({
+        year: cur.getFullYear(),
+        month: cur.getMonth(),
+        outbound: 0,
+        inbound: 0,
+      });
       cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
     }
 
@@ -201,16 +211,30 @@ export const getMonthlyEvolution = createServerFn({ method: 'GET' })
       }
 
       const d = new Date(inv.emitionDate);
-      const bucket = buckets.find((b) => b.year === d.getFullYear() && b.month === d.getMonth());
+      const bucket = buckets.find(
+        (b) => b.year === d.getFullYear() && b.month === d.getMonth()
+      );
       if (!bucket) return;
 
-      if (inv.direction?.toLowerCase() === 'outbound') bucket.outbound += amount;
-      else if (inv.direction?.toLowerCase() === 'inbound') bucket.inbound += amount;
+      if (inv.direction?.toLowerCase() === 'outbound')
+        bucket.outbound += amount;
+      else if (inv.direction?.toLowerCase() === 'inbound')
+        bucket.inbound += amount;
     });
 
     const MONTH_NAMES: Record<number, string> = {
-      0: 'ene', 1: 'feb', 2: 'mar', 3: 'abr', 4: 'may', 5: 'jun',
-      6: 'jul', 7: 'ago', 8: 'sep', 9: 'oct', 10: 'nov', 11: 'dic',
+      0: 'ene',
+      1: 'feb',
+      2: 'mar',
+      3: 'abr',
+      4: 'may',
+      5: 'jun',
+      6: 'jul',
+      7: 'ago',
+      8: 'sep',
+      9: 'oct',
+      10: 'nov',
+      11: 'dic',
     };
 
     return buckets.map((b) => ({
@@ -433,7 +457,14 @@ export const getTopClients = createServerFn({ method: 'GET' })
         and(inArray(debt.client, userClientIds), lte(debt.dueDate, new Date()))
       )
       .groupBy(debt.client)
-      .catch(() => [] as { clientId: string | null; overdueCount: number; maxOverdueDays: number }[]);
+      .catch(
+        () =>
+          [] as {
+            clientId: string | null;
+            overdueCount: number;
+            maxOverdueDays: number;
+          }[]
+      );
 
     const clientMap = new Map(userClients.map((c) => [c.id, c]));
     const overdueMap = new Map(overdueDebts.map((d) => [d.clientId, d]));
@@ -637,10 +668,7 @@ export const getExceptionsSummary = createServerFn({ method: 'GET' }).handler(
           .select({ count: sql<number>`count(*)` })
           .from(client)
           .where(
-            and(
-              eq(client.organizationId, orgId),
-              eq(client.hasErrors, true)
-            )
+            and(eq(client.organizationId, orgId), eq(client.hasErrors, true))
           ),
       ]);
 

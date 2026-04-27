@@ -1,7 +1,14 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { getClientPortalDashboard } from '@/actions/client-portal';
-import { Calendar, FileText, Bell, ClipboardList, CheckCircle2, AlertCircle } from 'lucide-react';
+import {
+  Calendar,
+  FileText,
+  Bell,
+  ClipboardList,
+  CheckCircle2,
+  AlertCircle,
+} from 'lucide-react';
 import { format, isPast } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -10,7 +17,7 @@ export const Route = createFileRoute('/_client/portal/')({
 });
 
 function PortalDashboard() {
-  const { clientId } = Route.useRouteContext() as { clientId: string; access: Record<string, unknown> };
+  const { clientId } = Route.useRouteContext();
 
   const { data, isLoading } = useQuery({
     queryKey: ['portalDashboard', clientId],
@@ -29,10 +36,17 @@ function PortalDashboard() {
 
   if (!data) return null;
 
-  const { client, nextDueDates, openDebts, unreadNotificationsCount, pendingRequests, permissions } = data;
+  const {
+    client,
+    nextDueDates,
+    openDebts,
+    unreadNotificationsCount,
+    pendingRequests,
+    permissions,
+  } = data;
 
   const totalDebt = openDebts
-    ? openDebts.reduce((sum, d) => sum + parseFloat((d.balance as string) ?? '0'), 0)
+    ? openDebts.reduce((sum, d) => sum + parseFloat(d.balance ?? '0'), 0)
     : 0;
 
   return (
@@ -52,7 +66,11 @@ function PortalDashboard() {
         <SummaryCard
           icon={<Calendar size={16} />}
           label="Vencimientos"
-          value={nextDueDates.length > 0 ? `${nextDueDates.length} próximos` : 'Sin vencimientos'}
+          value={
+            nextDueDates.length > 0
+              ? `${nextDueDates.length} próximos`
+              : 'Sin vencimientos'
+          }
           colorVar="var(--arca-accent-primary)"
           bgVar="var(--arca-accent-primary-bg)"
         />
@@ -65,23 +83,55 @@ function PortalDashboard() {
                 ? `$${totalDebt.toLocaleString('es-AR', { maximumFractionDigits: 0 })}`
                 : 'Sin deudas'
             }
-            colorVar={openDebts && openDebts.length > 0 ? 'var(--arca-accent-neg)' : 'var(--arca-accent-pos)'}
-            bgVar={openDebts && openDebts.length > 0 ? 'var(--arca-accent-neg-bg)' : 'var(--arca-accent-pos-bg)'}
+            colorVar={
+              openDebts && openDebts.length > 0
+                ? 'var(--arca-accent-neg)'
+                : 'var(--arca-accent-pos)'
+            }
+            bgVar={
+              openDebts && openDebts.length > 0
+                ? 'var(--arca-accent-neg-bg)'
+                : 'var(--arca-accent-pos-bg)'
+            }
           />
         )}
         <SummaryCard
           icon={<Bell size={16} />}
           label="Notificaciones"
-          value={unreadNotificationsCount > 0 ? `${unreadNotificationsCount} sin leer` : 'Sin novedades'}
-          colorVar={unreadNotificationsCount > 0 ? 'var(--arca-accent-warn)' : 'var(--arca-accent-pos)'}
-          bgVar={unreadNotificationsCount > 0 ? 'var(--arca-accent-warn-bg)' : 'var(--arca-accent-pos-bg)'}
+          value={
+            unreadNotificationsCount > 0
+              ? `${unreadNotificationsCount} sin leer`
+              : 'Sin novedades'
+          }
+          colorVar={
+            unreadNotificationsCount > 0
+              ? 'var(--arca-accent-warn)'
+              : 'var(--arca-accent-pos)'
+          }
+          bgVar={
+            unreadNotificationsCount > 0
+              ? 'var(--arca-accent-warn-bg)'
+              : 'var(--arca-accent-pos-bg)'
+          }
         />
         <SummaryCard
           icon={<ClipboardList size={16} />}
           label="Solicitudes"
-          value={pendingRequests.length > 0 ? `${pendingRequests.length} pendientes` : 'Sin solicitudes'}
-          colorVar={pendingRequests.length > 0 ? 'var(--arca-accent-warn)' : 'var(--arca-accent-pos)'}
-          bgVar={pendingRequests.length > 0 ? 'var(--arca-accent-warn-bg)' : 'var(--arca-accent-pos-bg)'}
+          value={
+            pendingRequests.length > 0
+              ? `${pendingRequests.length} pendientes`
+              : 'Sin solicitudes'
+          }
+          colorVar={
+            pendingRequests.length > 0
+              ? 'var(--arca-accent-warn)'
+              : 'var(--arca-accent-pos)'
+          }
+          bgVar={
+            pendingRequests.length > 0
+              ? 'var(--arca-accent-warn-bg)'
+              : 'var(--arca-accent-pos-bg)'
+          }
         />
       </div>
 
@@ -106,21 +156,35 @@ function PortalDashboard() {
                     <span
                       className="shrink-0 text-xs font-semibold w-10 text-center rounded-md py-1"
                       style={{
-                        background: overdue ? 'var(--arca-accent-neg-bg)' : 'var(--arca-accent-primary-bg)',
-                        color: overdue ? 'var(--arca-accent-neg)' : 'var(--arca-accent-primary)',
+                        background: overdue
+                          ? 'var(--arca-accent-neg-bg)'
+                          : 'var(--arca-accent-primary-bg)',
+                        color: overdue
+                          ? 'var(--arca-accent-neg)'
+                          : 'var(--arca-accent-primary)',
                       }}
                     >
                       {format(date, 'd MMM', { locale: es })}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-[var(--arca-ink)] truncate">{d.tax}</p>
-                      <p className="text-xs text-[var(--arca-ink-3)] truncate">{d.concept}</p>
+                      <p className="text-sm font-medium text-[var(--arca-ink)] truncate">
+                        {d.tax}
+                      </p>
+                      <p className="text-xs text-[var(--arca-ink-3)] truncate">
+                        {d.concept}
+                      </p>
                     </div>
                     {overdue && (
-                      <AlertCircle size={14} className="shrink-0 text-[var(--arca-accent-neg)]" />
+                      <AlertCircle
+                        size={14}
+                        className="shrink-0 text-[var(--arca-accent-neg)]"
+                      />
                     )}
                     {d.completedAt && (
-                      <CheckCircle2 size={14} className="shrink-0 text-[var(--arca-accent-pos)]" />
+                      <CheckCircle2
+                        size={14}
+                        className="shrink-0 text-[var(--arca-accent-pos)]"
+                      />
                     )}
                   </li>
                 );
@@ -144,11 +208,18 @@ function PortalDashboard() {
                 {openDebts.slice(0, 4).map((d) => (
                   <li key={d.id} className="py-2.5 flex items-center gap-3">
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-[var(--arca-ink)] truncate">{d.tax}</p>
-                      <p className="text-xs text-[var(--arca-ink-3)] truncate">{d.concept}</p>
+                      <p className="text-sm font-medium text-[var(--arca-ink)] truncate">
+                        {d.tax}
+                      </p>
+                      <p className="text-xs text-[var(--arca-ink-3)] truncate">
+                        {d.concept}
+                      </p>
                     </div>
                     <span className="text-sm font-semibold text-[var(--arca-accent-neg)] tabular-nums shrink-0">
-                      ${parseFloat((d.balance as string) ?? '0').toLocaleString('es-AR', { maximumFractionDigits: 0 })}
+                      $
+                      {parseFloat(d.balance ?? '0').toLocaleString('es-AR', {
+                        maximumFractionDigits: 0,
+                      })}
                     </span>
                   </li>
                 ))}
@@ -166,7 +237,9 @@ function PortalDashboard() {
         {pendingRequests.length > 0 && (
           <PortalCard
             title="Solicitudes pendientes"
-            icon={<ClipboardList size={15} className="text-[var(--arca-ink-3)]" />}
+            icon={
+              <ClipboardList size={15} className="text-[var(--arca-ink-3)]" />
+            }
             href="/portal/solicitudes"
             linkLabel="Ver todas"
           >
@@ -174,7 +247,9 @@ function PortalDashboard() {
               {pendingRequests.slice(0, 4).map((r) => (
                 <li key={r.id} className="py-2.5 flex items-center gap-3">
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-[var(--arca-ink)] truncate">{r.title}</p>
+                    <p className="text-sm font-medium text-[var(--arca-ink)] truncate">
+                      {r.title}
+                    </p>
                     <p className="text-xs text-[var(--arca-ink-3)]">
                       {r.dueAt
                         ? `Vence: ${format(new Date(r.dueAt as unknown as string), 'dd/MM/yyyy')}`
@@ -211,7 +286,9 @@ function PortalDashboard() {
               >
                 {unreadNotificationsCount}
               </span>
-              <p className="text-sm text-[var(--arca-ink-3)]">notificaciones sin leer</p>
+              <p className="text-sm text-[var(--arca-ink-3)]">
+                notificaciones sin leer
+              </p>
             </div>
           </PortalCard>
         )}
@@ -238,9 +315,14 @@ function SummaryCard({
       className="rounded-[12px] border px-4 py-3"
       style={{ background: bgVar, borderColor: colorVar + '40' }}
     >
-      <div className="flex items-center gap-1.5 mb-1" style={{ color: colorVar }}>
+      <div
+        className="flex items-center gap-1.5 mb-1"
+        style={{ color: colorVar }}
+      >
         {icon}
-        <span className="text-[11px] font-medium uppercase tracking-wide">{label}</span>
+        <span className="text-[11px] font-medium uppercase tracking-wide">
+          {label}
+        </span>
       </div>
       <p className="text-sm font-semibold text-[var(--arca-ink)]">{value}</p>
     </div>
@@ -265,7 +347,9 @@ function PortalCard({
       <div className="flex items-center justify-between px-4 pt-4 pb-2">
         <div className="flex items-center gap-2">
           {icon}
-          <span className="text-[13px] font-semibold text-[var(--arca-ink)]">{title}</span>
+          <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+            {title}
+          </span>
         </div>
         <a
           href={href}
@@ -279,7 +363,13 @@ function PortalCard({
   );
 }
 
-function EmptyState({ message, positive }: { message: string; positive?: boolean }) {
+function EmptyState({
+  message,
+  positive,
+}: {
+  message: string;
+  positive?: boolean;
+}) {
   return (
     <div className="py-4 flex items-center justify-center gap-2">
       {positive ? (

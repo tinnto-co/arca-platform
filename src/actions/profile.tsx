@@ -2,7 +2,11 @@ import { createServerFn } from '@tanstack/react-start';
 import z from 'zod';
 import { db } from '@/lib/db';
 import { profile, client } from '@/drizzle/schema';
-import { getSessionWithOrg, assertCanWrite, getMemberRole } from '@/actions/helpers';
+import {
+  getSessionWithOrg,
+  assertCanWrite,
+  getMemberRole,
+} from '@/actions/helpers';
 import { eq, and } from 'drizzle-orm';
 
 export const getProfile = createServerFn({
@@ -75,7 +79,12 @@ export const updateProfileManagement = createServerFn({ method: 'POST' })
       const [clientData] = await db
         .select({ id: client.id })
         .from(client)
-        .where(and(eq(client.id, profileData.clientId), eq(client.organizationId, orgId)))
+        .where(
+          and(
+            eq(client.id, profileData.clientId),
+            eq(client.organizationId, orgId)
+          )
+        )
         .limit(1);
       if (!clientData) throw new Error('No autorizado');
     }
@@ -86,7 +95,9 @@ export const updateProfileManagement = createServerFn({ method: 'POST' })
       .set({
         managedByStudy: ctx.data.managedByStudy,
         disabledAt: ctx.data.managedByStudy ? null : now,
-        disabledReason: ctx.data.managedByStudy ? null : (ctx.data.disabledReason ?? null),
+        disabledReason: ctx.data.managedByStudy
+          ? null
+          : (ctx.data.disabledReason ?? null),
       })
       .where(eq(profile.id, ctx.data.profileId));
 

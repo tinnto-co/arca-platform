@@ -15,7 +15,8 @@ async function main() {
     process.exit(1);
   }
 
-  await db.execute(sql.raw(`
+  await db.execute(
+    sql.raw(`
     CREATE TABLE IF NOT EXISTS "alert" (
       "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
       "organization_id" text NOT NULL REFERENCES "organization"("id") ON DELETE CASCADE,
@@ -36,11 +37,14 @@ async function main() {
       "created_at" timestamp DEFAULT now() NOT NULL,
       "updated_at" timestamp DEFAULT now() NOT NULL
     )
-  `));
+  `)
+  );
 
-  await db.execute(sql.raw(`
+  await db.execute(
+    sql.raw(`
     CREATE INDEX IF NOT EXISTS "idx_alert_org_status" ON "alert" ("organization_id", "status")
-  `));
+  `)
+  );
 
   console.log('Tabla alert: OK.');
 }

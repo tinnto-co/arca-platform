@@ -18,6 +18,23 @@ import {
 } from '@/actions/helpers';
 import { eq, and, isNull, gte, asc, desc } from 'drizzle-orm';
 
+export const getPortalSession = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    const session = await getAuthSession();
+    const userId = session.user.id;
+
+    const [access] = await db
+      .select()
+      .from(clientUserAccess)
+      .where(eq(clientUserAccess.userId, userId))
+      .limit(1);
+
+    if (!access) throw new Error('Sin acceso al portal del cliente');
+
+    return { userId, clientId: access.clientId, access };
+  }
+);
+
 /**
  * Validates that the calling user has a clientUserAccess row for the given client.
  * Returns the access row (with permission flags) or throws if not found.
@@ -449,7 +466,8 @@ export const uploadDocumentForRequest = createServerFn({ method: 'POST' })
       .limit(1);
 
     if (!request) throw new Error('Solicitud no encontrada');
-    if (request.status !== 'open') throw new Error('La solicitud no está abierta');
+    if (request.status !== 'open')
+      throw new Error('La solicitud no está abierta');
 
     const access = await getClientPortalAccess(userId, request.clientId);
     if (!access.canUploadDocuments) {

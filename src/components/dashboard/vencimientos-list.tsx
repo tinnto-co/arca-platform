@@ -101,7 +101,11 @@ export function VencimientosList() {
         )}
       </div>
 
-      <ArcaCardFoot leftText="Próximos 30 días" linkText="Ver calendario →" linkHref="/vencimientos" />
+      <ArcaCardFoot
+        leftText="Próximos 30 días"
+        linkText="Ver calendario →"
+        linkHref="/vencimientos"
+      />
     </ArcaCard>
   );
 }

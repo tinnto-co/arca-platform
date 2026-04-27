@@ -13,15 +13,7 @@ import {
   assertCanWrite,
   getMemberRole,
 } from '@/actions/helpers';
-import {
-  eq,
-  and,
-  desc,
-  gte,
-  lte,
-  sql,
-  inArray,
-} from 'drizzle-orm';
+import { eq, and, desc, gte, lte, sql, inArray } from 'drizzle-orm';
 
 /** Validate a bank account belongs to the calling user's org */
 async function ensureBankAccountBelongsToOrg(
@@ -33,10 +25,7 @@ async function ensureBankAccountBelongsToOrg(
     .from(bankAccount)
     .innerJoin(client, eq(client.id, bankAccount.clientId))
     .where(
-      and(
-        eq(bankAccount.id, bankAccountId),
-        eq(client.organizationId, orgId)
-      )
+      and(eq(bankAccount.id, bankAccountId), eq(client.organizationId, orgId))
     )
     .limit(1);
 
@@ -67,7 +56,9 @@ export const createBankAccount = createServerFn({ method: 'POST' })
     const [c] = await db
       .select({ id: client.id })
       .from(client)
-      .where(and(eq(client.id, ctx.data.clientId), eq(client.organizationId, orgId)))
+      .where(
+        and(eq(client.id, ctx.data.clientId), eq(client.organizationId, orgId))
+      )
       .limit(1);
 
     if (!c) throw new Error('Cliente no encontrado o no autorizado');
@@ -96,7 +87,9 @@ export const listBankAccounts = createServerFn({ method: 'GET' })
     const [c] = await db
       .select({ id: client.id })
       .from(client)
-      .where(and(eq(client.id, ctx.data.clientId), eq(client.organizationId, orgId)))
+      .where(
+        and(eq(client.id, ctx.data.clientId), eq(client.organizationId, orgId))
+      )
       .limit(1);
 
     if (!c) throw new Error('Cliente no encontrado o no autorizado');
@@ -104,7 +97,12 @@ export const listBankAccounts = createServerFn({ method: 'GET' })
     return db
       .select()
       .from(bankAccount)
-      .where(and(eq(bankAccount.clientId, ctx.data.clientId), eq(bankAccount.active, true)))
+      .where(
+        and(
+          eq(bankAccount.clientId, ctx.data.clientId),
+          eq(bankAccount.active, true)
+        )
+      )
       .orderBy(bankAccount.createdAt);
   });
 
@@ -151,14 +149,17 @@ export const importBankTransactions = createServerFn({ method: 'POST' })
             inArray(bankTransaction.externalId, externalIds)
           )
         );
-      existingExternalIds = new Set(existing.map((e) => e.externalId).filter(Boolean) as string[]);
+      existingExternalIds = new Set(
+        existing.map((e) => e.externalId).filter(Boolean) as string[]
+      );
     }
 
     const toInsert = ctx.data.transactions.filter(
       (t) => !t.externalId || !existingExternalIds.has(t.externalId)
     );
 
-    if (toInsert.length === 0) return { imported: 0, skipped: ctx.data.transactions.length };
+    if (toInsert.length === 0)
+      return { imported: 0, skipped: ctx.data.transactions.length };
 
     await db.insert(bankTransaction).values(
       toInsert.map((t) => ({
@@ -174,7 +175,10 @@ export const importBankTransactions = createServerFn({ method: 'POST' })
       }))
     );
 
-    return { imported: toInsert.length, skipped: ctx.data.transactions.length - toInsert.length };
+    return {
+      imported: toInsert.length,
+      skipped: ctx.data.transactions.length - toInsert.length,
+    };
   });
 
 export const listBankTransactions = createServerFn({ method: 'GET' })
@@ -195,10 +199,14 @@ export const listBankTransactions = createServerFn({ method: 'GET' })
       eq(bankTransaction.bankAccountId, ctx.data.bankAccountId) as any,
     ];
     if (ctx.data.from) {
-      conditions.push(gte(bankTransaction.transactionDate, new Date(ctx.data.from)) as any);
+      conditions.push(
+        gte(bankTransaction.transactionDate, new Date(ctx.data.from)) as any
+      );
     }
     if (ctx.data.to) {
-      conditions.push(lte(bankTransaction.transactionDate, new Date(ctx.data.to)) as any);
+      conditions.push(
+        lte(bankTransaction.transactionDate, new Date(ctx.data.to)) as any
+      );
     }
 
     // Fetch transactions with their match status
@@ -221,7 +229,8 @@ export const listBankTransactions = createServerFn({ method: 'GET' })
 
     const matchMap = new Map<string, typeof matches>();
     for (const m of matches) {
-      if (!matchMap.has(m.bankTransactionId)) matchMap.set(m.bankTransactionId, []);
+      if (!matchMap.has(m.bankTransactionId))
+        matchMap.set(m.bankTransactionId, []);
       matchMap.get(m.bankTransactionId)!.push(m);
     }
 
@@ -239,7 +248,10 @@ export const autoMatchTransactions = createServerFn({ method: 'POST' })
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const { clientId } = await ensureBankAccountBelongsToOrg(ctx.data.bankAccountId, orgId);
+    const { clientId } = await ensureBankAccountBelongsToOrg(
+      ctx.data.bankAccountId,
+      orgId
+    );
 
     // Get unmatched transactions
     const allTxs = await db
@@ -310,11 +322,17 @@ export const autoMatchTransactions = createServerFn({ method: 'POST' })
         let confidence = 50; // base: amount + date match
 
         // CUIT match bonus
-        const counterpartyCuit = tx.counterpartyIdentityNumber?.replace(/\D/g, '') ?? '';
+        const counterpartyCuit =
+          tx.counterpartyIdentityNumber?.replace(/\D/g, '') ?? '';
         if (counterpartyCuit) {
-          const emitterCuit = inv.emitterIdentityNumber?.replace(/\D/g, '') ?? '';
-          const recipientCuit = inv.recipientIdentityNumber?.replace(/\D/g, '') ?? '';
-          if (counterpartyCuit === emitterCuit || counterpartyCuit === recipientCuit) {
+          const emitterCuit =
+            inv.emitterIdentityNumber?.replace(/\D/g, '') ?? '';
+          const recipientCuit =
+            inv.recipientIdentityNumber?.replace(/\D/g, '') ?? '';
+          if (
+            counterpartyCuit === emitterCuit ||
+            counterpartyCuit === recipientCuit
+          ) {
             confidence += 40;
           }
         }
@@ -359,7 +377,10 @@ export const manualMatchTransaction = createServerFn({ method: 'POST' })
 
     // Validate transaction belongs to org
     const [tx] = await db
-      .select({ id: bankTransaction.id, bankAccountId: bankTransaction.bankAccountId })
+      .select({
+        id: bankTransaction.id,
+        bankAccountId: bankTransaction.bankAccountId,
+      })
       .from(bankTransaction)
       .innerJoin(bankAccount, eq(bankAccount.id, bankTransaction.bankAccountId))
       .innerJoin(client, eq(client.id, bankAccount.clientId))
@@ -416,7 +437,9 @@ export const getReconciliationSummary = createServerFn({ method: 'GET' })
     const [c] = await db
       .select({ id: client.id })
       .from(client)
-      .where(and(eq(client.id, ctx.data.clientId), eq(client.organizationId, orgId)))
+      .where(
+        and(eq(client.id, ctx.data.clientId), eq(client.organizationId, orgId))
+      )
       .limit(1);
 
     if (!c) throw new Error('Cliente no encontrado o no autorizado');
@@ -425,7 +448,12 @@ export const getReconciliationSummary = createServerFn({ method: 'GET' })
     const accounts = await db
       .select({ id: bankAccount.id })
       .from(bankAccount)
-      .where(and(eq(bankAccount.clientId, ctx.data.clientId), eq(bankAccount.active, true)));
+      .where(
+        and(
+          eq(bankAccount.clientId, ctx.data.clientId),
+          eq(bankAccount.active, true)
+        )
+      );
 
     if (accounts.length === 0) {
       return {
@@ -451,9 +479,14 @@ export const getReconciliationSummary = createServerFn({ method: 'GET' })
       .where(inArray(bankTransaction.bankAccountId, accountIds));
 
     const [matchedCount] = await db
-      .select({ count: sql<number>`COUNT(DISTINCT ${bankInvoiceMatch.bankTransactionId})` })
+      .select({
+        count: sql<number>`COUNT(DISTINCT ${bankInvoiceMatch.bankTransactionId})`,
+      })
       .from(bankInvoiceMatch)
-      .innerJoin(bankTransaction, eq(bankInvoiceMatch.bankTransactionId, bankTransaction.id))
+      .innerJoin(
+        bankTransaction,
+        eq(bankInvoiceMatch.bankTransactionId, bankTransaction.id)
+      )
       .where(inArray(bankTransaction.bankAccountId, accountIds));
 
     const total = Number(totals?.total ?? 0);

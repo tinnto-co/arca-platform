@@ -4906,7 +4906,9 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                                             data: { requestId: req.id },
                                           });
                                           if (!doc?.url) {
-                                            toast.error('Documento no encontrado');
+                                            toast.error(
+                                              'Documento no encontrado'
+                                            );
                                             return;
                                           }
                                           const a = document.createElement('a');
@@ -4914,7 +4916,9 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                                           a.download = doc.name ?? 'documento';
                                           a.click();
                                         } catch {
-                                          toast.error('Error al descargar el documento');
+                                          toast.error(
+                                            'Error al descargar el documento'
+                                          );
                                         }
                                       }}
                                       className="inline-flex items-center gap-1 text-[11px] text-[var(--arca-accent-primary)] hover:underline font-medium"
@@ -4922,7 +4926,9 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                                       <FileDown className="h-3 w-3" />
                                       Doc
                                     </button>
-                                    <span className="text-[var(--arca-border-strong)]">·</span>
+                                    <span className="text-[var(--arca-border-strong)]">
+                                      ·
+                                    </span>
                                   </>
                                 )}
                                 {req.status === 'open' && (

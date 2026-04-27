@@ -30,8 +30,18 @@ interface CalendarEvent {
 const WEEKDAY_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
 const MONTH_NAMES = [
-  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+  'Enero',
+  'Febrero',
+  'Marzo',
+  'Abril',
+  'Mayo',
+  'Junio',
+  'Julio',
+  'Agosto',
+  'Septiembre',
+  'Octubre',
+  'Noviembre',
+  'Diciembre',
 ];
 
 function startOfMonth(d: Date) {
@@ -62,7 +72,13 @@ function buildCalendarGrid(year: number, month: number): Date[] {
   const gridStart = new Date(year, month, 1 - startWeekday);
   const days: Date[] = [];
   for (let i = 0; i < 42; i++) {
-    days.push(new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i));
+    days.push(
+      new Date(
+        gridStart.getFullYear(),
+        gridStart.getMonth(),
+        gridStart.getDate() + i
+      )
+    );
   }
   return days;
 }
@@ -80,7 +96,8 @@ export function VencimientosCalendar() {
   const from = startOfMonth(currentMonth);
   // Fetch a bit extra for the grid edges (prev/next month days visible in grid)
   const gridDays = useMemo(
-    () => buildCalendarGrid(currentMonth.getFullYear(), currentMonth.getMonth()),
+    () =>
+      buildCalendarGrid(currentMonth.getFullYear(), currentMonth.getMonth()),
     [currentMonth]
   );
   const fetchFrom = gridDays[0];
@@ -158,16 +175,12 @@ export function VencimientosCalendar() {
   }, [selectedDate, eventsByDay]);
 
   function prevMonth() {
-    setCurrentMonth(
-      (m) => new Date(m.getFullYear(), m.getMonth() - 1, 1)
-    );
+    setCurrentMonth((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1));
     setSelectedDate(null);
   }
 
   function nextMonth() {
-    setCurrentMonth(
-      (m) => new Date(m.getFullYear(), m.getMonth() + 1, 1)
-    );
+    setCurrentMonth((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1));
     setSelectedDate(null);
   }
 
@@ -192,7 +205,9 @@ export function VencimientosCalendar() {
             Resumen del mes
           </h3>
           {isLoading ? (
-            <div className="text-[12.5px] text-[var(--arca-ink-3)]">Cargando...</div>
+            <div className="text-[12.5px] text-[var(--arca-ink-3)]">
+              Cargando...
+            </div>
           ) : (
             <div className="space-y-2.5">
               <div className="flex items-center justify-between">
@@ -226,10 +241,10 @@ export function VencimientosCalendar() {
             >
               {selectedDate
                 ? selectedDate.toLocaleDateString('es-AR', {
-                  weekday: 'long',
-                  day: 'numeric',
-                  month: 'long',
-                })
+                    weekday: 'long',
+                    day: 'numeric',
+                    month: 'long',
+                  })
                 : 'Seleccioná un día'}
             </h3>
           </div>
@@ -262,11 +277,18 @@ export function VencimientosCalendar() {
                         {ev.kind === 'due' ? (
                           <button
                             onClick={() =>
-                              completeMutation.mutate({ id: ev.id, completed: !isCompleted })
+                              completeMutation.mutate({
+                                id: ev.id,
+                                completed: !isCompleted,
+                              })
                             }
                             disabled={completeMutation.isPending}
                             className="shrink-0 mt-0.5 cursor-pointer text-[var(--arca-ink-3)] hover:text-[var(--arca-accent-pos)] transition-colors"
-                            title={isCompleted ? 'Marcar como pendiente' : 'Marcar como completado'}
+                            title={
+                              isCompleted
+                                ? 'Marcar como pendiente'
+                                : 'Marcar como completado'
+                            }
                           >
                             {isCompleted ? (
                               <CheckCircle2 className="w-5 h-5 text-[var(--arca-accent-pos)]" />
@@ -283,7 +305,8 @@ export function VencimientosCalendar() {
                           <div
                             className={cn(
                               'text-[13px] font-semibold text-[var(--arca-ink)] leading-tight',
-                              isCompleted && 'line-through text-[var(--arca-ink-3)]'
+                              isCompleted &&
+                                'line-through text-[var(--arca-ink-3)]'
                             )}
                           >
                             {ev.title}
@@ -302,7 +325,8 @@ export function VencimientosCalendar() {
                             {ev.clientName || 'General'}
                             {ev.balance && (
                               <span className="ml-2 font-semibold text-[var(--arca-accent-neg-fg)]">
-                                $ {parseFloat(ev.balance).toLocaleString('es-AR')}
+                                ${' '}
+                                {parseFloat(ev.balance).toLocaleString('es-AR')}
                               </span>
                             )}
                           </div>
@@ -326,7 +350,8 @@ export function VencimientosCalendar() {
               className="text-[17px] font-semibold tracking-[-0.01em] text-[var(--arca-ink)]"
               style={{ fontFamily: 'var(--ff-display)' }}
             >
-              {MONTH_NAMES[currentMonth.getMonth()]} {currentMonth.getFullYear()}
+              {MONTH_NAMES[currentMonth.getMonth()]}{' '}
+              {currentMonth.getFullYear()}
             </h2>
             <div className="flex items-center gap-0.5">
               <button
@@ -383,15 +408,16 @@ export function VencimientosCalendar() {
                   i % 7 === 0 && 'border-l-0',
                   !isCurrentMonth && 'bg-[var(--arca-surface-2)]',
                   isSelected && 'bg-[var(--arca-accent-info-bg)]',
-                  !isSelected && isCurrentMonth && 'hover:bg-[var(--arca-surface-2)]'
+                  !isSelected &&
+                    isCurrentMonth &&
+                    'hover:bg-[var(--arca-surface-2)]'
                 )}
               >
                 {/* Day number */}
                 <span
                   className={cn(
                     'inline-flex items-center justify-center w-6 h-6 rounded-full text-[12.5px] font-medium',
-                    isToday &&
-                    'bg-[var(--arca-ink)] text-white',
+                    isToday && 'bg-[var(--arca-ink)] text-white',
                     !isToday && isCurrentMonth && 'text-[var(--arca-ink)]',
                     !isToday && !isCurrentMonth && 'text-[var(--arca-ink-4)]'
                   )}
@@ -410,13 +436,17 @@ export function VencimientosCalendar() {
                           className={cn(
                             'text-[9.5px] font-medium leading-tight px-1 py-px rounded truncate',
                             evCompleted &&
-                            'bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)] line-through',
-                            !evCompleted && ev.kind === 'due' && !isPast &&
-                            'bg-[var(--arca-accent-info-bg)] text-[var(--arca-accent-info-fg)]',
-                            !evCompleted && ev.kind === 'due' && isPast &&
-                            'bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]',
+                              'bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)] line-through',
+                            !evCompleted &&
+                              ev.kind === 'due' &&
+                              !isPast &&
+                              'bg-[var(--arca-accent-info-bg)] text-[var(--arca-accent-info-fg)]',
+                            !evCompleted &&
+                              ev.kind === 'due' &&
+                              isPast &&
+                              'bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]',
                             ev.kind === 'debt' &&
-                            'bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]'
+                              'bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]'
                           )}
                         >
                           {ev.title}

@@ -11,8 +11,37 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { db, dbReadonly } from '@/lib/db';
-import { agentConversation, agentMessage, agentRun, ivaScrape, profile, client, invoice, notification, debt, dueDate, job, liquidacionImportEmpleado, payrollEscala, payrollConvenioCategoria, payrollConcepto } from '@/drizzle/schema';
-import { eq, and, sql, ilike, gte, lte, isNull, isNotNull, lt, desc, inArray, or } from 'drizzle-orm';
+import {
+  agentConversation,
+  agentMessage,
+  agentRun,
+  ivaScrape,
+  profile,
+  client,
+  invoice,
+  notification,
+  debt,
+  dueDate,
+  job,
+  liquidacionImportEmpleado,
+  payrollEscala,
+  payrollConvenioCategoria,
+  payrollConcepto,
+} from '@/drizzle/schema';
+import {
+  eq,
+  and,
+  sql,
+  ilike,
+  gte,
+  lte,
+  isNull,
+  isNotNull,
+  lt,
+  desc,
+  inArray,
+  or,
+} from 'drizzle-orm';
 import { differenceInYears } from 'date-fns';
 import { evaluatePayrollFormulaStrict } from '@/lib/payroll-formula';
 import {
@@ -22,7 +51,6 @@ import {
   calcularIvaDesdeFacturas,
   type InvoiceIvaRow,
 } from '@/lib/iva-calc';
-
 
 const googleAI = createGoogleGenerativeAI({
   apiKey: process.env.GEMINI_API_KEY!,
@@ -286,7 +314,7 @@ export const Route = createFileRoute('/api/agent')({
           })
           .from(agentMessage)
           .where(eq(agentMessage.conversationId, conversationId))
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+
           .orderBy(agentMessage.createdAt)
           .limit(12);
 
@@ -363,7 +391,11 @@ HERRAMIENTAS DISPONIBLES
               description:
                 'Obtiene un resumen completo del estado de un cliente: datos generales, cantidad de perfiles, notificaciones abiertas, deudas vencidas, próximos vencimientos (30 días) y últimas actualizaciones de scraping por tipo. Usá este tool cuando te pregunten sobre el estado general de un cliente.',
               inputSchema: z.object({
-                clientName: z.string().describe('Nombre del cliente (búsqueda parcial, case-insensitive)'),
+                clientName: z
+                  .string()
+                  .describe(
+                    'Nombre del cliente (búsqueda parcial, case-insensitive)'
+                  ),
               }),
               execute: async ({ clientName }) => {
                 const matchingClients = await dbReadonly
@@ -378,17 +410,29 @@ HERRAMIENTAS DISPONIBLES
                     registeredAt: client.registeredAt,
                   })
                   .from(client)
-                  .where(and(eq(client.organizationId, orgId), ilike(client.name, `%${clientName}%`)));
+                  .where(
+                    and(
+                      eq(client.organizationId, orgId),
+                      ilike(client.name, `%${clientName}%`)
+                    )
+                  );
 
                 if (matchingClients.length === 0)
-                  return { error: `No encontré clientes con nombre "${clientName}"` };
+                  return {
+                    error: `No encontré clientes con nombre "${clientName}"`,
+                  };
                 if (matchingClients.length > 1)
-                  return { error: 'Más de un cliente coincide', options: matchingClients.map((c) => c.name) };
+                  return {
+                    error: 'Más de un cliente coincide',
+                    options: matchingClients.map((c) => c.name),
+                  };
 
                 const foundClient = matchingClients[0];
                 const clientId = foundClient.id;
                 const now = new Date();
-                const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+                const in30Days = new Date(
+                  now.getTime() + 30 * 24 * 60 * 60 * 1000
+                );
 
                 const [
                   profileCountResult,
@@ -409,7 +453,7 @@ HERRAMIENTAS DISPONIBLES
                       and(
                         eq(notification.client, clientId),
                         isNotNull(notification.profile),
-                        isNull(notification.resolvedAt),
+                        isNull(notification.resolvedAt)
                       )
                     ),
 
@@ -423,7 +467,7 @@ HERRAMIENTAS DISPONIBLES
                       and(
                         eq(debt.client, clientId),
                         eq(debt.status, 'open'),
-                        lt(debt.dueDate, now),
+                        lt(debt.dueDate, now)
                       )
                     ),
 
@@ -440,7 +484,7 @@ HERRAMIENTAS DISPONIBLES
                         eq(dueDate.client, clientId),
                         isNull(dueDate.completedAt),
                         gte(dueDate.dueDate, now),
-                        lte(dueDate.dueDate, in30Days),
+                        lte(dueDate.dueDate, in30Days)
                       )
                     )
                     .orderBy(dueDate.dueDate)
@@ -449,7 +493,12 @@ HERRAMIENTAS DISPONIBLES
                   dbReadonly
                     .select({ type: job.type, finishedAt: job.finishedAt })
                     .from(job)
-                    .where(and(eq(job.clientId, clientId), eq(job.status, 'finished')))
+                    .where(
+                      and(
+                        eq(job.clientId, clientId),
+                        eq(job.status, 'finished')
+                      )
+                    )
                     .orderBy(desc(job.finishedAt))
                     .limit(50),
                 ]);
@@ -457,7 +506,8 @@ HERRAMIENTAS DISPONIBLES
                 const lastScrapesByType: Record<string, string | null> = {};
                 for (const j of lastScrapes) {
                   if (!lastScrapesByType[j.type]) {
-                    lastScrapesByType[j.type] = j.finishedAt?.toISOString() ?? null;
+                    lastScrapesByType[j.type] =
+                      j.finishedAt?.toISOString() ?? null;
                   }
                 }
 
@@ -472,7 +522,9 @@ HERRAMIENTAS DISPONIBLES
                     fechaAlta: foundClient.registeredAt?.toISOString() ?? null,
                   },
                   perfiles: { total: profileCountResult[0]?.count ?? 0 },
-                  notificaciones: { abiertas: notificationCountResult[0]?.count ?? 0 },
+                  notificaciones: {
+                    abiertas: notificationCountResult[0]?.count ?? 0,
+                  },
                   deudas: {
                     vencidasAbiertas: debtResult[0]?.count ?? 0,
                     totalDeuda: debtResult[0]?.totalBalance ?? '0',
@@ -491,9 +543,29 @@ HERRAMIENTAS DISPONIBLES
               description:
                 'Obtiene las notificaciones abiertas (no resueltas) del domicilio fiscal electrónico. Filtrá opcionalmente por cliente, severidad (critical, medium, low, informational, unclassified) y límite de resultados.',
               inputSchema: z.object({
-                clientName: z.string().optional().describe('Nombre del cliente (búsqueda parcial). Si no se especifica, devuelve notificaciones de todos los clientes de la org.'),
-                severity: z.enum(['critical', 'medium', 'low', 'informational', 'unclassified']).optional().describe('Filtrar por severidad'),
-                limit: z.number().int().min(1).max(100).default(10).describe('Cantidad máxima de resultados (default: 10)'),
+                clientName: z
+                  .string()
+                  .optional()
+                  .describe(
+                    'Nombre del cliente (búsqueda parcial). Si no se especifica, devuelve notificaciones de todos los clientes de la org.'
+                  ),
+                severity: z
+                  .enum([
+                    'critical',
+                    'medium',
+                    'low',
+                    'informational',
+                    'unclassified',
+                  ])
+                  .optional()
+                  .describe('Filtrar por severidad'),
+                limit: z
+                  .number()
+                  .int()
+                  .min(1)
+                  .max(100)
+                  .default(10)
+                  .describe('Cantidad máxima de resultados (default: 10)'),
               }),
               execute: async ({ clientName, severity, limit }) => {
                 // Resolve client IDs scoped to org
@@ -513,9 +585,14 @@ HERRAMIENTAS DISPONIBLES
                     c.name.toLowerCase().includes(clientName.toLowerCase())
                   );
                   if (matched.length === 0)
-                    return { error: `No encontré clientes con nombre "${clientName}"` };
+                    return {
+                      error: `No encontré clientes con nombre "${clientName}"`,
+                    };
                   if (matched.length > 1)
-                    return { error: 'Más de un cliente coincide', options: matched.map((c) => c.name) };
+                    return {
+                      error: 'Más de un cliente coincide',
+                      options: matched.map((c) => c.name),
+                    };
                   clientIds = [matched[0].id];
                   resolvedClientName = matched[0].name;
                 }
@@ -567,9 +644,23 @@ HERRAMIENTAS DISPONIBLES
               description:
                 'Obtiene las deudas fiscales de los clientes. Filtrá opcionalmente por cliente, estado (open, in_plan, paid, disputed) y límite de resultados.',
               inputSchema: z.object({
-                clientName: z.string().optional().describe('Nombre del cliente (búsqueda parcial). Si no se especifica, devuelve deudas de todos los clientes de la org.'),
-                status: z.enum(['open', 'in_plan', 'paid', 'disputed']).optional().describe('Filtrar por estado de la deuda'),
-                limit: z.number().int().min(1).max(200).default(20).describe('Cantidad máxima de resultados (default: 20)'),
+                clientName: z
+                  .string()
+                  .optional()
+                  .describe(
+                    'Nombre del cliente (búsqueda parcial). Si no se especifica, devuelve deudas de todos los clientes de la org.'
+                  ),
+                status: z
+                  .enum(['open', 'in_plan', 'paid', 'disputed'])
+                  .optional()
+                  .describe('Filtrar por estado de la deuda'),
+                limit: z
+                  .number()
+                  .int()
+                  .min(1)
+                  .max(200)
+                  .default(20)
+                  .describe('Cantidad máxima de resultados (default: 20)'),
               }),
               execute: async ({ clientName, status, limit }) => {
                 // Resolve client IDs scoped to org
@@ -578,8 +669,7 @@ HERRAMIENTAS DISPONIBLES
                   .from(client)
                   .where(eq(client.organizationId, orgId));
 
-                if (allOrgClients.length === 0)
-                  return { debts: [], total: 0 };
+                if (allOrgClients.length === 0) return { debts: [], total: 0 };
 
                 let clientIds = allOrgClients.map((c) => c.id);
                 let resolvedClientName: string | undefined;
@@ -589,9 +679,14 @@ HERRAMIENTAS DISPONIBLES
                     c.name.toLowerCase().includes(clientName.toLowerCase())
                   );
                   if (matched.length === 0)
-                    return { error: `No encontré clientes con nombre "${clientName}"` };
+                    return {
+                      error: `No encontré clientes con nombre "${clientName}"`,
+                    };
                   if (matched.length > 1)
-                    return { error: 'Más de un cliente coincide', options: matched.map((c) => c.name) };
+                    return {
+                      error: 'Más de un cliente coincide',
+                      options: matched.map((c) => c.name),
+                    };
                   clientIds = [matched[0].id];
                   resolvedClientName = matched[0].name;
                 }
@@ -653,11 +748,33 @@ HERRAMIENTAS DISPONIBLES
               description:
                 'Obtiene los vencimientos fiscales próximos. Filtrá opcionalmente por cliente, cantidad de días hacia adelante e incluir/excluir completados.',
               inputSchema: z.object({
-                clientName: z.string().optional().describe('Nombre del cliente (búsqueda parcial). Si no se especifica, devuelve vencimientos de todos los clientes.'),
-                days_ahead: z.number().int().min(1).max(365).default(30).describe('Cantidad de días hacia adelante a consultar (default: 30)'),
-                include_completed: z.boolean().default(false).describe('Incluir vencimientos ya completados (default: false)'),
+                clientName: z
+                  .string()
+                  .optional()
+                  .describe(
+                    'Nombre del cliente (búsqueda parcial). Si no se especifica, devuelve vencimientos de todos los clientes.'
+                  ),
+                days_ahead: z
+                  .number()
+                  .int()
+                  .min(1)
+                  .max(365)
+                  .default(30)
+                  .describe(
+                    'Cantidad de días hacia adelante a consultar (default: 30)'
+                  ),
+                include_completed: z
+                  .boolean()
+                  .default(false)
+                  .describe(
+                    'Incluir vencimientos ya completados (default: false)'
+                  ),
               }),
-              execute: async ({ clientName, days_ahead, include_completed }) => {
+              execute: async ({
+                clientName,
+                days_ahead,
+                include_completed,
+              }) => {
                 const allOrgClients = await dbReadonly
                   .select({ id: client.id, name: client.name })
                   .from(client)
@@ -674,15 +791,22 @@ HERRAMIENTAS DISPONIBLES
                     c.name.toLowerCase().includes(clientName.toLowerCase())
                   );
                   if (matched.length === 0)
-                    return { error: `No encontré clientes con nombre "${clientName}"` };
+                    return {
+                      error: `No encontré clientes con nombre "${clientName}"`,
+                    };
                   if (matched.length > 1)
-                    return { error: 'Más de un cliente coincide', options: matched.map((c) => c.name) };
+                    return {
+                      error: 'Más de un cliente coincide',
+                      options: matched.map((c) => c.name),
+                    };
                   clientIds = [matched[0].id];
                   resolvedClientName = matched[0].name;
                 }
 
                 const now = new Date();
-                const futureDate = new Date(now.getTime() + days_ahead * 24 * 60 * 60 * 1000);
+                const futureDate = new Date(
+                  now.getTime() + days_ahead * 24 * 60 * 60 * 1000
+                );
 
                 const conditions: any[] = [
                   inArray(dueDate.client, clientIds),
@@ -714,8 +838,11 @@ HERRAMIENTAS DISPONIBLES
                   cliente: resolvedClientName ?? 'Todos los clientes',
                   total: rows.length,
                   dueDates: rows.map((d) => {
-                    const msUntilDue = (d.dueDateVal?.getTime() ?? 0) - now.getTime();
-                    const daysUntilDue = Math.ceil(msUntilDue / (1000 * 60 * 60 * 24));
+                    const msUntilDue =
+                      (d.dueDateVal?.getTime() ?? 0) - now.getTime();
+                    const daysUntilDue = Math.ceil(
+                      msUntilDue / (1000 * 60 * 60 * 24)
+                    );
                     return {
                       id: d.id,
                       impuesto: d.tax,
@@ -734,24 +861,44 @@ HERRAMIENTAS DISPONIBLES
               description:
                 'Obtiene el estado fiscal de un perfil: datos del perfil, último scrape IVA, notificaciones abiertas, empleados activos y fechas de último scraping.',
               inputSchema: z.object({
-                clientName: z.string().describe('Nombre del cliente (búsqueda parcial)'),
-                profileName: z.string().optional().describe('Nombre del perfil (búsqueda parcial). Si no se especifica, devuelve todos los perfiles del cliente.'),
+                clientName: z
+                  .string()
+                  .describe('Nombre del cliente (búsqueda parcial)'),
+                profileName: z
+                  .string()
+                  .optional()
+                  .describe(
+                    'Nombre del perfil (búsqueda parcial). Si no se especifica, devuelve todos los perfiles del cliente.'
+                  ),
               }),
               execute: async ({ clientName, profileName }) => {
                 const matchingClients = await dbReadonly
                   .select({ id: client.id, name: client.name })
                   .from(client)
-                  .where(and(eq(client.organizationId, orgId), ilike(client.name, `%${clientName}%`)));
+                  .where(
+                    and(
+                      eq(client.organizationId, orgId),
+                      ilike(client.name, `%${clientName}%`)
+                    )
+                  );
 
                 if (matchingClients.length === 0)
-                  return { error: `No encontré clientes con nombre "${clientName}"` };
+                  return {
+                    error: `No encontré clientes con nombre "${clientName}"`,
+                  };
                 if (matchingClients.length > 1)
-                  return { error: 'Más de un cliente coincide', options: matchingClients.map((c) => c.name) };
+                  return {
+                    error: 'Más de un cliente coincide',
+                    options: matchingClients.map((c) => c.name),
+                  };
 
                 const foundClient = matchingClients[0];
 
                 const profileWhere = profileName
-                  ? and(eq(profile.client, foundClient.id), ilike(profile.name, `%${profileName}%`))
+                  ? and(
+                      eq(profile.client, foundClient.id),
+                      ilike(profile.name, `%${profileName}%`)
+                    )
                   : eq(profile.client, foundClient.id);
 
                 const profiles = await dbReadonly
@@ -769,7 +916,9 @@ HERRAMIENTAS DISPONIBLES
                   .where(profileWhere);
 
                 if (profiles.length === 0)
-                  return { error: `No se encontraron perfiles para ${foundClient.name}` };
+                  return {
+                    error: `No se encontraron perfiles para ${foundClient.name}`,
+                  };
 
                 const results = [];
                 for (const p of profiles) {
@@ -799,7 +948,7 @@ HERRAMIENTAS DISPONIBLES
                         and(
                           eq(notification.profile, p.id),
                           isNotNull(notification.profile),
-                          isNull(notification.resolvedAt),
+                          isNull(notification.resolvedAt)
                         )
                       ),
 
@@ -809,14 +958,19 @@ HERRAMIENTAS DISPONIBLES
                       .where(
                         and(
                           eq(liquidacionImportEmpleado.profileId, p.id),
-                          isNull(liquidacionImportEmpleado.fechaBaja),
+                          isNull(liquidacionImportEmpleado.fechaBaja)
                         )
                       ),
 
                     dbReadonly
                       .select({ type: job.type, finishedAt: job.finishedAt })
                       .from(job)
-                      .where(and(eq(job.clientId, foundClient.id), eq(job.status, 'finished')))
+                      .where(
+                        and(
+                          eq(job.clientId, foundClient.id),
+                          eq(job.status, 'finished')
+                        )
+                      )
                       .orderBy(desc(job.finishedAt))
                       .limit(30),
                   ]);
@@ -824,7 +978,8 @@ HERRAMIENTAS DISPONIBLES
                   const lastScrapesByType: Record<string, string | null> = {};
                   for (const j of lastScrapes) {
                     if (!lastScrapesByType[j.type]) {
-                      lastScrapesByType[j.type] = j.finishedAt?.toISOString() ?? null;
+                      lastScrapesByType[j.type] =
+                        j.finishedAt?.toISOString() ?? null;
                     }
                   }
 
@@ -853,21 +1008,39 @@ HERRAMIENTAS DISPONIBLES
               description:
                 'Previsualiza el cálculo de un recibo de sueldo para un empleado en un período dado. No persiste nada en la base de datos.',
               inputSchema: z.object({
-                clientName: z.string().describe('Nombre del cliente (búsqueda parcial)'),
-                employeeName: z.string().describe('Nombre del empleado (búsqueda parcial)'),
-                periodo: z.string().describe('Período de la liquidación en formato YYYY-MM (ej: "2026-03")'),
+                clientName: z
+                  .string()
+                  .describe('Nombre del cliente (búsqueda parcial)'),
+                employeeName: z
+                  .string()
+                  .describe('Nombre del empleado (búsqueda parcial)'),
+                periodo: z
+                  .string()
+                  .describe(
+                    'Período de la liquidación en formato YYYY-MM (ej: "2026-03")'
+                  ),
               }),
               execute: async ({ clientName, employeeName, periodo }) => {
                 // 1. Find client
                 const matchingClients = await dbReadonly
                   .select({ id: client.id, name: client.name })
                   .from(client)
-                  .where(and(eq(client.organizationId, orgId), ilike(client.name, `%${clientName}%`)));
+                  .where(
+                    and(
+                      eq(client.organizationId, orgId),
+                      ilike(client.name, `%${clientName}%`)
+                    )
+                  );
 
                 if (matchingClients.length === 0)
-                  return { error: `No encontré clientes con nombre "${clientName}"` };
+                  return {
+                    error: `No encontré clientes con nombre "${clientName}"`,
+                  };
                 if (matchingClients.length > 1)
-                  return { error: 'Más de un cliente coincide', options: matchingClients.map((c) => c.name) };
+                  return {
+                    error: 'Más de un cliente coincide',
+                    options: matchingClients.map((c) => c.name),
+                  };
 
                 const foundClient = matchingClients[0];
 
@@ -882,36 +1055,55 @@ HERRAMIENTAS DISPONIBLES
                     convenioId: liquidacionImportEmpleado.convenioId,
                   })
                   .from(liquidacionImportEmpleado)
-                  .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+                  .innerJoin(
+                    profile,
+                    eq(liquidacionImportEmpleado.profileId, profile.id)
+                  )
                   .where(
                     and(
                       eq(profile.client, foundClient.id),
-                      ilike(liquidacionImportEmpleado.nombre, `%${employeeName}%`),
-                      isNull(liquidacionImportEmpleado.fechaBaja),
+                      ilike(
+                        liquidacionImportEmpleado.nombre,
+                        `%${employeeName}%`
+                      ),
+                      isNull(liquidacionImportEmpleado.fechaBaja)
                     )
                   )
                   .limit(5);
 
                 if (employees.length === 0)
-                  return { error: `No encontré empleados activos con nombre "${employeeName}" en ${foundClient.name}` };
+                  return {
+                    error: `No encontré empleados activos con nombre "${employeeName}" en ${foundClient.name}`,
+                  };
                 if (employees.length > 1)
-                  return { error: 'Más de un empleado coincide', options: employees.map((e) => e.nombre) };
+                  return {
+                    error: 'Más de un empleado coincide',
+                    options: employees.map((e) => e.nombre),
+                  };
 
                 const emp = employees[0];
 
                 if (!emp.categoriaId || !emp.convenioId)
-                  return { error: `El empleado ${emp.nombre} no tiene convenio/categoría configurada para liquidar.` };
+                  return {
+                    error: `El empleado ${emp.nombre} no tiene convenio/categoría configurada para liquidar.`,
+                  };
 
                 // 3. Get basico from payrollEscala (most recent vigente for the period)
                 const periodoDate = new Date(periodo + '-01');
                 const escalaRows = await dbReadonly
-                  .select({ montoBasico: payrollEscala.montoBasico, vigenciaDesde: payrollEscala.vigenciaDesde })
+                  .select({
+                    montoBasico: payrollEscala.montoBasico,
+                    vigenciaDesde: payrollEscala.vigenciaDesde,
+                  })
                   .from(payrollEscala)
                   .where(
                     and(
                       eq(payrollEscala.categoriaId, emp.categoriaId),
                       lte(payrollEscala.vigenciaDesde, periodoDate),
-                      or(isNull(payrollEscala.vigenciaHasta), gte(payrollEscala.vigenciaHasta, periodoDate)),
+                      or(
+                        isNull(payrollEscala.vigenciaHasta),
+                        gte(payrollEscala.vigenciaHasta, periodoDate)
+                      )
                     )
                   )
                   .orderBy(desc(payrollEscala.vigenciaDesde))
@@ -919,7 +1111,9 @@ HERRAMIENTAS DISPONIBLES
 
                 const basico = parseFloat(escalaRows[0]?.montoBasico ?? '0');
                 if (basico === 0)
-                  return { error: `No hay escala salarial vigente para el período ${periodo} del empleado ${emp.nombre}.` };
+                  return {
+                    error: `No hay escala salarial vigente para el período ${periodo} del empleado ${emp.nombre}.`,
+                  };
 
                 // 4. Get category name
                 const [catRow] = await dbReadonly
@@ -944,7 +1138,10 @@ HERRAMIENTAS DISPONIBLES
                   .orderBy(payrollConcepto.orden);
 
                 // 6. Run dry-run calculation
-                const añosAntiguedad = differenceInYears(periodoDate, emp.fechaAlta ?? periodoDate);
+                const añosAntiguedad = differenceInYears(
+                  periodoDate,
+                  emp.fechaAlta ?? periodoDate
+                );
 
                 const context = {
                   basico,
@@ -960,7 +1157,12 @@ HERRAMIENTAS DISPONIBLES
                   bonos: 0,
                 };
 
-                const detalles: { codigo: string; nombre: string; tipo: string; monto: number }[] = [];
+                const detalles: {
+                  codigo: string;
+                  nombre: string;
+                  tipo: string;
+                  monto: number;
+                }[] = [];
                 let totalRemunerativo = 0;
                 let totalNoRemunerativo = 0;
                 let totalDescuentos = 0;
@@ -968,11 +1170,21 @@ HERRAMIENTAS DISPONIBLES
 
                 for (const con of conceptos) {
                   if (!con.activo) continue;
-                  const result = evaluatePayrollFormulaStrict(con.formula, context);
-                  const monto = result.ok ? Math.round(result.value * 100) / 100 : 0;
+                  const result = evaluatePayrollFormulaStrict(
+                    con.formula,
+                    context
+                  );
+                  const monto = result.ok
+                    ? Math.round(result.value * 100) / 100
+                    : 0;
                   if (monto === 0) continue;
 
-                  detalles.push({ codigo: con.codigo, nombre: con.nombre, tipo: con.tipo, monto });
+                  detalles.push({
+                    codigo: con.codigo,
+                    nombre: con.nombre,
+                    tipo: con.tipo,
+                    monto,
+                  });
 
                   if (con.tipo === 'remunerativo') {
                     totalRemunerativo += monto;
@@ -987,10 +1199,21 @@ HERRAMIENTAS DISPONIBLES
                   } else if (con.tipo === 'retencion') {
                     totalRetenciones += monto;
                   }
-                  context.neto = totalRemunerativo + totalNoRemunerativo - totalDescuentos - totalRetenciones;
+                  context.neto =
+                    totalRemunerativo +
+                    totalNoRemunerativo -
+                    totalDescuentos -
+                    totalRetenciones;
                 }
 
-                const neto = Math.round((totalRemunerativo + totalNoRemunerativo - totalDescuentos - totalRetenciones) * 100) / 100;
+                const neto =
+                  Math.round(
+                    (totalRemunerativo +
+                      totalNoRemunerativo -
+                      totalDescuentos -
+                      totalRetenciones) *
+                      100
+                  ) / 100;
 
                 return {
                   empleado: emp.nombre,
@@ -1042,7 +1265,7 @@ HERRAMIENTAS DISPONIBLES
 
                 try {
                   const result = await dbReadonly.execute(sql.raw(withLimit));
-                  // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+
                   const rows = Array.from(result as unknown[]);
                   return { rows, rowCount: rows.length };
                 } catch (err: any) {
@@ -1054,44 +1277,67 @@ HERRAMIENTAS DISPONIBLES
               description:
                 'Obtiene la posición IVA completa de un cliente para un período dado. Devuelve datos de todos los perfiles del cliente con totales consolidados. Usá este tool para cualquier consulta sobre IVA, saldo IVA, débito/crédito fiscal.',
               inputSchema: z.object({
-                clientName: z.string().describe('Nombre del cliente (búsqueda parcial)'),
+                clientName: z
+                  .string()
+                  .describe('Nombre del cliente (búsqueda parcial)'),
                 displayMonth: z
                   .string()
                   .optional()
                   .describe(
                     'Mes que el usuario quiere ver, en formato MM/YYYY. Ej: "03/2026" para Marzo 2026. ' +
-                    'Si no se especifica, usa el mes más reciente con datos disponibles. ' +
-                    'IMPORTANTE: "marzo" → "03/2026", "febrero" → "02/2026", etc.'
+                      'Si no se especifica, usa el mes más reciente con datos disponibles. ' +
+                      'IMPORTANTE: "marzo" → "03/2026", "febrero" → "02/2026", etc.'
                   ),
                 profileName: z
                   .string()
                   .optional()
-                  .describe('Nombre del perfil si querés filtrar a uno en particular'),
+                  .describe(
+                    'Nombre del perfil si querés filtrar a uno en particular'
+                  ),
               }),
               execute: async ({ clientName, displayMonth, profileName }) => {
                 const matchingClients = await dbReadonly
                   .select({ id: client.id, name: client.name })
                   .from(client)
-                  .where(and(eq(client.organizationId, orgId), ilike(client.name, `%${clientName}%`)));
+                  .where(
+                    and(
+                      eq(client.organizationId, orgId),
+                      ilike(client.name, `%${clientName}%`)
+                    )
+                  );
 
                 if (matchingClients.length === 0)
-                  return { error: `No encontré clientes con nombre "${clientName}"` };
+                  return {
+                    error: `No encontré clientes con nombre "${clientName}"`,
+                  };
                 if (matchingClients.length > 1)
-                  return { error: 'Más de un cliente coincide', options: matchingClients.map((c) => c.name) };
+                  return {
+                    error: 'Más de un cliente coincide',
+                    options: matchingClients.map((c) => c.name),
+                  };
 
                 const foundClient = matchingClients[0];
 
                 const profileWhere = profileName
-                  ? and(eq(profile.client, foundClient.id), ilike(profile.name, `%${profileName}%`))
+                  ? and(
+                      eq(profile.client, foundClient.id),
+                      ilike(profile.name, `%${profileName}%`)
+                    )
                   : eq(profile.client, foundClient.id);
 
                 const profiles = await dbReadonly
-                  .select({ id: profile.id, name: profile.name, identityNumber: profile.identityNumber })
+                  .select({
+                    id: profile.id,
+                    name: profile.name,
+                    identityNumber: profile.identityNumber,
+                  })
                   .from(profile)
                   .where(profileWhere);
 
                 if (profiles.length === 0)
-                  return { error: `No se encontraron perfiles para ${foundClient.name}` };
+                  return {
+                    error: `No se encontraron perfiles para ${foundClient.name}`,
+                  };
 
                 const profileIds = profiles.map((p) => p.id);
 
@@ -1109,7 +1355,9 @@ HERRAMIENTAS DISPONIBLES
                   return `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
                 };
 
-                const periodToDateRange = (p: string): { from: Date; to: Date } => {
+                const periodToDateRange = (
+                  p: string
+                ): { from: Date; to: Date } => {
                   const [mm, yyyy] = p.split('/').map(Number);
                   const from = new Date(yyyy, mm - 1, 1);
                   const to = new Date(yyyy, mm, 0, 23, 59, 59);
@@ -1133,68 +1381,107 @@ HERRAMIENTAS DISPONIBLES
                   ivaScrapeperiod = prevMonthStr(displayMonth);
                 } else {
                   // Sin período: buscar el último iva_scrape disponible y derivar el mes de facturas
-                  const rows = await dbReadonly.execute(sql.raw(
-                    `SELECT periodo_fiscal FROM iva_scrape
+                  const rows = await dbReadonly.execute(
+                    sql.raw(
+                      `SELECT periodo_fiscal FROM iva_scrape
                      WHERE profile_id = ANY(ARRAY[${profileIds.map((id) => `'${id}'`).join(',')}]::uuid[])
                      ORDER BY TO_DATE(periodo_fiscal, 'MM/YYYY') DESC LIMIT 1`
-                  ));
-                  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-                  const arr = Array.from(rows) as Record<string, unknown>[];
-                  if (arr.length === 0) return { error: `No hay datos de IVA disponibles para ${foundClient.name}.` };
-                  ivaScrapeperiod = arr[0].periodo_fiscal as string; // eslint-disable-line @typescript-eslint/no-unsafe-assignment
+                    )
+                  );
+
+                  const arr = Array.from(rows);
+                  if (arr.length === 0)
+                    return {
+                      error: `No hay datos de IVA disponibles para ${foundClient.name}.`,
+                    };
+                  ivaScrapeperiod = arr[0].periodo_fiscal as string;
                   invoicePeriod = nextMonthStr(ivaScrapeperiod);
                 }
 
-                const { from: dateFrom, to: dateTo } = periodToDateRange(invoicePeriod);
-                const n = (v: string | null | undefined) => parseFloat(v ?? '0') || 0;
+                const { from: dateFrom, to: dateTo } =
+                  periodToDateRange(invoicePeriod);
+                const n = (v: string | null | undefined) =>
+                  parseFloat(v ?? '0') || 0;
 
                 const results = [];
                 for (const p of profiles) {
                   // 1. iva_scrape: período del mes ANTERIOR al que se muestra (convención AFIP)
-                  const [ivaRow] = await dbReadonly.select().from(ivaScrape)
-                    .where(and(eq(ivaScrape.profileId, p.id), eq(ivaScrape.periodoFiscal, ivaScrapeperiod))).limit(1);
+                  const [ivaRow] = await dbReadonly
+                    .select()
+                    .from(ivaScrape)
+                    .where(
+                      and(
+                        eq(ivaScrape.profileId, p.id),
+                        eq(ivaScrape.periodoFiscal, ivaScrapeperiod)
+                      )
+                    )
+                    .limit(1);
 
                   // 2. Facturas del mes que el usuario quiere ver (mismo para todos los perfiles)
 
-                  const invoices = await dbReadonly.select({
-                    direction: invoice.direction,
-                    type: invoice.type,
-                    currency: invoice.currency,
-                    currencyRate: invoice.cureencyRate,
-                    amountIVA21: invoice.amountIVA21,
-                    amountIVA105: invoice.amountIVA105,
-                    amountIVA27: invoice.amountIVA27,
-                    amountIVA5: invoice.amountIVA5,
-                    amountIVA25: invoice.amountIVA25,
-                    IVA21: invoice.IVA21,
-                    IVA105: invoice.IVA105,
-                    IVA27: invoice.IVA27,
-                  }).from(invoice)
-                    .where(and(
-                      eq(invoice.profile, p.id),
-                      gte(invoice.emitionDate, dateFrom),
-                      lte(invoice.emitionDate, dateTo),
-                    ));
+                  const invoices = await dbReadonly
+                    .select({
+                      direction: invoice.direction,
+                      type: invoice.type,
+                      currency: invoice.currency,
+                      currencyRate: invoice.cureencyRate,
+                      amountIVA21: invoice.amountIVA21,
+                      amountIVA105: invoice.amountIVA105,
+                      amountIVA27: invoice.amountIVA27,
+                      amountIVA5: invoice.amountIVA5,
+                      amountIVA25: invoice.amountIVA25,
+                      IVA21: invoice.IVA21,
+                      IVA105: invoice.IVA105,
+                      IVA27: invoice.IVA27,
+                    })
+                    .from(invoice)
+                    .where(
+                      and(
+                        eq(invoice.profile, p.id),
+                        gte(invoice.emitionDate, dateFrom),
+                        lte(invoice.emitionDate, dateTo)
+                      )
+                    );
 
                   // 3. Calcular débito/crédito fiscal usando lógica compartida con el módulo de clientes
-                  const ivaCalc = calcularIvaDesdeFacturas(invoices as InvoiceIvaRow[]);
+                  const ivaCalc = calcularIvaDesdeFacturas(
+                    invoices as InvoiceIvaRow[]
+                  );
                   const debitoFiscalCalculado = ivaCalc.debitoFiscal;
                   const creditoFiscalCalculado = ivaCalc.creditoFiscalCompras;
-                  const { netoA21, netoA105, totalAmountB21: totalB21, totalAmountB105: totalB105, totalAmountB27: totalB27,
-                    netoInbound21: netoIn21, netoInbound105: netoIn105, netoInbound27: netoIn27, netoInbound5: netoIn5, netoInbound25: netoIn25 } = ivaCalc;
+                  const {
+                    netoA21,
+                    netoA105,
+                    totalAmountB21: totalB21,
+                    totalAmountB105: totalB105,
+                    totalAmountB27: totalB27,
+                    netoInbound21: netoIn21,
+                    netoInbound105: netoIn105,
+                    netoInbound27: netoIn27,
+                    netoInbound5: netoIn5,
+                    netoInbound25: netoIn25,
+                  } = ivaCalc;
 
                   // 4. Saldos de iva_scrape (AFIP)
                   const saldoAFavor = n(ivaRow?.saldoTecnicoFavorContribuyente);
-                  const saldoLibreDisp = n(ivaRow?.saldoLibreDisponibilidadFavorContribuyentePeriodo);
-                  const totalRetenciones = n(ivaRow?.totalRetencionesPercepcionesPeriodo);
+                  const saldoLibreDisp = n(
+                    ivaRow?.saldoLibreDisponibilidadFavorContribuyentePeriodo
+                  );
+                  const totalRetenciones = n(
+                    ivaRow?.totalRetencionesPercepcionesPeriodo
+                  );
 
-                  const saldoTecnico = debitoFiscalCalculado - creditoFiscalCalculado - saldoAFavor;
+                  const saldoTecnico =
+                    debitoFiscalCalculado -
+                    creditoFiscalCalculado -
+                    saldoAFavor;
 
                   results.push({
                     perfil: p.name,
                     cuit: p.identityNumber,
                     periodo: invoicePeriod,
-                    fechaPresentacion: ivaRow?.fechaPresentacion ?? 'No disponible',
+                    fechaPresentacion:
+                      ivaRow?.fechaPresentacion ?? 'No disponible',
                     ventas: {
                       netoA21: netoA21.toFixed(2),
                       netoA105: netoA105.toFixed(2),
@@ -1210,9 +1497,13 @@ HERRAMIENTAS DISPONIBLES
                       creditoFiscal: creditoFiscalCalculado.toFixed(2),
                     },
                     saldosAFIP: {
-                      saldoAFavorPeriodoAnterior: ivaRow?.saldoTecnicoFavorContribuyente ?? null,
-                      saldoLibreDisponibilidad: ivaRow?.saldoLibreDisponibilidadFavorContribuyentePeriodo ?? null,
-                      totalRetencionesPercepciones: ivaRow?.totalRetencionesPercepcionesPeriodo ?? null,
+                      saldoAFavorPeriodoAnterior:
+                        ivaRow?.saldoTecnicoFavorContribuyente ?? null,
+                      saldoLibreDisponibilidad:
+                        ivaRow?.saldoLibreDisponibilidadFavorContribuyentePeriodo ??
+                        null,
+                      totalRetencionesPercepciones:
+                        ivaRow?.totalRetencionesPercepcionesPeriodo ?? null,
                     },
                     saldoTecnico: saldoTecnico.toFixed(2),
                     saldoLibreDisponibilidad: saldoLibreDisp.toFixed(2),
@@ -1222,19 +1513,35 @@ HERRAMIENTAS DISPONIBLES
                 }
 
                 if (results.length === 0)
-                  return { error: `No hay datos para ${foundClient.name} en el período ${invoicePeriod}.` };
+                  return {
+                    error: `No hay datos para ${foundClient.name} en el período ${invoicePeriod}.`,
+                  };
 
-                const totales = results.length > 1 ? {
-                  debitoFiscal: results.reduce((s, r) => s + n(r.ventas.debitoFiscal), 0).toFixed(2),
-                  creditoFiscal: results.reduce((s, r) => s + n(r.compras.creditoFiscal), 0).toFixed(2),
-                  saldoTecnico: results.reduce((s, r) => s + n(r.saldoTecnico), 0).toFixed(2),
-                  saldoLibreDisponibilidad: results.reduce((s, r) => s + n(r.saldoLibreDisponibilidad), 0).toFixed(2),
-                } : null;
+                const totales =
+                  results.length > 1
+                    ? {
+                        debitoFiscal: results
+                          .reduce((s, r) => s + n(r.ventas.debitoFiscal), 0)
+                          .toFixed(2),
+                        creditoFiscal: results
+                          .reduce((s, r) => s + n(r.compras.creditoFiscal), 0)
+                          .toFixed(2),
+                        saldoTecnico: results
+                          .reduce((s, r) => s + n(r.saldoTecnico), 0)
+                          .toFixed(2),
+                        saldoLibreDisponibilidad: results
+                          .reduce(
+                            (s, r) => s + n(r.saldoLibreDisponibilidad),
+                            0
+                          )
+                          .toFixed(2),
+                      }
+                    : null;
 
                 return {
                   cliente: foundClient.name,
-                  periodoMostrado: invoicePeriod,       // el mes que el usuario ve (facturas)
-                  periodoIvaScrape: ivaScrapeperiod,    // el mes de iva_scrape (mes anterior)
+                  periodoMostrado: invoicePeriod, // el mes que el usuario ve (facturas)
+                  periodoIvaScrape: ivaScrapeperiod, // el mes de iva_scrape (mes anterior)
                   perfiles: results,
                   totales,
                 };
@@ -1262,7 +1569,9 @@ HERRAMIENTAS DISPONIBLES
 
               // Combinar TODO el texto de TODOS los mensajes assistant en uno solo.
               // Así se evita perder párrafos cuando el tool loop genera múltiples pasos.
-              const assistantMessages = finishedMessages.filter((m) => m.role === 'assistant');
+              const assistantMessages = finishedMessages.filter(
+                (m) => m.role === 'assistant'
+              );
 
               const assistantText = assistantMessages
                 .flatMap((m) =>

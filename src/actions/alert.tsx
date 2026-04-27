@@ -98,7 +98,12 @@ export const acknowledgeAlert = createServerFn({ method: 'POST' })
     const rows = await db
       .update(alertTable)
       .set({ status: 'acknowledged', updatedAt: new Date() })
-      .where(and(eq(alertTable.id, ctx.data.id), eq(alertTable.organizationId, orgId)))
+      .where(
+        and(
+          eq(alertTable.id, ctx.data.id),
+          eq(alertTable.organizationId, orgId)
+        )
+      )
       .returning();
 
     return rows[0] as any;
@@ -114,7 +119,12 @@ export const assignAlert = createServerFn({ method: 'POST' })
     const rows = await db
       .update(alertTable)
       .set({ assignedToUserId: ctx.data.userId, updatedAt: new Date() })
-      .where(and(eq(alertTable.id, ctx.data.id), eq(alertTable.organizationId, orgId)))
+      .where(
+        and(
+          eq(alertTable.id, ctx.data.id),
+          eq(alertTable.organizationId, orgId)
+        )
+      )
       .returning();
 
     return rows[0] as any;
@@ -135,7 +145,12 @@ export const resolveAlert = createServerFn({ method: 'POST' })
         resolvedByUserId: userId,
         updatedAt: new Date(),
       })
-      .where(and(eq(alertTable.id, ctx.data.id), eq(alertTable.organizationId, orgId)))
+      .where(
+        and(
+          eq(alertTable.id, ctx.data.id),
+          eq(alertTable.organizationId, orgId)
+        )
+      )
       .returning();
 
     return rows[0] as any;

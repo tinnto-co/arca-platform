@@ -15,7 +15,8 @@ async function main() {
     process.exit(1);
   }
 
-  await db.execute(sql.raw(`
+  await db.execute(
+    sql.raw(`
     CREATE TABLE IF NOT EXISTS "client_balance_config" (
       "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
       "client_id" uuid NOT NULL UNIQUE REFERENCES "client"("id") ON DELETE CASCADE,
@@ -26,7 +27,8 @@ async function main() {
       "created_at" timestamp DEFAULT now() NOT NULL,
       "updated_at" timestamp DEFAULT now() NOT NULL
     )
-  `));
+  `)
+  );
 
   console.log('Tabla client_balance_config: OK.');
 }
