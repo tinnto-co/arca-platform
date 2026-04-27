@@ -1,4 +1,4 @@
-CREATE TABLE "payroll_convenio_fuente" (
+CREATE TABLE IF NOT EXISTS "payroll_convenio_fuente" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   "convenio_id" uuid NOT NULL REFERENCES "payroll_convenio"("id") ON DELETE cascade,
   "fuente" text NOT NULL,
