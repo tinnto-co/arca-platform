@@ -752,10 +752,8 @@ export function ReciboFormulario({
                       </SelectContent>
                     </Select>
                     <FormDescription>
-                      Si no copiás, se muestra la grilla con los conceptos SOS del{' '}
-                      <span className="font-medium">perfil</span> (vínculos en concepto_sos_profile).
-                      Los conceptos salariales sin número SOS coincidente se liquidan solo por
-                      fórmulas al calcular.
+                      Si no copiás, se muestra el catálogo completo de conceptos SOS (1–699)
+                      con valores vacíos. Completá solo los que aplican al empleado.
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

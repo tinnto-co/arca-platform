@@ -34,24 +34,38 @@ function buildConceptosParaGuardar(
     importeMinimo: '',
     importeMaximo: '',
   };
-  return filas.map((c) => {
-    const e = edits[c.codigo] ?? empty;
-    return {
-      codigo: c.codigo,
-      monto: e.monto !== '' ? e.monto : (c.monto ?? ''),
-      cantidad: e.cantidad !== '' ? e.cantidad : (c.cantidad ?? ''),
-      porcentaje: e.porcentaje !== '' ? e.porcentaje : (c.porcentaje ?? ''),
-      importeConceptoNumero:
-        e.importeConceptoNumero !== ''
-          ? e.importeConceptoNumero
-          : (c.importeConceptoNumero ?? ''),
-      importe: e.importe !== '' ? e.importe : (c.importe ?? ''),
-      importeMinimo:
-        e.importeMinimo !== '' ? e.importeMinimo : (c.importeMinimo ?? ''),
-      importeMaximo:
-        e.importeMaximo !== '' ? e.importeMaximo : (c.importeMaximo ?? ''),
-    };
-  });
+  return filas
+    .map((c) => {
+      const e = edits[c.codigo] ?? empty;
+      return {
+        codigo: c.codigo,
+        monto: e.monto !== '' ? e.monto : (c.monto ?? ''),
+        cantidad: e.cantidad !== '' ? e.cantidad : (c.cantidad ?? ''),
+        porcentaje: e.porcentaje !== '' ? e.porcentaje : (c.porcentaje ?? ''),
+        importeConceptoNumero:
+          e.importeConceptoNumero !== ''
+            ? e.importeConceptoNumero
+            : (c.importeConceptoNumero ?? ''),
+        importe: e.importe !== '' ? e.importe : (c.importe ?? ''),
+        importeMinimo:
+          e.importeMinimo !== '' ? e.importeMinimo : (c.importeMinimo ?? ''),
+        importeMaximo:
+          e.importeMaximo !== '' ? e.importeMaximo : (c.importeMaximo ?? ''),
+      };
+    })
+    .filter((c) => {
+      // Excluir filas sin ningún dato (monto cero y todos los campos vacíos)
+      const montoN = Number(c.monto);
+      if (!isNaN(montoN) && montoN !== 0) return true;
+      return (
+        c.cantidad !== '' ||
+        c.porcentaje !== '' ||
+        c.importe !== '' ||
+        c.importeConceptoNumero !== '' ||
+        c.importeMinimo !== '' ||
+        c.importeMaximo !== ''
+      );
+    });
 }
 
 type TipoReciboGuardar =
@@ -110,17 +124,17 @@ export function SueldosSimulador({
     enabled: !!sosEmpleadoId,
   });
 
-  const usaPlantillaManual =
-    flowHeader !== null && !flowHeader.copiarUltimoRecibo;
-
+  // Plantilla con todos los conceptos SOS (catálogo completo); se carga siempre
+  // que haya un flowHeader activo, tanto para modo manual como para copia.
   const { data: plantillaManual = [], isLoading: loadingPlantilla } = useQuery(
     {
-      queryKey: ['plantilla-manual-sos', clientId, profileId],
+      queryKey: ['plantilla-manual-sos', clientId],
       queryFn: () =>
         listConceptosPlantillaManualSos({
-          data: { clientId, profileId },
+          data: { clientId },
         }),
-      enabled: !!clientId && !!profileId && usaPlantillaManual,
+      enabled: !!clientId && !!flowHeader,
+      staleTime: 10 * 60 * 1000,
     }
   );
 
@@ -139,7 +153,7 @@ export function SueldosSimulador({
           periodo: flowHeader!.periodo,
         },
       }),
-    enabled: usaPlantillaManual && !!flowHeader?.importEmpleadoId && !!flowHeader?.periodo,
+    enabled: !flowHeader?.copiarUltimoRecibo && !!flowHeader?.importEmpleadoId && !!flowHeader?.periodo,
   });
 
   // El básico de escala se pasa como prop implícito a TablaReciboSos.
@@ -178,15 +192,44 @@ export function SueldosSimulador({
     };
   }, [flowHeader]);
 
-  const showImportTable =
-    !!flowHeader?.copiarUltimoRecibo && !!sosEmpleadoId && !!ultimoRecibo;
-  const showManualTable = !!flowHeader && !flowHeader.copiarUltimoRecibo;
+  const isCopyMode = !!flowHeader?.copiarUltimoRecibo;
+  const isLoadingTable =
+    loadingPlantilla || (isCopyMode && loadingUltimo);
+  const showTable = !!flowHeader && !isLoadingTable && plantillaManual.length > 0;
 
-  const conceptosFilas: ConceptoImportado[] = showImportTable
-    ? ultimoRecibo!.conceptos
-    : showManualTable
-      ? plantillaManual
-      : [];
+  // Para modo copia: muestra todos los conceptos SOS con valores del último recibo pre-cargados.
+  // Para modo manual: muestra todos los conceptos SOS con valores vacíos.
+  const conceptosFilas: ConceptoImportado[] = useMemo(() => {
+    if (!flowHeader || plantillaManual.length === 0) return [];
+    if (isCopyMode && ultimoRecibo) {
+      const ultimoByCode = new Map(
+        ultimoRecibo.conceptos.map((c) => [c.codigo, c])
+      );
+      const plantillaCodes = new Set(plantillaManual.map((p) => p.codigo));
+      // Conceptos del último recibo con código fuera del catálogo (ej. > 699)
+      const extras = ultimoRecibo.conceptos.filter(
+        (c) => !plantillaCodes.has(c.codigo)
+      );
+      return [
+        ...plantillaManual.map((p) => {
+          const prev = ultimoByCode.get(p.codigo);
+          if (!prev) return p;
+          return {
+            ...p,
+            monto: prev.monto,
+            cantidad: prev.cantidad,
+            porcentaje: prev.porcentaje,
+            importeConceptoNumero: prev.importeConceptoNumero,
+            importe: prev.importe,
+            importeMinimo: prev.importeMinimo,
+            importeMaximo: prev.importeMaximo,
+          };
+        }),
+        ...extras,
+      ];
+    }
+    return plantillaManual;
+  }, [flowHeader, isCopyMode, plantillaManual, ultimoRecibo]);
 
   const plantillaKey = useMemo(
     () => plantillaManual.map((c) => c.id).join('|'),
@@ -261,7 +304,7 @@ export function SueldosSimulador({
 
   const puedeGuardar =
     !!flowHeader &&
-    conceptosFilas.length > 0 &&
+    showTable &&
     permiteLiquidar &&
     !guardarRecibo.isPending;
 
@@ -273,101 +316,59 @@ export function SueldosSimulador({
         onSuccess={onFormSuccess}
       />
 
-      {flowHeader?.copiarUltimoRecibo && sosEmpleadoId && loadingUltimo && (
+      {!!flowHeader && isLoadingTable && (
         <p className="text-sm text-muted-foreground flex items-center gap-2">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Cargando último recibo importado…
+          {loadingPlantilla ? 'Cargando conceptos SOS…' : 'Cargando último recibo…'}
         </p>
       )}
 
-      {flowHeader?.copiarUltimoRecibo &&
-        sosEmpleadoId &&
-        !loadingUltimo &&
-        !ultimoRecibo && (
-          <p className="text-sm text-amber-700">
-            No hay recibo importado previo para este empleado. Volvé al formulario
-            y elegí cargar conceptos manualmente o importá liquidaciones desde
-            Excel.
-          </p>
-        )}
+      {isCopyMode && !loadingUltimo && !ultimoRecibo && !loadingPlantilla && (
+        <p className="text-sm text-amber-700">
+          No hay recibo previo para este empleado — se muestra el catálogo completo
+          con valores vacíos para carga manual.
+        </p>
+      )}
 
-      {showImportTable && (
+      {showTable && (
         <Card className="border border-border/70 shadow-sm">
           <CardHeader>
             <CardTitle className="text-base">
-              Último recibo importado — conceptos
+              {isCopyMode ? 'Conceptos — copia del último recibo' : 'Conceptos — carga manual'}
             </CardTitle>
             <p className="text-sm text-muted-foreground">
-              Editá la grilla y presioná <span className="font-medium">Guardar recibo</span>{' '}
-              para persistir en el libro de sueldos importado (LSD).
+              {isCopyMode
+                ? 'Se muestran todos los conceptos SOS con los valores del último recibo pre-cargados. Podés editar cualquier fila antes de guardar.'
+                : 'Se muestran todos los conceptos SOS. Los montos se pre-calculan con el básico de escala vigente del empleado. Podés ajustar cualquier valor antes de guardar.'}
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="rounded-lg border bg-background p-3">
-            <TablaReciboSos
-              variant="importado"
-              recibo={ultimoRecibo!.recibo}
-              conceptos={ultimoRecibo!.conceptos}
-              onChange={handleTablaChange}
-              firmaEmpleadorUrl={firmaEmpleadorUrl}
-            />
-            </div>
-            <div className="flex flex-col items-end gap-2">
-              {!permiteLiquidar && (
-                <span className="text-xs text-muted-foreground">
-                  Solo se puede guardar el mes anterior al en curso.
-                </span>
-              )}
-              <Button
-                onClick={() => guardarRecibo.mutate()}
-                disabled={!puedeGuardar}
-              >
-                {guardarRecibo.isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Save className="mr-2 h-4 w-4" />
-                )}
-                Guardar recibo
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {showManualTable && (
-        <Card className="border border-border/70 shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-base">Conceptos — carga manual</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Los montos se pre-calculan con el básico de escala vigente del empleado
-              en el período a liquidar. Podés ajustar cualquier valor antes de guardar.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {loadingPlantilla || loadingBasico ? (
+            {!isCopyMode && loadingBasico ? (
               <p className="text-sm text-muted-foreground flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                {loadingBasico ? 'Cargando escala salarial…' : 'Cargando plantilla…'}
+                Cargando escala salarial…
               </p>
             ) : (
               <>
-                <div className="rounded-md border border-emerald-300/60 bg-emerald-50/50 px-3 py-2 text-xs text-emerald-950">
-                  Básico de escala tomado para empleado/período{' '}
-                  <span className="font-semibold">{flowHeader.periodo}</span>:{' '}
-                  <span className="font-mono font-semibold">
-                    ${moneyFmt(basicoEscala)}
-                  </span>
-                </div>
+                {!isCopyMode && (
+                  <div className="rounded-md border border-emerald-300/60 bg-emerald-50/50 px-3 py-2 text-xs text-emerald-950">
+                    Básico de escala tomado para empleado/período{' '}
+                    <span className="font-semibold">{flowHeader!.periodo}</span>:{' '}
+                    <span className="font-mono font-semibold">
+                      ${moneyFmt(basicoEscala)}
+                    </span>
+                  </div>
+                )}
                 <div className="rounded-lg border bg-background p-3">
-                <TablaReciboSos
-                  key={plantillaManual.map((c) => c.id).join('|')}
-                  variant="manual"
-                  recibo={reciboHeaderSimulado}
-                  conceptos={plantillaManual}
-                  basico={basicoEscala}
-                  onChange={handleTablaChange}
-                  firmaEmpleadorUrl={firmaEmpleadorUrl}
-                />
+                  <TablaReciboSos
+                    key={plantillaKey}
+                    variant={isCopyMode ? 'importado' : 'manual'}
+                    recibo={isCopyMode && ultimoRecibo ? ultimoRecibo.recibo : reciboHeaderSimulado}
+                    conceptos={conceptosFilas}
+                    basico={!isCopyMode ? basicoEscala : undefined}
+                    onChange={handleTablaChange}
+                    firmaEmpleadorUrl={firmaEmpleadorUrl}
+                  />
                 </div>
                 <div className="flex flex-col items-end gap-2">
                   {!permiteLiquidar && (
