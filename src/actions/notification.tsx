@@ -606,7 +606,7 @@ Mensaje de notificación:
 ${message}`;
 
   const response = await ai.models.generateContent({
-    model: 'gemini-2.0-flash',
+    model: 'gemini-2.5-flash',
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     config: {
       responseMimeType: 'application/json',
@@ -693,68 +693,78 @@ export const classifyNotification = createServerFn({
 
 export const classifyUnclassifiedNotifications = createServerFn({
   method: 'POST',
-}).handler(async () => {
-  const { orgId } = await getSessionWithOrg();
-  const role = await getMemberRole();
-  assertCanWrite(role);
+})
+  .inputValidator(
+    z
+      .object({ limit: z.number().int().positive().max(500).optional() })
+      .optional()
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
 
-  const orgClientIds = await getOrgClientIds(orgId);
-  if (orgClientIds.length === 0) return { classified: 0, errors: 0 };
+    const orgClientIds = await getOrgClientIds(orgId);
+    if (orgClientIds.length === 0) return { classified: 0, errors: 0 };
 
-  const unclassified = await db
-    .select({
-      id: notification.id,
-      message: notification.message,
-      clientId: notification.client,
-      profileId: notification.profile,
-    })
-    .from(notification)
-    .where(
-      and(
-        inArray(notification.client, orgClientIds),
-        eq(notification.severity, 'unclassified'),
-        isNull(notification.aiClassifiedAt)
-      )
-    );
+    const limit = ctx.data?.limit;
+    const baseQuery = db
+      .select({
+        id: notification.id,
+        message: notification.message,
+        clientId: notification.client,
+        profileId: notification.profile,
+      })
+      .from(notification)
+      .where(
+        and(
+          inArray(notification.client, orgClientIds),
+          eq(notification.severity, 'unclassified'),
+          isNull(notification.aiClassifiedAt)
+        )
+      );
+    const unclassified = limit
+      ? await baseQuery.limit(limit)
+      : await baseQuery;
 
-  let classified = 0;
-  let errors = 0;
-  const now = new Date();
+    let classified = 0;
+    let errors = 0;
+    const now = new Date();
 
-  for (const notif of unclassified) {
-    try {
-      const result = await classifyWithGemini(notif.message);
+    for (const notif of unclassified) {
+      try {
+        const result = await classifyWithGemini(notif.message);
 
-      await db
-        .update(notification)
-        .set({
-          severity: result.severity,
-          category: result.category,
-          aiSummary: result.ai_summary,
-          aiClassifiedAt: now,
-          updatedAt: now,
-        })
-        .where(eq(notification.id, notif.id));
+        await db
+          .update(notification)
+          .set({
+            severity: result.severity,
+            category: result.category,
+            aiSummary: result.ai_summary,
+            aiClassifiedAt: now,
+            updatedAt: now,
+          })
+          .where(eq(notification.id, notif.id));
 
-      await db.insert(dataSourceEvent).values({
-        organizationId: orgId,
-        clientId: notif.clientId ?? undefined,
-        profileId: notif.profileId ?? undefined,
-        entityType: 'notification',
-        entityId: notif.id,
-        source: 'ai',
-        action: 'classified',
-        metadata: {
-          severity: result.severity,
-          category: result.category,
-        },
-      });
+        await db.insert(dataSourceEvent).values({
+          organizationId: orgId,
+          clientId: notif.clientId ?? undefined,
+          profileId: notif.profileId ?? undefined,
+          entityType: 'notification',
+          entityId: notif.id,
+          source: 'ai',
+          action: 'classified',
+          metadata: {
+            severity: result.severity,
+            category: result.category,
+          },
+        });
 
-      classified++;
-    } catch {
-      errors++;
+        classified++;
+      } catch {
+        errors++;
+      }
     }
-  }
 
-  return { classified, errors };
-});
+    return { classified, errors };
+  });

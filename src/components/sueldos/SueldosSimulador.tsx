@@ -115,7 +115,7 @@ export function SueldosSimulador({
   const [flowHeader, setFlowHeader] = useState<FlowHeader | null>(null);
   const [sosEmpleadoId, setSosEmpleadoId] = useState<string | null>(null);
   const [tablaEdits, setTablaEdits] = useState<EditsMap>({});
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('__none__');
   const [showSaveTemplateDialog, setShowSaveTemplateDialog] = useState(false);
   const [templateName, setTemplateName] = useState('');
 
@@ -229,7 +229,7 @@ export function SueldosSimulador({
       void queryClient.invalidateQueries({
         queryKey: ['receipt-templates', profileId],
       });
-      setSelectedTemplateId('');
+      setSelectedTemplateId('__none__');
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Error'),
   });
@@ -446,7 +446,7 @@ export function SueldosSimulador({
                       <SelectValue placeholder="Usar template…" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Todos los conceptos</SelectItem>
+                      <SelectItem value="__none__">Todos los conceptos</SelectItem>
                       {templates.map((t) => (
                         <SelectItem key={t.id} value={t.id}>
                           {t.name}
@@ -454,7 +454,7 @@ export function SueldosSimulador({
                       ))}
                     </SelectContent>
                   </Select>
-                  {selectedTemplateId && (
+                  {selectedTemplateId !== '__none__' && (
                     <Button
                       variant="ghost"
                       size="icon"
