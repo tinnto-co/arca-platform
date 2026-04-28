@@ -12,6 +12,7 @@ import {
   Trash2,
   Loader2,
   CheckCircle2,
+  Pencil,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardTitle } from '@/components/ui/card';
@@ -47,6 +48,7 @@ import {
   listConveniosAfipEmpleadores,
   agregarConvenioDesdeAfipEmpleadores,
   createConvenio,
+  updateConvenio,
   createCategoria,
   upsertEscala,
   deleteEscala,
@@ -62,6 +64,7 @@ export function SueldosConvenios({ clientId, profileId }: SueldosConveniosProps)
   const queryClient = useQueryClient();
   const [newConvenioOpen, setNewConvenioOpen] = useState(false);
   const [newConvenioNombre, setNewConvenioNombre] = useState('');
+  const [newConvenioCct, setNewConvenioCct] = useState('');
 
   const { data: convenios = [] } = useQuery({
     queryKey: ['convenios', clientId, profileId],
@@ -70,11 +73,18 @@ export function SueldosConvenios({ clientId, profileId }: SueldosConveniosProps)
   });
 
   const createConv = useMutation({
-    mutationFn: (nombre: string) =>
-      createConvenio({ data: { clientId, nombre } }),
+    mutationFn: () =>
+      createConvenio({
+        data: {
+          clientId,
+          nombre: newConvenioNombre,
+          cctCodigo: newConvenioCct.trim() || undefined,
+        },
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['convenios', clientId] });
       setNewConvenioNombre('');
+      setNewConvenioCct('');
       setNewConvenioOpen(false);
       toast.success('Convenio creado');
     },
@@ -202,10 +212,18 @@ export function SueldosConvenios({ clientId, profileId }: SueldosConveniosProps)
                 placeholder="Ej. Comercio"
               />
             </div>
+            <div>
+              <Label>Número CCT</Label>
+              <Input
+                value={newConvenioCct}
+                onChange={(e) => setNewConvenioCct(e.target.value)}
+                placeholder="Ej. 130/75"
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button
-              onClick={() => createConv.mutate(newConvenioNombre)}
+              onClick={() => createConv.mutate()}
               disabled={!newConvenioNombre.trim() || createConv.isPending}
             >
               Crear
@@ -252,6 +270,9 @@ function ConvenioCard({
   const [open, setOpen] = useState(false);
   const [addCategoria, setAddCategoria] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editNombre, setEditNombre] = useState('');
+  const [editCct, setEditCct] = useState('');
   const [codigo, setCodigo] = useState('');
   const [nombreCat, setNombreCat] = useState('');
 
@@ -262,6 +283,25 @@ function ConvenioCard({
       queryClient.invalidateQueries({ queryKey: ['convenios', clientId] });
       setDeleteOpen(false);
       toast.success('Convenio eliminado');
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const updateConv = useMutation({
+    mutationFn: () =>
+      updateConvenio({
+        data: {
+          id: convenio.id,
+          clientId,
+          nombre: editNombre,
+          cctCodigo: editCct.trim() || undefined,
+        },
+      }),
+    onSuccess: () => {
+      onRefresh();
+      queryClient.invalidateQueries({ queryKey: ['convenios', clientId] });
+      setEditOpen(false);
+      toast.success('Convenio actualizado');
     },
     onError: (e) => toast.error(e.message),
   });
@@ -328,6 +368,21 @@ function ConvenioCard({
                 type="button"
                 variant="ghost"
                 size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setEditNombre(convenio.nombre);
+                  setEditCct(convenio.cctCodigo ?? '');
+                  setEditOpen(true);
+                }}
+                title="Editar convenio"
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
                 className="h-8 w-8 text-muted-foreground hover:text-destructive"
                 onClick={(e) => {
                   e.preventDefault();
@@ -365,6 +420,40 @@ function ConvenioCard({
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+        <Dialog open={editOpen} onOpenChange={setEditOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Editar convenio</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div>
+                <Label>Nombre</Label>
+                <Input
+                  value={editNombre}
+                  onChange={(e) => setEditNombre(e.target.value)}
+                  placeholder="Ej. Comercio"
+                />
+              </div>
+              <div>
+                <Label>Número CCT</Label>
+                <Input
+                  value={editCct}
+                  onChange={(e) => setEditCct(e.target.value)}
+                  placeholder="Ej. 130/75"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                onClick={() => updateConv.mutate()}
+                disabled={!editNombre.trim() || updateConv.isPending}
+              >
+                {updateConv.isPending ? 'Guardando…' : 'Guardar'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <CollapsibleContent>
           <CardContent className="pt-0">
             <p className="mb-4 text-sm text-muted-foreground">

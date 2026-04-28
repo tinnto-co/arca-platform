@@ -327,6 +327,7 @@ export const createConvenio = createServerFn({ method: 'POST' })
     z.object({
       clientId: z.string().uuid(),
       nombre: z.string().min(1),
+      cctCodigo: z.string().optional(),
       descripcion: z.string().optional(),
     })
   )
@@ -340,7 +341,7 @@ export const createConvenio = createServerFn({ method: 'POST' })
       .values({
         clientId: ctx.data.clientId,
         nombre: ctx.data.nombre,
-        cctCodigo: extractCctCodigo(ctx.data.nombre),
+        cctCodigo: ctx.data.cctCodigo?.trim() || extractCctCodigo(ctx.data.nombre),
         descripcion: ctx.data.descripcion ?? null,
       })
       .returning();
@@ -363,6 +364,7 @@ export const updateConvenio = createServerFn({ method: 'POST' })
       id: z.string().uuid(),
       clientId: z.string().uuid(),
       nombre: z.string().min(1),
+      cctCodigo: z.string().optional(),
       descripcion: z.string().optional(),
     })
   )
@@ -375,7 +377,7 @@ export const updateConvenio = createServerFn({ method: 'POST' })
       .update(payrollConvenio)
       .set({
         nombre: ctx.data.nombre,
-        cctCodigo: extractCctCodigo(ctx.data.nombre),
+        cctCodigo: ctx.data.cctCodigo?.trim() || extractCctCodigo(ctx.data.nombre),
         descripcion: ctx.data.descripcion ?? null,
         updatedAt: new Date(),
       })
