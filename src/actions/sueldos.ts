@@ -1712,7 +1712,7 @@ export const listConceptosPlantillaManualSos = createServerFn({ method: 'GET' })
       codigo: String(r.numeroSos),
       monto: null as string | null,
       cantidad: null as string | null,
-      porcentaje: null as string | null,
+      porcentaje: r.pctFijo != null ? String(r.pctFijo) : null as string | null,
       importeConceptoNumero: null as string | null,
       importe: null as string | null,
       importeMinimo: null as string | null,
@@ -1728,6 +1728,7 @@ export const listConceptosPlantillaManualSos = createServerFn({ method: 'GET' })
       tieneImporte: r.tieneImporte ?? null,
       tieneImpMin: r.tieneImpMin ?? null,
       tieneImpMax: r.tieneImpMax ?? null,
+      pctFijo: r.pctFijo != null ? Number(r.pctFijo) : null,
     }));
   });
 
@@ -3272,6 +3273,60 @@ export const listLiquidacionesByPeriodo = createServerFn({ method: 'GET' })
         sql`(CASE WHEN ${liquidacionImportEmpleado.legajo} ~ '^[0-9]+$' THEN (${liquidacionImportEmpleado.legajo})::bigint END) NULLS LAST`,
         asc(liquidacionImportEmpleado.nombre)
       );
+  });
+
+/**
+ * Lista recibos confirmados con filtros opcionales de período y/o empleado.
+ * Al menos uno de los dos debe estar presente.
+ */
+export const listLiquidacionesByFiltros = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z
+      .object({
+        clientId: z.string().uuid(),
+        profileId: z.string().uuid(),
+        /** Período en formato YYYY-MM (opcional). */
+        periodo: z.string().optional(),
+        /** ID de liquidacion_import_empleado (opcional). */
+        importEmpleadoId: z.string().uuid().optional(),
+      })
+      .refine((d) => d.periodo || d.importEmpleadoId, {
+        message: 'Se requiere al menos período o empleado',
+      })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureProfileBelongsToClient(ctx.data.profileId, ctx.data.clientId);
+    const conditions = [
+      eq(profile.client, ctx.data.clientId),
+      eq(liquidacionImportEmpleado.profileId, ctx.data.profileId),
+      eq(liquidacionImportRecibo.origen, 'generado'),
+    ];
+    if (ctx.data.periodo) {
+      conditions.push(condicionPeriodoRecibo(ctx.data.periodo));
+    }
+    if (ctx.data.importEmpleadoId) {
+      conditions.push(eq(liquidacionImportEmpleado.id, ctx.data.importEmpleadoId));
+    }
+    return db
+      .select({
+        liquidacion: liquidacionImportRecibo,
+        empleado: liquidacionImportEmpleado,
+      })
+      .from(liquidacionImportRecibo)
+      .innerJoin(
+        liquidacionImportEmpleado,
+        eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
+      )
+      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .where(and(...conditions))
+      .orderBy(
+        desc(liquidacionImportRecibo.periodo),
+        sql`(CASE WHEN ${liquidacionImportEmpleado.legajo} ~ '^[0-9]+$' THEN (${liquidacionImportEmpleado.legajo})::bigint END) NULLS LAST`,
+        asc(liquidacionImportEmpleado.nombre)
+      )
+      .limit(300);
   });
 
 /** Marca la liquidación como recibo confirmado; así aparece en la solapa Recibo. */

@@ -723,6 +723,8 @@ export const conceptosCompletosSos = pgTable("conceptos_completos_sos", {
   divHsNorm: integer("div_hs_norm").default(1),
   /** Divisor de días (1, 25 o 30). */
   divCantidad: integer("div_cantidad").default(1),
+  /** Porcentaje fijo del concepto (no editable por el usuario, ej. 8.33 para Presentismo). */
+  pctFijo: numeric("pct_fijo"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().$onUpdate(() => new Date()).notNull(),
 });

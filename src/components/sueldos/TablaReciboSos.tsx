@@ -8,6 +8,12 @@ import {
   useEffect,
   useRef,
 } from 'react';
+import { Plus } from 'lucide-react';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import {
   SECCIONES_SOS,
   ORDEN_SECCIONES,
@@ -48,6 +54,8 @@ export interface ConceptoImportado {
   tieneImporte?: boolean | null;
   tieneImpMin?: boolean | null;
   tieneImpMax?: boolean | null;
+  /** Porcentaje fijo no editable (ej. 8.33 para Presentismo). */
+  pctFijo?: number | null;
 }
 
 export interface ReciboImportadoHeader {
@@ -191,6 +199,92 @@ function EditableCell({
 }
 
 // ---------------------------------------------------------------------------
+// Add concept button
+// ---------------------------------------------------------------------------
+
+function AgregarConceptoButton({
+  seccion,
+  catalogo,
+  codigosActivos,
+  onAdd,
+}: {
+  seccion: SeccionSos;
+  catalogo: ConceptoImportado[];
+  codigosActivos: Set<string>;
+  onAdd: (codigo: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busqueda, setBusqueda] = useState('');
+  const cfg = SECCIONES_SOS[seccion];
+
+  const disponibles = catalogo.filter((c) => {
+    const num = parseInt(c.codigo, 10);
+    if (isNaN(num) || num < cfg.rangoMin || num > cfg.rangoMax) return false;
+    if (codigosActivos.has(c.codigo)) return false;
+    if (busqueda) {
+      const q = busqueda.toLowerCase();
+      return c.codigo.includes(q) || (c.nombre ?? '').toLowerCase().includes(q);
+    }
+    return true;
+  });
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(v) => {
+        setOpen(v);
+        if (!v) setBusqueda('');
+      }}
+    >
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-1 rounded px-2 py-0.5 text-[10px] text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+        >
+          <Plus className="h-3 w-3" />
+          Agregar concepto
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-72 p-2" align="start">
+        <input
+          type="text"
+          placeholder="Buscar por nombre o número…"
+          value={busqueda}
+          onChange={(e) => setBusqueda(e.target.value)}
+          className="mb-2 w-full rounded border px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-slate-300"
+          autoFocus
+        />
+        <div className="max-h-52 overflow-y-auto">
+          {disponibles.length === 0 ? (
+            <p className="px-2 py-1 text-xs text-muted-foreground">
+              {busqueda
+                ? 'Sin resultados.'
+                : 'Todos los conceptos de esta sección ya están agregados.'}
+            </p>
+          ) : (
+            disponibles.map((c) => (
+              <button
+                key={c.codigo}
+                type="button"
+                className="flex w-full items-start gap-2 rounded px-2 py-1 text-left text-xs hover:bg-slate-100"
+                onClick={() => {
+                  onAdd(c.codigo);
+                  setOpen(false);
+                  setBusqueda('');
+                }}
+              >
+                <span className="w-6 shrink-0 tabular-nums text-slate-400">{c.codigo}</span>
+                <span>{c.nombre ?? `Concepto ${c.codigo}`}</span>
+              </button>
+            ))
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Section component
 // ---------------------------------------------------------------------------
 
@@ -201,6 +295,9 @@ interface TableSectionProps {
   edits: EditsMap;
   setField: (codigo: string, field: keyof EditsMap[string], value: string) => void;
   sectionTotal: (s: SeccionSos) => number;
+  catalogoCompleto?: ConceptoImportado[];
+  codigosActivos?: Set<string>;
+  onAddConcepto?: (codigo: string) => void;
 }
 
 function TableSection({
@@ -210,6 +307,9 @@ function TableSection({
   edits,
   setField,
   sectionTotal,
+  catalogoCompleto,
+  codigosActivos,
+  onAddConcepto,
 }: TableSectionProps) {
   const isHaberes = cfg.columna === 'haberes';
   const isDesc = cfg.columna === 'descuentos';
@@ -248,9 +348,11 @@ function TableSection({
                   : DASH}
               </td>
               <td className="px-1 py-1.5">
-                {c.tienePct !== false
-                  ? <EditableCell value={edit?.porcentaje ?? ''} onChange={(v) => setField(c.codigo, 'porcentaje', v)} />
-                  : DASH}
+                {c.pctFijo != null
+                  ? <span className="block w-full px-1 text-right tabular-nums text-muted-foreground">{c.pctFijo}</span>
+                  : c.tienePct !== false
+                    ? <EditableCell value={edit?.porcentaje ?? ''} onChange={(v) => setField(c.codigo, 'porcentaje', v)} />
+                    : DASH}
               </td>
               <td className="px-1 py-1.5">
                 {c.tieneImpConceptoNro !== false
@@ -298,6 +400,20 @@ function TableSection({
           </Fragment>
         );
       })}
+
+      {/* Add concept row */}
+      {onAddConcepto && catalogoCompleto && codigosActivos && (
+        <tr>
+          <td colSpan={12} className="px-2 py-0.5 bg-slate-50">
+            <AgregarConceptoButton
+              seccion={seccion}
+              catalogo={catalogoCompleto}
+              codigosActivos={codigosActivos}
+              onAdd={onAddConcepto}
+            />
+          </td>
+        </tr>
+      )}
 
       {/* Section total row */}
       <tr className="border-b border-t-2 border-t-slate-300 bg-slate-100 divide-x divide-slate-300">
@@ -351,6 +467,10 @@ interface TablaReciboSosProps {
   basico?: number;
   /** URL (data URL o URL pública) de la imagen de firma del empleador. */
   firmaEmpleadorUrl?: string | null;
+  /** Catálogo completo SOS para los popovers de "Agregar concepto". */
+  catalogoCompleto?: ConceptoImportado[];
+  /** Callback para agregar un concepto activo por código. */
+  onAddConcepto?: (codigo: string) => void;
 }
 
 export function TablaReciboSos({
@@ -360,6 +480,8 @@ export function TablaReciboSos({
   variant = 'importado',
   basico,
   firmaEmpleadorUrl,
+  catalogoCompleto,
+  onAddConcepto,
 }: TablaReciboSosProps) {
   const initialEdits = useMemo<EditsMap>(() => {
     const map: EditsMap = {};
@@ -367,7 +489,7 @@ export function TablaReciboSos({
       map[c.codigo] = {
         monto: c.monto ?? '',
         cantidad: c.cantidad ?? '',
-        porcentaje: c.porcentaje ?? '',
+        porcentaje: c.porcentaje ?? (c.pctFijo != null ? String(c.pctFijo) : ''),
         importeConceptoNumero: c.importeConceptoNumero ?? '',
         importe: c.importe ?? '',
         importeMinimo: c.importeMinimo ?? '',
@@ -409,6 +531,28 @@ export function TablaReciboSos({
   useEffect(() => {
     onChangeRef.current?.(edits);
   }, [edits]);
+
+  // Inicializar edits para conceptos recién agregados sin sobreescribir los existentes
+  useEffect(() => {
+    setEdits((prev) => {
+      const newEntries: EditsMap = {};
+      for (const c of conceptos) {
+        if (!prev[c.codigo]) {
+          newEntries[c.codigo] = {
+            monto: c.monto ?? '',
+            cantidad: c.cantidad ?? '',
+            porcentaje: c.porcentaje ?? (c.pctFijo != null ? String(c.pctFijo) : ''),
+            importeConceptoNumero: c.importeConceptoNumero ?? '',
+            importe: c.importe ?? '',
+            importeMinimo: c.importeMinimo ?? '',
+            importeMaximo: c.importeMaximo ?? '',
+          };
+        }
+      }
+      if (Object.keys(newEntries).length === 0) return prev;
+      return { ...prev, ...newEntries };
+    });
+  }, [conceptos]);
 
   const setField = useCallback(
     (editedCodigo: string, field: keyof EditsMap[string], value: string) => {
@@ -567,6 +711,11 @@ export function TablaReciboSos({
     return groups;
   }, [conceptos]);
 
+  const codigosActivosSet = useMemo(
+    () => new Set(conceptos.map((c) => c.codigo)),
+    [conceptos]
+  );
+
   const sumaRango = useCallback(
     (min: number, max: number): number => {
       let total = 0;
@@ -666,11 +815,11 @@ export function TablaReciboSos({
     return { warnings, errors };
   }, [conceptos, edits]);
 
-  const seccionesConDatos = ORDEN_SECCIONES.filter(
-    (s) => (conceptosPorSeccion[s]?.length ?? 0) > 0
-  );
+  const seccionesAMostrar = onAddConcepto
+    ? ORDEN_SECCIONES
+    : ORDEN_SECCIONES.filter((s) => (conceptosPorSeccion[s]?.length ?? 0) > 0);
 
-  if (seccionesConDatos.length === 0) {
+  if (seccionesAMostrar.length === 0) {
     return (
       <p className="text-sm text-muted-foreground py-4 text-center">
         {variant === 'manual'
@@ -682,7 +831,9 @@ export function TablaReciboSos({
 
   const pieNota =
     variant === 'manual'
-      ? 'Plantilla según conceptos SOS del perfil (mismos códigos de fila que en el import). Completá montos en la columna que corresponda; al Calcular reemplazan la fórmula si el concepto salarial tiene el mismo número SOS.'
+      ? onAddConcepto
+        ? 'Usá el botón "+" de cada sección para agregar los conceptos que necesites. Completá los valores y guardá el recibo.'
+        : 'Plantilla según conceptos SOS del perfil (mismos códigos de fila que en el import). Completá montos en la columna que corresponda; al Calcular reemplazan la fórmula si el concepto salarial tiene el mismo número SOS.'
       : 'Datos del último recibo importado de SOS Contador — los campos son editables';
 
   return (
@@ -724,7 +875,7 @@ export function TablaReciboSos({
             </tr>
           </thead>
           <tbody>
-            {seccionesConDatos.map((seccion) => (
+            {seccionesAMostrar.map((seccion) => (
               <TableSection
                 key={seccion}
                 seccion={seccion}
@@ -733,6 +884,9 @@ export function TablaReciboSos({
                 edits={edits}
                 setField={setField}
                 sectionTotal={sectionTotal}
+                catalogoCompleto={catalogoCompleto}
+                codigosActivos={codigosActivosSet}
+                onAddConcepto={onAddConcepto}
               />
             ))}
           </tbody>

@@ -119,6 +119,7 @@ export function SueldosSimulador({
   const [flowHeader, setFlowHeader] = useState<FlowHeader | null>(null);
   const [sosEmpleadoId, setSosEmpleadoId] = useState<string | null>(null);
   const [tablaEdits, setTablaEdits] = useState<EditsMap>({});
+  const [activeCodigos, setActiveCodigos] = useState<Set<string>>(new Set());
 
   const periodo = flowHeader?.periodo ?? '';
   const permiteLiquidar =
@@ -266,6 +267,12 @@ export function SueldosSimulador({
     [plantillaManual]
   );
 
+  const conceptosActivos = useMemo(
+    () => conceptosFilas.filter((c) => activeCodigos.has(c.codigo)),
+    [conceptosFilas, activeCodigos]
+  );
+
+  // Resetear edits cuando cambia empleado/período/modo/plantilla
   useEffect(() => {
     setTablaEdits({});
   }, [
@@ -276,10 +283,43 @@ export function SueldosSimulador({
     plantillaKey,
   ]);
 
+  // Resetear códigos activos cuando cambia empleado/período/modo/plantilla
+  useEffect(() => {
+    setActiveCodigos(new Set());
+  }, [
+    flowHeader?.importEmpleadoId,
+    flowHeader?.periodo,
+    flowHeader?.copiarUltimoRecibo,
+    plantillaKey,
+  ]);
+
+  // En modo copia: pre-cargar los códigos activos del último recibo
+  useEffect(() => {
+    if (!isCopyMode || !ultimoRecibo) return;
+    setActiveCodigos(
+      new Set(
+        ultimoRecibo.conceptos
+          .filter((c) => {
+            const montoN = Number(c.monto);
+            return (
+              (!isNaN(montoN) && montoN !== 0) ||
+              c.cantidad !== '' ||
+              c.porcentaje !== '' ||
+              c.importe !== '' ||
+              c.importeConceptoNumero !== '' ||
+              c.importeMinimo !== '' ||
+              c.importeMaximo !== ''
+            );
+          })
+          .map((c) => c.codigo)
+      )
+    );
+  }, [isCopyMode, ultimoRecibo]);
+
   const guardarRecibo = useMutation({
     mutationFn: async () => {
       if (!flowHeader) throw new Error('Completá el formulario y presioná Agregar');
-      const conceptos = buildConceptosParaGuardar(conceptosFilas, tablaEdits);
+      const conceptos = buildConceptosParaGuardar(conceptosActivos, tablaEdits);
       if (conceptos.length === 0) {
         throw new Error('No hay conceptos para guardar');
       }
@@ -311,6 +351,10 @@ export function SueldosSimulador({
     setTablaEdits(edits);
   }, []);
 
+  const handleAddConcepto = useCallback((codigo: string) => {
+    setActiveCodigos((prev) => new Set([...prev, codigo]));
+  }, []);
+
   const onFormSuccess = useCallback(
     (payload: {
       importEmpleadoId: string;
@@ -332,6 +376,7 @@ export function SueldosSimulador({
         payload.copiarUltimoRecibo ? payload.importEmpleadoId : null
       );
       setTablaEdits({});
+      setActiveCodigos(new Set());
     },
     []
   );
@@ -340,6 +385,7 @@ export function SueldosSimulador({
     setFlowHeader(null);
     setSosEmpleadoId(null);
     setTablaEdits({});
+    setActiveCodigos(new Set());
   }, []);
 
   const puedeGuardar =
@@ -417,8 +463,8 @@ export function SueldosSimulador({
             </CardTitle>
             <p className="text-sm text-muted-foreground">
               {isCopyMode
-                ? 'Se muestran todos los conceptos SOS con los valores del último recibo pre-cargados. Podés editar cualquier fila antes de guardar.'
-                : 'Se muestran todos los conceptos SOS. Los montos se pre-calculan con el básico de escala vigente del empleado. Podés ajustar cualquier valor antes de guardar.'}
+                ? 'Conceptos del último recibo pre-cargados. Podés editar cualquier fila o agregar conceptos extra con el botón "+".'
+                : 'Usá el botón "+" de cada sección para agregar los conceptos que necesites. Los montos se pre-calculan con el básico de escala vigente.'}
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -443,10 +489,12 @@ export function SueldosSimulador({
                     key={plantillaKey}
                     variant={isCopyMode ? 'importado' : 'manual'}
                     recibo={isCopyMode && ultimoRecibo ? ultimoRecibo.recibo : reciboHeaderSimulado}
-                    conceptos={conceptosFilas}
+                    conceptos={conceptosActivos}
                     basico={!isCopyMode ? basicoEscala : undefined}
                     onChange={handleTablaChange}
                     firmaEmpleadorUrl={firmaEmpleadorUrl}
+                    catalogoCompleto={conceptosFilas}
+                    onAddConcepto={handleAddConcepto}
                   />
                 </div>
                 <div className="flex flex-col items-end gap-2">

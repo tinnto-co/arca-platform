@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { FileText } from 'lucide-react';
+import { FileText, ChevronRight } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Select,
@@ -14,7 +14,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  listLiquidacionesByPeriodo,
+  listLiquidacionesByFiltros,
+  listImportEmpleados,
   getReciboDetalle,
   getPayrollEmployerConfig,
 } from '@/actions/sueldos';
@@ -328,10 +329,17 @@ function DocCell({
 }
 
 export function SueldosRecibo({ clientId, profileId }: SueldosReciboProps) {
-  const [ano, setAno] = useState(String(now.getFullYear()));
-  const [mes, setMes] = useState(String(now.getMonth() + 1).padStart(2, '0'));
-  const periodo = useMemo(() => `${ano}-${mes}`, [ano, mes]);
+  const [ano, setAno] = useState('');
+  const [mes, setMes] = useState('');
+  const [empleadoId, setEmpleadoId] = useState('');
   const [reciboId, setReciboId] = useState('');
+
+  const periodo = useMemo(
+    () => (ano && mes ? `${ano}-${mes}` : ''),
+    [ano, mes]
+  );
+
+  const hayFiltro = !!periodo || !!empleadoId;
 
   const { data: clientData } = useQuery({
     queryKey: ['client', clientId],
@@ -339,11 +347,25 @@ export function SueldosRecibo({ clientId, profileId }: SueldosReciboProps) {
     enabled: !!clientId,
   });
 
-  const { data: recibosPeriodo = [], isLoading: loadingList } = useQuery({
-    queryKey: ['liquidaciones-recibo', clientId, profileId, periodo],
-    queryFn: () =>
-      listLiquidacionesByPeriodo({ data: { clientId, profileId, periodo } }),
+  const { data: empleados = [] } = useQuery({
+    queryKey: ['import-empleados', clientId, profileId],
+    queryFn: () => listImportEmpleados({ data: { clientId, profileId } }),
     enabled: !!clientId && !!profileId,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: recibos = [], isLoading: loadingList } = useQuery({
+    queryKey: ['liquidaciones-filtros', clientId, profileId, periodo, empleadoId],
+    queryFn: () =>
+      listLiquidacionesByFiltros({
+        data: {
+          clientId,
+          profileId,
+          ...(periodo ? { periodo } : {}),
+          ...(empleadoId ? { importEmpleadoId: empleadoId } : {}),
+        },
+      }),
+    enabled: !!clientId && !!profileId && hayFiltro,
   });
 
   const { data: detalle, isLoading: loadingDetalle } = useQuery({
@@ -360,9 +382,16 @@ export function SueldosRecibo({ clientId, profileId }: SueldosReciboProps) {
   });
   const firmaEmpleadorUrl = employerConfig?.firmaEmpleadorUrl ?? null;
 
+  function resetFiltros() {
+    setAno('');
+    setMes('');
+    setEmpleadoId('');
+    setReciboId('');
+  }
+
   return (
     <div className="w-full min-w-0 max-w-full space-y-6">
-      {/* ── Selectores ────────────────────────────────────────────────────── */}
+      {/* ── Filtros ───────────────────────────────────────────────────────── */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -370,23 +399,26 @@ export function SueldosRecibo({ clientId, profileId }: SueldosReciboProps) {
             Recibos liquidados
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Seleccioná período y recibo para ver el detalle de la liquidación.
+            Filtrá por período (mes + año) y/o por empleado. Podés usar solo empleado para ver todos sus recibos.
           </p>
         </CardHeader>
         <CardContent className="flex flex-wrap items-end gap-4">
+          {/* Año */}
           <div>
             <label className="mb-2 block text-sm font-medium">Año</label>
             <Select
-              value={ano}
+              value={ano || '__all'}
               onValueChange={(v) => {
-                setAno(v);
+                setAno(v === '__all' ? '' : v);
+                setMes('');
                 setReciboId('');
               }}
             >
-              <SelectTrigger className="w-[120px]">
+              <SelectTrigger className="w-[130px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="__all">Todos los años</SelectItem>
                 {ANOS.map((y) => (
                   <SelectItem key={y} value={String(y)}>
                     {y}
@@ -395,19 +427,25 @@ export function SueldosRecibo({ clientId, profileId }: SueldosReciboProps) {
               </SelectContent>
             </Select>
           </div>
+
+          {/* Mes (solo relevante si hay año) */}
           <div>
             <label className="mb-2 block text-sm font-medium">Mes</label>
             <Select
-              value={mes}
+              value={mes || '__all'}
               onValueChange={(v) => {
-                setMes(v);
+                setMes(v === '__all' ? '' : v);
                 setReciboId('');
               }}
+              disabled={!ano}
             >
               <SelectTrigger className="w-[160px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="__all">
+                  {ano ? 'Todos los meses' : '—'}
+                </SelectItem>
                 {MESES.map((m) => (
                   <SelectItem key={m.value} value={m.value}>
                     {m.label}
@@ -416,32 +454,115 @@ export function SueldosRecibo({ clientId, profileId }: SueldosReciboProps) {
               </SelectContent>
             </Select>
           </div>
+
+          {/* Empleado */}
           <div>
-            <label className="mb-2 block text-sm font-medium">Recibo</label>
-            <Select value={reciboId} onValueChange={setReciboId}>
-              <SelectTrigger className="w-[min(100%,320px)] max-w-[320px]">
-                <SelectValue
-                  placeholder={
-                    loadingList ? 'Cargando…' : 'Seleccioná un recibo'
-                  }
-                />
+            <label className="mb-2 block text-sm font-medium">Empleado</label>
+            <Select
+              value={empleadoId || '__all'}
+              onValueChange={(v) => {
+                setEmpleadoId(v === '__all' ? '' : v);
+                setReciboId('');
+              }}
+            >
+              <SelectTrigger className="w-[260px]">
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {recibosPeriodo.map((r) => (
-                  <SelectItem
-                    key={r.liquidacion.id}
-                    value={r.liquidacion.id}
-                  >
-                    {`${r.empleado.nombre} · ${tipoReciboLabel(r.liquidacion.tipo)}`}
+                <SelectItem value="__all">Todos los empleados</SelectItem>
+                {empleados.map((e) => (
+                  <SelectItem key={e.empleado.id} value={e.empleado.id}>
+                    {e.empleado.nombre}
+                    {e.empleado.legajo
+                      ? ` (Leg. ${legajoParaMostrar(e.empleado.legajo)})`
+                      : ''}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
+
+          {/* Limpiar */}
+          {(ano || empleadoId) && (
+            <button
+              type="button"
+              onClick={resetFiltros}
+              className="mb-0.5 text-xs text-muted-foreground underline hover:text-foreground"
+            >
+              Limpiar filtros
+            </button>
+          )}
         </CardContent>
       </Card>
 
-      {/* ── Recibo ────────────────────────────────────────────────────────── */}
+      {/* ── Lista de resultados ───────────────────────────────────────────── */}
+      {hayFiltro && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              {loadingList
+                ? 'Buscando…'
+                : recibos.length === 0
+                  ? 'Sin resultados'
+                  : `${recibos.length} recibo${recibos.length !== 1 ? 's' : ''} encontrado${recibos.length !== 1 ? 's' : ''}`}
+            </CardTitle>
+          </CardHeader>
+          {!loadingList && recibos.length > 0 && (
+            <CardContent className="p-0">
+              <div className="divide-y">
+                {recibos.map((r) => {
+                  const isSelected = r.liquidacion.id === reciboId;
+                  return (
+                    <button
+                      key={r.liquidacion.id}
+                      type="button"
+                      onClick={() =>
+                        setReciboId(
+                          isSelected ? '' : r.liquidacion.id
+                        )
+                      }
+                      className={`flex w-full items-center justify-between px-4 py-3 text-left text-sm transition-colors hover:bg-muted/50 ${
+                        isSelected ? 'bg-muted/60 font-medium' : ''
+                      }`}
+                    >
+                      <div className="flex flex-col gap-0.5 min-w-0">
+                        <span className="font-medium truncate">
+                          {r.empleado.nombre}
+                          {r.empleado.legajo && (
+                            <span className="ml-2 text-xs font-normal text-muted-foreground">
+                              Leg. {legajoParaMostrar(r.empleado.legajo)}
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {r.liquidacion.periodo} · {tipoReciboLabel(r.liquidacion.tipo)}
+                          {r.liquidacion.quincena
+                            ? ` · ${quincenaLabel(r.liquidacion.quincena)}`
+                            : ''}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0 ml-4">
+                        {r.liquidacion.neto && (
+                          <span className="text-sm tabular-nums font-medium">
+                            ${moneyFmt(r.liquidacion.neto)}
+                          </span>
+                        )}
+                        <ChevronRight
+                          className={`h-4 w-4 text-muted-foreground transition-transform ${
+                            isSelected ? 'rotate-90' : ''
+                          }`}
+                        />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </CardContent>
+          )}
+        </Card>
+      )}
+
+      {/* ── Recibo detalle ───────────────────────────────────────────────── */}
       {reciboId && (
         <>
           {loadingDetalle ? (
@@ -459,7 +580,11 @@ export function SueldosRecibo({ clientId, profileId }: SueldosReciboProps) {
               </CardContent>
             </Card>
           ) : (
-            <ReciboDocumento detalle={detalle} clientData={clientData ?? null} firmaEmpleadorUrl={firmaEmpleadorUrl} />
+            <ReciboDocumento
+              detalle={detalle}
+              clientData={clientData ?? null}
+              firmaEmpleadorUrl={firmaEmpleadorUrl}
+            />
           )}
         </>
       )}
