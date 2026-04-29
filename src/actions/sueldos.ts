@@ -2001,6 +2001,19 @@ export const guardarReciboDesdeTabla = createServerFn({ method: 'POST' })
       periodo: z.string().regex(/^\d{4}-\d{2}$/),
       tipoRecibo: tipoReciboReciboSchema,
       conceptos: z.array(conceptoEditsSosSchema),
+      // Metadata del recibo (opcionales: se usan al crear, se omiten al editar desde "Editar")
+      quincena: z.enum(['0', '1', '2']).optional(),
+      fechaLiquidacion: z.string().optional(),
+      obraSocialId: z.string().uuid().optional().nullable(),
+      fechaPago: z.string().optional(),
+      lugarPago: z.string().optional().nullable(),
+      formaPago: z.enum(['efectivo', 'cheque', 'acreditacion']).optional(),
+      cbu: z.string().optional().nullable(),
+      banco: z.string().optional().nullable(),
+      periodoCargas: z.string().optional(),
+      fechaDepositoCargas: z.string().optional().nullable(),
+      observacionInterna: z.string().optional().nullable(),
+      observacionRecibo: z.string().optional().nullable(),
     })
   )
   .handler(async (ctx) => {
@@ -2070,6 +2083,31 @@ export const guardarReciboDesdeTabla = createServerFn({ method: 'POST' })
         )
         .limit(1);
 
+      // Campos de metadata opcionales (presentes cuando viene del formulario nuevo,
+      // ausentes cuando viene del flujo "Editar" — en ese caso no se sobreescriben).
+      const hasMeta = !!ctx.data.fechaLiquidacion;
+      const metaFields = hasMeta
+        ? {
+            quincena: ctx.data.quincena ?? '0',
+            fecha: parseISO(ctx.data.fechaLiquidacion!.slice(0, 10)),
+            obraSocialId: ctx.data.obraSocialId ?? null,
+            fechaPago: ctx.data.fechaPago
+              ? parseISO(ctx.data.fechaPago.slice(0, 10))
+              : null,
+            lugarPago: ctx.data.lugarPago ?? null,
+            formaPago: ctx.data.formaPago ?? 'efectivo',
+            cbu: ctx.data.cbu ?? null,
+            banco: ctx.data.banco ?? null,
+            periodoCargas: ctx.data.periodoCargas ?? '',
+            fechaDepositoCargas: ctx.data.fechaDepositoCargas
+              ? parseISO(ctx.data.fechaDepositoCargas.slice(0, 10))
+              : null,
+            observacionInterna: ctx.data.observacionInterna ?? null,
+            observacionRecibo: ctx.data.observacionRecibo ?? null,
+            origen: 'generado' as const,
+          }
+        : {};
+
       let rid: string;
       if (existing) {
         await tx
@@ -2080,8 +2118,8 @@ export const guardarReciboDesdeTabla = createServerFn({ method: 'POST' })
             descuentos: descStr,
             retenciones: retStr,
             neto: netoStr,
-            fecha: new Date(),
             updatedAt: new Date(),
+            ...metaFields,
           })
           .where(eq(liquidacionImportRecibo.id, existing.id));
         rid = existing.id;
@@ -2092,12 +2130,12 @@ export const guardarReciboDesdeTabla = createServerFn({ method: 'POST' })
             empleadoId: ctx.data.importEmpleadoId,
             periodo: ctx.data.periodo,
             tipo: ctx.data.tipoRecibo,
-            fecha: new Date(),
             haberes: haberesStr,
             noRemunerativo: noRemStr,
             descuentos: descStr,
             retenciones: retStr,
             neto: netoStr,
+            ...metaFields,
           })
           .returning({ id: liquidacionImportRecibo.id });
         if (!ins) throw new Error('No se pudo crear el recibo');

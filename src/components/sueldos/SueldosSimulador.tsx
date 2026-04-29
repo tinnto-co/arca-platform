@@ -93,6 +93,19 @@ interface FlowHeader {
   tipoRecibo: TipoReciboGuardar;
   copiarUltimoRecibo: boolean;
   antiguedadAnios: number | null;
+  // metadata from form — absent when coming from "Editar" (initialData flow)
+  quincena?: '0' | '1' | '2';
+  fechaLiquidacion?: string;
+  obraSocialId?: string | null;
+  fechaPago?: string;
+  lugarPago?: string | null;
+  formaPago?: 'efectivo' | 'cheque' | 'acreditacion';
+  cbu?: string | null;
+  banco?: string | null;
+  periodoCargas?: string;
+  fechaDepositoCargas?: string | null;
+  observacionInterna?: string | null;
+  observacionRecibo?: string | null;
 }
 
 interface SueldosSimuladorProps {
@@ -349,6 +362,18 @@ export function SueldosSimulador({
           periodo: flowHeader.periodo,
           tipoRecibo: flowHeader.tipoRecibo,
           conceptos,
+          quincena: flowHeader.quincena,
+          fechaLiquidacion: flowHeader.fechaLiquidacion,
+          obraSocialId: flowHeader.obraSocialId,
+          fechaPago: flowHeader.fechaPago,
+          lugarPago: flowHeader.lugarPago,
+          formaPago: flowHeader.formaPago,
+          cbu: flowHeader.cbu,
+          banco: flowHeader.banco,
+          periodoCargas: flowHeader.periodoCargas,
+          fechaDepositoCargas: flowHeader.fechaDepositoCargas,
+          observacionInterna: flowHeader.observacionInterna,
+          observacionRecibo: flowHeader.observacionRecibo,
         },
       });
     },
@@ -410,6 +435,18 @@ export function SueldosSimulador({
       tipoRecibo: string;
       copiarUltimoRecibo: boolean;
       antiguedadAnios: number | null;
+      quincena: '0' | '1' | '2';
+      fechaLiquidacion: string;
+      obraSocialId: string | null;
+      fechaPago: string;
+      lugarPago: string | null;
+      formaPago: 'efectivo' | 'cheque' | 'acreditacion';
+      cbu: string | null;
+      banco: string | null;
+      periodoCargas: string;
+      fechaDepositoCargas: string | null;
+      observacionInterna: string | null;
+      observacionRecibo: string | null;
     }) => {
       setFlowHeader({
         importEmpleadoId: payload.importEmpleadoId,
@@ -418,6 +455,18 @@ export function SueldosSimulador({
         tipoRecibo: payload.tipoRecibo as TipoReciboGuardar,
         copiarUltimoRecibo: payload.copiarUltimoRecibo,
         antiguedadAnios: payload.antiguedadAnios,
+        quincena: payload.quincena,
+        fechaLiquidacion: payload.fechaLiquidacion,
+        obraSocialId: payload.obraSocialId,
+        fechaPago: payload.fechaPago,
+        lugarPago: payload.lugarPago,
+        formaPago: payload.formaPago,
+        cbu: payload.cbu,
+        banco: payload.banco,
+        periodoCargas: payload.periodoCargas,
+        fechaDepositoCargas: payload.fechaDepositoCargas,
+        observacionInterna: payload.observacionInterna,
+        observacionRecibo: payload.observacionRecibo,
       });
       queryClient.invalidateQueries({
         queryKey: [

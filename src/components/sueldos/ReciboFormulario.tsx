@@ -8,12 +8,8 @@ import { useQuery } from '@tanstack/react-query';
 import { format, differenceInYears } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { FilePlus2, ChevronLeft, ChevronRight } from 'lucide-react';
-import { toast } from 'sonner';
 import { legajoParaMostrar } from '@/lib/legajo';
-import {
-  createReciboHeader,
-  listImportEmpleadosConConfig,
-} from '@/actions/sueldos';
+import { listImportEmpleadosConConfig } from '@/actions/sueldos';
 import { Button } from '@/components/ui/button';
 import {
   Form,
@@ -85,13 +81,24 @@ const formSchema = z.object({
 export type ReciboFormValues = z.infer<typeof formSchema>;
 
 export interface ReciboFormularioSuccess {
-  liquidacionId: string;
   importEmpleadoId: string;
   empleadoNombre: string;
   periodo: string;
   copiarUltimoRecibo: boolean;
   tipoRecibo: string;
   antiguedadAnios: number | null;
+  quincena: '0' | '1' | '2';
+  fechaLiquidacion: string;
+  obraSocialId: string | null;
+  fechaPago: string;
+  lugarPago: string | null;
+  formaPago: 'efectivo' | 'cheque' | 'acreditacion';
+  cbu: string | null;
+  banco: string | null;
+  periodoCargas: string;
+  fechaDepositoCargas: string | null;
+  observacionInterna: string | null;
+  observacionRecibo: string | null;
 }
 
 interface ReciboFormularioProps {
@@ -165,50 +172,33 @@ export function ReciboFormulario({
     return differenceInYears(now, new Date(fechaAlta as unknown as string));
   }, [empleadoSel]);
 
-  const onSubmit = async (values: ReciboFormValues) => {
+  const onSubmit = (values: ReciboFormValues) => {
     const emp = empleados.find((e) => e.empleado.id === values.importEmpleadoId);
     const periodo = `${values.ano}-${values.mes}`;
     const periodoCargas = `${values.anoCargas} / ${values.mesCargas}`;
-    try {
-      const res = await createReciboHeader({
-        data: {
-          clientId,
-          importEmpleadoId: values.importEmpleadoId,
-          periodo,
-          tipoRecibo: values.tipoRecibo,
-          quincena: values.quincena,
-          fechaLiquidacion: values.fechaLiquidacion,
-          obraSocialId: emp?.empleado.obraSocialId ?? null,
-          fechaPago: values.fechaPago,
-          lugarPago: emp?.empleado.lugarPago ?? null,
-          formaPago: (emp?.empleado.formaPago ?? 'efectivo') as
-            | 'efectivo'
-            | 'cheque'
-            | 'acreditacion',
-          cbu: emp?.empleado.cbu ?? null,
-          banco: emp?.empleado.banco ?? null,
-          periodoCargas,
-          fechaDepositoCargas: values.fechaDepositoCargas?.trim()
-            ? values.fechaDepositoCargas
-            : null,
-          observacionInterna: values.observacionInterna?.trim() || null,
-          observacionRecibo: values.observacionRecibo?.trim() || null,
-          copiarUltimoRecibo: values.copiarUltimoRecibo === 'si',
-        },
-      });
-      toast.success('Cabecera del recibo creada. Podés calcular la liquidación.');
-      onSuccess({
-        liquidacionId: res.liquidacionId,
-        importEmpleadoId: res.importEmpleadoId,
-        empleadoNombre: emp?.empleado.nombre ?? '',
-        periodo: res.periodo,
-        copiarUltimoRecibo: values.copiarUltimoRecibo === 'si',
-        tipoRecibo: values.tipoRecibo,
-        antiguedadAnios,
-      });
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Error al guardar');
-    }
+    onSuccess({
+      importEmpleadoId: values.importEmpleadoId,
+      empleadoNombre: emp?.empleado.nombre ?? '',
+      periodo,
+      copiarUltimoRecibo: values.copiarUltimoRecibo === 'si',
+      tipoRecibo: values.tipoRecibo,
+      antiguedadAnios,
+      quincena: values.quincena,
+      fechaLiquidacion: values.fechaLiquidacion,
+      obraSocialId: emp?.empleado.obraSocialId ?? null,
+      fechaPago: values.fechaPago,
+      lugarPago: emp?.empleado.lugarPago ?? null,
+      formaPago: (emp?.empleado.formaPago ?? 'efectivo') as
+        | 'efectivo'
+        | 'cheque'
+        | 'acreditacion',
+      cbu: emp?.empleado.cbu ?? null,
+      banco: emp?.empleado.banco ?? null,
+      periodoCargas,
+      fechaDepositoCargas: values.fechaDepositoCargas?.trim() || null,
+      observacionInterna: values.observacionInterna?.trim() || null,
+      observacionRecibo: values.observacionRecibo?.trim() || null,
+    });
   };
 
   const goNext = async () => {
@@ -627,10 +617,9 @@ export function ReciboFormulario({
               ) : (
                 <Button
                   type="button"
-                  disabled={form.formState.isSubmitting}
                   onClick={() => void form.handleSubmit(onSubmit)()}
                 >
-                  {form.formState.isSubmitting ? 'Guardando…' : 'Agregar'}
+                  Agregar
                 </Button>
               )}
             </div>
