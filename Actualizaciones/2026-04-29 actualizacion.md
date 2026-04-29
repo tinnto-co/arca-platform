@@ -2,7 +2,7 @@
 
 ## 1) Objetivo general del dia
 
-Continuación del refactor de la solapa Sueldos, con foco en tres mejoras de UX en el flujo de recibos: (1) soporte para eliminar conceptos individuales de la tabla de liquidación, (2) botón "Editar" en la solapa Recibo que navega al simulador con los datos del recibo pre-cargados, y (3) correcciones menores de datos: sincronización de categorías de empleados desde archivos SOS, enlace de gerentes al convenio 9999/99, y fix del contador de empleados activos en el dashboard.
+Continuación del refactor de la solapa Sueldos, con foco en tres mejoras de UX en el flujo de recibos: (1) soporte para eliminar conceptos individuales de la tabla de liquidación, (2) botón "Editar" en la solapa Recibo que navega al simulador con los datos del recibo pre-cargados, (3) correcciones menores de datos: sincronización de categorías de empleados desde archivos SOS, enlace de gerentes al convenio 9999/99, y fix del contador de empleados activos en el dashboard, y (4) corrección del flujo del simulador para diferir la escritura en DB al momento de "Guardar Recibo".
 
 ---
 
@@ -43,7 +43,14 @@ Continuación del refactor de la solapa Sueldos, con foco en tres mejoras de UX 
 - **Impacto:** Mayor cobertura de empleados con `categoria_id` enlazado → más recibos con básico calculado automáticamente desde la escala.
 - **Archivos:** `src/scripts/sync-categorias-desde-sos.py`
 
-### 2.6 Enlace de gerentes al convenio 9999/99 (Excluido de Convenio)
+### 2.6 Fix: escritura en DB diferida al "Guardar Recibo" en el simulador
+
+- **Cambio:** El botón "Agregar" del paso 3 del formulario de nuevo recibo ya no crea ningún registro en la base de datos. Solo pasa los datos al simulador para mostrar la tabla de conceptos. La escritura en `liquidacion_import_recibo` ocurre únicamente al presionar "Guardar Recibo", incluyendo todos los metadatos (fechas, obra social, forma de pago, CBU, observaciones, etc.) en esa única operación.
+- **Motivo:** Al hacer click en "Agregar", se generaba inmediatamente un recibo en $0 en la DB antes de que el operador completara ningún concepto. Esto creaba registros basura y era confuso.
+- **Impacto:** El flujo es ahora completamente no destructivo hasta el momento de confirmar. El operador puede armar la liquidación con total libertad y guardar una sola vez cuando esté lista.
+- **Archivos:** `src/components/sueldos/ReciboFormulario.tsx`, `src/components/sueldos/SueldosSimulador.tsx`, `src/actions/sueldos.ts`
+
+### 2.7 Enlace de gerentes al convenio 9999/99 (Excluido de Convenio)
 
 - **Cambio:** Se ejecutaron los scripts `setup-fuera-convenio-gerentes.ts` (inicial, creó convenios FUERA) y `fix-gerentes-convenio.ts` (corrección, eliminó los FUERA y re-enlazó a los convenios existentes 9999/99). 16 empleados con `categoria = 'Gerente'` quedaron enlazados a `9999/99 / GERENTE` con su `valor_sueldo` individual como override.
 - **Motivo:** Los gerentes están fuera de escala CCT; necesitan un convenio especial con override manual por empleado.
@@ -54,7 +61,24 @@ Continuación del refactor de la solapa Sueldos, con foco en tres mejoras de UX 
 
 ## 3) Cambios tecnicos (implementacion)
 
-### 3.1 Frontend / UI
+### 3.1 Frontend / UI (simulador — escritura diferida)
+
+- **`ReciboFormulario.tsx`:**
+  - Elimina el import y la llamada a `createReciboHeader`.
+  - `onSubmit` es ahora síncrono: recopila datos del form + del empleado seleccionado y llama a `onSuccess` directamente, sin ninguna llamada a la API.
+  - `ReciboFormularioSuccess` reemplaza `liquidacionId` por los campos de metadata: `quincena`, `fechaLiquidacion`, `obraSocialId`, `fechaPago`, `lugarPago`, `formaPago`, `cbu`, `banco`, `periodoCargas`, `fechaDepositoCargas`, `observacionInterna`, `observacionRecibo`.
+
+- **`SueldosSimulador.tsx`:**
+  - `FlowHeader` incluye los campos de metadata como opcionales (compatibilidad con flujo "Editar" que no tiene form).
+  - `onFormSuccess` almacena toda la metadata en el estado local.
+  - `guardarRecibo.mutate()` pasa la metadata completa a `guardarReciboDesdeTabla`.
+
+- **`src/actions/sueldos.ts`:**
+  - `guardarReciboDesdeTabla` acepta los campos de metadata como opcionales.
+  - En **insert** (recibo nuevo): guarda toda la metadata + `origen: 'generado'`.
+  - En **update** (recibo existente): solo sobreescribe la metadata si viene del formulario (`fechaLiquidacion` presente); si viene del flujo "Editar" sin form, solo actualiza los totales y conceptos.
+
+### 3.2 Frontend / UI (otros cambios del día)
 
 - **`TablaReciboSos.tsx`:**
   - Nuevo prop `onRemoveConcepto?: (codigo: string) => void` en `TablaReciboSosProps` y `TableSectionProps`.
@@ -130,9 +154,11 @@ Continuación del refactor de la solapa Sueldos, con foco en tres mejoras de UX 
 - `src/components/sueldos/TablaReciboSos.tsx`
 - `src/components/sueldos/SueldosSimulador.tsx`
 - `src/components/sueldos/SueldosRecibo.tsx`
+- `src/components/sueldos/ReciboFormulario.tsx`
 - `src/components/sueldos/SueldosDashboard.tsx`
 - `src/components/sueldos/SueldosEmpleados.tsx`
 - `src/routes/_authed/sueldos/index.tsx`
+- `src/actions/sueldos.ts`
 - `src/scripts/sync-categorias-desde-sos.py`
 - `src/scripts/setup-fuera-convenio-gerentes.ts`
 - `src/scripts/fix-gerentes-convenio.ts`
