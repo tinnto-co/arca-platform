@@ -14,6 +14,13 @@ import {
   payrollConvenioCategoria,
   payrollEscala,
   payrollConcepto,
+  payrollModalidadContratacion,
+  payrollSituacion,
+  payrollZona,
+  payrollCondicion,
+  payrollActividad,
+  payrollSiniestrado,
+  payrollProvincia,
   afipEmpleadoresConvenio,
   conveniosDeTrabajo,
   liquidacionImportEmpleado,
@@ -1372,12 +1379,26 @@ export const listImportEmpleados = createServerFn({ method: 'GET' })
         categoriaNombre: payrollConvenioCategoria.nombre,
         obraSocialNombre: obraSocial.nombre,
         obraSocialCodigo: obraSocial.codigo,
+        modalidadNombre: payrollModalidadContratacion.nombre,
+        situacionNombre: payrollSituacion.nombre,
+        zonaNombre: payrollZona.nombre,
+        condicionNombre: payrollCondicion.nombre,
+        actividadNombre: payrollActividad.nombre,
+        siniestradoNombre: payrollSiniestrado.nombre,
+        provinciaNombre: payrollProvincia.nombre,
       })
       .from(liquidacionImportEmpleado)
       .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
       .leftJoin(payrollConvenio, eq(liquidacionImportEmpleado.convenioId, payrollConvenio.id))
       .leftJoin(payrollConvenioCategoria, eq(liquidacionImportEmpleado.categoriaId, payrollConvenioCategoria.id))
       .leftJoin(obraSocial, eq(liquidacionImportEmpleado.obraSocialId, obraSocial.id))
+      .leftJoin(payrollModalidadContratacion, eq(liquidacionImportEmpleado.modalidadContratacionId, payrollModalidadContratacion.id))
+      .leftJoin(payrollSituacion, eq(liquidacionImportEmpleado.situacionId, payrollSituacion.id))
+      .leftJoin(payrollZona, eq(liquidacionImportEmpleado.zonaId, payrollZona.id))
+      .leftJoin(payrollCondicion, eq(liquidacionImportEmpleado.condicionId, payrollCondicion.id))
+      .leftJoin(payrollActividad, eq(liquidacionImportEmpleado.actividadId, payrollActividad.id))
+      .leftJoin(payrollSiniestrado, eq(liquidacionImportEmpleado.siniestradoId, payrollSiniestrado.id))
+      .leftJoin(payrollProvincia, eq(liquidacionImportEmpleado.provinciaId, payrollProvincia.id))
       .where(
         and(
           eq(profile.client, ctx.data.clientId),
@@ -1825,6 +1846,76 @@ export const listObrasSociales = createServerFn({ method: 'GET' }).handler(
       })
       .from(obraSocial)
       .orderBy(asc(obraSocial.nombre));
+  }
+);
+
+export const listModalidadesContratacion = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    await getSessionWithOrg();
+    return db
+      .select({ id: payrollModalidadContratacion.id, codigo: payrollModalidadContratacion.codigo, nombre: payrollModalidadContratacion.nombre })
+      .from(payrollModalidadContratacion)
+      .orderBy(asc(payrollModalidadContratacion.codigo));
+  }
+);
+
+export const listSituaciones = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    await getSessionWithOrg();
+    return db
+      .select({ id: payrollSituacion.id, codigo: payrollSituacion.codigo, nombre: payrollSituacion.nombre })
+      .from(payrollSituacion)
+      .orderBy(asc(payrollSituacion.codigo));
+  }
+);
+
+export const listZonas = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    await getSessionWithOrg();
+    return db
+      .select({ id: payrollZona.id, codigo: payrollZona.codigo, nombre: payrollZona.nombre })
+      .from(payrollZona)
+      .orderBy(asc(payrollZona.codigo));
+  }
+);
+
+export const listCondiciones = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    await getSessionWithOrg();
+    return db
+      .select({ id: payrollCondicion.id, codigo: payrollCondicion.codigo, nombre: payrollCondicion.nombre })
+      .from(payrollCondicion)
+      .orderBy(asc(payrollCondicion.codigo));
+  }
+);
+
+export const listActividades = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    await getSessionWithOrg();
+    return db
+      .select({ id: payrollActividad.id, codigo: payrollActividad.codigo, nombre: payrollActividad.nombre })
+      .from(payrollActividad)
+      .orderBy(asc(payrollActividad.codigo));
+  }
+);
+
+export const listSiniestrados = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    await getSessionWithOrg();
+    return db
+      .select({ id: payrollSiniestrado.id, codigo: payrollSiniestrado.codigo, nombre: payrollSiniestrado.nombre })
+      .from(payrollSiniestrado)
+      .orderBy(asc(payrollSiniestrado.codigo));
+  }
+);
+
+export const listProvincias = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    await getSessionWithOrg();
+    return db
+      .select({ id: payrollProvincia.id, codigo: payrollProvincia.codigo, nombre: payrollProvincia.nombre })
+      .from(payrollProvincia)
+      .orderBy(asc(payrollProvincia.nombre));
   }
 );
 
@@ -2407,13 +2498,21 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
       adherentes: z.number().int().optional().nullable(),
       // Obra social
       obraSocialId: z.string().uuid().optional().nullable(),
-      // Códigos auxiliares
+      // Códigos auxiliares (texto legacy)
       codigoModalidadContratacion: z.string().optional().nullable(),
       codigoSituacion: z.string().optional().nullable(),
       codigoZona: z.string().optional().nullable(),
       codigoCondicion: z.string().optional().nullable(),
       codigoActividad: z.string().optional().nullable(),
       codigoSiniestrado: z.string().optional().nullable(),
+      // FK a catálogos
+      modalidadContratacionId: z.string().uuid().optional().nullable(),
+      situacionId: z.string().uuid().optional().nullable(),
+      zonaId: z.string().uuid().optional().nullable(),
+      condicionId: z.string().uuid().optional().nullable(),
+      actividadId: z.string().uuid().optional().nullable(),
+      siniestradoId: z.string().uuid().optional().nullable(),
+      provinciaId: z.string().uuid().optional().nullable(),
       observaciones: z.string().optional().nullable(),
     })
   )
@@ -2465,6 +2564,13 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
       codigoCondicion,
       codigoActividad,
       codigoSiniestrado,
+      modalidadContratacionId,
+      situacionId,
+      zonaId,
+      condicionId,
+      actividadId,
+      siniestradoId,
+      provinciaId,
       observaciones,
     } = ctx.data;
     // Combine nombre + apellido into nombre field if both provided
@@ -2497,6 +2603,13 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
     if (codigoCondicion !== undefined) set.codigoCondicion = codigoCondicion?.trim() || null;
     if (codigoActividad !== undefined) set.codigoActividad = codigoActividad?.trim() || null;
     if (codigoSiniestrado !== undefined) set.codigoSiniestrado = codigoSiniestrado?.trim() || null;
+    if (modalidadContratacionId !== undefined) set.modalidadContratacionId = modalidadContratacionId;
+    if (situacionId !== undefined) set.situacionId = situacionId;
+    if (zonaId !== undefined) set.zonaId = zonaId;
+    if (condicionId !== undefined) set.condicionId = condicionId;
+    if (actividadId !== undefined) set.actividadId = actividadId;
+    if (siniestradoId !== undefined) set.siniestradoId = siniestradoId;
+    if (provinciaId !== undefined) set.provinciaId = provinciaId;
     if (observaciones !== undefined) set.observaciones = observaciones?.trim() || null;
 
     const [row] = await db

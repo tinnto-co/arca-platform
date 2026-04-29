@@ -32,6 +32,13 @@ import {
   listConvenios,
   listCategoriasByConvenio,
   listObrasSociales,
+  listModalidadesContratacion,
+  listSituaciones,
+  listZonas,
+  listCondiciones,
+  listActividades,
+  listSiniestrados,
+  listProvincias,
   sincronizarConveniosEmpleados,
   updateEmpleado,
 } from '@/actions/sueldos';
@@ -215,13 +222,15 @@ function EmpleadoDetalleDialog({
   const [adherentes, setAdherentes] = useState('');
   // Obra social
   const [obraSocialId, setObraSocialId] = useState('');
-  // Códigos auxiliares
-  const [codModalidad, setCodModalidad] = useState('');
-  const [codSituacion, setCodSituacion] = useState('');
-  const [codZona, setCodZona] = useState('');
-  const [codCondicion, setCodCondicion] = useState('');
-  const [codActividad, setCodActividad] = useState('');
-  const [codSiniestrado, setCodSiniestrado] = useState('');
+  // Provincia
+  const [provinciaId, setProvinciaId] = useState('');
+  // Códigos auxiliares (UUIDs de catálogos)
+  const [modalidadContratacionId, setModalidadContratacionId] = useState('');
+  const [situacionId, setSituacionId] = useState('');
+  const [zonaId, setZonaId] = useState('');
+  const [condicionId, setCondicionId] = useState('');
+  const [actividadId, setActividadId] = useState('');
+  const [siniestradoId, setSiniestradoId] = useState('');
   const [observaciones, setObservaciones] = useState('');
 
   const { data: categoriasEdit = [] } = useQuery({
@@ -235,6 +244,49 @@ function EmpleadoDetalleDialog({
     queryFn: () => listObrasSociales(),
     enabled: isEditing,
     staleTime: 10 * 60 * 1000,
+  });
+
+  const { data: catalogModalidades = [] } = useQuery({
+    queryKey: ['catalog-modalidades'],
+    queryFn: () => listModalidadesContratacion(),
+    enabled: isEditing,
+    staleTime: 30 * 60 * 1000,
+  });
+  const { data: catalogSituaciones = [] } = useQuery({
+    queryKey: ['catalog-situaciones'],
+    queryFn: () => listSituaciones(),
+    enabled: isEditing,
+    staleTime: 30 * 60 * 1000,
+  });
+  const { data: catalogZonas = [] } = useQuery({
+    queryKey: ['catalog-zonas'],
+    queryFn: () => listZonas(),
+    enabled: isEditing,
+    staleTime: 30 * 60 * 1000,
+  });
+  const { data: catalogCondiciones = [] } = useQuery({
+    queryKey: ['catalog-condiciones'],
+    queryFn: () => listCondiciones(),
+    enabled: isEditing,
+    staleTime: 30 * 60 * 1000,
+  });
+  const { data: catalogActividades = [] } = useQuery({
+    queryKey: ['catalog-actividades'],
+    queryFn: () => listActividades(),
+    enabled: isEditing,
+    staleTime: 30 * 60 * 1000,
+  });
+  const { data: catalogSiniestrados = [] } = useQuery({
+    queryKey: ['catalog-siniestrados'],
+    queryFn: () => listSiniestrados(),
+    enabled: isEditing,
+    staleTime: 30 * 60 * 1000,
+  });
+  const { data: catalogProvincias = [] } = useQuery({
+    queryKey: ['catalog-provincias'],
+    queryFn: () => listProvincias(),
+    enabled: isEditing,
+    staleTime: 30 * 60 * 1000,
   });
 
   const resetForm = (r: EmpleadoRow) => {
@@ -262,12 +314,13 @@ function EmpleadoDetalleDialog({
     setHijos(emp.hijos != null ? String(emp.hijos) : '');
     setAdherentes(emp.adherentes != null ? String(emp.adherentes) : '');
     setObraSocialId(emp.obraSocialId ?? '');
-    setCodModalidad(emp.codigoModalidadContratacion ?? '');
-    setCodSituacion(emp.codigoSituacion ?? '');
-    setCodZona(emp.codigoZona ?? '');
-    setCodCondicion(emp.codigoCondicion ?? '');
-    setCodActividad(emp.codigoActividad ?? '');
-    setCodSiniestrado(emp.codigoSiniestrado ?? '');
+    setProvinciaId(emp.provinciaId ?? '');
+    setModalidadContratacionId(emp.modalidadContratacionId ?? '');
+    setSituacionId(emp.situacionId ?? '');
+    setZonaId(emp.zonaId ?? '');
+    setCondicionId(emp.condicionId ?? '');
+    setActividadId(emp.actividadId ?? '');
+    setSiniestradoId(emp.siniestradoId ?? '');
     setObservaciones(emp.observaciones ?? '');
   };
 
@@ -303,12 +356,13 @@ function EmpleadoDetalleDialog({
           hijos: hijos !== '' ? parseInt(hijos, 10) : null,
           adherentes: adherentes !== '' ? parseInt(adherentes, 10) : null,
           obraSocialId: obraSocialId || null,
-          codigoModalidadContratacion: codModalidad.trim() || null,
-          codigoSituacion: codSituacion.trim() || null,
-          codigoZona: codZona.trim() || null,
-          codigoCondicion: codCondicion.trim() || null,
-          codigoActividad: codActividad.trim() || null,
-          codigoSiniestrado: codSiniestrado.trim() || null,
+          provinciaId: provinciaId || null,
+          modalidadContratacionId: modalidadContratacionId || null,
+          situacionId: situacionId || null,
+          zonaId: zonaId || null,
+          condicionId: condicionId || null,
+          actividadId: actividadId || null,
+          siniestradoId: siniestradoId || null,
           observaciones: observaciones.trim() || null,
         },
       });
@@ -412,6 +466,18 @@ function EmpleadoDetalleDialog({
                       <Input value={localidad} onChange={(ev) => setLocalidad(ev.target.value)} />
                     </div>
                     <div className="space-y-1">
+                      <Label>Provincia</Label>
+                      <Select value={provinciaId || '_ninguna'} onValueChange={(v) => setProvinciaId(v === '_ninguna' ? '' : v)}>
+                        <SelectTrigger><SelectValue placeholder="Sin provincia" /></SelectTrigger>
+                        <SelectContent className="max-h-[240px]">
+                          <SelectItem value="_ninguna">Sin provincia</SelectItem>
+                          {catalogProvincias.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>{p.nombre}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
                       <Label>Código postal</Label>
                       <Input value={codigoPostal} onChange={(ev) => setCodigoPostal(ev.target.value)} maxLength={10} />
                     </div>
@@ -432,6 +498,7 @@ function EmpleadoDetalleDialog({
                   <>
                     <Campo label="Domicilio" value={e.domicilio} />
                     <Campo label="Localidad" value={e.localidad} />
+                    <Campo label="Provincia" value={row.provinciaNombre ?? null} />
                     <Campo label="Código postal" value={e.codigoPostal} />
                     <Campo label="Cónyuge" value={e.conyuge != null ? String(e.conyuge) : null} />
                     <Campo label="Hijos" value={e.hijos != null ? String(e.hijos) : null} />
@@ -597,37 +664,85 @@ function EmpleadoDetalleDialog({
                   <>
                     <div className="space-y-1">
                       <Label>Modalidad contratación</Label>
-                      <Input value={codModalidad} onChange={(ev) => setCodModalidad(ev.target.value)} />
+                      <Select value={modalidadContratacionId || '_ninguna'} onValueChange={(v) => setModalidadContratacionId(v === '_ninguna' ? '' : v)}>
+                        <SelectTrigger><SelectValue placeholder="Sin modalidad" /></SelectTrigger>
+                        <SelectContent className="max-h-[240px]">
+                          <SelectItem value="_ninguna">Sin modalidad</SelectItem>
+                          {catalogModalidades.map((m) => (
+                            <SelectItem key={m.id} value={m.id}>{m.codigo} — {m.nombre}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-1">
                       <Label>Situación</Label>
-                      <Input value={codSituacion} onChange={(ev) => setCodSituacion(ev.target.value)} />
+                      <Select value={situacionId || '_ninguna'} onValueChange={(v) => setSituacionId(v === '_ninguna' ? '' : v)}>
+                        <SelectTrigger><SelectValue placeholder="Sin situación" /></SelectTrigger>
+                        <SelectContent className="max-h-[240px]">
+                          <SelectItem value="_ninguna">Sin situación</SelectItem>
+                          {catalogSituaciones.map((s) => (
+                            <SelectItem key={s.id} value={s.id}>{s.codigo} — {s.nombre}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-1">
                       <Label>Zona</Label>
-                      <Input value={codZona} onChange={(ev) => setCodZona(ev.target.value)} />
+                      <Select value={zonaId || '_ninguna'} onValueChange={(v) => setZonaId(v === '_ninguna' ? '' : v)}>
+                        <SelectTrigger><SelectValue placeholder="Sin zona" /></SelectTrigger>
+                        <SelectContent className="max-h-[240px]">
+                          <SelectItem value="_ninguna">Sin zona</SelectItem>
+                          {catalogZonas.map((z) => (
+                            <SelectItem key={z.id} value={z.id}>{z.codigo} — {z.nombre}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-1">
                       <Label>Condición</Label>
-                      <Input value={codCondicion} onChange={(ev) => setCodCondicion(ev.target.value)} />
+                      <Select value={condicionId || '_ninguna'} onValueChange={(v) => setCondicionId(v === '_ninguna' ? '' : v)}>
+                        <SelectTrigger><SelectValue placeholder="Sin condición" /></SelectTrigger>
+                        <SelectContent className="max-h-[240px]">
+                          <SelectItem value="_ninguna">Sin condición</SelectItem>
+                          {catalogCondiciones.map((c) => (
+                            <SelectItem key={c.id} value={c.id}>{c.codigo} — {c.nombre}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-1">
                       <Label>Actividad</Label>
-                      <Input value={codActividad} onChange={(ev) => setCodActividad(ev.target.value)} />
+                      <Select value={actividadId || '_ninguna'} onValueChange={(v) => setActividadId(v === '_ninguna' ? '' : v)}>
+                        <SelectTrigger><SelectValue placeholder="Sin actividad" /></SelectTrigger>
+                        <SelectContent className="max-h-[240px]">
+                          <SelectItem value="_ninguna">Sin actividad</SelectItem>
+                          {catalogActividades.map((a) => (
+                            <SelectItem key={a.id} value={a.id}>{a.codigo} — {a.nombre}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-1">
                       <Label>Siniestrado</Label>
-                      <Input value={codSiniestrado} onChange={(ev) => setCodSiniestrado(ev.target.value)} />
+                      <Select value={siniestradoId || '_ninguna'} onValueChange={(v) => setSiniestradoId(v === '_ninguna' ? '' : v)}>
+                        <SelectTrigger><SelectValue placeholder="Sin siniestrado" /></SelectTrigger>
+                        <SelectContent className="max-h-[240px]">
+                          <SelectItem value="_ninguna">Sin siniestrado</SelectItem>
+                          {catalogSiniestrados.map((s) => (
+                            <SelectItem key={s.id} value={s.id}>{s.codigo} — {s.nombre}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                   </>
                 ) : (
                   <>
-                    <Campo label="Modalidad contratación" value={e.codigoModalidadContratacion} />
-                    <Campo label="Situación" value={e.codigoSituacion} />
-                    <Campo label="Zona" value={e.codigoZona} />
-                    <Campo label="Condición" value={e.codigoCondicion} />
-                    <Campo label="Actividad" value={e.codigoActividad} />
-                    <Campo label="Siniestrado" value={e.codigoSiniestrado} />
+                    <Campo label="Modalidad contratación" value={row.modalidadNombre ?? e.codigoModalidadContratacion} />
+                    <Campo label="Situación" value={row.situacionNombre ?? e.codigoSituacion} />
+                    <Campo label="Zona" value={row.zonaNombre ?? e.codigoZona} />
+                    <Campo label="Condición" value={row.condicionNombre ?? e.codigoCondicion} />
+                    <Campo label="Actividad" value={row.actividadNombre ?? e.codigoActividad} />
+                    <Campo label="Siniestrado" value={row.siniestradoNombre ?? e.codigoSiniestrado} />
                   </>
                 )}
               </Seccion>
@@ -1015,12 +1130,11 @@ export function SueldosEmpleados({
       <div className="w-full min-w-0 max-w-full overflow-x-auto rounded-md border">
         <Table className="w-full min-w-0 table-fixed text-sm">
           <colgroup>
-            <col className="w-[20%]" />
-            <col className="w-[14%]" />
-            <col className="w-[7%]" />
-            <col className="w-[9%]" />
-            <col className="w-[17%]" />
-            <col className="w-[17%]" />
+            <col className="w-[23%]" />
+            <col className="w-[15%]" />
+            <col className="w-[8%]" />
+            <col className="w-[10%]" />
+            <col className="w-[28%]" />
             <col className="w-[10%]" />
             <col className="w-[6%]" />
           </colgroup>
@@ -1030,7 +1144,6 @@ export function SueldosEmpleados({
               <TableHead>CUIL</TableHead>
               <TableHead>Legajo</TableHead>
               <TableHead className="whitespace-normal">Fecha alta</TableHead>
-              <TableHead className="whitespace-normal">Convenio</TableHead>
               <TableHead className="whitespace-normal">Categoría</TableHead>
               <TableHead>Estado</TableHead>
               <TableHead />
@@ -1039,13 +1152,13 @@ export function SueldosEmpleados({
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center text-muted-foreground">
+                <TableCell colSpan={7} className="text-center text-muted-foreground">
                   Cargando…
                 </TableCell>
               </TableRow>
             ) : filtrados.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center text-muted-foreground">
+                <TableCell colSpan={7} className="text-center text-muted-foreground">
                   {busqueda
                     ? 'Sin resultados para la búsqueda.'
                     : ocultarBajas
@@ -1075,11 +1188,6 @@ export function SueldosEmpleados({
                     </TableCell>
                     <TableCell className="whitespace-nowrap align-top py-2">
                       {formatDate(e.fechaAlta ?? undefined)}
-                    </TableCell>
-                    <TableCell className="min-w-0 break-words align-top py-2">
-                      {r.convenioNombre
-                        ? formatTitleCaseDisplay(r.convenioNombre)
-                        : <span className="text-muted-foreground text-xs">Sin vincular</span>}
                     </TableCell>
                     <TableCell className="min-w-0 break-words align-top py-2">
                       {r.categoriaNombre
