@@ -48,14 +48,14 @@ import {
   eliminarLiquidacionesDelPeriodo,
 } from '@/actions/sueldos';
 import {
-  getPeriodoMesAnterior,
+  getPeriodoMesActual,
   puedeLiquidarPeriodo,
 } from '@/lib/payroll-period-rules';
 import { legajoParaMostrar } from '@/lib/legajo';
 
 const now = new Date();
 const [PERIODO_INICIAL_ANO, PERIODO_INICIAL_MES] =
-  getPeriodoMesAnterior().split('-');
+  getPeriodoMesActual().split('-');
 const ANOS = Array.from({ length: 6 }, (_, i) => now.getFullYear() - i);
 const MESES = Array.from({ length: 12 }, (_, i) => ({
   value: String(i + 1).padStart(2, '0'),
@@ -434,7 +434,7 @@ export function SueldosDashboard({
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{importEmpleados.length}</div>
+            <div className="text-2xl font-bold">{importEmpleados.filter((e) => e.empleado.activo).length}</div>
           </CardContent>
         </Card>
         <Card>

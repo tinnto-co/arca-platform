@@ -1048,19 +1048,20 @@ async function getBasicoVigenteInternal(
   fechaStr: string
 ): Promise<number> {
   const p = normalizarPeriodoYYYYMM(fechaStr);
-  const fechaIso = p.length === 7 ? `${p}-01` : p;
-  const fecha = parseISO(fechaIso);
-  if (Number.isNaN(fecha.getTime())) return 0;
+  if (!p) return 0;
+  const periodo = p.length === 7 ? p : p.substring(0, 7);
+  // Comparar por rango de fechas del período (1er y último día del mes) evita
+  // corrimientos por timezone al formatear timestamp -> YYYY-MM.
   const [escala] = await db
     .select()
     .from(payrollEscala)
     .where(
       and(
         eq(payrollEscala.categoriaId, categoriaId),
-        lte(payrollEscala.vigenciaDesde, fecha),
+        sql`(${payrollEscala.vigenciaDesde})::date <= (to_date(${periodo} || '-01', 'YYYY-MM-DD') + interval '1 month - 1 day')::date`,
         or(
           isNull(payrollEscala.vigenciaHasta),
-          gte(payrollEscala.vigenciaHasta, fecha)
+          sql`(${payrollEscala.vigenciaHasta})::date >= to_date(${periodo} || '-01', 'YYYY-MM-DD')`
         )
       )
     )
@@ -1146,24 +1147,65 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
     const categoriaId =
       empleado.categoriaId ?? (await resolveCategoriaIdParaBasico(empleado));
 
-    if (!categoriaId) return { basico: 0 };
+    if (!categoriaId) return { basico: 0, categoriaNombre: null };
+
+    // Nombre de la categoría para mostrar en UI
+    const [catRow] = await db
+      .select({ nombre: payrollConvenioCategoria.nombre })
+      .from(payrollConvenioCategoria)
+      .where(eq(payrollConvenioCategoria.id, categoriaId))
+      .limit(1);
+    const categoriaNombre = catRow?.nombre ?? null;
+
+    const periodoNorm = normalizarPeriodoYYYYMM(ctx.data.periodo);
+    const [escalaPeriodo] = await db
+      .select({
+        monto: payrollEscala.montoBasico,
+        periodoLabel: payrollEscala.periodoLabel,
+      })
+      .from(payrollEscala)
+      .where(
+        and(
+          eq(payrollEscala.categoriaId, categoriaId),
+          sql`(${payrollEscala.vigenciaDesde})::date <= (to_date(${periodoNorm} || '-01', 'YYYY-MM-DD') + interval '1 month - 1 day')::date`,
+          or(
+            isNull(payrollEscala.vigenciaHasta),
+            sql`(${payrollEscala.vigenciaHasta})::date >= to_date(${periodoNorm} || '-01', 'YYYY-MM-DD')`
+          )
+        )
+      )
+      .orderBy(desc(payrollEscala.vigenciaDesde))
+      .limit(1);
 
     // Busca la escala exacta para el período
-    let basico = await getBasicoVigenteInternal(categoriaId, ctx.data.periodo);
+    let basico = escalaPeriodo ? Number(escalaPeriodo.monto) : 0;
+    let sinEscalaParaPeriodo = false;
+    let fallbackPeriodoLabel: string | null = null;
+    let periodoEscalaLabel: string | null = escalaPeriodo?.periodoLabel ?? null;
 
     // Fallback: si no hay escala para el período exacto, usa la más reciente disponible.
-    // Útil cuando la escala fue cargada después de la fecha de inicio del período.
     if ((!basico || Number.isNaN(basico)) && categoriaId) {
       const [masReciente] = await db
-        .select({ monto: payrollEscala.montoBasico })
+        .select({ monto: payrollEscala.montoBasico, periodoLabel: payrollEscala.periodoLabel })
         .from(payrollEscala)
         .where(eq(payrollEscala.categoriaId, categoriaId))
         .orderBy(desc(payrollEscala.vigenciaDesde))
         .limit(1);
-      if (masReciente) basico = Number(masReciente.monto);
+      if (masReciente) {
+        basico = Number(masReciente.monto);
+        sinEscalaParaPeriodo = true;
+        fallbackPeriodoLabel = masReciente.periodoLabel;
+        periodoEscalaLabel = masReciente.periodoLabel;
+      }
     }
 
-    return { basico: Number.isNaN(basico) ? 0 : basico };
+    return {
+      basico: Number.isNaN(basico) ? 0 : basico,
+      categoriaNombre,
+      sinEscalaParaPeriodo,
+      fallbackPeriodoLabel,
+      periodoEscalaLabel,
+    };
   });
 
 // ---------- Conceptos salariales ----------

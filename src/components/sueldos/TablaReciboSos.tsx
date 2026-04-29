@@ -8,7 +8,7 @@ import {
   useEffect,
   useRef,
 } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import {
   Popover,
   PopoverContent,
@@ -298,6 +298,7 @@ interface TableSectionProps {
   catalogoCompleto?: ConceptoImportado[];
   codigosActivos?: Set<string>;
   onAddConcepto?: (codigo: string) => void;
+  onRemoveConcepto?: (codigo: string) => void;
 }
 
 function TableSection({
@@ -310,6 +311,7 @@ function TableSection({
   catalogoCompleto,
   codigosActivos,
   onAddConcepto,
+  onRemoveConcepto,
 }: TableSectionProps) {
   const isHaberes = cfg.columna === 'haberes';
   const isDesc = cfg.columna === 'descuentos';
@@ -337,10 +339,24 @@ function TableSection({
             <tr className="border-b hover:bg-slate-50 divide-x divide-slate-200">
               <td className="px-2 py-1.5 text-center text-slate-400 tabular-nums">{c.codigo}</td>
               <td className="px-2 py-1.5 font-medium">
-                {c.nombre ?? `Concepto ${c.codigo}`}
-                {c.codigoAfip && c.codigoAfip !== '0' && (
-                  <span className="ml-1 text-slate-400 font-normal">[{c.codigoAfip}]</span>
-                )}
+                <div className="flex items-center gap-1 group/row">
+                  <span>
+                    {c.nombre ?? `Concepto ${c.codigo}`}
+                    {c.codigoAfip && c.codigoAfip !== '0' && (
+                      <span className="ml-1 text-slate-400 font-normal">[{c.codigoAfip}]</span>
+                    )}
+                  </span>
+                  {onRemoveConcepto && (
+                    <button
+                      type="button"
+                      onClick={() => onRemoveConcepto(c.codigo)}
+                      className="ml-1 shrink-0 opacity-0 group-hover/row:opacity-100 text-slate-300 hover:text-red-500 transition-opacity"
+                      title="Eliminar concepto"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
               </td>
               <td className="px-1 py-1.5 !border-l-2 !border-l-slate-400">
                 {c.tieneCantidad !== false
@@ -465,12 +481,16 @@ interface TablaReciboSosProps {
    * No se muestra en la columna Importe — el usuario solo ve el resultado en Haberes.
    */
   basico?: number;
+  /** Recalcula montos con básico vigente (útil en modo copiar último recibo). */
+  recalculateWithBasico?: boolean;
   /** URL (data URL o URL pública) de la imagen de firma del empleador. */
   firmaEmpleadorUrl?: string | null;
   /** Catálogo completo SOS para los popovers de "Agregar concepto". */
   catalogoCompleto?: ConceptoImportado[];
   /** Callback para agregar un concepto activo por código. */
   onAddConcepto?: (codigo: string) => void;
+  /** Callback para eliminar un concepto activo por código. */
+  onRemoveConcepto?: (codigo: string) => void;
 }
 
 export function TablaReciboSos({
@@ -479,9 +499,11 @@ export function TablaReciboSos({
   onChange,
   variant = 'importado',
   basico,
+  recalculateWithBasico = false,
   firmaEmpleadorUrl,
   catalogoCompleto,
   onAddConcepto,
+  onRemoveConcepto,
 }: TablaReciboSosProps) {
   const initialEdits = useMemo<EditsMap>(() => {
     const map: EditsMap = {};
@@ -553,6 +575,65 @@ export function TablaReciboSos({
       return { ...prev, ...newEntries };
     });
   }, [conceptos]);
+
+  // Recalcula montos que dependen del básico vigente cuando se solicita explícitamente.
+  useEffect(() => {
+    if (!recalculateWithBasico) return;
+    if (!basico || basico <= 0) return;
+
+    setEdits((prev) => {
+      let changed = false;
+      const next: EditsMap = { ...prev };
+
+      for (const c of conceptos) {
+        const current = next[c.codigo] ?? EMPTY_EDIT_ROW;
+        const hasExplicitPorcentaje = (current.porcentaje ?? '').trim() !== '';
+        if (!hasExplicitPorcentaje) continue;
+
+        const bc = c.baseColumna;
+        let implicitBase: number | null = null;
+        if (bc === 'sueldo' || bc === 'sueldoLegajo') {
+          implicitBase = basico / Math.max(1, c.divCantidad ?? 1);
+        } else if (bc === 'valHora') {
+          const divHs = c.divHsNorm ? 200 : 1;
+          implicitBase = basico / divHs / Math.max(1, c.divCantidad ?? 1);
+        }
+        if (implicitBase == null || !Number.isFinite(implicitBase) || implicitBase <= 0) {
+          continue;
+        }
+
+        // En modo "recalcular con escala vigente" la base implícita del período
+        // debe prevalecer sobre valores heredados del recibo copiado.
+        const rowParaFormula = {
+          ...current,
+          importeConceptoNumero: '',
+          importe: String(implicitBase),
+        };
+
+        if (!canApplyFormula(rowParaFormula)) continue;
+
+        const nuevoMonto = montoLiquidadoDesdeEditsSos(rowParaFormula, {
+          forceFormula: true,
+        }).toFixed(2);
+
+        if (
+          (current.monto ?? '') !== nuevoMonto ||
+          (current.importe ?? '') !== rowParaFormula.importe ||
+          (current.importeConceptoNumero ?? '') !== ''
+        ) {
+          next[c.codigo] = {
+            ...current,
+            importeConceptoNumero: '',
+            importe: rowParaFormula.importe,
+            monto: nuevoMonto,
+          };
+          changed = true;
+        }
+      }
+
+      return changed ? next : prev;
+    });
+  }, [recalculateWithBasico, basico, conceptos]);
 
   const setField = useCallback(
     (editedCodigo: string, field: keyof EditsMap[string], value: string) => {
@@ -887,6 +968,7 @@ export function TablaReciboSos({
                 catalogoCompleto={catalogoCompleto}
                 codigosActivos={codigosActivosSet}
                 onAddConcepto={onAddConcepto}
+                onRemoveConcepto={onRemoveConcepto}
               />
             ))}
           </tbody>

@@ -37,6 +37,12 @@ export const Route = createFileRoute('/_authed/sueldos/')({
 function RouteComponent() {
   const [selectedOptionId, setSelectedOptionId] = useState<string>('');
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [editReciboData, setEditReciboData] = useState<{
+    importEmpleadoId: string;
+    empleadoNombre: string;
+    periodo: string;
+    tipoRecibo: string;
+  } | undefined>(undefined);
 
   const { data: clients = [] } = useQuery({
     queryKey: ['clients', 'sueldos'],
@@ -153,10 +159,18 @@ function RouteComponent() {
                 clientId={clientId}
                 profileId={profileId}
                 onConfirmRecibo={() => setActiveTab('recibo')}
+                initialData={editReciboData}
               />
             </TabsContent>
             <TabsContent value="recibo">
-              <SueldosRecibo clientId={clientId} profileId={profileId} />
+              <SueldosRecibo
+                clientId={clientId}
+                profileId={profileId}
+                onEditRecibo={(data) => {
+                  setEditReciboData(data);
+                  setActiveTab('simulador');
+                }}
+              />
             </TabsContent>
             <TabsContent value="firma-digital">
               <SueldosFirmaDigital clientId={clientId} profileId={profileId} />

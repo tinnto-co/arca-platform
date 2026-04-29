@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { format } from 'date-fns';
+import { format, startOfMonth } from 'date-fns';
 import {
   Plus,
   ChevronDown,
@@ -540,7 +540,7 @@ function CategoriaRow({
   const queryClient = useQueryClient();
   const [showEscala, setShowEscala] = useState(false);
   const [vigenciaDesde, setVigenciaDesde] = useState(
-    format(new Date(), 'yyyy-MM-dd')
+    format(startOfMonth(new Date()), 'yyyy-MM-dd')
   );
   const [monto, setMonto] = useState('');
 

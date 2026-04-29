@@ -665,6 +665,7 @@ export function SueldosEmpleados({
   const [open, setOpen] = useState(false);
   const [busqueda, setBusqueda] = useState('');
   const [pagina, setPagina] = useState(1);
+  const [ocultarBajas, setOcultarBajas] = useState(true);
   const [detalleRow, setDetalleRow] = useState<EmpleadoRow | null>(null);
   const [form, setForm] = useState({
     cuil: '',
@@ -687,16 +688,17 @@ export function SueldosEmpleados({
 
   const filtrados = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
-    if (!q) return rows;
     return rows.filter((r) => {
       const e = r.empleado;
+      if (ocultarBajas && e.fechaBaja != null) return false;
+      if (!q) return true;
       return (
         e.nombre.toLowerCase().includes(q) ||
         e.cuil.toLowerCase().includes(q) ||
         (e.legajo ?? '').toLowerCase().includes(q)
       );
     });
-  }, [rows, busqueda]);
+  }, [rows, busqueda, ocultarBajas]);
 
   const totalPaginas = Math.max(1, Math.ceil(filtrados.length / PAGE_SIZE));
   const paginaActual = Math.min(pagina, totalPaginas);
@@ -989,14 +991,25 @@ export function SueldosEmpleados({
         </div>
       </div>
 
-      <div className="relative max-w-sm">
-        <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Buscar por nombre, CUIL o legajo…"
-          value={busqueda}
-          onChange={(e) => handleBusqueda(e.target.value)}
-          className="pl-8"
-        />
+      <div className="flex items-center gap-3">
+        <div className="relative max-w-sm">
+          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por nombre, CUIL o legajo…"
+            value={busqueda}
+            onChange={(e) => handleBusqueda(e.target.value)}
+            className="pl-8"
+          />
+        </div>
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground select-none">
+          <input
+            type="checkbox"
+            checked={ocultarBajas}
+            onChange={(e) => { setOcultarBajas(e.target.checked); setPagina(1); }}
+            className="h-4 w-4 accent-primary"
+          />
+          Ocultar bajas
+        </label>
       </div>
 
       <div className="w-full min-w-0 max-w-full overflow-x-auto rounded-md border">
@@ -1035,7 +1048,9 @@ export function SueldosEmpleados({
                 <TableCell colSpan={9} className="text-center text-muted-foreground">
                   {busqueda
                     ? 'Sin resultados para la búsqueda.'
-                    : 'No hay empleados para este perfil. Ejecutá el import de Excel en el scrapper o creá uno manualmente.'}
+                    : ocultarBajas
+                      ? 'No hay empleados activos. Desactivá "Ocultar bajas" para ver todos.'
+                      : 'No hay empleados para este perfil. Ejecutá el import de Excel en el scrapper o creá uno manualmente.'}
                 </TableCell>
               </TableRow>
             ) : (

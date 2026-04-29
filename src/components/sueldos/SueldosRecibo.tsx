@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { FileText, ChevronRight } from 'lucide-react';
+import { FileText, ChevronRight, Pencil } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Select,
@@ -32,6 +32,12 @@ const MESES = Array.from({ length: 12 }, (_, i) => ({
 interface SueldosReciboProps {
   clientId: string;
   profileId: string;
+  onEditRecibo?: (data: {
+    importEmpleadoId: string;
+    empleadoNombre: string;
+    periodo: string;
+    tipoRecibo: string;
+  }) => void;
 }
 
 function tipoReciboLabel(tipo: string | null): string {
@@ -328,7 +334,7 @@ function DocCell({
   );
 }
 
-export function SueldosRecibo({ clientId, profileId }: SueldosReciboProps) {
+export function SueldosRecibo({ clientId, profileId, onEditRecibo }: SueldosReciboProps) {
   const [ano, setAno] = useState('');
   const [mes, setMes] = useState('');
   const [empleadoId, setEmpleadoId] = useState('');
@@ -546,6 +552,24 @@ export function SueldosRecibo({ clientId, profileId }: SueldosReciboProps) {
                           <span className="text-sm tabular-nums font-medium">
                             ${moneyFmt(r.liquidacion.neto)}
                           </span>
+                        )}
+                        {onEditRecibo && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onEditRecibo({
+                                importEmpleadoId: r.empleado.id,
+                                empleadoNombre: r.empleado.nombre,
+                                periodo: r.liquidacion.periodo,
+                                tipoRecibo: r.liquidacion.tipo ?? 'sueldo',
+                              });
+                            }}
+                            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                            title="Editar recibo"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
                         )}
                         <ChevronRight
                           className={`h-4 w-4 text-muted-foreground transition-transform ${

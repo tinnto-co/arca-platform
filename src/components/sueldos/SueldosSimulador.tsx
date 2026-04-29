@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Save, FilePlus2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import {
   getUltimoReciboImportado,
   listConceptosPlantillaManualSos,
@@ -99,12 +100,20 @@ interface SueldosSimuladorProps {
   profileId: string;
   /** Tras guardar en liquidacion_import_*: período y id del recibo importado */
   onConfirmRecibo?: (periodo: string, reciboImportId: string) => void;
+  /** Pre-carga el simulador (desde Recibo → Editar) saltando el formulario. */
+  initialData?: {
+    importEmpleadoId: string;
+    empleadoNombre: string;
+    periodo: string;
+    tipoRecibo: string;
+  };
 }
 
 export function SueldosSimulador({
   clientId,
   profileId,
   onConfirmRecibo,
+  initialData,
 }: SueldosSimuladorProps) {
   const moneyFmt = useCallback(
     (value: number) =>
@@ -120,6 +129,8 @@ export function SueldosSimulador({
   const [sosEmpleadoId, setSosEmpleadoId] = useState<string | null>(null);
   const [tablaEdits, setTablaEdits] = useState<EditsMap>({});
   const [activeCodigos, setActiveCodigos] = useState<Set<string>>(new Set());
+  const [recalcularConEscalaVigente, setRecalcularConEscalaVigente] =
+    useState(false);
 
   const periodo = flowHeader?.periodo ?? '';
   const permiteLiquidar =
@@ -163,12 +174,19 @@ export function SueldosSimulador({
           periodo: flowHeader!.periodo,
         },
       }),
-    enabled: !flowHeader?.copiarUltimoRecibo && !!flowHeader?.importEmpleadoId && !!flowHeader?.periodo,
+    enabled: !!flowHeader?.importEmpleadoId && !!flowHeader?.periodo,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
   });
 
   // El básico de escala se pasa como prop implícito a TablaReciboSos.
   // No se inyecta en la columna Importe — el cálculo ocurre internamente en la grilla.
   const basicoEscala = basicoData?.basico ?? 0;
+  const categoriaEscala = basicoData?.categoriaNombre ?? null;
+  const sinEscalaParaPeriodo = basicoData?.sinEscalaParaPeriodo ?? false;
+  const fallbackPeriodoLabel = basicoData?.fallbackPeriodoLabel ?? null;
+  const periodoEscalaLabel = basicoData?.periodoEscalaLabel ?? null;
 
   const { data: employerConfig } = useQuery({
     queryKey: ['payroll-employer-config', clientId, profileId],
@@ -355,6 +373,35 @@ export function SueldosSimulador({
     setActiveCodigos((prev) => new Set([...prev, codigo]));
   }, []);
 
+  const handleRemoveConcepto = useCallback((codigo: string) => {
+    setActiveCodigos((prev) => {
+      const next = new Set(prev);
+      next.delete(codigo);
+      return next;
+    });
+  }, []);
+
+  // Cuando llega initialData (desde "Editar" en la solapa Recibo), pre-carga el simulador.
+  const lastInitialDataRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!initialData) return;
+    const key = JSON.stringify(initialData);
+    if (lastInitialDataRef.current === key) return;
+    lastInitialDataRef.current = key;
+    setFlowHeader({
+      importEmpleadoId: initialData.importEmpleadoId,
+      empleadoNombre: initialData.empleadoNombre,
+      periodo: initialData.periodo,
+      tipoRecibo: initialData.tipoRecibo as TipoReciboGuardar,
+      copiarUltimoRecibo: true,
+      antiguedadAnios: null,
+    });
+    setSosEmpleadoId(initialData.importEmpleadoId);
+    setTablaEdits({});
+    setActiveCodigos(new Set());
+    setRecalcularConEscalaVigente(true);
+  }, [initialData]);
+
   const onFormSuccess = useCallback(
     (payload: {
       importEmpleadoId: string;
@@ -372,11 +419,20 @@ export function SueldosSimulador({
         copiarUltimoRecibo: payload.copiarUltimoRecibo,
         antiguedadAnios: payload.antiguedadAnios,
       });
+      queryClient.invalidateQueries({
+        queryKey: [
+          'basico-empleado-periodo',
+          clientId,
+          payload.importEmpleadoId,
+          payload.periodo,
+        ],
+      });
       setSosEmpleadoId(
         payload.copiarUltimoRecibo ? payload.importEmpleadoId : null
       );
       setTablaEdits({});
       setActiveCodigos(new Set());
+      setRecalcularConEscalaVigente(payload.copiarUltimoRecibo);
     },
     []
   );
@@ -386,6 +442,7 @@ export function SueldosSimulador({
     setSosEmpleadoId(null);
     setTablaEdits({});
     setActiveCodigos(new Set());
+    setRecalcularConEscalaVigente(false);
   }, []);
 
   const puedeGuardar =
@@ -423,6 +480,7 @@ export function SueldosSimulador({
                 );
                 setSosEmpleadoId(copiar ? flowHeader.importEmpleadoId : null);
                 setTablaEdits({});
+                setRecalcularConEscalaVigente(copiar);
               }}
             >
               <SelectTrigger className="h-8 w-auto gap-1 text-xs">
@@ -433,6 +491,15 @@ export function SueldosSimulador({
                 <SelectItem value="si">Copiar último recibo</SelectItem>
               </SelectContent>
             </Select>
+            {isCopyMode && (
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Switch
+                  checked={recalcularConEscalaVigente}
+                  onCheckedChange={setRecalcularConEscalaVigente}
+                />
+                Recalcular con escala vigente
+              </label>
+            )}
           </div>
           <Button type="button" variant="outline" size="sm" onClick={resetFlow} className="gap-1.5">
             <FilePlus2 className="h-4 w-4" />
@@ -468,33 +535,72 @@ export function SueldosSimulador({
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
-            {!isCopyMode && loadingBasico ? (
+            {loadingBasico ? (
               <p className="text-sm text-muted-foreground flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Cargando escala salarial…
               </p>
             ) : (
               <>
-                {!isCopyMode && (
-                  <div className="rounded-md border border-emerald-300/60 bg-emerald-50/50 px-3 py-2 text-xs text-emerald-950">
-                    Básico de escala tomado para empleado/período{' '}
-                    <span className="font-semibold">{flowHeader!.periodo}</span>:{' '}
-                    <span className="font-mono font-semibold">
-                      ${moneyFmt(basicoEscala)}
-                    </span>
-                  </div>
-                )}
+                <div className={`rounded-md border px-3 py-2 text-xs ${sinEscalaParaPeriodo ? 'border-amber-300/60 bg-amber-50/50 text-amber-900' : 'border-emerald-300/60 bg-emerald-50/50 text-emerald-950'}`}>
+                  {sinEscalaParaPeriodo ? (
+                    <>
+                      Sin escala cargada para{' '}
+                      <span className="font-semibold">{flowHeader!.periodo}</span>.{' '}
+                      Usando la más reciente
+                      {fallbackPeriodoLabel && (
+                        <> ({fallbackPeriodoLabel})</>
+                      )}
+                      :{' '}
+                      <span className="font-mono font-semibold">
+                        ${moneyFmt(basicoEscala)}
+                      </span>
+                      {categoriaEscala && (
+                        <>
+                          {' '}
+                          · Categoría: <span className="font-semibold">{categoriaEscala}</span>
+                        </>
+                      )}
+                      . Cargá la escala del período en Convenios.
+                    </>
+                  ) : (
+                    <>
+                      Escala vigente para período{' '}
+                      <span className="font-semibold">{flowHeader!.periodo}</span>
+                      {periodoEscalaLabel && (
+                        <>
+                          {' '}
+                          (<span className="font-semibold">{periodoEscalaLabel}</span>)
+                        </>
+                      )}
+                      :{' '}
+                      <span className="font-mono font-semibold">
+                        ${moneyFmt(basicoEscala)}
+                      </span>
+                      {categoriaEscala && (
+                        <>
+                          {' '}
+                          · Categoría: <span className="font-semibold">{categoriaEscala}</span>
+                        </>
+                      )}
+                    </>
+                  )}
+                </div>
                 <div className="rounded-lg border bg-background p-3">
                   <TablaReciboSos
                     key={plantillaKey}
                     variant={isCopyMode ? 'importado' : 'manual'}
                     recibo={isCopyMode && ultimoRecibo ? ultimoRecibo.recibo : reciboHeaderSimulado}
                     conceptos={conceptosActivos}
-                    basico={!isCopyMode ? basicoEscala : undefined}
+                    basico={basicoEscala}
+                    recalculateWithBasico={
+                      isCopyMode && recalcularConEscalaVigente
+                    }
                     onChange={handleTablaChange}
                     firmaEmpleadorUrl={firmaEmpleadorUrl}
                     catalogoCompleto={conceptosFilas}
                     onAddConcepto={handleAddConcepto}
+                    onRemoveConcepto={handleRemoveConcepto}
                   />
                 </div>
                 <div className="flex flex-col items-end gap-2">
