@@ -208,13 +208,6 @@ export function SueldosSimulador({
   });
   const firmaEmpleadorUrl = employerConfig?.firmaEmpleadorUrl ?? null;
 
-  const { data: employerConfig } = useQuery({
-    queryKey: ['payroll-employer-config', clientId, profileId],
-    queryFn: () => getPayrollEmployerConfig({ data: { clientId, profileId } }),
-    enabled: !!clientId && !!profileId,
-  });
-  const firmaEmpleadorUrl = employerConfig?.firmaEmpleadorUrl ?? null;
-
   const reciboHeaderSimulado = useMemo(() => {
     if (!flowHeader) {
       return {
