@@ -1,0 +1,363 @@
+erDiagram
+
+    %% ── AUTH (Better Auth) ──────────────────────────────────────────
+    user {
+        text id PK
+        text name
+        text email UK
+        text role
+        boolean banned
+    }
+    organization {
+        text id PK
+        text name
+        text slug UK
+    }
+    session {
+        text id PK
+        text userId FK
+        timestamp expiresAt
+        text token UK
+    }
+    account {
+        text id PK
+        text userId FK
+        text providerId
+        text password
+    }
+    member {
+        text id PK
+        text organizationId FK
+        text userId FK
+        text role
+    }
+    invitation {
+        text id PK
+        text organizationId FK
+        text inviterId FK
+        text email
+        text status
+    }
+    verification {
+        text id PK
+        text identifier
+        text value
+        timestamp expiresAt
+    }
+
+    %% ── NÚCLEO MULTI-TENANT ─────────────────────────────────────────
+    client {
+        uuid id PK
+        text organizationId FK
+        text userId FK
+        text name
+        text identityNumber
+        text identityType
+        boolean liquidaSueldos
+        boolean convenioMultilateral
+        boolean hasErrors
+    }
+    profile {
+        uuid id PK
+        uuid clientId FK
+        text name
+        text identityNumber
+        boolean liquidaSueldos
+        boolean usaLsdReferencia
+        text firmaDigitalEmpleador
+        timestamp scrapedAt
+    }
+    credential {
+        uuid id PK
+        uuid clientId FK
+        text provider
+        jsonb data
+    }
+    document {
+        uuid id PK
+        uuid clientId FK
+        text type
+        text name
+        text url
+    }
+    notification {
+        uuid id PK
+        uuid clientId FK
+        uuid profileId FK
+        text externalId
+        text message
+        boolean opened
+        timestamp expirationDate
+    }
+    invoiceAttachment {
+        uuid id PK
+        uuid notificationId FK
+        uuid documentId FK
+        text externalId
+    }
+
+    %% ── DATOS FISCALES ──────────────────────────────────────────────
+    invoice {
+        uuid id PK
+        uuid clientId FK
+        uuid profileId FK
+        text direction
+        text type
+        text authorizationNumber
+        numeric amount
+        numeric totalIVA
+    }
+    dueDate {
+        uuid id PK
+        uuid clientId FK
+        text tax
+        text period
+        timestamp dueDate
+    }
+    debt {
+        uuid id PK
+        uuid clientId FK
+        text tax
+        text period
+        numeric balance
+        numeric compensatoryInterest
+    }
+    ivaScrape {
+        uuid id PK
+        uuid profileId FK
+        text periodoFiscal
+        boolean ok
+        numeric debitoFiscal
+        numeric creditoFiscal
+        numeric saldoTecnicoFavorContribuyente
+    }
+    fiscalEntity {
+        uuid id PK
+        text cuilCuit UK
+        text name
+        text province
+    }
+    movements {
+        text id PK
+        text userId FK
+        text tipo
+        timestamp fecha
+        numeric monto
+        text tipoGasto
+    }
+
+    %% ── JOBS / SCRAPING ─────────────────────────────────────────────
+    job {
+        uuid id PK
+        uuid clientId FK
+        job_status status
+        job_type type
+        jsonb params
+        jsonb result
+        integer progress
+        text bullJobId
+    }
+    jobLog {
+        uuid id PK
+        uuid jobId FK
+        text level
+        text message
+        jsonb context
+    }
+
+    %% ── AGENTE (legacy) ─────────────────────────────────────────────
+    agentConversation {
+        uuid id PK
+        text organizationId
+        text userId
+        text title
+    }
+    agentMessage {
+        uuid id PK
+        uuid conversationId FK
+        text role
+        text content
+    }
+
+    %% ── LSD / AFIP ──────────────────────────────────────────────────
+    lsdConceptoAfip {
+        uuid id PK
+        text codigoAfip UK
+        text descripcion
+    }
+    lsdPerfilConcepto {
+        uuid id PK
+        uuid profileId FK
+        uuid conceptoAfipId FK
+        text codigoContribuyente
+        boolean aportesSipa
+        boolean contribucionesSipa
+        boolean aportesObraSocial
+    }
+    afipEmpleadoresConvenio {
+        uuid id PK
+        uuid profileId FK
+        text cct
+        text actividad
+        text signatarios
+        text fechaNovedad
+    }
+    conceptoSos {
+        uuid id PK
+        text codigo UK
+        text nombre
+        text codigoAfip
+        uuid conceptoAfipId FK
+    }
+    conceptoSosProfile {
+        uuid id PK
+        uuid conceptoId FK
+        uuid profileId FK
+    }
+
+    %% ── SUELDOS / PAYROLL ───────────────────────────────────────────
+    obraSocial {
+        uuid id PK
+        text codigo UK
+        text nombre
+    }
+    payrollConvenio {
+        uuid id PK
+        uuid clientId FK
+        text nombre
+        text cctCodigo
+        boolean activo
+    }
+    payrollConvenioFuente {
+        uuid id PK
+        uuid convenioId FK
+        text fuente UK
+        timestamp lastSyncedAt
+    }
+    payrollConvenioCategoria {
+        uuid id PK
+        uuid convenioId FK
+        text codigo
+        text nombre
+        integer orden
+    }
+    payrollEscala {
+        uuid id PK
+        uuid categoriaId FK
+        timestamp vigenciaDesde
+        timestamp vigenciaHasta
+        numeric montoBasico
+        numeric montoNoRemunerativo
+    }
+    conceptosCompletosSos {
+        uuid id PK
+        integer numeroSos UK
+        text codigoAfip
+        text nombre
+        text baseColumna
+        integer divHsNorm
+        integer divCantidad
+    }
+    payrollConcepto {
+        uuid id PK
+        uuid clientId FK
+        text codigo
+        text nombre
+        payroll_concepto_tipo tipo
+        text formula
+        integer numeroSos
+        text codigoArca
+        uuid refConceptoId FK
+    }
+    liquidacionImportEmpleado {
+        uuid id PK
+        uuid profileId FK
+        text cuil
+        text legajo
+        text nombre
+        uuid convenioId FK
+        uuid categoriaId FK
+        uuid obraSocialId FK
+        text origen
+        boolean activo
+        integer horasMensualesNormales
+    }
+    liquidacionImportRecibo {
+        uuid id PK
+        uuid empleadoId FK
+        uuid obraSocialId FK
+        text periodo
+        text tipo
+        text origen
+        numeric haberes
+        numeric noRemunerativo
+        numeric descuentos
+        numeric neto
+        boolean reciboConfirmado
+    }
+    liquidacionImportConceptoValor {
+        uuid id PK
+        uuid reciboId FK
+        uuid conceptoId FK
+        text codigo
+        numeric monto
+        boolean activoEnRecibo
+        numeric importeOverride
+        text tipoLiquidacion
+    }
+
+    %% ── RELACIONES ──────────────────────────────────────────────────
+
+    user ||--o{ session : "autenticado por"
+    user ||--o{ account : "vinculado a"
+    user ||--o{ member : "es miembro"
+    user ||--o{ invitation : "invita"
+    user ||--o{ client : "gestiona"
+    user ||--o{ movements : "registra"
+    organization ||--o{ member : "tiene"
+    organization ||--o{ invitation : "envia"
+    organization ||--o{ client : "agrupa"
+
+    client ||--o{ profile : "tiene"
+    client ||--o{ credential : "almacena"
+    client ||--o{ document : "archiva"
+    client ||--o{ notification : "recibe"
+    client ||--o{ invoice : "tiene"
+    client ||--o{ dueDate : "tiene"
+    client ||--o{ debt : "tiene"
+    client ||--o{ job : "genera"
+    client ||--o{ payrollConvenio : "configura"
+    client ||--o{ payrollConcepto : "define"
+
+    profile ||--o{ notification : "recibe"
+    profile ||--o{ invoice : "emite"
+    profile ||--o{ afipEmpleadoresConvenio : "tiene CCT"
+    profile ||--o{ lsdPerfilConcepto : "mapea conceptos"
+    profile ||--o{ ivaScrape : "historial IVA"
+    profile ||--o{ conceptoSosProfile : "habilita conceptos"
+    profile ||--o{ liquidacionImportEmpleado : "emplea"
+
+    document ||--o{ invoiceAttachment : "adjunto en"
+    notification ||--o{ invoiceAttachment : "tiene adjunto"
+
+    job ||--o{ jobLog : "genera logs"
+    agentConversation ||--o{ agentMessage : "contiene"
+
+    lsdConceptoAfip ||--o{ lsdPerfilConcepto : "mapeado en"
+    lsdConceptoAfip ||--o{ conceptoSos : "referenciado por"
+    conceptoSos ||--o{ conceptoSosProfile : "habilitado en"
+
+    payrollConvenio ||--o{ payrollConvenioFuente : "tiene fuentes"
+    payrollConvenio ||--o{ payrollConvenioCategoria : "tiene categorias"
+    payrollConvenio ||--o{ liquidacionImportEmpleado : "aplica a"
+    payrollConvenioCategoria ||--o{ payrollEscala : "tiene escalas"
+    payrollConvenioCategoria ||--o{ liquidacionImportEmpleado : "categoriza"
+
+    payrollConcepto ||--o{ liquidacionImportConceptoValor : "genera valores"
+    payrollConcepto ||--o| payrollConcepto : "referencia"
+
+    obraSocial ||--o{ liquidacionImportEmpleado : "cubre"
+    obraSocial ||--o{ liquidacionImportRecibo : "en recibo"
+
+    liquidacionImportEmpleado ||--o{ liquidacionImportRecibo : "tiene recibos"
+    liquidacionImportRecibo ||--o{ liquidacionImportConceptoValor : "contiene conceptos"
