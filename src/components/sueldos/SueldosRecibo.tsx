@@ -388,13 +388,6 @@ export function SueldosRecibo({ clientId, profileId, onEditRecibo }: SueldosReci
   });
   const firmaEmpleadorUrl = employerConfig?.firmaEmpleadorUrl ?? null;
 
-  function resetFiltros() {
-    setAno('');
-    setMes('');
-    setEmpleadoId('');
-    setReciboId('');
-  }
-
   return (
     <div className="w-full min-w-0 max-w-full space-y-6">
       {/* ── Filtros ───────────────────────────────────────────────────────── */}
@@ -604,11 +597,7 @@ export function SueldosRecibo({ clientId, profileId, onEditRecibo }: SueldosReci
               </CardContent>
             </Card>
           ) : (
-            <ReciboDocumento
-              detalle={detalle}
-              clientData={clientData ?? null}
-              firmaEmpleadorUrl={firmaEmpleadorUrl}
-            />
+            <ReciboDocumento detalle={detalle} clientData={clientData ?? null} firmaEmpleadorUrl={firmaEmpleadorUrl} />
           )}
         </>
       )}

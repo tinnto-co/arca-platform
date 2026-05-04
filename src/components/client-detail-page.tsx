@@ -201,10 +201,10 @@ const MetricDelta = ({
   return (
     <p
       className={`text-xs mt-1 ${diff > 0
-          ? 'text-emerald-600 dark:text-emerald-400'
-          : diff < 0
-            ? 'text-red-600 dark:text-red-400'
-            : 'text-muted-foreground'
+        ? 'text-emerald-600 dark:text-emerald-400'
+        : diff < 0
+          ? 'text-red-600 dark:text-red-400'
+          : 'text-muted-foreground'
         }`}
     >
       {label}: {formattedPct}

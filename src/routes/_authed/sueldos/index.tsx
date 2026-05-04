@@ -175,6 +175,9 @@ function RouteComponent() {
             <TabsContent value="firma-digital">
               <SueldosFirmaDigital clientId={clientId} profileId={profileId} />
             </TabsContent>
+            <TabsContent value="firma-digital">
+              <SueldosFirmaDigital clientId={clientId} profileId={profileId} />
+            </TabsContent>
           </div>
         </Tabs>
       )}
