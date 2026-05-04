@@ -3,7 +3,7 @@ import z from 'zod';
 import { db } from '@/lib/db';
 import { profile, client } from '@/drizzle/schema';
 import { getSessionWithOrg } from '@/actions/helpers';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 
 export const getProfile = createServerFn({
   method: 'GET',
@@ -47,4 +47,36 @@ export const getProfile = createServerFn({
     }
 
     return profileData;
+  });
+
+export const updateProfileLiquidaSueldos = createServerFn({
+  method: 'POST',
+})
+  .inputValidator(z.object({ profileId: z.string(), liquidaSueldos: z.boolean() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+
+    // Verificar que el perfil pertenece a un cliente de la organización
+    const [profileData] = await db
+      .select({ id: profile.id, clientId: profile.client })
+      .from(profile)
+      .where(eq(profile.id, ctx.data.profileId))
+      .limit(1);
+
+    if (!profileData) throw new Error('Perfil no encontrado');
+
+    const [clientData] = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(and(eq(client.id, profileData.clientId!), eq(client.organizationId, orgId)))
+      .limit(1);
+
+    if (!clientData) throw new Error('No autorizado');
+
+    await db
+      .update(profile)
+      .set({ liquidaSueldos: ctx.data.liquidaSueldos, updatedAt: new Date() })
+      .where(eq(profile.id, ctx.data.profileId));
+
+    return { success: true };
   });

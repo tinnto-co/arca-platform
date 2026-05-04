@@ -522,6 +522,27 @@ export const fiscalEntity = pgTable(
   }
 );
 
+// ========== MÓDULO AGENTE / CHAT (tablas legacy, preservadas) ==========
+
+export const agentConversation = pgTable("agent_conversation", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: text("organization_id").notNull(),
+  userId: text("user_id").notNull(),
+  title: text("title").notNull().default("Nueva conversación"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const agentMessage = pgTable("agent_message", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  conversationId: uuid("conversation_id")
+    .notNull()
+    .references(() => agentConversation.id, { onDelete: "cascade" }),
+  role: text("role").notNull(),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // ========== MÓDULO SUELDOS / LIQUIDACIÓN ==========
 
 /** Catálogo nacional de obras sociales (códigos legacy / AFIP). */

@@ -48,7 +48,6 @@ type ClientFormValues = z.infer<typeof clientSchema>;
 interface EditClientDialogProps {
   clientId: string;
   children?: React.ReactNode;
-  /** Controlled mode: when provided, dialog open state is controlled and no trigger is rendered */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }
@@ -70,6 +69,8 @@ export function EditClientDialog({
     ? (v: boolean) => controlledOnOpenChange?.(v)
     : setInternalOpen;
 
+  const initializedRef = React.useRef<string | null>(null);
+
   const { data: client, isLoading: loadingClient } = useQuery({
     queryKey: ['client', clientId],
     queryFn: () => getClient({ data: { id: clientId } }),
@@ -87,9 +88,9 @@ export function EditClientDialog({
     },
   });
 
-  // Update form when client data loads
   React.useEffect(() => {
-    if (client) {
+    if (client && initializedRef.current !== clientId) {
+      initializedRef.current = clientId;
       form.reset({
         name: client.name,
         email: client.email || '',
@@ -98,7 +99,13 @@ export function EditClientDialog({
         image: client.image || '',
       });
     }
-  }, [client, form]);
+  }, [client, clientId, form]);
+
+  React.useEffect(() => {
+    if (!open) {
+      initializedRef.current = null;
+    }
+  }, [open]);
 
   const updateMutation = useMutation({
     mutationFn: (data: any) => updateClient({ data }),
@@ -150,39 +157,38 @@ export function EditClientDialog({
         ) : (
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Nombre</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Nombre del cliente" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="email"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Email (opcional)</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="email"
-                          placeholder="cliente@ejemplo.com"
-                          {...field}
-                          value={field.value || ''}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Nombre</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Nombre del cliente" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email (opcional)</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="email"
+                        placeholder="cliente@ejemplo.com"
+                        {...field}
+                        value={field.value || ''}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
               <FormField
                 control={form.control}

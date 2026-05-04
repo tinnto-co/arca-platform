@@ -78,7 +78,8 @@ export function ClientsTable() {
 
   // Filter clients based on search term and filters
   const filteredClients = useMemo(() => {
-    return clients.filter((client) => {
+    return clients
+    .filter((client) => {
       // Search filter (name, profile name, identity number, phone)
       const matchesSearch =
         searchTerm === '' ||
@@ -96,7 +97,8 @@ export function ClientsTable() {
         statusFilter === 'all' || client.status === statusFilter;
 
       return matchesSearch && matchesStatus;
-    });
+    })
+    .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase(), 'es'));
   }, [clients, searchTerm, statusFilter]);
 
   const deleteMutation = useMutation({
@@ -278,7 +280,9 @@ export function ClientsTable() {
                         </Tooltip>
                       )}
                     </TableCell>
-                    <TableCell>{client.identityNumber}</TableCell>
+                    <TableCell>
+                      {client.profiles?.[0]?.identityNumber || client.identityNumber}
+                    </TableCell>
                     <TableCell>
                       {new Date(client.createdAt).toLocaleDateString()}
                     </TableCell>

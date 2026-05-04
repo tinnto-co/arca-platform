@@ -43,6 +43,7 @@ import {
   getLastJobByType,
   getRunningJobByType,
 } from '@/actions/client';
+import { updateProfileLiquidaSueldos } from '@/actions/profile';
 import {
   Select,
   SelectContent,
@@ -68,6 +69,7 @@ import {
 } from '@/actions/notification';
 import { scrapSingleJob } from '@/actions/client';
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import {
   Clock,
@@ -198,13 +200,12 @@ const MetricDelta = ({
 
   return (
     <p
-      className={`text-xs mt-1 ${
-        diff > 0
+      className={`text-xs mt-1 ${diff > 0
           ? 'text-emerald-600 dark:text-emerald-400'
           : diff < 0
             ? 'text-red-600 dark:text-red-400'
             : 'text-muted-foreground'
-      }`}
+        }`}
     >
       {label}: {formattedPct}
     </p>
@@ -1152,17 +1153,17 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
           ? 0
           : null
         : ((invoiceStatsFiltered.totalSales - invoiceStatsPrevious.totalSales) /
-            invoiceStatsPrevious.totalSales) *
-          100;
+          invoiceStatsPrevious.totalSales) *
+        100;
     const purchasesPct =
       invoiceStatsPrevious.totalPurchases === 0
         ? invoiceStatsFiltered.totalPurchases === 0
           ? 0
           : null
         : ((invoiceStatsFiltered.totalPurchases -
-            invoiceStatsPrevious.totalPurchases) /
-            invoiceStatsPrevious.totalPurchases) *
-          100;
+          invoiceStatsPrevious.totalPurchases) /
+          invoiceStatsPrevious.totalPurchases) *
+        100;
     return { salesPct, purchasesPct };
   }, [invoiceStatsFiltered, invoiceStatsPrevious, facturasPeriodType]);
 
@@ -1240,7 +1241,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
       );
       const byMonthKey: Record<string, { ventas: number; compras: number }> =
         {};
-      for (let t = from.getTime(); t <= to.getTime(); ) {
+      for (let t = from.getTime(); t <= to.getTime();) {
         const d = new Date(t);
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         byMonthKey[key] = { ventas: 0, compras: 0 };
@@ -1641,7 +1642,22 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                             </div>
                           </div>
                         </div>
-                        <div className="mt-2.5 pt-2 border-t border-border/50">
+                        <div className="mt-2.5 pt-2 border-t border-border/50 flex items-center justify-between">
+                          <label className="flex items-center gap-2 cursor-pointer select-none">
+                            <Checkbox
+                              checked={selectedResumenProfile.liquidaSueldos ?? false}
+                              onCheckedChange={async (checked) => {
+                                await updateProfileLiquidaSueldos({
+                                  data: {
+                                    profileId: selectedResumenProfile.id,
+                                    liquidaSueldos: !!checked,
+                                  },
+                                });
+                                queryClient.invalidateQueries({ queryKey: ['clientProfiles', clientId] });
+                              }}
+                            />
+                            <span className="text-xs text-muted-foreground">Liquida sueldos</span>
+                          </label>
                           <Link
                             to="/clients/$clientId/$profileId"
                             params={{
@@ -1716,7 +1732,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                       minimumFractionDigits: 2,
                     }).format(
                       resumenCurrentMonthStats.totalSales -
-                        resumenCurrentMonthStats.totalPurchases
+                      resumenCurrentMonthStats.totalPurchases
                     )}
                   </div>
                 </div>
@@ -1778,7 +1794,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                           Number(
                             resumenClientIva.data
                               .saldoLibreDisponibilidadFavorContribuyentePeriodo ??
-                              0
+                            0
                           ) > 0
                             ? 'text-emerald-600 dark:text-emerald-400'
                             : 'text-muted-foreground'
@@ -1943,10 +1959,10 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                           <p className="text-[10px] text-muted-foreground mt-0.5">
                             {notif.publicationDate
                               ? format(
-                                  new Date(notif.publicationDate),
-                                  'dd/MM/yyyy',
-                                  { locale: es }
-                                )
+                                new Date(notif.publicationDate),
+                                'dd/MM/yyyy',
+                                { locale: es }
+                              )
                               : '—'}
                           </p>
                         </button>
@@ -2089,7 +2105,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                       minimumFractionDigits: 2,
                     }).format(
                       debtStats.totalCompensatoryInterest +
-                        debtStats.totalPunitiveInterest
+                      debtStats.totalPunitiveInterest
                     )}{' '}
                     intereses
                   </p>
@@ -3138,8 +3154,8 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                         ? facturasDateRange?.to
                           ? `${format(facturasDateRange.from, 'dd/MM/yyyy', { locale: es })} – ${format(facturasDateRange.to, 'dd/MM/yyyy', { locale: es })}`
                           : format(facturasDateRange.from, 'dd/MM/yyyy', {
-                              locale: es,
-                            })
+                            locale: es,
+                          })
                         : 'Elegir fechas'}
                     </Button>
                   </PopoverTrigger>
@@ -3257,11 +3273,11 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                     {invoiceStatsFiltered == null
                       ? '—'
                       : new Intl.NumberFormat('es-AR', {
-                          style: 'currency',
-                          currency: 'ARS',
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        }).format(invoiceStatsFiltered.totalSales)}
+                        style: 'currency',
+                        currency: 'ARS',
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      }).format(invoiceStatsFiltered.totalSales)}
                   </div>
                   {facturasVariationPct?.salesPct !== undefined && (
                     <div
@@ -3270,7 +3286,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                         facturasVariationPct.salesPct === 0
                           ? 'text-muted-foreground'
                           : facturasVariationPct.salesPct !== null &&
-                              facturasVariationPct.salesPct > 0
+                            facturasVariationPct.salesPct > 0
                             ? 'text-emerald-600 dark:text-emerald-400'
                             : 'text-red-600 dark:text-red-400'
                       )}
@@ -3293,11 +3309,11 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                     {invoiceStatsFiltered == null
                       ? '—'
                       : new Intl.NumberFormat('es-AR', {
-                          style: 'currency',
-                          currency: 'ARS',
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        }).format(invoiceStatsFiltered.totalPurchases)}
+                        style: 'currency',
+                        currency: 'ARS',
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      }).format(invoiceStatsFiltered.totalPurchases)}
                   </div>
                   {facturasVariationPct?.purchasesPct !== undefined && (
                     <div
@@ -3306,7 +3322,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                         facturasVariationPct.purchasesPct === 0
                           ? 'text-muted-foreground'
                           : facturasVariationPct.purchasesPct !== null &&
-                              facturasVariationPct.purchasesPct > 0
+                            facturasVariationPct.purchasesPct > 0
                             ? 'text-emerald-600 dark:text-emerald-400'
                             : 'text-red-600 dark:text-red-400'
                       )}
@@ -3330,8 +3346,8 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                       'text-xl font-bold tabular-nums break-all',
                       invoiceStatsFiltered != null &&
                         invoiceStatsFiltered.totalSales -
-                          invoiceStatsFiltered.totalPurchases <
-                          0
+                        invoiceStatsFiltered.totalPurchases <
+                        0
                         ? 'text-red-600 dark:text-red-400'
                         : 'text-foreground'
                     )}
@@ -3339,14 +3355,14 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                     {invoiceStatsFiltered == null
                       ? '—'
                       : new Intl.NumberFormat('es-AR', {
-                          style: 'currency',
-                          currency: 'ARS',
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        }).format(
-                          invoiceStatsFiltered.totalSales -
-                            invoiceStatsFiltered.totalPurchases
-                        )}
+                        style: 'currency',
+                        currency: 'ARS',
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      }).format(
+                        invoiceStatsFiltered.totalSales -
+                        invoiceStatsFiltered.totalPurchases
+                      )}
                   </div>
                 </div>
               </CardContent>
@@ -4247,13 +4263,13 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                           <TableCell className="text-[11px]">
                             {inv.emitionDate
                               ? new Date(inv.emitionDate).toLocaleDateString(
-                                  'es-AR',
-                                  {
-                                    day: '2-digit',
-                                    month: '2-digit',
-                                    year: 'numeric',
-                                  }
-                                )
+                                'es-AR',
+                                {
+                                  day: '2-digit',
+                                  month: '2-digit',
+                                  year: 'numeric',
+                                }
+                              )
                               : '—'}
                           </TableCell>
                           <TableCell className="text-[11px]">
@@ -4307,13 +4323,13 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                         <span className="text-muted-foreground">
                           {inv.emitionDate
                             ? new Date(inv.emitionDate).toLocaleDateString(
-                                'es-AR',
-                                {
-                                  day: '2-digit',
-                                  month: '2-digit',
-                                  year: 'numeric',
-                                }
-                              )
+                              'es-AR',
+                              {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric',
+                              }
+                            )
                             : '—'}
                         </span>
                       </div>
