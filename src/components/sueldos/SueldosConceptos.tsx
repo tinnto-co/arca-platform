@@ -1,8 +1,8 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Info } from 'lucide-react';
+import { Info, ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -12,6 +12,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Dialog,
   DialogContent,
@@ -19,7 +20,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { listConceptosByPerfil } from '@/actions/sueldos';
+import { listTodosConceptosSos } from '@/actions/sueldos';
 import {
   formulaLegibleSos,
   leyendaRelacionadaFormulaSos,
@@ -30,52 +31,13 @@ interface SueldosConceptosProps {
   profileId: string;
 }
 
-type ConceptoRow = Awaited<ReturnType<typeof listConceptosByPerfil>>[number];
-
-const SUBSISTEMAS: {
-  label: string;
-  aporte: keyof ConceptoRow | null;
-  contribucion: keyof ConceptoRow | null;
-}[] = [
-  { label: 'SIPA', aporte: 'aportesSipa', contribucion: 'contribucionesSipa' },
-  {
-    label: 'INSSJYP',
-    aporte: 'aportesInssjyp',
-    contribucion: 'contribucionesInssjyp',
-  },
-  {
-    label: 'Obra Social',
-    aporte: 'aportesObraSocial',
-    contribucion: 'contribucionesObraSocial',
-  },
-  { label: 'FSR', aporte: 'aportesFsr', contribucion: 'contribucionesFsr' },
-  {
-    label: 'RENATEA',
-    aporte: 'aportesRenatea',
-    contribucion: 'contribucionesRenatea',
-  },
-  { label: 'Dif.', aporte: 'aportesDiferenciales', contribucion: null },
-  { label: 'Esp.', aporte: 'aportesEspeciales', contribucion: null },
-  { label: 'AAFF', aporte: null, contribucion: 'contribucionesAaff' },
-  { label: 'FNE', aporte: null, contribucion: 'contribucionesFne' },
-  { label: 'LRT', aporte: null, contribucion: 'contribucionesLrt' },
-];
-
-function Check({ value }: { value: boolean | null }) {
-  if (value === null)
-    return <span className="text-muted-foreground text-xs">—</span>;
-  return value ? (
-    <span className="text-green-600 font-bold">✓</span>
-  ) : (
-    <span className="text-muted-foreground">✗</span>
-  );
-}
+type ConceptoRow = Awaited<ReturnType<typeof listTodosConceptosSos>>[number];
 
 function ConceptoDialog({ row }: { row: ConceptoRow }) {
   const meta = {
     baseColumna: row.baseColumna,
     divCantidad: row.divCantidad,
-    divHsNorm: row.divHsNorm,
+    divHsNorm: row.divHsNorm != null ? row.divHsNorm > 0 : null,
     tieneCantidad: row.tieneCantidad,
     tienePct: row.tienePct,
     tieneImporte: row.tieneImporte,
@@ -93,13 +55,18 @@ function ConceptoDialog({ row }: { row: ConceptoRow }) {
           <Info className="h-4 w-4" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="w-[95vw] sm:max-w-3xl">
+      <DialogContent className="w-[95vw] sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="text-base">
             <span className="font-mono text-muted-foreground mr-2">
-              {row.afipCodigo}
+              {row.numeroSos}
             </span>
-            {row.afipNombre}
+            {row.nombre}
+            {row.codigoAfip && (
+              <span className="ml-2 text-xs text-muted-foreground font-normal">
+                AFIP: {row.codigoAfip}
+              </span>
+            )}
           </DialogTitle>
         </DialogHeader>
         <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs space-y-3">
@@ -127,119 +94,100 @@ function ConceptoDialog({ row }: { row: ConceptoRow }) {
             </div>
           )}
         </div>
-        <Table className="text-xs">
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-28 text-xs" />
-              {SUBSISTEMAS.map((s) => (
-                <TableHead
-                  key={s.label}
-                  className="text-center text-xs px-1 whitespace-nowrap"
-                >
-                  {s.label}
-                </TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            <TableRow>
-              <TableCell className="font-medium text-xs">Aportes</TableCell>
-              {SUBSISTEMAS.map((s) => (
-                <TableCell key={s.label} className="text-center px-1 py-2">
-                  <Check value={s.aporte ? (row[s.aporte] as boolean) : null} />
-                </TableCell>
-              ))}
-            </TableRow>
-            <TableRow>
-              <TableCell className="font-medium text-xs">
-                Contribuciones
-              </TableCell>
-              {SUBSISTEMAS.map((s) => (
-                <TableCell key={s.label} className="text-center px-1 py-2">
-                  <Check
-                    value={
-                      s.contribucion ? (row[s.contribucion] as boolean) : null
-                    }
-                  />
-                </TableCell>
-              ))}
-            </TableRow>
-          </TableBody>
-        </Table>
       </DialogContent>
     </Dialog>
   );
 }
 
+const PAGE_SIZE = 10;
+
 export function SueldosConceptos({
   clientId,
-  profileId,
 }: SueldosConceptosProps) {
+  const [busqueda, setBusqueda] = useState('');
+  const [pagina, setPagina] = useState(1);
+
   const { data: conceptos = [], isLoading } = useQuery({
-    queryKey: ['conceptos-by-perfil', clientId, profileId],
-    queryFn: () => listConceptosByPerfil({ data: { clientId, profileId } }),
-    enabled: !!clientId && !!profileId,
+    queryKey: ['todos-conceptos-sos'],
+    queryFn: () => listTodosConceptosSos(),
+    staleTime: 10 * 60 * 1000,
+    enabled: !!clientId,
   });
 
-  const rows = useMemo(
-    () =>
-      conceptos.map((row) => ({
-        ...row,
-        __key: `${row.codigoContribuyente}-${row.afipCodigo}`,
-      })),
-    [conceptos]
-  );
+  const filtrados = useMemo(() => {
+    const q = busqueda.trim().toLowerCase();
+    if (!q) return conceptos;
+    return conceptos.filter(
+      (c) =>
+        c.nombre.toLowerCase().includes(q) ||
+        (c.codigoAfip ?? '').toLowerCase().includes(q)
+    );
+  }, [conceptos, busqueda]);
+
+  const totalPaginas = Math.max(1, Math.ceil(filtrados.length / PAGE_SIZE));
+  const paginaActual = Math.min(pagina, totalPaginas);
+  const inicio = (paginaActual - 1) * PAGE_SIZE;
+  const pagina_rows = filtrados.slice(inicio, inicio + PAGE_SIZE);
+
+  const handleBusqueda = (v: string) => {
+    setBusqueda(v);
+    setPagina(1);
+  };
 
   return (
-    <div className="w-full min-w-0 max-w-full">
+    <div className="w-full min-w-0 max-w-full space-y-3">
+      <p className="text-sm text-muted-foreground">
+        Catálogo completo de conceptos SOS (códigos 1–699). Todos los conceptos están disponibles
+        para usar en cualquier recibo.
+      </p>
+
+      <div className="relative max-w-sm">
+        <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          placeholder="Buscar por nombre o código AFIP…"
+          value={busqueda}
+          onChange={(e) => handleBusqueda(e.target.value)}
+          className="pl-8"
+        />
+      </div>
+
       <div className="rounded-md border overflow-hidden">
         <Table className="w-full text-sm">
           <colgroup>
-            <col className="w-20" />
-            <col className="w-20" />
+            <col className="w-16" />
+            <col className="w-24" />
             <col />
             <col className="w-10" />
           </colgroup>
           <TableHeader>
             <TableRow>
+              <TableHead>Cód. SOS</TableHead>
               <TableHead>Cód. AFIP</TableHead>
-              <TableHead>Cód. Contribuyente</TableHead>
-              <TableHead>Concepto AFIP</TableHead>
+              <TableHead>Nombre</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell
-                  colSpan={4}
-                  className="text-center text-muted-foreground"
-                >
+                <TableCell colSpan={4} className="text-center text-muted-foreground">
                   Cargando...
                 </TableCell>
               </TableRow>
-            ) : rows.length === 0 ? (
+            ) : filtrados.length === 0 ? (
               <TableRow>
-                <TableCell
-                  colSpan={4}
-                  className="text-center text-muted-foreground"
-                >
-                  No hay conceptos para este perfil.
+                <TableCell colSpan={4} className="text-center text-muted-foreground">
+                  {busqueda ? 'Sin resultados para la búsqueda.' : 'No hay conceptos en el catálogo.'}
                 </TableCell>
               </TableRow>
             ) : (
-              rows.map((row) => (
-                <TableRow key={row.__key}>
-                  <TableCell className="font-mono">{row.afipCodigo}</TableCell>
-                  <TableCell className="font-mono">{row.codigoContribuyente}</TableCell>
-                  <TableCell className="min-w-0 break-words">
-                    <div className="space-y-0.5">
-                      <p>{row.afipNombre}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {row.descripcionContribuyente}
-                      </p>
-                    </div>
+              pagina_rows.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell className="font-mono">{row.numeroSos}</TableCell>
+                  <TableCell className="font-mono text-muted-foreground">
+                    {row.codigoAfip ?? '—'}
                   </TableCell>
+                  <TableCell className="min-w-0 break-words">{row.nombre}</TableCell>
                   <TableCell className="text-center">
                     <ConceptoDialog row={row} />
                   </TableCell>
@@ -249,6 +197,37 @@ export function SueldosConceptos({
           </TableBody>
         </Table>
       </div>
+
+      {!isLoading && filtrados.length > 0 && (
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-muted-foreground">
+            {filtrados.length === conceptos.length
+              ? `${conceptos.length} conceptos`
+              : `${filtrados.length} de ${conceptos.length} conceptos`}
+            {' · '}página {paginaActual} de {totalPaginas}
+          </span>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setPagina((p) => Math.max(1, p - 1))}
+              disabled={paginaActual === 1}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
+              disabled={paginaActual === totalPaginas}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

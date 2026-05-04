@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { format } from 'date-fns';
+import { format, startOfMonth } from 'date-fns';
 import {
   Plus,
   ChevronDown,
@@ -12,6 +12,7 @@ import {
   Trash2,
   Loader2,
   CheckCircle2,
+  Pencil,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardTitle } from '@/components/ui/card';
@@ -47,6 +48,7 @@ import {
   listConveniosAfipEmpleadores,
   agregarConvenioDesdeAfipEmpleadores,
   createConvenio,
+  updateConvenio,
   createCategoria,
   upsertEscala,
   deleteEscala,
@@ -62,6 +64,7 @@ export function SueldosConvenios({ clientId, profileId }: SueldosConveniosProps)
   const queryClient = useQueryClient();
   const [newConvenioOpen, setNewConvenioOpen] = useState(false);
   const [newConvenioNombre, setNewConvenioNombre] = useState('');
+  const [newConvenioCct, setNewConvenioCct] = useState('');
 
   const { data: convenios = [] } = useQuery({
     queryKey: ['convenios', clientId, profileId],
@@ -70,11 +73,18 @@ export function SueldosConvenios({ clientId, profileId }: SueldosConveniosProps)
   });
 
   const createConv = useMutation({
-    mutationFn: (nombre: string) =>
-      createConvenio({ data: { clientId, nombre, descripcion: undefined } }),
+    mutationFn: () =>
+      createConvenio({
+        data: {
+          clientId,
+          nombre: newConvenioNombre,
+          cctCodigo: newConvenioCct.trim() || undefined,
+        },
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['convenios', clientId] });
       setNewConvenioNombre('');
+      setNewConvenioCct('');
       setNewConvenioOpen(false);
       toast.success('Convenio creado');
     },
@@ -90,7 +100,7 @@ export function SueldosConvenios({ clientId, profileId }: SueldosConveniosProps)
 
   const convenioYaTieneCct = (cct: string) =>
     (convenios ?? []).some(
-      (c) => c.nombre === cct || (c.descripcion ?? '').includes(cct)
+      (c) => c.nombre === cct || (c.cctCodigo ?? '') === cct
     );
 
   const agregarDesdeAfip = useMutation({
@@ -202,10 +212,18 @@ export function SueldosConvenios({ clientId, profileId }: SueldosConveniosProps)
                 placeholder="Ej. Comercio"
               />
             </div>
+            <div>
+              <Label>Número CCT</Label>
+              <Input
+                value={newConvenioCct}
+                onChange={(e) => setNewConvenioCct(e.target.value)}
+                placeholder="Ej. 130/75"
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button
-              onClick={() => createConv.mutate(newConvenioNombre)}
+              onClick={() => createConv.mutate()}
               disabled={!newConvenioNombre.trim() || createConv.isPending}
             >
               Crear
@@ -238,13 +256,23 @@ function ConvenioCard({
   onRefresh,
 }: {
   clientId: string;
-  convenio: { id: string; nombre: string; cctCodigo: string | null; descripcion: string | null };
+  convenio: {
+    id: string;
+    nombre: string;
+    cctCodigo: string | null;
+    signatarios: string | null;
+    fuentes?: string[];
+    afipUpdatedAt?: Date | string | null;
+  };
   onRefresh: () => void;
 }) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [addCategoria, setAddCategoria] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editNombre, setEditNombre] = useState('');
+  const [editCct, setEditCct] = useState('');
   const [codigo, setCodigo] = useState('');
   const [nombreCat, setNombreCat] = useState('');
 
@@ -255,6 +283,25 @@ function ConvenioCard({
       queryClient.invalidateQueries({ queryKey: ['convenios', clientId] });
       setDeleteOpen(false);
       toast.success('Convenio eliminado');
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const updateConv = useMutation({
+    mutationFn: () =>
+      updateConvenio({
+        data: {
+          id: convenio.id,
+          clientId,
+          nombre: editNombre,
+          cctCodigo: editCct.trim() || undefined,
+        },
+      }),
+    onSuccess: () => {
+      onRefresh();
+      queryClient.invalidateQueries({ queryKey: ['convenios', clientId] });
+      setEditOpen(false);
+      toast.success('Convenio actualizado');
     },
     onError: (e) => toast.error(e.message),
   });
@@ -288,14 +335,50 @@ function ConvenioCard({
           <button className="flex w-full items-center justify-between px-6 py-4 text-left">
             <div className="flex items-center gap-2">
               <Building2 className="h-5 w-5 text-muted-foreground" />
-              <CardTitle className="text-lg">
-                {convenio.cctCodigo ?? convenio.nombre}
-              </CardTitle>
+              <div>
+                <CardTitle className="text-lg">
+                  {convenio.nombre}
+                </CardTitle>
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                  {convenio.cctCodigo ? (
+                    <span className="rounded border px-2 py-0.5 text-muted-foreground">
+                      CCT: {convenio.cctCodigo}
+                    </span>
+                  ) : null}
+                  <span className="rounded border px-2 py-0.5 text-muted-foreground">
+                    Fuentes:{' '}
+                    {convenio.fuentes && convenio.fuentes.length > 0
+                      ? convenio.fuentes.join(', ')
+                      : 'Sin fuente identificada'}
+                  </span>
+                  {convenio.afipUpdatedAt ? (
+                    <span className="rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-emerald-700">
+                      AFIP actualizado:{' '}
+                      {format(new Date(convenio.afipUpdatedAt), 'dd/MM/yyyy')}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
             </div>
             <div
               className="flex items-center gap-1"
               onClick={(e) => e.stopPropagation()}
             >
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setEditNombre(convenio.nombre);
+                  setEditCct(convenio.cctCodigo ?? '');
+                  setEditOpen(true);
+                }}
+                title="Editar convenio"
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
               <Button
                 type="button"
                 variant="ghost"
@@ -337,10 +420,44 @@ function ConvenioCard({
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+        <Dialog open={editOpen} onOpenChange={setEditOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Editar convenio</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div>
+                <Label>Nombre</Label>
+                <Input
+                  value={editNombre}
+                  onChange={(e) => setEditNombre(e.target.value)}
+                  placeholder="Ej. Comercio"
+                />
+              </div>
+              <div>
+                <Label>Número CCT</Label>
+                <Input
+                  value={editCct}
+                  onChange={(e) => setEditCct(e.target.value)}
+                  placeholder="Ej. 130/75"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                onClick={() => updateConv.mutate()}
+                disabled={!editNombre.trim() || updateConv.isPending}
+              >
+                {updateConv.isPending ? 'Guardando…' : 'Guardar'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <CollapsibleContent>
           <CardContent className="pt-0">
             <p className="mb-4 text-sm text-muted-foreground">
-              {convenio.descripcion || 'Sin descripción.'}
+              {convenio.signatarios || 'Sin signatarios registrados.'}
             </p>
             <div className="flex justify-end gap-2">
               <Button
@@ -423,7 +540,7 @@ function CategoriaRow({
   const queryClient = useQueryClient();
   const [showEscala, setShowEscala] = useState(false);
   const [vigenciaDesde, setVigenciaDesde] = useState(
-    format(new Date(), 'yyyy-MM-dd')
+    format(startOfMonth(new Date()), 'yyyy-MM-dd')
   );
   const [monto, setMonto] = useState('');
 

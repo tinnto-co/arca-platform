@@ -43,6 +43,7 @@ import {
   getLastJobByType,
   getRunningJobByType,
 } from '@/actions/client';
+import { updateProfileLiquidaSueldos } from '@/actions/profile';
 import {
   Select,
   SelectContent,
@@ -68,6 +69,7 @@ import {
 } from '@/actions/notification';
 import { scrapSingleJob } from '@/actions/client';
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import {
   Clock,
@@ -1639,7 +1641,22 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                             </div>
                           </div>
                         </div>
-                        <div className="mt-2.5 pt-2 border-t border-border/50">
+                        <div className="mt-2.5 pt-2 border-t border-border/50 flex items-center justify-between">
+                          <label className="flex items-center gap-2 cursor-pointer select-none">
+                            <Checkbox
+                              checked={selectedResumenProfile.liquidaSueldos ?? false}
+                              onCheckedChange={async (checked) => {
+                                await updateProfileLiquidaSueldos({
+                                  data: {
+                                    profileId: selectedResumenProfile.id,
+                                    liquidaSueldos: !!checked,
+                                  },
+                                });
+                                queryClient.invalidateQueries({ queryKey: ['clientProfiles', clientId] });
+                              }}
+                            />
+                            <span className="text-xs text-muted-foreground">Liquida sueldos</span>
+                          </label>
                           <Link
                             to="/clients/$clientId/$profileId"
                             params={{
