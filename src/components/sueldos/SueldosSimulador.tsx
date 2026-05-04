@@ -208,6 +208,13 @@ export function SueldosSimulador({
   });
   const firmaEmpleadorUrl = employerConfig?.firmaEmpleadorUrl ?? null;
 
+  const { data: employerConfig } = useQuery({
+    queryKey: ['payroll-employer-config', clientId, profileId],
+    queryFn: () => getPayrollEmployerConfig({ data: { clientId, profileId } }),
+    enabled: !!clientId && !!profileId,
+  });
+  const firmaEmpleadorUrl = employerConfig?.firmaEmpleadorUrl ?? null;
+
   const reciboHeaderSimulado = useMemo(() => {
     if (!flowHeader) {
       return {
@@ -584,7 +591,48 @@ export function SueldosSimulador({
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
-            {loadingBasico ? (
+            <div className="rounded-lg border bg-background p-3">
+            <TablaReciboSos
+              variant="importado"
+              recibo={ultimoRecibo!.recibo}
+              conceptos={ultimoRecibo!.conceptos}
+              onChange={handleTablaChange}
+              firmaEmpleadorUrl={firmaEmpleadorUrl}
+            />
+            </div>
+            <div className="flex flex-col items-end gap-2">
+              {!permiteLiquidar && (
+                <span className="text-xs text-muted-foreground">
+                  Solo se puede guardar el mes anterior al en curso.
+                </span>
+              )}
+              <Button
+                onClick={() => guardarRecibo.mutate()}
+                disabled={!puedeGuardar}
+              >
+                {guardarRecibo.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="mr-2 h-4 w-4" />
+                )}
+                Guardar recibo
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {showManualTable && (
+        <Card className="border border-border/70 shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-base">Conceptos — carga manual</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Los montos se pre-calculan con el básico de escala vigente del empleado
+              en el período a liquidar. Podés ajustar cualquier valor antes de guardar.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {loadingPlantilla || loadingBasico ? (
               <p className="text-sm text-muted-foreground flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Cargando escala salarial…
@@ -636,21 +684,15 @@ export function SueldosSimulador({
                   )}
                 </div>
                 <div className="rounded-lg border bg-background p-3">
-                  <TablaReciboSos
-                    key={plantillaKey}
-                    variant={isCopyMode ? 'importado' : 'manual'}
-                    recibo={isCopyMode && ultimoRecibo ? ultimoRecibo.recibo : reciboHeaderSimulado}
-                    conceptos={conceptosActivos}
-                    basico={basicoEscala}
-                    recalculateWithBasico={
-                      isCopyMode && recalcularConEscalaVigente
-                    }
-                    onChange={handleTablaChange}
-                    firmaEmpleadorUrl={firmaEmpleadorUrl}
-                    catalogoCompleto={conceptosFilas}
-                    onAddConcepto={handleAddConcepto}
-                    onRemoveConcepto={handleRemoveConcepto}
-                  />
+                <TablaReciboSos
+                  key={plantillaManual.map((c) => c.id).join('|')}
+                  variant="manual"
+                  recibo={reciboHeaderSimulado}
+                  conceptos={plantillaManual}
+                  basico={basicoEscala}
+                  onChange={handleTablaChange}
+                  firmaEmpleadorUrl={firmaEmpleadorUrl}
+                />
                 </div>
                 <div className="flex flex-col items-end gap-2">
                   {!permiteLiquidar && (
