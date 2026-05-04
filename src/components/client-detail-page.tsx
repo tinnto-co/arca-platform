@@ -111,7 +111,7 @@ import {
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { userQuery } from '../lib/user-query';
-import { INVOICE_TYPES } from '../../../arca-scrapper/invoicesTypes';
+import { INVOICE_TYPES } from '@/lib/invoicesTypes';
 import {
   ChartContainer,
   ChartTooltip,
