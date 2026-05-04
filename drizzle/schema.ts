@@ -66,30 +66,6 @@ export const client = pgTable("client", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-/**
- * Tablas auxiliares legacy de conversaciones del agente.
- * Se declaran para alinear schema con la BD existente y evitar drops accidentales
- * en `drizzle-kit push`.
- */
-export const agentConversation = pgTable("agent_conversation", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  organizationId: text("organization_id").notNull(),
-  userId: text("user_id").notNull(),
-  title: text("title").notNull().default("Nueva conversación"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
-
-export const agentMessage = pgTable("agent_message", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  conversationId: uuid("conversation_id")
-    .notNull()
-    .references(() => agentConversation.id),
-  role: text("role").notNull(),
-  content: text("content").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
 export const profile = pgTable("profile", {
   id: uuid("id").primaryKey().defaultRandom(),
   client: uuid("client_id").references(() => client.id, {
