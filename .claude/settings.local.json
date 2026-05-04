@@ -62,7 +62,9 @@
       "Bash(cd \"C:\\\\Users\\\\Brian\\\\OneDrive\\\\Escritorio\\\\Proyectos\\\\arca-platform\" && bun tsc --noEmit 2>&1 | grep -E \"TablaReciboSos|SueldosSimulador|basicoEscala|implicitBase|useReducer\" | head -15)",
       "Bash(cd \"C:\\\\Users\\\\Brian\\\\OneDrive\\\\Escritorio\\\\Proyectos\\\\arca-platform\" && bun tsc --noEmit 2>&1 | grep -E \"TablaReciboSos|SueldosSimulador|EditAction|editsReducer\" | head -15)",
       "Bash(cd \"C:\\\\Users\\\\Brian\\\\OneDrive\\\\Escritorio\\\\Proyectos\\\\arca-platform\" && bun tsc --noEmit 2>&1 | grep -E \"TablaReciboSos|SueldosSimulador|basicoEscala|implicitBase\" | head -10)",
-      "Bash(cd \"C:\\\\Users\\\\Brian\\\\OneDrive\\\\Escritorio\\\\Proyectos\\\\arca-platform\" && bun tsc --noEmit 2>&1 | grep -E \"TablaReciboSos|sos-recibo-totales\" | head -5)"
+      "Bash(cd \"C:\\\\Users\\\\Brian\\\\OneDrive\\\\Escritorio\\\\Proyectos\\\\arca-platform\" && bun tsc --noEmit 2>&1 | grep -E \"TablaReciboSos|sos-recibo-totales\" | head -5)",
+      "Bash(cd \"C:\\\\Users\\\\Brian\\\\OneDrive\\\\Escritorio\\\\Proyectos\\\\arca-platform\" && ls drizzle/*.sql | sort)",
+      "Bash(cd \"C:\\\\Users\\\\Brian\\\\OneDrive\\\\Escritorio\\\\Proyectos\\\\arca-platform\" && glab mr create --source-branch fix/alta-clientes --target-branch main --title \"Correccion del alta de clientes y Check de liquidacion de sueldos\" --description \"Fallaba el alta de cliente en produccion, asi que se lo corrigio. Tambien se agrego un check dentro de cada cliente para que se habilite para liquidar sueldos\" 2>&1)"
     ]
   }
 }

@@ -10,7 +10,7 @@ export function getPeriodoMesActual(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
-/** Mes anterior al en curso (YYYY-MM) — único período liquidable */
+/** Mes anterior al en curso (YYYY-MM) — usado como período inicial por defecto en el dashboard. */
 export function getPeriodoMesAnterior(): string {
   const now = new Date();
   const year = now.getFullYear();
@@ -23,10 +23,10 @@ export function getPeriodoMesAnterior(): string {
 
 /**
  * Indica si el período puede liquidarse.
- * Solo el mes anterior al actual es liquidable.
+ * Se permite cualquier mes hasta el en curso (inclusive).
  */
 export function puedeLiquidarPeriodo(periodo: string): boolean {
-  return periodo === getPeriodoMesAnterior();
+  return periodo <= getPeriodoMesActual();
 }
 
 /**
