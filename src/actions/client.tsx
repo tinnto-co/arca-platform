@@ -796,12 +796,17 @@ export const scrapSingleJob = createServerFn({
     })
   )
   .handler(async (ctx) => {
+    console.log('[scrapSingleJob] start', ctx.data);
     await getSessionWithOrg();
+    console.log('[scrapSingleJob] session ok');
     const role = await getMemberRole();
+    console.log('[scrapSingleJob] role:', role);
     assertCanWrite(role);
+    console.log('[scrapSingleJob] canWrite ok');
 
     const baseUrl = JOBS_API_URL;
     const { clientId, jobType } = ctx.data;
+    console.log('[scrapSingleJob] posting to', `${baseUrl}/api/jobs`);
 
     try {
       const { data: job } = await axios.post(`${baseUrl}/api/jobs`, {
