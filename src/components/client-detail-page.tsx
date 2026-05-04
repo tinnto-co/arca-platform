@@ -108,10 +108,9 @@ import {
   DialogHeader,
   DialogTitle,
   DialogClose,
-} from '@/components/ui/dialog';
-import { cn } from '@/lib/utils';
-import { userQuery } from '../lib/user-query';
-import { INVOICE_TYPES } from '@/lib/invoicesTypes';
+} from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
+import { INVOICE_TYPES } from "@/lib/invoicesTypes";
 import {
   ChartContainer,
   ChartTooltip,
@@ -201,10 +200,10 @@ const MetricDelta = ({
   return (
     <p
       className={`text-xs mt-1 ${diff > 0
-          ? 'text-emerald-600 dark:text-emerald-400'
-          : diff < 0
-            ? 'text-red-600 dark:text-red-400'
-            : 'text-muted-foreground'
+        ? 'text-emerald-600 dark:text-emerald-400'
+        : diff < 0
+          ? 'text-red-600 dark:text-red-400'
+          : 'text-muted-foreground'
         }`}
     >
       {label}: {formattedPct}

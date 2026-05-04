@@ -481,16 +481,8 @@ interface TablaReciboSosProps {
    * No se muestra en la columna Importe — el usuario solo ve el resultado en Haberes.
    */
   basico?: number;
-  /** Recalcula montos con básico vigente (útil en modo copiar último recibo). */
-  recalculateWithBasico?: boolean;
   /** URL (data URL o URL pública) de la imagen de firma del empleador. */
   firmaEmpleadorUrl?: string | null;
-  /** Catálogo completo SOS para los popovers de "Agregar concepto". */
-  catalogoCompleto?: ConceptoImportado[];
-  /** Callback para agregar un concepto activo por código. */
-  onAddConcepto?: (codigo: string) => void;
-  /** Callback para eliminar un concepto activo por código. */
-  onRemoveConcepto?: (codigo: string) => void;
 }
 
 export function TablaReciboSos({
@@ -499,11 +491,7 @@ export function TablaReciboSos({
   onChange,
   variant = 'importado',
   basico,
-  recalculateWithBasico = false,
   firmaEmpleadorUrl,
-  catalogoCompleto,
-  onAddConcepto,
-  onRemoveConcepto,
 }: TablaReciboSosProps) {
   const initialEdits = useMemo<EditsMap>(() => {
     const map: EditsMap = {};
