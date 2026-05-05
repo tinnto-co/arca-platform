@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import {
   AlertCircle,
   AlertTriangle,
@@ -15,8 +16,11 @@ import {
   FileWarning,
   Search,
   ArrowRight,
+  EyeOff,
+  Eye,
+  Play,
 } from 'lucide-react';
-import { useNavigate } from '@tanstack/react-router';
+import { toast } from 'sonner';
 
 import {
   Table,
@@ -60,6 +64,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   getJobs,
   getJobLogs,
+  dispatchAllJobs,
   type JobStatus,
   type JobType,
   type JobRow,
@@ -69,16 +74,43 @@ import {
 import { getClients } from '@/actions/client';
 
 export function JobsTable() {
+  const routerNavigate = useNavigate();
+  const {
+    page: currentPage,
+    status: statusFilter,
+    type: typeFilter,
+    clientId: clientFilter,
+    search: searchTerm,
+    date,
+    fromTime,
+  } = useSearch({ from: '/_authed/jobs/' });
+
+  const setFilter = (updates: Record<string, unknown>) => {
+    routerNavigate({
+      to: '/jobs',
+      search: (prev: Record<string, unknown>) => ({ ...prev, ...updates, page: 'page' in updates ? (updates.page as number) : 1 }),
+    });
+  };
+
   const navigate = useNavigate();
-  const [statusFilter, setStatusFilter] = useState<'all' | JobStatus>('all');
-  const [typeFilter, setTypeFilter] = useState<'all' | JobType>('all');
-  const [clientFilter, setClientFilter] = useState<string>('all');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
+  const queryClient = useQueryClient();
   const [selectedJob, setSelectedJob] = useState<JobRow | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [logsOpen, setLogsOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
+  const [hideFinished, setHideFinished] = useState(false);
+
+  const dispatchMutation = useMutation({
+    mutationFn: () => dispatchAllJobs(),
+    onSuccess: (data) => {
+      toast.success(`${data.dispatched} jobs encolados correctamente`);
+      void queryClient.invalidateQueries({ queryKey: ['jobs'] });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Error al disparar los jobs');
+    },
+  });
 
   const toggleAll = (ids: string[]) => {
     const allSelected = ids.length > 0 && ids.every((id) => selectedIds.has(id));
@@ -101,7 +133,7 @@ export function JobsTable() {
   });
 
   const { data, isLoading } = useQuery<JobsResponse>({
-    queryKey: ['jobs', currentPage, statusFilter, typeFilter, clientFilter],
+    queryKey: ['jobs', currentPage, statusFilter, typeFilter, clientFilter, date, fromTime],
     queryFn: async (): Promise<JobsResponse> => {
       const response = await getJobs({
         data: {
@@ -110,21 +142,29 @@ export function JobsTable() {
           clientId: clientFilter === 'all' ? undefined : clientFilter,
           status: statusFilter === 'all' ? undefined : statusFilter,
           type: typeFilter === 'all' ? undefined : typeFilter,
+          date,
+          fromTime: fromTime || undefined,
         },
       });
       return response;
     },
   });
 
-  const jobs = (data?.jobs ?? []).filter((job: JobRow) => {
-    if (!searchTerm.trim()) return true;
-    const term = searchTerm.toLowerCase();
-    return (
-      job.id.toLowerCase().includes(term) ||
-      (job.clientName ?? '').toLowerCase().includes(term) ||
-      job.type.toLowerCase().includes(term)
-    );
-  });
+  const STATUS_ORDER: Record<string, number> = { running: 0, failed: 1, finished: 2, pending: 3 };
+
+  const jobs = (data?.jobs ?? [])
+    .filter((job: JobRow) => {
+      if (hiddenIds.has(job.id)) return false;
+      if (hideFinished && (job.status === 'finished' || job.status === 'failed')) return false;
+      if (!searchTerm.trim()) return true;
+      const term = searchTerm.toLowerCase();
+      return (
+        job.id.toLowerCase().includes(term) ||
+        (job.clientName ?? '').toLowerCase().includes(term) ||
+        job.type.toLowerCase().includes(term)
+      );
+    })
+    .sort((a: JobRow, b: JobRow) => (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99));
 
   const totalPages = data?.totalPages ?? 1;
 
@@ -168,7 +208,7 @@ export function JobsTable() {
     return `${minutes.toFixed(1)} min`;
   };
 
-  const renderStatusBadge = (status: JobStatus, progress: number | null) => {
+  const renderStatusBadge = (status: JobStatus) => {
     const baseClass =
       'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium';
 
@@ -188,7 +228,7 @@ export function JobsTable() {
             className={`${baseClass} bg-[var(--arca-navy-700)]/10 text-[var(--arca-navy-700)]`}
           >
             <Loader2 className="h-3 w-3 animate-spin" />
-            En progreso {typeof progress === 'number' ? `(${progress}%)` : ''}
+            En progreso
           </span>
         );
       case 'failed':
@@ -279,94 +319,132 @@ export function JobsTable() {
 
   return (
     <div className="flex flex-col h-full gap-4">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between flex-shrink-0">
-        <div className="flex flex-col gap-2 md:flex-row md:items-center">
-          <div className="relative">
-            <Search className="absolute left-2 top-2.5 h-4 w-4 text-[var(--arca-ink-3)]" />
+      <div className="flex items-start justify-between gap-4 flex-shrink-0">
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-2 top-2.5 h-4 w-4 text-[var(--arca-ink-3)]" />
+              <Input
+                placeholder="Buscar por ID, cliente o tipo..."
+                value={searchTerm}
+                onChange={(e) => setFilter({ search: e.target.value })}
+                className="pl-8 w-72"
+              />
+            </div>
+
             <Input
-              placeholder="Buscar por ID, cliente o tipo..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-8 w-full md:w-72"
+              type="date"
+              value={date}
+              onChange={(e) => setFilter({ date: e.target.value })}
+              className="w-40"
+            />
+
+            <Input
+              type="time"
+              value={fromTime}
+              onChange={(e) => setFilter({ fromTime: e.target.value })}
+              placeholder="Desde"
+              className="w-32"
             />
           </div>
 
-          <Select
-            value={clientFilter}
-            onValueChange={(value) => {
-              setClientFilter(value);
-              setCurrentPage(1);
-            }}
-          >
-            <SelectTrigger className="w-full md:w-56">
-              <SelectValue placeholder="Filtrar por cliente" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos los clientes</SelectItem>
-              {clients.map((client) => (
-                <SelectItem key={client.id} value={client.id}>
-                  {client.name}
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={clientFilter}
+              onValueChange={(value) => setFilter({ clientId: value })}
+            >
+              <SelectTrigger className="w-56">
+                <SelectValue placeholder="Filtrar por cliente" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos los clientes</SelectItem>
+                {clients.map((client) => (
+                  <SelectItem key={client.id} value={client.id}>
+                    {client.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={statusFilter}
+              onValueChange={(value) => setFilter({ status: value })}
+            >
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="Estado" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                <SelectItem value="pending">Pendiente</SelectItem>
+                <SelectItem value="running">En progreso</SelectItem>
+                <SelectItem value="finished">Correcto</SelectItem>
+                <SelectItem value="failed">Fallido</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={typeFilter}
+              onValueChange={(value) => setFilter({ type: value })}
+            >
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Tipo de job" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos los tipos</SelectItem>
+                <SelectItem value="comprobantes">Comprobantes</SelectItem>
+                <SelectItem value="comprobantes_full">
+                  Comprobantes full
                 </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={statusFilter}
-            onValueChange={(value) => {
-              setStatusFilter(value as 'all' | JobStatus);
-              setCurrentPage(1);
-            }}
-          >
-            <SelectTrigger className="w-full md:w-40">
-              <SelectValue placeholder="Estado" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos</SelectItem>
-              <SelectItem value="pending">Pendiente</SelectItem>
-              <SelectItem value="running">En progreso</SelectItem>
-              <SelectItem value="finished">Correcto</SelectItem>
-              <SelectItem value="failed">Fallido</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={typeFilter}
-            onValueChange={(value) => {
-              setTypeFilter(value as 'all' | JobType);
-              setCurrentPage(1);
-            }}
-          >
-            <SelectTrigger className="w-full md:w-48">
-              <SelectValue placeholder="Tipo de job" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos los tipos</SelectItem>
-              <SelectItem value="comprobantes">Comprobantes</SelectItem>
-              <SelectItem value="comprobantes_full">
-                Comprobantes full
-              </SelectItem>
-              <SelectItem value="iva">IVA</SelectItem>
-              <SelectItem value="notificaciones">Notificaciones</SelectItem>
-              <SelectItem value="deuda">Deuda</SelectItem>
-              <SelectItem value="vencimientos">Vencimientos</SelectItem>
-            </SelectContent>
-          </Select>
+                <SelectItem value="iva">IVA</SelectItem>
+                <SelectItem value="notificaciones">Notificaciones</SelectItem>
+                <SelectItem value="deuda">Deuda</SelectItem>
+                <SelectItem value="vencimientos">Vencimientos</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
-        <div className="mt-2 md:mt-0">
+        <div className="flex items-center gap-2 shrink-0">
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              setSearchTerm('');
-              setClientFilter('all');
-              setStatusFilter('all');
-              setTypeFilter('all');
-              setCurrentPage(1);
-            }}
+            onClick={() => setHideFinished((v) => !v)}
+          >
+            {hideFinished ? (
+              <Eye className="mr-1.5 h-4 w-4" />
+            ) : (
+              <EyeOff className="mr-1.5 h-4 w-4" />
+            )}
+            {hideFinished ? 'Mostrar terminados' : 'Ocultar terminados'}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              setFilter({
+                search: '',
+                clientId: 'all',
+                status: 'all',
+                type: 'all',
+                date: new Date().toISOString().split('T')[0],
+                fromTime: '',
+                page: 1,
+              })
+            }
           >
             Limpiar filtros
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => dispatchMutation.mutate()}
+            disabled={dispatchMutation.isPending}
+          >
+            {dispatchMutation.isPending ? (
+              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+            ) : (
+              <Play className="mr-1.5 h-4 w-4" />
+            )}
+            Disparar jobs
           </Button>
         </div>
       </div>
@@ -440,7 +518,7 @@ export function JobsTable() {
                   </TableCell>
                   <TableCell>{renderTypeBadge(job.type)}</TableCell>
                   <TableCell>
-                    {renderStatusBadge(job.status, job.progress)}
+                    {renderStatusBadge(job.status)}
                   </TableCell>
                   <TableCell>{formatDateTime(job.createdAt)}</TableCell>
                   <TableCell>
@@ -469,6 +547,18 @@ export function JobsTable() {
                           <ArrowRight className="mr-2 h-4 w-4" />
                           Ir al cliente
                         </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() =>
+                            setHiddenIds((prev) => {
+                              const next = new Set(prev);
+                              next.add(job.id);
+                              return next;
+                            })
+                          }
+                        >
+                          <EyeOff className="mr-2 h-4 w-4" />
+                          Ocultar
+                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -485,7 +575,7 @@ export function JobsTable() {
             <PaginationContent>
               <PaginationItem>
                 <PaginationPrevious
-                  onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                  onClick={() => setFilter({ page: Math.max(1, currentPage - 1) })}
                   className={
                     currentPage === 1
                       ? 'pointer-events-none opacity-50'
@@ -517,7 +607,7 @@ export function JobsTable() {
                       )}
                       <PaginationItem key={page}>
                         <PaginationLink
-                          onClick={() => setCurrentPage(page)}
+                          onClick={() => setFilter({ page })}
                           isActive={currentPage === page}
                           className="cursor-pointer"
                         >
@@ -530,9 +620,8 @@ export function JobsTable() {
 
               <PaginationItem>
                 <PaginationNext
-                  onClick={() =>
-                    setCurrentPage(Math.min(totalPages, currentPage + 1))
-                  }
+                  onClick={() => setFilter({ page: Math.min(totalPages, currentPage + 1) })}
+
                   className={
                     currentPage === totalPages
                       ? 'pointer-events-none opacity-50'
@@ -558,7 +647,7 @@ export function JobsTable() {
                   ID: {selectedJob.id}
                 </p>
                 <div className="pt-1">
-                  {renderStatusBadge(selectedJob.status, selectedJob.progress)}
+                  {renderStatusBadge(selectedJob.status)}
                 </div>
               </>
             )}
@@ -696,7 +785,7 @@ export function JobsTable() {
               {selectedJob && (
                 <div className="flex flex-col items-end gap-1 shrink-0">
                   {renderTypeBadge(selectedJob.type)}
-                  {renderStatusBadge(selectedJob.status, selectedJob.progress)}
+                  {renderStatusBadge(selectedJob.status)}
                 </div>
               )}
             </DialogTitle>

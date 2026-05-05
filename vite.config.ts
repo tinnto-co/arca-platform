@@ -5,7 +5,8 @@ import viteTsConfigPaths from "vite-tsconfig-paths";
 import tailwindcss from "@tailwindcss/vite";
 export default defineConfig({
   server: {
-    port: 3000,
+    // port: 3000, // rollback: cambiar a 3000
+    port: 3001,
     allowedHosts: [
       "familycapitalfunds.com",
       "app.familycapitalfunds.com",

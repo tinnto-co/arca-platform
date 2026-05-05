@@ -92,13 +92,13 @@ Facturas emitidas y recibidas, scrapeadas de AFIP ("Mis Comprobantes").
   recipient_name (text), recipient_identity_number (text)
   receipt_province (text) — provincia del receptor (IIBB)
   currency (text) — 'ARS' | 'USD'
-  cureency_rate (numeric) — tipo de cambio (typo heredado: "cureency", no "currency")
+  currency_rate (numeric) — tipo de cambio (columna DB correcta; el typo "cureencyRate" existe solo en el código Drizzle, NO en la DB)
   amount (numeric) — total del comprobante en la moneda original
   amount_taxed (numeric), amount_no_taxed (numeric), amount_exempt (numeric)
   amount_iva0, amount_iva25, amount_iva5, amount_iva105, amount_iva21, amount_iva27 — base imponible por alícuota
   iva25, iva5, iva105, iva21, iva27 — monto de IVA liquidado por alícuota
   total_iva (numeric), other_taxes (numeric)
-  ► Convertir a ARS: CASE WHEN UPPER(currency)='USD' THEN amount::numeric * cureency_rate::numeric ELSE amount::numeric END
+  ► Convertir a ARS: CASE WHEN UPPER(currency)='USD' THEN amount::numeric * currency_rate::numeric ELSE amount::numeric END
 
 ## notification  [SQL table: "notification"]
 Notificaciones del domicilio fiscal electrónico de AFIP.
@@ -197,7 +197,7 @@ FORMATOS DE PERÍODO — no comparar entre tablas sin parsear
 TRAMPAS CONOCIDAS
 ───────────────────────────────────────────────
   • invoice.direction está en PascalCase en la DB ('Outbound'/'Inbound'). Filtrá con ILIKE o usá LOWER().
-  • La columna de tipo de cambio se llama "cureency_rate" (typo heredado, doble 'e').
+  • La columna de tipo de cambio se llama "currency_rate" (bien escrita). No uses "cureency_rate" — esa es solo la propiedad JS de Drizzle con typo heredado.
   • debt y due_date NO tienen profile_id. Agregar SIEMPRE por client_id para no duplicar filas.
   • NUNCA expongas client.password (clave fiscal AFIP).
   • notification: siempre WHERE profile_id IS NOT NULL.
@@ -234,6 +234,8 @@ export const Route = createFileRoute('/api/agent')({
         const userText =
           message.parts?.find((p) => p.type === 'text')?.text ??
           String((message as any).content ?? '');
+
+        console.info(`[agent] ▶ org=${orgId} conv=${conversationId} user="${userText.slice(0, 120)}"`);
 
         // Verificar / crear conversación scoped a org+user
         const [existingConv] = await db
@@ -326,7 +328,7 @@ ${buildSchema(orgId)}
 REGLAS AL ESCRIBIR QUERIES
 1. Solo SELECT. Siempre incluí LIMIT (máximo 200).
 2. SIEMPRE filtrá por organization_id = '${orgId}' via JOIN con client — en CADA query, incluso en follow-ups del mismo cliente.
-3. Montos en ARS: CASE WHEN UPPER(currency)='USD' THEN amount::numeric * cureency_rate::numeric ELSE amount::numeric END
+3. Montos en ARS: CASE WHEN UPPER(currency)='USD' THEN amount::numeric * currency_rate::numeric ELSE amount::numeric END
 4. Facturas — direction: "facturó/vendió" → WHERE LOWER(direction)='outbound' | "gastó/compró" → WHERE LOWER(direction)='inbound'
 5. Notificaciones: siempre WHERE profile_id IS NOT NULL
 6. Búsquedas por nombre de cliente: ILIKE '%texto%'
@@ -352,14 +354,16 @@ HERRAMIENTAS DISPONIBLES
                   .string()
                   .describe('Una línea explicando qué busca esta query'),
               }),
-              execute: async ({ query }) => {
+              execute: async ({ query, description }) => {
                 const trimmed = query.trim();
 
                 if (!/^SELECT\b/i.test(trimmed)) {
+                  console.warn('[agent.executeQuery] rejected (not SELECT):', trimmed.slice(0, 200));
                   return { error: 'Solo se permiten queries SELECT.' };
                 }
 
                 if (!trimmed.includes(orgId)) {
+                  console.warn('[agent.executeQuery] rejected (missing orgId):', trimmed.slice(0, 200));
                   return {
                     error: `La query debe filtrar por organization_id = '${orgId}'. Revisá el JOIN con la tabla client.`,
                   };
@@ -370,12 +374,17 @@ HERRAMIENTAS DISPONIBLES
                   ? trimmed
                   : `${trimmed} LIMIT 200`;
 
+                console.info('[agent.executeQuery]', description ?? '(no description)');
+                console.info('[agent.executeQuery] SQL:', withLimit);
+
                 try {
                   const result = await dbReadonly.execute(sql.raw(withLimit));
                   // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                   const rows = Array.from(result as unknown[]);
+                  console.info(`[agent.executeQuery] OK — ${rows.length} rows`);
                   return { rows, rowCount: rows.length };
                 } catch (err: any) {
+                  console.error('[agent.executeQuery] SQL error:', err?.message, '\nQuery:', withLimit);
                   return { error: `Error SQL: ${err.message}` };
                 }
               },
@@ -590,9 +599,14 @@ HERRAMIENTAS DISPONIBLES
                 .insert(agentMessage)
                 .values({ conversationId, role: 'user', content: userText });
 
-              // Combinar TODO el texto de TODOS los mensajes assistant en uno solo.
-              // Así se evita perder párrafos cuando el tool loop genera múltiples pasos.
-              const assistantText = finishedMessages
+              // finishedMessages contiene el historial COMPLETO + los mensajes nuevos.
+              // Nos quedamos solo con los nuevos (posteriores al user message que vino en este request),
+              // así cada turno guarda su propia respuesta, no todo el chat acumulado.
+              const newMessages = finishedMessages.slice(
+                historyUiMessages.length + 1
+              );
+
+              const assistantText = newMessages
                 .filter((m) => m.role === 'assistant')
                 .flatMap((m) =>
                   (m.parts ?? [])
