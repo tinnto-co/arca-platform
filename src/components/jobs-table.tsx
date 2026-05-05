@@ -38,13 +38,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import {
   Dialog,
   DialogContent,
@@ -349,58 +343,49 @@ export function JobsTable() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Select
+            <SearchableSelect
+              options={[
+                { value: 'all', label: 'Todos los clientes' },
+                ...clients.map((c) => ({ value: c.id, label: c.name })),
+              ]}
               value={clientFilter}
               onValueChange={(value) => setFilter({ clientId: value })}
-            >
-              <SelectTrigger className="w-56">
-                <SelectValue placeholder="Filtrar por cliente" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos los clientes</SelectItem>
-                {clients.map((client) => (
-                  <SelectItem key={client.id} value={client.id}>
-                    {client.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              placeholder="Filtrar por cliente"
+              searchPlaceholder="Buscar cliente..."
+              width={224}
+            />
 
-            <Select
+            <SearchableSelect
+              options={[
+                { value: 'all', label: 'Todos' },
+                { value: 'pending', label: 'Pendiente' },
+                { value: 'running', label: 'En progreso' },
+                { value: 'finished', label: 'Correcto' },
+                { value: 'failed', label: 'Fallido' },
+              ]}
               value={statusFilter}
               onValueChange={(value) => setFilter({ status: value })}
-            >
-              <SelectTrigger className="w-40">
-                <SelectValue placeholder="Estado" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
-                <SelectItem value="pending">Pendiente</SelectItem>
-                <SelectItem value="running">En progreso</SelectItem>
-                <SelectItem value="finished">Correcto</SelectItem>
-                <SelectItem value="failed">Fallido</SelectItem>
-              </SelectContent>
-            </Select>
+              placeholder="Estado"
+              searchPlaceholder="Buscar estado..."
+              width={160}
+            />
 
-            <Select
+            <SearchableSelect
+              options={[
+                { value: 'all', label: 'Todos los tipos' },
+                { value: 'comprobantes', label: 'Comprobantes' },
+                { value: 'comprobantes_full', label: 'Comprobantes full' },
+                { value: 'iva', label: 'IVA' },
+                { value: 'notificaciones', label: 'Notificaciones' },
+                { value: 'deuda', label: 'Deuda' },
+                { value: 'vencimientos', label: 'Vencimientos' },
+              ]}
               value={typeFilter}
               onValueChange={(value) => setFilter({ type: value })}
-            >
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="Tipo de job" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos los tipos</SelectItem>
-                <SelectItem value="comprobantes">Comprobantes</SelectItem>
-                <SelectItem value="comprobantes_full">
-                  Comprobantes full
-                </SelectItem>
-                <SelectItem value="iva">IVA</SelectItem>
-                <SelectItem value="notificaciones">Notificaciones</SelectItem>
-                <SelectItem value="deuda">Deuda</SelectItem>
-                <SelectItem value="vencimientos">Vencimientos</SelectItem>
-              </SelectContent>
-            </Select>
+              placeholder="Tipo de job"
+              searchPlaceholder="Buscar tipo..."
+              width={192}
+            />
           </div>
         </div>
 
