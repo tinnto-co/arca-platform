@@ -28,7 +28,7 @@ import {
   ArcaCardHead,
   formatArs,
 } from '@/components/dashboard/shared';
-import { getClients } from '@/actions/client';
+import { getClients, getClientsWithProfiles } from '@/actions/client';
 import {
   getExecutiveSummary,
   getClientsAtRisk,
@@ -156,12 +156,19 @@ function AnalyticsPage() {
   const [ratiosFrom, setRatiosFrom] = useState(monthStart());
   const [ratiosTo, setRatiosTo] = useState(today());
   const [riskFilter, setRiskFilter] = useState<'medium' | 'high' | 'critical'>('high');
+  const [riskPeriod, setRiskPeriod] = useState<string>(currentPeriod());
   const [ivaProfileId, setIvaProfileId] = useState<string>('');
 
   /* Clients list for selectors */
   const { data: clients = [] } = useQuery({
     queryKey: ['clients'],
     queryFn: () => getClients(),
+  });
+
+  /* Clients with profiles (for IVA projection selector) */
+  const { data: clientsWithProfiles = [] } = useQuery({
+    queryKey: ['clientsWithProfiles'],
+    queryFn: () => getClientsWithProfiles(),
   });
 
   /* Executive summary */
@@ -172,9 +179,15 @@ function AnalyticsPage() {
 
   /* Clients at risk */
   const { data: atRisk = [], isLoading: riskLoading } = useQuery({
-    queryKey: ['clientsAtRisk', riskFilter],
+    queryKey: ['clientsAtRisk', riskFilter, riskPeriod],
     queryFn: () =>
-      getClientsAtRisk({ data: { riskLevel: riskFilter, limit: 20 } }),
+      getClientsAtRisk({
+        data: {
+          riskLevel: riskFilter,
+          period: riskPeriod,
+          limit: 20,
+        },
+      }),
   });
 
   /* Ratios for selected client */
@@ -298,17 +311,26 @@ function AnalyticsPage() {
           <h2 className="text-[12px] font-semibold uppercase tracking-widest text-[var(--arca-ink-3)]">
             Ranking de riesgo
           </h2>
-          <select
-            className={SELECT_CLASS}
-            value={riskFilter}
-            onChange={(e) =>
-              setRiskFilter(e.target.value as 'medium' | 'high' | 'critical')
-            }
-          >
-            <option value="medium">Medio y superior</option>
-            <option value="high">Alto y crítico</option>
-            <option value="critical">Solo crítico</option>
-          </select>
+          <div className="flex items-center gap-2">
+            <input
+              type="month"
+              className={SELECT_CLASS}
+              value={riskPeriod}
+              onChange={(e) => setRiskPeriod(e.target.value)}
+              title="Período del snapshot de riesgo"
+            />
+            <select
+              className={SELECT_CLASS}
+              value={riskFilter}
+              onChange={(e) =>
+                setRiskFilter(e.target.value as 'medium' | 'high' | 'critical')
+              }
+            >
+              <option value="medium">Medio y superior</option>
+              <option value="high">Alto y crítico</option>
+              <option value="critical">Solo crítico</option>
+            </select>
+          </div>
         </div>
         <ArcaCard>
           <ArcaCardHead>
@@ -316,7 +338,7 @@ function AnalyticsPage() {
               Perfiles por nivel de riesgo
             </span>
             <span className="text-[12px] text-[var(--arca-ink-3)]">
-              Período: {currentPeriod()}
+              Período: {riskPeriod}
             </span>
           </ArcaCardHead>
           {riskLoading ? (
@@ -563,7 +585,7 @@ function AnalyticsPage() {
             onChange={(e) => setIvaProfileId(e.target.value)}
           >
             <option value="">Seleccionar perfil…</option>
-            {clients.flatMap((c: { id: string; name: string; profiles?: { id: string; name: string }[] }) =>
+            {clientsWithProfiles.flatMap((c: { id: string; name: string; profiles?: { id: string; name: string }[] }) =>
               (c.profiles ?? []).map((p) => (
                 <option key={p.id} value={p.id}>
                   {c.name} — {p.name}

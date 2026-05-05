@@ -11,6 +11,7 @@ import {
   CheckCircle,
   XCircle,
   UserCheck,
+  Sparkles,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -37,6 +38,8 @@ import {
   resolveNotification,
   unresolveNotification,
   listOrgMembersForAssignment,
+  classifyNotification,
+  classifyUnclassifiedNotifications,
 } from '@/actions/notification';
 import { getClients, getClientProfiles } from '@/actions/client';
 import { cn } from '@/lib/utils';
@@ -308,6 +311,32 @@ export function NotificationsView({
     onError: () => toast.error('Error al reabrir la notificación'),
   });
 
+  const classifyMutation = useMutation({
+    mutationFn: (id: string) => classifyNotification({ data: { id } }),
+    onSuccess: (result: any) => {
+      invalidateNotificationQueries();
+      toast.success(
+        `Clasificada: severity=${result?.severity}, category=${result?.category}`
+      );
+    },
+    onError: (err: unknown) => {
+      toast.error(
+        `Error al clasificar: ${err instanceof Error ? err.message : 'desconocido'}`
+      );
+    },
+  });
+
+  const classifyAllMutation = useMutation({
+    mutationFn: () => classifyUnclassifiedNotifications(),
+    onSuccess: (result: { classified: number; errors: number }) => {
+      invalidateNotificationQueries();
+      toast.success(
+        `Clasificación batch: ${result.classified} ok, ${result.errors} errores`
+      );
+    },
+    onError: () => toast.error('Error en la clasificación batch'),
+  });
+
   const handleNotificationClick = (notification: {
     id: string;
     opened?: boolean;
@@ -430,6 +459,16 @@ export function NotificationsView({
                 title="Marcar todas como leídas"
               >
                 <CheckCheck className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => classifyAllMutation.mutate()}
+                disabled={classifyAllMutation.isPending}
+                title="Clasificar pendientes con IA"
+              >
+                <Sparkles className="h-4 w-4" />
+                {classifyAllMutation.isPending ? '…' : null}
               </Button>
             </div>
             {!clientIdProp ? (
@@ -662,6 +701,23 @@ export function NotificationsView({
                         width="100%"
                       />
                     </div>
+                    {(!(selectedNotification as any).severity ||
+                      (selectedNotification as any).severity ===
+                        'unclassified') && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          classifyMutation.mutate(selectedNotification.id)
+                        }
+                        disabled={classifyMutation.isPending}
+                      >
+                        <Sparkles className="h-4 w-4 mr-1" />
+                        {classifyMutation.isPending
+                          ? 'Clasificando…'
+                          : 'Clasificar con IA'}
+                      </Button>
+                    )}
                     {(selectedNotification as any).resolvedAt ? (
                       <Button
                         variant="outline"
@@ -716,15 +772,39 @@ export function NotificationsView({
                     selectedNotification.attachments.length > 0 && (
                       <div className="space-y-4">
                         {selectedNotification.attachments.map(
-                          (attachment: any) => (
-                            <div key={attachment.id}>
-                              <iframe
-                                src={attachment.documentUrl}
-                                title={attachment.documentName}
-                                className="w-full h-[600px] rounded-lg border border-[var(--arca-border)]"
-                              />
-                            </div>
-                          )
+                          (attachment: any) => {
+                            const isPdf = /\.pdf$/i.test(
+                              attachment.documentName ?? ''
+                            );
+                            return (
+                              <div key={attachment.id} className="space-y-2">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-sm font-medium truncate">
+                                    {attachment.documentName}
+                                  </span>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() =>
+                                      handleDownloadAttachment(
+                                        attachment.documentUrl,
+                                        attachment.documentName
+                                      )
+                                    }
+                                  >
+                                    Descargar
+                                  </Button>
+                                </div>
+                                {isPdf && (
+                                  <iframe
+                                    src={attachment.documentUrl}
+                                    title={attachment.documentName}
+                                    className="w-full h-[600px] rounded-lg border border-[var(--arca-border)]"
+                                  />
+                                )}
+                              </div>
+                            );
+                          }
                         )}
                       </div>
                     )}
