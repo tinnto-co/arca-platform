@@ -14,6 +14,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthedRouteRouteImport } from './routes/_authed/route'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
 import { Route as InviteInvitationIdRouteImport } from './routes/invite.$invitationId'
+import { Route as ApiCopilotkitRouteImport } from './routes/api/copilotkit'
 import { Route as ApiAgentRouteImport } from './routes/api/agent'
 import { Route as AuthedVencimientosIndexRouteImport } from './routes/_authed/vencimientos/index'
 import { Route as AuthedSueldosIndexRouteImport } from './routes/_authed/sueldos/index'
@@ -53,6 +54,11 @@ const AuthedIndexRoute = AuthedIndexRouteImport.update({
 const InviteInvitationIdRoute = InviteInvitationIdRouteImport.update({
   id: '/invite/$invitationId',
   path: '/invite/$invitationId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCopilotkitRoute = ApiCopilotkitRouteImport.update({
+  id: '/api/copilotkit',
+  path: '/api/copilotkit',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAgentRoute = ApiAgentRouteImport.update({
@@ -144,6 +150,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/no-organization': typeof NoOrganizationRoute
   '/api/agent': typeof ApiAgentRoute
+  '/api/copilotkit': typeof ApiCopilotkitRoute
   '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/chat/$id': typeof AuthedChatIdRoute
   '/products/$id': typeof AuthedProductsIdRoute
@@ -165,6 +172,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/no-organization': typeof NoOrganizationRoute
   '/api/agent': typeof ApiAgentRoute
+  '/api/copilotkit': typeof ApiCopilotkitRoute
   '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/': typeof AuthedIndexRoute
   '/chat/$id': typeof AuthedChatIdRoute
@@ -189,6 +197,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/no-organization': typeof NoOrganizationRoute
   '/api/agent': typeof ApiAgentRoute
+  '/api/copilotkit': typeof ApiCopilotkitRoute
   '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/chat/$id': typeof AuthedChatIdRoute
@@ -214,6 +223,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/no-organization'
     | '/api/agent'
+    | '/api/copilotkit'
     | '/invite/$invitationId'
     | '/chat/$id'
     | '/products/$id'
@@ -235,6 +245,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/no-organization'
     | '/api/agent'
+    | '/api/copilotkit'
     | '/invite/$invitationId'
     | '/'
     | '/chat/$id'
@@ -258,6 +269,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/no-organization'
     | '/api/agent'
+    | '/api/copilotkit'
     | '/invite/$invitationId'
     | '/_authed/'
     | '/_authed/chat/$id'
@@ -282,6 +294,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   NoOrganizationRoute: typeof NoOrganizationRoute
   ApiAgentRoute: typeof ApiAgentRoute
+  ApiCopilotkitRoute: typeof ApiCopilotkitRoute
   InviteInvitationIdRoute: typeof InviteInvitationIdRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
@@ -321,6 +334,13 @@ declare module '@tanstack/react-router' {
       path: '/invite/$invitationId'
       fullPath: '/invite/$invitationId'
       preLoaderRoute: typeof InviteInvitationIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/copilotkit': {
+      id: '/api/copilotkit'
+      path: '/api/copilotkit'
+      fullPath: '/api/copilotkit'
+      preLoaderRoute: typeof ApiCopilotkitRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/agent': {
@@ -484,6 +504,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   NoOrganizationRoute: NoOrganizationRoute,
   ApiAgentRoute: ApiAgentRoute,
+  ApiCopilotkitRoute: ApiCopilotkitRoute,
   InviteInvitationIdRoute: InviteInvitationIdRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }

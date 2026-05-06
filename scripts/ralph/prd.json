@@ -27,7 +27,7 @@
         "Run `bun run dev` — server boots without errors; manually open /chat and send a test message — existing agent at /api/agent continues to work and stream responses"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 1 — Foundation. The TanStack Start route handler signature is `{ server: { handlers: { POST: async ({ request }) => Response } } }` — see existing src/routes/api/agent.ts for the pattern. CopilotKit's runtime accepts a Web Request and returns a Response, which fits TanStack Start. If the runtime requires Node-style req/res, wrap it. Reference: https://docs.copilotkit.ai/reference/classes/CopilotRuntime"
     },
     {
