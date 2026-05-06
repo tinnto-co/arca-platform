@@ -94,9 +94,13 @@ export function JobsTable() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const [hideFinished, setHideFinished] = useState(false);
+  const [dispatchLimit, setDispatchLimit] = useState('');
 
   const dispatchMutation = useMutation({
-    mutationFn: () => dispatchAllJobs(),
+    mutationFn: () =>
+      dispatchAllJobs({
+        data: { limit: dispatchLimit ? parseInt(dispatchLimit) : undefined },
+      }),
     onSuccess: (data) => {
       toast.success(`${data.dispatched} jobs encolados correctamente`);
       void queryClient.invalidateQueries({ queryKey: ['jobs'] });
@@ -430,6 +434,15 @@ export function JobsTable() {
           >
             Limpiar filtros
           </Button>
+          <Input
+            type="number"
+            min={1}
+            value={dispatchLimit}
+            onChange={(e) => setDispatchLimit(e.target.value)}
+            placeholder="Todos"
+            className="w-24 text-sm"
+            title="Límite de clientes (vacío = todos)"
+          />
           <Button
             size="sm"
             onClick={() => dispatchMutation.mutate()}

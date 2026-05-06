@@ -215,16 +215,21 @@ export const getJobLogs = createServerFn({
     return logs as JobLogRow[];
   });
 
-export const dispatchAllJobs = createServerFn({ method: 'POST' }).handler(
-  async () => {
+export const dispatchAllJobs = createServerFn({ method: 'POST' })
+  .inputValidator(z.object({ limit: z.number().int().positive().optional() }))
+  .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const clients = await db
+    let clients = await db
       .select({ id: client.id })
       .from(client)
       .where(eq(client.organizationId, orgId));
+
+    if (ctx.data.limit) {
+      clients = clients.slice(0, ctx.data.limit);
+    }
 
     if (clients.length === 0) return { success: true, dispatched: 0 };
 
@@ -259,5 +264,4 @@ export const dispatchAllJobs = createServerFn({ method: 'POST' }).handler(
 
     await axios.post(`${JOBS_API_URL}/api/jobs/batch`, { jobs });
     return { success: true, dispatched: jobs.length };
-  }
-);
+  });
