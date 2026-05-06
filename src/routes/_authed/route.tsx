@@ -20,6 +20,8 @@ import { CopilotKit } from '@copilotkit/react-core';
 import { CopilotPopup } from '@copilotkit/react-ui';
 import '@copilotkit/react-ui/styles.css';
 import { CopilotActions } from '@/components/copilot/CopilotActions';
+import { CopilotAttachmentProvider } from '@/components/copilot/AttachmentContext';
+import { AttachmentBar } from '@/components/copilot/AttachmentBar';
 import { cn } from '@/lib/utils';
 
 export const Route = createFileRoute('/_authed')({
@@ -80,17 +82,21 @@ function RouteComponent() {
   if (aiAgentEnabled) {
     return (
       <CopilotKit runtimeUrl="/api/copilotkit" agent="default">
-        <CopilotActions />
-        {shell}
-        {!isChatRoute && (
-          <CopilotPopup
-            labels={{
-              title: 'Asistente Arca',
-              initial: '¿En qué puedo ayudarte?',
-              placeholder: 'Preguntale al asistente…',
-            }}
-          />
-        )}
+        <CopilotAttachmentProvider>
+          <CopilotActions />
+          {shell}
+          {!isChatRoute && (
+            <CopilotPopup
+              labels={{
+                title: 'Asistente Arca',
+                initial: '¿En qué puedo ayudarte?',
+                placeholder: 'Preguntale al asistente…',
+              }}
+            >
+              <AttachmentBar />
+            </CopilotPopup>
+          )}
+        </CopilotAttachmentProvider>
       </CopilotKit>
     );
   }

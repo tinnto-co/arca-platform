@@ -188,7 +188,7 @@
         "DO NOT modify src/routes/api/agent.ts"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 4 — Scan PDF. CopilotKit may not have first-class file upload yet; use a custom approach. Reference Sonner toast pattern from src/conventions. The AttachmentContext is consumed by US-011 action."
     },
     {
