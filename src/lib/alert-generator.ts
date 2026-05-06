@@ -1,6 +1,7 @@
 import { db } from '@/lib/db';
-import { alert, client, debt, notification, dueDate } from '@/drizzle/schema';
-import { and, eq, lt, isNull, gte, lte, inArray } from 'drizzle-orm';
+import { alert, client, debt, notification, dueDate, job } from '@/drizzle/schema';
+import { and, eq, lt, isNull, gte, lte, inArray, desc } from 'drizzle-orm';
+import { classifyError, CATEGORY_LABELS } from '@/lib/error-classifier';
 
 /**
  * Generates alerts for an organization by scanning:
@@ -136,24 +137,75 @@ export async function generateAlerts(
     });
   }
 
-  // 4. Clients with scraper errors
+  // 4. Clients with scraper errors (classified by error category)
   const errorClients = await db
-    .select()
+    .select({ id: client.id, name: client.name })
     .from(client)
     .where(and(eq(client.organizationId, orgId), eq(client.hasErrors, true)));
 
   for (const c of errorClients) {
-    maybeAdd(`scraper_error:client:${c.id}`, {
-      organizationId: orgId,
-      clientId: c.id,
-      type: 'scraper_error',
-      severity: 'high',
-      title: `Error en scraper: ${c.name}`,
-      description: c.errorMessage || undefined,
-      sourceEntityType: 'client',
-      sourceEntityId: c.id,
-      status: 'open',
-    });
+    const failedJobs = await db
+      .select({ id: job.id, type: job.type, failedReason: job.failedReason })
+      .from(job)
+      .where(and(eq(job.clientId, c.id), eq(job.status, 'failed')))
+      .orderBy(desc(job.createdAt))
+      .limit(20);
+
+    if (failedJobs.length === 0) continue;
+
+    // Group by error category
+    const byCategory = new Map<
+      string,
+      {
+        jobIds: string[];
+        jobTypes: string[];
+        sampleError: string;
+        classification: ReturnType<typeof classifyError>;
+      }
+    >();
+
+    for (const j of failedJobs) {
+      if (!j.failedReason) continue;
+      const classification = classifyError(j.failedReason);
+      const key = classification.category;
+
+      if (!byCategory.has(key)) {
+        byCategory.set(key, {
+          jobIds: [],
+          jobTypes: [],
+          sampleError: j.failedReason,
+          classification,
+        });
+      }
+
+      const entry = byCategory.get(key)!;
+      entry.jobIds.push(j.id);
+      if (!entry.jobTypes.includes(j.type)) {
+        entry.jobTypes.push(j.type);
+      }
+    }
+
+    for (const [category, entry] of byCategory) {
+      maybeAdd(`scraper_error:client:${c.id}:${category}`, {
+        organizationId: orgId,
+        clientId: c.id,
+        type: 'scraper_error',
+        severity: entry.classification.severity,
+        title: `Error de scraping: ${c.name}`,
+        description: CATEGORY_LABELS[category as keyof typeof CATEGORY_LABELS] || category,
+        sourceEntityType: 'client',
+        sourceEntityId: `${c.id}:${category}`,
+        status: 'open',
+        metadata: {
+          errorCategory: category,
+          retryable: entry.classification.retryable,
+          failedJobIds: entry.jobIds,
+          failedJobTypes: entry.jobTypes,
+          sampleError: entry.sampleError,
+          jobCount: entry.jobIds.length,
+        },
+      });
+    }
   }
 
   if (alertsToInsert.length === 0) return { created: 0 };

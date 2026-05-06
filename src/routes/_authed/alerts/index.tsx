@@ -6,13 +6,22 @@ import {
   CheckCircle2,
   UserCheck,
   ExternalLink,
+  RefreshCw,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { ArcaCard } from '@/components/dashboard/shared';
 import { relativeTime } from '@/components/dashboard/shared';
-import { listAlerts, resolveAlert, assignAlert } from '@/actions/alert';
+import {
+  listAlerts,
+  resolveAlert,
+  assignAlert,
+  retryAlertJobs,
+  retryAllRetryable,
+} from '@/actions/alert';
 import { getClients } from '@/actions/client';
 import { listOrgMembersForAssignment } from '@/actions/notification';
+import { CATEGORY_LABELS } from '@/lib/error-classifier';
+import { toast } from 'sonner';
 
 export const Route = createFileRoute('/_authed/alerts/')({
   component: AlertsPage,
@@ -49,6 +58,37 @@ const SEVERITY_CONFIG: Record<
   },
 };
 
+const CATEGORY_BADGE: Record<string, { bg: string; fg: string }> = {
+  credentials: {
+    bg: 'var(--arca-accent-neg-bg)',
+    fg: 'var(--arca-accent-neg-fg)',
+  },
+  captcha: {
+    bg: 'var(--arca-surface-2)',
+    fg: 'var(--arca-ink-3)',
+  },
+  infrastructure: {
+    bg: 'var(--arca-accent-warn-bg)',
+    fg: 'var(--arca-accent-warn-fg)',
+  },
+  selector_change: {
+    bg: 'var(--arca-accent-warn-bg)',
+    fg: 'var(--arca-accent-warn-fg)',
+  },
+  csv_not_found: {
+    bg: 'var(--arca-accent-warn-bg)',
+    fg: 'var(--arca-accent-warn-fg)',
+  },
+  profile_not_found: {
+    bg: 'var(--arca-accent-neg-bg)',
+    fg: 'var(--arca-accent-neg-fg)',
+  },
+  unknown: {
+    bg: 'var(--arca-surface-2)',
+    fg: 'var(--arca-ink-3)',
+  },
+};
+
 const TYPE_LABELS: Record<string, string> = {
   overdue_debt: 'Deuda vencida',
   critical_notification: 'Notificación crítica',
@@ -78,6 +118,15 @@ function getSourceHref(alert: AlertRow): string {
 }
 
 /* ─── Types ─── */
+interface AlertMetadata {
+  errorCategory?: string;
+  retryable?: boolean;
+  failedJobIds?: string[];
+  failedJobTypes?: string[];
+  sampleError?: string;
+  jobCount?: number;
+}
+
 interface AlertRow {
   id: string;
   type: string;
@@ -89,6 +138,7 @@ interface AlertRow {
   status: string;
   assignedToUserId?: string | null;
   createdAt: string | Date;
+  metadata?: AlertMetadata | null;
 }
 
 interface Member {
@@ -114,6 +164,21 @@ function SeverityBadge({ severity }: { severity: string }) {
   );
 }
 
+/* ─── Category badge ─── */
+function CategoryBadge({ category }: { category: string }) {
+  const cfg = CATEGORY_BADGE[category] ?? CATEGORY_BADGE.unknown;
+  const label =
+    CATEGORY_LABELS[category as keyof typeof CATEGORY_LABELS] ?? category;
+  return (
+    <span
+      className="inline-flex items-center px-2 py-0.5 rounded-[4px] text-[11px] font-medium shrink-0"
+      style={{ background: cfg.bg, color: cfg.fg }}
+    >
+      {label}
+    </span>
+  );
+}
+
 /* ─── Alert row ─── */
 function AlertRowItem({
   alert,
@@ -123,6 +188,8 @@ function AlertRowItem({
   setAssigningId,
   onResolve,
   onAssign,
+  onRetry,
+  retryingId,
 }: {
   alert: AlertRow;
   clientName: string;
@@ -131,9 +198,14 @@ function AlertRowItem({
   setAssigningId: (id: string | null) => void;
   onResolve: () => void;
   onAssign: (userId: string) => void;
+  onRetry: () => void;
+  retryingId: string | null;
 }) {
   const isResolved = alert.status === 'resolved';
   const sourceHref = getSourceHref(alert);
+  const meta = alert.metadata;
+  const isRetryable = meta?.retryable === true;
+  const isRetrying = retryingId === alert.id;
 
   return (
     <div
@@ -146,6 +218,14 @@ function AlertRowItem({
           <span className="text-[11px] text-[var(--arca-ink-3)] bg-[var(--arca-surface-2)] border border-[var(--arca-border)] px-1.5 py-0.5 rounded-[4px]">
             {TYPE_LABELS[alert.type] ?? alert.type}
           </span>
+          {meta?.errorCategory && (
+            <CategoryBadge category={meta.errorCategory} />
+          )}
+          {meta?.jobCount != null && (
+            <span className="text-[11px] text-[var(--arca-ink-3)]">
+              {meta.jobCount} job{meta.jobCount !== 1 ? 's' : ''}
+            </span>
+          )}
         </div>
 
         <div className="text-[13.5px] font-medium text-[var(--arca-ink)] leading-snug">
@@ -155,6 +235,12 @@ function AlertRowItem({
         {alert.description && (
           <div className="text-[12px] text-[var(--arca-ink-3)] mt-0.5 line-clamp-1">
             {alert.description}
+          </div>
+        )}
+
+        {meta?.sampleError && (
+          <div className="text-[11px] text-[var(--arca-ink-3)] mt-0.5 font-mono bg-[var(--arca-surface-2)] px-2 py-0.5 rounded-[4px] line-clamp-1">
+            {meta.sampleError}
           </div>
         )}
 
@@ -199,6 +285,20 @@ function AlertRowItem({
 
       {!isResolved && (
         <div className="flex items-center gap-0.5 shrink-0 mt-0.5">
+          {isRetryable && (
+            <button
+              onClick={onRetry}
+              disabled={isRetrying}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-[6px] text-[12px] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] transition-colors disabled:opacity-50"
+              title="Reintentar jobs fallidos"
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${isRetrying ? 'animate-spin' : ''}`}
+                strokeWidth={1.8}
+              />
+              <span className="hidden sm:inline">Reintentar</span>
+            </button>
+          )}
           <button
             onClick={() =>
               setAssigningId(assigningId === alert.id ? null : alert.id)
@@ -237,7 +337,9 @@ function AlertsPage() {
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('open');
   const [clientIdFilter, setClientIdFilter] = useState('');
+  const [errorCategoryFilter, setErrorCategoryFilter] = useState('');
   const [assigningId, setAssigningId] = useState<string | null>(null);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
 
   const queryClient = useQueryClient();
 
@@ -248,6 +350,7 @@ function AlertsPage() {
       severityFilter,
       typeFilter,
       clientIdFilter,
+      errorCategoryFilter,
     ],
     queryFn: () =>
       listAlerts({
@@ -256,6 +359,7 @@ function AlertsPage() {
           severity: severityFilter || undefined,
           type: typeFilter || undefined,
           clientId: clientIdFilter || undefined,
+          errorCategory: errorCategoryFilter || undefined,
           limit: 100,
         },
       }),
@@ -292,13 +396,59 @@ function AlertsPage() {
     },
   });
 
+  const retryMutation = useMutation({
+    mutationFn: (id: string) => retryAlertJobs({ data: { id } }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['alerts'] });
+      toast.success(
+        `${data.retried} job${data.retried !== 1 ? 's' : ''} encolado${data.retried !== 1 ? 's' : ''} para reintento`
+      );
+    },
+    onError: (err: any) => {
+      toast.error(err?.message ?? 'Error al reintentar');
+    },
+    onSettled: () => setRetryingId(null),
+  });
+
+  const retryAllMutation = useMutation({
+    mutationFn: () => retryAllRetryable(),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['alerts'] });
+      toast.success(
+        `${data.retried} job${data.retried !== 1 ? 's' : ''} encolado${data.retried !== 1 ? 's' : ''} — ${data.acknowledged} alerta${data.acknowledged !== 1 ? 's' : ''} reconocida${data.acknowledged !== 1 ? 's' : ''}`
+      );
+    },
+    onError: (err: any) => {
+      toast.error(err?.message ?? 'Error al reintentar');
+    },
+  });
+
+  const retryableCount = alerts.filter(
+    (a) => (a.metadata as AlertMetadata)?.retryable === true
+  ).length;
+
   return (
     <div className="p-[28px_36px_60px] max-w-[1440px]">
-      <PageHeader
-        icon={AlertTriangle}
-        title="Alertas"
-        subtitle={`${alerts.length} alerta${alerts.length !== 1 ? 's' : ''}`}
-      />
+      <div className="flex items-start justify-between gap-4 mb-6">
+        <PageHeader
+          icon={AlertTriangle}
+          title="Alertas"
+          subtitle={`${alerts.length} alerta${alerts.length !== 1 ? 's' : ''}`}
+        />
+        {retryableCount > 0 && statusFilter === 'open' && (
+          <button
+            onClick={() => retryAllMutation.mutate()}
+            disabled={retryAllMutation.isPending}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-[12.5px] font-medium bg-[var(--arca-surface)] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] transition-colors disabled:opacity-50 shrink-0 mt-1"
+          >
+            <RefreshCw
+              className={`w-3.5 h-3.5 ${retryAllMutation.isPending ? 'animate-spin' : ''}`}
+              strokeWidth={1.8}
+            />
+            Reintentar todos ({retryableCount})
+          </button>
+        )}
+      </div>
 
       {/* Filter bar */}
       <div className="flex flex-wrap gap-2 mb-5">
@@ -337,6 +487,21 @@ function AlertsPage() {
           <option value="scraper_error">Error de scraping</option>
           <option value="balance_due_soon">Balance próximo</option>
           <option value="missing_activity">Sin actividad</option>
+        </select>
+
+        <select
+          value={errorCategoryFilter}
+          onChange={(e) => setErrorCategoryFilter(e.target.value)}
+          className={SELECT_CLASS}
+        >
+          <option value="">Categoría de error</option>
+          <option value="credentials">Credenciales inválidas</option>
+          <option value="captcha">Error de CAPTCHA</option>
+          <option value="infrastructure">Infraestructura</option>
+          <option value="selector_change">AFIP cambió la interfaz</option>
+          <option value="csv_not_found">CSV no encontrado</option>
+          <option value="profile_not_found">Perfil no encontrado</option>
+          <option value="unknown">Desconocido</option>
         </select>
 
         <select
@@ -379,6 +544,11 @@ function AlertsPage() {
                 onAssign={(userId) =>
                   assignMutation.mutate({ id: alert.id, userId })
                 }
+                onRetry={() => {
+                  setRetryingId(alert.id);
+                  retryMutation.mutate(alert.id);
+                }}
+                retryingId={retryingId}
               />
             ))}
           </div>
