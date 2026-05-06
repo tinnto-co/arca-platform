@@ -21,6 +21,7 @@ import {
 import { getClients } from '@/actions/client';
 import { listOrgMembersForAssignment } from '@/actions/notification';
 import { CATEGORY_LABELS } from '@/lib/error-classifier';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import { toast } from 'sonner';
 
 export const Route = createFileRoute('/_authed/alerts/')({
@@ -97,9 +98,6 @@ const TYPE_LABELS: Record<string, string> = {
   balance_due_soon: 'Balance próximo',
   missing_activity: 'Sin actividad',
 };
-
-const SELECT_CLASS =
-  'h-8 px-2.5 text-[12.5px] border border-[var(--arca-border)] rounded-[8px] bg-[var(--arca-surface)] text-[var(--arca-ink)] focus:outline-none';
 
 /* ─── Helpers ─── */
 function getSourceHref(alert: AlertRow): string {
@@ -333,15 +331,17 @@ function AlertRowItem({
 
 /* ─── Page ─── */
 function AlertsPage() {
-  const [severityFilter, setSeverityFilter] = useState('');
-  const [typeFilter, setTypeFilter] = useState('');
+  const [severityFilter, setSeverityFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('open');
-  const [clientIdFilter, setClientIdFilter] = useState('');
-  const [errorCategoryFilter, setErrorCategoryFilter] = useState('');
+  const [clientIdFilter, setClientIdFilter] = useState('all');
+  const [errorCategoryFilter, setErrorCategoryFilter] = useState('all');
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
 
   const queryClient = useQueryClient();
+
+  const toFilter = (v: string) => (v === 'all' ? undefined : v);
 
   const { data: alertsRaw = [] } = useQuery({
     queryKey: [
@@ -355,11 +355,11 @@ function AlertsPage() {
     queryFn: () =>
       listAlerts({
         data: {
-          status: statusFilter || undefined,
-          severity: severityFilter || undefined,
-          type: typeFilter || undefined,
-          clientId: clientIdFilter || undefined,
-          errorCategory: errorCategoryFilter || undefined,
+          status: toFilter(statusFilter),
+          severity: toFilter(severityFilter),
+          type: toFilter(typeFilter),
+          clientId: toFilter(clientIdFilter),
+          errorCategory: toFilter(errorCategoryFilter),
           limit: 100,
         },
       }),
@@ -452,70 +452,81 @@ function AlertsPage() {
 
       {/* Filter bar */}
       <div className="flex flex-wrap gap-2 mb-5">
-        <select
+        <SearchableSelect
+          options={[
+            { value: 'open', label: 'Abiertas' },
+            { value: 'acknowledged', label: 'Reconocidas' },
+            { value: 'resolved', label: 'Resueltas' },
+            { value: 'all', label: 'Todas' },
+          ]}
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className={SELECT_CLASS}
-        >
-          <option value="open">Abiertas</option>
-          <option value="acknowledged">Reconocidas</option>
-          <option value="resolved">Resueltas</option>
-          <option value="">Todas</option>
-        </select>
+          onValueChange={setStatusFilter}
+          placeholder="Estado"
+          searchPlaceholder="Buscar estado..."
+          width={160}
+        />
 
-        <select
-          value={severityFilter}
-          onChange={(e) => setSeverityFilter(e.target.value)}
-          className={SELECT_CLASS}
-        >
-          <option value="">Severidad</option>
-          <option value="critical">Crítico</option>
-          <option value="high">Alto</option>
-          <option value="medium">Medio</option>
-          <option value="low">Bajo</option>
-        </select>
-
-        <select
+        <SearchableSelect
+          options={[
+            { value: 'all', label: 'Todos los tipos' },
+            { value: 'overdue_debt', label: 'Deuda vencida' },
+            { value: 'critical_notification', label: 'Notificación crítica' },
+            { value: 'upcoming_due_date', label: 'Vencimiento próximo' },
+            { value: 'scraper_error', label: 'Error de scraping' },
+            { value: 'balance_due_soon', label: 'Balance próximo' },
+            { value: 'missing_activity', label: 'Sin actividad' },
+          ]}
           value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
-          className={SELECT_CLASS}
-        >
-          <option value="">Tipo</option>
-          <option value="overdue_debt">Deuda vencida</option>
-          <option value="critical_notification">Notificación crítica</option>
-          <option value="upcoming_due_date">Vencimiento próximo</option>
-          <option value="scraper_error">Error de scraping</option>
-          <option value="balance_due_soon">Balance próximo</option>
-          <option value="missing_activity">Sin actividad</option>
-        </select>
+          onValueChange={setTypeFilter}
+          placeholder="Tipo"
+          searchPlaceholder="Buscar tipo..."
+          width={192}
+        />
 
-        <select
+        <SearchableSelect
+          options={[
+            { value: 'all', label: 'Todas las severidades' },
+            { value: 'critical', label: 'Crítico' },
+            { value: 'high', label: 'Alto' },
+            { value: 'medium', label: 'Medio' },
+            { value: 'low', label: 'Bajo' },
+          ]}
+          value={severityFilter}
+          onValueChange={setSeverityFilter}
+          placeholder="Severidad"
+          searchPlaceholder="Buscar severidad..."
+          width={176}
+        />
+
+        <SearchableSelect
+          options={[
+            { value: 'all', label: 'Todas las categorías' },
+            { value: 'credentials', label: 'Credenciales inválidas' },
+            { value: 'captcha', label: 'Error de CAPTCHA' },
+            { value: 'infrastructure', label: 'Infraestructura' },
+            { value: 'selector_change', label: 'AFIP cambió la interfaz' },
+            { value: 'csv_not_found', label: 'CSV no encontrado' },
+            { value: 'profile_not_found', label: 'Perfil no encontrado' },
+            { value: 'unknown', label: 'Desconocido' },
+          ]}
           value={errorCategoryFilter}
-          onChange={(e) => setErrorCategoryFilter(e.target.value)}
-          className={SELECT_CLASS}
-        >
-          <option value="">Categoría de error</option>
-          <option value="credentials">Credenciales inválidas</option>
-          <option value="captcha">Error de CAPTCHA</option>
-          <option value="infrastructure">Infraestructura</option>
-          <option value="selector_change">AFIP cambió la interfaz</option>
-          <option value="csv_not_found">CSV no encontrado</option>
-          <option value="profile_not_found">Perfil no encontrado</option>
-          <option value="unknown">Desconocido</option>
-        </select>
+          onValueChange={setErrorCategoryFilter}
+          placeholder="Categoría de error"
+          searchPlaceholder="Buscar categoría..."
+          width={208}
+        />
 
-        <select
+        <SearchableSelect
+          options={[
+            { value: 'all', label: 'Todos los clientes' },
+            ...clients.map((c) => ({ value: c.id, label: c.name })),
+          ]}
           value={clientIdFilter}
-          onChange={(e) => setClientIdFilter(e.target.value)}
-          className={SELECT_CLASS}
-        >
-          <option value="">Todos los clientes</option>
-          {clients.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+          onValueChange={setClientIdFilter}
+          placeholder="Filtrar por cliente"
+          searchPlaceholder="Buscar cliente..."
+          width={224}
+        />
       </div>
 
       {/* Alert list */}
