@@ -82,8 +82,8 @@ export const createThing = createServerFn({ method: "POST" })
 ### Database schema — main tables
 
 **Accounting:**
-- `client` — Company (CUIT, fiscal condition, orgId). Core entity for all accounting data.
-- `profile` — Employee/entity within a client (used for payroll).
+- `client` — Agrupador de entidades fiscales (representante o titular CUIT genérico, ligado a `orgId`). Contenedor en el que viven 1+ profiles. **No es la persona jurídica con CUIT propio** — eso es el `profile`.
+- `profile` — Entidad fiscal individual (empresa con CUIT propio: `identity_number`, `identity_type`, dirección, email, etc.). Es donde viven los datos fiscales reales (deudas, notificaciones, IVA, sueldos por empresa). Configuraciones fiscales por entidad (cierre de ejercicio, situación frente al IVA, etc.) deben ir a este nivel.
 - `credential` — External provider credentials (AFIP, etc.) per client.
 - `invoice` — Inbound/outbound invoices with IVA breakdown and AFIP integration fields.
 - `ivaScrape` — Monthly IVA scrape results; unique on `(profileId, periodoFiscal)`.

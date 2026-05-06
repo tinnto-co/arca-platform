@@ -126,8 +126,7 @@ export function KpiCardsRow({ from, to }: KpiCardsRowProps) {
     {
       label: 'Resultado bruto',
       value: resultadoBruto,
-      chipColor:
-        margen >= 20 ? posColor : margen >= 5 ? warnColor : negColor,
+      chipColor: margen >= 20 ? posColor : margen >= 5 ? warnColor : negColor,
       chipText: `${margen.toFixed(1)}%`,
       footLabel: 'margen s/ ventas',
     },

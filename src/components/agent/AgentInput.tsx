@@ -17,11 +17,15 @@ export function AgentInput() {
 
   const handleSubmit = (message: PromptInputMessage) => {
     const text = message.text?.trim();
-    if (!text) return
+    if (!text) return;
     const id = crypto.randomUUID();
     setValue('');
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    navigate({ to: '/chat/$id', params: { id }, state: { initialMessage: text } as any });
+
+    navigate({
+      to: '/chat/$id',
+      params: { id },
+      state: { initialMessage: text } as any,
+    });
   };
 
   return (

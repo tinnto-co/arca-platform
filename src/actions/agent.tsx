@@ -6,7 +6,11 @@ import { getSessionWithOrg } from '@/actions/helpers';
 import { eq, and, desc, ilike } from 'drizzle-orm';
 
 export const getAgentConversations = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ limit: z.number().optional(), offset: z.number().optional() }).optional())
+  .inputValidator(
+    z
+      .object({ limit: z.number().optional(), offset: z.number().optional() })
+      .optional()
+  )
   .handler(async ({ data }) => {
     const { orgId, userId } = await getSessionWithOrg();
     return db
@@ -66,11 +70,23 @@ export const getConversationMessages = createServerFn({ method: 'GET' })
       )
       .limit(1);
     if (!conv) throw new Error('Conversación no encontrada');
-    return db
-      .select()
+    const rows = await db
+      .select({
+        id: agentMessage.id,
+        conversationId: agentMessage.conversationId,
+        role: agentMessage.role,
+        content: agentMessage.content,
+        metadata: agentMessage.metadata,
+        toolCalls: agentMessage.toolCalls,
+        citations: agentMessage.citations,
+        confidence: agentMessage.confidence,
+        createdAt: agentMessage.createdAt,
+      })
       .from(agentMessage)
       .where(eq(agentMessage.conversationId, data.conversationId))
       .orderBy(agentMessage.createdAt);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return rows as any;
   });
 
 export const deleteConversation = createServerFn({ method: 'POST' })

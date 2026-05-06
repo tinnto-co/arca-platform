@@ -396,7 +396,9 @@ function MovementsTable({
 
               <TableCell
                 className={`text-right font-medium ${
-                  title === 'Ingresos' ? 'text-[var(--arca-accent-pos-fg)]' : 'text-[var(--arca-accent-neg-fg)]'
+                  title === 'Ingresos'
+                    ? 'text-[var(--arca-accent-pos-fg)]'
+                    : 'text-[var(--arca-accent-neg-fg)]'
                 }`}
               >
                 {m.monto}

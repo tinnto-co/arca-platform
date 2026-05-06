@@ -11,6 +11,8 @@ import {
   updateMemberRole,
   getOrgInvitations,
   cancelInvitation,
+  listOrgModules,
+  setModuleEnabled,
 } from '@/actions/admin';
 import { getUser } from '@/actions/user';
 import {
@@ -62,6 +64,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { toast } from 'sonner';
 import {
   Building,
+  Layers,
   Loader2,
   Mail,
   Shield,
@@ -108,10 +111,14 @@ function AdminPanel() {
       <PageHeader
         icon={Building}
         title={isLoading ? 'Administración' : (org?.name ?? 'Administración')}
-        subtitle={isLoading ? '' : (org?.slug ?? 'Miembros e invitaciones de la organización')}
+        subtitle={
+          isLoading
+            ? ''
+            : (org?.slug ?? 'Miembros e invitaciones de la organización')
+        }
       />
       <Tabs defaultValue="members" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="members">
             <Users className="size-4 mr-2" />
             Miembros
@@ -124,6 +131,10 @@ function AdminPanel() {
             <Building className="size-4 mr-2" />
             Configuración
           </TabsTrigger>
+          <TabsTrigger value="modules">
+            <Layers className="size-4 mr-2" />
+            Módulos
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="members">
@@ -134,6 +145,9 @@ function AdminPanel() {
         </TabsContent>
         <TabsContent value="settings">
           <SettingsTab />
+        </TabsContent>
+        <TabsContent value="modules">
+          <ModulesTab />
         </TabsContent>
       </Tabs>
     </div>
@@ -549,6 +563,99 @@ function SettingsTab() {
             {updateMutation.isPending ? 'Guardando...' : 'Guardar cambios'}
           </Button>
         </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+const MODULE_LABELS: Record<string, string> = {
+  sueldos: 'Sueldos',
+  banco: 'Banco',
+  contabilidad: 'Contabilidad',
+  analytics: 'Analytics',
+  portal_cliente: 'Portal del cliente',
+  ai_agent: 'Asistente IA',
+};
+
+const MODULE_DESCRIPTIONS: Record<string, string> = {
+  sueldos: 'Liquidación de sueldos, convenios y recibos de sueldo',
+  banco: 'Conciliación bancaria y matching de transacciones',
+  contabilidad: 'Plan de cuentas, asientos y mayor contable',
+  analytics: 'Proyecciones IVA, ratios y ranking de riesgo',
+  portal_cliente: 'Acceso del cliente a su información fiscal',
+  ai_agent: 'Asistente inteligente con acceso a datos fiscales',
+};
+
+function ModulesTab() {
+  const queryClient = useQueryClient();
+  const { data: modules, isLoading } = useQuery({
+    queryKey: ['admin', 'modules'],
+    queryFn: () => listOrgModules(),
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: (data: { module: string; enabled: boolean }) =>
+      setModuleEnabled({
+        data: { module: data.module as Parameters<typeof setModuleEnabled>[0]['data']['module'], enabled: data.enabled },
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'modules'] });
+      void queryClient.invalidateQueries({ queryKey: ['orgModules'] });
+      toast.success('Módulo actualizado');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Módulos habilitados</CardTitle>
+        <CardDescription>
+          Activá o desactivá módulos para tu organización. Los módulos
+          desactivados no aparecen en la barra lateral y sus rutas quedan
+          bloqueadas.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <p className="text-[var(--arca-ink-3)]">Cargando...</p>
+        ) : (
+          <div className="space-y-3">
+            {(modules ?? []).map((mod) => (
+              <div
+                key={mod.module}
+                className="flex items-center justify-between rounded-lg border p-4"
+              >
+                <div className="space-y-0.5">
+                  <p className="font-medium text-sm">
+                    {MODULE_LABELS[mod.module] ?? mod.module}
+                  </p>
+                  <p className="text-[var(--arca-ink-3)] text-xs">
+                    {MODULE_DESCRIPTIONS[mod.module] ?? ''}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Badge variant={mod.enabled ? 'default' : 'secondary'}>
+                    {mod.enabled ? 'Activo' : 'Inactivo'}
+                  </Badge>
+                  <Button
+                    variant={mod.enabled ? 'outline' : 'default'}
+                    size="sm"
+                    disabled={toggleMutation.isPending}
+                    onClick={() =>
+                      toggleMutation.mutate({
+                        module: mod.module,
+                        enabled: !mod.enabled,
+                      })
+                    }
+                  >
+                    {mod.enabled ? 'Desactivar' : 'Activar'}
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

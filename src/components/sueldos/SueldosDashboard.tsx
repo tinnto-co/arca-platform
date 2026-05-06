@@ -178,7 +178,14 @@ export function SueldosDashboard({
         </Alert>
       ) : null}
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <MonthPicker ano={ano} mes={mes} onSelect={(a, m) => { setAno(a); setMes(m); }} />
+        <MonthPicker
+          ano={ano}
+          mes={mes}
+          onSelect={(a, m) => {
+            setAno(a);
+            setMes(m);
+          }}
+        />
         <div className="flex flex-col items-end gap-1">
           {!permiteLiquidar && (
             <span className="text-xs text-[var(--arca-ink-3)]">
@@ -412,8 +419,34 @@ export function SueldosDashboard({
 }
 
 /* ─── Month Picker ─── */
-const MONTH_LABELS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-const MONTH_LABELS_FULL = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+const MONTH_LABELS = [
+  'Ene',
+  'Feb',
+  'Mar',
+  'Abr',
+  'May',
+  'Jun',
+  'Jul',
+  'Ago',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dic',
+];
+const MONTH_LABELS_FULL = [
+  'Enero',
+  'Febrero',
+  'Marzo',
+  'Abril',
+  'Mayo',
+  'Junio',
+  'Julio',
+  'Agosto',
+  'Septiembre',
+  'Octubre',
+  'Noviembre',
+  'Diciembre',
+];
 
 function MonthPicker({
   ano,
@@ -446,7 +479,9 @@ function MonthPicker({
           >
             <ChevronLeft className="w-3.5 h-3.5" />
           </button>
-          <span className="text-[13px] font-semibold text-[var(--arca-ink)]">{navYear}</span>
+          <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+            {navYear}
+          </span>
           <button
             onClick={() => setNavYear((y) => y + 1)}
             disabled={navYear >= now.getFullYear()}

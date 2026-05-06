@@ -17,7 +17,9 @@ const password = process.env.READONLY_PASSWORD;
 
 if (!password) {
   console.error('❌  Falta la variable de entorno READONLY_PASSWORD');
-  console.error('    Ejemplo: READONLY_PASSWORD=mi_password bun run src/scripts/setup-readonly-user.ts');
+  console.error(
+    '    Ejemplo: READONLY_PASSWORD=mi_password bun run src/scripts/setup-readonly-user.ts'
+  );
   process.exit(1);
 }
 
@@ -47,16 +49,22 @@ async function main() {
   console.log('✅  Usuario creado / contraseña actualizada');
 
   // 2. Permisos de conexión y schema
-  await sql.unsafe(`GRANT CONNECT ON DATABASE "${dbName}" TO ${READONLY_USER};`);
+  await sql.unsafe(
+    `GRANT CONNECT ON DATABASE "${dbName}" TO ${READONLY_USER};`
+  );
   await sql.unsafe(`GRANT USAGE ON SCHEMA public TO ${READONLY_USER};`);
   console.log('✅  Permisos de conexión y schema otorgados');
 
   // 3. SELECT sobre todas las tablas existentes
-  await sql.unsafe(`GRANT SELECT ON ALL TABLES IN SCHEMA public TO ${READONLY_USER};`);
+  await sql.unsafe(
+    `GRANT SELECT ON ALL TABLES IN SCHEMA public TO ${READONLY_USER};`
+  );
   console.log('✅  SELECT otorgado en tablas existentes');
 
   // 4. SELECT automático en tablas futuras (migraciones nuevas)
-  await sql.unsafe(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO ${READONLY_USER};`);
+  await sql.unsafe(
+    `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO ${READONLY_USER};`
+  );
   console.log('✅  Privilegios por defecto configurados para tablas futuras');
 
   // 5. Construir y mostrar la DATABASE_READONLY_URL
@@ -66,7 +74,9 @@ async function main() {
   const readonlyUrl = parsed.toString();
 
   console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('Agregá esta variable a tu .env y a las variables de entorno de producción:');
+  console.log(
+    'Agregá esta variable a tu .env y a las variables de entorno de producción:'
+  );
   console.log('');
   console.log(`DATABASE_READONLY_URL=${readonlyUrl}`);
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');

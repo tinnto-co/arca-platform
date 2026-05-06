@@ -1,9 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
-import { Plus, Trash2, RefreshCw, Wallet } from 'lucide-react';
+import {
+  Plus,
+  Trash2,
+  RefreshCw,
+  Wallet,
+  ChevronDown,
+  ChevronRight,
+  CalendarClock,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Table,
@@ -33,7 +41,11 @@ import {
   listCategoriasByConvenio,
   sincronizarConveniosEmpleados,
   updateEmpleado,
+  createEmployeeEvent,
+  listEmployeeEvents,
 } from '@/actions/sueldos';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
 import { legajoParaMostrar } from '@/lib/legajo';
 import { BANCOS } from '@/lib/bancos';
 import {
@@ -115,12 +127,158 @@ function formatTitleCaseDisplay(str: string | null | undefined): string {
     .join(', ');
 }
 
+const EVENT_TYPES = [
+  { value: 'ausencia', label: 'Ausencia' },
+  { value: 'llegada_tarde', label: 'Llegada tarde' },
+  { value: 'licencia', label: 'Licencia' },
+  { value: 'accidente', label: 'Accidente' },
+  { value: 'enfermedad', label: 'Enfermedad' },
+  { value: 'cambio_categoria', label: 'Cambio de categoría' },
+  { value: 'cambio_sueldo', label: 'Cambio de sueldo' },
+  { value: 'nota_legal', label: 'Nota legal' },
+  { value: 'observacion', label: 'Observación' },
+] as const;
+
+const EVENT_TYPE_COLORS: Record<string, { bg: string; text: string }> = {
+  ausencia: {
+    bg: 'var(--arca-accent-warn-bg)',
+    text: 'var(--arca-accent-warn)',
+  },
+  llegada_tarde: {
+    bg: 'var(--arca-accent-warn-bg)',
+    text: 'var(--arca-accent-warn)',
+  },
+  licencia: {
+    bg: 'var(--arca-accent-info-bg, #e0f0ff)',
+    text: 'var(--arca-accent-info, #1d6fa4)',
+  },
+  accidente: {
+    bg: 'var(--arca-accent-neg-bg)',
+    text: 'var(--arca-accent-neg)',
+  },
+  enfermedad: {
+    bg: 'var(--arca-accent-neg-bg)',
+    text: 'var(--arca-accent-neg)',
+  },
+  cambio_categoria: { bg: '#f3e8ff', text: '#7c3aed' },
+  cambio_sueldo: {
+    bg: 'var(--arca-accent-pos-bg)',
+    text: 'var(--arca-accent-pos)',
+  },
+  nota_legal: { bg: 'var(--arca-surface-2)', text: 'var(--arca-ink-2)' },
+  observacion: { bg: 'var(--arca-surface-2)', text: 'var(--arca-ink-3)' },
+};
+
+interface EmployeeEventRow {
+  id: string;
+  type: string;
+  title: string;
+  description: string | null;
+  eventDate: string | Date;
+  affectsPayroll: boolean;
+}
+
+function EmpleadoTimeline({
+  empleadoId,
+  onAdd,
+}: {
+  empleadoId: string;
+  onAdd: () => void;
+}) {
+  const { data: events = [], isLoading } = useQuery({
+    queryKey: ['employee-events', empleadoId],
+    queryFn: () => listEmployeeEvents({ data: { empleadoId } }),
+  });
+
+  const typedEvents = events as unknown as EmployeeEventRow[];
+
+  if (isLoading) {
+    return (
+      <div className="px-4 py-3 text-sm text-[var(--arca-ink-3)]">
+        Cargando historial…
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-4 py-3 space-y-2">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-medium text-[var(--arca-ink-3)] uppercase tracking-wide">
+          Historial de eventos
+        </span>
+        <button
+          type="button"
+          onClick={onAdd}
+          className="flex items-center gap-1 text-xs text-[var(--arca-accent-primary)] hover:underline"
+        >
+          <Plus className="h-3 w-3" />
+          Agregar evento
+        </button>
+      </div>
+      {typedEvents.length === 0 ? (
+        <p className="text-xs text-[var(--arca-ink-3)]">
+          Sin eventos registrados.
+        </p>
+      ) : (
+        <div className="relative border-l-2 border-[var(--arca-border)] pl-4 space-y-3">
+          {typedEvents.map((ev) => {
+            const colors =
+              EVENT_TYPE_COLORS[ev.type] ?? EVENT_TYPE_COLORS.observacion;
+            const label =
+              EVENT_TYPES.find((t) => t.value === ev.type)?.label ?? ev.type;
+            return (
+              <div key={ev.id} className="relative">
+                <div className="absolute -left-[21px] mt-0.5 h-3 w-3 rounded-full border-2 border-[var(--arca-surface)] bg-[var(--arca-accent-primary)]" />
+                <div className="flex flex-wrap items-start gap-2">
+                  <span
+                    className="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium"
+                    style={{ background: colors.bg, color: colors.text }}
+                  >
+                    {label}
+                  </span>
+                  <span className="text-xs text-[var(--arca-ink-3)]">
+                    {formatDate(ev.eventDate)}
+                  </span>
+                  {ev.affectsPayroll && (
+                    <span className="text-xs text-[var(--arca-accent-warn)]">
+                      · Afecta liquidación
+                    </span>
+                  )}
+                </div>
+                <p className="mt-0.5 text-sm text-[var(--arca-ink)]">
+                  {ev.title}
+                </p>
+                {ev.description && (
+                  <p className="mt-0.5 text-xs text-[var(--arca-ink-3)]">
+                    {ev.description}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function SueldosEmpleados({
   clientId,
   profileId,
 }: SueldosEmpleadosProps) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [expandedEmpleados, setExpandedEmpleados] = useState<Set<string>>(
+    new Set()
+  );
+  const [addEventFor, setAddEventFor] = useState<string | null>(null);
+  const [eventForm, setEventForm] = useState({
+    type: 'observacion',
+    title: '',
+    description: '',
+    eventDate: '',
+    affectsPayroll: false,
+  });
   const [pagoEdit, setPagoEdit] = useState<{
     empleadoId: string;
     lugarPago: string;
@@ -247,6 +405,50 @@ export function SueldosEmpleados({
     },
     onError: (e) => toast.error(e.message),
   });
+
+  const crearEvento = useMutation({
+    mutationFn: () => {
+      if (!addEventFor) throw new Error('No empleado');
+      return createEmployeeEvent({
+        data: {
+          empleadoId: addEventFor,
+          type: eventForm.type,
+          title: eventForm.title,
+          eventDate:
+            eventForm.eventDate || new Date().toISOString().slice(0, 10),
+          description: eventForm.description || undefined,
+          affectsPayroll: eventForm.affectsPayroll,
+        },
+      });
+    },
+    onSuccess: () => {
+      toast.success('Evento registrado');
+      if (addEventFor) {
+        queryClient.invalidateQueries({
+          queryKey: ['employee-events', addEventFor],
+        });
+      }
+      setAddEventFor(null);
+      setEventForm({
+        type: 'observacion',
+        title: '',
+        description: '',
+        eventDate: '',
+        affectsPayroll: false,
+      });
+    },
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : 'Error al guardar'),
+  });
+
+  function toggleExpanded(id: string) {
+    setExpandedEmpleados((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -461,15 +663,16 @@ export function SueldosEmpleados({
       <div className="w-full min-w-0 max-w-full overflow-x-auto rounded-md border">
         <Table className="w-full min-w-0 table-fixed text-sm">
           <colgroup>
-            <col className="w-[16%]" />
+            <col className="w-[14%]" />
             <col className="w-[11%]" />
             <col className="w-[6%]" />
             <col className="w-[8%]" />
             <col className="w-[8%]" />
-            <col className="w-[12%]" />
-            <col className="w-[12%]" />
+            <col className="w-[11%]" />
+            <col className="w-[11%]" />
+            <col className="w-[8%]" />
             <col className="w-[9%]" />
-            <col className="w-[10%]" />
+            <col className="w-[6%]" />
             <col className="w-[6%]" />
           </colgroup>
           <TableHeader>
@@ -483,6 +686,7 @@ export function SueldosEmpleados({
               <TableHead className="whitespace-normal">Categoría</TableHead>
               <TableHead>Estado</TableHead>
               <TableHead className="whitespace-normal">Pago</TableHead>
+              <TableHead />
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -512,92 +716,132 @@ export function SueldosEmpleados({
                 const e = r.empleado;
                 const baja = e.fechaBaja != null;
                 const esManual = e.origen === 'manual';
+                const isExpanded = expandedEmpleados.has(e.id);
                 return (
-                  <TableRow key={e.id}>
-                    <TableCell className="min-w-0 break-words font-medium align-top py-2">
-                      {formatTitleCaseDisplay(e.nombre)}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap align-top py-2 tabular-nums">
-                      {e.cuil}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap align-top py-2 tabular-nums">
-                      {legajoParaMostrar(e.legajo)}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap align-top py-2">
-                      {formatDate(e.fechaAlta ?? undefined)}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap align-top py-2">
-                      {formatDate(e.fechaBaja ?? undefined)}
-                    </TableCell>
-                    <TableCell className="min-w-0 break-words align-top py-2">
-                      {r.convenioNombre ? (
-                        formatTitleCaseDisplay(r.convenioNombre)
-                      ) : (
-                        <span className="text-[var(--arca-ink-3)] text-xs">
-                          Sin vincular
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="min-w-0 break-words align-top py-2">
-                      {r.categoriaNombre ? (
-                        formatTitleCaseDisplay(r.categoriaNombre)
-                      ) : (
-                        <span className="text-[var(--arca-ink-3)] text-xs">
-                          {formatTitleCaseDisplay(e.categoria)}
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="align-top py-2">
-                      {baja ? (
-                        <Badge
-                          variant="secondary"
-                          className="whitespace-nowrap"
+                  <React.Fragment key={e.id}>
+                    <TableRow>
+                      <TableCell className="min-w-0 break-words font-medium align-top py-2">
+                        {formatTitleCaseDisplay(e.nombre)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap align-top py-2 tabular-nums">
+                        {e.cuil}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap align-top py-2 tabular-nums">
+                        {legajoParaMostrar(e.legajo)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap align-top py-2">
+                        {formatDate(e.fechaAlta ?? undefined)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap align-top py-2">
+                        {formatDate(e.fechaBaja ?? undefined)}
+                      </TableCell>
+                      <TableCell className="min-w-0 break-words align-top py-2">
+                        {r.convenioNombre ? (
+                          formatTitleCaseDisplay(r.convenioNombre)
+                        ) : (
+                          <span className="text-[var(--arca-ink-3)] text-xs">
+                            Sin vincular
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="min-w-0 break-words align-top py-2">
+                        {r.categoriaNombre ? (
+                          formatTitleCaseDisplay(r.categoriaNombre)
+                        ) : (
+                          <span className="text-[var(--arca-ink-3)] text-xs">
+                            {formatTitleCaseDisplay(e.categoria)}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="align-top py-2">
+                        {baja ? (
+                          <Badge
+                            variant="secondary"
+                            className="whitespace-nowrap"
+                          >
+                            Baja
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant="default"
+                            className="whitespace-nowrap"
+                          >
+                            Activo
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="align-top py-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="gap-1 h-8"
+                          onClick={() =>
+                            setPagoEdit({
+                              empleadoId: e.id,
+                              lugarPago: e.lugarPago ?? '',
+                              formaPago: formaDbToSelect(e.formaPago),
+                              banco:
+                                e.banco && e.banco.trim() !== ''
+                                  ? e.banco
+                                  : '_otro banco',
+                              cbu: e.cbu ?? '',
+                            })
+                          }
                         >
-                          Baja
-                        </Badge>
-                      ) : (
-                        <Badge variant="default" className="whitespace-nowrap">
-                          Activo
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="align-top py-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="gap-1 h-8"
-                        onClick={() =>
-                          setPagoEdit({
-                            empleadoId: e.id,
-                            lugarPago: e.lugarPago ?? '',
-                            formaPago: formaDbToSelect(e.formaPago),
-                            banco:
-                              e.banco && e.banco.trim() !== ''
-                                ? e.banco
-                                : '_otro banco',
-                            cbu: e.cbu ?? '',
-                          })
-                        }
-                      >
-                        <Wallet className="h-3.5 w-3.5" />
-                        Legajo
-                      </Button>
-                    </TableCell>
-                    <TableCell className="align-top py-2">
-                      {esManual && (
+                          <Wallet className="h-3.5 w-3.5" />
+                          Legajo
+                        </Button>
+                      </TableCell>
+                      <TableCell className="align-top py-2">
+                        {esManual && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-[var(--arca-accent-neg)] hover:text-[var(--arca-accent-neg)]"
+                            disabled={eliminar.isPending}
+                            onClick={() => eliminar.mutate(e.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </TableCell>
+                      <TableCell className="align-top py-2">
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-[var(--arca-accent-neg)] hover:text-[var(--arca-accent-neg)]"
-                          disabled={eliminar.isPending}
-                          onClick={() => eliminar.mutate(e.id)}
+                          className="h-7 w-7"
+                          title="Ver historial"
+                          onClick={() => toggleExpanded(e.id)}
                         >
-                          <Trash2 className="h-4 w-4" />
+                          {isExpanded ? (
+                            <ChevronDown className="h-4 w-4" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4" />
+                          )}
                         </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
+                      </TableCell>
+                    </TableRow>
+                    {isExpanded && (
+                      <TableRow className="bg-[var(--arca-surface-2)]">
+                        <TableCell colSpan={11} className="p-0">
+                          <EmpleadoTimeline
+                            empleadoId={e.id}
+                            onAdd={() => {
+                              setAddEventFor(e.id);
+                              setEventForm({
+                                type: 'observacion',
+                                title: '',
+                                description: '',
+                                eventDate: '',
+                                affectsPayroll: false,
+                              });
+                            }}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </React.Fragment>
                 );
               })
             )}
@@ -720,6 +964,105 @@ export function SueldosEmpleados({
               </div>
             </div>
           ) : null}
+        </DialogContent>
+      </Dialog>
+
+      {/* Agregar evento dialog */}
+      <Dialog
+        open={addEventFor !== null}
+        onOpenChange={(v) => {
+          if (!v) setAddEventFor(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-[440px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarClock className="h-4 w-4" />
+              Agregar evento al legajo
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-1">
+              <Label htmlFor="ev-type">Tipo de evento</Label>
+              <Select
+                value={eventForm.type}
+                onValueChange={(v) => setEventForm((f) => ({ ...f, type: v }))}
+              >
+                <SelectTrigger id="ev-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {EVENT_TYPES.map((t) => (
+                    <SelectItem key={t.value} value={t.value}>
+                      {t.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="ev-date">Fecha del evento</Label>
+              <Input
+                id="ev-date"
+                type="date"
+                value={eventForm.eventDate}
+                onChange={(e) =>
+                  setEventForm((f) => ({ ...f, eventDate: e.target.value }))
+                }
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="ev-title">Título *</Label>
+              <Input
+                id="ev-title"
+                value={eventForm.title}
+                onChange={(e) =>
+                  setEventForm((f) => ({ ...f, title: e.target.value }))
+                }
+                placeholder="Ej. Falta injustificada"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="ev-desc">Descripción</Label>
+              <Textarea
+                id="ev-desc"
+                value={eventForm.description}
+                onChange={(e) =>
+                  setEventForm((f) => ({ ...f, description: e.target.value }))
+                }
+                placeholder="Detalles opcionales…"
+                rows={3}
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <Switch
+                id="ev-affects"
+                checked={eventForm.affectsPayroll}
+                onCheckedChange={(v) =>
+                  setEventForm((f) => ({ ...f, affectsPayroll: v }))
+                }
+              />
+              <Label htmlFor="ev-affects" className="cursor-pointer">
+                Afecta liquidación
+              </Label>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setAddEventFor(null)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                disabled={crearEvento.isPending || !eventForm.title.trim()}
+                onClick={() => crearEvento.mutate()}
+              >
+                {crearEvento.isPending ? 'Guardando…' : 'Guardar'}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

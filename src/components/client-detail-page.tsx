@@ -18,6 +18,11 @@ import {
   Download,
   X,
   Search,
+  BookOpen,
+  ClipboardList,
+  Plus,
+  Paperclip,
+  FileDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -29,7 +34,13 @@ import {
   PaginationPrevious,
 } from '@/components/ui/pagination';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
   getClient,
@@ -39,6 +50,8 @@ import {
   getClientIvaCredit,
   getLastJobByType,
   getRunningJobByType,
+  getBalanceConfig,
+  upsertBalanceConfig,
 } from '@/actions/client';
 import {
   Select,
@@ -63,14 +76,23 @@ import {
   getNotifications,
   markNotificationOpened,
 } from '@/actions/notification';
-import { scrapSingleJob } from '@/actions/client';
+import { updateProfileManagement } from '@/actions/profile';
+import { scrapSingleJob, updateDebtStatus } from '@/actions/client';
+import {
+  listClientRequests,
+  createClientRequest,
+  updateClientRequestStatus,
+  getRequestDocument,
+} from '@/actions/client-portal';
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
 import {
   Clock,
   CalendarCheck,
   CalendarX,
-  Loader2
+  Loader2,
+  EyeOff,
+  Eye,
 } from 'lucide-react';
 import {
   Table,
@@ -105,11 +127,16 @@ import {
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { INVOICE_TYPES } from '@/lib/invoicesTypes';
+import { ChartContainer, type ChartConfig } from '@/components/ui/chart';
 import {
-  ChartContainer,
-  type ChartConfig,
-} from '@/components/ui/chart';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend, Tooltip } from 'recharts';
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Legend,
+  Tooltip,
+} from 'recharts';
 import { userQuery } from '@/lib/user-query';
 
 interface ClientDetailPageProps {
@@ -192,12 +219,13 @@ const MetricDelta = ({
 
   return (
     <p
-      className={`text-xs mt-1 ${diff > 0
-        ? 'text-[var(--arca-accent-pos-fg)]'
-        : diff < 0
-          ? 'text-[var(--arca-accent-neg-fg)]'
-          : 'text-muted-foreground'
-        }`}
+      className={`text-xs mt-1 ${
+        diff > 0
+          ? 'text-[var(--arca-accent-pos-fg)]'
+          : diff < 0
+            ? 'text-[var(--arca-accent-neg-fg)]'
+            : 'text-muted-foreground'
+      }`}
     >
       {label}: {formattedPct}
     </p>
@@ -384,6 +412,147 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
       });
     },
   });
+
+  const toggleProfileManagementMutation = useMutation({
+    mutationFn: (vars: { profileId: string; managedByStudy: boolean }) =>
+      updateProfileManagement({ data: vars }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['clientProfiles', clientId] });
+      toast.success('Perfil actualizado');
+    },
+    onError: () => {
+      toast.error('Error al actualizar el perfil');
+    },
+  });
+  const updateDebtStatusMutation = useMutation({
+    mutationFn: (vars: {
+      id: string;
+      status: 'open' | 'in_plan' | 'paid' | 'disputed';
+      isIntimated: boolean;
+    }) => updateDebtStatus({ data: vars }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['clientDebts', clientId] });
+      toast.success('Deuda actualizada');
+    },
+    onError: () => {
+      toast.error('Error al actualizar la deuda');
+    },
+  });
+
+  // Balance config state
+  const [balanceMonth, setBalanceMonth] = useState<string>('12');
+  const [balanceDay, setBalanceDay] = useState<string>('31');
+  const [balancePresentationDays, setBalancePresentationDays] =
+    useState<string>('');
+  const [balanceAlertDays, setBalanceAlertDays] =
+    useState<string>('60,30,15,7');
+
+  // Solicitudes state
+  const [solicitudesStatusFilter, setSolicitudesStatusFilter] =
+    useState<string>('');
+  const [newRequestDialogOpen, setNewRequestDialogOpen] = useState(false);
+  const [newRequestTitle, setNewRequestTitle] = useState('');
+  const [newRequestDescription, setNewRequestDescription] = useState('');
+  const [newRequestType, setNewRequestType] = useState('general');
+  const [newRequestDueAt, setNewRequestDueAt] = useState('');
+
+  interface RequestRow {
+    id: string;
+    organizationId: string;
+    clientId: string;
+    profileId: string | null;
+    requestedByUserId: string | null;
+    title: string;
+    description: string | null;
+    type: string;
+    status: string;
+    dueAt: Date | null;
+    completedAt: Date | null;
+    metadata?: { documentId?: string; documentName?: string } | null;
+    createdAt: Date;
+  }
+  const {
+    data: clientRequestsData = [] as RequestRow[],
+    refetch: refetchRequests,
+  } = useQuery({
+    queryKey: ['clientRequests', clientId, solicitudesStatusFilter],
+    queryFn: () =>
+      listClientRequests({
+        data: { clientId, status: solicitudesStatusFilter || undefined },
+      }),
+    enabled: !!clientId,
+  });
+
+  const createRequestMutation = useMutation({
+    mutationFn: () =>
+      createClientRequest({
+        data: {
+          clientId,
+          title: newRequestTitle,
+          description: newRequestDescription || undefined,
+          type: newRequestType,
+          dueAt: newRequestDueAt || undefined,
+        },
+      }),
+    onSuccess: () => {
+      refetchRequests();
+      setNewRequestDialogOpen(false);
+      setNewRequestTitle('');
+      setNewRequestDescription('');
+      setNewRequestType('general');
+      setNewRequestDueAt('');
+      toast.success('Solicitud creada');
+    },
+    onError: () => toast.error('Error al crear solicitud'),
+  });
+
+  const updateRequestStatusMutation = useMutation({
+    mutationFn: (vars: { requestId: string; status: string }) =>
+      updateClientRequestStatus({ data: vars }),
+    onSuccess: () => {
+      refetchRequests();
+      toast.success('Estado actualizado');
+    },
+    onError: () => toast.error('Error al actualizar estado'),
+  });
+
+  const { data: balanceConfig } = useQuery({
+    queryKey: ['balanceConfig', clientId],
+    queryFn: () => getBalanceConfig({ data: { clientId } }),
+    enabled: !!clientId,
+  });
+
+  // Sync form state when config loads
+  useEffect(() => {
+    if (balanceConfig) {
+      setBalanceMonth(String(balanceConfig.fiscalYearEndMonth));
+      setBalanceDay(String(balanceConfig.fiscalYearEndDay));
+      setBalancePresentationDays(
+        balanceConfig.presentationDueDays != null
+          ? String(balanceConfig.presentationDueDays)
+          : ''
+      );
+      const days = balanceConfig.alertDaysBefore;
+      setBalanceAlertDays(Array.isArray(days) ? days.join(',') : '60,30,15,7');
+    }
+  }, [balanceConfig]);
+
+  const upsertBalanceConfigMutation = useMutation({
+    mutationFn: (vars: {
+      fiscalYearEndMonth: number;
+      fiscalYearEndDay: number;
+      presentationDueDays: number | null;
+      alertDaysBefore: number[];
+    }) => upsertBalanceConfig({ data: { clientId, ...vars } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['balanceConfig', clientId] });
+      toast.success('Configuración guardada');
+    },
+    onError: () => {
+      toast.error('Error al guardar la configuración');
+    },
+  });
+
   const ivaResumeRef = useRef<RenderIvaResumeRef>(null);
   const ivaSelectedYear = ivaResumenDateRange.from.getFullYear();
   const ivaSelectedMonth = ivaResumenDateRange.from.getMonth();
@@ -1145,17 +1314,17 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
           ? 0
           : null
         : ((invoiceStatsFiltered.totalSales - invoiceStatsPrevious.totalSales) /
-          invoiceStatsPrevious.totalSales) *
-        100;
+            invoiceStatsPrevious.totalSales) *
+          100;
     const purchasesPct =
       invoiceStatsPrevious.totalPurchases === 0
         ? invoiceStatsFiltered.totalPurchases === 0
           ? 0
           : null
         : ((invoiceStatsFiltered.totalPurchases -
-          invoiceStatsPrevious.totalPurchases) /
-          invoiceStatsPrevious.totalPurchases) *
-        100;
+            invoiceStatsPrevious.totalPurchases) /
+            invoiceStatsPrevious.totalPurchases) *
+          100;
     return { salesPct, purchasesPct };
   }, [invoiceStatsFiltered, invoiceStatsPrevious, facturasPeriodType]);
 
@@ -1233,7 +1402,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
       );
       const byMonthKey: Record<string, { ventas: number; compras: number }> =
         {};
-      for (let t = from.getTime(); t <= to.getTime();) {
+      for (let t = from.getTime(); t <= to.getTime(); ) {
         const d = new Date(t);
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         byMonthKey[key] = { ventas: 0, compras: 0 };
@@ -1308,20 +1477,35 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     // Build the 12 month buckets: from (currentYear, currentMonth - 11) to (currentYear, currentMonth)
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth(); // 0-indexed
-    const buckets: { year: number; month: number; ventas: number; compras: number }[] = [];
+    const buckets: {
+      year: number;
+      month: number;
+      ventas: number;
+      compras: number;
+    }[] = [];
     for (let i = 11; i >= 0; i--) {
       let m = currentMonth - i;
       let y = currentYear;
-      if (m < 0) { m += 12; y -= 1; }
+      if (m < 0) {
+        m += 12;
+        y -= 1;
+      }
       buckets.push({ year: y, month: m, ventas: 0, compras: 0 });
     }
     invoices.forEach((inv: any) => {
-      if (effectiveResumenProfileId && inv.profileId !== effectiveResumenProfileId) return;
+      if (
+        effectiveResumenProfileId &&
+        inv.profileId !== effectiveResumenProfileId
+      )
+        return;
       const d = new Date(inv.emitionDate);
-      const bucket = buckets.find((b) => b.year === d.getFullYear() && b.month === d.getMonth());
+      const bucket = buckets.find(
+        (b) => b.year === d.getFullYear() && b.month === d.getMonth()
+      );
       if (!bucket) return;
       let amount = parseFloat(inv.amount || '0');
-      if (inv.currency?.toUpperCase() === 'USD') amount *= parseFloat(inv.currencyRate || '1');
+      if (inv.currency?.toUpperCase() === 'USD')
+        amount *= parseFloat(inv.currencyRate || '1');
       const dir = inv.direction?.toLowerCase();
       if (dir === 'outbound') bucket.ventas += amount;
       else if (dir === 'inbound') bucket.compras += amount;
@@ -1506,7 +1690,9 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 </div>
                 <div className="mt-[4px] flex flex-wrap items-center gap-x-[10px] gap-y-[2px] text-[11.5px] text-[var(--arca-ink-3)]">
                   {client.identityNumber && (
-                    <span className="font-mono">CUIT {client.identityNumber}</span>
+                    <span className="font-mono">
+                      CUIT {client.identityNumber}
+                    </span>
                   )}
                   {client.fiscalCondition && (
                     <>
@@ -1523,7 +1709,13 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                   {client.registeredAt && (
                     <>
                       <span className="w-[3px] h-[3px] rounded-full bg-[var(--arca-ink-4)] shrink-0" />
-                      <span>Alta {new Date(client.registeredAt).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                      <span>
+                        Alta{' '}
+                        {new Date(client.registeredAt).toLocaleDateString(
+                          'es-AR',
+                          { day: 'numeric', month: 'short', year: 'numeric' }
+                        )}
+                      </span>
                     </>
                   )}
                 </div>
@@ -1544,29 +1736,62 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 <FileText className="h-[14px] w-[14px]" />
                 Resumen
               </TabsTrigger>
-              <TabsTrigger value="deudas" className={tabTriggerCls(lastDeudaJob ? !lastDeudaJob.success : false)}>
+              <TabsTrigger
+                value="deudas"
+                className={tabTriggerCls(
+                  lastDeudaJob ? !lastDeudaJob.success : false
+                )}
+              >
                 <DollarSign className="h-[14px] w-[14px]" />
                 Deudas
               </TabsTrigger>
-              <TabsTrigger value="vencimientos" className={tabTriggerCls(lastVencimientosJob ? !lastVencimientosJob.success : false)}>
+              <TabsTrigger
+                value="vencimientos"
+                className={tabTriggerCls(
+                  lastVencimientosJob ? !lastVencimientosJob.success : false
+                )}
+              >
                 <Calendar className="h-[14px] w-[14px]" />
                 Vencimientos
               </TabsTrigger>
-              <TabsTrigger value="notificaciones" className={tabTriggerCls((lastNotificacionesJob && !lastNotificacionesJob.success) || !!lastNotificacionesJob?.notificationFetchWarning)}>
+              <TabsTrigger
+                value="notificaciones"
+                className={tabTriggerCls(
+                  (lastNotificacionesJob && !lastNotificacionesJob.success) ||
+                    !!lastNotificacionesJob?.notificationFetchWarning
+                )}
+              >
                 <Bell className="h-[14px] w-[14px]" />
                 Notificaciones
               </TabsTrigger>
-              <TabsTrigger value="facturas" className={tabTriggerCls(lastComprobantesJob ? !lastComprobantesJob.success : false)}>
+              <TabsTrigger
+                value="facturas"
+                className={tabTriggerCls(
+                  lastComprobantesJob ? !lastComprobantesJob.success : false
+                )}
+              >
                 <Receipt className="h-[14px] w-[14px]" />
                 Facturas
               </TabsTrigger>
-              <TabsTrigger value="iva" className={tabTriggerCls(lastIvaJob ? !lastIvaJob.success : false)}>
+              <TabsTrigger
+                value="iva"
+                className={tabTriggerCls(
+                  lastIvaJob ? !lastIvaJob.success : false
+                )}
+              >
                 <BanknoteArrowUp className="h-[14px] w-[14px]" />
                 IVA
               </TabsTrigger>
-              <TabsTrigger value="convenio-multilateral" className={tabTriggerCls()}>
+              <TabsTrigger
+                value="convenio-multilateral"
+                className={tabTriggerCls()}
+              >
                 <MapPin className="h-[14px] w-[14px]" />
                 Convenio Multilateral
+              </TabsTrigger>
+              <TabsTrigger value="solicitudes" className={tabTriggerCls()}>
+                <ClipboardList className="h-[14px] w-[14px]" />
+                Solicitudes
               </TabsTrigger>
             </TabsList>
           </div>
@@ -1574,18 +1799,20 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
 
         {/* ── Content area ── */}
         <div className="px-4 md:px-[28px] pt-5 pb-[60px]">
-
           {/* Resumen Tab */}
           <TabsContent value="resumen" className="mt-4 space-y-[14px]">
             {/* Row 1: Perfiles (3fr) | Facturación (2fr) | IVA (2fr) */}
             <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr_2fr] gap-[14px]">
-
               {/* Perfiles Asociados */}
               <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_20px] flex flex-col gap-[14px]">
                 <div className="flex items-center gap-2">
                   <User className="h-3.5 w-3.5 shrink-0 text-[var(--arca-ink-3)]" />
-                  <span className="text-[13px] font-semibold text-[var(--arca-ink)]">Perfiles asociados</span>
-                  <span className="text-[11px] font-mono text-[var(--arca-ink-4)]">{profiles.length}</span>
+                  <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+                    Perfiles asociados
+                  </span>
+                  <span className="text-[11px] font-mono text-[var(--arca-ink-4)]">
+                    {profiles.length}
+                  </span>
                   <div className="flex-1" />
                   <button
                     onClick={() => setEditClientDialogOpen(true)}
@@ -1600,66 +1827,139 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                     Cargando...
                   </div>
                 ) : profiles.length === 0 ? (
-                  <p className="text-[12.5px] text-[var(--arca-ink-4)]">Sin perfiles asociados.</p>
+                  <p className="text-[12.5px] text-[var(--arca-ink-4)]">
+                    Sin perfiles asociados.
+                  </p>
                 ) : (
                   <>
                     <div className="flex flex-wrap gap-[6px]">
                       {profiles.map((prof) => {
                         const normCuit = (s: string) => s.replace(/\D/g, '');
-                        const warningCuits = lastNotificacionesJob?.notificationFetchWarningCuits ?? [];
-                        const isWarning = warningCuits.some((c) => normCuit(c) === normCuit(prof.identityNumber ?? ''));
-                        const isSelected = effectiveResumenProfileId === prof.id;
-                        const initials = (prof.name || prof.identityNumber || '?')
-                          .split(' ').slice(0, 2).map((w: string) => w[0]).join('').toUpperCase();
+                        const warningCuits =
+                          lastNotificacionesJob?.notificationFetchWarningCuits ??
+                          [];
+                        const isWarning = warningCuits.some(
+                          (c) =>
+                            normCuit(c) === normCuit(prof.identityNumber ?? '')
+                        );
+                        const isSelected =
+                          effectiveResumenProfileId === prof.id;
+                        const isUnmanaged = prof.managedByStudy === false;
+                        const initials = (
+                          prof.name ||
+                          prof.identityNumber ||
+                          '?'
+                        )
+                          .split(' ')
+                          .slice(0, 2)
+                          .map((w: string) => w[0])
+                          .join('')
+                          .toUpperCase();
                         return (
-                          <button
-                            key={prof.id}
-                            onClick={() => setResumenProfileId(prof.id)}
-                            className={cn(
-                              'inline-flex items-center gap-[7px] px-[9px] py-[5px] rounded-[var(--arca-r-pill)] text-[11.5px] font-medium border transition-all',
-                              isSelected
-                                ? 'bg-[var(--arca-ink)] text-[#F7F6F2] border-[var(--arca-ink)]'
-                                : isWarning
-                                  ? 'bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)] border-[var(--arca-accent-warn)]/30'
-                                  : 'bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)] border-[var(--arca-border)] hover:text-[var(--arca-ink)]'
-                            )}
-                          >
-                            <span className={cn(
-                              'w-4 h-4 rounded-[4px] inline-flex items-center justify-center text-[8.5px] font-bold text-white shrink-0',
-                              isSelected ? 'bg-white/10' : 'bg-[#1E3460]'
-                            )}>
-                              {initials}
-                            </span>
-                            {prof.name || prof.identityNumber}
-                          </button>
+                          <div key={prof.id} className="relative group">
+                            <button
+                              onClick={() => setResumenProfileId(prof.id)}
+                              className={cn(
+                                'inline-flex items-center gap-[7px] px-[9px] py-[5px] rounded-[var(--arca-r-pill)] text-[11.5px] font-medium border transition-all',
+                                isUnmanaged
+                                  ? 'opacity-50 bg-[var(--arca-surface-2)] text-[var(--arca-ink-4)] border-[var(--arca-border)]'
+                                  : isSelected
+                                    ? 'bg-[var(--arca-ink)] text-[#F7F6F2] border-[var(--arca-ink)]'
+                                    : isWarning
+                                      ? 'bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)] border-[var(--arca-accent-warn)]/30'
+                                      : 'bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)] border-[var(--arca-border)] hover:text-[var(--arca-ink)]'
+                              )}
+                            >
+                              <span
+                                className={cn(
+                                  'w-4 h-4 rounded-[4px] inline-flex items-center justify-center text-[8.5px] font-bold text-white shrink-0',
+                                  isUnmanaged
+                                    ? 'bg-[var(--arca-ink-4)]'
+                                    : isSelected
+                                      ? 'bg-white/10'
+                                      : 'bg-[#1E3460]'
+                                )}
+                              >
+                                {initials}
+                              </span>
+                              {prof.name || prof.identityNumber}
+                              {isUnmanaged && (
+                                <span className="ml-1 text-[10px] font-semibold text-[var(--arca-ink-4)]">
+                                  No administrado
+                                </span>
+                              )}
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleProfileManagementMutation.mutate({
+                                  profileId: prof.id,
+                                  managedByStudy: !prof.managedByStudy,
+                                });
+                              }}
+                              title={
+                                isUnmanaged
+                                  ? 'Marcar como administrado'
+                                  : 'Marcar como no administrado'
+                              }
+                              className="absolute -top-1 -right-1 hidden group-hover:flex items-center justify-center w-4 h-4 rounded-full bg-[var(--arca-surface)] border border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors shadow-sm"
+                            >
+                              {isUnmanaged ? (
+                                <Eye className="w-2.5 h-2.5" />
+                              ) : (
+                                <EyeOff className="w-2.5 h-2.5" />
+                              )}
+                            </button>
+                          </div>
                         );
                       })}
                     </div>
                     {selectedResumenProfile && (
                       <div className="grid grid-cols-3 gap-[14px] pt-[2px]">
                         <div>
-                          <div className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] mb-1">CUIT</div>
-                          <div className="font-mono text-[12.5px] text-[var(--arca-ink)]">{selectedResumenProfile.identityNumber || '—'}</div>
+                          <div className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] mb-1">
+                            CUIT
+                          </div>
+                          <div className="font-mono text-[12.5px] text-[var(--arca-ink)]">
+                            {selectedResumenProfile.identityNumber || '—'}
+                          </div>
                         </div>
                         <div>
-                          <div className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] mb-1">Teléfono</div>
-                          <div className="font-mono text-[12.5px] text-[var(--arca-ink)]">{client?.phone || '—'}</div>
+                          <div className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] mb-1">
+                            Teléfono
+                          </div>
+                          <div className="font-mono text-[12.5px] text-[var(--arca-ink)]">
+                            {client?.phone || '—'}
+                          </div>
                         </div>
                         <div className="min-w-0">
-                          <div className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] mb-1">Email</div>
-                          <div className="font-mono text-[12.5px] text-[var(--arca-ink)] truncate">{client?.email || '—'}</div>
+                          <div className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] mb-1">
+                            Email
+                          </div>
+                          <div className="font-mono text-[12.5px] text-[var(--arca-ink)] truncate">
+                            {client?.email || '—'}
+                          </div>
                         </div>
                       </div>
                     )}
                     {selectedResumenProfile && (
-                      <div className="pt-[6px] border-t border-[var(--arca-border)] flex items-center">
+                      <div className="pt-[6px] border-t border-[var(--arca-border)] flex items-center gap-3">
                         <Link
                           to="/clients/$clientId/$profileId"
-                          params={{ clientId, profileId: selectedResumenProfile.id }}
+                          params={{
+                            clientId,
+                            profileId: selectedResumenProfile.id,
+                          }}
                           className="text-[12px] font-medium text-[var(--arca-navy-700)] hover:underline"
                         >
                           Ver perfil completo →
                         </Link>
+                        <div className="flex-1" />
+                        {selectedResumenProfile.managedByStudy === false && (
+                          <span className="text-[11px] font-medium text-[var(--arca-ink-4)] bg-[var(--arca-surface-2)] border border-[var(--arca-border)] px-2 py-0.5 rounded-full">
+                            No administrado
+                          </span>
+                        )}
                       </div>
                     )}
                   </>
@@ -1670,36 +1970,66 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
               <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_20px] flex flex-col gap-[12px]">
                 <div className="flex items-center gap-2">
                   <Receipt className="h-3.5 w-3.5 shrink-0 text-[var(--arca-ink-3)]" />
-                  <span className="text-[13px] font-semibold text-[var(--arca-ink)]">Facturación</span>
+                  <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+                    Facturación
+                  </span>
                   <div className="flex-1" />
                   <span className="text-[11px] font-mono text-[var(--arca-ink-4)]">
-                    {MONTH_NAMES[now.getMonth()].toLowerCase()} {now.getFullYear()}
+                    {MONTH_NAMES[now.getMonth()].toLowerCase()}{' '}
+                    {now.getFullYear()}
                   </span>
                 </div>
                 <div className="flex flex-col gap-[10px]">
                   <div className="flex items-baseline gap-2">
-                    <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] min-w-[56px]">Ventas</span>
+                    <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] min-w-[56px]">
+                      Ventas
+                    </span>
                     <span className="flex-1 font-display font-semibold text-[15px] leading-none tracking-tight text-[var(--arca-ink)] tabular-nums text-right">
-                      {new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(resumenCurrentMonthStats.totalSales)}
+                      {new Intl.NumberFormat('es-AR', {
+                        style: 'currency',
+                        currency: 'ARS',
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 0,
+                      }).format(resumenCurrentMonthStats.totalSales)}
                     </span>
                   </div>
                   <div className="flex items-baseline gap-2">
-                    <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] min-w-[56px]">Compras</span>
+                    <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] min-w-[56px]">
+                      Compras
+                    </span>
                     <span className="flex-1 font-display font-semibold text-[15px] leading-none tracking-tight text-[var(--arca-ink)] tabular-nums text-right">
-                      {new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(resumenCurrentMonthStats.totalPurchases)}
+                      {new Intl.NumberFormat('es-AR', {
+                        style: 'currency',
+                        currency: 'ARS',
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 0,
+                      }).format(resumenCurrentMonthStats.totalPurchases)}
                     </span>
                   </div>
                   <div className="h-px bg-[var(--arca-border)]" />
                   {(() => {
-                    const saldo = resumenCurrentMonthStats.totalSales - resumenCurrentMonthStats.totalPurchases;
+                    const saldo =
+                      resumenCurrentMonthStats.totalSales -
+                      resumenCurrentMonthStats.totalPurchases;
                     return (
                       <div className="flex items-baseline gap-2">
-                        <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] min-w-[56px]">Saldo</span>
-                        <span className={cn(
-                          'flex-1 font-display font-semibold text-[20px] leading-none tracking-tight tabular-nums text-right',
-                          saldo < 0 ? 'text-[var(--arca-accent-neg-fg)]' : 'text-[var(--arca-ink)]'
-                        )}>
-                          {new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(saldo)}
+                        <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] min-w-[56px]">
+                          Saldo
+                        </span>
+                        <span
+                          className={cn(
+                            'flex-1 font-display font-semibold text-[20px] leading-none tracking-tight tabular-nums text-right',
+                            saldo < 0
+                              ? 'text-[var(--arca-accent-neg-fg)]'
+                              : 'text-[var(--arca-ink)]'
+                          )}
+                        >
+                          {new Intl.NumberFormat('es-AR', {
+                            style: 'currency',
+                            currency: 'ARS',
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 0,
+                          }).format(saldo)}
                         </span>
                       </div>
                     );
@@ -1711,7 +2041,9 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
               <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_20px] flex flex-col gap-[12px]">
                 <div className="flex items-center gap-2">
                   <BanknoteArrowUp className="h-3.5 w-3.5 shrink-0 text-[var(--arca-ink-3)]" />
-                  <span className="text-[13px] font-semibold text-[var(--arca-ink)]">IVA</span>
+                  <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+                    IVA
+                  </span>
                   <div className="flex-1" />
                   <span className="text-[11px] font-mono text-[var(--arca-ink-4)]">
                     {periodoFiscalResumen
@@ -1730,32 +2062,56 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                       <span className="w-[6px] h-[6px] rounded-full bg-[var(--arca-accent-info)] shrink-0" />
                       Pendiente de carga
                     </div>
-                    <div className="text-[13px] font-medium text-[var(--arca-ink-3)]">Sin datos del período</div>
-                    <div className="text-[11.5px] text-[var(--arca-ink-4)]">El IVA se publica el 5to día hábil del mes siguiente.</div>
+                    <div className="text-[13px] font-medium text-[var(--arca-ink-3)]">
+                      Sin datos del período
+                    </div>
+                    <div className="text-[11.5px] text-[var(--arca-ink-4)]">
+                      El IVA se publica el 5to día hábil del mes siguiente.
+                    </div>
                   </div>
                 ) : (
                   <div className="flex flex-col gap-[10px]">
                     <div className="flex items-baseline gap-2">
-                      <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] min-w-[72px]">Saldo técnico</span>
-                      <span className={cn(
-                        'flex-1 font-display font-semibold text-[15px] leading-none tracking-tight tabular-nums text-right',
-                        Number(resumenClientIva.data.saldoTecnicoFavorContribuyente ?? 0) > 0
-                          ? 'text-[var(--arca-accent-pos-fg)]'
-                          : 'text-[var(--arca-ink-3)]'
-                      )}>
-                        {formatIvaCurrency(resumenClientIva.data.saldoTecnicoFavorContribuyente)}
+                      <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] min-w-[72px]">
+                        Saldo técnico
+                      </span>
+                      <span
+                        className={cn(
+                          'flex-1 font-display font-semibold text-[15px] leading-none tracking-tight tabular-nums text-right',
+                          Number(
+                            resumenClientIva.data
+                              .saldoTecnicoFavorContribuyente ?? 0
+                          ) > 0
+                            ? 'text-[var(--arca-accent-pos-fg)]'
+                            : 'text-[var(--arca-ink-3)]'
+                        )}
+                      >
+                        {formatIvaCurrency(
+                          resumenClientIva.data.saldoTecnicoFavorContribuyente
+                        )}
                       </span>
                     </div>
                     <div className="h-px bg-[var(--arca-border)]" />
                     <div className="flex items-baseline gap-2">
-                      <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] min-w-[72px]">Libre disp.</span>
-                      <span className={cn(
-                        'flex-1 font-display font-semibold text-[20px] leading-none tracking-tight tabular-nums text-right',
-                        Number(resumenClientIva.data.saldoLibreDisponibilidadFavorContribuyentePeriodo ?? 0) > 0
-                          ? 'text-[var(--arca-accent-pos-fg)]'
-                          : 'text-[var(--arca-ink-3)]'
-                      )}>
-                        {formatIvaCurrency(resumenClientIva.data.saldoLibreDisponibilidadFavorContribuyentePeriodo)}
+                      <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] min-w-[72px]">
+                        Libre disp.
+                      </span>
+                      <span
+                        className={cn(
+                          'flex-1 font-display font-semibold text-[20px] leading-none tracking-tight tabular-nums text-right',
+                          Number(
+                            resumenClientIva.data
+                              .saldoLibreDisponibilidadFavorContribuyentePeriodo ??
+                              0
+                          ) > 0
+                            ? 'text-[var(--arca-accent-pos-fg)]'
+                            : 'text-[var(--arca-ink-3)]'
+                        )}
+                      >
+                        {formatIvaCurrency(
+                          resumenClientIva.data
+                            .saldoLibreDisponibilidadFavorContribuyentePeriodo
+                        )}
                       </span>
                     </div>
                   </div>
@@ -1764,16 +2120,22 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
             </div>
 
             {/* Row 2: Chart (1.7fr) | Notificaciones (1fr) */}
-            <div className={cn(
-              'grid grid-cols-1 gap-[14px] items-start',
-              resumenChartData.length > 0 ? 'md:grid-cols-[17fr_10fr]' : ''
-            )}>
+            <div
+              className={cn(
+                'grid grid-cols-1 gap-[14px] items-start',
+                resumenChartData.length > 0 ? 'md:grid-cols-[17fr_10fr]' : ''
+              )}
+            >
               {resumenChartData.length > 0 && (
                 <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_20px_14px] flex flex-col gap-[12px]">
                   <div className="flex items-center gap-[10px]">
                     <div className="flex-1">
-                      <div className="text-[13px] font-semibold text-[var(--arca-ink)]">Ventas y compras</div>
-                      <div className="text-[11.5px] text-[var(--arca-ink-4)] mt-[2px]">Últimos 12 meses · valores en ARS</div>
+                      <div className="text-[13px] font-semibold text-[var(--arca-ink)]">
+                        Ventas y compras
+                      </div>
+                      <div className="text-[11.5px] text-[var(--arca-ink-4)] mt-[2px]">
+                        Últimos 12 meses · valores en ARS
+                      </div>
                     </div>
                     <span className="inline-flex items-center gap-[5px] text-[11px] text-[var(--arca-ink-3)]">
                       <span className="w-2 h-2 rounded-[2px] bg-[#1E3460] shrink-0" />
@@ -1784,21 +2146,75 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                       Compras
                     </span>
                   </div>
-                  <ChartContainer config={facturasChartConfig} className="h-[200px] w-full">
-                    <BarChart data={resumenChartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }} barCategoryGap={4}>
-                      <CartesianGrid vertical={false} strokeDasharray="3 4" stroke="#ECEAE3" />
-                      <XAxis dataKey="period" tickLine={false} axisLine={false} tick={{ fill: '#6E7079', fontSize: 9 }} />
-                      <YAxis tickLine={false} axisLine={false} tick={{ fill: '#9B9CA3', fontSize: 9 }}
-                        tickFormatter={(v) => v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `${(v / 1e3).toFixed(0)}k` : String(v)} />
+                  <ChartContainer
+                    config={facturasChartConfig}
+                    className="h-[200px] w-full"
+                  >
+                    <BarChart
+                      data={resumenChartData}
+                      margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
+                      barCategoryGap={4}
+                    >
+                      <CartesianGrid
+                        vertical={false}
+                        strokeDasharray="3 4"
+                        stroke="#ECEAE3"
+                      />
+                      <XAxis
+                        dataKey="period"
+                        tickLine={false}
+                        axisLine={false}
+                        tick={{ fill: '#6E7079', fontSize: 9 }}
+                      />
+                      <YAxis
+                        tickLine={false}
+                        axisLine={false}
+                        tick={{ fill: '#9B9CA3', fontSize: 9 }}
+                        tickFormatter={(v) =>
+                          v >= 1e6
+                            ? `${(v / 1e6).toFixed(1)}M`
+                            : v >= 1e3
+                              ? `${(v / 1e3).toFixed(0)}k`
+                              : String(v)
+                        }
+                      />
                       <Tooltip
                         cursor={{ fill: 'rgba(30,52,96,0.06)' }}
-                        contentStyle={{ background: '#12131A', border: 'none', borderRadius: 8, padding: '8px 12px' }}
-                        labelStyle={{ color: '#9B9CA3', fontSize: 10, marginBottom: 4 }}
+                        contentStyle={{
+                          background: '#12131A',
+                          border: 'none',
+                          borderRadius: 8,
+                          padding: '8px 12px',
+                        }}
+                        labelStyle={{
+                          color: '#9B9CA3',
+                          fontSize: 10,
+                          marginBottom: 4,
+                        }}
                         itemStyle={{ color: '#E8E6DF', fontSize: 11 }}
-                        formatter={(value) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Number(value))}
+                        formatter={(value) =>
+                          new Intl.NumberFormat('es-AR', {
+                            style: 'currency',
+                            currency: 'ARS',
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 0,
+                          }).format(Number(value))
+                        }
                       />
-                      <Bar dataKey="ventas" fill="var(--color-ventas)" name="Ventas" maxBarSize={36} radius={[2, 2, 0, 0]} />
-                      <Bar dataKey="compras" fill="var(--color-compras)" name="Compras" maxBarSize={36} radius={[2, 2, 0, 0]} />
+                      <Bar
+                        dataKey="ventas"
+                        fill="var(--color-ventas)"
+                        name="Ventas"
+                        maxBarSize={36}
+                        radius={[2, 2, 0, 0]}
+                      />
+                      <Bar
+                        dataKey="compras"
+                        fill="var(--color-compras)"
+                        name="Compras"
+                        maxBarSize={36}
+                        radius={[2, 2, 0, 0]}
+                      />
                     </BarChart>
                   </ChartContainer>
                 </div>
@@ -1808,7 +2224,9 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
               <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_20px] flex flex-col gap-[14px]">
                 <div className="flex items-center gap-2">
                   <Bell className="h-3.5 w-3.5 shrink-0 text-[var(--arca-ink-3)]" />
-                  <span className="text-[13px] font-semibold text-[var(--arca-ink)]">Notificaciones</span>
+                  <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+                    Notificaciones
+                  </span>
                   <div className="flex-1" />
                   <span className="text-[11px] font-mono text-[var(--arca-ink-4)]">
                     {unreadNotifications?.notifications.length ?? 0}
@@ -1816,10 +2234,14 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 </div>
                 {profiles.length > 0 && (
                   <div className="flex flex-wrap gap-[6px]">
-                    {(['all', ...profiles.map((p) => p.id)]).map((pid) => {
-                      const label = pid === 'all'
-                        ? 'Todos'
-                        : (profiles.find((p) => p.id === pid)?.name || profiles.find((p) => p.id === pid)?.identityNumber || pid);
+                    {['all', ...profiles.map((p) => p.id)].map((pid) => {
+                      const label =
+                        pid === 'all'
+                          ? 'Todos'
+                          : profiles.find((p) => p.id === pid)?.name ||
+                            profiles.find((p) => p.id === pid)
+                              ?.identityNumber ||
+                            pid;
                       const on = resumenNotifProfileId === pid;
                       return (
                         <button
@@ -1848,8 +2270,12 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                     <div className="w-9 h-9 rounded-full bg-[var(--arca-surface-2)] border border-[var(--arca-border)] flex items-center justify-center">
                       <Check className="h-4 w-4 text-[var(--arca-ink-4)]" />
                     </div>
-                    <p className="text-[13px] text-[var(--arca-ink-3)] font-medium">Sin notificaciones pendientes</p>
-                    <p className="text-[11.5px] text-[var(--arca-ink-4)]">Te avisaremos cuando AFIP publique novedades.</p>
+                    <p className="text-[13px] text-[var(--arca-ink-3)] font-medium">
+                      Sin notificaciones pendientes
+                    </p>
+                    <p className="text-[11.5px] text-[var(--arca-ink-4)]">
+                      Te avisaremos cuando AFIP publique novedades.
+                    </p>
                   </div>
                 ) : (
                   <div className="space-y-1.5 overflow-y-auto pr-1 max-h-[280px]">
@@ -1858,15 +2284,26 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                         key={notif.id}
                         className="flex items-start gap-2 rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-3 py-2 hover:bg-[var(--arca-bg)] transition-colors"
                       >
-                        <button className="flex-1 min-w-0 text-left" onClick={() => setResumenNotifSelected(notif)}>
+                        <button
+                          className="flex-1 min-w-0 text-left"
+                          onClick={() => setResumenNotifSelected(notif)}
+                        >
                           {notif.profileName && (
                             <div className="text-[9.5px] text-[var(--arca-ink-4)] mb-0.5 font-semibold uppercase tracking-[0.06em]">
                               {notif.profileName}
                             </div>
                           )}
-                          <p className="text-[var(--arca-ink)] text-[12px] line-clamp-2 leading-snug">{notif.message}</p>
+                          <p className="text-[var(--arca-ink)] text-[12px] line-clamp-2 leading-snug">
+                            {notif.message}
+                          </p>
                           <p className="text-[10px] font-mono text-[var(--arca-ink-4)] mt-0.5">
-                            {notif.publicationDate ? format(new Date(notif.publicationDate), 'dd/MM/yyyy', { locale: es }) : '—'}
+                            {notif.publicationDate
+                              ? format(
+                                  new Date(notif.publicationDate),
+                                  'dd/MM/yyyy',
+                                  { locale: es }
+                                )
+                              : '—'}
                           </p>
                         </button>
                         <button
@@ -1880,6 +2317,126 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                       </div>
                     ))}
                   </div>
+                )}
+              </div>
+            </div>
+
+            {/* Row 3: Cierre de ejercicio */}
+            <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_20px] flex flex-col gap-[14px]">
+              <div className="flex items-center gap-2">
+                <BookOpen className="h-3.5 w-3.5 shrink-0 text-[var(--arca-ink-3)]" />
+                <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+                  Cierre de ejercicio
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-[14px]">
+                <div className="flex flex-col gap-[6px]">
+                  <label className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)]">
+                    Mes de cierre
+                  </label>
+                  <select
+                    value={balanceMonth}
+                    onChange={(e) => setBalanceMonth(e.target.value)}
+                    className="h-8 rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-2 text-[12.5px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-navy-700)]"
+                  >
+                    {[
+                      'Enero',
+                      'Febrero',
+                      'Marzo',
+                      'Abril',
+                      'Mayo',
+                      'Junio',
+                      'Julio',
+                      'Agosto',
+                      'Septiembre',
+                      'Octubre',
+                      'Noviembre',
+                      'Diciembre',
+                    ].map((m, i) => (
+                      <option key={i + 1} value={String(i + 1)}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-[6px]">
+                  <label className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)]">
+                    Día de cierre
+                  </label>
+                  <select
+                    value={balanceDay}
+                    onChange={(e) => setBalanceDay(e.target.value)}
+                    className="h-8 rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-2 text-[12.5px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-navy-700)]"
+                  >
+                    {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                      <option key={d} value={String(d)}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-[6px]">
+                  <label className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)]">
+                    Días para presentación
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    placeholder="Opcional"
+                    value={balancePresentationDays}
+                    onChange={(e) => setBalancePresentationDays(e.target.value)}
+                    className="h-8 rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-2 text-[12.5px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-navy-700)]"
+                  />
+                </div>
+                <div className="flex flex-col gap-[6px]">
+                  <label className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)]">
+                    Alertas (días antes)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="60,30,15,7"
+                    value={balanceAlertDays}
+                    onChange={(e) => setBalanceAlertDays(e.target.value)}
+                    className="h-8 rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-2 text-[12.5px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-navy-700)]"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  disabled={upsertBalanceConfigMutation.isPending}
+                  onClick={() => {
+                    const month = parseInt(balanceMonth, 10);
+                    const day = parseInt(balanceDay, 10);
+                    const presentationDays = balancePresentationDays
+                      ? parseInt(balancePresentationDays, 10)
+                      : null;
+                    const alertDays = balanceAlertDays
+                      .split(',')
+                      .map((s) => parseInt(s.trim(), 10))
+                      .filter((n) => !isNaN(n) && n > 0);
+                    if (isNaN(month) || isNaN(day)) {
+                      toast.error('Mes y día son obligatorios');
+                      return;
+                    }
+                    upsertBalanceConfigMutation.mutate({
+                      fiscalYearEndMonth: month,
+                      fiscalYearEndDay: day,
+                      presentationDueDays: presentationDays,
+                      alertDaysBefore:
+                        alertDays.length > 0 ? alertDays : [60, 30, 15, 7],
+                    });
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--arca-r-md)] text-[12px] font-semibold bg-[var(--arca-ink)] text-[#F7F6F2] hover:bg-[var(--arca-ink)]/90 transition-colors disabled:opacity-50"
+                >
+                  {upsertBalanceConfigMutation.isPending
+                    ? 'Guardando...'
+                    : 'Guardar'}
+                </button>
+                {balanceConfig && (
+                  <span className="text-[11px] text-[var(--arca-ink-4)]">
+                    Cierre: {balanceConfig.fiscalYearEndDay}/
+                    {balanceConfig.fiscalYearEndMonth}
+                  </span>
                 )}
               </div>
             </div>
@@ -1964,19 +2521,58 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
             {/* KPI Cards */}
             {!loadingDebts && debts.length > 0 && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px]">
-                {([
-                  { label: 'Total Deudas', value: debtStats.totalBalance, sub: `${debtStats.totalDebts} ${debtStats.totalDebts === 1 ? 'deuda' : 'deudas'}`, accent: 'var(--arca-accent-neg)' },
-                  { label: 'Total con Intereses', value: debtStats.totalDebt, sub: `+ ${new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(debtStats.totalCompensatoryInterest + debtStats.totalPunitiveInterest)} intereses`, accent: 'var(--arca-accent-neg)' },
-                  { label: 'Int. Compensatorio', value: debtStats.totalCompensatoryInterest, sub: null, accent: 'var(--arca-accent-warn)' },
-                  { label: 'Int. Punitorio', value: debtStats.totalPunitiveInterest, sub: null, accent: 'var(--arca-accent-warn)' },
-                ] as const).map((kpi) => (
-                  <div key={kpi.label} className="relative overflow-hidden bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_18px] flex flex-col gap-2">
-                    <div className="absolute left-0 top-[14px] bottom-[14px] w-[2px] rounded-[0_2px_2px_0]" style={{ background: kpi.accent }} />
-                    <span className="pl-[6px] text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">{kpi.label}</span>
+                {(
+                  [
+                    {
+                      label: 'Total Deudas',
+                      value: debtStats.totalBalance,
+                      sub: `${debtStats.totalDebts} ${debtStats.totalDebts === 1 ? 'deuda' : 'deudas'}`,
+                      accent: 'var(--arca-accent-neg)',
+                    },
+                    {
+                      label: 'Total con Intereses',
+                      value: debtStats.totalDebt,
+                      sub: `+ ${new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(debtStats.totalCompensatoryInterest + debtStats.totalPunitiveInterest)} intereses`,
+                      accent: 'var(--arca-accent-neg)',
+                    },
+                    {
+                      label: 'Int. Compensatorio',
+                      value: debtStats.totalCompensatoryInterest,
+                      sub: null,
+                      accent: 'var(--arca-accent-warn)',
+                    },
+                    {
+                      label: 'Int. Punitorio',
+                      value: debtStats.totalPunitiveInterest,
+                      sub: null,
+                      accent: 'var(--arca-accent-warn)',
+                    },
+                  ] as const
+                ).map((kpi) => (
+                  <div
+                    key={kpi.label}
+                    className="relative overflow-hidden bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_18px] flex flex-col gap-2"
+                  >
+                    <div
+                      className="absolute left-0 top-[14px] bottom-[14px] w-[2px] rounded-[0_2px_2px_0]"
+                      style={{ background: kpi.accent }}
+                    />
+                    <span className="pl-[6px] text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+                      {kpi.label}
+                    </span>
                     <div className="pl-[6px] font-display font-semibold text-[22px] leading-none tracking-tight text-[var(--arca-ink)] tabular-nums">
-                      {new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(kpi.value)}
+                      {new Intl.NumberFormat('es-AR', {
+                        style: 'currency',
+                        currency: 'ARS',
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 0,
+                      }).format(kpi.value)}
                     </div>
-                    {kpi.sub && <div className="pl-[6px] text-[11.5px] text-[var(--arca-ink-4)]">{kpi.sub}</div>}
+                    {kpi.sub && (
+                      <div className="pl-[6px] text-[11.5px] text-[var(--arca-ink-4)]">
+                        {kpi.sub}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1989,45 +2585,84 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                   Últ. actualización{' '}
                   {lastDeudaJob?.createdAt ? (
                     <span
-                      className={cn('font-mono', lastDeudaJob.success ? 'text-[var(--arca-accent-pos-fg)]' : 'text-destructive')}
+                      className={cn(
+                        'font-mono',
+                        lastDeudaJob.success
+                          ? 'text-[var(--arca-accent-pos-fg)]'
+                          : 'text-destructive'
+                      )}
                       title={lastDeudaJob.failedReason ?? undefined}
                     >
                       {formatLastUpdateAt(lastDeudaJob.createdAt)}
                     </span>
                   ) : (
-                    <span className="font-mono text-[var(--arca-ink-2)]">—</span>
+                    <span className="font-mono text-[var(--arca-ink-2)]">
+                      —
+                    </span>
                   )}
                 </span>
-                {lastDeudaJob && !lastDeudaJob.success && lastDeudaJob.failedReason && (
-                  <p className="text-[11px] text-destructive max-w-md">{lastDeudaJob.failedReason}</p>
-                )}
+                {lastDeudaJob &&
+                  !lastDeudaJob.success &&
+                  lastDeudaJob.failedReason && (
+                    <p className="text-[11px] text-destructive max-w-md">
+                      {lastDeudaJob.failedReason}
+                    </p>
+                  )}
               </div>
               <div className="flex-1" />
               {!loadingDebts && debts.length > 0 && (
                 <>
-                  <Select value={debtFilterImpuesto || 'all'} onValueChange={(v) => { setDebtFilterImpuesto(v === 'all' ? '' : v); setDebtPage(1); }}>
+                  <Select
+                    value={debtFilterImpuesto || 'all'}
+                    onValueChange={(v) => {
+                      setDebtFilterImpuesto(v === 'all' ? '' : v);
+                      setDebtPage(1);
+                    }}
+                  >
                     <SelectTrigger className="h-8 gap-1.5 px-3 text-[12px] border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] bg-[var(--arca-surface)] min-w-[130px]">
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">Impuesto</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+                        Impuesto
+                      </span>
                       <SelectValue placeholder="Todos" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">Todos</SelectItem>
-                      {debtFilterOptions.impuestos.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}
+                      {debtFilterOptions.impuestos.map((v) => (
+                        <SelectItem key={v} value={v}>
+                          {v}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
-                  <Select value={debtFilterConcepto || 'all'} onValueChange={(v) => { setDebtFilterConcepto(v === 'all' ? '' : v); setDebtPage(1); }}>
+                  <Select
+                    value={debtFilterConcepto || 'all'}
+                    onValueChange={(v) => {
+                      setDebtFilterConcepto(v === 'all' ? '' : v);
+                      setDebtPage(1);
+                    }}
+                  >
                     <SelectTrigger className="h-8 gap-1.5 px-3 text-[12px] border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] bg-[var(--arca-surface)] min-w-[130px]">
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">Concepto</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+                        Concepto
+                      </span>
                       <SelectValue placeholder="Todos" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">Todos</SelectItem>
-                      {debtFilterOptions.conceptos.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}
+                      {debtFilterOptions.conceptos.map((v) => (
+                        <SelectItem key={v} value={v}>
+                          {v}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   {(debtFilterImpuesto || debtFilterConcepto) && (
                     <button
-                      onClick={() => { setDebtFilterImpuesto(''); setDebtFilterConcepto(''); setDebtPage(1); }}
+                      onClick={() => {
+                        setDebtFilterImpuesto('');
+                        setDebtFilterConcepto('');
+                        setDebtPage(1);
+                      }}
                       className="inline-flex items-center gap-1 text-[11.5px] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors"
                     >
                       <X className="h-3 w-3" />
@@ -2042,15 +2677,27 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 onClick={async () => {
                   setScrapingSection('deudas');
                   try {
-                    await scrapSingleJob({ data: { clientId, jobType: 'deuda' } });
+                    await scrapSingleJob({
+                      data: { clientId, jobType: 'deuda' },
+                    });
                     await Promise.all([
-                      queryClient.invalidateQueries({ queryKey: ['clientDebts', clientId] }),
-                      queryClient.invalidateQueries({ queryKey: ['lastDeudaJob', clientId] }),
+                      queryClient.invalidateQueries({
+                        queryKey: ['clientDebts', clientId],
+                      }),
+                      queryClient.invalidateQueries({
+                        queryKey: ['lastDeudaJob', clientId],
+                      }),
                     ]);
                     toast.success('Deudas actualizadas correctamente');
                   } catch (err) {
-                    toast.error(err instanceof Error ? err.message : 'Error al actualizar deudas');
-                    queryClient.invalidateQueries({ queryKey: ['lastDeudaJob', clientId] });
+                    toast.error(
+                      err instanceof Error
+                        ? err.message
+                        : 'Error al actualizar deudas'
+                    );
+                    queryClient.invalidateQueries({
+                      queryKey: ['lastDeudaJob', clientId],
+                    });
                   } finally {
                     setScrapingSection(null);
                   }
@@ -2058,7 +2705,10 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 className="bg-[var(--arca-ink)] hover:bg-black text-white text-[12.5px] h-8 px-3 rounded-[var(--arca-r-md)] shrink-0"
               >
                 {scrapingSection === 'deudas' ? (
-                  <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Actualizando…</>
+                  <>
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    Actualizando…
+                  </>
                 ) : (
                   'Actualizar deudas'
                 )}
@@ -2069,7 +2719,9 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
             <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] overflow-hidden flex flex-col">
               <div className="px-[20px] py-[14px] border-b border-[var(--arca-border)] flex items-center gap-2">
                 <DollarSign className="h-3.5 w-3.5 shrink-0 text-[var(--arca-ink-3)]" />
-                <span className="text-[13px] font-semibold text-[var(--arca-ink)]">Deudas del cliente</span>
+                <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+                  Deudas del cliente
+                </span>
                 {debts.length > 0 && (
                   <span className="text-[11px] font-mono text-[var(--arca-ink-4)]">
                     {filteredDebts.length} mostradas · {debts.length} totales
@@ -2091,16 +2743,43 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full border-collapse text-[12.5px]" style={{ minWidth: 960 }}>
+                  <table
+                    className="w-full border-collapse text-[12.5px]"
+                    style={{ minWidth: 960 }}
+                  >
                     <thead>
                       <tr className="bg-[var(--arca-surface-2)]">
-                        {(['Impuesto', 'Concepto', 'Período', 'Vencimiento'] as const).map((h) => (
-                          <th key={h} className="px-[14px] py-[9px] text-left text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] border-b border-[var(--arca-border)] whitespace-nowrap">{h}</th>
+                        {(
+                          [
+                            'Impuesto',
+                            'Concepto',
+                            'Período',
+                            'Vencimiento',
+                          ] as const
+                        ).map((h) => (
+                          <th
+                            key={h}
+                            className="px-[14px] py-[9px] text-left text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] border-b border-[var(--arca-border)] whitespace-nowrap"
+                          >
+                            {h}
+                          </th>
                         ))}
-                        {(['Saldo', 'Int. Comp.', 'Int. Punit.'] as const).map((h) => (
-                          <th key={h} className="px-[14px] py-[9px] text-right text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] border-b border-[var(--arca-border)] whitespace-nowrap">{h}</th>
-                        ))}
-                        <th className="px-[14px] py-[9px] text-left text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] border-b border-[var(--arca-border)] whitespace-nowrap">Estado</th>
+                        {(['Saldo', 'Int. Comp.', 'Int. Punit.'] as const).map(
+                          (h) => (
+                            <th
+                              key={h}
+                              className="px-[14px] py-[9px] text-right text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] border-b border-[var(--arca-border)] whitespace-nowrap"
+                            >
+                              {h}
+                            </th>
+                          )
+                        )}
+                        <th className="px-[14px] py-[9px] text-left text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] border-b border-[var(--arca-border)] whitespace-nowrap">
+                          Estado
+                        </th>
+                        <th className="px-[14px] py-[9px] text-left text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] border-b border-[var(--arca-border)] whitespace-nowrap">
+                          Gestión
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2108,30 +2787,159 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                         const balance = Number(debt.balance || 0);
                         const intC = Number(debt.compensatoryInterest || 0);
                         const intP = Number(debt.punitiveInterest || 0);
-                        const today = new Date(); today.setHours(0, 0, 0, 0);
-                        const due = new Date(debt.dueDate); due.setHours(0, 0, 0, 0);
-                        const status = balance === 0 ? 'ok' : due < today ? 'late' : 'pend';
-                        const fmtD = (v: number) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 }).format(v);
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        const due = new Date(debt.dueDate);
+                        due.setHours(0, 0, 0, 0);
+                        const debtStatus = (debt.status ?? 'open') as
+                          | 'open'
+                          | 'in_plan'
+                          | 'paid'
+                          | 'disputed';
+                        const isIntimated = debt.isIntimated ?? false;
+                        const isOverdue = due < today && balance > 0;
+                        // Row background: red=open+overdue, orange=intimated, green=paid, gray=in_plan, default=disputed
+                        const rowBg =
+                          debtStatus === 'paid'
+                            ? 'rgba(34,197,94,0.06)'
+                            : debtStatus === 'in_plan'
+                              ? 'rgba(148,163,184,0.10)'
+                              : isIntimated
+                                ? 'rgba(249,115,22,0.08)'
+                                : isOverdue
+                                  ? 'rgba(239,68,68,0.07)'
+                                  : i % 2 === 1
+                                    ? 'var(--arca-bg)'
+                                    : undefined;
+                        const fmtD = (v: number) =>
+                          new Intl.NumberFormat('es-AR', {
+                            style: 'currency',
+                            currency: 'ARS',
+                            minimumFractionDigits: 2,
+                          }).format(v);
                         return (
                           <tr
                             key={debt.id}
-                            className="border-b border-[var(--arca-border)] hover:bg-[var(--arca-surface-2)] transition-colors cursor-default"
-                            style={{ background: i % 2 === 1 ? 'var(--arca-bg)' : undefined }}
+                            className="border-b border-[var(--arca-border)] hover:brightness-95 transition-colors cursor-default"
+                            style={{ background: rowBg }}
                           >
-                            <td className="px-[14px] py-[10px] whitespace-nowrap text-[var(--arca-ink)] font-medium" title={debt.tax || '-'}>{debt.tax || '-'}</td>
-                            <td className="px-[14px] py-[10px] whitespace-nowrap text-[var(--arca-ink-2)]" title={debt.concept || '-'}>{debt.concept || '-'}</td>
-                            <td className="px-[14px] py-[10px] whitespace-nowrap font-mono text-[var(--arca-ink-3)]">{debt.period || '-'}</td>
-                            <td className="px-[14px] py-[10px] whitespace-nowrap font-mono text-[var(--arca-ink-3)]">{new Date(debt.dueDate).toLocaleDateString('es-AR')}</td>
-                            <td className={cn('px-[14px] py-[10px] whitespace-nowrap text-right font-mono tabular-nums', balance === 0 ? 'text-[var(--arca-ink-4)]' : 'text-[var(--arca-ink)] font-semibold')}>{fmtD(balance)}</td>
-                            <td className={cn('px-[14px] py-[10px] whitespace-nowrap text-right font-mono tabular-nums', intC === 0 ? 'text-[var(--arca-ink-4)]' : 'text-[var(--arca-accent-warn-fg)]')}>{fmtD(intC)}</td>
-                            <td className="px-[14px] py-[10px] whitespace-nowrap text-right font-mono tabular-nums text-[var(--arca-ink-4)]">{fmtD(intP)}</td>
+                            <td
+                              className="px-[14px] py-[10px] whitespace-nowrap text-[var(--arca-ink)] font-medium"
+                              title={debt.tax || '-'}
+                            >
+                              {debt.tax || '-'}
+                            </td>
+                            <td
+                              className="px-[14px] py-[10px] whitespace-nowrap text-[var(--arca-ink-2)]"
+                              title={debt.concept || '-'}
+                            >
+                              {debt.concept || '-'}
+                            </td>
+                            <td className="px-[14px] py-[10px] whitespace-nowrap font-mono text-[var(--arca-ink-3)]">
+                              {debt.period || '-'}
+                            </td>
+                            <td className="px-[14px] py-[10px] whitespace-nowrap font-mono text-[var(--arca-ink-3)]">
+                              {new Date(debt.dueDate).toLocaleDateString(
+                                'es-AR'
+                              )}
+                            </td>
+                            <td
+                              className={cn(
+                                'px-[14px] py-[10px] whitespace-nowrap text-right font-mono tabular-nums',
+                                balance === 0
+                                  ? 'text-[var(--arca-ink-4)]'
+                                  : 'text-[var(--arca-ink)] font-semibold'
+                              )}
+                            >
+                              {fmtD(balance)}
+                            </td>
+                            <td
+                              className={cn(
+                                'px-[14px] py-[10px] whitespace-nowrap text-right font-mono tabular-nums',
+                                intC === 0
+                                  ? 'text-[var(--arca-ink-4)]'
+                                  : 'text-[var(--arca-accent-warn-fg)]'
+                              )}
+                            >
+                              {fmtD(intC)}
+                            </td>
+                            <td className="px-[14px] py-[10px] whitespace-nowrap text-right font-mono tabular-nums text-[var(--arca-ink-4)]">
+                              {fmtD(intP)}
+                            </td>
                             <td className="px-[14px] py-[10px] whitespace-nowrap">
-                              {status === 'ok'
-                                ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)]">Saldada</span>
-                                : status === 'late'
-                                  ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]">Vencida</span>
-                                  : <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]">Pendiente</span>
-                              }
+                              {debtStatus === 'paid' ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)]">
+                                  Pagada
+                                </span>
+                              ) : debtStatus === 'in_plan' ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[rgba(148,163,184,0.25)] text-[var(--arca-ink-3)]">
+                                  En plan
+                                </span>
+                              ) : debtStatus === 'disputed' ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[rgba(139,92,246,0.15)] text-[rgba(139,92,246,0.9)]">
+                                  Disputada
+                                </span>
+                              ) : isOverdue ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]">
+                                  Vencida
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]">
+                                  Abierta
+                                </span>
+                              )}
+                              {isIntimated && (
+                                <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9.5px] font-semibold bg-orange-100 text-orange-700">
+                                  Intimada
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-[14px] py-[10px] whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                <select
+                                  value={debtStatus}
+                                  onChange={(e) => {
+                                    const newStatus = e.target.value as
+                                      | 'open'
+                                      | 'in_plan'
+                                      | 'paid'
+                                      | 'disputed';
+                                    updateDebtStatusMutation.mutate({
+                                      id: debt.id,
+                                      status: newStatus,
+                                      isIntimated,
+                                    });
+                                  }}
+                                  className="text-[11.5px] border border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] bg-[var(--arca-surface)] px-2 py-1 text-[var(--arca-ink)] cursor-pointer"
+                                >
+                                  <option value="open">Abierta</option>
+                                  <option value="in_plan">En plan</option>
+                                  <option value="paid">Pagada</option>
+                                  <option value="disputed">Disputada</option>
+                                </select>
+                                <button
+                                  onClick={() =>
+                                    updateDebtStatusMutation.mutate({
+                                      id: debt.id,
+                                      status: debtStatus,
+                                      isIntimated: !isIntimated,
+                                    })
+                                  }
+                                  className={cn(
+                                    'text-[11px] font-semibold px-2 py-1 rounded-[var(--arca-r-md)] border transition-colors',
+                                    isIntimated
+                                      ? 'bg-orange-100 text-orange-700 border-orange-300 hover:bg-orange-200'
+                                      : 'bg-[var(--arca-surface)] text-[var(--arca-ink-3)] border-[var(--arca-border-strong)] hover:bg-[var(--arca-surface-2)]'
+                                  )}
+                                  title={
+                                    isIntimated
+                                      ? 'Quitar intimación'
+                                      : 'Marcar como intimada'
+                                  }
+                                >
+                                  Intimada
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -2142,31 +2950,81 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
               )}
               {debtTotalPages > 1 && (
                 <div className="px-[20px] py-[10px] border-t border-[var(--arca-border)] flex items-center gap-[10px] text-[11.5px] text-[var(--arca-ink-4)]">
-                  <span>Mostrando {pagedDebts.length} de {filteredDebts.length}</span>
+                  <span>
+                    Mostrando {pagedDebts.length} de {filteredDebts.length}
+                  </span>
                   <div className="flex-1" />
                   {(() => {
-                    const { startPage, endPage } = getPageRange(debtPage, debtTotalPages);
-                    const visiblePages = Array.from({ length: endPage - startPage + 1 }, (_, i) => startPage + i);
+                    const { startPage, endPage } = getPageRange(
+                      debtPage,
+                      debtTotalPages
+                    );
+                    const visiblePages = Array.from(
+                      { length: endPage - startPage + 1 },
+                      (_, i) => startPage + i
+                    );
                     return (
                       <div className="flex items-center gap-1">
-                        <button onClick={() => setDebtPage((p) => Math.max(1, p - 1))} disabled={debtPage === 1}
-                          className="px-2.5 py-1 text-[12px] border border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] disabled:opacity-40 hover:bg-[var(--arca-surface-2)] transition-colors">←</button>
-                        {startPage > 1 && (<>
-                          <button onClick={() => setDebtPage(1)} className="px-2.5 py-1 text-[12px] rounded-[var(--arca-r-md)] hover:bg-[var(--arca-surface-2)] transition-colors">1</button>
-                          {startPage > 2 && <span className="px-1 text-[var(--arca-ink-4)]">…</span>}
-                        </>)}
+                        <button
+                          onClick={() => setDebtPage((p) => Math.max(1, p - 1))}
+                          disabled={debtPage === 1}
+                          className="px-2.5 py-1 text-[12px] border border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] disabled:opacity-40 hover:bg-[var(--arca-surface-2)] transition-colors"
+                        >
+                          ←
+                        </button>
+                        {startPage > 1 && (
+                          <>
+                            <button
+                              onClick={() => setDebtPage(1)}
+                              className="px-2.5 py-1 text-[12px] rounded-[var(--arca-r-md)] hover:bg-[var(--arca-surface-2)] transition-colors"
+                            >
+                              1
+                            </button>
+                            {startPage > 2 && (
+                              <span className="px-1 text-[var(--arca-ink-4)]">
+                                …
+                              </span>
+                            )}
+                          </>
+                        )}
                         {visiblePages.map((page) => (
-                          <button key={page} onClick={() => setDebtPage(page)}
-                            className={cn('px-2.5 py-1 text-[12px] rounded-[var(--arca-r-md)] transition-colors', debtPage === page ? 'bg-[var(--arca-ink)] text-white font-semibold' : 'hover:bg-[var(--arca-surface-2)]')}>
+                          <button
+                            key={page}
+                            onClick={() => setDebtPage(page)}
+                            className={cn(
+                              'px-2.5 py-1 text-[12px] rounded-[var(--arca-r-md)] transition-colors',
+                              debtPage === page
+                                ? 'bg-[var(--arca-ink)] text-white font-semibold'
+                                : 'hover:bg-[var(--arca-surface-2)]'
+                            )}
+                          >
                             {page}
                           </button>
                         ))}
-                        {endPage < debtTotalPages && (<>
-                          {endPage < debtTotalPages - 1 && <span className="px-1 text-[var(--arca-ink-4)]">…</span>}
-                          <button onClick={() => setDebtPage(debtTotalPages)} className="px-2.5 py-1 text-[12px] rounded-[var(--arca-r-md)] hover:bg-[var(--arca-surface-2)] transition-colors">{debtTotalPages}</button>
-                        </>)}
-                        <button onClick={() => setDebtPage((p) => Math.min(debtTotalPages, p + 1))} disabled={debtPage === debtTotalPages}
-                          className="px-2.5 py-1 text-[12px] border border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] disabled:opacity-40 hover:bg-[var(--arca-surface-2)] transition-colors">→</button>
+                        {endPage < debtTotalPages && (
+                          <>
+                            {endPage < debtTotalPages - 1 && (
+                              <span className="px-1 text-[var(--arca-ink-4)]">
+                                …
+                              </span>
+                            )}
+                            <button
+                              onClick={() => setDebtPage(debtTotalPages)}
+                              className="px-2.5 py-1 text-[12px] rounded-[var(--arca-r-md)] hover:bg-[var(--arca-surface-2)] transition-colors"
+                            >
+                              {debtTotalPages}
+                            </button>
+                          </>
+                        )}
+                        <button
+                          onClick={() =>
+                            setDebtPage((p) => Math.min(debtTotalPages, p + 1))
+                          }
+                          disabled={debtPage === debtTotalPages}
+                          className="px-2.5 py-1 text-[12px] border border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] disabled:opacity-40 hover:bg-[var(--arca-surface-2)] transition-colors"
+                        >
+                          →
+                        </button>
                       </div>
                     );
                   })()}
@@ -2358,10 +3216,14 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                           <TableRow>
                             <TableHead className="w-[14%]">Impuesto</TableHead>
                             <TableHead className="w-[16%]">Concepto</TableHead>
-                            <TableHead className="w-[16%]">Subconcepto</TableHead>
+                            <TableHead className="w-[16%]">
+                              Subconcepto
+                            </TableHead>
                             <TableHead className="w-[10%]">Período</TableHead>
                             <TableHead className="w-[7%]">Cuota</TableHead>
-                            <TableHead className="w-[12%]">Vencimiento</TableHead>
+                            <TableHead className="w-[12%]">
+                              Vencimiento
+                            </TableHead>
                             <TableHead className="w-[25%]">Detalle</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -2560,7 +3422,9 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                       await queryClient.invalidateQueries({
                         queryKey: ['lastNotificacionesJob', clientId],
                       });
-                      toast.success('Notificaciones actualizadas correctamente');
+                      toast.success(
+                        'Notificaciones actualizadas correctamente'
+                      );
                     } catch (err) {
                       toast.error(
                         err instanceof Error
@@ -2670,7 +3534,9 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                         queryClient.invalidateQueries({
                           queryKey: ['clientAllInvoices', clientId],
                         }),
-                        queryClient.invalidateQueries({ queryKey: ['invoices'] }),
+                        queryClient.invalidateQueries({
+                          queryKey: ['invoices'],
+                        }),
                         queryClient.invalidateQueries({
                           queryKey: ['lastComprobantesFullJob', clientId],
                         }),
@@ -2835,8 +3701,8 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                           ? facturasDateRange?.to
                             ? `${format(facturasDateRange.from, 'dd/MM/yyyy', { locale: es })} – ${format(facturasDateRange.to, 'dd/MM/yyyy', { locale: es })}`
                             : format(facturasDateRange.from, 'dd/MM/yyyy', {
-                              locale: es,
-                            })
+                                locale: es,
+                              })
                           : 'Elegir fechas'}
                       </Button>
                     </PopoverTrigger>
@@ -2954,11 +3820,11 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                       {invoiceStatsFiltered == null
                         ? '—'
                         : new Intl.NumberFormat('es-AR', {
-                          style: 'currency',
-                          currency: 'ARS',
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        }).format(invoiceStatsFiltered.totalSales)}
+                            style: 'currency',
+                            currency: 'ARS',
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          }).format(invoiceStatsFiltered.totalSales)}
                     </div>
                     {facturasVariationPct?.salesPct !== undefined && (
                       <div
@@ -2967,7 +3833,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                           facturasVariationPct.salesPct === 0
                             ? 'text-muted-foreground'
                             : facturasVariationPct.salesPct !== null &&
-                              facturasVariationPct.salesPct > 0
+                                facturasVariationPct.salesPct > 0
                               ? 'text-[var(--arca-accent-pos-fg)]'
                               : 'text-[var(--arca-accent-neg-fg)]'
                         )}
@@ -2978,7 +3844,9 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                             ? `+${facturasVariationPct.salesPct.toFixed(1)}%`
                             : `${facturasVariationPct.salesPct.toFixed(1)}%`}{' '}
                         vs{' '}
-                        {facturasPeriodType === 'month' ? 'mes ant.' : 'año ant.'}
+                        {facturasPeriodType === 'month'
+                          ? 'mes ant.'
+                          : 'año ant.'}
                       </div>
                     )}
                   </div>
@@ -2990,11 +3858,11 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                       {invoiceStatsFiltered == null
                         ? '—'
                         : new Intl.NumberFormat('es-AR', {
-                          style: 'currency',
-                          currency: 'ARS',
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        }).format(invoiceStatsFiltered.totalPurchases)}
+                            style: 'currency',
+                            currency: 'ARS',
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          }).format(invoiceStatsFiltered.totalPurchases)}
                     </div>
                     {facturasVariationPct?.purchasesPct !== undefined && (
                       <div
@@ -3003,7 +3871,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                           facturasVariationPct.purchasesPct === 0
                             ? 'text-muted-foreground'
                             : facturasVariationPct.purchasesPct !== null &&
-                              facturasVariationPct.purchasesPct > 0
+                                facturasVariationPct.purchasesPct > 0
                               ? 'text-[var(--arca-accent-pos-fg)]'
                               : 'text-[var(--arca-accent-neg-fg)]'
                         )}
@@ -3014,7 +3882,9 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                             ? `+${facturasVariationPct.purchasesPct.toFixed(1)}%`
                             : `${facturasVariationPct.purchasesPct.toFixed(1)}%`}{' '}
                         vs{' '}
-                        {facturasPeriodType === 'month' ? 'mes ant.' : 'año ant.'}
+                        {facturasPeriodType === 'month'
+                          ? 'mes ant.'
+                          : 'año ant.'}
                       </div>
                     )}
                   </div>
@@ -3027,8 +3897,8 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                         'text-xl font-bold tabular-nums break-all',
                         invoiceStatsFiltered != null &&
                           invoiceStatsFiltered.totalSales -
-                          invoiceStatsFiltered.totalPurchases <
-                          0
+                            invoiceStatsFiltered.totalPurchases <
+                            0
                           ? 'text-[var(--arca-accent-neg-fg)]'
                           : 'text-foreground'
                       )}
@@ -3036,14 +3906,14 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                       {invoiceStatsFiltered == null
                         ? '—'
                         : new Intl.NumberFormat('es-AR', {
-                          style: 'currency',
-                          currency: 'ARS',
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        }).format(
-                          invoiceStatsFiltered.totalSales -
-                          invoiceStatsFiltered.totalPurchases
-                        )}
+                            style: 'currency',
+                            currency: 'ARS',
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          }).format(
+                            invoiceStatsFiltered.totalSales -
+                              invoiceStatsFiltered.totalPurchases
+                          )}
                     </div>
                   </div>
                 </CardContent>
@@ -3105,7 +3975,11 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                             borderRadius: 8,
                             padding: '8px 12px',
                           }}
-                          labelStyle={{ color: '#9B9CA3', fontSize: 10, marginBottom: 4 }}
+                          labelStyle={{
+                            color: '#9B9CA3',
+                            fontSize: 10,
+                            marginBottom: 4,
+                          }}
                           itemStyle={{ color: '#E8E6DF', fontSize: 11 }}
                           formatter={(value) =>
                             new Intl.NumberFormat('es-AR', {
@@ -3226,7 +4100,10 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                             const y = Number(v);
                             const newMax =
                               y === now.getFullYear() ? now.getMonth() : 11;
-                            const m = Math.min(multilateralSelectedMonth, newMax);
+                            const m = Math.min(
+                              multilateralSelectedMonth,
+                              newMax
+                            );
                             const range = getMonthBounds(y, m);
                             setMultilateralPeriod(range);
                             setMultilateralDateFrom(
@@ -3408,7 +4285,11 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                                   borderRadius: 8,
                                   padding: '8px 12px',
                                 }}
-                                labelStyle={{ color: '#9B9CA3', fontSize: 10, marginBottom: 4 }}
+                                labelStyle={{
+                                  color: '#9B9CA3',
+                                  fontSize: 10,
+                                  marginBottom: 4,
+                                }}
                                 itemStyle={{ color: '#E8E6DF', fontSize: 11 }}
                                 formatter={(value) => String(value)}
                               />
@@ -3483,7 +4364,11 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                                   borderRadius: 8,
                                   padding: '8px 12px',
                                 }}
-                                labelStyle={{ color: '#9B9CA3', fontSize: 10, marginBottom: 4 }}
+                                labelStyle={{
+                                  color: '#9B9CA3',
+                                  fontSize: 10,
+                                  marginBottom: 4,
+                                }}
                                 itemStyle={{ color: '#E8E6DF', fontSize: 11 }}
                                 formatter={(value) =>
                                   new Intl.NumberFormat('es-AR', {
@@ -3741,7 +4626,9 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                   <Select
                     key={`iva-${clientId}`}
                     defaultValue={effectiveIvaProfileId}
-                    onValueChange={(value) => setIvaProfileId(value || undefined)}
+                    onValueChange={(value) =>
+                      setIvaProfileId(value || undefined)
+                    }
                     disabled={loadingProfiles || profiles.length <= 1}
                   >
                     <SelectTrigger className="h-9 min-w-[200px] w-auto">
@@ -3755,7 +4642,9 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                           identityNumber?: string;
                         }) => (
                           <SelectItem key={profile.id} value={profile.id}>
-                            {profile.name || profile.identityNumber || profile.id}
+                            {profile.name ||
+                              profile.identityNumber ||
+                              profile.id}
                           </SelectItem>
                         )
                       )}
@@ -3858,7 +4747,339 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
               )}
             </div>
           </TabsContent>
-        </div>{/* end content area */}
+
+          {/* Solicitudes Tab */}
+          <TabsContent value="solicitudes" className="mt-4">
+            <div className="space-y-4">
+              {/* Header row */}
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={solicitudesStatusFilter || 'all'}
+                    onValueChange={(v) =>
+                      setSolicitudesStatusFilter(v === 'all' ? '' : v)
+                    }
+                  >
+                    <SelectTrigger className="h-8 gap-1.5 px-3 text-[12px] border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] bg-[var(--arca-surface)] min-w-[130px]">
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+                        Estado
+                      </span>
+                      <SelectValue placeholder="Todos" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos</SelectItem>
+                      <SelectItem value="open">Abierta</SelectItem>
+                      <SelectItem value="completed">Completada</SelectItem>
+                      <SelectItem value="cancelled">Cancelada</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => setNewRequestDialogOpen(true)}
+                  className="bg-[var(--arca-ink)] hover:bg-black text-white text-[12.5px] h-8 px-3 rounded-[var(--arca-r-md)] shrink-0 gap-1.5"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Nueva solicitud
+                </Button>
+              </div>
+
+              {/* Requests list */}
+              <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] overflow-hidden">
+                <div className="px-[20px] py-[14px] border-b border-[var(--arca-border)] flex items-center gap-2">
+                  <ClipboardList className="h-3.5 w-3.5 shrink-0 text-[var(--arca-ink-3)]" />
+                  <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+                    Solicitudes al cliente
+                  </span>
+                  {clientRequestsData.length > 0 && (
+                    <span className="text-[11px] font-mono text-[var(--arca-ink-4)]">
+                      {clientRequestsData.length}
+                    </span>
+                  )}
+                </div>
+                {clientRequestsData.length === 0 ? (
+                  <div className="flex items-center justify-center h-24 text-[13px] text-[var(--arca-ink-4)]">
+                    No hay solicitudes registradas
+                  </div>
+                ) : (
+                  <table className="w-full border-collapse text-[12.5px]">
+                    <thead>
+                      <tr className="bg-[var(--arca-surface-2)]">
+                        {(
+                          [
+                            'Título',
+                            'Tipo',
+                            'Estado',
+                            'Vencimiento',
+                            'Creada',
+                            'Acciones',
+                          ] as const
+                        ).map((h) => (
+                          <th
+                            key={h}
+                            className="px-[14px] py-[9px] text-left text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] border-b border-[var(--arca-border)] whitespace-nowrap"
+                          >
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {clientRequestsData.map((req: RequestRow, i: number) => {
+                        const statusColors: Record<
+                          string,
+                          { bg: string; color: string; label: string }
+                        > = {
+                          open: {
+                            bg: 'var(--arca-accent-warn-bg)',
+                            color: 'var(--arca-accent-warn)',
+                            label: 'Abierta',
+                          },
+                          completed: {
+                            bg: 'var(--arca-accent-pos-bg)',
+                            color: 'var(--arca-accent-pos)',
+                            label: 'Completada',
+                          },
+                          cancelled: {
+                            bg: 'var(--arca-surface-2)',
+                            color: 'var(--arca-ink-3)',
+                            label: 'Cancelada',
+                          },
+                        };
+                        const sc =
+                          statusColors[req.status] ?? statusColors.open;
+                        return (
+                          <tr
+                            key={req.id}
+                            className={`border-b border-[var(--arca-border)] last:border-b-0 ${i % 2 === 1 ? 'bg-[var(--arca-surface-2)]' : ''}`}
+                          >
+                            <td className="px-[14px] py-[10px]">
+                              <p className="font-medium text-[var(--arca-ink)] flex items-center gap-1.5">
+                                {req.title}
+                                {req.metadata?.documentId && (
+                                  <Paperclip className="h-3 w-3 text-[var(--arca-accent-primary)] shrink-0" />
+                                )}
+                              </p>
+                              {req.description && (
+                                <p className="text-[11px] text-[var(--arca-ink-3)] mt-0.5 max-w-[280px] truncate">
+                                  {req.description}
+                                </p>
+                              )}
+                              {req.metadata?.documentName && (
+                                <p className="text-[11px] text-[var(--arca-accent-primary)] mt-0.5">
+                                  {req.metadata?.documentName}
+                                </p>
+                              )}
+                            </td>
+                            <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)]">
+                              {req.type}
+                            </td>
+                            <td className="px-[14px] py-[10px]">
+                              <span
+                                className="inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                                style={{ background: sc.bg, color: sc.color }}
+                              >
+                                {sc.label}
+                              </span>
+                            </td>
+                            <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)] whitespace-nowrap">
+                              {req.dueAt
+                                ? new Date(
+                                    req.dueAt as unknown as string
+                                  ).toLocaleDateString('es-AR')
+                                : '—'}
+                            </td>
+                            <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)] whitespace-nowrap">
+                              {new Date(
+                                req.createdAt as unknown as string
+                              ).toLocaleDateString('es-AR')}
+                            </td>
+                            <td className="px-[14px] py-[10px]">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {/* Document download if metadata has documentId */}
+                                {req.metadata?.documentId && (
+                                  <>
+                                    <button
+                                      onClick={async () => {
+                                        try {
+                                          const doc = await getRequestDocument({
+                                            data: { requestId: req.id },
+                                          });
+                                          if (!doc?.url) {
+                                            toast.error(
+                                              'Documento no encontrado'
+                                            );
+                                            return;
+                                          }
+                                          const a = document.createElement('a');
+                                          a.href = doc.url;
+                                          a.download = doc.name ?? 'documento';
+                                          a.click();
+                                        } catch {
+                                          toast.error(
+                                            'Error al descargar el documento'
+                                          );
+                                        }
+                                      }}
+                                      className="inline-flex items-center gap-1 text-[11px] text-[var(--arca-accent-primary)] hover:underline font-medium"
+                                    >
+                                      <FileDown className="h-3 w-3" />
+                                      Doc
+                                    </button>
+                                    <span className="text-[var(--arca-border-strong)]">
+                                      ·
+                                    </span>
+                                  </>
+                                )}
+                                {req.status === 'open' && (
+                                  <>
+                                    <button
+                                      onClick={() =>
+                                        updateRequestStatusMutation.mutate({
+                                          requestId: req.id,
+                                          status: 'completed',
+                                        })
+                                      }
+                                      className="text-[11px] text-[var(--arca-accent-pos)] hover:underline font-medium"
+                                    >
+                                      Completar
+                                    </button>
+                                    <span className="text-[var(--arca-border-strong)]">
+                                      ·
+                                    </span>
+                                    <button
+                                      onClick={() =>
+                                        updateRequestStatusMutation.mutate({
+                                          requestId: req.id,
+                                          status: 'cancelled',
+                                        })
+                                      }
+                                      className="text-[11px] text-[var(--arca-ink-3)] hover:underline"
+                                    >
+                                      Cancelar
+                                    </button>
+                                  </>
+                                )}
+                                {req.status !== 'open' && (
+                                  <button
+                                    onClick={() =>
+                                      updateRequestStatusMutation.mutate({
+                                        requestId: req.id,
+                                        status: 'open',
+                                      })
+                                    }
+                                    className="text-[11px] text-[var(--arca-accent-primary)] hover:underline"
+                                  >
+                                    Reabrir
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            {/* Nueva solicitud dialog */}
+            <Dialog
+              open={newRequestDialogOpen}
+              onOpenChange={setNewRequestDialogOpen}
+            >
+              <DialogContent className="sm:max-w-[480px]">
+                <DialogHeader>
+                  <DialogTitle>Nueva solicitud al cliente</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-3 pt-2">
+                  <div>
+                    <label className="text-[12px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-[0.06em]">
+                      Título *
+                    </label>
+                    <Input
+                      value={newRequestTitle}
+                      onChange={(e) => setNewRequestTitle(e.target.value)}
+                      placeholder="Ej. Enviar balance del ejercicio"
+                      className="mt-1 h-9 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[12px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-[0.06em]">
+                      Descripción
+                    </label>
+                    <Input
+                      value={newRequestDescription}
+                      onChange={(e) => setNewRequestDescription(e.target.value)}
+                      placeholder="Instrucciones o contexto adicional"
+                      className="mt-1 h-9 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[12px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-[0.06em]">
+                      Tipo
+                    </label>
+                    <Select
+                      value={newRequestType}
+                      onValueChange={setNewRequestType}
+                    >
+                      <SelectTrigger className="mt-1 h-9 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="general">General</SelectItem>
+                        <SelectItem value="document">Documento</SelectItem>
+                        <SelectItem value="information">Información</SelectItem>
+                        <SelectItem value="signature">Firma</SelectItem>
+                        <SelectItem value="payment">Pago</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="text-[12px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-[0.06em]">
+                      Fecha límite
+                    </label>
+                    <Input
+                      type="date"
+                      value={newRequestDueAt}
+                      onChange={(e) => setNewRequestDueAt(e.target.value)}
+                      className="mt-1 h-9 text-sm"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setNewRequestDialogOpen(false)}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={
+                        !newRequestTitle.trim() ||
+                        createRequestMutation.isPending
+                      }
+                      onClick={() => createRequestMutation.mutate()}
+                      className="bg-[var(--arca-ink)] hover:bg-black text-white"
+                    >
+                      {createRequestMutation.isPending ? (
+                        <>
+                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                          Creando…
+                        </>
+                      ) : (
+                        'Crear solicitud'
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </TabsContent>
+        </div>
+        {/* end content area */}
       </Tabs>
 
       <EditClientDialog
@@ -3992,13 +5213,13 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                           <TableCell className="text-[11px]">
                             {inv.emitionDate
                               ? new Date(inv.emitionDate).toLocaleDateString(
-                                'es-AR',
-                                {
-                                  day: '2-digit',
-                                  month: '2-digit',
-                                  year: 'numeric',
-                                }
-                              )
+                                  'es-AR',
+                                  {
+                                    day: '2-digit',
+                                    month: '2-digit',
+                                    year: 'numeric',
+                                  }
+                                )
                               : '—'}
                           </TableCell>
                           <TableCell className="text-[11px]">
@@ -4054,13 +5275,13 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                         <span className="text-muted-foreground">
                           {inv.emitionDate
                             ? new Date(inv.emitionDate).toLocaleDateString(
-                              'es-AR',
-                              {
-                                day: '2-digit',
-                                month: '2-digit',
-                                year: 'numeric',
-                              }
-                            )
+                                'es-AR',
+                                {
+                                  day: '2-digit',
+                                  month: '2-digit',
+                                  year: 'numeric',
+                                }
+                              )
                             : '—'}
                         </span>
                       </div>

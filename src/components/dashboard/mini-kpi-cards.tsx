@@ -25,9 +25,7 @@ function MiniKpiCard({ data }: { data: MiniKpiData }) {
   return (
     <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[14px] p-[14px_16px] flex flex-col gap-2.5">
       <div className="flex items-center justify-between text-xs font-medium text-[var(--arca-ink-3)]">
-        <span className="flex items-center gap-1.5">
-          {data.label}
-        </span>
+        <span className="flex items-center gap-1.5">{data.label}</span>
       </div>
       <div className="font-display text-[22px] font-semibold tracking-[-0.02em] text-[var(--arca-ink)] tabular-nums leading-none flex items-baseline justify-between">
         {data.value}

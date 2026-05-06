@@ -23,7 +23,15 @@ export function periodToRange(period: Period): { from: Date; to: Date } {
   let from: Date;
   switch (period) {
     case 'Hoy':
-      from = new Date(to.getFullYear(), to.getMonth(), to.getDate(), 0, 0, 0, 0);
+      from = new Date(
+        to.getFullYear(),
+        to.getMonth(),
+        to.getDate(),
+        0,
+        0,
+        0,
+        0
+      );
       break;
     case '7d':
       from = new Date(to.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -46,7 +54,10 @@ interface DashboardTopbarProps {
   onPeriodChange: (period: Period) => void;
 }
 
-export function DashboardTopbar({ activePeriod, onPeriodChange }: DashboardTopbarProps) {
+export function DashboardTopbar({
+  activePeriod,
+  onPeriodChange,
+}: DashboardTopbarProps) {
   const queryClient = useQueryClient();
 
   const { data: notifData } = useQuery({
@@ -177,7 +188,9 @@ export function DashboardTopbar({ activePeriod, onPeriodChange }: DashboardTopba
                       search={{ notificationId: n.id }}
                       className="flex-1 min-w-0"
                     >
-                      <p className={`text-[12.5px] leading-snug line-clamp-2 ${n.opened === false ? 'font-semibold text-[var(--arca-ink)]' : 'text-[var(--arca-ink-2)]'}`}>
+                      <p
+                        className={`text-[12.5px] leading-snug line-clamp-2 ${n.opened === false ? 'font-semibold text-[var(--arca-ink)]' : 'text-[var(--arca-ink-2)]'}`}
+                      >
                         {n.message}
                       </p>
                       <div className="flex items-center gap-2 mt-1">
@@ -187,7 +200,9 @@ export function DashboardTopbar({ activePeriod, onPeriodChange }: DashboardTopba
                           </span>
                         )}
                         <span className="text-[11px] text-[var(--arca-ink-4)] ml-auto shrink-0">
-                          {relativeTime(new Date(n.publicationDate ?? n.createdAt))}
+                          {relativeTime(
+                            new Date(n.publicationDate ?? n.createdAt)
+                          )}
                         </span>
                       </div>
                     </Link>
@@ -201,7 +216,9 @@ export function DashboardTopbar({ activePeriod, onPeriodChange }: DashboardTopba
                         }
                       }}
                       className="shrink-0 p-1 rounded hover:bg-[var(--arca-surface)] transition-colors mt-0.5 cursor-pointer"
-                      title={n.opened ? 'Marcar como no leída' : 'Marcar como leída'}
+                      title={
+                        n.opened ? 'Marcar como no leída' : 'Marcar como leída'
+                      }
                     >
                       {n.opened ? (
                         <Mail className="w-3 h-3 text-[var(--arca-ink-4)]" />

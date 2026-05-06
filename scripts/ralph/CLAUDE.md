@@ -76,6 +76,19 @@ Before committing, check if any edited files have learnings worth preserving in 
 
 Only update CLAUDE.md if you have **genuinely reusable knowledge** that would help future work in that directory.
 
+## Running Scripts and Migrations
+
+When running DB migration scripts or any script that requires a database connection:
+
+1. **Always wrap with `timeout`** to avoid hanging indefinitely:
+   ```bash
+   timeout 60 bun run src/scripts/my-script.ts
+   ```
+2. If the script times out or fails with a connection error, **do not retry in a loop**. Instead:
+   - Note the failure in progress.txt
+   - Skip the verification step
+   - Proceed with the commit (the schema change in `drizzle/schema.ts` is the real deliverable; the migration script is just a helper)
+
 ## Quality Requirements
 
 - ALL commits must pass your project's quality checks (typecheck, lint, test)

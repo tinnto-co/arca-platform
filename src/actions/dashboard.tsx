@@ -2,7 +2,7 @@ import { createServerFn } from '@tanstack/react-start';
 import z from 'zod';
 import { db } from '@/lib/db';
 import { client, invoice, debt, dueDate, notification } from '@/drizzle/schema';
-import { eq, and, gte, lte, sql, inArray } from 'drizzle-orm';
+import { eq, and, gte, lte, sql, inArray, isNull } from 'drizzle-orm';
 import { getSessionWithOrg } from '@/actions/helpers';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -186,11 +186,21 @@ export const getMonthlyEvolution = createServerFn({ method: 'GET' })
       );
 
     // Build monthly buckets from `from` to `to`
-    const buckets: { year: number; month: number; outbound: number; inbound: number }[] = [];
+    const buckets: {
+      year: number;
+      month: number;
+      outbound: number;
+      inbound: number;
+    }[] = [];
     let cur = new Date(from.getFullYear(), from.getMonth(), 1);
     const endBucket = new Date(to.getFullYear(), to.getMonth(), 1);
     while (cur <= endBucket) {
-      buckets.push({ year: cur.getFullYear(), month: cur.getMonth(), outbound: 0, inbound: 0 });
+      buckets.push({
+        year: cur.getFullYear(),
+        month: cur.getMonth(),
+        outbound: 0,
+        inbound: 0,
+      });
       cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
     }
 
@@ -201,16 +211,30 @@ export const getMonthlyEvolution = createServerFn({ method: 'GET' })
       }
 
       const d = new Date(inv.emitionDate);
-      const bucket = buckets.find((b) => b.year === d.getFullYear() && b.month === d.getMonth());
+      const bucket = buckets.find(
+        (b) => b.year === d.getFullYear() && b.month === d.getMonth()
+      );
       if (!bucket) return;
 
-      if (inv.direction?.toLowerCase() === 'outbound') bucket.outbound += amount;
-      else if (inv.direction?.toLowerCase() === 'inbound') bucket.inbound += amount;
+      if (inv.direction?.toLowerCase() === 'outbound')
+        bucket.outbound += amount;
+      else if (inv.direction?.toLowerCase() === 'inbound')
+        bucket.inbound += amount;
     });
 
     const MONTH_NAMES: Record<number, string> = {
-      0: 'ene', 1: 'feb', 2: 'mar', 3: 'abr', 4: 'may', 5: 'jun',
-      6: 'jul', 7: 'ago', 8: 'sep', 9: 'oct', 10: 'nov', 11: 'dic',
+      0: 'ene',
+      1: 'feb',
+      2: 'mar',
+      3: 'abr',
+      4: 'may',
+      5: 'jun',
+      6: 'jul',
+      7: 'ago',
+      8: 'sep',
+      9: 'oct',
+      10: 'nov',
+      11: 'dic',
     };
 
     return buckets.map((b) => ({
@@ -433,7 +457,14 @@ export const getTopClients = createServerFn({ method: 'GET' })
         and(inArray(debt.client, userClientIds), lte(debt.dueDate, new Date()))
       )
       .groupBy(debt.client)
-      .catch(() => [] as { clientId: string | null; overdueCount: number; maxOverdueDays: number }[]);
+      .catch(
+        () =>
+          [] as {
+            clientId: string | null;
+            overdueCount: number;
+            maxOverdueDays: number;
+          }[]
+      );
 
     const clientMap = new Map(userClients.map((c) => [c.id, c]));
     const overdueMap = new Map(overdueDebts.map((d) => [d.clientId, d]));
@@ -528,6 +559,7 @@ export const getCalendarDueDates = createServerFn({ method: 'GET' })
           dueDate: dueDate.dueDate,
           clientId: dueDate.client,
           clientName: client.name,
+          completedAt: dueDate.completedAt,
         })
         .from(dueDate)
         .leftJoin(client, eq(dueDate.client, client.id))
@@ -563,3 +595,88 @@ export const getCalendarDueDates = createServerFn({ method: 'GET' })
 
     return { dueDates, debts };
   });
+
+// ── getExceptionsSummary ───────────────────────────────────────────────────
+
+export const getExceptionsSummary = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    const { orgId } = await getSessionWithOrg();
+
+    const userClients = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(eq(client.organizationId, orgId));
+
+    const userClientIds = userClients.map((c) => c.id);
+
+    if (userClientIds.length === 0) {
+      return {
+        overdueDebtCount: 0,
+        criticalNotificationCount: 0,
+        upcomingDueDateCount: 0,
+        clientErrorCount: 0,
+      };
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const threeDaysFromNow = new Date(today);
+    threeDaysFromNow.setDate(today.getDate() + 3);
+    threeDaysFromNow.setHours(23, 59, 59, 999);
+
+    const [overdueDebts, criticalNotifs, upcomingDueDates, clientErrors] =
+      await Promise.all([
+        // Overdue open debts: status='open' and dueDate < today
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(debt)
+          .where(
+            and(
+              inArray(debt.client, userClientIds),
+              eq(debt.status, 'open'),
+              lte(debt.dueDate, today)
+            )
+          ),
+
+        // Critical unresolved notifications
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(notification)
+          .where(
+            and(
+              inArray(notification.client, userClientIds),
+              eq(notification.severity, 'critical'),
+              isNull(notification.resolvedAt)
+            )
+          ),
+
+        // Upcoming due dates within 3 days that are not completed
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(dueDate)
+          .where(
+            and(
+              inArray(dueDate.client, userClientIds),
+              gte(dueDate.dueDate, today),
+              lte(dueDate.dueDate, threeDaysFromNow),
+              isNull(dueDate.completedAt)
+            )
+          ),
+
+        // Clients with errors
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(client)
+          .where(
+            and(eq(client.organizationId, orgId), eq(client.hasErrors, true))
+          ),
+      ]);
+
+    return {
+      overdueDebtCount: Number(overdueDebts[0]?.count ?? 0),
+      criticalNotificationCount: Number(criticalNotifs[0]?.count ?? 0),
+      upcomingDueDateCount: Number(upcomingDueDates[0]?.count ?? 0),
+      clientErrorCount: Number(clientErrors[0]?.count ?? 0),
+    };
+  }
+);

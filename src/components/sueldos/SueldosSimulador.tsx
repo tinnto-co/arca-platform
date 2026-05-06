@@ -2,16 +2,35 @@
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Save } from 'lucide-react';
+import { Loader2, Save, BookTemplate, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   getUltimoReciboImportado,
   listConceptosPlantillaManualSos,
   guardarReciboDesdeTabla,
   getBasicoParaEmpleadoPeriodo,
   getPayrollEmployerConfig,
+  listReceiptTemplates,
+  createReceiptTemplate,
+  deleteReceiptTemplate,
 } from '@/actions/sueldos';
 import { puedeLiquidarPeriodo } from '@/lib/payroll-period-rules';
 import { ReciboFormulario } from '@/components/sueldos/ReciboFormulario';
@@ -96,6 +115,9 @@ export function SueldosSimulador({
   const [flowHeader, setFlowHeader] = useState<FlowHeader | null>(null);
   const [sosEmpleadoId, setSosEmpleadoId] = useState<string | null>(null);
   const [tablaEdits, setTablaEdits] = useState<EditsMap>({});
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('__none__');
+  const [showSaveTemplateDialog, setShowSaveTemplateDialog] = useState(false);
+  const [templateName, setTemplateName] = useState('');
 
   const periodo = flowHeader?.periodo ?? '';
   const permiteLiquidar = periodo.length === 7 && puedeLiquidarPeriodo(periodo);
@@ -153,6 +175,65 @@ export function SueldosSimulador({
   });
   const firmaEmpleadorUrl = employerConfig?.firmaEmpleadorUrl ?? null;
 
+  interface ReceiptTemplate {
+    id: string;
+    name: string;
+    receiptType: string;
+    conceptIds: string[] | null;
+    active: boolean;
+    createdAt: Date;
+  }
+
+  const { data: templates = [] } = useQuery<ReceiptTemplate[]>({
+    queryKey: ['receipt-templates', profileId],
+    queryFn: () =>
+      listReceiptTemplates({ data: { profileId } }) as Promise<
+        ReceiptTemplate[]
+      >,
+    enabled: !!profileId,
+  });
+
+  const selectedTemplate = templates.find((t) => t.id === selectedTemplateId);
+  const templateConceptIds: string[] = Array.isArray(
+    selectedTemplate?.conceptIds
+  )
+    ? selectedTemplate.conceptIds
+    : [];
+
+  const saveTemplate = useMutation({
+    mutationFn: () =>
+      createReceiptTemplate({
+        data: {
+          profileId,
+          name: templateName.trim(),
+          receiptType: flowHeader?.tipoRecibo ?? 'sueldo',
+          conceptIds: conceptosFilas.map((c) => c.codigo),
+        },
+      }),
+    onSuccess: () => {
+      toast.success('Template guardado');
+      void queryClient.invalidateQueries({
+        queryKey: ['receipt-templates', profileId],
+      });
+      setShowSaveTemplateDialog(false);
+      setTemplateName('');
+    },
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : 'Error al guardar template'),
+  });
+
+  const removeTemplate = useMutation({
+    mutationFn: (id: string) => deleteReceiptTemplate({ data: { id } }),
+    onSuccess: () => {
+      toast.success('Template eliminado');
+      void queryClient.invalidateQueries({
+        queryKey: ['receipt-templates', profileId],
+      });
+      setSelectedTemplateId('__none__');
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Error'),
+  });
+
   const reciboHeaderSimulado = useMemo(() => {
     if (!flowHeader) {
       return {
@@ -182,11 +263,16 @@ export function SueldosSimulador({
     !!flowHeader?.copiarUltimoRecibo && !!sosEmpleadoId && !!ultimoRecibo;
   const showManualTable = !!flowHeader && !flowHeader.copiarUltimoRecibo;
 
-  const conceptosFilas: ConceptoImportado[] = showImportTable
+  const basePlantilla = showImportTable
     ? ultimoRecibo.conceptos
     : showManualTable
       ? plantillaManual
       : [];
+
+  const conceptosFilas: ConceptoImportado[] =
+    templateConceptIds.length > 0
+      ? basePlantilla.filter((c) => templateConceptIds.includes(c.codigo))
+      : basePlantilla;
 
   const plantillaKey = useMemo(
     () => plantillaManual.map((c) => c.id).join('|'),
@@ -339,14 +425,50 @@ export function SueldosSimulador({
       {showManualTable && (
         <Card className="border border-border/70 shadow-sm">
           <CardHeader>
-            <CardTitle className="text-base">
-              Conceptos — carga manual
-            </CardTitle>
-            <p className="text-sm text-[var(--arca-ink-3)]">
-              Los montos se pre-calculan con el básico de escala vigente del
-              empleado en el período a liquidar. Podés ajustar cualquier valor
-              antes de guardar.
-            </p>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <CardTitle className="text-base">
+                  Conceptos — carga manual
+                </CardTitle>
+                <p className="text-sm text-[var(--arca-ink-3)] mt-1">
+                  Los montos se pre-calculan con el básico de escala vigente del
+                  empleado en el período a liquidar. Podés ajustar cualquier
+                  valor antes de guardar.
+                </p>
+              </div>
+              {templates.length > 0 && (
+                <div className="flex items-center gap-2 shrink-0">
+                  <Select
+                    value={selectedTemplateId}
+                    onValueChange={setSelectedTemplateId}
+                  >
+                    <SelectTrigger className="w-48 h-8 text-xs">
+                      <SelectValue placeholder="Usar template…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">Todos los conceptos</SelectItem>
+                      {templates.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>
+                          {t.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {selectedTemplateId !== '__none__' && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-destructive"
+                      onClick={() => removeTemplate.mutate(selectedTemplateId)}
+                      disabled={removeTemplate.isPending}
+                      title="Eliminar template"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             {loadingPlantilla || loadingBasico ? (
@@ -382,23 +504,77 @@ export function SueldosSimulador({
                       Solo se puede guardar el mes anterior al en curso.
                     </span>
                   )}
-                  <Button
-                    onClick={() => guardarRecibo.mutate()}
-                    disabled={!puedeGuardar}
-                  >
-                    {guardarRecibo.isPending ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Save className="mr-2 h-4 w-4" />
-                    )}
-                    Guardar recibo
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowSaveTemplateDialog(true)}
+                      disabled={conceptosFilas.length === 0}
+                      title="Guardar lista de conceptos como template reutilizable"
+                    >
+                      <BookTemplate className="mr-2 h-4 w-4" />
+                      Guardar como template
+                    </Button>
+                    <Button
+                      onClick={() => guardarRecibo.mutate()}
+                      disabled={!puedeGuardar}
+                    >
+                      {guardarRecibo.isPending ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Save className="mr-2 h-4 w-4" />
+                      )}
+                      Guardar recibo
+                    </Button>
+                  </div>
                 </div>
               </>
             )}
           </CardContent>
         </Card>
       )}
+
+      <Dialog
+        open={showSaveTemplateDialog}
+        onOpenChange={setShowSaveTemplateDialog}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Guardar template de conceptos</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-[var(--arca-ink-3)]">
+              Se guardarán los {conceptosFilas.length} concepto(s) visibles como
+              template reutilizable para este perfil.
+            </p>
+            <div className="space-y-1">
+              <Label htmlFor="template-name">Nombre del template</Label>
+              <Input
+                id="template-name"
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+                placeholder="Ej: Sueldo básico mensual"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowSaveTemplateDialog(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => saveTemplate.mutate()}
+              disabled={!templateName.trim() || saveTemplate.isPending}
+            >
+              {saveTemplate.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Guardar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

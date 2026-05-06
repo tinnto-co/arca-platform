@@ -1,7 +1,30 @@
 // Tipos de comprobante según AFIP
-export const INVOICE_TYPES_A = ['1', '2', '3', '4', '51', '52', '53', '54', '201', '202', '203'];
+export const INVOICE_TYPES_A = [
+  '1',
+  '2',
+  '3',
+  '4',
+  '51',
+  '52',
+  '53',
+  '54',
+  '201',
+  '202',
+  '203',
+];
 export const INVOICE_TYPES_B = ['6', '7', '8'];
-export const CREDIT_NOTE_TYPES = ['3', '8', '13', '21', '53', '114', '197', '203', '208', '213'];
+export const CREDIT_NOTE_TYPES = [
+  '3',
+  '8',
+  '13',
+  '21',
+  '53',
+  '114',
+  '197',
+  '203',
+  '208',
+  '213',
+];
 
 export interface InvoiceIvaRow {
   direction: string | null;
@@ -40,15 +63,25 @@ export interface IvaBreakdown {
  * Calcula débito y crédito fiscal a partir de un conjunto de facturas.
  * Misma lógica que getInvoiceStatsByProfile en invoice.tsx.
  */
-export function calcularIvaDesdeFacturas(invoices: InvoiceIvaRow[]): IvaBreakdown {
+export function calcularIvaDesdeFacturas(
+  invoices: InvoiceIvaRow[]
+): IvaBreakdown {
   const n = (v: string | null | undefined) => parseFloat(v ?? '0') || 0;
 
-  let netoA21 = 0, netoA105 = 0;
-  let totalAmountB21 = 0, totalAmountB105 = 0, totalAmountB27 = 0;
-  let netoInbound21 = 0, netoInbound105 = 0, netoInbound27 = 0, netoInbound5 = 0, netoInbound25 = 0;
+  let netoA21 = 0,
+    netoA105 = 0;
+  let totalAmountB21 = 0,
+    totalAmountB105 = 0,
+    totalAmountB27 = 0;
+  let netoInbound21 = 0,
+    netoInbound105 = 0,
+    netoInbound27 = 0,
+    netoInbound5 = 0,
+    netoInbound25 = 0;
 
   for (const inv of invoices) {
-    const rate = inv.currency?.toUpperCase() === 'USD' ? n(inv.currencyRate) || 1 : 1;
+    const rate =
+      inv.currency?.toUpperCase() === 'USD' ? n(inv.currencyRate) || 1 : 1;
     const sign = CREDIT_NOTE_TYPES.includes(inv.type ?? '') ? -1 : 1;
     const dir = inv.direction?.toLowerCase();
     const type = inv.type ?? '';
@@ -80,7 +113,12 @@ export function calcularIvaDesdeFacturas(invoices: InvoiceIvaRow[]): IvaBreakdow
     (totalAmountB105 / 1.105) * 0.105 +
     (totalAmountB27 / 1.27) * 0.27;
 
-  const netoGravadoCompras = netoInbound27 + netoInbound21 + netoInbound105 + netoInbound5 + netoInbound25;
+  const netoGravadoCompras =
+    netoInbound27 +
+    netoInbound21 +
+    netoInbound105 +
+    netoInbound5 +
+    netoInbound25;
 
   const creditoFiscalCompras =
     netoInbound21 * 0.21 +

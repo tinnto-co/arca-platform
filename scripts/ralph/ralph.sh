@@ -79,35 +79,71 @@ if [ ! -f "$PROGRESS_FILE" ]; then
   echo "---" >> "$PROGRESS_FILE"
 fi
 
-echo "Starting Ralph - Tool: $TOOL - Max iterations: $MAX_ITERATIONS"
+# Helper: print a timestamped log line
+log() {
+  echo "[$(date '+%H:%M:%S')] $*"
+}
+
+# Helper: show pending/done story counts from prd.json
+show_progress() {
+  if command -v jq &>/dev/null && [ -f "$PRD_FILE" ]; then
+    TOTAL=$(jq '[.userStories[]] | length' "$PRD_FILE" 2>/dev/null || echo "?")
+    DONE=$(jq '[.userStories[] | select(.passes == true)] | length' "$PRD_FILE" 2>/dev/null || echo "?")
+    NEXT=$(jq -r '[.userStories[] | select(.passes != true)][0].id // "none"' "$PRD_FILE" 2>/dev/null || echo "?")
+    echo "  Stories: $DONE/$TOTAL done  |  Next: $NEXT"
+  fi
+}
+
+log "Starting Ralph — Tool: $TOOL — Max iterations: $MAX_ITERATIONS"
+show_progress
 
 for i in $(seq 1 $MAX_ITERATIONS); do
   echo ""
   echo "==============================================================="
-  echo "  Ralph Iteration $i of $MAX_ITERATIONS ($TOOL)"
+  log "Ralph Iteration $i of $MAX_ITERATIONS ($TOOL)"
+  show_progress
   echo "==============================================================="
 
+  ITER_START=$(date +%s)
+
   # Run the selected tool with the ralph prompt
+  # Timeout per iteration: 20 minutes. If Claude hangs (e.g. waiting on a DB script),
+  # kill it and let the loop retry in the next iteration.
+  ITER_TIMEOUT=1200
   if [[ "$TOOL" == "amp" ]]; then
-    OUTPUT=$(cat "$SCRIPT_DIR/prompt.md" | amp --dangerously-allow-all 2>&1 | tee /dev/stderr) || true
+    OUTPUT=$(timeout $ITER_TIMEOUT bash -c 'cat "$1/prompt.md" | amp --dangerously-allow-all 2>&1 | tee /dev/stderr' _ "$SCRIPT_DIR") || {
+      EXIT_CODE=$?
+      if [ $EXIT_CODE -eq 124 ]; then
+        log "WARNING: Iteration $i timed out after ${ITER_TIMEOUT}s. Retrying next iteration."
+      fi
+    }
   else
     # Claude Code: use --dangerously-skip-permissions for autonomous operation, --print for output
-    OUTPUT=$(claude --dangerously-skip-permissions --print < "$SCRIPT_DIR/CLAUDE.md" 2>&1 | tee /dev/stderr) || true
+    OUTPUT=$(timeout $ITER_TIMEOUT claude --dangerously-skip-permissions --print < "$SCRIPT_DIR/CLAUDE.md" 2>&1 | tee /dev/stderr) || {
+      EXIT_CODE=$?
+      if [ $EXIT_CODE -eq 124 ]; then
+        log "WARNING: Iteration $i timed out after ${ITER_TIMEOUT}s. Retrying next iteration."
+      fi
+    }
   fi
-  
+
+  ITER_END=$(date +%s)
+  ELAPSED=$(( ITER_END - ITER_START ))
+
   # Check for completion signal
   if echo "$OUTPUT" | grep -q "<promise>COMPLETE</promise>"; then
     echo ""
-    echo "Ralph completed all tasks!"
-    echo "Completed at iteration $i of $MAX_ITERATIONS"
+    log "Ralph completed all tasks! (iteration $i of $MAX_ITERATIONS, ${ELAPSED}s)"
+    show_progress
     exit 0
   fi
-  
-  echo "Iteration $i complete. Continuing..."
+
+  log "Iteration $i done in ${ELAPSED}s. Continuing..."
+  show_progress
   sleep 2
 done
 
 echo ""
-echo "Ralph reached max iterations ($MAX_ITERATIONS) without completing all tasks."
+log "Ralph reached max iterations ($MAX_ITERATIONS) without completing all tasks."
 echo "Check $PROGRESS_FILE for status."
 exit 1

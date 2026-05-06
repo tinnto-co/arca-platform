@@ -107,7 +107,8 @@ export function JobsTable() {
   });
 
   const toggleAll = (ids: string[]) => {
-    const allSelected = ids.length > 0 && ids.every((id) => selectedIds.has(id));
+    const allSelected =
+      ids.length > 0 && ids.every((id) => selectedIds.has(id));
     setSelectedIds(allSelected ? new Set() : new Set(ids));
   };
   const toggleRow = (id: string) => {
@@ -256,35 +257,45 @@ export function JobsTable() {
       case 'comprobantes':
       case 'comprobantes_full':
         return (
-          <span className={`${baseClass} bg-[var(--arca-accent-info-bg)] text-[var(--arca-accent-info-fg)]`}>
+          <span
+            className={`${baseClass} bg-[var(--arca-accent-info-bg)] text-[var(--arca-accent-info-fg)]`}
+          >
             <Receipt className="h-3 w-3" />
             {type === 'comprobantes' ? 'Comprobantes' : 'Comprobantes full'}
           </span>
         );
       case 'iva':
         return (
-          <span className={`${baseClass} bg-[var(--arca-navy-700)]/10 text-[var(--arca-navy-700)]`}>
+          <span
+            className={`${baseClass} bg-[var(--arca-navy-700)]/10 text-[var(--arca-navy-700)]`}
+          >
             <FileWarning className="h-3 w-3" />
             IVA
           </span>
         );
       case 'notificaciones':
         return (
-          <span className={`${baseClass} bg-[var(--arca-accent-info-bg)] text-[var(--arca-navy-700)]`}>
+          <span
+            className={`${baseClass} bg-[var(--arca-accent-info-bg)] text-[var(--arca-navy-700)]`}
+          >
             <Bell className="h-3 w-3" />
             Notificaciones
           </span>
         );
       case 'deuda':
         return (
-          <span className={`${baseClass} bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]`}>
+          <span
+            className={`${baseClass} bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]`}
+          >
             <AlertCircle className="h-3 w-3" />
             Deuda
           </span>
         );
       case 'vencimientos':
         return (
-          <span className={`${baseClass} bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]`}>
+          <span
+            className={`${baseClass} bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]`}
+          >
             <CalendarClock className="h-3 w-3" />
             Vencimientos
           </span>
@@ -442,9 +453,15 @@ export function JobsTable() {
                 <input
                   type="checkbox"
                   className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-navy-900)]"
-                  checked={jobs.length > 0 && jobs.every((j: JobRow) => selectedIds.has(j.id))}
+                  checked={
+                    jobs.length > 0 &&
+                    jobs.every((j: JobRow) => selectedIds.has(j.id))
+                  }
                   ref={(el) => {
-                    if (el) el.indeterminate = jobs.some((j: JobRow) => selectedIds.has(j.id)) && !jobs.every((j: JobRow) => selectedIds.has(j.id));
+                    if (el)
+                      el.indeterminate =
+                        jobs.some((j: JobRow) => selectedIds.has(j.id)) &&
+                        !jobs.every((j: JobRow) => selectedIds.has(j.id));
                   }}
                   onChange={() => toggleAll(jobs.map((j: JobRow) => j.id))}
                 />
@@ -473,7 +490,10 @@ export function JobsTable() {
               </TableRow>
             ) : (
               jobs.map((job: JobRow) => (
-                <TableRow key={job.id} data-state={selectedIds.has(job.id) ? 'selected' : undefined}>
+                <TableRow
+                  key={job.id}
+                  data-state={selectedIds.has(job.id) ? 'selected' : undefined}
+                >
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
@@ -792,11 +812,16 @@ export function JobsTable() {
                     const level = log.level.toLowerCase();
                     let colorClasses =
                       'border-[var(--arca-border)] bg-[var(--arca-surface)] text-[var(--arca-ink-2)]';
-                    let icon = <Info className="h-3.5 w-3.5 text-[var(--arca-ink-3)]" />;
+                    let icon = (
+                      <Info className="h-3.5 w-3.5 text-[var(--arca-ink-3)]" />
+                    );
 
                     if (level === 'info') {
-                      colorClasses = 'border-[var(--arca-accent-info)]/30 bg-[var(--arca-accent-info-bg)] text-[var(--arca-accent-info-fg)]';
-                      icon = <Info className="h-3.5 w-3.5 text-[var(--arca-accent-info)]" />;
+                      colorClasses =
+                        'border-[var(--arca-accent-info)]/30 bg-[var(--arca-accent-info-bg)] text-[var(--arca-accent-info-fg)]';
+                      icon = (
+                        <Info className="h-3.5 w-3.5 text-[var(--arca-accent-info)]" />
+                      );
                     } else if (level === 'warn') {
                       colorClasses =
                         'border-[var(--arca-accent-warn)]/30 bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]';
@@ -804,14 +829,17 @@ export function JobsTable() {
                         <AlertTriangle className="h-3.5 w-3.5 text-[var(--arca-accent-warn)]" />
                       );
                     } else if (level === 'error') {
-                      colorClasses = 'border-[var(--arca-accent-neg)]/30 bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]';
+                      colorClasses =
+                        'border-[var(--arca-accent-neg)]/30 bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]';
                       icon = (
                         <AlertCircle className="h-3.5 w-3.5 text-[var(--arca-accent-neg)]" />
                       );
                     } else if (level === 'debug') {
                       colorClasses =
                         'border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]';
-                      icon = <Bug className="h-3.5 w-3.5 text-[var(--arca-ink-4)]" />;
+                      icon = (
+                        <Bug className="h-3.5 w-3.5 text-[var(--arca-ink-4)]" />
+                      );
                     }
 
                     return (

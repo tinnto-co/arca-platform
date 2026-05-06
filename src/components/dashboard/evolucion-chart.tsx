@@ -31,8 +31,7 @@ export function EvolucionChart({ from, to }: EvolucionChartProps) {
 
   const { data: monthlyData = [], isLoading } = useQuery({
     queryKey: ['monthlyEvolution', fromStr, toStr],
-    queryFn: () =>
-      getMonthlyEvolution({ data: { from: fromStr, to: toStr } }),
+    queryFn: () => getMonthlyEvolution({ data: { from: fromStr, to: toStr } }),
   });
 
   const average =
