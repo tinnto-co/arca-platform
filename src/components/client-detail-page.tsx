@@ -261,6 +261,7 @@ function findBestMatchingProfileId(
 
 export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState<string>('resumen');
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [editClientDialogOpen, setEditClientDialogOpen] = useState(false);
   const now = new Date();
@@ -1478,8 +1479,10 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     <div>
       {aiAgentEnabled && (
         <CopilotReadableEntity
-          description="Cliente actualmente visible en pantalla"
+          description="Cliente actualmente visible en pantalla y la sección que está mirando el usuario. Usá tabActiva para entender el foco actual: resumen=overview, deudas=AFIP debts, vencimientos=próximos, notificaciones=AFIP, facturas=invoices, iva=IVA scrape, convenio-multilateral=Multilateral."
           value={{
+            modulo: 'cliente-detalle',
+            tabActiva: activeTab,
             id: client.id,
             name: client.name,
             identityNumber: client.identityNumber,
@@ -1488,7 +1491,11 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
           }}
         />
       )}
-      <Tabs defaultValue="resumen" className="flex flex-col">
+      <Tabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        className="flex flex-col"
+      >
         {/* ── Sticky client header ── */}
         <div className="sticky top-0 z-10 bg-[var(--arca-bg)] border-b border-[var(--arca-border)]">
           <div className="px-4 md:px-[28px] pt-[18px]">

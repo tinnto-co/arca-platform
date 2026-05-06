@@ -160,10 +160,12 @@ export function MiniKpiCardsRow({
   ];
 
   return (
-    <section className="grid grid-cols-2 xl:grid-cols-4 gap-3.5 mb-5">
-      {miniKpis.map((kpi) => (
-        <MiniKpiCard key={kpi.label} data={kpi} />
-      ))}
+    <section className="@container mb-5">
+      <div className="grid grid-cols-1 @[20rem]:grid-cols-2 @[56rem]:grid-cols-4 gap-3.5">
+        {miniKpis.map((kpi) => (
+          <MiniKpiCard key={kpi.label} data={kpi} />
+        ))}
+      </div>
     </section>
   );
 }

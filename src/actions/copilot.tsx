@@ -7,8 +7,11 @@ import {
   ivaScrape,
   invoice,
   movements,
+  debt,
+  notification,
+  job,
 } from '@/drizzle/schema';
-import { and, eq, gte, ilike, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, ilike, lte, sql } from 'drizzle-orm';
 import { calcularIvaDesdeFacturas, type InvoiceIvaRow } from '@/lib/iva-calc';
 import { assertCanWrite, getMemberRole, getSessionWithOrg } from './helpers';
 
@@ -511,5 +514,249 @@ export const persistBankStatementMovements = createServerFn({ method: 'POST' })
       clientId: target.id,
       clientName: target.name,
       banco: banco ?? '',
+    };
+  });
+
+/**
+ * Resumen de salud de un cliente (módulo Clientes).
+ *
+ * Combina datos de varias tablas para devolver un overview ejecutivo:
+ * - Health score 0-100
+ * - Facturación del mes en curso
+ * - Deudas vencidas y pendientes
+ * - Notificaciones AFIP no leídas
+ * - Estado del último scrape de cada tipo (auth_error / ok / fallido)
+ *
+ * Diseñado para responder "cómo está el cliente X" sin abrir 7 tabs.
+ *
+ * Acepta `clientId` y/o `clientName`. Si el id no resuelve (LLMs suelen
+ * "regenerar" UUIDs cambiándole un dígito), cae por fuzzy match al nombre.
+ */
+const getResumenSaludClienteInput = z.object({
+  clientId: z.string().optional(),
+  clientName: z.string().optional(),
+});
+
+export type GetResumenSaludClienteResult =
+  | { error: string }
+  | {
+      cliente: { id: string; name: string; identityNumber: string };
+      healthScore: number;
+      facturacionMesActual: { ventas: number; compras: number; cantidad: number };
+      deudas: { vencidas: number; vencidasMonto: number; total: number; totalMonto: number };
+      notificaciones: { noLeidas: number };
+      ultimoScrapePorTipo: {
+        tipo: string;
+        status: string | null;
+        finishedAt: string | null;
+        diasDesde: number | null;
+        failedReason: string | null;
+      }[];
+      observaciones: { severidad: 'info' | 'warn' | 'error'; mensaje: string }[];
+    };
+
+export const getResumenSaludCliente = createServerFn({ method: 'POST' })
+  .inputValidator(getResumenSaludClienteInput)
+  .handler(async (ctx): Promise<GetResumenSaludClienteResult> => {
+    const { orgId } = (await getSessionWithOrg()) as { orgId: string };
+    const { clientId, clientName } = ctx.data;
+
+    if (!clientId && !clientName) {
+      return { error: 'Se requiere clientId o clientName.' };
+    }
+
+    // 1) Try exact id match first (typical happy path).
+    let target: { id: string; name: string; identityNumber: string } | null = null;
+    if (clientId) {
+      const [byId] = await dbReadonly
+        .select({
+          id: client.id,
+          name: client.name,
+          identityNumber: client.identityNumber,
+        })
+        .from(client)
+        .where(
+          and(eq(client.id, clientId), eq(client.organizationId, orgId))
+        )
+        .limit(1);
+      if (byId) target = byId;
+    }
+
+    // 2) Fallback: fuzzy match by name (LLMs sometimes mangle UUIDs).
+    if (!target && clientName) {
+      const matches = await dbReadonly
+        .select({
+          id: client.id,
+          name: client.name,
+          identityNumber: client.identityNumber,
+        })
+        .from(client)
+        .where(
+          and(
+            eq(client.organizationId, orgId),
+            ilike(client.name, `%${clientName}%`)
+          )
+        )
+        .limit(5);
+      if (matches.length === 1) {
+        target = matches[0];
+      } else if (matches.length > 1) {
+        return {
+          error: `Encontré varios clientes con nombre similar a "${clientName}". Especificá cuál: ${matches
+            .map((m) => m.name)
+            .join(', ')}`,
+        };
+      }
+    }
+
+    if (!target) {
+      return {
+        error: clientName
+          ? `No encontré ningún cliente con nombre "${clientName}" en el estudio.`
+          : 'Cliente no encontrado o fuera del estudio.',
+      };
+    }
+
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+    const [debtRows, notifRow, jobRows, invoiceAgg] = await Promise.all([
+      dbReadonly.select().from(debt).where(eq(debt.client, target.id)),
+      dbReadonly
+        .select({ count: sql<number>`count(*)` })
+        .from(notification)
+        .where(
+          and(eq(notification.client, target.id), eq(notification.opened, false))
+        ),
+      // Último job de cada tipo
+      dbReadonly
+        .select({
+          type: job.type,
+          status: job.status,
+          finishedAt: job.finishedAt,
+          createdAt: job.createdAt,
+          failedReason: job.failedReason,
+        })
+        .from(job)
+        .where(eq(job.clientId, target.id))
+        .orderBy(desc(job.createdAt))
+        .limit(50),
+      // Facturación del mes
+      dbReadonly
+        .select({
+          direction: invoice.direction,
+          totalSum: sql<string>`COALESCE(SUM(${invoice.amount}), 0)`,
+          count: sql<number>`count(*)`,
+        })
+        .from(invoice)
+        .innerJoin(profile, eq(invoice.profile, profile.id))
+        .where(
+          and(
+            eq(profile.client, target.id),
+            gte(invoice.emitionDate, monthStart),
+            lte(invoice.emitionDate, monthEnd)
+          )
+        )
+        .groupBy(invoice.direction),
+    ]);
+
+    const num = (v: unknown) => Number(v ?? 0);
+
+    let ventas = 0;
+    let compras = 0;
+    let invoiceCount = 0;
+    for (const row of invoiceAgg) {
+      const total = num(row.totalSum);
+      invoiceCount += Number(row.count);
+      if (row.direction === 'output' || row.direction === 'sales')
+        ventas += total;
+      else compras += total;
+    }
+
+    const debtsVencidas = debtRows.filter((d) => d.dueDate && new Date(d.dueDate) < now);
+    const debtsVencidasMonto = debtsVencidas.reduce((s, d) => s + num(d.balance), 0);
+    const debtsTotalMonto = debtRows.reduce((s, d) => s + num(d.balance), 0);
+
+    const noLeidas = Number(notifRow[0]?.count ?? 0);
+
+    // Reducir jobs a último por tipo
+    const tipos = ['iva', 'comprobantes', 'notificaciones', 'deuda', 'vencimientos'] as const;
+    const ultimoScrapePorTipo = tipos.map((tipo) => {
+      const last = jobRows.find((j) => j.type === tipo);
+      const finished = last?.finishedAt ? new Date(last.finishedAt) : null;
+      const diasDesde = finished
+        ? Math.floor((now.getTime() - finished.getTime()) / (1000 * 60 * 60 * 24))
+        : null;
+      return {
+        tipo,
+        status: last?.status ?? null,
+        finishedAt: finished ? finished.toISOString() : null,
+        diasDesde,
+        failedReason: last?.failedReason ?? null,
+      };
+    });
+
+    // Health score
+    let score = 0;
+    const observaciones: { severidad: 'info' | 'warn' | 'error'; mensaje: string }[] = [];
+
+    // 25 pts: sin deudas vencidas
+    if (debtsVencidas.length === 0) score += 25;
+    else
+      observaciones.push({
+        severidad: 'error',
+        mensaje: `${debtsVencidas.length} deudas vencidas por $${debtsVencidasMonto.toFixed(0)}`,
+      });
+
+    // 20 pts: scrape reciente (cualquier tipo, <7 días)
+    const scrapeReciente = ultimoScrapePorTipo.some(
+      (s) => s.diasDesde !== null && s.diasDesde <= 7 && s.status === 'finished'
+    );
+    if (scrapeReciente) score += 20;
+    else
+      observaciones.push({
+        severidad: 'warn',
+        mensaje: 'No hay scrapes exitosos en los últimos 7 días',
+      });
+
+    // 20 pts: ningún job recientemente fallido
+    const algunFallido = ultimoScrapePorTipo.some((s) => s.status === 'failed');
+    if (!algunFallido) score += 20;
+    else
+      observaciones.push({
+        severidad: 'error',
+        mensaje: 'Hay jobs fallidos recientes — revisar credenciales',
+      });
+
+    // 15 pts: notif no leídas < 5
+    if (noLeidas < 5) score += 15;
+    else
+      observaciones.push({
+        severidad: 'warn',
+        mensaje: `${noLeidas} notificaciones AFIP sin leer`,
+      });
+
+    // 20 pts: tiene facturación reciente
+    if (invoiceCount > 0) score += 20;
+    else
+      observaciones.push({
+        severidad: 'info',
+        mensaje: 'Sin facturación registrada este mes',
+      });
+
+    return {
+      cliente: target,
+      healthScore: score,
+      facturacionMesActual: { ventas, compras, cantidad: invoiceCount },
+      deudas: {
+        vencidas: debtsVencidas.length,
+        vencidasMonto: debtsVencidasMonto,
+        total: debtRows.length,
+        totalMonto: debtsTotalMonto,
+      },
+      notificaciones: { noLeidas },
+      ultimoScrapePorTipo,
+      observaciones,
     };
   });

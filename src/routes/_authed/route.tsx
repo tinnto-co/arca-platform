@@ -17,11 +17,10 @@ import {
 } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { CopilotKit } from '@copilotkit/react-core';
-import { CopilotPopup } from '@copilotkit/react-ui';
 import '@copilotkit/react-ui/styles.css';
 import { CopilotActions } from '@/components/copilot/CopilotActions';
 import { CopilotAttachmentProvider } from '@/components/copilot/AttachmentContext';
-import { AttachmentBar } from '@/components/copilot/AttachmentBar';
+import { CopilotBottomPanel } from '@/components/copilot/CopilotBottomPanel';
 import { cn } from '@/lib/utils';
 
 export const Route = createFileRoute('/_authed')({
@@ -49,15 +48,22 @@ function RouteComponent() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isChatDetail = pathname.startsWith('/chat/');
   const isChatRoute = isChatDetail || pathname === '/chat';
-  const hideAgentInput = isChatRoute;
 
-  const { data: orgModules } = useQuery({
+  const { data: orgModules, isLoading: isModulesLoading } = useQuery({
     queryKey: ['orgModules'],
     queryFn: () => listOrgModules(),
   });
-  const aiAgentEnabled = orgModules?.ai_agent ?? false;
 
-  const shell = (
+  // Wait for the org-modules query before deciding whether to mount <CopilotKit>.
+  // Otherwise aiAgentEnabled flips false→true mid-render which unmounts/remounts
+  // the entire CopilotKit tree and triggers internal "subscribe on null" race
+  // conditions inside the library (see useCopilotChatInternal).
+  if (isModulesLoading) return null;
+
+  const aiAgentEnabled = orgModules?.ai_agent ?? false;
+  const hideAgentInput = isChatRoute || !aiAgentEnabled;
+
+  const shell = (agentInputSlot: React.ReactNode) => (
     <OrgSwitchProvider>
       <SidebarProvider defaultOpen={true} className="h-svh">
         <AppSidebar />
@@ -72,7 +78,7 @@ function RouteComponent() {
           >
             <Outlet />
           </div>
-          {!hideAgentInput && <AgentInput />}
+          {agentInputSlot}
         </SidebarInset>
         <MobileNavbar />
       </SidebarProvider>
@@ -84,22 +90,12 @@ function RouteComponent() {
       <CopilotKit runtimeUrl="/api/copilotkit" agent="default">
         <CopilotAttachmentProvider>
           <CopilotActions />
-          {shell}
-          {!isChatRoute && (
-            <CopilotPopup
-              labels={{
-                title: 'Asistente Arca',
-                initial: '¿En qué puedo ayudarte?',
-                placeholder: 'Preguntale al asistente…',
-              }}
-            >
-              <AttachmentBar />
-            </CopilotPopup>
-          )}
+          {shell(!hideAgentInput ? <AgentInput /> : null)}
+          {!isChatRoute && <CopilotBottomPanel />}
         </CopilotAttachmentProvider>
       </CopilotKit>
     );
   }
 
-  return shell;
+  return shell(null);
 }

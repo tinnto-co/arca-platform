@@ -36,7 +36,9 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { getClientsWithProfiles, deleteClient } from '@/actions/client';
+import { listOrgModules } from '@/actions/admin';
 import { EditClientDialog } from '@/components/edit-client-dialog';
+import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
 import { relativeTime } from '@/components/dashboard/shared';
 
 interface Client {
@@ -64,6 +66,22 @@ export function ClientsTable() {
     queryFn: () => getClientsWithProfiles(),
     retry: 1,
   });
+
+  const { data: orgModules } = useQuery({
+    queryKey: ['orgModules'],
+    queryFn: () => listOrgModules(),
+  });
+  const aiAgentEnabled = orgModules?.ai_agent ?? false;
+
+  const clientsTyped = clients as Client[];
+  const clientsConErrores = clientsTyped.filter((c) => c.hasErrors === true);
+  const clientesResumen = clientsTyped.slice(0, 30).map((c) => ({
+    id: c.id,
+    name: c.name,
+    cuit: c.identityNumber,
+    hasErrors: c.hasErrors === true,
+    errorMessage: c.errorMessage ?? null,
+  }));
 
   const deleteMutation = useMutation({
     mutationFn: (data: { id: string }) => deleteClient({ data }),
@@ -203,9 +221,23 @@ export function ClientsTable() {
 
   return (
     <>
+      {aiAgentEnabled && (
+        <CopilotReadableEntity
+          description="Listado de clientes visible en pantalla. clientesResumen incluye los primeros 30 con id/CUIT — usá el id para referenciar un cliente al invocar acciones."
+          value={{
+            modulo: 'clientes',
+            vista: 'lista',
+            totalClientes: clientsTyped.length,
+            clientesConErrores: clientsConErrores.length,
+            clientesSinErrores:
+              clientsTyped.length - clientsConErrores.length,
+            clientesResumen,
+          }}
+        />
+      )}
       <DataTable
         columns={columns}
-        data={clients as Client[]}
+        data={clientsTyped}
         isLoading={isLoading}
         searchKey="name"
         searchPlaceholder="Buscar por nombre, CUIT..."

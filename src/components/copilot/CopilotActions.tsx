@@ -4,10 +4,16 @@ import { useCopilotAction } from '@copilotkit/react-core';
 import { Loader2 } from 'lucide-react';
 import {
   getIvaPositionForCopilot,
+  getResumenSaludCliente,
   type GetIvaPositionForCopilotResult,
+  type GetResumenSaludClienteResult,
 } from '@/actions/copilot';
 import { getDashboardStats, getUpcomingDueDates } from '@/actions/dashboard';
 import { markNotificationOpened } from '@/actions/notification';
+import {
+  getResumenLiquidacionMes,
+  type GetResumenLiquidacionMesResult,
+} from '@/actions/sueldos';
 import {
   MiniKpiCardsRow,
   type DashboardStats,
@@ -18,6 +24,8 @@ import {
 } from '@/components/dashboard/vencimientos-list';
 import { ConfirmationCard } from './ConfirmationCard';
 import { CopilotIvaResume } from './CopilotIvaResume';
+import { ResumenLiquidacionMes } from './ResumenLiquidacionMes';
+import { ResumenSaludCliente } from './ResumenSaludCliente';
 import { ScanPdfConfirmation } from './ScanPdfConfirmation';
 import { ScrapeConfirmation, type ScrapeJobType } from './ScrapeConfirmation';
 
@@ -157,9 +165,108 @@ export function CopilotActions() {
   });
 
   useCopilotAction({
+    name: 'getResumenSaludCliente',
+    description:
+      'Devuelve un resumen ejecutivo de salud de un cliente: health score 0-100, facturación del mes, deudas vencidas y totales, notificaciones AFIP no leídas, estado del último scrape de cada tipo (IVA/comprobantes/notificaciones/deuda/vencimientos), y observaciones de atención requerida. INVOCALO cuando el usuario pregunte "cómo está el cliente X", "estado del cliente", "salud del cliente", "qué le pasa al cliente", o quiera un overview general. PASÁ SIEMPRE AMBOS parámetros cuando los tengas en el contexto: el clientId Y el clientName del cliente activo. Si el clientId no resuelve (por ejemplo por un typo), el sistema busca por nombre como fallback.',
+    parameters: [
+      {
+        name: 'clientId',
+        type: 'string',
+        description:
+          'UUID del cliente. Tomalo TAL CUAL del contexto activo (cliente visible en pantalla). NO lo modifiques ni regeneres.',
+        required: false,
+      },
+      {
+        name: 'clientName',
+        type: 'string',
+        description:
+          'Nombre del cliente. Pásalo siempre como respaldo por si el clientId se transcribe mal. Tomalo del contexto activo.',
+        required: false,
+      },
+    ],
+    handler: async ({ clientId, clientName }) => {
+      return await getResumenSaludCliente({
+        data: {
+          clientId: clientId ?? undefined,
+          clientName: clientName ?? undefined,
+        },
+      });
+    },
+    render: ({ status, result }) => {
+      if (status === 'inProgress' || status === 'executing') {
+        return (
+          <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <span>Calculando estado del cliente…</span>
+          </div>
+        );
+      }
+      if (!result) {
+        return (
+          <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            Sin datos.
+          </div>
+        );
+      }
+      return (
+        <ResumenSaludCliente result={result as GetResumenSaludClienteResult} />
+      );
+    },
+  });
+
+  useCopilotAction({
+    name: 'getResumenLiquidacionMes',
+    description:
+      'Resumen ejecutivo de la liquidación de sueldos de un cliente para un período. Devuelve totales (haberes, descuentos, retenciones, neto), cantidad de empleados liquidados, recibos por tipo (sueldo/SAC/anticipo/etc.) y cuántos están confirmados. INVOCALO cuando el usuario pregunte por totales del mes, cómo quedó la liquidación, resumen de sueldos, etc. Si no se especifica período, usar mesLiquidable del contexto (mes anterior). El clientId se obtiene del contexto del módulo Sueldos.',
+    parameters: [
+      {
+        name: 'clientId',
+        type: 'string',
+        description:
+          'UUID del cliente. Tomalo del contexto activo en /sueldos (cliente.clientId) si está disponible.',
+        required: true,
+      },
+      {
+        name: 'periodo',
+        type: 'string',
+        description:
+          'Período en formato YYYY-MM. Si el usuario no lo especifica, usar mesLiquidable del contexto (mes anterior al actual).',
+        required: true,
+      },
+    ],
+    handler: async ({ clientId, periodo }) => {
+      return await getResumenLiquidacionMes({
+        data: { clientId, periodo },
+      });
+    },
+    render: ({ status, result }) => {
+      if (status === 'inProgress' || status === 'executing') {
+        return (
+          <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <span>Calculando resumen de liquidación…</span>
+          </div>
+        );
+      }
+      if (!result) {
+        return (
+          <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            Sin datos.
+          </div>
+        );
+      }
+      return (
+        <ResumenLiquidacionMes
+          result={result as GetResumenLiquidacionMesResult}
+        />
+      );
+    },
+  });
+
+  useCopilotAction({
     name: 'dispararScrape',
     description:
-      'Dispara un job de scraping contra ARCA para un cliente. SIEMPRE pide confirmación al usuario antes de ejecutar — la acción se completa solo cuando el usuario confirma o cancela. Tipos disponibles: iva (posición IVA), comprobantes (facturas), notificaciones (notificaciones AFIP), deuda (deudas), vencimientos (vencimientos fiscales). Usalo cuando el usuario pida explícitamente refrescar/scrapear/actualizar datos de un cliente.',
+      'Dispara un job de scraping contra ARCA para un cliente. INVOCÁ ESTA ACTION DIRECTAMENTE en cuanto el usuario lo pida — el componente ya muestra una card visual con botones Cancelar/Confirmar antes de ejecutar el job. NO pidas confirmación en texto antes de invocar la action; la confirmación visual la maneja la UI. Tipos disponibles: iva (posición IVA), comprobantes (facturas), notificaciones (notificaciones AFIP), deuda (deudas), vencimientos (vencimientos fiscales). Usalo cuando el usuario pida explícitamente refrescar/scrapear/actualizar datos de un cliente.',
     parameters: [
       {
         name: 'clientId',
@@ -213,7 +320,7 @@ export function CopilotActions() {
   useCopilotAction({
     name: 'marcarNotificacionLeida',
     description:
-      'Marca una notificación AFIP como leída. SIEMPRE pide confirmación al usuario antes de ejecutar — la acción se completa solo cuando el usuario confirma o cancela. Usá el id (UUID) de la notificación, que está expuesto en el contexto cuando el usuario está en /notifications.',
+      'Marca una notificación AFIP como leída. INVOCÁ ESTA ACTION DIRECTAMENTE en cuanto el usuario lo pida — el componente ya muestra una card visual con botones Cancelar/Confirmar antes de aplicar el cambio. NO pidas confirmación en texto antes de invocar la action; la confirmación visual la maneja la UI. Usá el id (UUID) de la notificación, que está expuesto en el contexto cuando el usuario está en /notifications.',
     parameters: [
       {
         name: 'notificationId',
@@ -261,7 +368,7 @@ export function CopilotActions() {
   useCopilotAction({
     name: 'escanearExtractoBancario',
     description:
-      'Escanea el PDF adjunto al popup (extracto bancario) con Gemini, muestra una previsualización editable de los movimientos detectados y, tras la confirmación del usuario, los guarda como movimientos del cliente. SIEMPRE pide confirmación antes de persistir. Requiere que haya un PDF adjunto en la barra del popup; si no hay adjunto, avisá al usuario para que arrastre uno antes de invocar la acción. Pasá clientId si tenés el id del cliente activo en contexto; si solo tenés el nombre, pasá clientName.',
+      'Escanea el PDF adjunto al popup (extracto bancario) con Gemini, muestra una previsualización editable de los movimientos detectados y, tras la confirmación del usuario, los guarda como movimientos del cliente. INVOCÁ ESTA ACTION DIRECTAMENTE en cuanto el usuario lo pida — el componente ya muestra una card visual con previsualización + botones Cancelar/Confirmar antes de persistir nada. NO pidas confirmación en texto antes de invocar la action; la confirmación visual la maneja la UI. Requiere que haya un PDF adjunto en la barra del popup; si no hay adjunto, el componente mismo avisa al usuario que adjunte uno. Pasá clientId si tenés el id del cliente activo en contexto; si solo tenés el nombre, pasá clientName.',
     parameters: [
       {
         name: 'clientId',

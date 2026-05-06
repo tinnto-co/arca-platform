@@ -23,7 +23,23 @@ import { SueldosSimulador } from '@/components/sueldos/SueldosSimulador';
 import { SueldosRecibo } from '@/components/sueldos/SueldosRecibo';
 import { SueldosFirmaDigital } from '@/components/sueldos/SueldosFirmaDigital';
 import { getClientsForSueldos } from '@/actions/client';
+import { listOrgModules } from '@/actions/admin';
 import { PageHeader } from '@/components/shared/page-header';
+import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
+import {
+  getPeriodoMesActual,
+  getPeriodoMesAnterior,
+} from '@/lib/payroll-period-rules';
+
+const TAB_DESCRIPTIONS: Record<string, string> = {
+  dashboard: 'Listado de liquidaciones del período seleccionado',
+  empleados: 'Listado y CRUD de empleados del cliente',
+  convenios: 'Convenios colectivos (CCT), categorías y escalas salariales',
+  conceptos: 'Conceptos salariales del cliente con fórmulas configurables',
+  simulador: 'Generación de un nuevo recibo individual',
+  recibo: 'Visor e impresor de recibos confirmados',
+  'firma-digital': 'Carga y gestión de la firma digital del empleador',
+};
 
 export const Route = createFileRoute('/_authed/sueldos/')({
   component: RouteComponent,
@@ -37,6 +53,12 @@ function RouteComponent() {
     queryKey: ['clients', 'sueldos'],
     queryFn: () => getClientsForSueldos(),
   });
+
+  const { data: orgModules } = useQuery({
+    queryKey: ['orgModules'],
+    queryFn: () => listOrgModules(),
+  });
+  const aiAgentEnabled = orgModules?.ai_agent ?? false;
 
   const selectedOption = clients.find((c) => c.id === selectedOptionId);
   const clientId = selectedOption?.clientId ?? '';
@@ -54,6 +76,27 @@ function RouteComponent() {
 
   return (
     <div className="space-y-4 overflow-x-hidden p-4 md:space-y-6 md:px-[3rem] md:pt-[3rem] md:pb-6">
+      {aiAgentEnabled && (
+        <CopilotReadableEntity
+          description="Estado actual del módulo Sueldos visible en pantalla. Usá clientId/profileId al invocar acciones de payroll. mesLiquidable es el único período sobre el que se pueden calcular liquidaciones."
+          value={{
+            modulo: 'sueldos',
+            tabActiva: activeTab,
+            tabDescripcion: TAB_DESCRIPTIONS[activeTab] ?? null,
+            cliente: selectedOption
+              ? {
+                  optionId: selectedOption.id,
+                  clientId,
+                  profileId,
+                  label: selectedOption.label,
+                }
+              : null,
+            mesActual: getPeriodoMesActual(),
+            mesLiquidable: getPeriodoMesAnterior(),
+            totalClientesDisponibles: clients.length,
+          }}
+        />
+      )}
       <PageHeader
         title="Liquidación"
         subtitle="Gestione los sueldos de sus clientes"

@@ -2,9 +2,9 @@
 
 import { useCallback, useRef, useState } from 'react';
 import type { ChangeEvent, DragEvent } from 'react';
-import { useChatContext } from '@copilotkit/react-ui';
 import { FileText, Loader2, Paperclip, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useCopilotAttachment } from './AttachmentContext';
 
@@ -31,7 +31,6 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 export function AttachmentBar() {
-  const { open } = useChatContext();
   const { file, setFile, clear } = useCopilotAttachment();
   const [isDragging, setIsDragging] = useState(false);
   const [isReading, setIsReading] = useState(false);
@@ -64,7 +63,7 @@ export function AttachmentBar() {
   );
 
   const handleDrop = useCallback(
-    (e: DragEvent<HTMLDivElement>) => {
+    (e: DragEvent<HTMLElement>) => {
       e.preventDefault();
       e.stopPropagation();
       setIsDragging(false);
@@ -74,13 +73,13 @@ export function AttachmentBar() {
     [acceptFile]
   );
 
-  const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
+  const handleDragOver = useCallback((e: DragEvent<HTMLElement>) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(true);
   }, []);
 
-  const handleDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {
+  const handleDragLeave = useCallback((e: DragEvent<HTMLElement>) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
@@ -99,77 +98,71 @@ export function AttachmentBar() {
     inputRef.current?.click();
   }, []);
 
-  if (!open) return null;
+  return (
+    <div className="copilot-attachment-area">
+      <input
+        ref={inputRef}
+        type="file"
+        accept="application/pdf,.pdf"
+        className="sr-only"
+        onChange={handleFileInput}
+        disabled={isReading}
+      />
 
-  if (file) {
-    return (
-      <div
-        className="copilot-attachment-bar fixed right-4 bottom-[7.5rem] z-40 w-[24rem] max-w-[calc(100vw-2rem)] rounded-md border bg-background p-2 shadow-md sm:bottom-[6rem]"
-        role="group"
-        aria-label="Archivo adjunto"
-      >
-        <div className="flex items-center gap-2">
-          <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium">{file.name}</div>
-            <div className="text-xs text-muted-foreground">
+      {file && (
+        <div
+          className="copilot-attachment-pill flex items-center gap-2 rounded-full border bg-background py-1 pl-2 pr-1 shadow-sm"
+          role="group"
+          aria-label="Archivo adjunto"
+          onMouseDown={(e) => e.nativeEvent.stopImmediatePropagation()}
+        >
+          <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <div className="min-w-0 flex-1 text-xs">
+            <span className="truncate font-medium">{file.name}</span>
+            <span className="ml-1.5 text-muted-foreground">
               {formatSize(file.size)}
-            </div>
+            </span>
           </div>
           <button
             type="button"
             onClick={clear}
             aria-label="Quitar archivo"
-            className="rounded-sm p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
           >
-            <X className="h-4 w-4" />
+            <X className="h-3 w-3" />
           </button>
         </div>
-      </div>
-    );
-  }
+      )}
 
-  return (
-    <div
-      onDrop={handleDrop}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onClick={handleClick}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          handleClick();
-        }
-      }}
-      aria-label="Adjuntar PDF"
-      className={cn(
-        'copilot-attachment-bar fixed right-4 bottom-[7.5rem] z-40 flex w-[24rem] max-w-[calc(100vw-2rem)] cursor-pointer items-center gap-2 rounded-md border border-dashed bg-background p-2 text-xs text-muted-foreground shadow-md transition-colors hover:bg-muted/40 sm:bottom-[6rem]',
-        isDragging && 'border-primary bg-primary/5 text-foreground',
-        isReading && 'opacity-60'
+      {!file && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={handleClick}
+              onDrop={handleDrop}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onMouseDown={(e) => e.nativeEvent.stopImmediatePropagation()}
+              disabled={isReading}
+              aria-label="Adjuntar PDF"
+              className={cn(
+                'copilot-attach-btn flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-60',
+                isDragging && 'bg-primary/10 text-primary'
+              )}
+            >
+              {isReading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Paperclip className="h-4 w-4" />
+              )}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top" sideOffset={6}>
+            {isDragging ? 'Soltá el PDF acá' : 'Adjuntar PDF'}
+          </TooltipContent>
+        </Tooltip>
       )}
-    >
-      {isReading ? (
-        <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-      ) : (
-        <Paperclip className="h-4 w-4 shrink-0" />
-      )}
-      <span className="flex-1">
-        {isReading
-          ? 'Leyendo PDF…'
-          : isDragging
-            ? 'Soltá el PDF acá'
-            : 'Arrastrá un PDF o hacé click para adjuntar'}
-      </span>
-      <input
-        ref={inputRef}
-        type="file"
-        accept="application/pdf,.pdf"
-        className="hidden"
-        onChange={handleFileInput}
-        disabled={isReading}
-      />
     </div>
   );
 }
