@@ -16,6 +16,7 @@ import {
   type VencimientoItem,
 } from '@/components/dashboard/vencimientos-list';
 import { CopilotIvaResume } from './CopilotIvaResume';
+import { ScrapeConfirmation, type ScrapeJobType } from './ScrapeConfirmation';
 
 export function CopilotActions() {
   useCopilotAction({
@@ -148,6 +149,60 @@ export function CopilotActions() {
       const to = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
       return (
         <MiniKpiCardsRow from={from} to={to} stats={result as DashboardStats} />
+      );
+    },
+  });
+
+  useCopilotAction({
+    name: 'dispararScrape',
+    description:
+      'Dispara un job de scraping contra ARCA para un cliente. SIEMPRE pide confirmación al usuario antes de ejecutar — la acción se completa solo cuando el usuario confirma o cancela. Tipos disponibles: iva (posición IVA), comprobantes (facturas), notificaciones (notificaciones AFIP), deuda (deudas), vencimientos (vencimientos fiscales). Usalo cuando el usuario pida explícitamente refrescar/scrapear/actualizar datos de un cliente.',
+    parameters: [
+      {
+        name: 'clientId',
+        type: 'string',
+        description:
+          'ID (UUID) del cliente. Si tenés el cliente activo expuesto en el contexto, usá ese id.',
+        required: true,
+      },
+      {
+        name: 'jobType',
+        type: 'string',
+        enum: [
+          'iva',
+          'comprobantes',
+          'notificaciones',
+          'deuda',
+          'vencimientos',
+        ],
+        description: 'Tipo de job a disparar.',
+        required: true,
+      },
+    ],
+    renderAndWaitForResponse: ({ args, status, respond }) => {
+      if (status === 'inProgress' || !respond) {
+        return (
+          <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <span>Preparando confirmación…</span>
+          </div>
+        );
+      }
+      const { clientId, jobType } = args;
+      if (!clientId || !jobType) {
+        return (
+          <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+            Faltan datos para disparar el job (clientId y jobType son
+            requeridos).
+          </div>
+        );
+      }
+      return (
+        <ScrapeConfirmation
+          clientId={clientId}
+          jobType={jobType as ScrapeJobType}
+          respond={respond}
+        />
       );
     },
   });

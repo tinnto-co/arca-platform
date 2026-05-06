@@ -153,7 +153,7 @@
         "DO NOT modify src/routes/api/agent.ts"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 3 — HITL. CopilotKit's renderAndWaitForResponse pattern is documented at https://docs.copilotkit.ai/guides/human-in-the-loop. The component in src/components/copilot/ScrapeConfirmation.tsx should use shadcn UI primitives (Card, Button) consistent with the rest of the app."
     },
     {
