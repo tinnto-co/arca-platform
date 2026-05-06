@@ -64,6 +64,8 @@ import {
   markNotificationOpened,
 } from '@/actions/notification';
 import { scrapSingleJob } from '@/actions/client';
+import { listOrgModules } from '@/actions/admin';
+import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
 import {
@@ -432,6 +434,12 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
       return result;
     },
   });
+
+  const { data: orgModules } = useQuery({
+    queryKey: ['orgModules'],
+    queryFn: () => listOrgModules(),
+  });
+  const aiAgentEnabled = orgModules?.ai_agent ?? false;
 
   const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
     queryKey: ['clientProfiles', clientId],
@@ -1468,6 +1476,18 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
 
   return (
     <div>
+      {aiAgentEnabled && (
+        <CopilotReadableEntity
+          description="Cliente actualmente visible en pantalla"
+          value={{
+            id: client.id,
+            name: client.name,
+            identityNumber: client.identityNumber,
+            fiscalCondition: client.fiscalCondition,
+            status: client.status,
+          }}
+        />
+      )}
       <Tabs defaultValue="resumen" className="flex flex-col">
         {/* ── Sticky client header ── */}
         <div className="sticky top-0 z-10 bg-[var(--arca-bg)] border-b border-[var(--arca-border)]">

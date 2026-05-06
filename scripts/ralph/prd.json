@@ -131,7 +131,7 @@
         "DO NOT modify src/routes/api/agent.ts"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 3 — Contexto. useCopilotReadable from @copilotkit/react-core. Only expose non-sensitive fields. Never include client.password (AFIP credential)."
     },
     {

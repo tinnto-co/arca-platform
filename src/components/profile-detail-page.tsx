@@ -6,6 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { getProfile } from '@/actions/profile';
 import { getInvoiceStatsByProfile } from '@/actions/invoice';
+import { listOrgModules } from '@/actions/admin';
+import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
 import { InvoicesTable } from '@/components/invoices-table';
 import {
   ChartContainer,
@@ -67,6 +69,12 @@ export function ProfileDetailPage({
     queryKey: ['profileStats', profileId],
     queryFn: () => getInvoiceStatsByProfile({ data: { profileId } }),
   });
+
+  const { data: orgModules } = useQuery({
+    queryKey: ['orgModules'],
+    queryFn: () => listOrgModules(),
+  });
+  const aiAgentEnabled = orgModules?.ai_agent ?? false;
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -159,6 +167,18 @@ export function ProfileDetailPage({
 
   return (
     <div className="space-y-4 p-4 md:space-y-6 md:p-0 md:m-[3rem]">
+      {aiAgentEnabled && (
+        <CopilotReadableEntity
+          description="Profile fiscal actualmente visible en pantalla"
+          value={{
+            id: profile.id,
+            name: profile.name,
+            identityNumber: profile.identityNumber,
+            clientId: profile.clientId,
+            status: profile.status,
+          }}
+        />
+      )}
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 min-w-0">

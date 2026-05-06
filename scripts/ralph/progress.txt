@@ -29,6 +29,7 @@ Project: ARCA Platform — CopilotKit Integration
 - Reusing big stateful components in inline AI render (US-004): `RenderIvaResume` is heavy (own queries, editable rows, Excel export). Wrapping it works because it accepts `clientId`, `selectedProfileId`, `dateRange`, and a `clientIva` blob — all of which can be derived from the action's resolved client+profile+period. The wrapper (`CopilotIvaResume`) builds `clientIva` from the action result's `ivaScrape` row and lets RenderIvaResume re-query invoices itself. Don't try to feed pre-computed totals into RenderIvaResume — it computes from invoices via React Query. The action's role is *resolution* (name → uuid) and providing the AFIP scrape data, not pre-computation for display.
 - React Hooks rules in conditional render: when a component branches on `'error' in result`, ALL hooks (`useState`, `useEffect`, etc.) MUST be called before the conditional return. Use `const isError = 'error' in result;` to extract the discriminator, then call hooks based on safe values (e.g. `const perfiles = isError ? [] : result.perfiles`), THEN do `if (isError) return <ErrorView />`.
 - `dbReadonly.execute(sql.raw(...))` returns an iterable whose item type isn't `Record<string, unknown>` — drizzle types it loosely. ESLint flags `as Record<string, unknown>[]` as "unnecessary assertion". Workaround: type via `Iterable<{ field: type }>` cast on the source, then `Array.from(rows as Iterable<...>)` returns the right type without a no-unnecessary-type-assertion warning.
+- useCopilotReadable safety (US-007): the hook calls `useCopilotKit()` internally, which subscribes to the runtime via `useEffect`. When the CopilotKit provider is NOT mounted, the default context value has `copilotkit: null`, so the subscribe call inside `useCopilotKit`'s effect would crash. Workaround: never call `useCopilotReadable` directly in pages that render outside the provider. Instead, gate via `useQuery({ queryKey: ['orgModules'] })` and only render a tiny `<CopilotReadableEntity description value />` wrapper component when `aiAgentEnabled` is true. The wrapper is at `src/components/copilot/CopilotReadableEntity.tsx` and is reusable for any "expose entity context to Copilot" need.
 
 ---
 
@@ -156,4 +157,27 @@ Project: ARCA Platform — CopilotKit Integration
   - `MiniKpiCardsRow` runs three independent React Queries — when adding `enabled: !skipQuery` only gate the *specific* query whose data is being injected. Other queries should keep their default behavior so the component stays self-sufficient when used outside the Copilot context.
   - The `from`/`to` props are required by the signature but unused once `stats` is provided (they only feed the now-disabled query's queryKey). Keeping them required avoids a wider type change; the wrapper passes the same dates the handler used.
   - Naming: prefer `stats: statsProp` destructure when the local variable name `stats` (the merged value) is more useful in the body. Same pattern works well for any "optional pre-fetched data" extension.
+---
+
+## [2026-05-05 23:59] - US-007
+- Exposed the active client / profile entity to the Copilot via `useCopilotReadable`, gated by the `ai_agent` module flag.
+- Files changed:
+  - src/components/copilot/CopilotReadableEntity.tsx (new): tiny presenter that calls `useCopilotReadable({description, value})` and returns null. Reusable for any future "current entity in scope" context.
+  - src/components/client-detail-page.tsx: added `useQuery(['orgModules'])` next to the existing `useQuery(['client', clientId])`. After the early-return for missing client, render `<CopilotReadableEntity description="Cliente actualmente visible en pantalla" value={{id, name, identityNumber, fiscalCondition, status}} />` — only when `aiAgentEnabled`. NEVER expose `client.password` or other AFIP credentials.
+  - src/components/profile-detail-page.tsx: same pattern — `useQuery(['orgModules'])` plus a `<CopilotReadableEntity description="Profile fiscal actualmente visible en pantalla" value={{id, name, identityNumber, clientId, status}} />` rendered when `aiAgentEnabled`.
+- **How to verify:**
+  - `bun run dev` (port 3000). Login.
+  - Navigate to `/clients/<some-id>`. Open the CopilotPopup. Ask: "qué cliente estoy viendo" → assistant should respond with the client's name and identityNumber (CUIT). Ask follow-ups like "qué condición fiscal tiene" or "cuál es el estado" — the assistant resolves from the readable.
+  - Navigate to `/clients/<some-id>/<profile-id>`. Open the popup, ask: "qué profile estoy viendo" → assistant responds with the profile's name and CUIT.
+  - Combine with US-004: ask "IVA de este cliente en marzo 2026" — although the action still requires `clientName` and won't auto-resolve from the readable, the Gemini model may pick the name from context and pass it. (Auto-resolution is a polish for a later story.)
+  - Toggle ai_agent off (psql: `update organization set metadata = '{"modules":{"ai_agent":false}}' where id = '<orgId>';` then refresh) → CopilotPopup is gone, the `<CopilotReadableEntity>` is not rendered, no `useCopilotKit()` calls happen — page loads cleanly with no console errors.
+  - Regression: `/chat` continues to work via `/api/agent`. The legacy chat does NOT see the readable (it's CopilotKit-specific) which is fine — the existing tools resolve clients by name like before.
+  - `bunx eslint` on changed files → no NEW errors (pre-existing repo errors unchanged).
+  - `bunx tsc --noEmit | grep -E "client-detail-page|profile-detail-page|CopilotReadableEntity"` → only pre-existing errors.
+- **Learnings for future iterations:**
+  - The PRD said `useCopilotReadable` is "a no-op outside provider scope" — that's incorrect for v1.57.0 of CopilotKit. The hook calls `useCopilotKit()` which subscribes to the runtime via `useEffect`. When the provider is not mounted, the default context has `copilotkit: null` and the effect crashes when it tries to call `.subscribe(...)`. Don't call useCopilotReadable directly inside a page that may render outside the provider.
+  - Workaround pattern: extract the hook into a tiny presenter component (`<CopilotReadableEntity>`) and conditionally render it from the parent based on `useQuery(['orgModules']).ai_agent`. The `useQuery(['orgModules'])` cache hit is free since `_authed/route.tsx` already populates it on first render.
+  - Sensitive field discipline: the `client` row from `getClient()` returns `password`, `image`, `convenioMultilateral`, etc. Only the explicitly listed fields (id, name, identityNumber, fiscalCondition, status) go into the readable. Never spread `...client` into the value — it's a footgun for AFIP credential leakage.
+  - Hook placement: `useQuery(['orgModules'])` belongs near the top of the component, before any early returns, to satisfy `react-hooks/rules-of-hooks`. The conditional render `{aiAgentEnabled && <CopilotReadableEntity ... />}` lives inside the JSX, where conditionals are fine.
+  - For future entity-context stories (e.g. "active invoice", "active recibo"): reuse `CopilotReadableEntity` rather than registering a new readable hook in each page. Keeps the gating logic in one place.
 ---
