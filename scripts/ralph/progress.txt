@@ -21,6 +21,7 @@ Project: ARCA Platform — CopilotKit Integration
 - Module gating (US-002): `listOrgModules` server fn in `src/actions/admin.tsx` reads `organization.metadata` (JSON string) → `{ ai_agent: boolean }`. Defaults to `{ ai_agent: true }` when metadata is null/invalid. Consume via `useQuery({ queryKey: ['orgModules'], queryFn: () => listOrgModules() })`. The hook returns `undefined` while loading — treat that as "disabled" and upgrade once data resolves so the provider is never blocking.
 - `getSessionWithOrg()` returns `orgId` typed as `any` (helpers.ts uses `as any`). When passing to drizzle `eq()` in a NEW server function, cast at the call site: `const { orgId } = (await getSessionWithOrg()) as { orgId: string }` to avoid a fresh `no-unsafe-argument` lint error. Existing actions tolerate the error; new code shouldn't add to the count.
 - CopilotKit provider must be conditional but NEVER block render of the shell. Render the shell first, wrap in `<CopilotKit runtimeUrl="/api/copilotkit" agent="default">` only when `aiAgentEnabled` is true. Import `@copilotkit/react-ui/styles.css` once at the top of the route file — CSS class names are scoped enough that they don't visually leak when no CopilotKit DOM is present.
+- CopilotPopup (US-003): import `{ CopilotPopup }` from `@copilotkit/react-ui` and place it as a sibling of the shell *inside* the `<CopilotKit>` provider. It is a fixed-position floating button (bottom-right) so it does not shift layout. Hide it on `/chat` and `/chat/$id` to avoid double UI alongside the existing dedicated chat. Use `useRouterState({ select: (s) => s.location.pathname })` (already in scope) — `useLocation()` would also work but the existing route file uses `useRouterState`. Provide labels via `labels={{ title, initial, placeholder }}` — the `CopilotChatLabels` interface lives at node_modules/@copilotkit/react-ui/src/components/chat/ChatContext.tsx if you need to extend later.
 
 ---
 
@@ -64,4 +65,23 @@ Project: ARCA Platform — CopilotKit Integration
   - The CSS import (`@copilotkit/react-ui/styles.css`) is module-scoped (Vite hoists it). Putting it inside an `if` doesn't help — the CSS is bundled either way. CopilotKit's class names are prefixed (`copilotKitChat`, etc.), so importing the CSS without rendering CopilotKit DOM has no visual impact.
   - `@copilotkit/react-core`'s `<CopilotKit>` accepts `runtimeUrl` and `agent` (string). For now we use `agent="default"` — actions/readables get registered later (US-004+). The provider is happy with zero registered actions — it just renders chat UI when paired with `<CopilotPopup>` (US-003).
   - When a query returns `undefined` while loading, treat it as "disabled" rather than blocking render — the PRD explicitly says "provider must NOT block render". Acceptable tradeoff: tiny flicker on first paint when ai_agent is enabled.
+---
+
+## [2026-05-05 23:10] - US-003
+- Mounted `<CopilotPopup>` as floating assistant inside the CopilotKit provider, hidden on `/chat` routes.
+- Files changed:
+  - src/routes/_authed/route.tsx: imported `CopilotPopup` from `@copilotkit/react-ui`. Renamed `hideAgentInput` derivation to use a shared `isChatRoute` flag (covers both `/chat` and `/chat/$id`). Inside the `aiAgentEnabled` branch, render `<CopilotPopup>` next to `{shell}` only when `!isChatRoute`. Provided Spanish labels: title='Asistente Arca', initial='¿En qué puedo ayudarte?', placeholder='Preguntale al asistente…'.
+- **How to verify:**
+  - `bun run dev` boots cleanly on http://localhost:3000 (or 3001 if port busy).
+  - Login. Navigate to `/`, `/clients`, `/sueldos`, `/notifications` → a floating CopilotKit button is visible bottom-right. Click it → chat panel opens with the Spanish title 'Asistente Arca' and initial message '¿En qué puedo ayudarte?'. Send 'hola' → model responds in Spanish (uses Gemini 2.5 Flash via /api/copilotkit endpoint from US-001).
+  - Navigate to `/chat` and to `/chat/<some-id>` → the floating CopilotKit button is NOT rendered. Existing `/chat` UI continues to work unchanged (regression check: send a message via the existing AgentInput, response streams via `/api/agent`).
+  - Toggle ai_agent off (psql: `update organization set metadata = '{"modules":{"ai_agent":false}}' where id = '<orgId>';` then refresh): floating button disappears entirely on all routes (no CopilotKit provider mounted), and no `/api/copilotkit` requests should appear in the browser Network tab.
+  - `bun run lint` shows no NEW errors on `src/routes/_authed/route.tsx` (pre-existing warnings/errors unchanged).
+  - `bunx tsc --noEmit` shows no errors on `src/routes/_authed/route.tsx`.
+- **Learnings for future iterations:**
+  - `<CopilotPopup>` is fixed-position bottom-right (the `copilotKitPopup` class adds the absolute positioning). Mounting it as a sibling of the shell inside the provider is enough — no portal needed.
+  - The existing `<AgentInput>` (for the legacy `/chat`-routed assistant) is its own floating bar that targets `/chat/$id` — it lives at the bottom of the SidebarInset. The CopilotPopup floating button anchors bottom-right and does not visually conflict in normal viewports, but if you ever add more floating UI, reserve the bottom-right corner for CopilotPopup.
+  - `CopilotChatLabels` (the labels prop type) defines `title`, `initial`, `placeholder`, plus optional copy/feedback labels — see node_modules/@copilotkit/react-ui/src/components/chat/ChatContext.tsx:95. Default English fallbacks exist for any field you don't override; only the three top-level labels need Spanish overrides for now.
+  - `useRouterState({ select })` is already in use in this file — keep using it instead of switching to `useLocation()` from @tanstack/react-router. The PRD mentions both as acceptable; staying with the existing pattern minimizes diff noise.
+  - Do NOT add CopilotPopup outside the CopilotKit provider — it relies on the runtime context and would error.
 ---

@@ -64,7 +64,7 @@
         " - Existing /chat conversation continues working with no regression"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 1. CopilotPopup is preferred over CopilotSidebar for low-intrusion UX (no layout shift). Reference: https://docs.copilotkit.ai/reference/components/CopilotPopup"
     },
     {

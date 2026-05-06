@@ -17,6 +17,7 @@ import {
 } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { CopilotKit } from '@copilotkit/react-core';
+import { CopilotPopup } from '@copilotkit/react-ui';
 import '@copilotkit/react-ui/styles.css';
 import { cn } from '@/lib/utils';
 
@@ -44,7 +45,8 @@ export const Route = createFileRoute('/_authed')({
 function RouteComponent() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isChatDetail = pathname.startsWith('/chat/');
-  const hideAgentInput = isChatDetail || pathname === '/chat';
+  const isChatRoute = isChatDetail || pathname === '/chat';
+  const hideAgentInput = isChatRoute;
 
   const { data: orgModules } = useQuery({
     queryKey: ['orgModules'],
@@ -78,6 +80,15 @@ function RouteComponent() {
     return (
       <CopilotKit runtimeUrl="/api/copilotkit" agent="default">
         {shell}
+        {!isChatRoute && (
+          <CopilotPopup
+            labels={{
+              title: 'Asistente Arca',
+              initial: '¿En qué puedo ayudarte?',
+              placeholder: 'Preguntale al asistente…',
+            }}
+          />
+        )}
       </CopilotKit>
     );
   }
