@@ -33,6 +33,19 @@ if [[ "$TOOL" != "amp" && "$TOOL" != "claude" ]]; then
   echo "Error: Invalid tool '$TOOL'. Must be 'amp' or 'claude'."
   exit 1
 fi
+
+# Detect timeout command — GNU coreutils may be missing on macOS.
+# Tip: `brew install coreutils` provides `gtimeout`.
+if command -v timeout &>/dev/null; then
+  TIMEOUT_BIN="timeout"
+elif command -v gtimeout &>/dev/null; then
+  TIMEOUT_BIN="gtimeout"
+else
+  TIMEOUT_BIN=""
+  echo "WARNING: 'timeout' / 'gtimeout' not found. Iterations will run without per-iteration timeout."
+  echo "         To enable: brew install coreutils"
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PRD_FILE="$SCRIPT_DIR/prd.json"
 PROGRESS_FILE="$SCRIPT_DIR/progress.txt"
@@ -111,7 +124,7 @@ for i in $(seq 1 $MAX_ITERATIONS); do
   # kill it and let the loop retry in the next iteration.
   ITER_TIMEOUT=1200
   if [[ "$TOOL" == "amp" ]]; then
-    OUTPUT=$(timeout $ITER_TIMEOUT bash -c 'cat "$1/prompt.md" | amp --dangerously-allow-all 2>&1 | tee /dev/stderr' _ "$SCRIPT_DIR") || {
+    OUTPUT=$(${TIMEOUT_BIN:+$TIMEOUT_BIN $ITER_TIMEOUT} bash -c 'cat "$1/prompt.md" | amp --dangerously-allow-all 2>&1 | tee /dev/stderr' _ "$SCRIPT_DIR") || {
       EXIT_CODE=$?
       if [ $EXIT_CODE -eq 124 ]; then
         log "WARNING: Iteration $i timed out after ${ITER_TIMEOUT}s. Retrying next iteration."
@@ -119,7 +132,7 @@ for i in $(seq 1 $MAX_ITERATIONS); do
     }
   else
     # Claude Code: use --dangerously-skip-permissions for autonomous operation, --print for output
-    OUTPUT=$(timeout $ITER_TIMEOUT claude --dangerously-skip-permissions --print < "$SCRIPT_DIR/CLAUDE.md" 2>&1 | tee /dev/stderr) || {
+    OUTPUT=$(${TIMEOUT_BIN:+$TIMEOUT_BIN $ITER_TIMEOUT} claude --dangerously-skip-permissions --print < "$SCRIPT_DIR/CLAUDE.md" 2>&1 | tee /dev/stderr) || {
       EXIT_CODE=$?
       if [ $EXIT_CODE -eq 124 ]; then
         log "WARNING: Iteration $i timed out after ${ITER_TIMEOUT}s. Retrying next iteration."
