@@ -170,7 +170,7 @@
         "DO NOT modify src/routes/api/agent.ts"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 3. The ConfirmationCard component is generic — reuse for future HITL actions. Verify the existing notification component listing logic (src/components/notifications-view.tsx) has access to the unread list to expose via readable."
     },
     {

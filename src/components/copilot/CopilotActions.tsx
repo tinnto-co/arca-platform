@@ -7,6 +7,7 @@ import {
   type GetIvaPositionForCopilotResult,
 } from '@/actions/copilot';
 import { getDashboardStats, getUpcomingDueDates } from '@/actions/dashboard';
+import { markNotificationOpened } from '@/actions/notification';
 import {
   MiniKpiCardsRow,
   type DashboardStats,
@@ -15,6 +16,7 @@ import {
   VencimientosList,
   type VencimientoItem,
 } from '@/components/dashboard/vencimientos-list';
+import { ConfirmationCard } from './ConfirmationCard';
 import { CopilotIvaResume } from './CopilotIvaResume';
 import { ScrapeConfirmation, type ScrapeJobType } from './ScrapeConfirmation';
 
@@ -202,6 +204,54 @@ export function CopilotActions() {
           clientId={clientId}
           jobType={jobType as ScrapeJobType}
           respond={respond}
+        />
+      );
+    },
+  });
+
+  useCopilotAction({
+    name: 'marcarNotificacionLeida',
+    description:
+      'Marca una notificación AFIP como leída. SIEMPRE pide confirmación al usuario antes de ejecutar — la acción se completa solo cuando el usuario confirma o cancela. Usá el id (UUID) de la notificación, que está expuesto en el contexto cuando el usuario está en /notifications.',
+    parameters: [
+      {
+        name: 'notificationId',
+        type: 'string',
+        description:
+          'UUID de la notificación a marcar como leída. Obtenelo del contexto de "Notificaciones AFIP no leídas visibles en pantalla".',
+        required: true,
+      },
+    ],
+    renderAndWaitForResponse: ({ args, status, respond }) => {
+      if (status === 'inProgress' || !respond) {
+        return (
+          <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <span>Preparando confirmación…</span>
+          </div>
+        );
+      }
+      const { notificationId } = args;
+      if (!notificationId) {
+        return (
+          <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+            Falta el id de la notificación.
+          </div>
+        );
+      }
+      return (
+        <ConfirmationCard
+          title="Marcar notificación como leída"
+          description={`Marcar notificación ${notificationId.slice(0, 8)}… como leída.`}
+          confirmLabel="Marcar como leída"
+          submittingLabel="Marcando…"
+          successText="Notificación marcada como leída."
+          respond={respond}
+          onConfirm={async () => {
+            return await markNotificationOpened({
+              data: { id: notificationId },
+            });
+          }}
         />
       );
     },

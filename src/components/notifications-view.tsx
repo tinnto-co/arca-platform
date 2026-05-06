@@ -32,6 +32,8 @@ import {
   markAllNotificationsRead,
 } from '@/actions/notification';
 import { getClients, getClientProfiles } from '@/actions/client';
+import { listOrgModules } from '@/actions/admin';
+import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
 import { cn } from '@/lib/utils';
 import { userQuery } from '../lib/user-query';
 
@@ -72,6 +74,11 @@ export function NotificationsView({
   const queryClient = useQueryClient();
   const { data: user } = useQuery(userQuery);
   const orgKey = user?.activeOrganizationId ?? '__pending__';
+  const { data: orgModules } = useQuery({
+    queryKey: ['orgModules'],
+    queryFn: () => listOrgModules(),
+  });
+  const aiAgentEnabled = orgModules?.ai_agent ?? false;
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [notificationToDelete, setNotificationToDelete] = useState<
     string | null
@@ -285,6 +292,18 @@ export function NotificationsView({
     : // En la vista global: solo mostrar notificaciones con cliente asociado
     rawNotifications.filter((n: any) => n.clientName || n.clientId);
 
+  const unreadForCopilot = aiAgentEnabled
+    ? notifications
+      .filter((n: any) => n.opened === false)
+      .slice(0, 20)
+      .map((n: any) => ({
+        id: n.id,
+        message: n.message,
+        publicationDate: n.publicationDate,
+        clientName: n.clientName ?? null,
+      }))
+    : [];
+
   return (
     <div
       className={cn(
@@ -294,6 +313,12 @@ export function NotificationsView({
         className
       )}
     >
+      {aiAgentEnabled && (
+        <CopilotReadableEntity
+          description="Notificaciones AFIP no leídas visibles en pantalla (máx. 20). Usá el id para invocar la acción marcarNotificacionLeida."
+          value={unreadForCopilot}
+        />
+      )}
       {toolbar ? (
         <div className="w-full border-b bg-muted/30 px-4 py-2 flex items-center justify-between gap-2 flex-wrap shrink-0">
           {toolbar}
