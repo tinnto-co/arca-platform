@@ -18,6 +18,7 @@ import {
 } from '@/components/dashboard/vencimientos-list';
 import { ConfirmationCard } from './ConfirmationCard';
 import { CopilotIvaResume } from './CopilotIvaResume';
+import { ScanPdfConfirmation } from './ScanPdfConfirmation';
 import { ScrapeConfirmation, type ScrapeJobType } from './ScrapeConfirmation';
 
 export function CopilotActions() {
@@ -252,6 +253,53 @@ export function CopilotActions() {
               data: { id: notificationId },
             });
           }}
+        />
+      );
+    },
+  });
+
+  useCopilotAction({
+    name: 'escanearExtractoBancario',
+    description:
+      'Escanea el PDF adjunto al popup (extracto bancario) con Gemini, muestra una previsualización editable de los movimientos detectados y, tras la confirmación del usuario, los guarda como movimientos del cliente. SIEMPRE pide confirmación antes de persistir. Requiere que haya un PDF adjunto en la barra del popup; si no hay adjunto, avisá al usuario para que arrastre uno antes de invocar la acción. Pasá clientId si tenés el id del cliente activo en contexto; si solo tenés el nombre, pasá clientName.',
+    parameters: [
+      {
+        name: 'clientId',
+        type: 'string',
+        description:
+          'UUID del cliente. Preferilo si está disponible en el contexto (ej: cliente activo en pantalla).',
+        required: false,
+      },
+      {
+        name: 'clientName',
+        type: 'string',
+        description:
+          'Nombre del cliente (búsqueda parcial case-insensitive). Usalo si no tenés el clientId. Debe coincidir con un único cliente del estudio.',
+        required: false,
+      },
+    ],
+    renderAndWaitForResponse: ({ args, status, respond }) => {
+      if (status === 'inProgress' || !respond) {
+        return (
+          <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <span>Preparando escaneo…</span>
+          </div>
+        );
+      }
+      const { clientId, clientName } = args;
+      if (!clientId && !clientName) {
+        return (
+          <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+            Se requiere clientId o clientName para escanear el extracto.
+          </div>
+        );
+      }
+      return (
+        <ScanPdfConfirmation
+          clientId={clientId ?? undefined}
+          clientName={clientName ?? undefined}
+          respond={respond}
         />
       );
     },

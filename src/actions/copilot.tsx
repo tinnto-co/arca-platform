@@ -1,10 +1,16 @@
 import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
-import { dbReadonly } from '@/lib/db';
-import { client, profile, ivaScrape, invoice } from '@/drizzle/schema';
+import { db, dbReadonly } from '@/lib/db';
+import {
+  client,
+  profile,
+  ivaScrape,
+  invoice,
+  movements,
+} from '@/drizzle/schema';
 import { and, eq, gte, ilike, lte, sql } from 'drizzle-orm';
 import { calcularIvaDesdeFacturas, type InvoiceIvaRow } from '@/lib/iva-calc';
-import { getSessionWithOrg } from './helpers';
+import { assertCanWrite, getMemberRole, getSessionWithOrg } from './helpers';
 
 const getIvaPositionInput = z.object({
   clientName: z.string(),
@@ -324,5 +330,186 @@ export const getIvaPositionForCopilot = createServerFn({ method: 'POST' })
       periodoIvaScrape: ivaScrapeperiod,
       perfiles: results,
       totales,
+    };
+  });
+
+/* =========================================================================
+   Resolución de cliente por nombre o id, scoped al org.
+   Devuelve { id, name } o un mensaje de error.
+   Usada por escanearExtractoBancario para que el LLM pueda pasar nombre.
+   ========================================================================= */
+const resolveClientInput = z
+  .object({
+    clientId: z.string().optional(),
+    clientName: z.string().optional(),
+  })
+  .refine((v) => Boolean(v.clientId ?? v.clientName), {
+    message: 'Se requiere clientId o clientName',
+  });
+
+export type ResolveClientResult =
+  | { id: string; name: string }
+  | { error: string; options?: string[] };
+
+export const resolveClientForCopilot = createServerFn({ method: 'POST' })
+  .inputValidator(resolveClientInput)
+  .handler(async (ctx): Promise<ResolveClientResult> => {
+    const { orgId } = (await getSessionWithOrg()) as { orgId: string };
+    const { clientId, clientName } = ctx.data;
+
+    if (clientId) {
+      const [row] = await dbReadonly
+        .select({ id: client.id, name: client.name })
+        .from(client)
+        .where(and(eq(client.id, clientId), eq(client.organizationId, orgId)))
+        .limit(1);
+      if (!row) return { error: 'Cliente no encontrado o fuera del estudio.' };
+      return { id: row.id, name: row.name };
+    }
+
+    const matches = await dbReadonly
+      .select({ id: client.id, name: client.name })
+      .from(client)
+      .where(
+        and(
+          eq(client.organizationId, orgId),
+          ilike(client.name, `%${clientName!}%`)
+        )
+      );
+    if (matches.length === 0) {
+      return { error: `No encontré clientes con nombre "${clientName!}"` };
+    }
+    if (matches.length > 1) {
+      return {
+        error: 'Más de un cliente coincide',
+        options: matches.map((c) => c.name),
+      };
+    }
+    return { id: matches[0].id, name: matches[0].name };
+  });
+
+/* =========================================================================
+   Persistir movimientos extraídos de un extracto bancario por scanBankStatement.
+   Inserta en `movements` (FK por userId, no por client — ver schema.ts:353).
+   El clientId se valida contra el org pero no queda almacenado en la fila
+   (la tabla actual no tiene FK a client). Se incluye una nota en `descripcion`
+   con el banco y el cliente para preservar la trazabilidad.
+   ========================================================================= */
+const movementInputSchema = z.object({
+  fecha: z.string().min(1),
+  tipo: z.enum(['ingreso', 'egreso']),
+  monto: z.string().min(1),
+  infoExtra: z.string().optional().default(''),
+  tipoGasto: z.string().optional(),
+});
+
+const persistMovementsInput = z.object({
+  clientId: z.string().min(1),
+  banco: z.string().optional().default(''),
+  ingresos: z.array(movementInputSchema),
+  egresos: z.array(movementInputSchema),
+});
+
+export interface PersistMovementsResult {
+  inserted: number;
+  skipped: number;
+  clientId: string;
+  clientName: string;
+  banco: string;
+}
+
+const ARG_MONTO_RE = /^-?\d{1,3}(\.\d{3})*(,\d{1,2})?$|^-?\d+(,\d{1,2})?$/;
+const FECHA_RE = /^(\d{1,2})[/-](\d{1,2})[/-](\d{2}|\d{4})$/;
+const NON_NUMERIC_RE = /[^0-9.-]/g;
+
+function parseArgMonto(raw: string): number | null {
+  const trimmed = raw.trim().replace(/^\$\s*/, '');
+  // Acepta formato argentino "1.234.567,89" o "1234567,89" o "1234567.89".
+  if (ARG_MONTO_RE.test(trimmed)) {
+    const normalized = trimmed.replace(/\./g, '').replace(',', '.');
+    const n = Number(normalized);
+    return Number.isFinite(n) ? n : null;
+  }
+  // Fallback permisivo: quita separadores y prueba.
+  const fallback = Number(
+    trimmed.replace(/\./g, '').replace(',', '.').replace(NON_NUMERIC_RE, '')
+  );
+  return Number.isFinite(fallback) ? fallback : null;
+}
+
+function parseArgFecha(raw: string): Date | null {
+  const m = FECHA_RE.exec(raw.trim());
+  if (!m) return null;
+  const day = Number(m[1]);
+  const month = Number(m[2]);
+  let year = Number(m[3]);
+  if (year < 100) year += 2000;
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const d = new Date(year, month - 1, day, 12, 0, 0);
+  return Number.isFinite(d.getTime()) ? d : null;
+}
+
+export const persistBankStatementMovements = createServerFn({ method: 'POST' })
+  .inputValidator(persistMovementsInput)
+  .handler(async (ctx): Promise<PersistMovementsResult> => {
+    const { orgId, userId } = (await getSessionWithOrg()) as {
+      orgId: string;
+      userId: string;
+    };
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const { clientId, banco, ingresos, egresos } = ctx.data;
+
+    const [target] = await db
+      .select({ id: client.id, name: client.name })
+      .from(client)
+      .where(and(eq(client.id, clientId), eq(client.organizationId, orgId)))
+      .limit(1);
+    if (!target) {
+      throw new Error('Cliente no encontrado o fuera del estudio.');
+    }
+
+    const all: {
+      tipo: 'ingreso' | 'egreso';
+      m: z.infer<typeof movementInputSchema>;
+    }[] = [
+      ...ingresos.map((m) => ({ tipo: 'ingreso' as const, m })),
+      ...egresos.map((m) => ({ tipo: 'egreso' as const, m })),
+    ];
+
+    const rows: (typeof movements.$inferInsert)[] = [];
+    let skipped = 0;
+    for (const { tipo, m } of all) {
+      const fecha = parseArgFecha(m.fecha);
+      const montoNum = parseArgMonto(m.monto);
+      if (!fecha || montoNum == null) {
+        skipped += 1;
+        continue;
+      }
+      const descripcion = banco
+        ? `[${banco}] ${m.infoExtra ?? ''}`.trim()
+        : (m.infoExtra ?? '').trim() || tipo;
+      rows.push({
+        id: crypto.randomUUID(),
+        userId,
+        tipo,
+        fecha,
+        descripcion,
+        monto: Math.abs(montoNum).toFixed(2),
+        tipoGasto: m.tipoGasto ?? 'Sin especificar',
+      });
+    }
+
+    if (rows.length > 0) {
+      await db.insert(movements).values(rows);
+    }
+
+    return {
+      inserted: rows.length,
+      skipped,
+      clientId: target.id,
+      clientName: target.name,
+      banco: banco ?? '',
     };
   });

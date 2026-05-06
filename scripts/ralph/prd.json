@@ -211,7 +211,7 @@
         "DO NOT modify src/routes/api/agent.ts"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 4. Inspect scanBankStatement signature (src/actions/scannerAi.tsx) before designing — does it persist or just extract? If it persists, split the flow: extract + preview, then a separate persist call. RenderPdfInfo is at src/components/render-pdf-info.tsx."
     }
   ]
