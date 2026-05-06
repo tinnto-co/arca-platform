@@ -5,6 +5,27 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { member, organization, user } from '@/drizzle/auth';
 import { eq, and } from 'drizzle-orm';
+import { getSessionWithOrg } from './helpers';
+
+export type OrgModuleKey = 'ai_agent';
+
+export type OrgModules = Record<OrgModuleKey, boolean>;
+
+const DEFAULT_MODULES: OrgModules = {
+  ai_agent: true,
+};
+
+function parseModules(metadata: string | null | undefined): OrgModules {
+  if (!metadata) return { ...DEFAULT_MODULES };
+  try {
+    const parsed = JSON.parse(metadata) as {
+      modules?: Partial<OrgModules>;
+    } | null;
+    return { ...DEFAULT_MODULES, ...(parsed?.modules ?? {}) };
+  } catch {
+    return { ...DEFAULT_MODULES };
+  }
+}
 
 async function requireOwner() {
   const session = await auth.api.getSession({ headers: getRequestHeaders() });
@@ -167,6 +188,18 @@ export const getOrgInvitations = createServerFn({
   });
 
   return invitations;
+});
+
+export const listOrgModules = createServerFn({
+  method: 'GET',
+}).handler(async (): Promise<OrgModules> => {
+  const { orgId } = (await getSessionWithOrg()) as { orgId: string };
+  const [org] = await db
+    .select({ metadata: organization.metadata })
+    .from(organization)
+    .where(eq(organization.id, orgId))
+    .limit(1);
+  return parseModules(org?.metadata);
 });
 
 export const cancelInvitation = createServerFn({

@@ -18,6 +18,9 @@ Project: ARCA Platform — CopilotKit Integration
 - CopilotKit runtime endpoint (US-001): use `copilotRuntimeNextJSAppRouterEndpoint` from `@copilotkit/runtime` — its `handleRequest(req: Request)` works with TanStack Start's Web Request/Response model. No Node adapter needed. Pair with `GoogleGenerativeAIAdapter` and `process.env.GEMINI_API_KEY`.
 - New routes under `src/routes/` only get into `src/routeTree.gen.ts` after the dev server (vite + tanstackStart plugin) runs once; until then `tsc` will complain. Run `bun run dev` briefly to regenerate.
 - TS auth session shape: cast `(session.session as { activeOrganizationId?: string | null }).activeOrganizationId` — Better Auth doesn't type the org plugin field on the base type.
+- Module gating (US-002): `listOrgModules` server fn in `src/actions/admin.tsx` reads `organization.metadata` (JSON string) → `{ ai_agent: boolean }`. Defaults to `{ ai_agent: true }` when metadata is null/invalid. Consume via `useQuery({ queryKey: ['orgModules'], queryFn: () => listOrgModules() })`. The hook returns `undefined` while loading — treat that as "disabled" and upgrade once data resolves so the provider is never blocking.
+- `getSessionWithOrg()` returns `orgId` typed as `any` (helpers.ts uses `as any`). When passing to drizzle `eq()` in a NEW server function, cast at the call site: `const { orgId } = (await getSessionWithOrg()) as { orgId: string }` to avoid a fresh `no-unsafe-argument` lint error. Existing actions tolerate the error; new code shouldn't add to the count.
+- CopilotKit provider must be conditional but NEVER block render of the shell. Render the shell first, wrap in `<CopilotKit runtimeUrl="/api/copilotkit" agent="default">` only when `aiAgentEnabled` is true. Import `@copilotkit/react-ui/styles.css` once at the top of the route file — CSS class names are scoped enough that they don't visually leak when no CopilotKit DOM is present.
 
 ---
 
@@ -40,4 +43,25 @@ Project: ARCA Platform — CopilotKit Integration
   - The route file was emitted at /api/copilotkit BEFORE running dev once — `tsc` complains because `keyof FileRoutesByPath` doesn't include the new path until vite regenerates `src/routeTree.gen.ts`. After one dev start, the route tree updates and tsc/lint pass.
   - System instructions: there's no clean server-side hook to prepend a system prompt with this version of the runtime (middleware on CopilotRuntime is deprecated). Best place is the client-side `<CopilotKit instructions={...}>` prop in US-002. For now SYSTEM_INSTRUCTIONS is exported via runtime properties so US-002 can read it from there if desired.
   - Always cast Better Auth session: `(session.session as { activeOrganizationId?: string | null }).activeOrganizationId` — same pattern src/routes/api/agent.ts uses with `as any`. We used the typed cast for cleaner lint.
+---
+
+## [2026-05-05 22:50] - US-002
+- Mounted CopilotKit provider in /_authed layout, gated by `ai_agent` module flag.
+- Files changed:
+  - src/actions/admin.tsx: added `listOrgModules` server fn + `OrgModules`/`OrgModuleKey` types. Reads `organization.metadata` (JSON), parses `{ modules: { ai_agent: bool } }`, defaults to `{ ai_agent: true }` when missing/invalid. Calls `getSessionWithOrg()` first (multi-tenancy).
+  - src/routes/_authed/route.tsx: imported `CopilotKit` from `@copilotkit/react-core` and `@copilotkit/react-ui/styles.css`. Inside `RouteComponent`, fetch modules via `useQuery({ queryKey: ['orgModules'], queryFn: () => listOrgModules() })`. Render the shell unconditionally; wrap with `<CopilotKit runtimeUrl="/api/copilotkit" agent="default">` only when `aiAgentEnabled` is true. The `beforeLoad` block is unchanged.
+- **How to verify:**
+  - `bun run dev` boots cleanly (no errors).
+  - With ai_agent enabled (default for any org because metadata is null): login → on /, /clients, etc. open devtools Network tab → after page load you should see one POST to `/api/copilotkit` (CopilotKit's runtime info call). No CopilotPopup yet — that lands in US-003.
+  - With ai_agent disabled: in psql run `update organization set metadata = '{"modules":{"ai_agent":false}}' where id = '<orgId>';` then refresh. No `/api/copilotkit` requests should appear in Network.
+  - Existing `/chat` page continues to stream via `/api/agent` (regression check: open /chat, send a message, response streams).
+  - `bun run lint` shows no NEW errors on `_authed/route.tsx` or `admin.tsx` (pre-existing warnings/errors unchanged).
+  - `bunx tsc --noEmit` shows no errors on changed files.
+- **Learnings for future iterations:**
+  - `listOrgModules` did not exist in the codebase — the PRD referenced it as if it did. Created it from scratch backed by `organization.metadata` (text/JSON column). Future stories should consume the same `useQuery(['orgModules'])` pattern; do NOT call `listOrgModules()` directly inside a component without a query (no caching).
+  - Default to `{ ai_agent: true }` so existing orgs keep CopilotKit enabled — this matches the PRD's "module is gated" framing without requiring a manual flip per org.
+  - The Better-Auth `organization.metadata` column is a `text` field; treat it as JSON. Always wrap parsing in try/catch — don't trust other features that may have written non-JSON data.
+  - The CSS import (`@copilotkit/react-ui/styles.css`) is module-scoped (Vite hoists it). Putting it inside an `if` doesn't help — the CSS is bundled either way. CopilotKit's class names are prefixed (`copilotKitChat`, etc.), so importing the CSS without rendering CopilotKit DOM has no visual impact.
+  - `@copilotkit/react-core`'s `<CopilotKit>` accepts `runtimeUrl` and `agent` (string). For now we use `agent="default"` — actions/readables get registered later (US-004+). The provider is happy with zero registered actions — it just renders chat UI when paired with `<CopilotPopup>` (US-003).
+  - When a query returns `undefined` while loading, treat it as "disabled" rather than blocking render — the PRD explicitly says "provider must NOT block render". Acceptable tradeoff: tiny flicker on first paint when ai_agent is enabled.
 ---

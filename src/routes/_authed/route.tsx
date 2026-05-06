@@ -3,6 +3,7 @@ import {
   getOrganizations,
   setActiveOrganization,
 } from '@/actions/user';
+import { listOrgModules } from '@/actions/admin';
 import { AppSidebar } from '@/components/app-sidebar';
 import { AgentInput } from '@/components/agent/AgentInput';
 import { MobileNavbar } from '@/components/mobile-navbar';
@@ -14,6 +15,9 @@ import {
   redirect,
   useRouterState,
 } from '@tanstack/react-router';
+import { useQuery } from '@tanstack/react-query';
+import { CopilotKit } from '@copilotkit/react-core';
+import '@copilotkit/react-ui/styles.css';
 import { cn } from '@/lib/utils';
 
 export const Route = createFileRoute('/_authed')({
@@ -42,7 +46,13 @@ function RouteComponent() {
   const isChatDetail = pathname.startsWith('/chat/');
   const hideAgentInput = isChatDetail || pathname === '/chat';
 
-  return (
+  const { data: orgModules } = useQuery({
+    queryKey: ['orgModules'],
+    queryFn: () => listOrgModules(),
+  });
+  const aiAgentEnabled = orgModules?.ai_agent ?? false;
+
+  const shell = (
     <OrgSwitchProvider>
       <SidebarProvider defaultOpen={true} className="h-svh">
         <AppSidebar />
@@ -63,4 +73,14 @@ function RouteComponent() {
       </SidebarProvider>
     </OrgSwitchProvider>
   );
+
+  if (aiAgentEnabled) {
+    return (
+      <CopilotKit runtimeUrl="/api/copilotkit" agent="default">
+        {shell}
+      </CopilotKit>
+    );
+  }
+
+  return shell;
 }

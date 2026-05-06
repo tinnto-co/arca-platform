@@ -44,7 +44,7 @@
         "Manual: existing /chat page continues working in both states"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 1. The provider must NOT block render. Reference: useQuery key ['orgModules'] used by app-sidebar.tsx. Module flag values from src/actions/admin.tsx listOrgModules()."
     },
     {
