@@ -97,7 +97,7 @@
         "DO NOT modify src/routes/api/agent.ts"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 2. If VencimientosList expects a specific shape, adapt the handler's return value before passing to render. Inspect src/components/dashboard/vencimientos-list.tsx for the exact props."
     },
     {

@@ -116,3 +116,23 @@ Project: ARCA Platform — CopilotKit Integration
   - Keep duplicating the IVA logic for now — the PRD explicitly says future stories may consolidate into `src/lib/iva-position.ts`. Don't preemptively refactor /api/agent.ts (we are forbidden to touch it).
   - For the `dbReadonly.execute(sql.raw(...))` iterable, the cleanest typed access is `Array.from(rows as Iterable<{ ...fields }>)` — avoids both `as Record<string, unknown>[]` (lint complains it's unnecessary) and `arr[0].x as string` (lint complains the same).
 ---
+
+## [2026-05-05 23:55] - US-005
+- Added the `getVencimientos` Copilot action that lists upcoming due dates and renders inline using the existing `VencimientosList` component.
+- Files changed:
+  - src/components/dashboard/vencimientos-list.tsx: extended to optionally accept `items?: VencimientoItem[]`. When provided, the internal React Query call is disabled (`enabled: !skipQuery`) and the items prop is rendered directly. Default behavior (no props) is unchanged — the dashboard at /index continues to self-fetch via `getUpcomingDueDates({days:30,limit:5})`. Exported a `VencimientoItem` type derived from `Awaited<ReturnType<typeof getUpcomingDueDates>>[number]` so callers can stay in sync without redefining the shape.
+  - src/components/copilot/CopilotActions.tsx: registered a second `useCopilotAction({ name: 'getVencimientos', ... })`. Parameters: `{ daysAhead?: number }` (defaults to 30 in the handler). Handler calls `getUpcomingDueDates({ data: { days: daysAhead ?? 30, limit: 20 } })` (limit raised to 20 vs. dashboard's 5 since the chat-side list is the primary view). Render shows a spinner while in-progress, an empty-state card when zero items, otherwise `<VencimientosList items={result} />`.
+- **How to verify:**
+  - `bun run dev` (port 3000). Login.
+  - On any non-/chat route, open the CopilotPopup. Ask: "qué vencimientos tengo en los próximos 7 días" or "vencimientos próximos". Expected: spinner for ~1s, then the list renders inline with the same urgency styling (red tile when within 3 days) used on the dashboard.
+  - Ask: "vencimientos para los próximos 60 días" → list returns up to 20 items in the next 60 days. With small datasets you may see the empty-state card.
+  - Regression: navigate to `/` (dashboard) → existing `VencimientosList` continues to render its own data via React Query. No change in behavior. Toggle ai_agent off → CopilotPopup gone but `/` dashboard list still works.
+  - `bunx eslint src/components/copilot/CopilotActions.tsx src/components/dashboard/vencimientos-list.tsx` — only the 2 PRE-EXISTING lint problems (line 102 `||` and line 116 prettier) remain; my edits introduced 0 new errors.
+  - `bunx tsc --noEmit` — no errors on either changed file.
+- **Learnings for future iterations:**
+  - The PRD's literal `<VencimientosList items={result} />` did not compile against the existing component, which took zero props. Cleanest fix: add an optional `items` prop and disable the query (`enabled: !skipQuery`) when items are passed. This avoids creating yet another "Copilot…" wrapper file and keeps the dashboard usage untouched.
+  - When extending an existing dashboard component to support inline AI rendering, prefer adding an optional prop to the existing component over creating a new wrapper *unless* the component is heavily stateful with editable rows / cross-component side effects (in that case, follow the US-004 pattern and wrap with a `Copilot<Name>` adapter). VencimientosList is a stateless list, so the prop-extension path is appropriate.
+  - When using `useQuery` with `enabled: !skipQuery`, also gate the `isLoading` flag the same way: `const isLoading = !skipQuery && queryLoading`. Otherwise React Query reports `isLoading: true` indefinitely while the query is disabled, and the component shows a stale "Cargando…" message.
+  - Type the action's items via `Awaited<ReturnType<typeof serverFn>>[number]` and export it from the component so the action handler/render can pass it through without redefining the shape — keeps the contract single-sourced from the server fn.
+  - Action limits: dashboard sliced to 5 items (UI density). The chat list pulls 20 — chat space is more flexible and the user is asking for "próximos vencimientos" rather than a strict top-N preview.
+---
