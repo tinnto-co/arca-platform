@@ -113,7 +113,7 @@
         "DO NOT modify src/routes/api/agent.ts"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 2. Inspect MiniKpiCards props vs getDashboardStats return shape — adapt the render callback if necessary."
     },
     {

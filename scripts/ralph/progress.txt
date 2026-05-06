@@ -7,6 +7,7 @@ Project: ARCA Platform — CopilotKit Integration
 ## Codebase Patterns
 (Will be populated by Ralph as it discovers reusable patterns. Read this section first before starting any user story.)
 
+- Reusing dashboard KPI components in inline AI render: prefer extending the existing component with an optional pre-fetched data prop (like US-005's `items` and US-006's `stats`) over creating a new wrapper. When the prop is provided, gate the matching `useQuery` with `enabled: !skipQuery`. Other independent queries the component runs (e.g., `getOverdueDebts`, `getPendingNotificationsCount`) keep running and benefit from React Query cache reuse if the dashboard is already cached.
 - The existing AI agent at src/routes/api/agent.ts uses Vercel AI SDK v6 (`ToolLoopAgent`, `gemini-2.5-flash`) and is read-only (SQL SELECT only). It MUST NOT be modified.
 - The /chat page at src/routes/_authed/chat/{$id,index}.tsx uses @ai-sdk/react useChat with /api/agent endpoint. It MUST keep working unchanged.
 - CopilotKit runs in PARALLEL to the existing agent — separate runtime endpoint at /api/copilotkit, separate floating UI (CopilotPopup), shared Gemini API key.
@@ -135,4 +136,24 @@ Project: ARCA Platform — CopilotKit Integration
   - When using `useQuery` with `enabled: !skipQuery`, also gate the `isLoading` flag the same way: `const isLoading = !skipQuery && queryLoading`. Otherwise React Query reports `isLoading: true` indefinitely while the query is disabled, and the component shows a stale "Cargando…" message.
   - Type the action's items via `Awaited<ReturnType<typeof serverFn>>[number]` and export it from the component so the action handler/render can pass it through without redefining the shape — keeps the contract single-sourced from the server fn.
   - Action limits: dashboard sliced to 5 items (UI density). The chat list pulls 20 — chat space is more flexible and the user is asking for "próximos vencimientos" rather than a strict top-N preview.
+---
+
+## [2026-05-05 23:58] - US-006
+- Added the `getDashboardKpis` Copilot action that returns the org's monthly KPI summary and renders inline using the existing `MiniKpiCardsRow` component.
+- Files changed:
+  - src/components/dashboard/mini-kpi-cards.tsx: exported `DashboardStats = Awaited<ReturnType<typeof getDashboardStats>>`. Added optional `stats?: DashboardStats` prop to `MiniKpiCardsRow`. When provided, the internal `getDashboardStats` query is disabled (`enabled: !skipStatsQuery`) and the prop value drives the cards. The other two queries (`getOverdueDebts`, `getPendingNotificationsCount`) still run unconditionally — they have no date dependency and will hit the React Query cache if the dashboard was already visited. Default behavior (no `stats` prop) is unchanged: the dashboard at `/` continues to self-fetch.
+  - src/components/copilot/CopilotActions.tsx: registered a third `useCopilotAction({ name: 'getDashboardKpis', parameters: [], handler, render })`. Handler computes current-month bounds in JS and calls `getDashboardStats({ data: { from, to } })`. Render shows a spinner while in-progress, an empty-state card if result is missing, otherwise `<MiniKpiCardsRow from={from} to={to} stats={result} />` (where from/to are recomputed in the render callback for queryKey stability — they're unused since the query is skipped, but the prop signature still requires them).
+- **How to verify:**
+  - `bun run dev` (port 3000). Login to a non-/chat route (e.g. `/`).
+  - Open the CopilotPopup. Ask: "dame el resumen del estudio" or "cuáles son los KPIs" or "cómo va el estudio este mes". Expected: spinner for ~1s, then 4 cards render inline (Clientes activos / Facturas del período / Notificaciones pendientes / Deudas vencidas) with the same styling as the dashboard's mini KPI row.
+  - Compare the values shown in the popup to the values on `/` — they should match. Notifications and Overdue Debts will hit the React Query cache if `/` was already visited, otherwise they fetch on mount.
+  - Regression: navigate to `/` (dashboard) → existing `MiniKpiCardsRow` continues to render its own data via React Query (no `stats` prop = original behavior). Toggle `ai_agent` off in psql (`update organization set metadata = '{"modules":{"ai_agent":false}}' where id = '<orgId>';` then refresh) → CopilotPopup is gone, `/` dashboard still works unchanged.
+  - `bunx eslint src/components/copilot/CopilotActions.tsx src/components/dashboard/mini-kpi-cards.tsx` — clean (0 errors, 0 warnings after autofix).
+  - `bunx tsc --noEmit | grep -E "copilot/CopilotActions|dashboard/mini-kpi-cards"` — empty (no new typecheck errors on touched files; pre-existing repo errors unchanged).
+- **Learnings for future iterations:**
+  - Like US-005, the PRD's literal `<MiniKpiCards data={result} />` did not compile against the existing component — `MiniKpiCardsRow` takes `{from, to}` and self-fetches via 3 React Query calls. Cleanest path: optional `stats` prop + `enabled: !skipQuery` on the matching query, leaving the other queries untouched. No new wrapper file needed.
+  - `getDashboardStats` accepts an optional date range and defaults to current month bounds when both `from` and `to` are omitted. We pass them explicitly from the handler to keep the queryKey deterministic if React Query later caches based on them — and to keep the action's return shape interpretable for the LLM (it can mention "este mes" with confidence).
+  - `MiniKpiCardsRow` runs three independent React Queries — when adding `enabled: !skipQuery` only gate the *specific* query whose data is being injected. Other queries should keep their default behavior so the component stays self-sufficient when used outside the Copilot context.
+  - The `from`/`to` props are required by the signature but unused once `stats` is provided (they only feed the now-disabled query's queryKey). Keeping them required avoids a wider type change; the wrapper passes the same dates the handler used.
+  - Naming: prefer `stats: statsProp` destructure when the local variable name `stats` (the merged value) is more useful in the body. Same pattern works well for any "optional pre-fetched data" extension.
 ---

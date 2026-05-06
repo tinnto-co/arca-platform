@@ -6,7 +6,11 @@ import {
   getIvaPositionForCopilot,
   type GetIvaPositionForCopilotResult,
 } from '@/actions/copilot';
-import { getUpcomingDueDates } from '@/actions/dashboard';
+import { getDashboardStats, getUpcomingDueDates } from '@/actions/dashboard';
+import {
+  MiniKpiCardsRow,
+  type DashboardStats,
+} from '@/components/dashboard/mini-kpi-cards';
 import {
   VencimientosList,
   type VencimientoItem,
@@ -107,6 +111,44 @@ export function CopilotActions() {
         );
       }
       return <VencimientosList items={items} />;
+    },
+  });
+
+  useCopilotAction({
+    name: 'getDashboardKpis',
+    description:
+      'Resumen ejecutivo del estudio: KPIs principales del mes en curso (clientes activos, facturas del período, notificaciones pendientes, deudas vencidas). Usalo para preguntas como "dame el resumen del estudio", "cuáles son los KPIs", "cómo va el estudio este mes".',
+    parameters: [],
+    handler: async () => {
+      const now = new Date();
+      const from = new Date(now.getFullYear(), now.getMonth(), 1);
+      const to = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+      return await getDashboardStats({
+        data: { from: from.toISOString(), to: to.toISOString() },
+      });
+    },
+    render: ({ status, result }) => {
+      if (status === 'inProgress' || status === 'executing') {
+        return (
+          <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <span>Calculando KPIs del estudio…</span>
+          </div>
+        );
+      }
+      if (!result) {
+        return (
+          <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            Sin datos.
+          </div>
+        );
+      }
+      const now = new Date();
+      const from = new Date(now.getFullYear(), now.getMonth(), 1);
+      const to = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+      return (
+        <MiniKpiCardsRow from={from} to={to} stats={result as DashboardStats} />
+      );
     },
   });
 

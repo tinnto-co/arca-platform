@@ -8,6 +8,8 @@ import {
 import { ProgressBar, formatArs } from './shared';
 import type { ReactNode } from 'react';
 
+export type DashboardStats = Awaited<ReturnType<typeof getDashboardStats>>;
+
 interface MiniKpiData {
   label: string;
   icon: ReactNode;
@@ -25,9 +27,7 @@ function MiniKpiCard({ data }: { data: MiniKpiData }) {
   return (
     <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[14px] p-[14px_16px] flex flex-col gap-2.5">
       <div className="flex items-center justify-between text-xs font-medium text-[var(--arca-ink-3)]">
-        <span className="flex items-center gap-1.5">
-          {data.label}
-        </span>
+        <span className="flex items-center gap-1.5">{data.label}</span>
       </div>
       <div className="font-display text-[22px] font-semibold tracking-[-0.02em] text-[var(--arca-ink)] tabular-nums leading-none flex items-baseline justify-between">
         {data.value}
@@ -55,16 +55,24 @@ function MiniKpiCard({ data }: { data: MiniKpiData }) {
 interface MiniKpiCardsRowProps {
   from: Date;
   to: Date;
+  stats?: DashboardStats;
 }
 
-export function MiniKpiCardsRow({ from, to }: MiniKpiCardsRowProps) {
+export function MiniKpiCardsRow({
+  from,
+  to,
+  stats: statsProp,
+}: MiniKpiCardsRowProps) {
   const fromStr = from.toISOString();
   const toStr = to.toISOString();
 
-  const { data: stats } = useQuery({
+  const skipStatsQuery = statsProp !== undefined;
+  const { data: queryStats } = useQuery({
     queryKey: ['dashboardStats', fromStr, toStr],
     queryFn: () => getDashboardStats({ data: { from: fromStr, to: toStr } }),
+    enabled: !skipStatsQuery,
   });
+  const stats = statsProp ?? queryStats;
 
   const { data: overdueDebts = [] } = useQuery({
     queryKey: ['overdueDebts'],
