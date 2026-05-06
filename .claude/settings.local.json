@@ -79,7 +79,24 @@
       "Bash(bunx eslint *)",
       "Bash(grep -E 'chat/\\\\$id')",
       "Bash(grep -E 'chat/\\\\$id|prompt-input')",
-      "Bash(bun remove *)"
+      "Bash(bun remove *)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); [print\\(f''''US-{us[id]}: {us[title]} [{us.get\\(status,pending\\)}]''''\\) for us in d.get\\(''''user_stories'''',[]\\)]\")",
+      "Bash(docker exec *)",
+      "Bash(echo \"---exit:$?\")",
+      "Bash(git stash *)",
+      "Bash(grep -nE \"^- \\\\`client\\\\`|^- \\\\`profile\\\\`\" CLAUDE.md)",
+      "Bash(curl -sf -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/login)",
+      "Bash(lsof -i :3000 -sTCP:LISTEN)",
+      "Bash(curl -sS -X POST http://localhost:3000/api/auth/sign-up/email -H 'Content-Type: application/json' -d '{\"email\":\"adriana@tinnto.co\",\"password\":\"tinnto2026\",\"name\":\"Adriana\"}')",
+      "Bash(pkill -f \"bun run src/scripts/ensure\")",
+      "Bash(grep -nA20 \"^export const getClients = \" src/actions/client.tsx)",
+      "Bash(lsof -nP -iTCP -sTCP:LISTEN)",
+      "Bash(docker restart *)",
+      "Bash(python3 -m json.tool)",
+      "Bash(nc *)",
+      "WebFetch(domain:docs.copilotkit.ai)",
+      "WebFetch(domain:www.copilotkit.ai)",
+      "Bash(python3 -m json.tool .claude/settings.local.json)"
     ]
   }
 }

@@ -1,0 +1,19 @@
+# Ralph Progress Log
+Started: (initialize on first run)
+Branch: ralph/copilotkit-integration
+Project: ARCA Platform — CopilotKit Integration
+---
+
+## Codebase Patterns
+(Will be populated by Ralph as it discovers reusable patterns. Read this section first before starting any user story.)
+
+- The existing AI agent at src/routes/api/agent.ts uses Vercel AI SDK v6 (`ToolLoopAgent`, `gemini-2.5-flash`) and is read-only (SQL SELECT only). It MUST NOT be modified.
+- The /chat page at src/routes/_authed/chat/{$id,index}.tsx uses @ai-sdk/react useChat with /api/agent endpoint. It MUST keep working unchanged.
+- CopilotKit runs in PARALLEL to the existing agent — separate runtime endpoint at /api/copilotkit, separate floating UI (CopilotPopup), shared Gemini API key.
+- Module gating: every feature in this PRD must respect the `ai_agent` module flag (listOrgModules from src/actions/admin.tsx, useQuery key ['orgModules']).
+- Multi-tenancy: every server function calls getSessionWithOrg() first, scopes by orgId.
+- Never expose client.password (AFIP credential) in any context (readable, action result, log).
+- TanStack Start route handler signature: `{ server: { handlers: { POST: async ({ request }) => Response } } }` — see src/routes/api/agent.ts for the canonical pattern.
+- Module gate pattern (from US-055 of the previous Ralph run): `beforeLoad` with `throw redirect({ to: '/' })` requires `// eslint-disable-next-line @typescript-eslint/only-throw-error` before each throw.
+
+---
