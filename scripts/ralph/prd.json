@@ -81,7 +81,7 @@
         "DO NOT modify src/routes/api/agent.ts"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Phase 2 — Generative UI. The existing component is at src/components/render-iva-resume.tsx — inspect its props before wiring. The IVA logic is duplicated for now from /api/agent.ts; future stories may consolidate into a shared lib in src/lib/iva-position.ts. Use calcularIvaDesdeFacturas from @/lib/iva-calc as the existing agent does."
     },
     {
