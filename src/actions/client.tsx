@@ -837,6 +837,46 @@ export const scrapSingleJob = createServerFn({
     }
   });
 
+/**
+ * Fire-and-forget: creates a batch job for each selected client.
+ * Does NOT wait for completion — returns job IDs immediately.
+ */
+export const scrapBatchClients = createServerFn({
+  method: 'POST',
+})
+  .inputValidator(
+    z.object({
+      clientIds: z.array(z.string()).min(1),
+    })
+  )
+  .handler(async (ctx) => {
+    await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const baseUrl = JOBS_API_URL;
+    const { clientIds } = ctx.data;
+    const created: { clientId: string; jobId: string }[] = [];
+    const errors: { clientId: string; error: string }[] = [];
+
+    for (const clientId of clientIds) {
+      try {
+        const { data: job } = await axios.post(`${baseUrl}/api/jobs`, {
+          type: 'batch',
+          clientId,
+        });
+        created.push({ clientId, jobId: job.id });
+      } catch (error: any) {
+        errors.push({
+          clientId,
+          error: error.response?.data?.error || error.message,
+        });
+      }
+    }
+
+    return { created, errors, total: clientIds.length };
+  });
+
 /** Último job comprobantes_full para un cliente (por created_at), con estado success/error. */
 export const getLastComprobantesFullJob = createServerFn({
   method: 'GET',

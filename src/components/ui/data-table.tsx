@@ -52,6 +52,7 @@ interface DataTableProps<TData, TValue> {
   pagination?: boolean;
   pageSize?: number;
   onRowClick?: (row: TData) => void;
+  onSelectionChange?: (selectedRows: TData[]) => void;
   isLoading?: boolean;
   toolbar?: React.ReactNode;
   emptyMessage?: string;
@@ -66,6 +67,7 @@ export function DataTable<TData, TValue>({
   pagination = true,
   pageSize = 20,
   onRowClick,
+  onSelectionChange,
   isLoading = false,
   toolbar,
   emptyMessage = 'Sin resultados.',
@@ -117,7 +119,17 @@ export function DataTable<TData, TValue>({
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
-    onRowSelectionChange: setRowSelection,
+    onRowSelectionChange: (updater) => {
+      setRowSelection((prev) => {
+        const next = typeof updater === 'function' ? updater(prev) : updater;
+        if (onSelectionChange) {
+          const selectedIndices = Object.keys(next).filter((k) => next[k]);
+          const selectedRows = selectedIndices.map((i) => data[Number(i)]);
+          onSelectionChange(selectedRows);
+        }
+        return next;
+      });
+    },
     initialState: { pagination: { pageSize } },
     state: { sorting, columnFilters, columnVisibility, rowSelection },
   });
