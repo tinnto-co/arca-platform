@@ -431,7 +431,6 @@ function AlertsPage() {
     <div className="p-[28px_36px_60px] max-w-[1440px]">
       <div className="flex items-start justify-between gap-4 mb-6">
         <PageHeader
-          icon={AlertTriangle}
           title="Alertas"
           subtitle={`${alerts.length} alerta${alerts.length !== 1 ? 's' : ''}`}
         />

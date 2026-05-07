@@ -52,12 +52,12 @@ function RouteComponent() {
               'min-w-0',
               isChatDetail
                 ? 'h-full overflow-hidden'
-                : 'bg-[var(--arca-bg)] pb-20 md:pb-0'
+                : 'bg-[var(--arca-bg)] pb-20 md:pb-0 min-h-full'
             )}
           >
             <Outlet />
+            {!hideAgentInput && <AgentInput />}
           </div>
-          {!hideAgentInput && <AgentInput />}
         </SidebarInset>
         <MobileNavbar />
       </SidebarProvider>

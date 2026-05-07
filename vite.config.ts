@@ -19,7 +19,7 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    include: ["gridstack"],
+    include: ["gridstack", "@react-pdf/renderer"],
   },
 
 

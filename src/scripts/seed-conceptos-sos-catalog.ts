@@ -24,6 +24,7 @@ interface ConceptoSos {
   tieneImporte: boolean;
   tieneImpMin: boolean;
   tieneImpMax: boolean;
+  pctFijo?: number;
   baseColumna:
     | 'valHora'
     | 'sueldoLegajo'
@@ -60,7 +61,7 @@ const CONCEPTOS: ConceptoSos[] = [
   { numeroSos: 16,  codigoAfip: '140000', nombre: 'Plus por Zona Desfavorable',                              tieneMemo: true,  tieneCantidad: true,  tienePct: true,  tieneImpConceptoNro: true,  tieneImporte: true,  tieneImpMin: false, tieneImpMax: false, baseColumna: 'importe_fijo', divHsNorm: 1,   divCantidad: 1  },
   { numeroSos: 17,  codigoAfip: '130001', nombre: 'Horas extras 50% (s/valor hora)',                         tieneMemo: false, tieneCantidad: true,  tienePct: true,  tieneImpConceptoNro: false, tieneImporte: false, tieneImpMin: false, tieneImpMax: false, baseColumna: 'valHora',     divHsNorm: 1,   divCantidad: 1  },
   { numeroSos: 18,  codigoAfip: '130002', nombre: 'Horas extras 100% (s/valor hora)',                        tieneMemo: false, tieneCantidad: true,  tienePct: true,  tieneImpConceptoNro: false, tieneImporte: false, tieneImpMin: false, tieneImpMax: false, baseColumna: 'valHora',     divHsNorm: 1,   divCantidad: 1  },
-  { numeroSos: 19,  codigoAfip: '170000', nombre: 'Asignacion Complementaria (s/conc. 1 a 9)',               tieneMemo: true,  tieneCantidad: true,  tienePct: true,  tieneImpConceptoNro: false, tieneImporte: false, tieneImpMin: false, tieneImpMax: false, baseColumna: 'sub1_9',      divHsNorm: 1,   divCantidad: 1  },
+  { numeroSos: 19,  codigoAfip: '170000', nombre: 'Presentismo',                                              tieneMemo: true,  tieneCantidad: true,  tienePct: true,  tieneImpConceptoNro: false, tieneImporte: false, tieneImpMin: false, tieneImpMax: false, pctFijo: 8.33, baseColumna: 'sub1_9',      divHsNorm: 1,   divCantidad: 1  },
   { numeroSos: 20,  codigoAfip: '170000', nombre: 'Asignacion Complementaria (s/conc. 1 a 9)',               tieneMemo: true,  tieneCantidad: true,  tienePct: true,  tieneImpConceptoNro: false, tieneImporte: false, tieneImpMin: false, tieneImpMax: false, baseColumna: 'sub1_9',      divHsNorm: 1,   divCantidad: 1  },
   { numeroSos: 21,  codigoAfip: '130001', nombre: 'Horas extras 50% (s/sueldo)',                             tieneMemo: false, tieneCantidad: true,  tienePct: true,  tieneImpConceptoNro: false, tieneImporte: false, tieneImpMin: false, tieneImpMax: false, baseColumna: 'sueldo',      divHsNorm: 180, divCantidad: 1  },
   { numeroSos: 22,  codigoAfip: '130002', nombre: 'Horas extras 100% (s/sueldo)',                            tieneMemo: false, tieneCantidad: true,  tienePct: true,  tieneImpConceptoNro: false, tieneImporte: false, tieneImpMin: false, tieneImpMax: false, baseColumna: 'sueldo',      divHsNorm: 180, divCantidad: 1  },

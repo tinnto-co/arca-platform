@@ -263,8 +263,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   <span className="truncate">{org.name}</span>
                   {(org.id === user?.activeOrganizationId ||
                     org.id === activeOrg?.id) && (
-                    <Check className="ml-auto size-4" />
-                  )}
+                      <Check className="ml-auto size-4" />
+                    )}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
@@ -323,11 +323,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             label="Notificaciones"
             urgentCount={notifCount}
           />
-          <NavItem to="/jobs" icon={Clock} label="Trabajos" />
+          <NavItem to="/jobs" icon={Clock} label="Jobs" />
           <NavItem to="/invoices" icon={FileText} label="Facturas" />
-          {isEnabled('sueldos') && (
-            <NavItem to="/sueldos" icon={DollarSign} label="Sueldos" />
-          )}
+          <NavItem to="/sueldos" icon={DollarSign} label="Sueldos" />
           <NavItem to="/vencimientos" icon={Calendar} label="Vencimientos" />
           <NavItem
             to="/alerts"

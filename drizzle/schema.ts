@@ -54,6 +54,12 @@ export const client = pgTable("client", {
   fiscalCondition: text("fiscal_condition"),
   liquidaSueldos: boolean("liquida_sueldos").notNull().default(false),
   cuitEmpresa: text("cuit_empresa").notNull().default(""),
+  /**
+   * Campos legacy todavía presentes en BD productiva.
+   * Se mantienen en schema para evitar que drizzle-kit push intente eliminarlos.
+   */
+  esPersonaFisica: boolean("es_persona_fisica").notNull().default(true),
+  razonSocial: text("razon_social").notNull().default(""),
   hasErrors: boolean("has_errors").default(false).notNull(),
   errorMessage: text("error_message").default(""),
   registeredAt: timestamp("registered_at").notNull(),
@@ -76,6 +82,12 @@ export const profile = pgTable("profile", {
   email: text("email").notNull(),
   status: text("status").notNull(),
   liquidaSueldos: boolean("liquida_sueldos").notNull().default(false),
+  /**
+   * Compatibilidad con flujo legado LSD:
+   * cuando está activo, el sistema conserva importados como referencia y permite
+   * generar recibos propios en paralelo (mismo período/tipo, distinto origen).
+   */
+  usaLsdReferencia: boolean("usa_lsd_referencia").notNull().default(false),
   scrapedAt: timestamp("scraped_at"),
   /** Firma digital del empleador (data URL base64) para impresión de recibos. */
   firmaDigitalEmpleador: text("firma_digital_empleador"),
@@ -100,6 +112,9 @@ export const afipEmpleadoresConvenio = pgTable(
     profileId: uuid("profile_id")
       .notNull()
       .references(() => profile.id, { onDelete: "cascade" }),
+    /** FK al catálogo global. Poblado automáticamente por trigger al insertar/actualizar. */
+    convenioId: uuid("convenio_id")
+      .references(() => conveniosDeTrabajo.id, { onDelete: "set null" }),
     cct: text("cct").notNull(),
     actividad: text("actividad").notNull(),
     signatarios: text("signatarios").notNull(),
@@ -114,6 +129,25 @@ export const afipEmpleadoresConvenio = pgTable(
     ),
   ]
 );
+
+/**
+ * Catálogo global de convenios colectivos de trabajo conocidos.
+ * Se popula automáticamente a medida que el scraper detecta nuevos CCT
+ * en afip_empleadores_convenio. Un registro por número de CCT.
+ */
+export const conveniosDeTrabajo = pgTable("convenios_de_trabajo", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  cct: text("cct").unique().notNull(),
+  nombre: text("nombre").notNull(),
+  signatarios: text("signatarios"),
+  descripcion: text("descripcion"),
+  activo: boolean("activo").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at")
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+});
 
 /**
  * Conceptos AFIP para el servicio "Simplificación Registral - Empleadores".
@@ -511,6 +545,70 @@ export const obraSocial = pgTable("obra_social", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+/** Catálogo de situaciones de revista (códigos SOS/AFIP). */
+export const payrollSituacion = pgTable("payroll_situacion", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  codigo: text("codigo").notNull().unique(),
+  nombre: text("nombre").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/** Catálogo de condiciones de trabajo (códigos SOS/AFIP). */
+export const payrollCondicion = pgTable("payroll_condicion", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  codigo: text("codigo").notNull().unique(),
+  nombre: text("nombre").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/** Catálogo de actividades/rubros del empleador (códigos SOS/AFIP). */
+export const payrollActividad = pgTable("payroll_actividad", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  codigo: text("codigo").notNull().unique(),
+  nombre: text("nombre").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/** Catálogo de modalidades de contratación (códigos SOS/AFIP). */
+export const payrollModalidadContratacion = pgTable("payroll_modalidad_contratacion", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  codigo: text("codigo").notNull().unique(),
+  nombre: text("nombre").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/** Catálogo de tipos de siniestro ART (códigos SOS/AFIP). */
+export const payrollSiniestrado = pgTable("payroll_siniestrado", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  codigo: text("codigo").notNull().unique(),
+  nombre: text("nombre").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/** Catálogo de provincias argentinas (códigos SOS). */
+export const payrollProvincia = pgTable("payroll_provincia", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  codigo: text("codigo").notNull().unique(),
+  nombre: text("nombre").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/** Catálogo de nacionalidades / países (códigos SOS). */
+export const payrollNacionalidad = pgTable("payroll_nacionalidad", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  codigo: text("codigo").notNull().unique(),
+  nombre: text("nombre").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/** Catálogo de zonas geográficas con reducción de cargas patronales (códigos SOS/AFIP históricos). */
+export const payrollZona = pgTable("payroll_zona", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  codigo: text("codigo").notNull().unique(),
+  nombre: text("nombre").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const payrollConvenioTipoJornadaEnum = pgEnum("payroll_tipo_jornada", [
   "full_time",
   "part_time",
@@ -533,6 +631,31 @@ export const payrollConvenio = pgTable("payroll_convenio", {
     .$onUpdate(() => new Date())
     .notNull(),
 });
+
+/** Fuentes de información que enriquecen cada convenio (AFIP, estudios, etc.). */
+export const payrollConvenioFuente = pgTable(
+  "payroll_convenio_fuente",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    convenioId: uuid("convenio_id")
+      .notNull()
+      .references(() => payrollConvenio.id, { onDelete: "cascade" }),
+    fuente: text("fuente").notNull(),
+    detalle: text("detalle"),
+    lastSyncedAt: timestamp("last_synced_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    unique("payroll_convenio_fuente_convenio_id_fuente_unique").on(
+      table.convenioId,
+      table.fuente
+    ),
+  ]
+);
 
 /** Categorías dentro de un convenio */
 export const payrollConvenioCategoria = pgTable("payroll_convenio_categoria", {
@@ -613,6 +736,8 @@ export const conceptosCompletosSos = pgTable("conceptos_completos_sos", {
   divHsNorm: integer("div_hs_norm").default(1),
   /** Divisor de días (1, 25 o 30). */
   divCantidad: integer("div_cantidad").default(1),
+  /** Porcentaje fijo del concepto (no editable por el usuario, ej. 8.33 para Presentismo). */
+  pctFijo: numeric("pct_fijo"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().$onUpdate(() => new Date()).notNull(),
 });
@@ -745,7 +870,7 @@ export const liquidacionImportEmpleado = pgTable(
     banco: text("banco"),
     activo: boolean("activo").default(true).notNull(),
     // --- Datos demográficos y de legajo (fuente: planilla Excel SOS) ---
-    nacionalidad: text("nacionalidad"),
+    nacionalidadId: uuid("nacionalidad_id").references(() => payrollNacionalidad.id, { onDelete: "set null" }),
     fechaNacimiento: timestamp("fecha_nacimiento", { mode: "date" }),
     conyuge: integer("conyuge"),
     hijos: integer("hijos"),
@@ -754,17 +879,18 @@ export const liquidacionImportEmpleado = pgTable(
     domicilio: text("domicilio"),
     localidad: text("localidad"),
     codigoPostal: text("codigo_postal"),
-    provincia: text("provincia"),
+    provinciaId: uuid("provincia_id").references(() => payrollProvincia.id, { onDelete: "set null" }),
+    modalidadContratacionId: uuid("modalidad_contratacion_id").references(() => payrollModalidadContratacion.id, { onDelete: "set null" }),
     codigoModalidadContratacion: text("codigo_modalidad_contratacion"),
-    situacion: text("situacion"),
+    situacionId: uuid("situacion_id").references(() => payrollSituacion.id, { onDelete: "set null" }),
     codigoSituacion: text("codigo_situacion"),
-    zona: text("zona"),
+    zonaId: uuid("zona_id").references(() => payrollZona.id, { onDelete: "set null" }),
     codigoZona: text("codigo_zona"),
-    condicion: text("condicion"),
+    condicionId: uuid("condicion_id").references(() => payrollCondicion.id, { onDelete: "set null" }),
     codigoCondicion: text("codigo_condicion"),
-    actividad: text("actividad"),
+    actividadId: uuid("actividad_id").references(() => payrollActividad.id, { onDelete: "set null" }),
     codigoActividad: text("codigo_actividad"),
-    siniestrado: text("siniestrado"),
+    siniestradoId: uuid("siniestrado_id").references(() => payrollSiniestrado.id, { onDelete: "set null" }),
     codigoSiniestrado: text("codigo_siniestrado"),
     observaciones: text("observaciones"),
     obraSocialId: uuid("obra_social_id").references(() => obraSocial.id, { onDelete: "set null" }),
@@ -841,10 +967,11 @@ export const liquidacionImportRecibo = pgTable(
       .notNull(),
   },
   (table) => [
-    unique("liquidacion_import_recibo_empleado_periodo_tipo_unique").on(
+    unique("liquidacion_import_recibo_empleado_periodo_tipo_origen_unique").on(
       table.empleadoId,
       table.periodo,
       table.tipo,
+      table.origen,
     ),
   ],
 );

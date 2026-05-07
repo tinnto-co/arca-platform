@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { FileText } from 'lucide-react';
+import { FileText, ChevronRight, Pencil, Printer } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Select,
@@ -14,12 +14,15 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  listLiquidacionesByPeriodo,
+  listLiquidacionesByFiltros,
+  listImportEmpleados,
   getReciboDetalle,
   getPayrollEmployerConfig,
 } from '@/actions/sueldos';
 import { getClient } from '@/actions/client';
 import { legajoParaMostrar } from '@/lib/legajo';
+import { Button } from '@/components/ui/button';
+import { ImprimirRecibosDialog } from '@/components/sueldos/ImprimirRecibosDialog';
 
 const now = new Date();
 const ANOS = Array.from({ length: 8 }, (_, i) => now.getFullYear() - i);
@@ -31,6 +34,12 @@ const MESES = Array.from({ length: 12 }, (_, i) => ({
 interface SueldosReciboProps {
   clientId: string;
   profileId: string;
+  onEditRecibo?: (data: {
+    importEmpleadoId: string;
+    empleadoNombre: string;
+    periodo: string;
+    tipoRecibo: string;
+  }) => void;
 }
 
 function tipoReciboLabel(tipo: string | null): string {
@@ -66,7 +75,7 @@ function moneyFmt(v: string | number | null | undefined): string {
 
 /** Suma montos de líneas de detalle (mismo criterio que la grilla del recibo). */
 function sumaMontosDetalle(
-  rows: { detalle: { monto: string | null | undefined } }[]
+  rows: Array<{ detalle: { monto: string | null | undefined } }>
 ): number {
   return rows.reduce((acc, r) => {
     const n = Number(r.detalle.monto ?? 0);
@@ -84,11 +93,11 @@ function esCategoriaGerente(v: string | null | undefined): boolean {
 }
 
 function basicoDesdeDetalle(
-  rows: {
+  rows: Array<{
     detalle: { codigo: string; monto: string | null };
     concepto?: { numeroSos?: number | null; nombre?: string | null } | null;
     conceptoSos?: { codigo?: string | null; nombre?: string | null } | null;
-  }[]
+  }>
 ): number {
   for (const r of rows) {
     const numSos = r.concepto?.numeroSos ?? null;
@@ -206,50 +215,17 @@ function completarCabeceraConLegajo(
 
 // ─── Número a letras (pesos argentinos) ─────────────────────────────────────
 const UNIDADES = [
-  '',
-  'uno',
-  'dos',
-  'tres',
-  'cuatro',
-  'cinco',
-  'seis',
-  'siete',
-  'ocho',
-  'nueve',
-  'diez',
-  'once',
-  'doce',
-  'trece',
-  'catorce',
-  'quince',
-  'dieciséis',
-  'diecisiete',
-  'dieciocho',
-  'diecinueve',
+  '', 'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve',
+  'diez', 'once', 'doce', 'trece', 'catorce', 'quince', 'dieciséis', 'diecisiete',
+  'dieciocho', 'diecinueve',
 ];
 const DECENAS = [
-  '',
-  'diez',
-  'veinte',
-  'treinta',
-  'cuarenta',
-  'cincuenta',
-  'sesenta',
-  'setenta',
-  'ochenta',
-  'noventa',
+  '', 'diez', 'veinte', 'treinta', 'cuarenta', 'cincuenta', 'sesenta', 'setenta',
+  'ochenta', 'noventa',
 ];
 const CENTENAS = [
-  '',
-  'ciento',
-  'doscientos',
-  'trescientos',
-  'cuatrocientos',
-  'quinientos',
-  'seiscientos',
-  'setecientos',
-  'ochocientos',
-  'novecientos',
+  '', 'ciento', 'doscientos', 'trescientos', 'cuatrocientos', 'quinientos',
+  'seiscientos', 'setecientos', 'ochocientos', 'novecientos',
 ];
 
 function cientos(n: number): string {
@@ -279,7 +255,8 @@ function millones(n: number): string {
   if (n < 1_000_000) return miles(n);
   const m = Math.floor(n / 1_000_000);
   const resto = n % 1_000_000;
-  const parteM = m === 1 ? 'un millón' : `${miles(m)} millones`;
+  const parteM =
+    m === 1 ? 'un millón' : `${miles(m)} millones`;
   if (resto === 0) return parteM;
   return `${parteM} ${miles(resto)}`;
 }
@@ -351,21 +328,34 @@ function DocCell({
 }) {
   return (
     <div className={`flex flex-col px-2 py-1 ${className}`}>
-      <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--arca-ink-3)]">
+      <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
         {label}
       </span>
-      <span className="mt-0.5 text-sm font-medium leading-tight">
-        {value || '—'}
-      </span>
+      <span className="mt-0.5 text-sm font-medium leading-tight">{value || '—'}</span>
     </div>
   );
 }
 
-export function SueldosRecibo({ clientId, profileId }: SueldosReciboProps) {
+export function SueldosRecibo({ clientId, profileId, onEditRecibo }: SueldosReciboProps) {
   const [ano, setAno] = useState(String(now.getFullYear()));
   const [mes, setMes] = useState(String(now.getMonth() + 1).padStart(2, '0'));
-  const periodo = useMemo(() => `${ano}-${mes}`, [ano, mes]);
+  const [empleadoId, setEmpleadoId] = useState('');
   const [reciboId, setReciboId] = useState('');
+  const [showImprimir, setShowImprimir] = useState(false);
+
+  const periodo = useMemo(
+    () => (ano && mes ? `${ano}-${mes}` : ''),
+    [ano, mes]
+  );
+
+  const hayFiltro = !!periodo || !!empleadoId;
+
+  const resetFiltros = useCallback(() => {
+    setAno('');
+    setMes('');
+    setEmpleadoId('');
+    setReciboId('');
+  }, []);
 
   const { data: clientData } = useQuery({
     queryKey: ['client', clientId],
@@ -373,11 +363,31 @@ export function SueldosRecibo({ clientId, profileId }: SueldosReciboProps) {
     enabled: !!clientId,
   });
 
-  const { data: recibosPeriodo = [], isLoading: loadingList } = useQuery({
-    queryKey: ['liquidaciones-recibo', clientId, profileId, periodo],
-    queryFn: () =>
-      listLiquidacionesByPeriodo({ data: { clientId, profileId, periodo } }),
+  const { data: empleadosRaw = [] } = useQuery({
+    queryKey: ['import-empleados', clientId, profileId],
+    queryFn: () => listImportEmpleados({ data: { clientId, profileId } }),
     enabled: !!clientId && !!profileId,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Solo empleados activos para los selectores y el PDF
+  const empleados = useMemo(
+    () => empleadosRaw.filter((e) => e.empleado.activo),
+    [empleadosRaw]
+  );
+
+  const { data: recibos = [], isLoading: loadingList } = useQuery({
+    queryKey: ['liquidaciones-filtros', clientId, profileId, periodo, empleadoId],
+    queryFn: () =>
+      listLiquidacionesByFiltros({
+        data: {
+          clientId,
+          profileId,
+          ...(periodo ? { periodo } : {}),
+          ...(empleadoId ? { importEmpleadoId: empleadoId } : {}),
+        },
+      }),
+    enabled: !!clientId && !!profileId && hayFiltro,
   });
 
   const { data: detalle, isLoading: loadingDetalle } = useQuery({
@@ -396,31 +406,47 @@ export function SueldosRecibo({ clientId, profileId }: SueldosReciboProps) {
 
   return (
     <div className="w-full min-w-0 max-w-full space-y-6">
-      {/* ── Selectores ────────────────────────────────────────────────────── */}
+      {/* ── Filtros ───────────────────────────────────────────────────────── */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5" />
-            Recibos liquidados
-          </CardTitle>
-          <p className="text-sm text-[var(--arca-ink-3)]">
-            Seleccioná período y recibo para ver el detalle de la liquidación.
-          </p>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                Recibos liquidados
+              </CardTitle>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Filtrá por período (mes + año) y/o por empleado. Podés usar solo empleado para ver todos sus recibos.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0 gap-1.5"
+              onClick={() => setShowImprimir(true)}
+            >
+              <Printer className="h-4 w-4" />
+              Imprimir PDF
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="flex flex-wrap items-end gap-4">
+          {/* Año */}
           <div>
             <label className="mb-2 block text-sm font-medium">Año</label>
             <Select
-              value={ano}
+              value={ano || '__all'}
               onValueChange={(v) => {
-                setAno(v);
+                setAno(v === '__all' ? '' : v);
+                setMes('');
                 setReciboId('');
               }}
             >
-              <SelectTrigger className="w-[120px]">
+              <SelectTrigger className="w-[130px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="__all">Todos los años</SelectItem>
                 {ANOS.map((y) => (
                   <SelectItem key={y} value={String(y)}>
                     {y}
@@ -429,19 +455,25 @@ export function SueldosRecibo({ clientId, profileId }: SueldosReciboProps) {
               </SelectContent>
             </Select>
           </div>
+
+          {/* Mes (solo relevante si hay año) */}
           <div>
             <label className="mb-2 block text-sm font-medium">Mes</label>
             <Select
-              value={mes}
+              value={mes || '__all'}
               onValueChange={(v) => {
-                setMes(v);
+                setMes(v === '__all' ? '' : v);
                 setReciboId('');
               }}
+              disabled={!ano}
             >
               <SelectTrigger className="w-[160px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="__all">
+                  {ano ? 'Todos los meses' : '—'}
+                </SelectItem>
                 {MESES.map((m) => (
                   <SelectItem key={m.value} value={m.value}>
                     {m.label}
@@ -450,51 +482,162 @@ export function SueldosRecibo({ clientId, profileId }: SueldosReciboProps) {
               </SelectContent>
             </Select>
           </div>
+
+          {/* Empleado */}
           <div>
-            <label className="mb-2 block text-sm font-medium">Recibo</label>
-            <Select value={reciboId} onValueChange={setReciboId}>
-              <SelectTrigger className="w-[min(100%,320px)] max-w-[320px]">
-                <SelectValue
-                  placeholder={
-                    loadingList ? 'Cargando…' : 'Seleccioná un recibo'
-                  }
-                />
+            <label className="mb-2 block text-sm font-medium">Empleado</label>
+            <Select
+              value={empleadoId || '__all'}
+              onValueChange={(v) => {
+                setEmpleadoId(v === '__all' ? '' : v);
+                setReciboId('');
+              }}
+            >
+              <SelectTrigger className="w-[260px]">
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {recibosPeriodo.map((r) => (
-                  <SelectItem key={r.liquidacion.id} value={r.liquidacion.id}>
-                    {`${r.empleado.nombre} · ${tipoReciboLabel(r.liquidacion.tipo)}`}
+                <SelectItem value="__all">Todos los empleados</SelectItem>
+                {empleados.map((e) => (
+                  <SelectItem key={e.empleado.id} value={e.empleado.id}>
+                    {e.empleado.nombre}
+                    {e.empleado.legajo
+                      ? ` (Leg. ${legajoParaMostrar(e.empleado.legajo)})`
+                      : ''}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
+
+          {/* Limpiar */}
+          {(ano || empleadoId) && (
+            <button
+              type="button"
+              onClick={resetFiltros}
+              className="mb-0.5 text-xs text-muted-foreground underline hover:text-foreground"
+            >
+              Limpiar filtros
+            </button>
+          )}
         </CardContent>
       </Card>
 
-      {/* ── Recibo ────────────────────────────────────────────────────────── */}
+      {/* ── Lista de resultados ───────────────────────────────────────────── */}
+      {hayFiltro && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              {loadingList
+                ? 'Buscando…'
+                : recibos.length === 0
+                  ? 'Sin resultados'
+                  : `${recibos.length} recibo${recibos.length !== 1 ? 's' : ''} encontrado${recibos.length !== 1 ? 's' : ''}`}
+            </CardTitle>
+          </CardHeader>
+          {!loadingList && recibos.length > 0 && (
+            <CardContent className="p-0">
+              <div className="divide-y">
+                {recibos.map((r) => {
+                  const isSelected = r.liquidacion.id === reciboId;
+                  return (
+                    <button
+                      key={r.liquidacion.id}
+                      type="button"
+                      onClick={() =>
+                        setReciboId(
+                          isSelected ? '' : r.liquidacion.id
+                        )
+                      }
+                      className={`flex w-full items-center justify-between px-4 py-3 text-left text-sm transition-colors hover:bg-muted/50 ${
+                        isSelected ? 'bg-muted/60 font-medium' : ''
+                      }`}
+                    >
+                      <div className="flex flex-col gap-0.5 min-w-0">
+                        <span className="font-medium truncate">
+                          {r.empleado.nombre}
+                          {r.empleado.legajo && (
+                            <span className="ml-2 text-xs font-normal text-muted-foreground">
+                              Leg. {legajoParaMostrar(r.empleado.legajo)}
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {r.liquidacion.periodo} · {tipoReciboLabel(r.liquidacion.tipo)}
+                          {r.liquidacion.quincena
+                            ? ` · ${quincenaLabel(r.liquidacion.quincena)}`
+                            : ''}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0 ml-4">
+                        {r.liquidacion.neto && (
+                          <span className="text-sm tabular-nums font-medium">
+                            ${moneyFmt(r.liquidacion.neto)}
+                          </span>
+                        )}
+                        {onEditRecibo && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onEditRecibo({
+                                importEmpleadoId: r.empleado.id,
+                                empleadoNombre: r.empleado.nombre,
+                                periodo: r.liquidacion.periodo,
+                                tipoRecibo: r.liquidacion.tipo ?? 'sueldo',
+                              });
+                            }}
+                            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                            title="Editar recibo"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        <ChevronRight
+                          className={`h-4 w-4 text-muted-foreground transition-transform ${
+                            isSelected ? 'rotate-90' : ''
+                          }`}
+                        />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </CardContent>
+          )}
+        </Card>
+      )}
+
+      {/* ── Dialog: imprimir PDF ─────────────────────────────────────────── */}
+      <ImprimirRecibosDialog
+        open={showImprimir}
+        onOpenChange={setShowImprimir}
+        clientId={clientId}
+        profileId={profileId}
+        clientData={clientData ?? null}
+        firmaEmpleadorUrl={firmaEmpleadorUrl}
+        empleados={empleados}
+      />
+
+      {/* ── Recibo detalle ───────────────────────────────────────────────── */}
       {reciboId && (
         <>
           {loadingDetalle ? (
             <Card>
               <CardContent className="py-8">
-                <p className="text-[var(--arca-ink-3)]">Cargando…</p>
+                <p className="text-muted-foreground">Cargando…</p>
               </CardContent>
             </Card>
           ) : !detalle ? (
             <Card>
               <CardContent className="py-8">
-                <p className="text-[var(--arca-ink-3)]">
+                <p className="text-muted-foreground">
                   No se encontró el recibo.
                 </p>
               </CardContent>
             </Card>
           ) : (
-            <ReciboDocumento
-              detalle={detalle}
-              clientData={clientData ?? null}
-              firmaEmpleadorUrl={firmaEmpleadorUrl}
-            />
+            <ReciboDocumento detalle={detalle} clientData={clientData ?? null} firmaEmpleadorUrl={firmaEmpleadorUrl} />
           )}
         </>
       )}
@@ -503,7 +646,9 @@ export function SueldosRecibo({ clientId, profileId }: SueldosReciboProps) {
 }
 
 // ─── Componente del documento recibo ────────────────────────────────────────
-type DetalleType = NonNullable<Awaited<ReturnType<typeof getReciboDetalle>>>;
+type DetalleType = NonNullable<
+  Awaited<ReturnType<typeof getReciboDetalle>>
+>;
 type ClientData = Awaited<ReturnType<typeof getClient>>;
 
 function ReciboDocumento({
@@ -531,8 +676,7 @@ function ReciboDocumento({
   const basicoLiquidacionNum = Number(liquidacion.basico ?? 0);
   const basicoDetalleNum = basicoDesdeDetalle(detalles);
   const esGerente =
-    esCategoriaGerente(categoria?.nombre) ||
-    esCategoriaGerente(empleado.categoria);
+    esCategoriaGerente(categoria?.nombre) || esCategoriaGerente(empleado.categoria);
   const mostrarBasicoEscalaGerente =
     esGerente &&
     Number.isFinite(basicoCalculadoNum) &&
@@ -582,7 +726,10 @@ function ReciboDocumento({
   const totalRetenciones = redondearPesos(sumaMontosDetalle(retenciones));
   const totalNoRemunerativo = redondearPesos(sumaMontosDetalle(haberesSin));
   const neto = redondearPesos(
-    totalHaberes + totalNoRemunerativo - totalDescuentos - totalRetenciones
+    totalHaberes +
+      totalNoRemunerativo -
+      totalDescuentos -
+      totalRetenciones
   );
 
   const cab = completarCabeceraConLegajo(
@@ -593,6 +740,7 @@ function ReciboDocumento({
   return (
     <div className="w-full overflow-x-auto">
       <div className="min-w-[700px] rounded-md border border-border bg-background text-sm shadow-sm">
+
         {/* ── ENCABEZADO ──────────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 border-b border-border">
           {/* Empresa (izquierda) */}
@@ -601,11 +749,11 @@ function ReciboDocumento({
               {clientData?.name ?? '—'}
             </span>
             {clientData?.address && (
-              <span className="text-sm text-[var(--arca-ink-3)]">
+              <span className="text-sm text-muted-foreground">
                 {clientData.address}
               </span>
             )}
-            <span className="text-sm font-medium text-[var(--arca-ink-3)]">
+            <span className="text-sm font-medium text-muted-foreground">
               CUIT: {clientData?.identityNumber ?? '—'}
             </span>
           </div>
@@ -615,16 +763,13 @@ function ReciboDocumento({
               <span className="text-base font-bold uppercase tracking-widest">
                 Recibo de Haberes
               </span>
-              <span className="ml-3 text-sm font-medium text-[var(--arca-ink-3)]">
+              <span className="ml-3 text-sm font-medium text-muted-foreground">
                 — {tipoReciboLabel(liquidacion.tipo)}
               </span>
             </div>
             <div className="grid grid-cols-3 divide-x divide-border">
               <DocCell label="Período a pagar" value={liquidacion.periodo} />
-              <DocCell
-                label="Fecha de pago"
-                value={dateFmt(cab.fechaPagoParaMostrar)}
-              />
+              <DocCell label="Fecha de pago" value={dateFmt(cab.fechaPagoParaMostrar)} />
               <DocCell label="Lugar de pago" value={cab.lugarPago ?? '—'} />
               <DocCell
                 label="Banco"
@@ -662,16 +807,16 @@ function ReciboDocumento({
               empleado.legajo ?? detalle.importLegajo ?? null
             )}
           />
-          <DocCell label="Apellido y Nombres" value={empleado.nombre} />
+          <DocCell
+            label="Apellido y Nombres"
+            value={empleado.nombre}
+          />
           <DocCell
             label="Fecha de ingreso"
             value={dateFmt(empleado.fechaAlta)}
           />
           <DocCell label="CUIL" value={empleado.cuil} />
-          <DocCell
-            label="Sueldo básico"
-            value={`$${moneyFmt(basicoMostrado)}`}
-          />
+          <DocCell label="Sueldo básico" value={`$${moneyFmt(basicoMostrado)}`} />
         </div>
 
         {/* ── FILA 3 EMPLEADO: Convenio | Modalidad | Obra Social ─────────── */}
@@ -688,16 +833,14 @@ function ReciboDocumento({
           />
           <DocCell
             label="Modalidad"
-            value={
-              empleado.tipoJornada === 'full_time'
-                ? 'Tiempo completo'
-                : 'Tiempo parcial'
-            }
+            value={empleado.tipoJornada === 'full_time' ? 'Tiempo completo' : 'Tiempo parcial'}
           />
           <DocCell
             label="Obra social"
             value={
-              obraSocial ? `${obraSocial.codigo} ${obraSocial.nombre}` : '—'
+              obraSocial
+                ? `${obraSocial.codigo} ${obraSocial.nombre}`
+                : '—'
             }
           />
         </div>
@@ -705,7 +848,7 @@ function ReciboDocumento({
         {/* ── TABLA DE CONCEPTOS ──────────────────────────────────────────── */}
         <table className="w-full border-collapse">
           <thead>
-            <tr className="border-b border-border bg-[var(--arca-surface-2)] text-xs font-semibold uppercase tracking-wide text-[var(--arca-ink-3)]">
+            <tr className="border-b border-border bg-muted/40 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               <th className="w-[70px] px-2 py-2 text-left">Código</th>
               <th className="px-2 py-2 text-left">Descripción del concepto</th>
               <th className="w-[70px] px-2 py-2 text-right">Cant.</th>
@@ -729,60 +872,49 @@ function ReciboDocumento({
               <tr>
                 <td
                   colSpan={8}
-                  className="px-2 py-4 text-center text-sm text-[var(--arca-ink-3)]"
+                  className="px-2 py-4 text-center text-sm text-muted-foreground"
                 >
                   Sin conceptos cargados
                 </td>
               </tr>
             ) : (
-              filas.map(
-                ({
-                  detalle: det,
-                  concepto,
-                  conceptoAfip,
-                  conceptoSos,
-                  col,
-                }) => (
-                  <tr key={det.id} className="hover:bg-[var(--arca-surface-2)]">
-                    <td className="px-2 py-1 font-mono text-xs text-[var(--arca-ink-3)]">
-                      {det.codigo}
-                    </td>
-                    <td className="px-2 py-1">
-                      {concepto?.nombre ??
-                        conceptoAfip?.descripcion ??
-                        conceptoSos?.nombre ??
-                        det.codigo}
-                    </td>
-                    <td className="px-2 py-1 text-right tabular-nums text-[var(--arca-ink-3)]">
-                      {det.cantidad ? moneyFmt(det.cantidad) : '—'}
-                    </td>
-                    <td className="px-2 py-1 text-right tabular-nums text-[var(--arca-ink-3)]">
-                      {det.porcentaje ? moneyFmt(det.porcentaje) : '—'}
-                    </td>
-                    <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
-                      {col === 'hab' ? moneyFmt(det.monto) : ''}
-                    </td>
-                    <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
-                      {col === 'desc' ? moneyFmt(det.monto) : ''}
-                    </td>
-                    <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
-                      {col === 'ret' ? moneyFmt(det.monto) : ''}
-                    </td>
-                    <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
-                      {col === 'noRem' ? moneyFmt(det.monto) : ''}
-                    </td>
-                  </tr>
-                )
-              )
+              filas.map(({ detalle: det, concepto, conceptoAfip, conceptoSos, col }) => (
+                <tr key={det.id} className="hover:bg-muted/20">
+                  <td className="px-2 py-1 font-mono text-xs text-muted-foreground">
+                    {det.codigo}
+                  </td>
+                  <td className="px-2 py-1">
+                    {concepto?.nombre ??
+                      conceptoAfip?.descripcion ??
+                      conceptoSos?.nombre ??
+                      det.codigo}
+                  </td>
+                  <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">
+                    {det.cantidad ? moneyFmt(det.cantidad) : '—'}
+                  </td>
+                  <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">
+                    {det.porcentaje ? moneyFmt(det.porcentaje) : '—'}
+                  </td>
+                  <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                    {col === 'hab' ? moneyFmt(det.monto) : ''}
+                  </td>
+                  <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                    {col === 'desc' ? moneyFmt(det.monto) : ''}
+                  </td>
+                  <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                    {col === 'ret' ? moneyFmt(det.monto) : ''}
+                  </td>
+                  <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                    {col === 'noRem' ? moneyFmt(det.monto) : ''}
+                  </td>
+                </tr>
+              ))
             )}
           </tbody>
           {/* ── Fila de totales ─────────────────────────────────────────── */}
           <tfoot>
-            <tr className="border-t-2 border-border bg-[var(--arca-surface-2)] font-semibold">
-              <td
-                colSpan={4}
-                className="px-2 py-2 uppercase tracking-wide text-xs"
-              >
+            <tr className="border-t-2 border-border bg-muted/30 font-semibold">
+              <td colSpan={4} className="px-2 py-2 uppercase tracking-wide text-xs">
                 Totales
               </td>
               <td className="border-l border-border px-2 py-2 text-right tabular-nums">
@@ -802,8 +934,8 @@ function ReciboDocumento({
         </table>
 
         {/* ── NETO ────────────────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between border-t-2 border-border bg-[var(--arca-surface-2)] px-4 py-3">
-          <span className="text-sm text-[var(--arca-ink-3)]">
+        <div className="flex items-center justify-between border-t-2 border-border bg-muted/10 px-4 py-3">
+          <span className="text-sm text-muted-foreground">
             Son{' '}
             <span className="font-medium capitalize text-foreground">
               {pesoEnLetras(neto)}
@@ -817,7 +949,7 @@ function ReciboDocumento({
         {/* ── OBSERVACIÓN ─────────────────────────────────────────────────── */}
         {liquidacion.observacionRecibo && (
           <div className="border-t border-border px-4 py-2">
-            <span className="text-xs font-semibold uppercase text-[var(--arca-ink-3)]">
+            <span className="text-xs font-semibold uppercase text-muted-foreground">
               Observación:
             </span>{' '}
             <span className="text-sm">{liquidacion.observacionRecibo}</span>
@@ -836,13 +968,13 @@ function ReciboDocumento({
             ) : (
               <div className="h-16 w-full" />
             )}
-            <div className="w-full border-t border-foreground/40 pt-1 text-center text-xs uppercase tracking-widest text-[var(--arca-ink-3)]">
+            <div className="w-full border-t border-foreground/40 pt-1 text-center text-xs uppercase tracking-widest text-muted-foreground">
               Firma y sello del empleador
             </div>
           </div>
           <div className="flex flex-col items-center gap-4 px-8 py-6">
             <div className="h-16 w-full" />
-            <div className="w-full border-t border-foreground/40 pt-1 text-center text-xs uppercase tracking-widest text-[var(--arca-ink-3)]">
+            <div className="w-full border-t border-foreground/40 pt-1 text-center text-xs uppercase tracking-widest text-muted-foreground">
               Firma del empleado
             </div>
           </div>

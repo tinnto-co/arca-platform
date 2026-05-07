@@ -43,6 +43,9 @@ const clientBaseSelect = {
   convenioMultilateral: client.convenioMultilateral,
   regimenLocal: client.regimenLocal,
   fiscalCondition: client.fiscalCondition,
+  cuitEmpresa: client.cuitEmpresa,
+  esPersonaFisica: client.esPersonaFisica,
+  razonSocial: client.razonSocial,
   hasErrors: client.hasErrors,
   errorMessage: client.errorMessage,
   registeredAt: client.registeredAt,
@@ -285,18 +288,18 @@ export const getClientsWithProfiles = createServerFn({
     }
 
     const profiles = await db
-      .select({ clientId: profile.client, id: profile.id, name: profile.name })
+      .select({ clientId: profile.client, id: profile.id, name: profile.name, identityNumber: profile.identityNumber })
       .from(profile)
       .where(inArray(profile.client, clientIds));
 
     const profilesByClientId = new Map<
       string,
-      { id: string; name: string }[]
+      { id: string; name: string; identityNumber: string }[]
     >();
     for (const p of profiles) {
       if (p.clientId) {
         const list = profilesByClientId.get(p.clientId) ?? [];
-        list.push({ id: p.id, name: p.name });
+        list.push({ id: p.id, name: p.name, identityNumber: p.identityNumber });
         profilesByClientId.set(p.clientId, list);
       }
     }

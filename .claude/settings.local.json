@@ -79,7 +79,13 @@
       "Bash(bunx eslint *)",
       "Bash(grep -E 'chat/\\\\$id')",
       "Bash(grep -E 'chat/\\\\$id|prompt-input')",
-      "Bash(bun remove *)"
+      "Bash(bun remove *)",
+      "Bash(bun add:*)",
+      "Bash(pkill -f esbuild)",
+      "Bash(npx vite:*)",
+      "Bash(node:*)",
+      "Bash(bun vite:*)",
+      "Bash(pkill -f \"vite\\\\|bun run dev\")"
     ]
   }
 }
