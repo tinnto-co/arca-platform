@@ -14,7 +14,10 @@ import { sql } from 'drizzle-orm';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const jsonPath = join(__dirname, '../data/obras-sociales-seed.json');
 
-type Row = { codigo: string; nombre: string };
+interface Row {
+  codigo: string;
+  nombre: string;
+}
 
 async function main() {
   const raw = readFileSync(jsonPath, 'utf8');
@@ -33,7 +36,9 @@ async function main() {
       )
       .onConflictDoNothing({ target: obraSocial.codigo });
     inserted += chunk.length;
-    console.log(`Procesados ${Math.min(inserted, rows.length)} / ${rows.length}`);
+    console.log(
+      `Procesados ${Math.min(inserted, rows.length)} / ${rows.length}`
+    );
   }
   const [{ count }] = await db
     .select({ count: sql<number>`count(*)::int` })

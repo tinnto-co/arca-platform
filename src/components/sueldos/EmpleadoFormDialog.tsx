@@ -227,7 +227,11 @@ export function EmpleadoFormDialog({
                   <FormItem>
                     <FormLabel>Legajo</FormLabel>
                     <FormControl>
-                      <Input {...field} placeholder="Opcional" className="w-full" />
+                      <Input
+                        {...field}
+                        placeholder="Opcional"
+                        className="w-full"
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

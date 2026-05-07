@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><link rel="stylesheet" href="_base.css">
+<style>
+  body { padding: 24px; }
+  .row { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+  .lbl { font-family: var(--ff-mono); font-size: 10.5px; color: var(--ink-3); width: 100%; }
+
+  .tab-bar { display: inline-flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-md); padding: 2px; font-size: 12px; font-weight: 500; }
+  .tab-bar button { padding: 4px 10px; border-radius: 6px; color: var(--ink-3); border: 0; background: none; font-family: var(--ff-sans); cursor: pointer; }
+  .tab-bar button.on { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-sm); }
+
+  .period { display:flex; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r-md); overflow: hidden; font-size: 12.5px; font-weight: 500; }
+  .period button { padding: 6px 12px; color: var(--ink-3); border-right: 1px solid var(--border); background:none; font-family: var(--ff-sans); cursor:pointer; }
+  .period button:last-child { border-right: 0; }
+  .period button.on { background: var(--ink); color: #fff; }
+</style>
+</head><body>
+  <span class="lbl">tab-bar</span>
+  <div class="row">
+    <div class="tab-bar">
+      <button class="on">Mensual</button>
+      <button>Trimestral</button>
+      <button>Anual</button>
+    </div>
+    <div class="tab-bar">
+      <button class="on">Todo</button>
+      <button>Facturas</button>
+      <button>Sueldos</button>
+      <button>Tareas</button>
+    </div>
+  </div>
+  <div style="height:16px"></div>
+  <span class="lbl">period pill</span>
+  <div class="row">
+    <div class="period">
+      <button>Hoy</button><button>7d</button><button class="on">30d</button><button>90d</button><button>YTD</button>
+    </div>
+  </div>
+</body></html>

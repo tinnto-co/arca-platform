@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import {
   AlertCircle,
   AlertTriangle,
@@ -15,8 +16,11 @@ import {
   FileWarning,
   Search,
   ArrowRight,
+  EyeOff,
+  Eye,
+  Play,
 } from 'lucide-react';
-import { useNavigate } from '@tanstack/react-router';
+import { toast } from 'sonner';
 
 import {
   Table,
@@ -34,13 +38,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import {
   Dialog,
   DialogContent,
@@ -60,6 +58,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   getJobs,
   getJobLogs,
+  dispatchAllJobs,
   type JobStatus,
   type JobType,
   type JobRow,
@@ -69,15 +68,61 @@ import {
 import { getClients } from '@/actions/client';
 
 export function JobsTable() {
+  const routerNavigate = useNavigate();
+  const {
+    page: currentPage,
+    status: statusFilter,
+    type: typeFilter,
+    clientId: clientFilter,
+    search: searchTerm,
+    date,
+    fromTime,
+  } = useSearch({ from: '/_authed/jobs/' });
+
+  const setFilter = (updates: Record<string, unknown>) => {
+    routerNavigate({
+      to: '/jobs',
+      search: (prev: Record<string, unknown>) => ({ ...prev, ...updates, page: 'page' in updates ? (updates.page as number) : 1 }),
+    });
+  };
+
   const navigate = useNavigate();
-  const [statusFilter, setStatusFilter] = useState<'all' | JobStatus>('all');
-  const [typeFilter, setTypeFilter] = useState<'all' | JobType>('all');
-  const [clientFilter, setClientFilter] = useState<string>('all');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
+  const queryClient = useQueryClient();
   const [selectedJob, setSelectedJob] = useState<JobRow | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [logsOpen, setLogsOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
+  const [hideFinished, setHideFinished] = useState(false);
+  const [dispatchLimit, setDispatchLimit] = useState('');
+
+  const dispatchMutation = useMutation({
+    mutationFn: () =>
+      dispatchAllJobs({
+        data: { limit: dispatchLimit ? parseInt(dispatchLimit) : undefined },
+      }),
+    onSuccess: (data) => {
+      toast.success(`${data.dispatched} jobs encolados correctamente`);
+      void queryClient.invalidateQueries({ queryKey: ['jobs'] });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Error al disparar los jobs');
+    },
+  });
+
+  const toggleAll = (ids: string[]) => {
+    const allSelected =
+      ids.length > 0 && ids.every((id) => selectedIds.has(id));
+    setSelectedIds(allSelected ? new Set() : new Set(ids));
+  };
+  const toggleRow = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const pageSize = 20;
 
@@ -87,7 +132,7 @@ export function JobsTable() {
   });
 
   const { data, isLoading } = useQuery<JobsResponse>({
-    queryKey: ['jobs', currentPage, statusFilter, typeFilter, clientFilter],
+    queryKey: ['jobs', currentPage, statusFilter, typeFilter, clientFilter, date, fromTime],
     queryFn: async (): Promise<JobsResponse> => {
       const response = await getJobs({
         data: {
@@ -96,21 +141,29 @@ export function JobsTable() {
           clientId: clientFilter === 'all' ? undefined : clientFilter,
           status: statusFilter === 'all' ? undefined : statusFilter,
           type: typeFilter === 'all' ? undefined : typeFilter,
+          date,
+          fromTime: fromTime || undefined,
         },
       });
       return response;
     },
   });
 
-  const jobs = (data?.jobs ?? []).filter((job: JobRow) => {
-    if (!searchTerm.trim()) return true;
-    const term = searchTerm.toLowerCase();
-    return (
-      job.id.toLowerCase().includes(term) ||
-      (job.clientName ?? '').toLowerCase().includes(term) ||
-      job.type.toLowerCase().includes(term)
-    );
-  });
+  const STATUS_ORDER: Record<string, number> = { running: 0, failed: 1, finished: 2, pending: 3 };
+
+  const jobs = (data?.jobs ?? [])
+    .filter((job: JobRow) => {
+      if (hiddenIds.has(job.id)) return false;
+      if (hideFinished && (job.status === 'finished' || job.status === 'failed')) return false;
+      if (!searchTerm.trim()) return true;
+      const term = searchTerm.toLowerCase();
+      return (
+        job.id.toLowerCase().includes(term) ||
+        (job.clientName ?? '').toLowerCase().includes(term) ||
+        job.type.toLowerCase().includes(term)
+      );
+    })
+    .sort((a: JobRow, b: JobRow) => (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99));
 
   const totalPages = data?.totalPages ?? 1;
 
@@ -154,35 +207,43 @@ export function JobsTable() {
     return `${minutes.toFixed(1)} min`;
   };
 
-  const renderStatusBadge = (status: JobStatus, progress: number | null) => {
+  const renderStatusBadge = (status: JobStatus) => {
     const baseClass =
       'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium';
 
     switch (status) {
       case 'pending':
         return (
-          <span className={`${baseClass} bg-amber-100 text-amber-900`}>
+          <span
+            className={`${baseClass} bg-[var(--arca-accent-warn)]/10 text-[var(--arca-accent-warn-fg)]`}
+          >
             <Clock className="h-3 w-3" />
             Pendiente
           </span>
         );
       case 'running':
         return (
-          <span className={`${baseClass} bg-blue-100 text-blue-900`}>
+          <span
+            className={`${baseClass} bg-[var(--arca-navy-700)]/10 text-[var(--arca-navy-700)]`}
+          >
             <Loader2 className="h-3 w-3 animate-spin" />
-            En progreso {typeof progress === 'number' ? `(${progress}%)` : ''}
+            En progreso
           </span>
         );
       case 'failed':
         return (
-          <span className={`${baseClass} bg-red-100 text-red-900`}>
+          <span
+            className={`${baseClass} bg-[var(--arca-accent-neg)]/10 text-[var(--arca-accent-neg-fg)]`}
+          >
             <AlertCircle className="h-3 w-3" />
             Fallido
           </span>
         );
       case 'finished':
         return (
-          <span className={`${baseClass} bg-emerald-100 text-emerald-900`}>
+          <span
+            className={`${baseClass} bg-[var(--arca-accent-pos)]/10 text-[var(--arca-accent-pos-fg)]`}
+          >
             <CheckCircle2 className="h-3 w-3" />
             Correcto
           </span>
@@ -200,35 +261,45 @@ export function JobsTable() {
       case 'comprobantes':
       case 'comprobantes_full':
         return (
-          <span className={`${baseClass} bg-sky-100 text-sky-900`}>
+          <span
+            className={`${baseClass} bg-[var(--arca-accent-info-bg)] text-[var(--arca-accent-info-fg)]`}
+          >
             <Receipt className="h-3 w-3" />
             {type === 'comprobantes' ? 'Comprobantes' : 'Comprobantes full'}
           </span>
         );
       case 'iva':
         return (
-          <span className={`${baseClass} bg-purple-100 text-purple-900`}>
+          <span
+            className={`${baseClass} bg-[var(--arca-navy-700)]/10 text-[var(--arca-navy-700)]`}
+          >
             <FileWarning className="h-3 w-3" />
             IVA
           </span>
         );
       case 'notificaciones':
         return (
-          <span className={`${baseClass} bg-indigo-100 text-indigo-900`}>
+          <span
+            className={`${baseClass} bg-[var(--arca-accent-info-bg)] text-[var(--arca-navy-700)]`}
+          >
             <Bell className="h-3 w-3" />
             Notificaciones
           </span>
         );
       case 'deuda':
         return (
-          <span className={`${baseClass} bg-rose-100 text-rose-900`}>
+          <span
+            className={`${baseClass} bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]`}
+          >
             <AlertCircle className="h-3 w-3" />
             Deuda
           </span>
         );
       case 'vencimientos':
         return (
-          <span className={`${baseClass} bg-teal-100 text-teal-900`}>
+          <span
+            className={`${baseClass} bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]`}
+          >
             <CalendarClock className="h-3 w-3" />
             Vencimientos
           </span>
@@ -257,102 +328,157 @@ export function JobsTable() {
 
   return (
     <div className="flex flex-col h-full gap-4">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between flex-shrink-0">
-        <div className="flex flex-col gap-2 md:flex-row md:items-center">
-          <div className="relative">
-            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+      <div className="flex items-start justify-between gap-4 flex-shrink-0">
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-2 top-2.5 h-4 w-4 text-[var(--arca-ink-3)]" />
+              <Input
+                placeholder="Buscar por ID, cliente o tipo..."
+                value={searchTerm}
+                onChange={(e) => setFilter({ search: e.target.value })}
+                className="pl-8 w-72"
+              />
+            </div>
+
             <Input
-              placeholder="Buscar por ID, cliente o tipo..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-8 w-full md:w-72"
+              type="date"
+              value={date}
+              onChange={(e) => setFilter({ date: e.target.value })}
+              className="w-40"
+            />
+
+            <Input
+              type="time"
+              value={fromTime}
+              onChange={(e) => setFilter({ fromTime: e.target.value })}
+              placeholder="Desde"
+              className="w-32"
             />
           </div>
 
-          <Select
-            value={clientFilter}
-            onValueChange={(value) => {
-              setClientFilter(value);
-              setCurrentPage(1);
-            }}
-          >
-            <SelectTrigger className="w-full md:w-56">
-              <SelectValue placeholder="Filtrar por cliente" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos los clientes</SelectItem>
-              {clients.map((client) => (
-                <SelectItem key={client.id} value={client.id}>
-                  {client.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex flex-wrap items-center gap-2">
+            <SearchableSelect
+              options={[
+                { value: 'all', label: 'Todos los clientes' },
+                ...clients.map((c) => ({ value: c.id, label: c.name })),
+              ]}
+              value={clientFilter}
+              onValueChange={(value) => setFilter({ clientId: value })}
+              placeholder="Filtrar por cliente"
+              searchPlaceholder="Buscar cliente..."
+              width={224}
+            />
 
-          <Select
-            value={statusFilter}
-            onValueChange={(value) => {
-              setStatusFilter(value as 'all' | JobStatus);
-              setCurrentPage(1);
-            }}
-          >
-            <SelectTrigger className="w-full md:w-40">
-              <SelectValue placeholder="Estado" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos</SelectItem>
-              <SelectItem value="pending">Pendiente</SelectItem>
-              <SelectItem value="running">En progreso</SelectItem>
-              <SelectItem value="finished">Correcto</SelectItem>
-              <SelectItem value="failed">Fallido</SelectItem>
-            </SelectContent>
-          </Select>
+            <SearchableSelect
+              options={[
+                { value: 'all', label: 'Todos' },
+                { value: 'pending', label: 'Pendiente' },
+                { value: 'running', label: 'En progreso' },
+                { value: 'finished', label: 'Correcto' },
+                { value: 'failed', label: 'Fallido' },
+              ]}
+              value={statusFilter}
+              onValueChange={(value) => setFilter({ status: value })}
+              placeholder="Estado"
+              searchPlaceholder="Buscar estado..."
+              width={160}
+            />
 
-          <Select
-            value={typeFilter}
-            onValueChange={(value) => {
-              setTypeFilter(value as 'all' | JobType);
-              setCurrentPage(1);
-            }}
-          >
-            <SelectTrigger className="w-full md:w-48">
-              <SelectValue placeholder="Tipo de job" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos los tipos</SelectItem>
-              <SelectItem value="comprobantes">Comprobantes</SelectItem>
-              <SelectItem value="comprobantes_full">
-                Comprobantes full
-              </SelectItem>
-              <SelectItem value="iva">IVA</SelectItem>
-              <SelectItem value="notificaciones">Notificaciones</SelectItem>
-              <SelectItem value="deuda">Deuda</SelectItem>
-              <SelectItem value="vencimientos">Vencimientos</SelectItem>
-            </SelectContent>
-          </Select>
+            <SearchableSelect
+              options={[
+                { value: 'all', label: 'Todos los tipos' },
+                { value: 'comprobantes', label: 'Comprobantes' },
+                { value: 'comprobantes_full', label: 'Comprobantes full' },
+                { value: 'iva', label: 'IVA' },
+                { value: 'notificaciones', label: 'Notificaciones' },
+                { value: 'deuda', label: 'Deuda' },
+                { value: 'vencimientos', label: 'Vencimientos' },
+              ]}
+              value={typeFilter}
+              onValueChange={(value) => setFilter({ type: value })}
+              placeholder="Tipo de job"
+              searchPlaceholder="Buscar tipo..."
+              width={192}
+            />
+          </div>
         </div>
 
-        <div className="mt-2 md:mt-0">
+        <div className="flex items-center gap-2 shrink-0">
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              setSearchTerm('');
-              setClientFilter('all');
-              setStatusFilter('all');
-              setTypeFilter('all');
-              setCurrentPage(1);
-            }}
+            onClick={() => setHideFinished((v) => !v)}
+          >
+            {hideFinished ? (
+              <Eye className="mr-1.5 h-4 w-4" />
+            ) : (
+              <EyeOff className="mr-1.5 h-4 w-4" />
+            )}
+            {hideFinished ? 'Mostrar terminados' : 'Ocultar terminados'}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              setFilter({
+                search: '',
+                clientId: 'all',
+                status: 'all',
+                type: 'all',
+                date: new Date().toISOString().split('T')[0],
+                fromTime: '',
+                page: 1,
+              })
+            }
           >
             Limpiar filtros
+          </Button>
+          <Input
+            type="number"
+            min={1}
+            value={dispatchLimit}
+            onChange={(e) => setDispatchLimit(e.target.value)}
+            placeholder="Todos"
+            className="w-24 text-sm"
+            title="Límite de clientes (vacío = todos)"
+          />
+          <Button
+            size="sm"
+            onClick={() => dispatchMutation.mutate()}
+            disabled={dispatchMutation.isPending}
+          >
+            {dispatchMutation.isPending ? (
+              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+            ) : (
+              <Play className="mr-1.5 h-4 w-4" />
+            )}
+            Disparar jobs
           </Button>
         </div>
       </div>
 
-      <div className="rounded-xl border border-[#efeeef] bg-white shadow-sm overflow-auto flex-1 min-h-0">
+      <div className="overflow-auto flex-1 min-h-0">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-10">
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-navy-900)]"
+                  checked={
+                    jobs.length > 0 &&
+                    jobs.every((j: JobRow) => selectedIds.has(j.id))
+                  }
+                  ref={(el) => {
+                    if (el)
+                      el.indeterminate =
+                        jobs.some((j: JobRow) => selectedIds.has(j.id)) &&
+                        !jobs.every((j: JobRow) => selectedIds.has(j.id));
+                  }}
+                  onChange={() => toggleAll(jobs.map((j: JobRow) => j.id))}
+                />
+              </TableHead>
               <TableHead className="w-[90px]">ID</TableHead>
               <TableHead>Cliente</TableHead>
               <TableHead>Tipo</TableHead>
@@ -377,9 +503,20 @@ export function JobsTable() {
               </TableRow>
             ) : (
               jobs.map((job: JobRow) => (
-                <TableRow key={job.id}>
+                <TableRow
+                  key={job.id}
+                  data-state={selectedIds.has(job.id) ? 'selected' : undefined}
+                >
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-navy-900)]"
+                      checked={selectedIds.has(job.id)}
+                      onChange={() => toggleRow(job.id)}
+                    />
+                  </TableCell>
                   <TableCell>
-                    <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
+                    <code className="text-xs bg-[var(--arca-surface-2)] px-1.5 py-0.5 rounded">
                       {job.id.slice(0, 8)}
                     </code>
                   </TableCell>
@@ -387,19 +524,19 @@ export function JobsTable() {
                     {job.clientName ? (
                       <div className="flex flex-col">
                         <span className="font-medium">{job.clientName}</span>
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-xs text-[var(--arca-ink-3)]">
                           {job.clientId.slice(0, 8)}
                         </span>
                       </div>
                     ) : (
-                      <span className="text-muted-foreground text-sm">
+                      <span className="text-[var(--arca-ink-3)] text-sm">
                         Cliente desconocido
                       </span>
                     )}
                   </TableCell>
                   <TableCell>{renderTypeBadge(job.type)}</TableCell>
                   <TableCell>
-                    {renderStatusBadge(job.status, job.progress)}
+                    {renderStatusBadge(job.status)}
                   </TableCell>
                   <TableCell>{formatDateTime(job.createdAt)}</TableCell>
                   <TableCell>
@@ -428,6 +565,18 @@ export function JobsTable() {
                           <ArrowRight className="mr-2 h-4 w-4" />
                           Ir al cliente
                         </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() =>
+                            setHiddenIds((prev) => {
+                              const next = new Set(prev);
+                              next.add(job.id);
+                              return next;
+                            })
+                          }
+                        >
+                          <EyeOff className="mr-2 h-4 w-4" />
+                          Ocultar
+                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -444,7 +593,7 @@ export function JobsTable() {
             <PaginationContent>
               <PaginationItem>
                 <PaginationPrevious
-                  onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                  onClick={() => setFilter({ page: Math.max(1, currentPage - 1) })}
                   className={
                     currentPage === 1
                       ? 'pointer-events-none opacity-50'
@@ -469,14 +618,14 @@ export function JobsTable() {
                     <>
                       {showEllipsis && (
                         <PaginationItem key={`ellipsis-${page}`}>
-                          <span className="px-2 text-muted-foreground">
+                          <span className="px-2 text-[var(--arca-ink-3)]">
                             ...
                           </span>
                         </PaginationItem>
                       )}
                       <PaginationItem key={page}>
                         <PaginationLink
-                          onClick={() => setCurrentPage(page)}
+                          onClick={() => setFilter({ page })}
                           isActive={currentPage === page}
                           className="cursor-pointer"
                         >
@@ -489,9 +638,8 @@ export function JobsTable() {
 
               <PaginationItem>
                 <PaginationNext
-                  onClick={() =>
-                    setCurrentPage(Math.min(totalPages, currentPage + 1))
-                  }
+                  onClick={() => setFilter({ page: Math.min(totalPages, currentPage + 1) })}
+
                   className={
                     currentPage === totalPages
                       ? 'pointer-events-none opacity-50'
@@ -513,11 +661,11 @@ export function JobsTable() {
             </DialogTitle>
             {selectedJob && (
               <>
-                <p className="text-[11px] text-muted-foreground font-mono truncate">
+                <p className="text-[11px] text-[var(--arca-ink-3)] font-mono truncate">
                   ID: {selectedJob.id}
                 </p>
                 <div className="pt-1">
-                  {renderStatusBadge(selectedJob.status, selectedJob.progress)}
+                  {renderStatusBadge(selectedJob.status)}
                 </div>
               </>
             )}
@@ -527,19 +675,19 @@ export function JobsTable() {
             <div className="space-y-6 pt-4 overflow-y-auto pr-2">
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div className="space-y-1.5">
-                  <p className="text-xs font-medium text-muted-foreground">
+                  <p className="text-xs font-medium text-[var(--arca-ink-3)]">
                     Cliente
                   </p>
                   <p className="text-sm font-semibold">
                     {selectedJob.clientName ?? 'Cliente desconocido'}
                   </p>
-                  <p className="text-xs text-muted-foreground font-mono">
+                  <p className="text-xs text-[var(--arca-ink-3)] font-mono">
                     {selectedJob.clientId}
                   </p>
                 </div>
 
                 <div className="space-y-1.5">
-                  <p className="text-xs font-medium text-muted-foreground">
+                  <p className="text-xs font-medium text-[var(--arca-ink-3)]">
                     Duración
                   </p>
                   <p className="text-sm">
@@ -548,7 +696,7 @@ export function JobsTable() {
                       selectedJob.finishedAt
                     )}
                   </p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs text-[var(--arca-ink-3)]">
                     {selectedJob.startedAt && selectedJob.finishedAt
                       ? `${formatDateTime(selectedJob.startedAt)} → ${formatDateTime(
                           selectedJob.finishedAt
@@ -558,32 +706,32 @@ export function JobsTable() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <p className="text-xs font-medium text-muted-foreground">
+                  <p className="text-xs font-medium text-[var(--arca-ink-3)]">
                     Creado
                   </p>
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-sm text-[var(--arca-ink-3)]">
                     {formatDateTime(selectedJob.createdAt)}
                   </p>
                 </div>
 
                 <div className="space-y-1.5">
-                  <p className="text-xs font-medium text-muted-foreground">
+                  <p className="text-xs font-medium text-[var(--arca-ink-3)]">
                     Última actualización
                   </p>
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-sm text-[var(--arca-ink-3)]">
                     {formatDateTime(selectedJob.updatedAt)}
                   </p>
                 </div>
 
                 <div className="space-y-1.5 col-span-2">
-                  <p className="text-xs font-medium text-muted-foreground">
+                  <p className="text-xs font-medium text-[var(--arca-ink-3)]">
                     Motivo de error
                   </p>
                   <p
                     className={`mt-1 text-sm rounded-md px-2 py-1 ${
                       selectedJob.failedReason
-                        ? 'bg-red-50 text-red-800 border border-red-100'
-                        : 'text-muted-foreground bg-muted'
+                        ? 'bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)] border border-[var(--arca-accent-neg)]/30'
+                        : 'text-[var(--arca-ink-3)] bg-[var(--arca-surface-2)]'
                     }`}
                   >
                     {selectedJob.failedReason || 'Sin errores reportados'}
@@ -595,7 +743,7 @@ export function JobsTable() {
                 <div className="flex items-center justify-between mb-1">
                   <div className="flex flex-col">
                     <p className="font-medium">Resultado</p>
-                    <p className="text-[11px] text-muted-foreground">
+                    <p className="text-[11px] text-[var(--arca-ink-3)]">
                       Resumen de lo que devolvió el scrapper
                     </p>
                   </div>
@@ -608,11 +756,11 @@ export function JobsTable() {
 
                 {!selectedJob.result ||
                 Object.keys(selectedJob.result).length === 0 ? (
-                  <div className="border rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                  <div className="border rounded-md bg-[var(--arca-surface-2)] px-3 py-2 text-xs text-[var(--arca-ink-3)]">
                     Sin resultado aún.
                   </div>
                 ) : (
-                  <ScrollArea className="h-48 border rounded-md bg-muted/40 p-2">
+                  <ScrollArea className="h-48 border rounded-md bg-[var(--arca-surface-2)] p-2">
                     <div className="space-y-1 text-xs">
                       {Object.entries(selectedJob.result).map(
                         ([key, value]) => (
@@ -623,7 +771,7 @@ export function JobsTable() {
                             <span className="font-medium text-foreground min-w-[120px]">
                               {key}
                             </span>
-                            <span className="text-muted-foreground text-right flex-1 break-words">
+                            <span className="text-[var(--arca-ink-3)] text-right flex-1 break-words">
                               {typeof value === 'object'
                                 ? JSON.stringify(value)
                                 : String(value)}
@@ -647,7 +795,7 @@ export function JobsTable() {
               <div className="flex flex-col gap-1 min-w-0">
                 <span className="truncate">Logs del job</span>
                 {selectedJob && (
-                  <p className="text-[11px] text-muted-foreground font-mono truncate">
+                  <p className="text-[11px] text-[var(--arca-ink-3)] font-mono truncate">
                     {selectedJob.id}
                   </p>
                 )}
@@ -655,7 +803,7 @@ export function JobsTable() {
               {selectedJob && (
                 <div className="flex flex-col items-end gap-1 shrink-0">
                   {renderTypeBadge(selectedJob.type)}
-                  {renderStatusBadge(selectedJob.status, selectedJob.progress)}
+                  {renderStatusBadge(selectedJob.status)}
                 </div>
               )}
             </DialogTitle>
@@ -663,40 +811,48 @@ export function JobsTable() {
 
           <div className="pt-3 flex-1 min-h-0">
             {logsLoading ? (
-              <div className="border rounded-md bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+              <div className="border rounded-md bg-[var(--arca-surface-2)] px-3 py-2 text-sm text-[var(--arca-ink-3)]">
                 Cargando logs...
               </div>
             ) : jobLogs.length === 0 ? (
-              <div className="border rounded-md bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+              <div className="border rounded-md bg-[var(--arca-surface-2)] px-3 py-2 text-sm text-[var(--arca-ink-3)]">
                 No hay logs registrados para este job.
               </div>
             ) : (
-              <ScrollArea className="h-[60vh] border rounded-md bg-muted/40 p-3">
+              <ScrollArea className="h-[60vh] border rounded-md bg-[var(--arca-surface-2)] p-3">
                 <div className="space-y-2 text-xs">
                   {jobLogs.map((log) => {
                     const level = log.level.toLowerCase();
                     let colorClasses =
-                      'border-slate-200 bg-white text-slate-900';
-                    let icon = <Info className="h-3.5 w-3.5 text-slate-500" />;
+                      'border-[var(--arca-border)] bg-[var(--arca-surface)] text-[var(--arca-ink-2)]';
+                    let icon = (
+                      <Info className="h-3.5 w-3.5 text-[var(--arca-ink-3)]" />
+                    );
 
                     if (level === 'info') {
-                      colorClasses = 'border-blue-100 bg-blue-50 text-blue-900';
-                      icon = <Info className="h-3.5 w-3.5 text-blue-500" />;
+                      colorClasses =
+                        'border-[var(--arca-accent-info)]/30 bg-[var(--arca-accent-info-bg)] text-[var(--arca-accent-info-fg)]';
+                      icon = (
+                        <Info className="h-3.5 w-3.5 text-[var(--arca-accent-info)]" />
+                      );
                     } else if (level === 'warn') {
                       colorClasses =
-                        'border-amber-100 bg-amber-50 text-amber-900';
+                        'border-[var(--arca-accent-warn)]/30 bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]';
                       icon = (
-                        <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+                        <AlertTriangle className="h-3.5 w-3.5 text-[var(--arca-accent-warn)]" />
                       );
                     } else if (level === 'error') {
-                      colorClasses = 'border-red-100 bg-red-50 text-red-900';
+                      colorClasses =
+                        'border-[var(--arca-accent-neg)]/30 bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]';
                       icon = (
-                        <AlertCircle className="h-3.5 w-3.5 text-red-500" />
+                        <AlertCircle className="h-3.5 w-3.5 text-[var(--arca-accent-neg)]" />
                       );
                     } else if (level === 'debug') {
                       colorClasses =
-                        'border-slate-200 bg-slate-50 text-slate-900';
-                      icon = <Bug className="h-3.5 w-3.5 text-slate-500" />;
+                        'border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]';
+                      icon = (
+                        <Bug className="h-3.5 w-3.5 text-[var(--arca-ink-4)]" />
+                      );
                     }
 
                     return (
@@ -710,7 +866,7 @@ export function JobsTable() {
                             <span className="text-[11px] font-semibold tracking-wide uppercase">
                               {level}
                             </span>
-                            <span className="text-[10px] text-muted-foreground">
+                            <span className="text-[10px] text-[var(--arca-ink-3)]">
                               {formatDateTime(log.createdAt)}
                             </span>
                           </div>
@@ -719,7 +875,7 @@ export function JobsTable() {
                           </p>
                           {log.context &&
                             Object.keys(log.context).length > 0 && (
-                              <pre className="mt-1 text-[10px] text-muted-foreground bg-background/60 rounded px-2 py-1 whitespace-pre-wrap break-words">
+                              <pre className="mt-1 text-[10px] text-[var(--arca-ink-3)] bg-background/60 rounded px-2 py-1 whitespace-pre-wrap break-words">
                                 {JSON.stringify(log.context, null, 2)}
                               </pre>
                             )}

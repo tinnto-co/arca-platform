@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><link rel="stylesheet" href="_base.css">
+<style>
+  body { padding: 24px; background: var(--bg); }
+  .row { display: flex; gap: 14px; align-items: flex-end; }
+  .item { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+  .box { background: var(--surface); border: 1px solid var(--border); }
+  .name { font-size: 11px; font-weight: 600; color: var(--ink); }
+  .hex  { font-family: var(--ff-mono); font-size: 10px; color: var(--ink-3); }
+</style>
+</head><body>
+  <div class="row">
+    <div class="item"><div class="box" style="width:64px; height:64px; border-radius: 6px;"></div><span class="name">sm</span><span class="hex">6px</span></div>
+    <div class="item"><div class="box" style="width:80px; height:80px; border-radius: 10px;"></div><span class="name">md</span><span class="hex">10px · buttons</span></div>
+    <div class="item"><div class="box" style="width:100px; height:100px; border-radius: 14px;"></div><span class="name">lg</span><span class="hex">14px · cards</span></div>
+    <div class="item"><div class="box" style="width:110px; height:110px; border-radius: 18px;"></div><span class="name">xl</span><span class="hex">18px · reserved</span></div>
+    <div class="item"><div class="box" style="width:110px; height:40px; border-radius: 20px;"></div><span class="name">pill</span><span class="hex">20px · tags</span></div>
+  </div>
+</body></html>

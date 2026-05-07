@@ -26,7 +26,13 @@ function NoOrganizationPage() {
   };
 
   return (
-    <div className="flex min-h-svh items-center justify-center bg-gradient-to-br from-[#232c50] via-[#2e3a66] to-[#139ed9] p-4">
+    <div
+      className="flex min-h-svh items-center justify-center p-4"
+      style={{
+        background:
+          'linear-gradient(145deg, var(--arca-navy-900) 0%, var(--arca-navy-800) 100%)',
+      }}
+    >
       <Card className="w-full max-w-md text-center">
         <CardHeader>
           <div className="mx-auto mb-2 flex size-16 items-center justify-center rounded-full bg-muted">

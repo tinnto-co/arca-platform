@@ -9,7 +9,15 @@ import {
 import appCss from '@/styles/app.css?url';
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
 import { Toaster } from '@/components/ui/sonner';
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000, // 30s — no refetch si datos son frescos
+      gcTime: 5 * 60_000, // 5min — mantener en cache
+      refetchOnWindowFocus: false, // no refetch al volver al tab
+    },
+  },
+});
 export const Route = createRootRoute({
   notFoundComponent: () => (
     <div className="flex items-center justify-center h-screen">
@@ -44,7 +52,7 @@ export const Route = createRootRoute({
       },
       {
         rel: 'stylesheet',
-        href: 'https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,100..900;1,100..900&display=swap',
+        href: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Inter+Tight:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap',
       },
       {
         rel: 'stylesheet',

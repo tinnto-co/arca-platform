@@ -1,9 +1,15 @@
 import { createServerFn } from '@tanstack/react-start';
 import z from 'zod';
+import axios from 'axios';
 import { db } from '@/lib/db';
 import { job, client, jobLog } from '@/drizzle/schema';
-import { getSessionWithOrg } from '@/actions/helpers';
+import { getSessionWithOrg, getMemberRole, assertCanWrite } from '@/actions/helpers';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+
+const JOBS_API_URL =
+  process.env.SCRAPPER_JOBS_URL ||
+  process.env.BACKEND_API_URL ||
+  'http://localhost:3002';
 
 const jobStatusEnum = z.enum(['pending', 'running', 'failed', 'finished']);
 const jobTypeEnum = z.enum([
@@ -60,12 +66,14 @@ export const getJobs = createServerFn({
       clientId: z.string().optional(),
       status: jobStatusEnum.optional(),
       type: jobTypeEnum.optional(),
+      date: z.string().optional(), // YYYY-MM-DD
+      fromTime: z.string().optional(), // HH:mm
     })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const { page, limit, clientId, status, type } = ctx.data;
+    const { page, limit, clientId, status, type, date, fromTime } = ctx.data;
     const offset = (page - 1) * limit;
 
     const userClients = await db
@@ -97,6 +105,16 @@ export const getJobs = createServerFn({
       conditions.push(eq(job.type, type));
     }
 
+    if (date && fromTime) {
+      conditions.push(
+        sql`${job.createdAt} >= (${`${date} ${fromTime}`}::timestamp AT TIME ZONE 'America/Argentina/Buenos_Aires')`
+      );
+    } else if (date) {
+      conditions.push(
+        sql`(${job.createdAt} AT TIME ZONE 'America/Argentina/Buenos_Aires')::date = ${date}::date`
+      );
+    }
+
     const whereCondition = and(...conditions);
 
     const [{ count }] = await db
@@ -123,7 +141,10 @@ export const getJobs = createServerFn({
       .from(job)
       .leftJoin(client, eq(job.clientId, client.id))
       .where(whereCondition)
-      .orderBy(desc(job.createdAt))
+      .orderBy(
+        sql`CASE ${job.status} WHEN 'running' THEN 0 WHEN 'failed' THEN 1 WHEN 'finished' THEN 2 ELSE 3 END`,
+        desc(job.createdAt)
+      )
       .limit(limit)
       .offset(offset);
 
@@ -192,4 +213,55 @@ export const getJobLogs = createServerFn({
       .limit(limit);
 
     return logs as JobLogRow[];
+  });
+
+export const dispatchAllJobs = createServerFn({ method: 'POST' })
+  .inputValidator(z.object({ limit: z.number().int().positive().optional() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    let clients = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(eq(client.organizationId, orgId));
+
+    if (ctx.data.limit) {
+      clients = clients.slice(0, ctx.data.limit);
+    }
+
+    if (clients.length === 0) return { success: true, dispatched: 0 };
+
+    const clientIds = clients.map((c) => c.id);
+
+    const [activeJobs] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(job)
+      .where(
+        and(
+          inArray(job.clientId, clientIds),
+          sql`${job.status} IN ('running', 'pending')`
+        )
+      );
+
+    if (activeJobs.count > 0) {
+      throw new Error(
+        `Ya hay un batch en ejecución (${activeJobs.count} jobs activos). Esperá a que termine antes de disparar uno nuevo.`
+      );
+    }
+
+    const types = [
+      'deuda',
+      'vencimientos',
+      'notificaciones',
+      'comprobantes_full',
+      'iva',
+    ] as const;
+    const jobs = clients.flatMap((c) =>
+      types.map((type) => ({ type, clientId: c.id }))
+    );
+
+    await axios.post(`${JOBS_API_URL}/api/jobs/batch`, { jobs });
+    return { success: true, dispatched: jobs.length };
   });

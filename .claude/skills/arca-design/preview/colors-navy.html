@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><link rel="stylesheet" href="_base.css">
+<style>
+  body { padding: 24px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .sw {
+    width: 140px; border: 1px solid var(--border); border-radius: var(--r-md);
+    overflow: hidden; background: var(--surface);
+  }
+  .sw .chip { height: 68px; border-bottom: 1px solid var(--border); display:flex; align-items:flex-end; padding: 8px; color: #fff;
+    font-family: var(--ff-display); font-weight: 600; font-size: 13px;
+  }
+  .sw .meta { padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; }
+  .sw .name { font-size: 11.5px; font-weight: 600; color: var(--ink); }
+  .sw .hex  { font-family: var(--ff-mono); font-size: 10.5px; color: var(--ink-3); }
+</style>
+</head><body>
+  <div class="row">
+    <div class="sw"><div class="chip" style="background:#0B1730">900</div><div class="meta"><span class="name">navy-900</span><span class="hex">#0B1730</span></div></div>
+    <div class="sw"><div class="chip" style="background:#142447">800</div><div class="meta"><span class="name">navy-800</span><span class="hex">#142447</span></div></div>
+    <div class="sw"><div class="chip" style="background:#1E3460">700</div><div class="meta"><span class="name">navy-700</span><span class="hex">#1E3460</span></div></div>
+    <div class="sw"><div class="chip" style="background:#2A4680">600</div><div class="meta"><span class="name">navy-600</span><span class="hex">#2A4680</span></div></div>
+  </div>
+</body></html>

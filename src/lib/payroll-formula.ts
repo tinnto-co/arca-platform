@@ -59,11 +59,11 @@ export function evaluatePayrollFormula(
   return evaluate(parsed, context);
 }
 
-export type PayrollFormulaEvalResult = {
+export interface PayrollFormulaEvalResult {
   ok: boolean;
   value: number;
   error?: string;
-};
+}
 
 /**
  * Evaluación estricta: nunca lanza excepción y reporta error de fórmula.

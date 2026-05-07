@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><link rel="stylesheet" href="_base.css">
+<style>
+  body { padding: 0; }
+  .wrap { width: 260px; background: var(--navy-900); color: #E8E9EE; padding: 14px 12px; border-radius: var(--r-lg); display: flex; flex-direction: column; gap: 4px; font-family: var(--ff-sans); }
+  .ws { display:flex; align-items:center; gap: 10px; padding: 8px; border-radius: var(--r-md); }
+  .ws .logo { width: 32px; height: 32px; border-radius: 8px; background: linear-gradient(135deg, #F7F6F2, #E8E4D6); color: var(--navy-900); display:flex; align-items:center; justify-content:center; font-family: var(--ff-display); font-weight: 700; font-size: 13px; }
+  .ws .n { font-size: 13px; font-weight: 600; color: #F2F3F7; }
+  .ws .h { font-size: 11.5px; color: #8A8F9E; font-family: var(--ff-mono); }
+
+  .search { margin: 8px 0 6px; display:flex; align-items:center; gap: 8px; padding: 7px 10px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.06); border-radius: var(--r-md); color: #8A8F9E; font-size: 12.5px; }
+  .search kbd { margin-left: auto; font-family: var(--ff-mono); font-size: 10.5px; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08); padding: 1px 5px; border-radius: 4px; color: #B3B7C2; }
+
+  .item { display:flex; align-items:center; gap: 10px; padding: 7px 10px; border-radius: var(--r-md); color: #C6C9D3; font-size: 13px; font-weight: 500; position: relative; }
+  .item.active { background: rgba(255,255,255,.06); color: #fff; }
+  .item.active::before { content: ''; position: absolute; left: -12px; top: 8px; bottom: 8px; width: 2px; background: #F7F6F2; border-radius: 2px; }
+  .item.hover { background: rgba(255,255,255,.04); color: #F2F3F7; }
+  .lbl { font-size: 10.5px; font-weight: 600; color: #6E7283; letter-spacing: 0.08em; text-transform: uppercase; padding: 10px 10px 6px; }
+  .count { margin-left: auto; font-family: var(--ff-mono); font-size: 11px; color: #8A8F9E; }
+  .count.urgent { background: var(--accent-neg); color: #fff; padding: 0 6px; border-radius: 8px; font-size: 10px; line-height: 16px; height: 16px; }
+</style>
+</head><body>
+  <div class="wrap">
+    <div class="ws">
+      <div class="logo">BG</div>
+      <div><div class="n">Estudio Blak-G</div><div class="h">estudio-blakg</div></div>
+    </div>
+    <div class="search">Buscar<kbd>⌘K</kbd></div>
+    <div class="item active">Inicio</div>
+    <div class="lbl">Plataforma</div>
+    <div class="item">Clientes<span class="count">57</span></div>
+    <div class="item hover">Notificaciones<span class="count urgent">12</span></div>
+    <div class="item">Facturas<span class="count">699</span></div>
+  </div>
+</body></html>

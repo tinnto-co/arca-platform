@@ -36,22 +36,22 @@ function OrgMini({
   const initial = name.trim().slice(0, 2).toUpperCase() || '?';
   return (
     <div className="flex max-w-[130px] flex-col items-center gap-2">
-      <span className="text-[10px] font-medium uppercase tracking-wide text-[#232c50]/60">
+      <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--arca-ink-3)]">
         {label}
       </span>
-      <div className="flex size-16 items-center justify-center overflow-hidden rounded-xl border-2 border-white bg-white shadow-md ring-2 ring-[#139ed9]/15">
+      <div className="flex size-16 items-center justify-center overflow-hidden rounded-xl border-2 border-white bg-white shadow-md ring-2 ring-[var(--arca-navy-700)]/15">
         {logo ? (
           <Avatar className="size-16 rounded-lg">
             <AvatarImage src={logo} alt="" className="object-cover" />
-            <AvatarFallback className="rounded-lg text-base font-semibold text-[#139ed9]">
+            <AvatarFallback className="rounded-lg text-base font-semibold text-[var(--arca-navy-700)]">
               {initial}
             </AvatarFallback>
           </Avatar>
         ) : (
-          <Building className="size-8 text-[#139ed9]" />
+          <Building className="size-8 text-[var(--arca-navy-700)]" />
         )}
       </div>
-      <span className="w-full truncate text-center text-xs font-medium text-[#232c50]">
+      <span className="w-full truncate text-center text-xs font-medium text-[var(--arca-ink)]">
         {name || '—'}
       </span>
     </div>
@@ -61,7 +61,7 @@ function OrgMini({
 function OrgSwitchOverlay({ visual }: { visual: OrgSwitchVisual }) {
   return (
     <div
-      className="fixed inset-0 z-[200] flex flex-col items-center justify-center gap-6 bg-[#efeeef]/55 px-4 backdrop-blur-[7px]"
+      className="fixed inset-0 z-[200] flex flex-col items-center justify-center gap-6 bg-[var(--arca-bg)]/70 px-4 backdrop-blur-[7px]"
       role="status"
       aria-live="polite"
       aria-busy="true"
@@ -76,9 +76,9 @@ function OrgSwitchOverlay({ visual }: { visual: OrgSwitchVisual }) {
 
           <div className="flex flex-col items-center gap-3 px-1 pt-6 sm:px-2">
             <div className="flex items-center gap-1">
-              <span className="inline-block size-2 animate-bounce rounded-full bg-[#139ed9] [animation-delay:-0.25s]" />
-              <span className="inline-block size-2 animate-bounce rounded-full bg-[#139ed9] [animation-delay:-0.12s]" />
-              <span className="inline-block size-2 animate-bounce rounded-full bg-[#139ed9]" />
+              <span className="inline-block size-2 animate-bounce rounded-full bg-[var(--arca-navy-700)] [animation-delay:-0.25s]" />
+              <span className="inline-block size-2 animate-bounce rounded-full bg-[var(--arca-navy-700)] [animation-delay:-0.12s]" />
+              <span className="inline-block size-2 animate-bounce rounded-full bg-[var(--arca-navy-700)]" />
             </div>
           </div>
 

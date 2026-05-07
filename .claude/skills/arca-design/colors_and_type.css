@@ -1,0 +1,216 @@
+/* ============================================================
+   Arca — Colors & Type
+   Warm editorial B2B dashboard palette (Spanish-language, AR).
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Inter+Tight:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  /* --- Neutrals (warm) --- */
+  --bg: #F7F6F2;
+  --surface: #FFFFFF;
+  --surface-2: #FBFAF6;
+  --border: #ECEAE3;
+  --border-strong: #DFDCD3;
+
+  /* --- Ink (text) --- */
+  --ink: #12131A;
+  --ink-2: #3E404A;
+  --ink-3: #6E7079;
+  --ink-4: #9B9CA3;
+
+  /* --- Primary — Navy --- */
+  --navy-900: #0B1730;
+  --navy-800: #142447;
+  --navy-700: #1E3460;
+  --navy-600: #2A4680;
+
+  /* --- Status accents (oklch, same chroma, varying hue) --- */
+  --accent-pos:     oklch(0.62 0.13 160);
+  --accent-pos-bg:  oklch(0.94 0.04 160);
+  --accent-pos-fg:  oklch(0.45 0.13 160);
+  --accent-neg:     oklch(0.60 0.15 25);
+  --accent-neg-bg:  oklch(0.94 0.04 25);
+  --accent-neg-fg:  oklch(0.45 0.15 25);
+  --accent-warn:    oklch(0.72 0.13 75);
+  --accent-warn-bg: oklch(0.95 0.04 75);
+  --accent-warn-fg: oklch(0.50 0.13 75);
+  --accent-info:    oklch(0.60 0.12 240);
+  --accent-info-bg: oklch(0.94 0.04 240);
+  --accent-info-fg: oklch(0.45 0.12 240);
+
+  /* --- Chart palette --- */
+  --chart-1: #1E3460;  /* navy-700  — Ventas / primary data */
+  --chart-2: #7AA2C8;  /* light blue — Compras */
+  --chart-3: #C2A878;  /* gold       — Margin / tax */
+  --chart-4: #8FB39F;  /* sage       — Sueldos / quaternary */
+
+  /* --- Type families --- */
+  --ff-sans:    'Inter', system-ui, -apple-system, sans-serif;
+  --ff-display: 'Inter Tight', 'Inter', sans-serif;
+  --ff-mono:    'JetBrains Mono', ui-monospace, monospace;
+
+  /* --- Radii --- */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 18px;
+  --r-pill: 20px;
+
+  /* --- Shadows --- */
+  --shadow-sm: 0 1px 2px rgba(18,19,26,0.04);
+  --shadow-md: 0 1px 3px rgba(18,19,26,0.04), 0 4px 12px rgba(18,19,26,0.04);
+
+  /* --- Motion --- */
+  --dur-fast: 120ms;
+  --dur-base: 150ms;
+  --ease: ease;
+}
+
+/* ============================================================
+   Base / semantic type
+   Body base: Inter 14 / 1.5.
+   ============================================================ */
+
+html, body {
+  font-family: var(--ff-sans);
+  color: var(--ink);
+  background: var(--bg);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* H1 — page greeting / hero. */
+.h1, h1 {
+  font-family: var(--ff-display);
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+  color: var(--ink);
+}
+
+/* Card title — inline with a leading icon. */
+.h-card-title {
+  font-family: var(--ff-display);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  color: var(--ink);
+}
+
+/* KPI value (primary) */
+.t-kpi {
+  font-family: var(--ff-display);
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.025em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* KPI value (mini / cashflow) */
+.t-kpi-mini {
+  font-family: var(--ff-display);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Body / table cell */
+.t-body, p {
+  font-family: var(--ff-sans);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+/* Card sub / tertiary caption */
+.t-sub {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+/* Section micro-label — 10.5 / 600 / uppercase / 0.08em */
+.t-micro {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Table header (TH) — 10.5 / 600 / uppercase / 0.06em */
+.t-th {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Nav label */
+.t-nav {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+/* Status tag */
+.t-tag {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* Delta badge */
+.t-delta {
+  font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Mono references — CUIT, invoice ids, emails, kbd */
+.t-mono {
+  font-family: var(--ff-mono);
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--ink-3);
+}
+
+/* kbd */
+kbd, .t-kbd {
+  font-family: var(--ff-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+/* Due-date big number */
+.t-due-day {
+  font-family: var(--ff-display);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.t-due-month {
+  font-family: var(--ff-display);
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.tabular { font-variant-numeric: tabular-nums; }

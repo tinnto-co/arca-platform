@@ -287,8 +287,8 @@ export function ProfileDetailPage({
                       (stats?.totalOutbound || 0) -
                         (stats?.totalInbound || 0) >=
                       0
-                        ? 'text-[#232c50]'
-                        : 'text-[#232c50]'
+                        ? 'text-[var(--arca-ink)]'
+                        : 'text-[var(--arca-ink)]'
                     }`}
                   >
                     {new Intl.NumberFormat('es-AR', {

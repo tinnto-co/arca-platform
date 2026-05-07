@@ -112,7 +112,7 @@ export function LoginForm({ className }: React.ComponentProps<'div'>) {
   return (
     <div className={cn('flex flex-col gap-6', className)}>
       <div className="flex flex-col items-center gap-2 text-center">
-        <h1 className="text-2xl font-bold text-[#232c50]">
+        <h1 className="font-display text-[22px] font-semibold tracking-[-0.01em] text-[var(--arca-ink)]">
           Iniciar sesion en tu cuenta
         </h1>
         <p className="text-muted-foreground text-sm text-balance">
@@ -131,9 +131,13 @@ export function LoginForm({ className }: React.ComponentProps<'div'>) {
             type="email"
             placeholder="john@example.com"
             required
-            className={emailError ? 'border-red-500' : ''}
+            className={emailError ? 'border-[var(--arca-accent-neg)]' : ''}
           />
-          {emailError && <p className="text-sm text-red-500">{emailError}</p>}
+          {emailError && (
+            <p className="text-sm text-[var(--arca-accent-neg)]">
+              {emailError}
+            </p>
+          )}
         </div>
         <div className="flex flex-col gap-2">
           <Label>Contraseña</Label>

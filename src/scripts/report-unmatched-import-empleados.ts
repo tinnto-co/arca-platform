@@ -29,7 +29,7 @@ function canonicalizeCategoriaText(value: string): string {
 
 function extractCctCodigo(raw: string | null | undefined): string | null {
   if (!raw) return null;
-  const match = raw.match(/\b(\d{2,4})\/(\d{2,4})\b/);
+  const match = /\b(\d{2,4})\/(\d{2,4})\b/.exec(raw);
   if (!match) return null;
   const izquierda = String(parseInt(match[1], 10));
   const derecha = String(parseInt(match[2], 10)).padStart(2, '0');
@@ -51,7 +51,10 @@ function scoreCategoriaMatch(
   const tokens = source.split(' ').filter(Boolean);
   let tokenHits = 0;
   for (const token of tokens) {
-    if (token.length >= 3 && (nombre.includes(token) || codigo.includes(token))) {
+    if (
+      token.length >= 3 &&
+      (nombre.includes(token) || codigo.includes(token))
+    ) {
       tokenHits++;
     }
   }
@@ -59,17 +62,21 @@ function scoreCategoriaMatch(
 }
 
 async function main() {
-  const report: Array<{
+  const report: {
     clientId: string;
     profile: string;
     empleado: string;
     cuil: string;
     categoria: string;
     motivo: string;
-  }> = [];
+  }[] = [];
 
   const profilesConSueldos = await db
-    .select({ id: profile.id, clientId: profile.client, profileName: profile.name })
+    .select({
+      id: profile.id,
+      clientId: profile.client,
+      profileName: profile.name,
+    })
     .from(profile)
     .where(eq(profile.liquidaSueldos, true));
 
@@ -103,7 +110,7 @@ async function main() {
 
     const categoriasByConvenio = new Map<
       string,
-      Array<{ id: string; codigo: string; nombre: string }>
+      { id: string; codigo: string; nombre: string }[]
     >();
     for (const convenio of conveniosFiltrados) {
       const categorias = await db
@@ -170,4 +177,3 @@ main()
     console.error(err);
     process.exit(1);
   });
-

@@ -91,7 +91,7 @@ export function SueldosFirmaDigital({
             <PenLine className="h-5 w-5" />
             Firma digital del empleador
           </CardTitle>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-[var(--arca-ink-3)]">
             La imagen se imprimirá sobre la línea &quot;Firma y sello del
             empleador&quot; en todos los recibos de esta empresa.
           </p>
@@ -99,7 +99,7 @@ export function SueldosFirmaDigital({
         <CardContent className="flex items-center gap-6">
           {firmaUrl ? (
             <>
-              <div className="flex h-24 w-56 items-center justify-center rounded border border-border bg-muted/20 p-2">
+              <div className="flex h-24 w-56 items-center justify-center rounded border border-border bg-[var(--arca-surface-2)] p-2">
                 <img
                   src={firmaUrl}
                   alt="Firma del empleador"

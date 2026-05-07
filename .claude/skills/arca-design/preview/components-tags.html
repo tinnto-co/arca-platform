@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><link rel="stylesheet" href="_base.css">
+<style>
+  body { padding: 24px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+  .lbl { font-family: var(--ff-mono); font-size: 10.5px; color: var(--ink-3); min-width: 68px; }
+
+  .status-tag { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 500; }
+  .status-tag .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .ok   { color: var(--accent-pos-fg); background: var(--accent-pos-bg); }
+  .ok .dot { background: var(--accent-pos); }
+  .late { color: var(--accent-neg-fg); background: var(--accent-neg-bg); }
+  .late .dot { background: var(--accent-neg); }
+  .pend { color: var(--accent-warn-fg); background: var(--accent-warn-bg); }
+  .pend .dot { background: var(--accent-warn); }
+
+  .delta { display:inline-flex; align-items:center; gap: 3px; padding: 2px 7px; border-radius: 20px; font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .delta.pos { color: var(--accent-pos-fg); background: var(--accent-pos-bg); }
+  .delta.neg { color: var(--accent-neg-fg); background: var(--accent-neg-bg); }
+  .delta.warn{ color: var(--accent-warn-fg); background: var(--accent-warn-bg); }
+
+  .chip { display:inline-flex; align-items:center; gap: 5px; padding: 3px 8px; border-radius: 20px; background: var(--surface-2); border: 1px solid var(--border); font-size: 11px; color: var(--ink-3); font-weight: 500; }
+  .chip .sw { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-pos); }
+  .chip.urgent { background: var(--accent-neg-bg); color: var(--accent-neg-fg); border-color: transparent; }
+</style>
+</head><body>
+  <div class="row"><span class="lbl">status</span>
+    <span class="status-tag ok"><span class="dot"></span>Al día</span>
+    <span class="status-tag pend"><span class="dot"></span>Pendiente</span>
+    <span class="status-tag late"><span class="dot"></span>Vencido +8d</span>
+  </div>
+  <div class="row"><span class="lbl">delta</span>
+    <span class="delta pos">+12.4%</span>
+    <span class="delta neg">-91.1%</span>
+    <span class="delta warn">vence 20 may</span>
+  </div>
+  <div class="row"><span class="lbl">chip</span>
+    <span class="chip"><span class="sw"></span>En regla</span>
+    <span class="chip urgent">3 urgentes</span>
+  </div>
+</body></html>
