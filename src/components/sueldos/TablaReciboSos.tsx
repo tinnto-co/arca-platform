@@ -483,6 +483,17 @@ interface TablaReciboSosProps {
   basico?: number;
   /** URL (data URL o URL pública) de la imagen de firma del empleador. */
   firmaEmpleadorUrl?: string | null;
+  /**
+   * Si se define, solo se muestran filas cuyo `codigo` está en el set (carga manual con "+").
+   * Si no se define, se muestran todas las filas de `conceptos` (último recibo importado).
+   */
+  activeCodigos?: Set<string>;
+  /** Catálogo para "Agregar concepto" (toda la plantilla). Por defecto coincide con `conceptos`. */
+  catalogoCompleto?: ConceptoImportado[];
+  onAddConcepto?: (codigo: string) => void;
+  onRemoveConcepto?: (codigo: string) => void;
+  /** Recalcula montos desde `basico` cuando el usuario activa escala vigente en modo copia. */
+  recalculateWithBasico?: boolean;
 }
 
 export function TablaReciboSos({
@@ -492,7 +503,13 @@ export function TablaReciboSos({
   variant = 'importado',
   basico,
   firmaEmpleadorUrl,
+  activeCodigos: activeCodigosProp,
+  catalogoCompleto: catalogoCompletoProp,
+  onAddConcepto,
+  onRemoveConcepto,
+  recalculateWithBasico = false,
 }: TablaReciboSosProps) {
+  const catalogoCompleto = catalogoCompletoProp ?? conceptos;
   const initialEdits = useMemo<EditsMap>(() => {
     const map: EditsMap = {};
     for (const c of conceptos) {
@@ -569,11 +586,15 @@ export function TablaReciboSos({
     if (!recalculateWithBasico) return;
     if (!basico || basico <= 0) return;
 
+    const filasParaRecalc = activeCodigosProp
+      ? conceptos.filter((c) => activeCodigosProp.has(c.codigo))
+      : conceptos;
+
     setEdits((prev) => {
       let changed = false;
       const next: EditsMap = { ...prev };
 
-      for (const c of conceptos) {
+      for (const c of filasParaRecalc) {
         const current = next[c.codigo] ?? EMPTY_EDIT_ROW;
         const hasExplicitPorcentaje = (current.porcentaje ?? '').trim() !== '';
         if (!hasExplicitPorcentaje) continue;
@@ -621,7 +642,12 @@ export function TablaReciboSos({
 
       return changed ? next : prev;
     });
-  }, [recalculateWithBasico, basico, conceptos]);
+  }, [recalculateWithBasico, basico, conceptos, activeCodigosProp]);
+
+  const conceptosVisibles = useMemo(() => {
+    if (!activeCodigosProp) return conceptos;
+    return conceptos.filter((c) => activeCodigosProp.has(c.codigo));
+  }, [conceptos, activeCodigosProp]);
 
   const setField = useCallback(
     (editedCodigo: string, field: keyof EditsMap[string], value: string) => {
@@ -769,7 +795,7 @@ export function TablaReciboSos({
 
   const conceptosPorSeccion = useMemo(() => {
     const groups: Partial<Record<SeccionSos, ConceptoImportado[]>> = {};
-    for (const c of conceptos) {
+    for (const c of conceptosVisibles) {
       const num = parseInt(c.codigo, 10);
       if (isNaN(num)) continue;
       const seccion = getSeccionSos(num);
@@ -778,12 +804,12 @@ export function TablaReciboSos({
       groups[seccion]!.push(c);
     }
     return groups;
-  }, [conceptos]);
+  }, [conceptosVisibles]);
 
-  const codigosActivosSet = useMemo(
-    () => new Set(conceptos.map((c) => c.codigo)),
-    [conceptos]
-  );
+  const codigosActivosSet = useMemo(() => {
+    if (activeCodigosProp) return activeCodigosProp;
+    return new Set(conceptos.map((c) => c.codigo));
+  }, [activeCodigosProp, conceptos]);
 
   const sumaRango = useCallback(
     (min: number, max: number): number => {
@@ -822,7 +848,7 @@ export function TablaReciboSos({
     const warnings: string[] = [];
     const errors: string[] = [];
 
-    for (const c of conceptos) {
+    for (const c of conceptosVisibles) {
       const n = parseInt(c.codigo, 10);
       if (isNaN(n)) continue;
       const row = edits[c.codigo] ?? EMPTY_EDIT_ROW;
@@ -882,7 +908,7 @@ export function TablaReciboSos({
     }
 
     return { warnings, errors };
-  }, [conceptos, edits]);
+  }, [conceptosVisibles, edits]);
 
   const seccionesAMostrar = onAddConcepto
     ? ORDEN_SECCIONES

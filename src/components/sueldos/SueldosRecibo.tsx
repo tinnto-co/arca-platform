@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { FileText, ChevronRight, Pencil } from 'lucide-react';
+import { FileText, ChevronRight, Pencil, Printer } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Select,
@@ -21,6 +21,8 @@ import {
 } from '@/actions/sueldos';
 import { getClient } from '@/actions/client';
 import { legajoParaMostrar } from '@/lib/legajo';
+import { Button } from '@/components/ui/button';
+import { ImprimirRecibosDialog } from '@/components/sueldos/ImprimirRecibosDialog';
 
 const now = new Date();
 const ANOS = Array.from({ length: 8 }, (_, i) => now.getFullYear() - i);
@@ -335,10 +337,11 @@ function DocCell({
 }
 
 export function SueldosRecibo({ clientId, profileId, onEditRecibo }: SueldosReciboProps) {
-  const [ano, setAno] = useState('');
-  const [mes, setMes] = useState('');
+  const [ano, setAno] = useState(String(now.getFullYear()));
+  const [mes, setMes] = useState(String(now.getMonth() + 1).padStart(2, '0'));
   const [empleadoId, setEmpleadoId] = useState('');
   const [reciboId, setReciboId] = useState('');
+  const [showImprimir, setShowImprimir] = useState(false);
 
   const periodo = useMemo(
     () => (ano && mes ? `${ano}-${mes}` : ''),
@@ -347,18 +350,31 @@ export function SueldosRecibo({ clientId, profileId, onEditRecibo }: SueldosReci
 
   const hayFiltro = !!periodo || !!empleadoId;
 
+  const resetFiltros = useCallback(() => {
+    setAno('');
+    setMes('');
+    setEmpleadoId('');
+    setReciboId('');
+  }, []);
+
   const { data: clientData } = useQuery({
     queryKey: ['client', clientId],
     queryFn: () => getClient({ data: { id: clientId } }),
     enabled: !!clientId,
   });
 
-  const { data: empleados = [] } = useQuery({
+  const { data: empleadosRaw = [] } = useQuery({
     queryKey: ['import-empleados', clientId, profileId],
     queryFn: () => listImportEmpleados({ data: { clientId, profileId } }),
     enabled: !!clientId && !!profileId,
     staleTime: 5 * 60 * 1000,
   });
+
+  // Solo empleados activos para los selectores y el PDF
+  const empleados = useMemo(
+    () => empleadosRaw.filter((e) => e.empleado.activo),
+    [empleadosRaw]
+  );
 
   const { data: recibos = [], isLoading: loadingList } = useQuery({
     queryKey: ['liquidaciones-filtros', clientId, profileId, periodo, empleadoId],
@@ -393,13 +409,26 @@ export function SueldosRecibo({ clientId, profileId, onEditRecibo }: SueldosReci
       {/* ── Filtros ───────────────────────────────────────────────────────── */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5" />
-            Recibos liquidados
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Filtrá por período (mes + año) y/o por empleado. Podés usar solo empleado para ver todos sus recibos.
-          </p>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                Recibos liquidados
+              </CardTitle>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Filtrá por período (mes + año) y/o por empleado. Podés usar solo empleado para ver todos sus recibos.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0 gap-1.5"
+              onClick={() => setShowImprimir(true)}
+            >
+              <Printer className="h-4 w-4" />
+              Imprimir PDF
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="flex flex-wrap items-end gap-4">
           {/* Año */}
@@ -578,6 +607,17 @@ export function SueldosRecibo({ clientId, profileId, onEditRecibo }: SueldosReci
           )}
         </Card>
       )}
+
+      {/* ── Dialog: imprimir PDF ─────────────────────────────────────────── */}
+      <ImprimirRecibosDialog
+        open={showImprimir}
+        onOpenChange={setShowImprimir}
+        clientId={clientId}
+        profileId={profileId}
+        clientData={clientData ?? null}
+        firmaEmpleadorUrl={firmaEmpleadorUrl}
+        empleados={empleados}
+      />
 
       {/* ── Recibo detalle ───────────────────────────────────────────────── */}
       {reciboId && (
