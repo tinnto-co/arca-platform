@@ -46,6 +46,7 @@ import {
   inArray,
   sql,
   ne,
+  like,
 } from 'drizzle-orm';
 import {
   montoLiquidadoDesdeEditsSos,
@@ -3878,4 +3879,218 @@ export const getReciboDetalle = createServerFn({ method: 'GET' })
       detalles,
     };
     return JSON.parse(JSON.stringify(payload)) as typeof payload;
+  });
+
+/**
+ * Obtiene en batch todos los recibos generados con sus detalles completos,
+ * agrupados por año (obligatorio) y opcionalmente por mes y/o empleados.
+ * Diseñado para generación de PDFs: 2 consultas principales + cálculos en paralelo.
+ */
+export const listRecibosDetalleParaPDF = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      profileId: z.string().uuid(),
+      ano: z.string().regex(/^\d{4}$/, 'Año inválido'),
+      mes: z.string().regex(/^\d{2}$/).optional(),
+      empleadoIds: z.array(z.string().uuid()).optional(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureProfileBelongsToClient(ctx.data.profileId, ctx.data.clientId);
+
+    const { ano, mes, empleadoIds } = ctx.data;
+
+    const conditions = [
+      eq(profile.client, ctx.data.clientId),
+      eq(liquidacionImportEmpleado.profileId, ctx.data.profileId),
+      eq(liquidacionImportRecibo.origen, 'generado'),
+      eq(liquidacionImportEmpleado.activo, true),
+      mes
+        ? condicionPeriodoRecibo(`${ano}-${mes}`)
+        : like(liquidacionImportRecibo.periodo, `${ano}-%`),
+    ];
+
+    if (empleadoIds && empleadoIds.length > 0) {
+      conditions.push(inArray(liquidacionImportEmpleado.id, empleadoIds));
+    }
+
+    // ── 1. Headers en una sola query ───────────────────────────────────────────
+    const recibos = await db
+      .select({
+        liquidacion: liquidacionImportRecibo,
+        empleado: liquidacionImportEmpleado,
+        convenio: payrollConvenio,
+        categoria: payrollConvenioCategoria,
+        obraSocial,
+      })
+      .from(liquidacionImportRecibo)
+      .innerJoin(
+        liquidacionImportEmpleado,
+        eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
+      )
+      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .leftJoin(payrollConvenio, eq(liquidacionImportEmpleado.convenioId, payrollConvenio.id))
+      .leftJoin(
+        payrollConvenioCategoria,
+        eq(liquidacionImportEmpleado.categoriaId, payrollConvenioCategoria.id)
+      )
+      .leftJoin(obraSocial, eq(liquidacionImportRecibo.obraSocialId, obraSocial.id))
+      .where(and(...conditions))
+      .orderBy(asc(liquidacionImportEmpleado.nombre), asc(liquidacionImportRecibo.periodo))
+      .limit(500);
+
+    if (recibos.length === 0) return [];
+
+    const reciboIds = recibos.map((r) => r.liquidacion.id);
+
+    // ── 2. Detalles de conceptos en una sola query ─────────────────────────────
+    const allDetallesRaw = await db
+      .select({
+        detalle: liquidacionImportConceptoValor,
+        concepto: payrollConcepto,
+        conceptoAfip: lsdConceptoAfip,
+        conceptoSos,
+      })
+      .from(liquidacionImportConceptoValor)
+      .leftJoin(
+        payrollConcepto,
+        eq(liquidacionImportConceptoValor.conceptoId, payrollConcepto.id)
+      )
+      .leftJoin(
+        lsdConceptoAfip,
+        eq(
+          lsdConceptoAfip.codigoAfip,
+          sql`coalesce(${payrollConcepto.codigoArca}, ${liquidacionImportConceptoValor.codigo})`
+        )
+      )
+      .leftJoin(
+        conceptoSos,
+        or(
+          eq(liquidacionImportConceptoValor.codigo, conceptoSos.codigo),
+          and(
+            isNotNull(payrollConcepto.numeroSos),
+            eq(
+              conceptoSos.codigo,
+              sql`cast(${payrollConcepto.numeroSos} as text)`
+            )
+          )
+        )
+      )
+      .where(inArray(liquidacionImportConceptoValor.reciboId, reciboIds))
+      .orderBy(asc(liquidacionImportConceptoValor.codigo));
+
+    const allDetallesEnriched = await enrichConceptosFaltantes(
+      allDetallesRaw as DetalleReciboRow[]
+    );
+
+    const detallesByReciboId = new Map<string, DetalleReciboRow[]>();
+    for (const d of allDetallesEnriched) {
+      const key = d.detalle.reciboId;
+      if (!detallesByReciboId.has(key)) detallesByReciboId.set(key, []);
+      detallesByReciboId.get(key)!.push(d);
+    }
+
+    // ── 3. Resolver categoríaId para cada empleado único (en paralelo) ─────────
+    const uniqueEmpleados = new Map<
+      string,
+      typeof liquidacionImportEmpleado.$inferSelect
+    >();
+    for (const r of recibos) {
+      if (!uniqueEmpleados.has(r.empleado.id)) uniqueEmpleados.set(r.empleado.id, r.empleado);
+    }
+
+    const categoriaIdByEmpleado = new Map<string, string | null>();
+    await Promise.all(
+      [...uniqueEmpleados.entries()].map(async ([id, emp]) => {
+        categoriaIdByEmpleado.set(
+          id,
+          emp.categoriaId ?? (await resolveCategoriaIdParaBasico(emp))
+        );
+      })
+    );
+
+    // ── 4. Básico de escala por par catId+período único (en paralelo) ──────────
+    const basicoEscalaCache = new Map<string, number>();
+    const catPeriodoPairs = new Set<string>();
+    for (const r of recibos) {
+      const catId = categoriaIdByEmpleado.get(r.empleado.id);
+      if (catId) {
+        catPeriodoPairs.add(`${catId}|${normalizarPeriodoYYYYMM(r.liquidacion.periodo)}`);
+      }
+    }
+    await Promise.all(
+      [...catPeriodoPairs].map(async (key) => {
+        const [catId, periodo] = key.split('|') as [string, string];
+        basicoEscalaCache.set(key, await getBasicoVigenteInternal(catId, periodo));
+      })
+    );
+
+    // ── 5. Cabecera de pago por empleado único (en paralelo) ───────────────────
+    const cabeceraByEmpleadoId = new Map<
+      string,
+      Partial<typeof liquidacionImportRecibo.$inferSelect>
+    >();
+    await Promise.all(
+      [...uniqueEmpleados.keys()].map(async (id) => {
+        cabeceraByEmpleadoId.set(id, await obtenerCabeceraPagoPlantilla(id));
+      })
+    );
+
+    // ── 6. Armar payload completo por recibo ───────────────────────────────────
+    const result = recibos.map((r) => {
+      const rawDetalles = detallesByReciboId.get(r.liquidacion.id) ?? [];
+      const merged = mergeDetalleFilasDuplicadas(rawDetalles);
+      const detalles = merged.map((row) => ({
+        ...row,
+        tipoColumna: tipoColumnaSosContador(row.detalle, row.concepto, row.conceptoSos),
+      }));
+
+      // basicoCalculado (replica la lógica de basicoParaRecibo sin async)
+      const override = r.empleado.valorSueldo != null ? Number(r.empleado.valorSueldo) : 0;
+      let basicoCalculado: number;
+      if (!isNaN(override) && override > 0) {
+        basicoCalculado = override;
+      } else {
+        const catId = categoriaIdByEmpleado.get(r.empleado.id);
+        const periodoNorm = normalizarPeriodoYYYYMM(r.liquidacion.periodo);
+        const deEscala = catId ? (basicoEscalaCache.get(`${catId}|${periodoNorm}`) ?? 0) : 0;
+        if (!isNaN(deEscala) && deEscala > 0) {
+          basicoCalculado = deEscala;
+        } else {
+          const persistido = r.liquidacion.basico != null ? Number(r.liquidacion.basico) : 0;
+          basicoCalculado = isNaN(persistido) ? 0 : persistido;
+        }
+      }
+
+      const catId = r.empleado.categoriaId;
+      const periodoNorm = normalizarPeriodoYYYYMM(r.liquidacion.periodo);
+      const basicoEscalaCategoria = catId
+        ? (basicoEscalaCache.get(`${catId}|${periodoNorm}`) ?? 0)
+        : 0;
+
+      // Merge cabecera pago igual que en getReciboDetalle
+      const plantillaCabecera = cabeceraByEmpleadoId.get(r.empleado.id) ?? {};
+      let liqVista = mergeCabeceraPagoLiquidacion(
+        r.liquidacion,
+        cabeceraPagoDesdeEmpleado(r.empleado)
+      );
+      liqVista = mergeCabeceraPagoLiquidacion(liqVista, plantillaCabecera);
+      liqVista = {
+        ...liqVista,
+        formaPago: normalizarFormaPagoAlmacenada(liqVista.formaPago),
+      };
+
+      return {
+        ...r,
+        liquidacion: liqVista,
+        basicoCalculado,
+        basicoEscalaCategoria,
+        detalles,
+      };
+    });
+
+    return JSON.parse(JSON.stringify(result)) as typeof result;
   });
