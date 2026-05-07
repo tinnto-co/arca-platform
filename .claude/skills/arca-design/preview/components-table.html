@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><link rel="stylesheet" href="_base.css">
+<style>
+  body { padding: 20px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; }
+  .head { display:flex; align-items:center; justify-content:space-between; padding: 14px 20px 12px; border-bottom: 1px solid var(--border); }
+  .ttl { font-family: var(--ff-display); font-size: 15px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
+  .sub { font-size: 12px; color: var(--ink-3); margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th { text-align: left; font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); padding: 10px 20px; background: var(--surface-2); border-bottom: 1px solid var(--border); border-top: 1px solid var(--border); }
+  td { padding: 11px 20px; border-bottom: 1px solid var(--border); color: var(--ink-2); vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 500; }
+  .ca { width: 28px; height: 28px; border-radius: 7px; display:inline-flex; align-items:center; justify-content:center; font-size: 10.5px; font-weight: 700; color: #fff; margin-right: 10px; vertical-align: middle; }
+  .nm { font-weight: 600; color: var(--ink); font-size: 13px; display:inline-block; vertical-align: middle; }
+  .sb { font-size: 11px; color: var(--ink-4); font-family: var(--ff-mono); display:block; }
+  .st { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 500; }
+  .st .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .st.ok { color: var(--accent-pos-fg); background: var(--accent-pos-bg); } .st.ok .dot { background: var(--accent-pos); }
+  .st.pend { color: var(--accent-warn-fg); background: var(--accent-warn-bg); } .st.pend .dot { background: var(--accent-warn); }
+  .st.late { color: var(--accent-neg-fg); background: var(--accent-neg-bg); } .st.late .dot { background: var(--accent-neg); }
+</style>
+</head><body>
+  <div class="card">
+    <div class="head">
+      <div><div class="ttl">Clientes con movimiento</div><div class="sub">Facturación del mes · top por volumen</div></div>
+    </div>
+    <table>
+      <thead><tr><th>Cliente</th><th>Estado</th><th>Últ.</th><th style="text-align:right">Facturado</th></tr></thead>
+      <tbody>
+        <tr><td><span class="ca" style="background:#1E3460">MA</span><span class="nm">Maderera Austral</span><span class="sb">CUIT 30-71045821-6</span></td>
+            <td><span class="st ok"><span class="dot"></span>Al día</span></td><td>hace 2 h</td><td class="num">$ 48.927.430</td></tr>
+        <tr><td><span class="ca" style="background:#8FB39F">PG</span><span class="nm">Panadería Güemes</span><span class="sb">CUIT 27-38441209-2</span></td>
+            <td><span class="st pend"><span class="dot"></span>Pendiente</span></td><td>hoy, 11:30</td><td class="num">$ 32.108.220</td></tr>
+        <tr><td><span class="ca" style="background:#C2A878">LV</span><span class="nm">Logística del Valle</span><span class="sb">CUIT 30-69847011-5</span></td>
+            <td><span class="st late"><span class="dot"></span>Vencido +8d</span></td><td>ayer</td><td class="num">$ 27.540.000</td></tr>
+      </tbody>
+    </table>
+  </div>
+</body></html>

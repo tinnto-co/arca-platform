@@ -40,7 +40,10 @@ async function main() {
   }
 
   const empleados = await db
-    .select({ id: liquidacionImportEmpleado.id, nombre: liquidacionImportEmpleado.nombre })
+    .select({
+      id: liquidacionImportEmpleado.id,
+      nombre: liquidacionImportEmpleado.nombre,
+    })
     .from(liquidacionImportEmpleado);
 
   let updated = 0;

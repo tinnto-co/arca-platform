@@ -1,0 +1,1563 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Arca — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Inter+Tight:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* ============ Sistema de color ============ */
+    /* Neutrales cálidos */
+    --bg: #F7F6F2;             /* off-white cálido */
+    --surface: #FFFFFF;
+    --surface-2: #FBFAF6;
+    --border: #ECEAE3;
+    --border-strong: #DFDCD3;
+    --ink: #12131A;            /* texto principal */
+    --ink-2: #3E404A;          /* texto secundario */
+    --ink-3: #6E7079;          /* texto terciario */
+    --ink-4: #9B9CA3;          /* placeholder */
+
+    /* Primary — navy profundo */
+    --navy-900: #0B1730;
+    --navy-800: #142447;
+    --navy-700: #1E3460;
+    --navy-600: #2A4680;
+
+    /* Accents (mismo chroma/lightness, hue variando) */
+    --accent-pos: oklch(0.62 0.13 160);   /* verde */
+    --accent-pos-bg: oklch(0.94 0.04 160);
+    --accent-neg: oklch(0.60 0.15 25);    /* coral/rojo */
+    --accent-neg-bg: oklch(0.94 0.04 25);
+    --accent-warn: oklch(0.72 0.13 75);   /* ámbar */
+    --accent-warn-bg: oklch(0.95 0.04 75);
+    --accent-info: oklch(0.60 0.12 240);  /* azul */
+    --accent-info-bg: oklch(0.94 0.04 240);
+
+    /* Chart colors */
+    --chart-1: #1E3460;
+    --chart-2: #7AA2C8;
+    --chart-3: #C2A878;
+    --chart-4: #8FB39F;
+
+    /* Type */
+    --ff-sans: 'Inter', system-ui, -apple-system, sans-serif;
+    --ff-display: 'Inter Tight', 'Inter', sans-serif;
+    --ff-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+    /* Radii */
+    --r-sm: 6px;
+    --r-md: 10px;
+    --r-lg: 14px;
+    --r-xl: 18px;
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px rgba(18,19,26,0.04);
+    --shadow-md: 0 1px 3px rgba(18,19,26,0.04), 0 4px 12px rgba(18,19,26,0.04);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    font-family: var(--ff-sans);
+    color: var(--ink);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  button { font-family: inherit; border: 0; background: none; cursor: pointer; color: inherit; }
+  a { color: inherit; text-decoration: none; }
+
+  .tabular { font-variant-numeric: tabular-nums; }
+
+  /* ============ Layout ============ */
+  .app {
+    display: grid;
+    grid-template-columns: 248px 1fr;
+    min-height: 100vh;
+    background: var(--bg);
+  }
+
+  /* ============ Sidebar ============ */
+  .sidebar {
+    background: var(--navy-900);
+    color: #E8E9EE;
+    display: flex;
+    flex-direction: column;
+    padding: 14px 12px;
+    gap: 4px;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+  }
+
+  .workspace {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 8px 8px 8px;
+    border-radius: var(--r-md);
+    cursor: pointer;
+    transition: background .15s;
+    position: relative;
+  }
+  .workspace:hover { background: rgba(255,255,255,0.04); }
+  .workspace-logo {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #F7F6F2, #E8E4D6);
+    color: var(--navy-900);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--ff-display);
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: -0.02em;
+    flex-shrink: 0;
+  }
+  .workspace-meta { flex: 1; min-width: 0; }
+  .workspace-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #F2F3F7;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .workspace-handle {
+    font-size: 11.5px;
+    color: #8A8F9E;
+    font-family: var(--ff-mono);
+  }
+  .workspace-chev { color: #8A8F9E; flex-shrink: 0; }
+
+  .sidebar-search {
+    margin: 10px 0 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: var(--r-md);
+    color: #8A8F9E;
+    font-size: 12.5px;
+  }
+  .sidebar-search kbd {
+    margin-left: auto;
+    font-family: var(--ff-mono);
+    font-size: 10.5px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    padding: 1px 5px;
+    border-radius: 4px;
+    color: #B3B7C2;
+  }
+
+  .cta-new {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #F7F6F2;
+    color: var(--navy-900);
+    padding: 9px 12px;
+    border-radius: var(--r-md);
+    font-weight: 600;
+    font-size: 13px;
+    margin-bottom: 12px;
+    transition: background .15s;
+  }
+  .cta-new:hover { background: #fff; }
+
+  .nav-group-label {
+    font-size: 10.5px;
+    font-weight: 600;
+    color: #6E7283;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 14px 10px 6px;
+  }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 10px;
+    border-radius: var(--r-md);
+    color: #C6C9D3;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    position: relative;
+    transition: background .12s, color .12s;
+  }
+  .nav-item:hover { background: rgba(255,255,255,0.04); color: #F2F3F7; }
+  .nav-item.active {
+    background: rgba(255,255,255,0.06);
+    color: #FFFFFF;
+  }
+  .nav-item.active::before {
+    content: '';
+    position: absolute;
+    left: -12px;
+    top: 8px;
+    bottom: 8px;
+    width: 2px;
+    border-radius: 2px;
+    background: #F7F6F2;
+  }
+  .nav-item .count {
+    margin-left: auto;
+    font-family: var(--ff-mono);
+    font-size: 11px;
+    color: #8A8F9E;
+  }
+  .nav-item.active .count { color: #E8E9EE; }
+
+  .sidebar-footer {
+    margin-top: auto;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+  }
+  .user-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    border-radius: var(--r-md);
+    cursor: pointer;
+  }
+  .user-card:hover { background: rgba(255,255,255,0.04); }
+  .avatar {
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #2A4680, #C2A878);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700;
+    color: #F7F6F2;
+    flex-shrink: 0;
+  }
+  .user-meta { flex: 1; min-width: 0; }
+  .user-name { font-size: 12.5px; font-weight: 600; color: #F2F3F7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .user-email { font-size: 11px; color: #8A8F9E; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ============ Main ============ */
+  .main {
+    padding: 0;
+    min-width: 0;
+  }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 36px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    position: sticky;
+    top: 0;
+    z-index: 5;
+  }
+  .crumbs {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12.5px; color: var(--ink-3);
+  }
+  .crumbs .sep { color: var(--ink-4); }
+  .crumbs .cur { color: var(--ink); font-weight: 500; }
+
+  .topbar-actions {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .period-pill {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-md);
+    overflow: hidden;
+    font-size: 12.5px;
+    font-weight: 500;
+  }
+  .period-pill button {
+    padding: 6px 12px;
+    color: var(--ink-3);
+    border-right: 1px solid var(--border);
+  }
+  .period-pill button:last-child { border-right: 0; }
+  .period-pill button.on {
+    background: var(--ink);
+    color: #fff;
+  }
+
+  .icon-btn {
+    width: 32px; height: 32px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-md);
+    background: var(--surface);
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--ink-2);
+    transition: background .12s;
+    position: relative;
+  }
+  .icon-btn:hover { background: var(--surface-2); }
+  .icon-btn .dot {
+    position: absolute; top: 6px; right: 6px;
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--accent-neg);
+    border: 1.5px solid var(--surface);
+  }
+
+  /* ============ Page content ============ */
+  .page {
+    padding: 28px 36px 60px;
+    max-width: 1440px;
+  }
+
+  .greeting {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+  .greeting h1 {
+    font-family: var(--ff-display);
+    font-size: 30px;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    color: var(--ink);
+    line-height: 1.15;
+  }
+  .greeting h1 .sub {
+    font-weight: 500;
+    color: var(--ink-3);
+  }
+  .greeting p {
+    font-size: 13.5px;
+    color: var(--ink-3);
+    margin-top: 6px;
+    max-width: 560px;
+  }
+  .greeting-side {
+    display: flex; gap: 10px;
+    align-items: center;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: var(--r-md);
+    font-size: 13px;
+    font-weight: 500;
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+    color: var(--ink);
+    transition: background .12s, border-color .12s;
+  }
+  .btn:hover { background: var(--surface-2); }
+  .btn.primary {
+    background: var(--ink);
+    color: #fff;
+    border-color: var(--ink);
+  }
+  .btn.primary:hover { background: #000; }
+
+  /* ============ KPI cards ============ */
+  .kpis {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+
+  .kpi {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    position: relative;
+    overflow: hidden;
+  }
+  .kpi-head {
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .kpi-label {
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--ink-3);
+    display: flex; align-items: center; gap: 7px;
+  }
+  .kpi-label .ico {
+    width: 22px; height: 22px;
+    border-radius: 6px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--ink-2);
+  }
+  .delta {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 20px;
+    font-variant-numeric: tabular-nums;
+  }
+  .delta.pos { color: oklch(0.45 0.13 160); background: var(--accent-pos-bg); }
+  .delta.neg { color: oklch(0.45 0.15 25);  background: var(--accent-neg-bg); }
+  .delta.warn { color: oklch(0.50 0.13 75); background: var(--accent-warn-bg); }
+
+  .kpi-value {
+    font-family: var(--ff-display);
+    font-size: 28px;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+  .kpi-value .cur {
+    color: var(--ink-3);
+    font-weight: 500;
+    font-size: 18px;
+    margin-right: 4px;
+  }
+  .kpi-foot {
+    font-size: 11.5px;
+    color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .kpi-foot .label { color: var(--ink-4); }
+
+  /* Spark */
+  .kpi-spark {
+    position: absolute;
+    right: 16px;
+    bottom: 14px;
+    height: 34px;
+    width: 90px;
+    pointer-events: none;
+    opacity: 0.9;
+  }
+
+  /* Secondary KPI row */
+  .mini-kpis {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-bottom: 22px;
+  }
+  .mini-kpi {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .mini-kpi-head {
+    display: flex; align-items: center; justify-content: space-between;
+    color: var(--ink-3);
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .mini-kpi-head span { display: flex; align-items: center; gap: 6px; }
+  .mini-kpi-val {
+    font-family: var(--ff-display);
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    display: flex; align-items: baseline; justify-content: space-between;
+  }
+  .mini-kpi-val .trend {
+    font-family: var(--ff-sans);
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--ink-3);
+  }
+  .mini-kpi-foot {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 11px;
+    color: var(--ink-4);
+  }
+  .mini-kpi-foot .alert {
+    font-weight: 600;
+    color: oklch(0.50 0.15 25);
+    font-variant-numeric: tabular-nums;
+  }
+  /* progress bar for mini kpi */
+  .progress {
+    height: 4px;
+    background: var(--surface-2);
+    border-radius: 2px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .progress > span {
+    display: block;
+    height: 100%;
+    background: var(--ink);
+    border-radius: 2px;
+  }
+  .progress.pos > span { background: oklch(0.62 0.13 160); }
+  .progress.neg > span { background: oklch(0.60 0.15 25); }
+  .progress.warn > span { background: oklch(0.72 0.13 75); }
+  .progress.info > span { background: oklch(0.60 0.12 240); }
+
+  /* ============ Grid layout main ============ */
+  .grid-main {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    overflow: hidden;
+  }
+  .card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .card-title {
+    font-family: var(--ff-display);
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card-sub {
+    font-size: 12px;
+    color: var(--ink-3);
+    margin-top: 2px;
+  }
+  .card-head-actions { display: flex; align-items: center; gap: 8px; }
+
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 8px;
+    border-radius: 20px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--ink-3);
+    font-weight: 500;
+  }
+  .chip .swatch { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+
+  .tab-bar {
+    display: inline-flex;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    padding: 2px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .tab-bar button {
+    padding: 4px 10px;
+    border-radius: 6px;
+    color: var(--ink-3);
+  }
+  .tab-bar button.on {
+    background: var(--surface);
+    color: var(--ink);
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* ============ Chart ============ */
+  .chart-wrap {
+    padding: 20px 14px 12px 14px;
+    height: 316px;
+    position: relative;
+  }
+  .chart-legend {
+    display: flex; gap: 16px;
+    padding: 0 20px 10px;
+    font-size: 11.5px;
+    color: var(--ink-3);
+  }
+  .chart-legend span { display: flex; align-items: center; gap: 6px; }
+  .chart-legend .sw {
+    width: 10px; height: 10px; border-radius: 3px;
+  }
+
+  /* ============ Cashflow / side card ============ */
+  .cash-summary {
+    padding: 20px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .cash-val {
+    font-family: var(--ff-display);
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+  }
+  .cash-val .cur { color: var(--ink-3); font-weight: 500; font-size: 18px; margin-right: 4px; }
+
+  .cash-bar {
+    display: flex;
+    height: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--border);
+  }
+  .cash-bar > div {
+    height: 100%;
+  }
+
+  .cash-list {
+    display: flex; flex-direction: column; gap: 10px;
+    padding-top: 2px;
+  }
+  .cash-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 4px;
+    font-size: 12.5px;
+  }
+  .cash-row .lbl { display: flex; align-items: center; gap: 8px; color: var(--ink-2); font-weight: 500; }
+  .cash-row .val { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink); }
+  .cash-row .sub { font-size: 11px; color: var(--ink-4); grid-column: 1 / -1; padding-left: 18px; margin-top: -2px; }
+  .swatch-sq { width: 10px; height: 10px; border-radius: 3px; }
+
+  /* ============ Tables ============ */
+  .grid-bot {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 14px;
+  }
+
+  table.t {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+  }
+  table.t th {
+    text-align: left;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    padding: 10px 20px;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border);
+    border-top: 1px solid var(--border);
+  }
+  table.t th:first-child { padding-left: 20px; }
+  table.t td {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    color: var(--ink-2);
+    vertical-align: middle;
+  }
+  table.t tbody tr:last-child td { border-bottom: 0; }
+  table.t tbody tr:hover { background: var(--surface-2); }
+  table.t td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 500; }
+
+  .client-cell {
+    display: flex; align-items: center; gap: 10px;
+  }
+  .client-avatar {
+    width: 28px; height: 28px;
+    border-radius: 7px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10.5px; font-weight: 700;
+    color: #fff;
+    flex-shrink: 0;
+    letter-spacing: 0.02em;
+  }
+  .client-name { font-weight: 600; color: var(--ink); font-size: 13px; line-height: 1.2; }
+  .client-sub { font-size: 11px; color: var(--ink-4); font-family: var(--ff-mono); }
+
+  .status-tag {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 500;
+    border: 1px solid var(--border);
+  }
+  .status-tag .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .status-tag.ok   { color: oklch(0.45 0.13 160); background: var(--accent-pos-bg); border-color: transparent; }
+  .status-tag.ok .dot { background: oklch(0.62 0.13 160); }
+  .status-tag.late { color: oklch(0.45 0.15 25);  background: var(--accent-neg-bg); border-color: transparent; }
+  .status-tag.late .dot { background: oklch(0.60 0.15 25); }
+  .status-tag.pend { color: oklch(0.50 0.13 75);  background: var(--accent-warn-bg); border-color: transparent; }
+  .status-tag.pend .dot { background: oklch(0.72 0.13 75); }
+
+  /* ============ Activity feed ============ */
+  .feed {
+    padding: 6px 0 10px;
+  }
+  .feed-item {
+    display: grid;
+    grid-template-columns: 28px 1fr auto;
+    gap: 12px;
+    padding: 12px 20px;
+    align-items: flex-start;
+    border-bottom: 1px solid var(--border);
+  }
+  .feed-item:last-child { border-bottom: 0; }
+  .feed-ico {
+    width: 28px; height: 28px;
+    border-radius: 7px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--ink-2);
+    flex-shrink: 0;
+  }
+  .feed-body { min-width: 0; }
+  .feed-title {
+    font-size: 13px; color: var(--ink); font-weight: 500;
+    line-height: 1.35;
+  }
+  .feed-title b { font-weight: 600; }
+  .feed-sub {
+    font-size: 11.5px; color: var(--ink-3);
+    margin-top: 2px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .feed-sub .mono { font-family: var(--ff-mono); }
+  .feed-time {
+    font-size: 11px;
+    color: var(--ink-4);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* ============ Deadlines (due) ============ */
+  .due-list { padding: 6px 0 10px; }
+  .due-item {
+    display: grid;
+    grid-template-columns: 46px 1fr auto;
+    gap: 12px;
+    padding: 10px 20px;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+  }
+  .due-item:last-child { border-bottom: 0; }
+  .due-date {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px 0;
+    text-align: center;
+    font-family: var(--ff-display);
+  }
+  .due-date .d { font-size: 16px; font-weight: 700; color: var(--ink); line-height: 1; letter-spacing: -0.02em; }
+  .due-date .m { font-size: 9.5px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.1em; margin-top: 2px; display: block; font-weight: 600; }
+  .due-date.urgent { background: var(--accent-neg-bg); border-color: transparent; }
+  .due-date.urgent .d, .due-date.urgent .m { color: oklch(0.45 0.15 25); }
+
+  .due-title { font-size: 13px; font-weight: 500; color: var(--ink); }
+  .due-sub { font-size: 11.5px; color: var(--ink-3); margin-top: 1px; }
+  .due-amt { font-size: 12px; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink); }
+
+  .card-foot {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 20px;
+    border-top: 1px solid var(--border);
+    background: var(--surface-2);
+    font-size: 12px;
+    color: var(--ink-3);
+  }
+  .card-foot a {
+    color: var(--ink); font-weight: 500;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+
+  /* Quick hover interactions */
+  .hoverable { cursor: pointer; }
+
+  /* Scrollbar tidy */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 6px; border: 2px solid var(--bg); }
+  ::-webkit-scrollbar-thumb:hover { background: #C4C0B3; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar">
+    <div class="workspace">
+      <div class="workspace-logo">BG</div>
+      <div class="workspace-meta">
+        <div class="workspace-name">Estudio Blak-G</div>
+        <div class="workspace-handle">estudio-blakg</div>
+      </div>
+      <svg class="workspace-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 9 12 5 16 9"/><polyline points="16 15 12 19 8 15"/></svg>
+    </div>
+
+    <div class="sidebar-search">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      Buscar
+      <kbd>⌘K</kbd>
+    </div>
+
+    <button class="cta-new">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Crear nuevo
+    </button>
+
+    <div class="nav-item active">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l9-9 9 9"/><path d="M5 10v10h14V10"/></svg>
+      Inicio
+    </div>
+
+    <div class="nav-group-label">Plataforma</div>
+
+    <div class="nav-item">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>
+      Clientes
+      <span class="count">57</span>
+    </div>
+    <div class="nav-item">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      Notificaciones
+      <span class="count" style="background: oklch(0.60 0.15 25); color:#fff; padding: 0 6px; border-radius: 8px; font-size: 10px; line-height: 16px; height: 16px; display: inline-flex; align-items: center;">12</span>
+    </div>
+    <div class="nav-item">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      Trabajos
+      <span class="count">24</span>
+    </div>
+    <div class="nav-item">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg>
+      Facturas
+      <span class="count">699</span>
+    </div>
+    <div class="nav-item">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+      Sueldos
+    </div>
+    <div class="nav-item">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      Calendario
+    </div>
+    <div class="nav-item">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 9l-5 5-3-3-4 4"/></svg>
+      Informes
+    </div>
+
+    <div class="nav-group-label">Cuenta</div>
+    <div class="nav-item">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      Administración
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="user-card">
+        <div class="avatar">ES</div>
+        <div class="user-meta">
+          <div class="user-name">Estudio Blak-G</div>
+          <div class="user-email">estudioblakg@gmail.com</div>
+        </div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8A8F9E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="main">
+    <!-- Topbar -->
+    <header class="topbar">
+      <div class="crumbs">
+        <span>Workspace</span>
+        <span class="sep">/</span>
+        <span class="cur">Inicio</span>
+      </div>
+      <div class="topbar-actions">
+        <div class="period-pill">
+          <button>Hoy</button>
+          <button>7d</button>
+          <button class="on">30d</button>
+          <button>90d</button>
+          <button>YTD</button>
+        </div>
+        <button class="icon-btn" title="Exportar">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </button>
+        <button class="icon-btn" title="Notificaciones">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          <span class="dot"></span>
+        </button>
+        <button class="btn primary">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Nueva factura
+        </button>
+      </div>
+    </header>
+
+    <div class="page">
+
+      <!-- Greeting -->
+      <section class="greeting">
+        <div>
+          <h1>Buenas tardes, <span class="sub">Estudio Blak-G</span></h1>
+          <p>Resumen general de tus clientes y actividad contable · periodo <b style="color:var(--ink)">abr 2026</b>, comparado con mes anterior.</p>
+        </div>
+        <div class="greeting-side">
+          <button class="btn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            Abr 1 – 20, 2026
+          </button>
+          <button class="btn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+            Filtros
+          </button>
+        </div>
+      </section>
+
+      <!-- ============ Primary KPI row ============ -->
+      <section class="kpis">
+
+        <div class="kpi">
+          <div class="kpi-head">
+            <div class="kpi-label">
+              <span class="ico">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+              </span>
+              Ventas del mes
+            </div>
+            <span class="delta neg">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>
+              91.1%
+            </span>
+          </div>
+          <div class="kpi-value tabular"><span class="cur">$</span>359.929.960</div>
+          <div class="kpi-foot">
+            <span class="label">vs mes anterior</span>
+            <span>$ 4.048.656.207</span>
+          </div>
+          <svg class="kpi-spark" viewBox="0 0 90 34" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="oklch(0.60 0.15 25)" stop-opacity="0.22"/>
+                <stop offset="100%" stop-color="oklch(0.60 0.15 25)" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <path d="M0 8 L10 10 L20 6 L30 12 L40 9 L50 14 L60 11 L70 18 L80 26 L90 30 L90 34 L0 34 Z" fill="url(#g1)"/>
+            <path d="M0 8 L10 10 L20 6 L30 12 L40 9 L50 14 L60 11 L70 18 L80 26 L90 30" fill="none" stroke="oklch(0.60 0.15 25)" stroke-width="1.5"/>
+          </svg>
+        </div>
+
+        <div class="kpi">
+          <div class="kpi-head">
+            <div class="kpi-label">
+              <span class="ico">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+              </span>
+              Compras del mes
+            </div>
+            <span class="delta pos">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+              92.3%
+            </span>
+          </div>
+          <div class="kpi-value tabular"><span class="cur">$</span>190.746.909</div>
+          <div class="kpi-foot">
+            <span class="label">vs mes anterior</span>
+            <span>$ 2.474.707.731</span>
+          </div>
+          <svg class="kpi-spark" viewBox="0 0 90 34" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="oklch(0.62 0.13 160)" stop-opacity="0.22"/>
+                <stop offset="100%" stop-color="oklch(0.62 0.13 160)" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <path d="M0 26 L10 24 L20 22 L30 18 L40 20 L50 14 L60 15 L70 9 L80 7 L90 4 L90 34 L0 34 Z" fill="url(#g2)"/>
+            <path d="M0 26 L10 24 L20 22 L30 18 L40 20 L50 14 L60 15 L70 9 L80 7 L90 4" fill="none" stroke="oklch(0.62 0.13 160)" stroke-width="1.5"/>
+          </svg>
+        </div>
+
+        <div class="kpi">
+          <div class="kpi-head">
+            <div class="kpi-label">
+              <span class="ico">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+              </span>
+              Resultado bruto
+            </div>
+            <span class="delta pos">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+              12.4%
+            </span>
+          </div>
+          <div class="kpi-value tabular"><span class="cur">$</span>169.183.051</div>
+          <div class="kpi-foot">
+            <span class="label">margen</span>
+            <span>47.0%</span>
+          </div>
+          <svg class="kpi-spark" viewBox="0 0 90 34" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="g3" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="var(--navy-700)" stop-opacity="0.22"/>
+                <stop offset="100%" stop-color="var(--navy-700)" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <path d="M0 20 L10 18 L20 22 L30 14 L40 16 L50 10 L60 12 L70 8 L80 11 L90 6 L90 34 L0 34 Z" fill="url(#g3)"/>
+            <path d="M0 20 L10 18 L20 22 L30 14 L40 16 L50 10 L60 12 L70 8 L80 11 L90 6" fill="none" stroke="var(--navy-700)" stroke-width="1.5"/>
+          </svg>
+        </div>
+
+        <div class="kpi">
+          <div class="kpi-head">
+            <div class="kpi-label">
+              <span class="ico">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M9 9h6v6H9z"/></svg>
+              </span>
+              IVA a pagar
+            </div>
+            <span class="delta warn">vence 20 may</span>
+          </div>
+          <div class="kpi-value tabular"><span class="cur">$</span>32.272.144</div>
+          <div class="kpi-foot">
+            <span class="label">débito − crédito fiscal</span>
+          </div>
+          <svg class="kpi-spark" viewBox="0 0 90 34" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="g4" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="oklch(0.72 0.13 75)" stop-opacity="0.25"/>
+                <stop offset="100%" stop-color="oklch(0.72 0.13 75)" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <path d="M0 18 L10 20 L20 16 L30 22 L40 14 L50 18 L60 12 L70 16 L80 10 L90 12 L90 34 L0 34 Z" fill="url(#g4)"/>
+            <path d="M0 18 L10 20 L20 16 L30 22 L40 14 L50 18 L60 12 L70 16 L80 10 L90 12" fill="none" stroke="oklch(0.72 0.13 75)" stroke-width="1.5"/>
+          </svg>
+        </div>
+
+      </section>
+
+      <!-- Mini KPI row -->
+      <section class="mini-kpis">
+        <div class="mini-kpi">
+          <div class="mini-kpi-head">
+            <span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+              Clientes activos
+            </span>
+            <span style="color: oklch(0.45 0.13 160); font-weight:600;">+4</span>
+          </div>
+          <div class="mini-kpi-val">57 <span class="trend">/ 62 total</span></div>
+          <div class="progress info"><span style="width:92%"></span></div>
+          <div class="mini-kpi-foot"><span>5 inactivos</span><span>92% activos</span></div>
+        </div>
+
+        <div class="mini-kpi">
+          <div class="mini-kpi-head">
+            <span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+              Facturas del mes
+            </span>
+            <span style="color: oklch(0.45 0.13 160); font-weight:600;">+12%</span>
+          </div>
+          <div class="mini-kpi-val">699 <span class="trend">emitidas</span></div>
+          <div class="progress pos"><span style="width:78%"></span></div>
+          <div class="mini-kpi-foot"><span>546 cobradas</span><span>78%</span></div>
+        </div>
+
+        <div class="mini-kpi">
+          <div class="mini-kpi-head">
+            <span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+              Notif. pendientes
+            </span>
+            <span style="color: oklch(0.50 0.13 75); font-weight:600;">12 urgentes</span>
+          </div>
+          <div class="mini-kpi-val">290 <span class="trend">tareas abiertas</span></div>
+          <div class="progress warn"><span style="width:36%"></span></div>
+          <div class="mini-kpi-foot"><span>105 resueltas hoy</span><span>36%</span></div>
+        </div>
+
+        <div class="mini-kpi">
+          <div class="mini-kpi-head">
+            <span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              Deudas vencidas
+            </span>
+          </div>
+          <div class="mini-kpi-val">5 <span class="trend">clientes</span></div>
+          <div class="progress neg"><span style="width:8%"></span></div>
+          <div class="mini-kpi-foot"><span>Total: $ 8.848</span><span class="alert">+6 días promedio</span></div>
+        </div>
+      </section>
+
+      <!-- ============ Evolución mensual + cashflow ============ -->
+      <section class="grid-main">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-7"/></svg>
+                Evolución mensual
+              </div>
+              <div class="card-sub">Ventas vs Compras · últimos 6 meses</div>
+            </div>
+            <div class="card-head-actions">
+              <div class="tab-bar">
+                <button class="on">Mensual</button>
+                <button>Trimestral</button>
+                <button>Anual</button>
+              </div>
+              <button class="icon-btn" title="Opciones">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="chart-legend">
+            <span><span class="sw" style="background: var(--navy-700)"></span> Ventas</span>
+            <span><span class="sw" style="background: var(--chart-2)"></span> Compras</span>
+            <span><span class="sw" style="background: var(--chart-3); border-radius: 50%; width:8px; height:8px;"></span> Margen</span>
+          </div>
+
+          <div class="chart-wrap">
+            <svg viewBox="0 0 820 300" preserveAspectRatio="none" width="100%" height="100%" style="display:block;">
+              <!-- gridlines -->
+              <g stroke="#ECEAE3" stroke-dasharray="3,4">
+                <line x1="50" y1="40"  x2="800" y2="40"/>
+                <line x1="50" y1="100" x2="800" y2="100"/>
+                <line x1="50" y1="160" x2="800" y2="160"/>
+                <line x1="50" y1="220" x2="800" y2="220"/>
+                <line x1="50" y1="280" x2="800" y2="280"/>
+              </g>
+              <!-- y labels -->
+              <g fill="#9B9CA3" font-family="Inter, sans-serif" font-size="10" text-anchor="end">
+                <text x="42" y="44">6.0K M</text>
+                <text x="42" y="104">4.5K M</text>
+                <text x="42" y="164">3.0K M</text>
+                <text x="42" y="224">1.5K M</text>
+                <text x="42" y="284">0</text>
+              </g>
+
+              <!-- Bars: 6 months, each month has ventas + compras bars -->
+              <g>
+                <!-- nov 25 -->
+                <rect x="90"  y="90"  width="36" height="190" rx="5" fill="#1E3460"/>
+                <rect x="130" y="130" width="36" height="150" rx="5" fill="#7AA2C8"/>
+
+                <!-- dic 25 -->
+                <rect x="210" y="70"  width="36" height="210" rx="5" fill="#1E3460"/>
+                <rect x="250" y="126" width="36" height="154" rx="5" fill="#7AA2C8"/>
+
+                <!-- ene 26 -->
+                <rect x="330" y="98"  width="36" height="182" rx="5" fill="#1E3460"/>
+                <rect x="370" y="142" width="36" height="138" rx="5" fill="#7AA2C8"/>
+
+                <!-- feb 26 -->
+                <rect x="450" y="82"  width="36" height="198" rx="5" fill="#1E3460"/>
+                <rect x="490" y="134" width="36" height="146" rx="5" fill="#7AA2C8"/>
+
+                <!-- mar 26 -->
+                <rect x="570" y="92"  width="36" height="188" rx="5" fill="#1E3460"/>
+                <rect x="610" y="152" width="36" height="128" rx="5" fill="#7AA2C8"/>
+
+                <!-- abr 26 (active/current) -->
+                <rect x="690" y="210" width="36" height="70" rx="5" fill="#1E3460" fill-opacity="0.65"/>
+                <rect x="730" y="232" width="36" height="48" rx="5" fill="#7AA2C8" fill-opacity="0.65"/>
+                <!-- marker for current -->
+                <rect x="688" y="35" width="80" height="22" rx="6" fill="#12131A"/>
+                <text x="728" y="50" fill="#fff" font-family="Inter, sans-serif" font-size="11" font-weight="600" text-anchor="middle">En curso</text>
+              </g>
+
+              <!-- Margin line -->
+              <path d="M128 140 L248 120 L368 148 L488 130 L608 136 L728 226"
+                    fill="none"
+                    stroke="#C2A878"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-dasharray="4 4"/>
+              <g fill="#C2A878">
+                <circle cx="128" cy="140" r="3.5"/>
+                <circle cx="248" cy="120" r="3.5"/>
+                <circle cx="368" cy="148" r="3.5"/>
+                <circle cx="488" cy="130" r="3.5"/>
+                <circle cx="608" cy="136" r="3.5"/>
+                <circle cx="728" cy="226" r="3.5" fill="#fff" stroke="#C2A878" stroke-width="2"/>
+              </g>
+
+              <!-- x labels -->
+              <g fill="#6E7079" font-family="Inter, sans-serif" font-size="11" text-anchor="middle">
+                <text x="128" y="300">nov 25</text>
+                <text x="248" y="300">dic 25</text>
+                <text x="368" y="300">ene 26</text>
+                <text x="488" y="300">feb 26</text>
+                <text x="608" y="300">mar 26</text>
+                <text x="728" y="300" font-weight="600" fill="#12131A">abr 26</text>
+              </g>
+            </svg>
+          </div>
+
+          <div class="card-foot">
+            <span>Promedio mensual: <b style="color:var(--ink); font-variant-numeric: tabular-nums;">$ 3.814.521.304</b></span>
+            <a href="#">Ver reporte completo →</a>
+          </div>
+        </div>
+
+        <!-- Cashflow side card -->
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><line x1="6" y1="12" x2="6.01" y2="12"/><line x1="18" y1="12" x2="18.01" y2="12"/></svg>
+                Flujo de caja
+              </div>
+              <div class="card-sub">Distribución mes en curso</div>
+            </div>
+            <span class="chip"><span class="swatch" style="background: oklch(0.62 0.13 160)"></span>En regla</span>
+          </div>
+
+          <div class="cash-summary">
+            <div>
+              <div class="cash-val tabular"><span class="cur">$</span>169.183.051</div>
+              <div style="font-size:12px; color: var(--ink-3); margin-top: 2px;">Saldo neto del periodo</div>
+            </div>
+
+            <div class="cash-bar" title="Distribución">
+              <div style="flex: 56; background: var(--navy-700);"></div>
+              <div style="flex: 22; background: var(--chart-3);"></div>
+              <div style="flex: 14; background: var(--chart-4);"></div>
+              <div style="flex: 8;  background: oklch(0.60 0.15 25);"></div>
+            </div>
+
+            <div class="cash-list">
+              <div class="cash-row">
+                <span class="lbl"><span class="swatch-sq" style="background: var(--navy-700)"></span>Operaciones</span>
+                <span class="val">$ 94.742.508</span>
+                <span class="sub">56% · 412 transacciones</span>
+              </div>
+              <div class="cash-row">
+                <span class="lbl"><span class="swatch-sq" style="background: var(--chart-3)"></span>Impuestos</span>
+                <span class="val">$ 37.220.271</span>
+                <span class="sub">22% · IVA + Ganancias</span>
+              </div>
+              <div class="cash-row">
+                <span class="lbl"><span class="swatch-sq" style="background: var(--chart-4)"></span>Sueldos</span>
+                <span class="val">$ 23.685.627</span>
+                <span class="sub">14% · 38 empleados</span>
+              </div>
+              <div class="cash-row">
+                <span class="lbl"><span class="swatch-sq" style="background: oklch(0.60 0.15 25)"></span>Otros gastos</span>
+                <span class="val">$ 13.534.645</span>
+                <span class="sub">8% · servicios e insumos</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card-foot">
+            <span>Actualizado hace 4 min</span>
+            <a href="#">Ver flujo completo →</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ Clientes destacados + actividad ============ -->
+      <section class="grid-bot">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+                Clientes con movimiento
+              </div>
+              <div class="card-sub">Facturación del mes · top por volumen</div>
+            </div>
+            <div class="card-head-actions">
+              <button class="btn" style="padding: 6px 10px; font-size:12px;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+                Filtrar
+              </button>
+            </div>
+          </div>
+
+          <table class="t">
+            <thead>
+              <tr>
+                <th>Cliente</th>
+                <th>Estado</th>
+                <th>Últ. actividad</th>
+                <th style="text-align:right;">Facturado</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="hoverable">
+                <td>
+                  <div class="client-cell">
+                    <div class="client-avatar" style="background:#1E3460">MA</div>
+                    <div>
+                      <div class="client-name">Maderera Austral S.R.L.</div>
+                      <div class="client-sub">CUIT 30-71045821-6</div>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="status-tag ok"><span class="dot"></span>Al día</span></td>
+                <td>hace 2 h</td>
+                <td class="num">$ 48.927.430</td>
+              </tr>
+              <tr class="hoverable">
+                <td>
+                  <div class="client-cell">
+                    <div class="client-avatar" style="background:#8FB39F">PG</div>
+                    <div>
+                      <div class="client-name">Panadería Güemes</div>
+                      <div class="client-sub">CUIT 27-38441209-2</div>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="status-tag pend"><span class="dot"></span>Pendiente</span></td>
+                <td>hoy, 11:30</td>
+                <td class="num">$ 32.108.220</td>
+              </tr>
+              <tr class="hoverable">
+                <td>
+                  <div class="client-cell">
+                    <div class="client-avatar" style="background:#C2A878">LV</div>
+                    <div>
+                      <div class="client-name">Logística del Valle</div>
+                      <div class="client-sub">CUIT 30-69847011-5</div>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="status-tag late"><span class="dot"></span>Vencido +8d</span></td>
+                <td>ayer</td>
+                <td class="num">$ 27.540.000</td>
+              </tr>
+              <tr class="hoverable">
+                <td>
+                  <div class="client-cell">
+                    <div class="client-avatar" style="background:#2A4680">EM</div>
+                    <div>
+                      <div class="client-name">Estudio Médico Norte</div>
+                      <div class="client-sub">CUIT 30-71229404-1</div>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="status-tag ok"><span class="dot"></span>Al día</span></td>
+                <td>hace 1 d</td>
+                <td class="num">$ 19.480.112</td>
+              </tr>
+              <tr class="hoverable">
+                <td>
+                  <div class="client-cell">
+                    <div class="client-avatar" style="background:#7AA2C8">TS</div>
+                    <div>
+                      <div class="client-name">Textiles Sur S.A.</div>
+                      <div class="client-sub">CUIT 33-70814502-9</div>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="status-tag pend"><span class="dot"></span>Pendiente</span></td>
+                <td>hace 3 d</td>
+                <td class="num">$ 14.220.900</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="card-foot">
+            <span>Mostrando 5 de 57 clientes</span>
+            <a href="#">Ver todos →</a>
+          </div>
+        </div>
+
+        <!-- Vencimientos próximos -->
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                Vencimientos próximos
+              </div>
+              <div class="card-sub">Obligaciones fiscales e internas</div>
+            </div>
+            <span class="chip" style="background: var(--accent-neg-bg); color: oklch(0.45 0.15 25); border-color: transparent;">3 urgentes</span>
+          </div>
+
+          <div class="due-list">
+            <div class="due-item">
+              <div class="due-date urgent">
+                <div class="d">22</div>
+                <span class="m">abr</span>
+              </div>
+              <div>
+                <div class="due-title">IVA — DDJJ mensual</div>
+                <div class="due-sub">Formulario F.2002 · AFIP</div>
+              </div>
+              <div class="due-amt">$ 32.272.144</div>
+            </div>
+            <div class="due-item">
+              <div class="due-date urgent">
+                <div class="d">24</div>
+                <span class="m">abr</span>
+              </div>
+              <div>
+                <div class="due-title">Aportes autónomos</div>
+                <div class="due-sub">Categoría B · 12 clientes</div>
+              </div>
+              <div class="due-amt">$ 1.284.600</div>
+            </div>
+            <div class="due-item">
+              <div class="due-date">
+                <div class="d">28</div>
+                <span class="m">abr</span>
+              </div>
+              <div>
+                <div class="due-title">Ingresos Brutos CABA</div>
+                <div class="due-sub">Anticipo mensual · 9 clientes</div>
+              </div>
+              <div class="due-amt">$ 8.490.220</div>
+            </div>
+            <div class="due-item">
+              <div class="due-date">
+                <div class="d">05</div>
+                <span class="m">may</span>
+              </div>
+              <div>
+                <div class="due-title">Sueldos abril</div>
+                <div class="due-sub">38 empleados · liquidación</div>
+              </div>
+              <div class="due-amt">$ 23.685.627</div>
+            </div>
+            <div class="due-item">
+              <div class="due-date">
+                <div class="d">11</div>
+                <span class="m">may</span>
+              </div>
+              <div>
+                <div class="due-title">Ganancias — 1.º anticipo</div>
+                <div class="due-sub">SP. Bienes personales</div>
+              </div>
+              <div class="due-amt">$ 4.112.080</div>
+            </div>
+          </div>
+
+          <div class="card-foot">
+            <span>Próximos 30 días</span>
+            <a href="#">Ver calendario →</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ Actividad reciente ============ -->
+      <section style="margin-top: 14px;">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                Actividad reciente
+              </div>
+              <div class="card-sub">Últimos movimientos en tu estudio</div>
+            </div>
+            <div class="card-head-actions">
+              <div class="tab-bar">
+                <button class="on">Todo</button>
+                <button>Facturas</button>
+                <button>Sueldos</button>
+                <button>Tareas</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="feed">
+            <div class="feed-item">
+              <div class="feed-ico" style="background: var(--accent-pos-bg); border-color:transparent; color: oklch(0.45 0.13 160);">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              </div>
+              <div class="feed-body">
+                <div class="feed-title"><b>Maderera Austral S.R.L.</b> confirmó el pago de 3 facturas</div>
+                <div class="feed-sub"><span class="mono">FC A 0004-00012847</span> · $ 4.827.950</div>
+              </div>
+              <div class="feed-time">hace 12 min</div>
+            </div>
+
+            <div class="feed-item">
+              <div class="feed-ico" style="background: var(--accent-info-bg); border-color:transparent; color: oklch(0.45 0.12 240);">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              </div>
+              <div class="feed-body">
+                <div class="feed-title">Se emitieron <b>24 facturas</b> desde el módulo de Clientes</div>
+                <div class="feed-sub">Por <span class="mono">camila.b@blakg.com</span> · lote #L-0412</div>
+              </div>
+              <div class="feed-time">hace 1 h</div>
+            </div>
+
+            <div class="feed-item">
+              <div class="feed-ico" style="background: var(--accent-warn-bg); border-color:transparent; color: oklch(0.50 0.13 75);">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              </div>
+              <div class="feed-body">
+                <div class="feed-title"><b>Logística del Valle</b> supera los 8 días de mora en 2 facturas</div>
+                <div class="feed-sub">Deuda acumulada: $ 8.848 · se envió recordatorio automático</div>
+              </div>
+              <div class="feed-time">hace 3 h</div>
+            </div>
+
+            <div class="feed-item">
+              <div class="feed-ico">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              </div>
+              <div class="feed-body">
+                <div class="feed-title"><b>Nicolás G.</b> dejó un comentario en el Job “Cierre trimestral Q1”</div>
+                <div class="feed-sub">“Subí los papeles del banco, falta conciliar marzo.”</div>
+              </div>
+              <div class="feed-time">ayer, 18:42</div>
+            </div>
+
+            <div class="feed-item">
+              <div class="feed-ico">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              </div>
+              <div class="feed-body">
+                <div class="feed-title">Importación AFIP completada · <b>186 comprobantes</b> sincronizados</div>
+                <div class="feed-sub">Periodo marzo 2026 · sin diferencias</div>
+              </div>
+              <div class="feed-time">ayer, 09:10</div>
+            </div>
+          </div>
+          <div class="card-foot">
+            <span>22 eventos hoy</span>
+            <a href="#">Ver registro completo →</a>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+</body>
+</html>

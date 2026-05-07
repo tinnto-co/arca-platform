@@ -28,7 +28,8 @@ export async function sendOrganizationInvitationEmail(
   const base =
     process.env.BETTER_AUTH_URL ||
     process.env.PUBLIC_APP_URL ||
-    'http://localhost:3000';
+    // 'http://localhost:3000'; // rollback: cambiar a 3000
+    'http://localhost:3001';
   const inviteLink = `${base.replace(/\/$/, '')}/invite/${data.id}`;
 
   const apiKey = process.env.RESEND_API_KEY;

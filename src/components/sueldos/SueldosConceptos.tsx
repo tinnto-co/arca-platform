@@ -37,7 +37,7 @@ function ConceptoDialog({ row }: { row: ConceptoRow }) {
   const meta = {
     baseColumna: row.baseColumna,
     divCantidad: row.divCantidad,
-    divHsNorm: row.divHsNorm != null ? row.divHsNorm > 0 : null,
+    divHsNorm: row.divHsNorm != null ? (row.divHsNorm ? 1 : 0) : null,
     tieneCantidad: row.tieneCantidad,
     tienePct: row.tienePct,
     tieneImporte: row.tieneImporte,

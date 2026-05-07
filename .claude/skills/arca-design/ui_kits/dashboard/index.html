@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<title>Arca Dashboard — UI Kit</title>
+<link rel="stylesheet" href="../../colors_and_type.css"/>
+<style>
+  html, body { margin:0; padding:0; background: var(--bg); color: var(--ink); font-family: var(--ff-sans); }
+  *, *::before, *::after { box-sizing: border-box; }
+  button { font-family: inherit; }
+  ::selection { background: oklch(90% 0.06 250); color: var(--ink); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="data.js"></script>
+<script type="text/babel" src="Primitives.jsx"></script>
+<script type="text/babel" src="Shell.jsx"></script>
+<script type="text/babel" src="KPIs.jsx"></script>
+<script type="text/babel" src="Chart.jsx"></script>
+<script type="text/babel" src="Tables.jsx"></script>
+
+<script type="text/babel">
+function Dashboard() {
+  const [period, setPeriod] = React.useState('30d');
+
+  // Sparkline paths for KPI cards (viewBox 90x34)
+  const spark = {
+    // gentle up
+    up:   { path: 'M0 26 L12 22 L24 24 L36 18 L48 14 L60 16 L72 10 L84 6', area: 'M0 26 L12 22 L24 24 L36 18 L48 14 L60 16 L72 10 L84 6 L84 34 L0 34 Z' },
+    // down
+    down: { path: 'M0 10 L12 12 L24 8 L36 14 L48 18 L60 16 L72 22 L84 26', area: 'M0 10 L12 12 L24 8 L36 14 L48 18 L60 16 L72 22 L84 26 L84 34 L0 34 Z' },
+    // flat-ish wavy
+    flat: { path: 'M0 18 L12 14 L24 20 L36 16 L48 20 L60 14 L72 18 L84 12', area: 'M0 18 L12 14 L24 20 L36 16 L48 20 L60 14 L72 18 L84 12 L84 34 L0 34 Z' },
+  };
+
+  return (
+    <AppShell>
+      <Topbar period={period} setPeriod={setPeriod}/>
+      <div style={{ padding:'24px 28px 40px', display:'flex', flexDirection:'column', gap:18 }}>
+
+        {/* Row 1: headline KPIs */}
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:14 }}>
+          <KpiCard primary
+            title="Facturación abr"
+            value="$ 24.8M"
+            delta="+12,3 %" deltaKind="pos"
+            sub="vs marzo · 187 comprobantes"
+            sparkColor="#E8E4D6" sparkPath={spark.up.path} sparkArea={spark.up.area} gradId="sp-primary"/>
+          <KpiCard
+            title="Presentaciones"
+            value="184"
+            delta="+8" deltaKind="pos"
+            sub="42 pendientes · 12 esta semana"
+            sparkColor="var(--chart-1)" sparkPath={spark.up.path} sparkArea={spark.up.area} gradId="sp-1"/>
+          <KpiCard
+            title="Clientes activos"
+            value="47"
+            delta="+3" deltaKind="pos"
+            sub="de 52 totales · 5 nuevos este mes"
+            sparkColor="var(--chart-2)" sparkPath={spark.flat.path} sparkArea={spark.flat.area} gradId="sp-2"/>
+          <KpiCard
+            title="Vencimientos"
+            value="12"
+            delta="−2" deltaKind="pos"
+            sub="próximos 14 días · 2 urgentes"
+            sparkColor="var(--chart-3)" sparkPath={spark.down.path} sparkArea={spark.down.area} gradId="sp-3"/>
+        </div>
+
+        {/* Row 2: mini KPIs */}
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:14 }}>
+          <MiniKpi title="IVA a ingresar (abr)" value="$ 4.2M"   delta="+18,4 %" deltaKind="pos"  progressKind="info" progressPct={68}/>
+          <MiniKpi title="Retenciones pendientes" value="$ 1.08M" delta="−5,2 %"  deltaKind="pos"  progressKind="warn" progressPct={42}/>
+          <MiniKpi title="Cuentas por cobrar"   value="$ 8.64M"   delta="+4 facturas" deltaKind="warn" progressKind="neg"  progressPct={82}/>
+        </div>
+
+        {/* Row 3: chart + cashflow */}
+        <div style={{ display:'grid', gridTemplateColumns:'minmax(0, 1.8fr) minmax(0, 1fr)', gap:14 }}>
+          <EvolucionChart/>
+          <FlujoCajaCard/>
+        </div>
+
+        {/* Row 4: vencimientos + clientes */}
+        <div style={{ display:'grid', gridTemplateColumns:'minmax(0, 1fr) minmax(0, 1.2fr)', gap:14 }}>
+          <VencimientosList/>
+          <ClientesTable/>
+        </div>
+
+        {/* Row 5: actividad */}
+        <ActividadFeed/>
+
+      </div>
+    </AppShell>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<Dashboard/>);
+</script>
+</body>
+</html>

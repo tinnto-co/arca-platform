@@ -4,11 +4,17 @@ import {
   setActiveOrganization,
 } from '@/actions/user';
 import { AppSidebar } from '@/components/app-sidebar';
+import { AgentInput } from '@/components/agent/AgentInput';
 import { MobileNavbar } from '@/components/mobile-navbar';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { OrgSwitchProvider } from '@/contexts/org-switch-context';
-import { createFileRoute, Outlet, redirect } from '@tanstack/react-router';
-import { Suspense } from 'react';
+import {
+  createFileRoute,
+  Outlet,
+  redirect,
+  useRouterState,
+} from '@tanstack/react-router';
+import { cn } from '@/lib/utils';
 
 export const Route = createFileRoute('/_authed')({
   component: RouteComponent,
@@ -32,24 +38,29 @@ export const Route = createFileRoute('/_authed')({
 });
 
 function RouteComponent() {
-  //   const { sidebarOpen } = Route.useLoaderData();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const isChatDetail = pathname.startsWith('/chat/');
+  const hideAgentInput = isChatDetail || pathname === '/chat';
+
   return (
     <OrgSwitchProvider>
-      <div className="grid h-svh grid-rows-[auto_1fr]">
-        <SidebarProvider defaultOpen={true}>
-          <Suspense fallback={<div>Loading...</div>}>
-            <AppSidebar />
-          </Suspense>
-          <SidebarInset>
-            <div className="min-h-[100svh] bg-[#efeeef]">
-              <div className="w-full max-w-full min-w-0 pb-20 md:pb-0 overflow-x-hidden">
-                <Outlet />
-              </div>
-            </div>
-          </SidebarInset>
-          <MobileNavbar />
-        </SidebarProvider>
-      </div>
+      <SidebarProvider defaultOpen={true} className="h-svh">
+        <AppSidebar />
+        <SidebarInset className="min-h-0 overflow-y-auto">
+          <div
+            className={cn(
+              'min-w-0',
+              isChatDetail
+                ? 'h-full overflow-hidden'
+                : 'bg-[var(--arca-bg)] pb-20 md:pb-0 min-h-full'
+            )}
+          >
+            <Outlet />
+            {!hideAgentInput && <AgentInput />}
+          </div>
+        </SidebarInset>
+        <MobileNavbar />
+      </SidebarProvider>
     </OrgSwitchProvider>
   );
 }

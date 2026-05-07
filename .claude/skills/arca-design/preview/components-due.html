@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><link rel="stylesheet" href="_base.css">
+<style>
+  body { padding: 22px; }
+  .row { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-start; }
+  .lbl { font-family: var(--ff-mono); font-size: 10.5px; color: var(--ink-3); width: 100%; }
+
+  .due { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); padding: 10px 14px; display:grid; grid-template-columns: 46px 1fr auto; gap: 12px; align-items: center; width: 340px; }
+  .d { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 4px 0; text-align: center; font-family: var(--ff-display); }
+  .d.urgent { background: var(--accent-neg-bg); border-color: transparent; }
+  .d.urgent .dd, .d.urgent .mm { color: var(--accent-neg-fg); }
+  .dd { font-size: 16px; font-weight: 700; line-height: 1; letter-spacing: -0.02em; color: var(--ink); }
+  .mm { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-3); font-weight: 600; margin-top: 2px; display:block; }
+  .t { font-size: 13px; font-weight: 500; color: var(--ink); }
+  .s { font-size: 11.5px; color: var(--ink-3); }
+  .a { font-size: 12px; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink); }
+</style>
+</head><body>
+  <span class="lbl">vencimiento — standard & urgent</span>
+  <div class="row">
+    <div class="due">
+      <div class="d urgent"><div class="dd">22</div><span class="mm">abr</span></div>
+      <div><div class="t">IVA — DDJJ mensual</div><div class="s">Formulario F.2002 · AFIP</div></div>
+      <div class="a">$ 32.272.144</div>
+    </div>
+    <div class="due">
+      <div class="d"><div class="dd">05</div><span class="mm">may</span></div>
+      <div><div class="t">Sueldos abril</div><div class="s">38 empleados · liquidación</div></div>
+      <div class="a">$ 23.685.627</div>
+    </div>
+  </div>
+</body></html>

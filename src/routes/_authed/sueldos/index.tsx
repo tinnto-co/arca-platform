@@ -2,7 +2,6 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  DollarSign,
   LayoutDashboard,
   Users,
   Building2,
@@ -13,14 +12,8 @@ import {
   PenLine,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import { SueldosDashboard } from '@/components/sueldos/SueldosDashboard';
 import { SueldosEmpleados } from '@/components/sueldos/SueldosEmpleados';
 import { SueldosConvenios } from '@/components/sueldos/SueldosConvenios';
@@ -29,10 +22,18 @@ import { SueldosSimulador } from '@/components/sueldos/SueldosSimulador';
 import { SueldosRecibo } from '@/components/sueldos/SueldosRecibo';
 import { SueldosFirmaDigital } from '@/components/sueldos/SueldosFirmaDigital';
 import { getClientsForSueldos } from '@/actions/client';
+import { cn } from '@/lib/utils';
 
 export const Route = createFileRoute('/_authed/sueldos/')({
   component: RouteComponent,
 });
+
+const tabTriggerCls = () =>
+  cn(
+    'relative h-auto flex-none px-[14px] py-[10px] text-[13px] font-medium rounded-[8px_8px_0_0] border whitespace-nowrap gap-[7px] cursor-pointer',
+    'border-transparent text-[var(--arca-ink-3)] hover:bg-transparent hover:text-[var(--arca-ink)]',
+    'data-[state=active]:bg-[var(--arca-surface)] data-[state=active]:border-[var(--arca-border)] data-[state=active]:[border-bottom-color:var(--arca-bg)] data-[state=active]:text-[var(--arca-ink)] data-[state=active]:font-semibold data-[state=active]:shadow-none data-[state=active]:top-px'
+  );
 
 function RouteComponent() {
   const [selectedOptionId, setSelectedOptionId] = useState<string>('');
@@ -63,98 +64,119 @@ function RouteComponent() {
     }
   }, [clients, selectedOptionId]);
 
+  const clientOptions = clients.map((c) => ({
+    value: c.id,
+    label: c.label,
+  }));
+
   return (
-    <div className="space-y-4 overflow-x-hidden p-4 md:space-y-6 md:px-[3rem] md:pt-[3rem] md:pb-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <DollarSign className="h-6 w-6 text-[#139ed9]" />
-          <h1 className="text-2xl font-bold text-[#232c50]">
-            Liquidación de sueldos
-          </h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <UserCircle className="h-5 w-5 text-muted-foreground" />
-          <span className="text-sm font-medium text-muted-foreground">
-            Cliente:
-          </span>
-          <Select value={selectedOptionId} onValueChange={setSelectedOptionId}>
-            <SelectTrigger className="w-[280px]">
-              <SelectValue placeholder="Seleccione un cliente" />
-            </SelectTrigger>
-            <SelectContent>
-              {clients.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+    <div className="space-y-0 overflow-x-hidden">
+      {/* Header */}
+      <div className="px-4 md:px-[3rem] pt-4 md:pt-[3rem] pb-0">
+        <PageHeader
+          title="Liquidación de sueldos"
+          subtitle="Gestión de convenios, empleados, conceptos y liquidaciones"
+          actions={
+            <SearchableSelect
+              options={clientOptions}
+              value={selectedOptionId}
+              onValueChange={setSelectedOptionId}
+              placeholder="Seleccione un cliente"
+              searchPlaceholder="Buscar cliente..."
+              emptyMessage="Sin clientes con sueldos habilitados"
+              width={320}
+            />
+          }
+        />
       </div>
 
       {!clientId ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-            <UserCircle className="h-16 w-16 text-muted-foreground mb-4" />
-            <h2 className="text-lg font-semibold mb-2">
+        <div className="px-4 md:px-[3rem] pt-6">
+          <div
+            className="flex flex-col items-center justify-center py-16 text-center rounded-[var(--arca-r-lg)]"
+            style={{
+              background: 'var(--arca-surface)',
+              border: '1px solid var(--arca-border)',
+            }}
+          >
+            <div
+              className="w-14 h-14 rounded-[12px] flex items-center justify-center mb-4"
+              style={{
+                background: 'var(--arca-surface-2)',
+                border: '1px solid var(--arca-border)',
+              }}
+            >
+              <UserCircle
+                className="h-7 w-7 text-[var(--arca-ink-3)]"
+                strokeWidth={1.5}
+              />
+            </div>
+            <h2 className="font-display text-[17px] font-semibold text-[var(--arca-ink)] mb-1.5">
               Seleccione un cliente
             </h2>
-            <p className="text-muted-foreground max-w-md">
+            <p className="text-[13px] text-[var(--arca-ink-3)] max-w-md leading-relaxed">
               Elija un cliente en el selector superior para gestionar convenios,
-              empleados, conceptos y liquidaciones de sueldos de ese cliente.
+              empleados, conceptos y liquidaciones de sueldos.
             </p>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       ) : (
         <Tabs
           value={activeTab}
           onValueChange={setActiveTab}
-          className="w-full min-w-0 max-w-full"
+          className="flex flex-col"
         >
-          <TabsList className="flex flex-wrap h-auto gap-1 bg-muted/50 p-1">
-            <TabsTrigger value="dashboard" className="gap-2">
-              <LayoutDashboard className="h-4 w-4" />
-              Dashboard
-            </TabsTrigger>
-            <TabsTrigger value="empleados" className="gap-2">
-              <Users className="h-4 w-4" />
-              Empleados
-            </TabsTrigger>
-            <TabsTrigger value="convenios" className="gap-2">
-              <Building2 className="h-4 w-4" />
-              Convenios
-            </TabsTrigger>
-            <TabsTrigger value="conceptos" className="gap-2">
-              <Calculator className="h-4 w-4" />
-              Conceptos
-            </TabsTrigger>
-            <TabsTrigger value="simulador" className="gap-2">
-              <Sliders className="h-4 w-4" />
-              Nuevo recibo
-            </TabsTrigger>
-            <TabsTrigger value="recibo" className="gap-2">
-              <FileText className="h-4 w-4" />
-              Recibo
-            </TabsTrigger>
-            <TabsTrigger value="firma-digital" className="gap-2">
-              <PenLine className="h-4 w-4" />
-              Firma Digital
-            </TabsTrigger>
-          </TabsList>
-          <div className="mt-4 min-w-0 max-w-full">
-            <TabsContent value="dashboard">
+          {/* Tab bar — sticky under the header */}
+          <div className="sticky top-0 z-10 bg-[var(--arca-bg)] border-b border-[var(--arca-border)]">
+            <div className="px-4 md:px-[3rem]">
+              <TabsList className="flex h-auto w-full bg-transparent p-0 rounded-none gap-0 overflow-x-auto justify-start">
+                <TabsTrigger value="dashboard" className={tabTriggerCls()}>
+                  <LayoutDashboard className="h-[14px] w-[14px]" />
+                  Dashboard
+                </TabsTrigger>
+                <TabsTrigger value="empleados" className={tabTriggerCls()}>
+                  <Users className="h-[14px] w-[14px]" />
+                  Empleados
+                </TabsTrigger>
+                <TabsTrigger value="convenios" className={tabTriggerCls()}>
+                  <Building2 className="h-[14px] w-[14px]" />
+                  Convenios
+                </TabsTrigger>
+                <TabsTrigger value="conceptos" className={tabTriggerCls()}>
+                  <Calculator className="h-[14px] w-[14px]" />
+                  Conceptos
+                </TabsTrigger>
+                <TabsTrigger value="simulador" className={tabTriggerCls()}>
+                  <Sliders className="h-[14px] w-[14px]" />
+                  Nuevo recibo
+                </TabsTrigger>
+                <TabsTrigger value="recibo" className={tabTriggerCls()}>
+                  <FileText className="h-[14px] w-[14px]" />
+                  Recibo
+                </TabsTrigger>
+                <TabsTrigger value="firma-digital" className={tabTriggerCls()}>
+                  <PenLine className="h-[14px] w-[14px]" />
+                  Firma Digital
+                </TabsTrigger>
+              </TabsList>
+            </div>
+          </div>
+
+          {/* Content */}
+          <div className="px-4 md:px-[3rem] pt-5 pb-6">
+            <TabsContent value="dashboard" className="mt-0">
               <SueldosDashboard clientId={clientId} profileId={profileId} />
             </TabsContent>
-            <TabsContent value="empleados">
+            <TabsContent value="empleados" className="mt-0">
               <SueldosEmpleados clientId={clientId} profileId={profileId} />
             </TabsContent>
-            <TabsContent value="convenios">
+            <TabsContent value="convenios" className="mt-0">
               <SueldosConvenios clientId={clientId} profileId={profileId} />
             </TabsContent>
-            <TabsContent value="conceptos">
+            <TabsContent value="conceptos" className="mt-0">
               <SueldosConceptos clientId={clientId} profileId={profileId} />
             </TabsContent>
-            <TabsContent value="simulador">
+            <TabsContent value="simulador" className="mt-0">
               <SueldosSimulador
                 clientId={clientId}
                 profileId={profileId}
@@ -162,7 +184,7 @@ function RouteComponent() {
                 initialData={editReciboData}
               />
             </TabsContent>
-            <TabsContent value="recibo">
+            <TabsContent value="recibo" className="mt-0">
               <SueldosRecibo
                 clientId={clientId}
                 profileId={profileId}
@@ -172,7 +194,7 @@ function RouteComponent() {
                 }}
               />
             </TabsContent>
-            <TabsContent value="firma-digital">
+            <TabsContent value="firma-digital" className="mt-0">
               <SueldosFirmaDigital clientId={clientId} profileId={profileId} />
             </TabsContent>
           </div>

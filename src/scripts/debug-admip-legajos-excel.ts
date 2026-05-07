@@ -26,7 +26,10 @@ function main() {
   }
   if (rows[1]) console.log('Segunda fila raw:', rows[1]);
 
-  const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true }) as unknown[][];
+  const aoa = XLSX.utils.sheet_to_json(sheet, {
+    header: 1,
+    raw: true,
+  });
   console.log('Primeras 3 filas como array (header=1):');
   console.log(JSON.stringify(aoa.slice(0, 3), null, 2));
 }

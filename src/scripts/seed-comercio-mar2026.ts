@@ -23,35 +23,140 @@ const PERIODO_LABEL = 'Marzo 2026 (resumen)';
 const VIGENCIA_DESDE = new Date('2026-03-01');
 const VIGENCIA_HASTA = new Date('2026-03-31');
 
-type EscalaRef = {
+interface EscalaRef {
   codigo: string;
   nombre: string;
   basico: number;
   noRemunerativo: number;
-};
+}
 
 const ESCALAS_MARZO_2026: EscalaRef[] = [
-  { codigo: 'MA_A', nombre: 'Maestranza A', basico: 1055795, noRemunerativo: 100000 },
-  { codigo: 'MA_B', nombre: 'Maestranza B', basico: 1058852, noRemunerativo: 100000 },
-  { codigo: 'MA_C', nombre: 'Maestranza C', basico: 1069560, noRemunerativo: 100000 },
-  { codigo: 'ADM_A', nombre: 'Administrativo A', basico: 1067268, noRemunerativo: 100000 },
-  { codigo: 'ADM_B', nombre: 'Administrativo B', basico: 1071860, noRemunerativo: 100000 },
-  { codigo: 'ADM_C', nombre: 'Administrativo C', basico: 1076448, noRemunerativo: 100000 },
-  { codigo: 'ADM_D', nombre: 'Administrativo D', basico: 1090218, noRemunerativo: 100000 },
-  { codigo: 'ADM_E', nombre: 'Administrativo E', basico: 1101690, noRemunerativo: 100000 },
-  { codigo: 'ADM_F', nombre: 'Administrativo F', basico: 1118519, noRemunerativo: 100000 },
-  { codigo: 'CAJ_A', nombre: 'Cajeros A', basico: 1071091, noRemunerativo: 100000 },
-  { codigo: 'CAJ_B', nombre: 'Cajeros B', basico: 1076448, noRemunerativo: 100000 },
-  { codigo: 'CAJ_C', nombre: 'Cajeros C', basico: 1083333, noRemunerativo: 100000 },
-  { codigo: 'AUX_A', nombre: 'Personal Auxiliar A', basico: 1071091, noRemunerativo: 100000 },
-  { codigo: 'AUX_B', nombre: 'Personal Auxiliar B', basico: 1078740, noRemunerativo: 100000 },
-  { codigo: 'AUX_C', nombre: 'Personal Auxiliar C', basico: 1103985, noRemunerativo: 100000 },
-  { codigo: 'AUESP_A', nombre: 'Auxiliar Especializado A', basico: 1080274, noRemunerativo: 100000 },
-  { codigo: 'AUESP_B', nombre: 'Auxiliar Especializado B', basico: 1094041, noRemunerativo: 100000 },
-  { codigo: 'VEN_A', nombre: 'Vendedores A', basico: 1071091, noRemunerativo: 100000 },
-  { codigo: 'VEN_B', nombre: 'Vendedores B', basico: 1094044, noRemunerativo: 100000 },
-  { codigo: 'VEN_C', nombre: 'Vendedores C', basico: 1101690, noRemunerativo: 100000 },
-  { codigo: 'VEN_D', nombre: 'Vendedores D', basico: 1118519, noRemunerativo: 100000 },
+  {
+    codigo: 'MA_A',
+    nombre: 'Maestranza A',
+    basico: 1055795,
+    noRemunerativo: 100000,
+  },
+  {
+    codigo: 'MA_B',
+    nombre: 'Maestranza B',
+    basico: 1058852,
+    noRemunerativo: 100000,
+  },
+  {
+    codigo: 'MA_C',
+    nombre: 'Maestranza C',
+    basico: 1069560,
+    noRemunerativo: 100000,
+  },
+  {
+    codigo: 'ADM_A',
+    nombre: 'Administrativo A',
+    basico: 1067268,
+    noRemunerativo: 100000,
+  },
+  {
+    codigo: 'ADM_B',
+    nombre: 'Administrativo B',
+    basico: 1071860,
+    noRemunerativo: 100000,
+  },
+  {
+    codigo: 'ADM_C',
+    nombre: 'Administrativo C',
+    basico: 1076448,
+    noRemunerativo: 100000,
+  },
+  {
+    codigo: 'ADM_D',
+    nombre: 'Administrativo D',
+    basico: 1090218,
+    noRemunerativo: 100000,
+  },
+  {
+    codigo: 'ADM_E',
+    nombre: 'Administrativo E',
+    basico: 1101690,
+    noRemunerativo: 100000,
+  },
+  {
+    codigo: 'ADM_F',
+    nombre: 'Administrativo F',
+    basico: 1118519,
+    noRemunerativo: 100000,
+  },
+  {
+    codigo: 'CAJ_A',
+    nombre: 'Cajeros A',
+    basico: 1071091,
+    noRemunerativo: 100000,
+  },
+  {
+    codigo: 'CAJ_B',
+    nombre: 'Cajeros B',
+    basico: 1076448,
+    noRemunerativo: 100000,
+  },
+  {
+    codigo: 'CAJ_C',
+    nombre: 'Cajeros C',
+    basico: 1083333,
+    noRemunerativo: 100000,
+  },
+  {
+    codigo: 'AUX_A',
+    nombre: 'Personal Auxiliar A',
+    basico: 1071091,
+    noRemunerativo: 100000,
+  },
+  {
+    codigo: 'AUX_B',
+    nombre: 'Personal Auxiliar B',
+    basico: 1078740,
+    noRemunerativo: 100000,
+  },
+  {
+    codigo: 'AUX_C',
+    nombre: 'Personal Auxiliar C',
+    basico: 1103985,
+    noRemunerativo: 100000,
+  },
+  {
+    codigo: 'AUESP_A',
+    nombre: 'Auxiliar Especializado A',
+    basico: 1080274,
+    noRemunerativo: 100000,
+  },
+  {
+    codigo: 'AUESP_B',
+    nombre: 'Auxiliar Especializado B',
+    basico: 1094041,
+    noRemunerativo: 100000,
+  },
+  {
+    codigo: 'VEN_A',
+    nombre: 'Vendedores A',
+    basico: 1071091,
+    noRemunerativo: 100000,
+  },
+  {
+    codigo: 'VEN_B',
+    nombre: 'Vendedores B',
+    basico: 1094044,
+    noRemunerativo: 100000,
+  },
+  {
+    codigo: 'VEN_C',
+    nombre: 'Vendedores C',
+    basico: 1101690,
+    noRemunerativo: 100000,
+  },
+  {
+    codigo: 'VEN_D',
+    nombre: 'Vendedores D',
+    basico: 1118519,
+    noRemunerativo: 100000,
+  },
 ];
 
 function canon(s: string): string {

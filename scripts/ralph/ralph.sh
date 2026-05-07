@@ -1,0 +1,149 @@
+#!/bin/bash
+# Ralph Wiggum - Long-running AI agent loop
+# Usage: ./ralph.sh [--tool amp|claude] [max_iterations]
+
+set -e
+
+# Parse arguments
+TOOL="amp"  # Default to amp for backwards compatibility
+MAX_ITERATIONS=10
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --tool)
+      TOOL="$2"
+      shift 2
+      ;;
+    --tool=*)
+      TOOL="${1#*=}"
+      shift
+      ;;
+    *)
+      # Assume it's max_iterations if it's a number
+      if [[ "$1" =~ ^[0-9]+$ ]]; then
+        MAX_ITERATIONS="$1"
+      fi
+      shift
+      ;;
+  esac
+done
+
+# Validate tool choice
+if [[ "$TOOL" != "amp" && "$TOOL" != "claude" ]]; then
+  echo "Error: Invalid tool '$TOOL'. Must be 'amp' or 'claude'."
+  exit 1
+fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PRD_FILE="$SCRIPT_DIR/prd.json"
+PROGRESS_FILE="$SCRIPT_DIR/progress.txt"
+ARCHIVE_DIR="$SCRIPT_DIR/archive"
+LAST_BRANCH_FILE="$SCRIPT_DIR/.last-branch"
+
+# Archive previous run if branch changed
+if [ -f "$PRD_FILE" ] && [ -f "$LAST_BRANCH_FILE" ]; then
+  CURRENT_BRANCH=$(jq -r '.branchName // empty' "$PRD_FILE" 2>/dev/null || echo "")
+  LAST_BRANCH=$(cat "$LAST_BRANCH_FILE" 2>/dev/null || echo "")
+  
+  if [ -n "$CURRENT_BRANCH" ] && [ -n "$LAST_BRANCH" ] && [ "$CURRENT_BRANCH" != "$LAST_BRANCH" ]; then
+    # Archive the previous run
+    DATE=$(date +%Y-%m-%d)
+    # Strip "ralph/" prefix from branch name for folder
+    FOLDER_NAME=$(echo "$LAST_BRANCH" | sed 's|^ralph/||')
+    ARCHIVE_FOLDER="$ARCHIVE_DIR/$DATE-$FOLDER_NAME"
+    
+    echo "Archiving previous run: $LAST_BRANCH"
+    mkdir -p "$ARCHIVE_FOLDER"
+    [ -f "$PRD_FILE" ] && cp "$PRD_FILE" "$ARCHIVE_FOLDER/"
+    [ -f "$PROGRESS_FILE" ] && cp "$PROGRESS_FILE" "$ARCHIVE_FOLDER/"
+    echo "   Archived to: $ARCHIVE_FOLDER"
+    
+    # Reset progress file for new run
+    echo "# Ralph Progress Log" > "$PROGRESS_FILE"
+    echo "Started: $(date)" >> "$PROGRESS_FILE"
+    echo "---" >> "$PROGRESS_FILE"
+  fi
+fi
+
+# Track current branch
+if [ -f "$PRD_FILE" ]; then
+  CURRENT_BRANCH=$(jq -r '.branchName // empty' "$PRD_FILE" 2>/dev/null || echo "")
+  if [ -n "$CURRENT_BRANCH" ]; then
+    echo "$CURRENT_BRANCH" > "$LAST_BRANCH_FILE"
+  fi
+fi
+
+# Initialize progress file if it doesn't exist
+if [ ! -f "$PROGRESS_FILE" ]; then
+  echo "# Ralph Progress Log" > "$PROGRESS_FILE"
+  echo "Started: $(date)" >> "$PROGRESS_FILE"
+  echo "---" >> "$PROGRESS_FILE"
+fi
+
+# Helper: print a timestamped log line
+log() {
+  echo "[$(date '+%H:%M:%S')] $*"
+}
+
+# Helper: show pending/done story counts from prd.json
+show_progress() {
+  if command -v jq &>/dev/null && [ -f "$PRD_FILE" ]; then
+    TOTAL=$(jq '[.userStories[]] | length' "$PRD_FILE" 2>/dev/null || echo "?")
+    DONE=$(jq '[.userStories[] | select(.passes == true)] | length' "$PRD_FILE" 2>/dev/null || echo "?")
+    NEXT=$(jq -r '[.userStories[] | select(.passes != true)][0].id // "none"' "$PRD_FILE" 2>/dev/null || echo "?")
+    echo "  Stories: $DONE/$TOTAL done  |  Next: $NEXT"
+  fi
+}
+
+log "Starting Ralph — Tool: $TOOL — Max iterations: $MAX_ITERATIONS"
+show_progress
+
+for i in $(seq 1 $MAX_ITERATIONS); do
+  echo ""
+  echo "==============================================================="
+  log "Ralph Iteration $i of $MAX_ITERATIONS ($TOOL)"
+  show_progress
+  echo "==============================================================="
+
+  ITER_START=$(date +%s)
+
+  # Run the selected tool with the ralph prompt
+  # Timeout per iteration: 20 minutes. If Claude hangs (e.g. waiting on a DB script),
+  # kill it and let the loop retry in the next iteration.
+  ITER_TIMEOUT=1200
+  if [[ "$TOOL" == "amp" ]]; then
+    OUTPUT=$(timeout $ITER_TIMEOUT bash -c 'cat "$1/prompt.md" | amp --dangerously-allow-all 2>&1 | tee /dev/stderr' _ "$SCRIPT_DIR") || {
+      EXIT_CODE=$?
+      if [ $EXIT_CODE -eq 124 ]; then
+        log "WARNING: Iteration $i timed out after ${ITER_TIMEOUT}s. Retrying next iteration."
+      fi
+    }
+  else
+    # Claude Code: use --dangerously-skip-permissions for autonomous operation, --print for output
+    OUTPUT=$(timeout $ITER_TIMEOUT claude --dangerously-skip-permissions --print < "$SCRIPT_DIR/CLAUDE.md" 2>&1 | tee /dev/stderr) || {
+      EXIT_CODE=$?
+      if [ $EXIT_CODE -eq 124 ]; then
+        log "WARNING: Iteration $i timed out after ${ITER_TIMEOUT}s. Retrying next iteration."
+      fi
+    }
+  fi
+
+  ITER_END=$(date +%s)
+  ELAPSED=$(( ITER_END - ITER_START ))
+
+  # Check for completion signal
+  if echo "$OUTPUT" | grep -q "<promise>COMPLETE</promise>"; then
+    echo ""
+    log "Ralph completed all tasks! (iteration $i of $MAX_ITERATIONS, ${ELAPSED}s)"
+    show_progress
+    exit 0
+  fi
+
+  log "Iteration $i done in ${ELAPSED}s. Continuing..."
+  show_progress
+  sleep 2
+done
+
+echo ""
+log "Ralph reached max iterations ($MAX_ITERATIONS) without completing all tasks."
+echo "Check $PROGRESS_FILE for status."
+exit 1

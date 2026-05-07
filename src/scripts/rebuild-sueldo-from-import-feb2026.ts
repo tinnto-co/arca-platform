@@ -37,19 +37,19 @@ async function findClientIdByName(substring: string): Promise<string | null> {
   const rows = await db
     .select({ id: client.id, name: client.name })
     .from(client)
-    .where(
-      sql`lower(${client.name}) like lower(${pattern})`
-    )
+    .where(sql`lower(${client.name}) like lower(${pattern})`)
     .limit(5);
   if (rows.length === 0) {
-    console.error(`No se encontró cliente con nombre que contenga "${substring}".`);
+    console.error(
+      `No se encontró cliente con nombre que contenga "${substring}".`
+    );
     return null;
   }
   if (rows.length > 1) {
     console.warn('Varios clientes coinciden; se usa el primero:');
     rows.forEach((r) => console.warn(`  - ${r.name} (${r.id})`));
   }
-  const chosen = rows[0]!;
+  const chosen = rows[0];
   console.log(`Cliente: ${chosen.name} (${chosen.id})`);
   return chosen.id;
 }
@@ -58,10 +58,7 @@ async function empleadoIdsForClient(clientId: string): Promise<string[]> {
   const rows = await db
     .select({ id: liquidacionImportEmpleado.id })
     .from(liquidacionImportEmpleado)
-    .innerJoin(
-      profile,
-      eq(liquidacionImportEmpleado.profileId, profile.id)
-    )
+    .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
     .where(eq(profile.client, clientId));
   return rows.map((r) => r.id);
 }

@@ -1,5 +1,6 @@
 import { createServerFn } from '@tanstack/react-start';
 import z from 'zod';
+import { GoogleGenAI } from '@google/genai';
 import { db } from '@/lib/db';
 import {
   notification,
@@ -7,14 +8,16 @@ import {
   profile,
   invoiceAttachment,
   document,
+  dataSourceEvent,
 } from '@/drizzle/schema';
+import { member, user } from '@/drizzle/auth';
 import {
   getSessionWithOrg,
   assertCanWrite,
   getMemberRole,
   getOrgClientIds,
 } from '@/actions/helpers';
-import { eq, desc, and, gte, lte, sql, inArray } from 'drizzle-orm';
+import { eq, desc, and, gte, lte, sql, inArray, isNull } from 'drizzle-orm';
 
 export const getNotifications = createServerFn({
   method: 'GET',
@@ -29,14 +32,25 @@ export const getNotifications = createServerFn({
       profileId: z.string().optional(),
       search: z.string().optional(),
       opened: z.boolean().optional(),
+      category: z.string().optional(),
+      onlyUnresolved: z.boolean().optional(),
     })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const orgClientIds = await getOrgClientIds(orgId);
 
-    const { page, limit, clientFilter, dateFrom, dateTo, profileId, opened } =
-      ctx.data;
+    const {
+      page,
+      limit,
+      clientFilter,
+      dateFrom,
+      dateTo,
+      profileId,
+      opened,
+      category,
+      onlyUnresolved,
+    } = ctx.data;
     const offset = (page - 1) * limit;
 
     if (orgClientIds.length === 0) {
@@ -79,6 +93,14 @@ export const getNotifications = createServerFn({
       conditions.push(eq(notification.opened, opened));
     }
 
+    if (category && category !== 'all') {
+      conditions.push(eq(notification.category, category));
+    }
+
+    if (onlyUnresolved) {
+      conditions.push(isNull(notification.resolvedAt));
+    }
+
     const whereCondition = and(...conditions);
 
     // Get total count for pagination
@@ -103,6 +125,12 @@ export const getNotifications = createServerFn({
         profileId: notification.profile,
         profileName: profile.name,
         profileIdentityNumber: profile.identityNumber,
+        severity: notification.severity,
+        category: notification.category,
+        aiSummary: notification.aiSummary,
+        assignedToUserId: notification.assignedToUserId,
+        resolvedAt: notification.resolvedAt,
+        resolvedByUserId: notification.resolvedByUserId,
         createdAt: notification.createdAt,
         updatedAt: notification.updatedAt,
       })
@@ -351,6 +379,51 @@ export const markNotificationOpened = createServerFn({
     return { opened: true };
   });
 
+export const markNotificationUnread = createServerFn({
+  method: 'POST',
+})
+  .inputValidator(z.object({ id: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const orgClientIds = await getOrgClientIds(orgId);
+    if (orgClientIds.length === 0) throw new Error('Unauthorized');
+
+    const [updated] = await db
+      .update(notification)
+      .set({ opened: false, updatedAt: new Date() })
+      .where(
+        and(
+          eq(notification.id, ctx.data.id),
+          inArray(notification.client, orgClientIds)
+        )
+      )
+      .returning();
+
+    if (!updated) throw new Error('Notificación no encontrada o sin acceso');
+    return { opened: false };
+  });
+
+export const markAllNotificationsRead = createServerFn({
+  method: 'POST',
+}).handler(async () => {
+  const { orgId } = await getSessionWithOrg();
+  const orgClientIds = await getOrgClientIds(orgId);
+  if (orgClientIds.length === 0) return { count: 0 };
+
+  const updated = await db
+    .update(notification)
+    .set({ opened: true, updatedAt: new Date() })
+    .where(
+      and(
+        inArray(notification.client, orgClientIds),
+        eq(notification.opened, false)
+      )
+    )
+    .returning({ id: notification.id });
+
+  return { count: updated.length };
+});
+
 export const deleteNotification = createServerFn({
   method: 'POST',
 })
@@ -379,4 +452,319 @@ export const deleteNotification = createServerFn({
       throw new Error('Error al eliminar la notificación');
 
     return { success: true };
+  });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Assignment & Resolution
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const listOrgMembersForAssignment = createServerFn({
+  method: 'GET',
+}).handler(async () => {
+  const { orgId } = await getSessionWithOrg();
+
+  const members = await db
+    .select({
+      userId: user.id,
+      name: user.name,
+      email: user.email,
+    })
+    .from(member)
+    .innerJoin(user, eq(member.userId, user.id))
+    .where(eq(member.organizationId, orgId));
+
+  return members;
+});
+
+export const assignNotification = createServerFn({
+  method: 'POST',
+})
+  .inputValidator(
+    z.object({
+      id: z.string().uuid(),
+      userId: z.string().nullable(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const orgClientIds = await getOrgClientIds(orgId);
+    if (orgClientIds.length === 0)
+      throw new Error('Notificación no encontrada');
+
+    const [updated] = await db
+      .update(notification)
+      .set({ assignedToUserId: ctx.data.userId, updatedAt: new Date() })
+      .where(
+        and(
+          eq(notification.id, ctx.data.id),
+          inArray(notification.client, orgClientIds)
+        )
+      )
+      .returning();
+
+    if (!updated) throw new Error('Notificación no encontrada');
+    return updated;
+  });
+
+export const resolveNotification = createServerFn({
+  method: 'POST',
+})
+  .inputValidator(z.object({ id: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const orgClientIds = await getOrgClientIds(orgId);
+    if (orgClientIds.length === 0)
+      throw new Error('Notificación no encontrada');
+
+    const now = new Date();
+    const [updated] = await db
+      .update(notification)
+      .set({ resolvedAt: now, resolvedByUserId: userId, updatedAt: now })
+      .where(
+        and(
+          eq(notification.id, ctx.data.id),
+          inArray(notification.client, orgClientIds)
+        )
+      )
+      .returning();
+
+    if (!updated) throw new Error('Notificación no encontrada');
+    return updated;
+  });
+
+export const unresolveNotification = createServerFn({
+  method: 'POST',
+})
+  .inputValidator(z.object({ id: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const orgClientIds = await getOrgClientIds(orgId);
+    if (orgClientIds.length === 0)
+      throw new Error('Notificación no encontrada');
+
+    const [updated] = await db
+      .update(notification)
+      .set({ resolvedAt: null, resolvedByUserId: null, updatedAt: new Date() })
+      .where(
+        and(
+          eq(notification.id, ctx.data.id),
+          inArray(notification.client, orgClientIds)
+        )
+      )
+      .returning();
+
+    if (!updated) throw new Error('Notificación no encontrada');
+    return updated;
+  });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AI Classification helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface ClassificationResult {
+  severity: string;
+  category: string;
+  ai_summary: string;
+}
+
+async function classifyWithGemini(
+  message: string
+): Promise<ClassificationResult> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY no configurada');
+
+  const ai = new GoogleGenAI({ apiKey });
+
+  const prompt = `Sos un clasificador de notificaciones fiscales de AFIP Argentina.
+Analizá el siguiente mensaje de notificación y determiná su severidad, categoría y generá un resumen breve en español.
+
+Severidades disponibles:
+- critical: requiere acción urgente (intimaciones, inspecciones activas, deudas con embargo)
+- medium: requiere acción en los próximos días (requerimientos, vencimientos próximos)
+- low: informativo con plazo holgado (notificaciones preventivas, comunicaciones de baja urgencia)
+- informational: sin acción requerida (acuse de recibo, confirmaciones, informativos generales)
+
+Categorías disponibles:
+- requerimiento: AFIP requiere documentación o información
+- inspeccion: proceso de inspección o auditoría
+- deuda: deuda impositiva o previsional
+- intimacion: intimación formal o carta documento
+- comunicacion_general: comunicación informativa general
+- vencimiento: aviso de vencimiento de obligación
+- otro: no encaja en ninguna categoría anterior
+
+Mensaje de notificación:
+${message}`;
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.5-flash',
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: 'OBJECT',
+        properties: {
+          severity: { type: 'STRING' },
+          category: { type: 'STRING' },
+          ai_summary: { type: 'STRING' },
+        },
+        required: ['severity', 'category', 'ai_summary'],
+      },
+    },
+  });
+
+  const text = response.text ?? '';
+  if (!text) throw new Error('Gemini no devolvió respuesta');
+
+  return JSON.parse(text) as ClassificationResult;
+}
+
+export const classifyNotification = createServerFn({
+  method: 'POST',
+})
+  .inputValidator(z.object({ id: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const orgClientIds = await getOrgClientIds(orgId);
+    if (orgClientIds.length === 0)
+      throw new Error('Notificación no encontrada');
+
+    const [notif] = await db
+      .select({
+        id: notification.id,
+        message: notification.message,
+        clientId: notification.client,
+        profileId: notification.profile,
+      })
+      .from(notification)
+      .where(
+        and(
+          eq(notification.id, ctx.data.id),
+          inArray(notification.client, orgClientIds)
+        )
+      )
+      .limit(1);
+
+    if (!notif) throw new Error('Notificación no encontrada');
+
+    const result = await classifyWithGemini(notif.message);
+
+    const now = new Date();
+    const [updated] = await db
+      .update(notification)
+      .set({
+        severity: result.severity,
+        category: result.category,
+        aiSummary: result.ai_summary,
+        aiClassifiedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(notification.id, notif.id))
+      .returning();
+
+    await db.insert(dataSourceEvent).values({
+      organizationId: orgId,
+      clientId: notif.clientId ?? undefined,
+      profileId: notif.profileId ?? undefined,
+      entityType: 'notification',
+      entityId: notif.id,
+      source: 'ai',
+      action: 'classified',
+      metadata: {
+        severity: result.severity,
+        category: result.category,
+      },
+    });
+
+    return updated;
+  });
+
+export const classifyUnclassifiedNotifications = createServerFn({
+  method: 'POST',
+})
+  .inputValidator(
+    z
+      .object({ limit: z.number().int().positive().max(500).optional() })
+      .optional()
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const orgClientIds = await getOrgClientIds(orgId);
+    if (orgClientIds.length === 0) return { classified: 0, errors: 0 };
+
+    const limit = ctx.data?.limit;
+    const baseQuery = db
+      .select({
+        id: notification.id,
+        message: notification.message,
+        clientId: notification.client,
+        profileId: notification.profile,
+      })
+      .from(notification)
+      .where(
+        and(
+          inArray(notification.client, orgClientIds),
+          eq(notification.severity, 'unclassified'),
+          isNull(notification.aiClassifiedAt)
+        )
+      );
+    const unclassified = limit
+      ? await baseQuery.limit(limit)
+      : await baseQuery;
+
+    let classified = 0;
+    let errors = 0;
+    const now = new Date();
+
+    for (const notif of unclassified) {
+      try {
+        const result = await classifyWithGemini(notif.message);
+
+        await db
+          .update(notification)
+          .set({
+            severity: result.severity,
+            category: result.category,
+            aiSummary: result.ai_summary,
+            aiClassifiedAt: now,
+            updatedAt: now,
+          })
+          .where(eq(notification.id, notif.id));
+
+        await db.insert(dataSourceEvent).values({
+          organizationId: orgId,
+          clientId: notif.clientId ?? undefined,
+          profileId: notif.profileId ?? undefined,
+          entityType: 'notification',
+          entityId: notif.id,
+          source: 'ai',
+          action: 'classified',
+          metadata: {
+            severity: result.severity,
+            category: result.category,
+          },
+        });
+
+        classified++;
+      } catch {
+        errors++;
+      }
+    }
+
+    return { classified, errors };
   });
