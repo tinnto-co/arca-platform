@@ -134,7 +134,7 @@ function InvitePage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-svh items-center justify-center bg-gradient-to-br from-[#232c50] via-[#2e3a66] to-[#139ed9]">
+      <div className="flex min-h-svh items-center justify-center bg-[var(--arca-navy-900)]">
         <Loader2 className="size-8 animate-spin text-white" />
       </div>
     );
@@ -142,7 +142,7 @@ function InvitePage() {
 
   if (error && !invitation) {
     return (
-      <div className="flex min-h-svh items-center justify-center bg-gradient-to-br from-[#232c50] via-[#2e3a66] to-[#139ed9] p-4">
+      <div className="flex min-h-svh items-center justify-center bg-[var(--arca-navy-900)] p-4">
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
             <AlertCircle className="mx-auto size-12 text-destructive mb-2" />
@@ -161,10 +161,10 @@ function InvitePage() {
 
   if (accepted) {
     return (
-      <div className="flex min-h-svh items-center justify-center bg-gradient-to-br from-[#232c50] via-[#2e3a66] to-[#139ed9] p-4">
+      <div className="flex min-h-svh items-center justify-center bg-[var(--arca-navy-900)] p-4">
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
-            <CheckCircle className="mx-auto size-12 text-green-500 mb-2" />
+            <CheckCircle className="mx-auto size-12 text-[var(--arca-accent-pos)] mb-2" />
             <CardTitle>¡Bienvenido!</CardTitle>
             <CardDescription>
               Te uniste a {invitation?.organizationName ?? 'la organización'}.
@@ -177,7 +177,7 @@ function InvitePage() {
   }
 
   return (
-    <div className="flex min-h-svh items-center justify-center bg-gradient-to-br from-[#232c50] via-[#2e3a66] to-[#139ed9] p-4">
+    <div className="flex min-h-svh items-center justify-center bg-[var(--arca-navy-900)] p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="mx-auto mb-2 flex size-12 items-center justify-center rounded-full bg-primary/10">

@@ -4,7 +4,12 @@ import path from 'node:path';
 import * as XLSX from 'xlsx';
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { client, liquidacionImportEmpleado, obraSocial, profile } from '@/drizzle/schema';
+import {
+  client,
+  liquidacionImportEmpleado,
+  obraSocial,
+  profile,
+} from '@/drizzle/schema';
 import {
   getCuilFromLegajoRow,
   getLegajoFromLegajoRow,
@@ -43,7 +48,7 @@ function parseDate(v: unknown): Date | null {
   if (!s) return null;
   const parsed = new Date(s);
   if (!Number.isNaN(parsed.getTime())) return parsed;
-  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/.exec(s);
   if (!m) return null;
   const day = Number(m[1]);
   const month = Number(m[2]) - 1;
@@ -68,7 +73,7 @@ function findExcelFiles(dir: string): string[] {
 }
 
 function cuitFromPath(filePath: string): string | null {
-  const m = filePath.match(/\d{2}-\d{8}-\d|\d{11}/);
+  const m = /\d{2}-\d{8}-\d|\d{11}/.exec(filePath);
   if (!m) return null;
   const cuit = normDigits(m[0]);
   return cuit.length === 11 ? cuit : null;
@@ -85,20 +90,25 @@ async function resolveObraSocialId(
 ): Promise<string | null> {
   const codRaw = normText(normalized['cod obra social']);
   const codDigits = normDigits(codRaw);
-  if (codDigits && byCodigo.has(codDigits)) return byCodigo.get(codDigits) ?? null;
+  if (codDigits && byCodigo.has(codDigits))
+    return byCodigo.get(codDigits) ?? null;
 
   const obraRaw = normText(normalized['obra social']);
   if (!obraRaw) return null;
 
   // Muchos excels traen "400800 OBRA SOCIAL ...", intentamos tomar código al inicio.
-  const prefijo = obraRaw.match(/^\s*(\d{4,})\b/);
+  const prefijo = /^\s*(\d{4,})\b/.exec(obraRaw);
   if (prefijo) {
     const prefijoDigits = normDigits(prefijo[1]);
-    if (prefijoDigits && byCodigo.has(prefijoDigits)) return byCodigo.get(prefijoDigits) ?? null;
+    if (prefijoDigits && byCodigo.has(prefijoDigits))
+      return byCodigo.get(prefijoDigits) ?? null;
   }
 
-  const nombreNorm = normalizeNombreObraSocial(obraRaw.replace(/^\s*\d{4,}\s+/, ''));
-  if (nombreNorm && byNombre.has(nombreNorm)) return byNombre.get(nombreNorm) ?? null;
+  const nombreNorm = normalizeNombreObraSocial(
+    obraRaw.replace(/^\s*\d{4,}\s+/, '')
+  );
+  if (nombreNorm && byNombre.has(nombreNorm))
+    return byNombre.get(nombreNorm) ?? null;
 
   // Si no existe en catálogo, la damos de alta para poder asociarla al empleado.
   const codigoAlta = codDigits || normDigits(prefijo?.[1] ?? '');
@@ -164,7 +174,9 @@ async function main() {
   for (const os of obras) {
     const cod = normDigits(os.codigo);
     if (cod) obraByCodigo.set(cod, os.id);
-    const codDesdeNombre = normDigits(normText(os.nombre).match(/^\s*(\d{4,})\b/)?.[1] ?? '');
+    const codDesdeNombre = normDigits(
+      /^\s*(\d{4,})\b/.exec(normText(os.nombre))?.[1] ?? ''
+    );
     if (codDesdeNombre) obraByCodigo.set(codDesdeNombre, os.id);
     const nom = normalizeNombreObraSocial(os.nombre);
     if (nom) obraByNombre.set(nom, os.id);
@@ -202,7 +214,9 @@ async function main() {
       .where(eq(liquidacionImportEmpleado.profileId, perfil.profileId));
 
     const byCuil = new Map(
-      empleados.map((e) => [normDigits(e.cuil), e]).filter(([k]) => k.length > 0)
+      empleados
+        .map((e) => [normDigits(e.cuil), e])
+        .filter(([k]) => k.length > 0)
     );
     const byLegajo = new Map(
       empleados
@@ -213,38 +227,43 @@ async function main() {
     for (const normalized of rows) {
       const cuil = normDigits(getCuilFromLegajoRow(normalized));
       const legajo = normalizeLegajo(getLegajoFromLegajoRow(normalized));
-      const emp = (cuil && byCuil.get(cuil)) || (legajo && byLegajo.get(legajo));
+      const emp =
+        (cuil && byCuil.get(cuil)) || (legajo && byLegajo.get(legajo));
       if (!emp) {
         totalNoMatch += 1;
         continue;
       }
 
       const patch: Record<string, unknown> = { updatedAt: new Date() };
-      patch.nacionalidad = normText(normalized['nacionalidad']) || null;
+      patch.nacionalidad = normText(normalized.nacionalidad) || null;
       patch.fechaNacimiento = parseDate(normalized['fecha de nacimiento']);
-      patch.conyuge = toIntOrNull(normalized['conyuge']);
-      patch.hijos = toIntOrNull(normalized['hijos']);
-      patch.adherentes = toIntOrNull(normalized['adherentes']);
-      patch.sexo = normText(normalized['sexo']) || null;
-      patch.domicilio = normText(normalized['domicilio']) || null;
-      patch.localidad = normText(normalized['localidad']) || null;
-      patch.codigoPostal = normText(normalized['cp']) || null;
-      patch.provincia = normText(normalized['provincia']) || null;
+      patch.conyuge = toIntOrNull(normalized.conyuge);
+      patch.hijos = toIntOrNull(normalized.hijos);
+      patch.adherentes = toIntOrNull(normalized.adherentes);
+      patch.sexo = normText(normalized.sexo) || null;
+      patch.domicilio = normText(normalized.domicilio) || null;
+      patch.localidad = normText(normalized.localidad) || null;
+      patch.codigoPostal = normText(normalized.cp) || null;
+      patch.provincia = normText(normalized.provincia) || null;
       patch.codigoModalidadContratacion =
         normText(normalized['cod modalidad contratacion']) || null;
-      patch.situacion = normText(normalized['situacion']) || null;
+      patch.situacion = normText(normalized.situacion) || null;
       patch.codigoSituacion = normText(normalized['cod situacion']) || null;
-      patch.zona = normText(normalized['zona']) || null;
+      patch.zona = normText(normalized.zona) || null;
       patch.codigoZona = normText(normalized['cod zona']) || null;
-      patch.condicion = normText(normalized['condicion']) || null;
+      patch.condicion = normText(normalized.condicion) || null;
       patch.codigoCondicion = normText(normalized['cod condicion']) || null;
-      patch.actividad = normText(normalized['actividad']) || null;
+      patch.actividad = normText(normalized.actividad) || null;
       patch.codigoActividad = normText(normalized['cod actividad']) || null;
-      patch.siniestrado = normText(normalized['siniestrado']) || null;
+      patch.siniestrado = normText(normalized.siniestrado) || null;
       patch.codigoSiniestrado = normText(normalized['cod siniestrado']) || null;
       patch.observaciones =
-        normText(normalized['observaciones'] ?? normalized['observacioes']) || null;
-      patch.obraSocialId = await resolveObraSocialId(normalized, obraByCodigo, obraByNombre);
+        normText(normalized.observaciones ?? normalized.observacioes) || null;
+      patch.obraSocialId = await resolveObraSocialId(
+        normalized,
+        obraByCodigo,
+        obraByNombre
+      );
 
       await db
         .update(liquidacionImportEmpleado)

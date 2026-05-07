@@ -5,6 +5,7 @@ import viteTsConfigPaths from "vite-tsconfig-paths";
 import tailwindcss from "@tailwindcss/vite";
 export default defineConfig({
   server: {
+    // port: 3000, // rollback: cambiar a 3000
     port: 3000,
     allowedHosts: [
       "familycapitalfunds.com",
@@ -13,7 +14,8 @@ export default defineConfig({
     ],
     watch: {
       usePolling: true,
-      interval: 100,
+      interval: 300,
+      ignored: ["**/src/routeTree.gen.ts"],
     },
   },
   optimizeDeps: {
@@ -31,6 +33,9 @@ export default defineConfig({
       "use-file-picker",
       "react-lite-youtube-embed",
       "react-tweet",
+      "ai",
+      "@ai-sdk/google",
+      "@ai-sdk/react",
     ],
   },
   plugins: [

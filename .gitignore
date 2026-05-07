@@ -10,3 +10,8 @@ dist
 .env.development
 .env.test
 .env.production
+.DS_Store
+
+# Local DB dumps
+*.dump
+*.sql.gz

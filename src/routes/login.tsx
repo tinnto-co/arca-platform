@@ -22,11 +22,23 @@ export default function LoginPage() {
           </div>
         </div>
       </div>
-      <div className="bg-gradient-to-br from-[#232c50] via-[#2e3a66] to-[#139ed9] relative hidden lg:flex lg:items-center lg:justify-center">
-        <p className="text-white w-full text-center text-2xl font-bold tracking-wider uppercase p-4">
-          <span className="text-sm block font-semibold mb-1">Bienvenido a</span>
-          Control Integrado de Arca
-        </p>
+      <div
+        className="relative hidden lg:flex lg:items-center lg:justify-center"
+        style={{
+          background:
+            'linear-gradient(145deg, var(--arca-navy-900) 0%, var(--arca-navy-800) 60%, var(--arca-navy-700) 100%)',
+        }}
+      >
+        <div className="text-center px-8">
+          <p className="text-[var(--arca-surface-2)] text-[11px] font-semibold uppercase tracking-[0.12em] mb-3">
+            Bienvenido a
+          </p>
+          <h2 className="font-display text-[28px] font-semibold text-white tracking-[-0.02em]">
+            Control Integrado
+            <br />
+            <span style={{ color: '#C2A878' }}>de Arca</span>
+          </h2>
+        </div>
       </div>
     </div>
   );

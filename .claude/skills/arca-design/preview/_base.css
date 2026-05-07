@@ -1,0 +1,17 @@
+/* Shared base for preview cards — loads tokens, normalizes, fills viewport. */
+@import url('../colors_and_type.css');
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  background: var(--bg);
+  padding: 20px;
+  min-height: 100vh;
+  font-family: var(--ff-sans);
+  color: var(--ink);
+}
+.card-frame {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 22px 24px;
+}

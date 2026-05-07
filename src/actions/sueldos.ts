@@ -459,7 +459,7 @@ export const listConveniosAfipEmpleadores = createServerFn({ method: 'GET' })
     // cuando existen varios perfiles del mismo cliente con el mismo CCT.
     const byCct = new Map<string, (typeof rows)[number]>();
     for (const row of rows) {
-      const key = row.cct.trim().replace(/\s+/g, ' ');
+      const key = (row.cct ?? '').trim().replace(/\s+/g, ' ');
       if (!byCct.has(key)) byCct.set(key, row);
     }
     return Array.from(byCct.values());
@@ -606,8 +606,8 @@ export const agregarConvenioDesdeAfipEmpleadores = createServerFn({
         and(
           eq(payrollConvenio.clientId, ctx.data.clientId),
           or(
-            eq(payrollConvenio.nombre, afipRow.cct),
-            eq(payrollConvenio.nombre, cctNormalizado),
+            afipRow.cct ? eq(payrollConvenio.nombre, afipRow.cct) : undefined,
+            cctNormalizado ? eq(payrollConvenio.nombre, cctNormalizado) : undefined,
             cctCodigo
               ? eq(payrollConvenio.cctCodigo, cctCodigo)
               : isNull(payrollConvenio.cctCodigo)
@@ -2756,10 +2756,9 @@ async function calcularUnaLiquidacion(
 
   const periodoDate = parseISO(periodo + '-01');
   const convenioIdResuelto = await resolveConvenioIdParaEmpleado(emp, clientId);
-  const categoriaIdResuelta = await resolveCategoriaIdParaBasico({
-    ...emp,
-    convenioId: convenioIdResuelto,
-  });
+  const categoriaIdResuelta = await resolveCategoriaIdParaBasico(
+    { ...emp, convenioId: convenioIdResuelto } as typeof liquidacionImportEmpleado.$inferSelect
+  );
 
   if (!convenioIdResuelto) {
     throw new Error(
@@ -3500,7 +3499,8 @@ export const listLiquidacionesByFiltros = createServerFn({ method: 'GET' })
       eq(liquidacionImportRecibo.origen, 'generado'),
     ];
     if (ctx.data.periodo) {
-      conditions.push(condicionPeriodoRecibo(ctx.data.periodo));
+      const cond = condicionPeriodoRecibo(ctx.data.periodo);
+      if (cond) conditions.push(cond);
     }
     if (ctx.data.importEmpleadoId) {
       conditions.push(eq(liquidacionImportEmpleado.id, ctx.data.importEmpleadoId));
@@ -3654,13 +3654,13 @@ function tipoColumnaDesdeCodigoAfip(codigo: string | null | undefined): TipoColu
 function extraerNumeroSos(
   detalle: typeof liquidacionImportConceptoValor.$inferSelect,
   concepto: typeof payrollConcepto.$inferSelect | null,
-  conceptoSos: typeof conceptoSos.$inferSelect | null
+  conceptoSosRow: typeof conceptoSos.$inferSelect | null
 ): number | null {
   if (concepto?.numeroSos != null && concepto.numeroSos > 0) {
     return concepto.numeroSos;
   }
-  if (conceptoSos?.codigo) {
-    const t = conceptoSos.codigo.trim();
+  if (conceptoSosRow?.codigo) {
+    const t = conceptoSosRow.codigo.trim();
     if (/^\d+$/.test(t)) {
       const n = parseInt(t, 10);
       if (tipoColumnaDesdeRangoSos(n)) return n;
@@ -3677,9 +3677,9 @@ function extraerNumeroSos(
 function tipoColumnaSosContador(
   detalle: typeof liquidacionImportConceptoValor.$inferSelect,
   concepto: typeof payrollConcepto.$inferSelect | null,
-  conceptoSos: typeof conceptoSos.$inferSelect | null
+  conceptoSosRow: typeof conceptoSos.$inferSelect | null
 ): TipoColumnaRecibo {
-  const n = extraerNumeroSos(detalle, concepto, conceptoSos);
+  const n = extraerNumeroSos(detalle, concepto, conceptoSosRow);
   if (n != null) {
     const col = tipoColumnaDesdeRangoSos(n);
     if (col) return col;

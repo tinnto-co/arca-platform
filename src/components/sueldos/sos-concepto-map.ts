@@ -101,10 +101,34 @@ export interface SubtotalSosConfig {
  * Subtot 411/469 → base para retenciones sobre no rem 501-504
  */
 export const SUBTOTALES_SOS: SubtotalSosConfig[] = [
-  { key: 'subtot_1_9', label: 'Subtotal 1/9', rangoMin: 1, rangoMax: 9, despuesDeCodigo: 9 },
-  { key: 'subtot_1_19', label: 'Subtotal 1/19', rangoMin: 1, rangoMax: 19, despuesDeCodigo: 19 },
-  { key: 'subtot_1_26', label: 'Subtotal 1/26', rangoMin: 1, rangoMax: 26, despuesDeCodigo: 26 },
-  { key: 'subtot_1_39', label: 'Subtotal 1/39', rangoMin: 1, rangoMax: 39, despuesDeCodigo: 39 },
+  {
+    key: 'subtot_1_9',
+    label: 'Subtotal 1/9',
+    rangoMin: 1,
+    rangoMax: 9,
+    despuesDeCodigo: 9,
+  },
+  {
+    key: 'subtot_1_19',
+    label: 'Subtotal 1/19',
+    rangoMin: 1,
+    rangoMax: 19,
+    despuesDeCodigo: 19,
+  },
+  {
+    key: 'subtot_1_26',
+    label: 'Subtotal 1/26',
+    rangoMin: 1,
+    rangoMax: 26,
+    despuesDeCodigo: 26,
+  },
+  {
+    key: 'subtot_1_39',
+    label: 'Subtotal 1/39',
+    rangoMin: 1,
+    rangoMax: 39,
+    despuesDeCodigo: 39,
+  },
   {
     key: 'subtot_1_199',
     label: 'Total remunerativo (1/199)',
@@ -133,7 +157,10 @@ const SECCION_EXCEPCIONES: Record<number, SeccionSos> = {
 export function getSeccionSos(codigo: number): SeccionSos | null {
   const excepcion = SECCION_EXCEPCIONES[codigo];
   if (excepcion) return excepcion;
-  for (const [key, cfg] of Object.entries(SECCIONES_SOS) as [SeccionSos, SeccionConfig][]) {
+  for (const [key, cfg] of Object.entries(SECCIONES_SOS) as [
+    SeccionSos,
+    SeccionConfig,
+  ][]) {
     if (codigo >= cfg.rangoMin && codigo <= cfg.rangoMax) return key;
   }
   return null;

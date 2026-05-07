@@ -51,7 +51,7 @@ export function DragDrop({ onFileSelected }: Props) {
         <input {...getInputProps()} />
 
         {isDragReject && (
-          <p className="text-sm text-red-600">
+          <p className="text-sm text-[var(--arca-accent-neg)]">
             ❌ Solo se permiten archivos PDF
           </p>
         )}

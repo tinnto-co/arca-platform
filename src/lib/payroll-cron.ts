@@ -34,15 +34,20 @@ export const CCT_SOURCES = [
 // Tipos internos
 // ─────────────────────────────────────────────────────────────────────────────
 
-type EscalaCategoria = { nombre: string; basico: number };
-type PeriodoEscala = {
+interface EscalaCategoria {
+  nombre: string;
+  basico: number;
+}
+interface PeriodoEscala {
   label: string;
   vigenciaDesde: string; // YYYY-MM-DD
   vigenciaHasta: string; // YYYY-MM-DD o ''
   noRemunerativo: number;
   categorias: EscalaCategoria[];
-};
-type ParsedResult = { periodos: PeriodoEscala[] };
+}
+interface ParsedResult {
+  periodos: PeriodoEscala[];
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fetch y limpieza de HTML
@@ -129,7 +134,13 @@ ${pageText}`;
                   },
                 },
               },
-              required: ['label', 'vigenciaDesde', 'vigenciaHasta', 'noRemunerativo', 'categorias'],
+              required: [
+                'label',
+                'vigenciaDesde',
+                'vigenciaHasta',
+                'noRemunerativo',
+                'categorias',
+              ],
             },
           },
         },
@@ -208,13 +219,21 @@ async function syncCCT(
 
     for (const periodo of periodos) {
       const desde = new Date(periodo.vigenciaDesde);
-      if (isNaN(desde.getTime())) { skipped++; continue; }
-      const hasta = periodo.vigenciaHasta ? new Date(periodo.vigenciaHasta) : null;
+      if (isNaN(desde.getTime())) {
+        skipped++;
+        continue;
+      }
+      const hasta = periodo.vigenciaHasta
+        ? new Date(periodo.vigenciaHasta)
+        : null;
       const nr = periodo.noRemunerativo ?? 0;
 
       for (const ref of periodo.categorias) {
         const cat = catByCanon.get(canon(ref.nombre));
-        if (!cat) { skipped++; continue; }
+        if (!cat) {
+          skipped++;
+          continue;
+        }
 
         const [existing] = await db
           .select({ id: payrollEscala.id })
@@ -263,7 +282,9 @@ async function syncCCT(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function runPayrollCronJob(): Promise<void> {
-  console.log('[payroll-cron] Iniciando actualización de escalas salariales...');
+  console.log(
+    '[payroll-cron] Iniciando actualización de escalas salariales...'
+  );
 
   for (const source of CCT_SOURCES) {
     try {
@@ -303,25 +324,34 @@ let lastRunMonth = '';
 
 export function startPayrollCron(): void {
   if (!process.env.DATABASE_URL) {
-    console.log('[payroll-cron] DATABASE_URL no configurada — cron desactivado');
+    console.log(
+      '[payroll-cron] DATABASE_URL no configurada — cron desactivado'
+    );
     return;
   }
   if (!process.env.GEMINI_API_KEY) {
-    console.log('[payroll-cron] GEMINI_API_KEY no configurada — cron desactivado');
+    console.log(
+      '[payroll-cron] GEMINI_API_KEY no configurada — cron desactivado'
+    );
     return;
   }
 
   // Verificar cada hora si es el día 20 y no corrió este mes
-  setInterval(() => {
-    const now = new Date();
-    const yearMonth = `${now.getFullYear()}-${now.getMonth()}`;
-    if (now.getDate() === 20 && yearMonth !== lastRunMonth) {
-      lastRunMonth = yearMonth;
-      runPayrollCronJob().catch((err: unknown) => {
-        console.error('[payroll-cron] Error en job mensual:', err);
-      });
-    }
-  }, 60 * 60 * 1000);
+  setInterval(
+    () => {
+      const now = new Date();
+      const yearMonth = `${now.getFullYear()}-${now.getMonth()}`;
+      if (now.getDate() === 20 && yearMonth !== lastRunMonth) {
+        lastRunMonth = yearMonth;
+        runPayrollCronJob().catch((err: unknown) => {
+          console.error('[payroll-cron] Error en job mensual:', err);
+        });
+      }
+    },
+    60 * 60 * 1000
+  );
 
-  console.log('[payroll-cron] Cron configurado: se ejecuta el día 20 de cada mes');
+  console.log(
+    '[payroll-cron] Cron configurado: se ejecuta el día 20 de cada mes'
+  );
 }

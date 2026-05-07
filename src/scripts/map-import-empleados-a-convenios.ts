@@ -29,20 +29,24 @@ function canonicalizeCategoriaText(value: string): string {
 
 function extractCctCodigo(raw: string | null | undefined): string | null {
   if (!raw) return null;
-  const match = raw.match(/\b(\d{2,4})\/(\d{2,4})\b/);
+  const match = /\b(\d{2,4})\/(\d{2,4})\b/.exec(raw);
   if (!match) return null;
   const izquierda = String(parseInt(match[1], 10));
   const derecha = String(parseInt(match[2], 10)).padStart(2, '0');
   return `${izquierda}/${derecha}`;
 }
 
-function splitNombreCompleto(nombre: string): { apellido: string; nombre: string } {
+function splitNombreCompleto(nombre: string): {
+  apellido: string;
+  nombre: string;
+} {
   if (nombre.includes(',')) {
     const [apellido, nom] = nombre.split(',').map((x) => x.trim());
     return { apellido: apellido || nombre, nombre: nom || apellido || nombre };
   }
   const parts = nombre.trim().split(/\s+/);
-  if (parts.length <= 1) return { apellido: nombre.trim(), nombre: nombre.trim() };
+  if (parts.length <= 1)
+    return { apellido: nombre.trim(), nombre: nombre.trim() };
   const apellido = parts[0];
   const nom = parts.slice(1).join(' ');
   return { apellido, nombre: nom };
@@ -59,7 +63,10 @@ function isGerenteFallbackCategoria(raw: string | null | undefined): boolean {
   );
 }
 
-function scoreCategoriaMatch(importCat: string, target: { codigo: string; nombre: string }): number {
+function scoreCategoriaMatch(
+  importCat: string,
+  target: { codigo: string; nombre: string }
+): number {
   const source = canonicalizeCategoriaText(importCat);
   const codigo = canonicalizeCategoriaText(target.codigo);
   const nombre = canonicalizeCategoriaText(target.nombre);
@@ -73,7 +80,10 @@ function scoreCategoriaMatch(importCat: string, target: { codigo: string; nombre
   const tokens = source.split(' ').filter(Boolean);
   let tokenHits = 0;
   for (const token of tokens) {
-    if (token.length >= 3 && (nombre.includes(token) || codigo.includes(token))) {
+    if (
+      token.length >= 3 &&
+      (nombre.includes(token) || codigo.includes(token))
+    ) {
       tokenHits++;
     }
   }
@@ -123,7 +133,7 @@ async function main() {
 
     const categoriasByConvenio = new Map<
       string,
-      Array<{ id: string; codigo: string; nombre: string }>
+      { id: string; codigo: string; nombre: string }[]
     >();
     for (const convenio of conveniosFiltrados) {
       const categorias = await db
@@ -145,9 +155,11 @@ async function main() {
     for (const imp of imports) {
       const catImport = imp.categoria ?? '';
 
-      let best:
-        | { convenioId: string; categoriaId: string; score: number }
-        | null = null;
+      let best: {
+        convenioId: string;
+        categoriaId: string;
+        score: number;
+      } | null = null;
 
       for (const convenio of conveniosFiltrados) {
         const categorias = categoriasByConvenio.get(convenio.id) ?? [];
@@ -169,7 +181,8 @@ async function main() {
           withoutMatch++;
           continue;
         }
-        const categoriasFallback = categoriasByConvenio.get(convenioFallback.id) ?? [];
+        const categoriasFallback =
+          categoriasByConvenio.get(convenioFallback.id) ?? [];
         let categoriaGerente = categoriasFallback.find(
           (cat) => canonicalizeCategoriaText(cat.nombre) === 'gerente'
         );
@@ -202,10 +215,17 @@ async function main() {
 
       // Si ya tiene convenio asignado en liquidacion_import_empleado, actualizar si cambió
       if (imp.convenioId) {
-        if (imp.convenioId !== best.convenioId || imp.categoriaId !== best.categoriaId) {
+        if (
+          imp.convenioId !== best.convenioId ||
+          imp.categoriaId !== best.categoriaId
+        ) {
           await db
             .update(liquidacionImportEmpleado)
-            .set({ convenioId: best.convenioId, categoriaId: best.categoriaId, updatedAt: new Date() })
+            .set({
+              convenioId: best.convenioId,
+              categoriaId: best.categoriaId,
+              updatedAt: new Date(),
+            })
             .where(eq(liquidacionImportEmpleado.id, imp.id));
           updatedConfigs++;
         }
@@ -247,4 +267,3 @@ main()
     console.error('Error en mapeo:', err);
     process.exit(1);
   });
-

@@ -249,11 +249,11 @@ export function EmpleadosCargaMasivaDialog({
           </div>
           {result && (
             <div className="rounded-lg border p-3 text-sm">
-              <p className="font-medium text-green-600 dark:text-green-400">
+              <p className="font-medium text-[var(--arca-accent-pos-fg)]">
                 {result.created} empleado(s) cargados
               </p>
               {result.errors.length > 0 && (
-                <ul className="mt-2 max-h-32 overflow-y-auto text-destructive">
+                <ul className="mt-2 max-h-32 overflow-y-auto text-[var(--arca-accent-neg)]">
                   {result.errors.map((e, i) => (
                     <li key={i}>
                       Fila {e.row}: {e.message}

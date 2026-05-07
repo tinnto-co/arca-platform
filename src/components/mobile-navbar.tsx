@@ -17,7 +17,7 @@ export function MobileNavbar() {
 
   return (
     <nav className="fixed bottom-4 left-4 right-4 z-50 md:hidden">
-      <div className="bg-[#232c50] rounded-2xl shadow-2xl px-2 py-2 flex items-center justify-around">
+      <div className="bg-[var(--arca-navy-900)] rounded-2xl shadow-2xl px-2 py-2 flex items-center justify-around">
         {navItems.map((item) => {
           const isActive =
             item.to === '/' ? pathname === '/' : pathname.startsWith(item.to);

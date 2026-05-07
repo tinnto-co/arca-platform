@@ -56,30 +56,31 @@ export const getUser = createServerFn({
   let orgLogo: string | null = null;
 
   if (activeOrgId) {
-    const [m] = await db
-      .select({ role: member.role })
-      .from(member)
-      .where(
-        and(
-          eq(member.userId, session.user.id),
-          eq(member.organizationId, activeOrgId)
+    const [memberResult, orgResult] = await Promise.all([
+      db
+        .select({ role: member.role })
+        .from(member)
+        .where(
+          and(
+            eq(member.userId, session.user.id),
+            eq(member.organizationId, activeOrgId)
+          )
         )
-      )
-      .limit(1);
-    orgRole = m?.role ?? null;
-
-    const [org] = await db
-      .select({
-        name: organization.name,
-        slug: organization.slug,
-        logo: organization.logo,
-      })
-      .from(organization)
-      .where(eq(organization.id, activeOrgId))
-      .limit(1);
-    orgName = org?.name ?? null;
-    orgSlug = org?.slug ?? null;
-    orgLogo = org?.logo ?? null;
+        .limit(1),
+      db
+        .select({
+          name: organization.name,
+          slug: organization.slug,
+          logo: organization.logo,
+        })
+        .from(organization)
+        .where(eq(organization.id, activeOrgId))
+        .limit(1),
+    ]);
+    orgRole = memberResult[0]?.role ?? null;
+    orgName = orgResult[0]?.name ?? null;
+    orgSlug = orgResult[0]?.slug ?? null;
+    orgLogo = orgResult[0]?.logo ?? null;
   }
 
   return {

@@ -12,7 +12,8 @@ import { sendOrganizationInvitationEmail } from '@/lib/send-invitation-email';
 import 'dotenv/config';
 
 export const auth = betterAuth({
-  trustedOrigins: ['http://localhost:3000', 'https://blakg.tinnto.co'],
+  // trustedOrigins: ['http://localhost:3000', 'https://blakg.tinnto.co'], // rollback: cambiar a 3000
+  trustedOrigins: ['http://localhost:3001', 'https://blakg.tinnto.co'],
   session: {
     cookieCache: {
       enabled: true,

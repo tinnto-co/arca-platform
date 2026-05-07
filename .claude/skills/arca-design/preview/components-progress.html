@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><link rel="stylesheet" href="_base.css">
+<style>
+  body { padding: 24px; }
+  .row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+  .lbl { font-family: var(--ff-mono); font-size: 10.5px; color: var(--ink-3); width: 100%; }
+
+  .prog { width: 180px; height: 4px; background: var(--surface-2); border-radius: 2px; overflow: hidden; border: 1px solid var(--border); }
+  .prog > span { display:block; height: 100%; border-radius: 2px; }
+  .prog.pos > span  { background: var(--accent-pos); }
+  .prog.warn > span { background: var(--accent-warn); }
+  .prog.neg > span  { background: var(--accent-neg); }
+  .prog.info > span { background: var(--accent-info); }
+
+  .cash-bar { display: flex; width: 100%; max-width: 620px; height: 8px; border-radius: 4px; overflow: hidden; background: var(--border); }
+  .cash-bar > div { height: 100%; }
+
+  .legend { display: flex; gap: 16px; font-size: 11px; color: var(--ink-3); margin-top: 6px; }
+  .legend span { display: flex; align-items: center; gap: 6px; }
+  .sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+</style>
+</head><body>
+  <span class="lbl">progress — small</span>
+  <div class="row">
+    <div class="prog info"><span style="width:92%"></span></div>
+    <div class="prog pos"><span style="width:78%"></span></div>
+    <div class="prog warn"><span style="width:36%"></span></div>
+    <div class="prog neg"><span style="width:8%"></span></div>
+  </div>
+  <div style="height: 16px"></div>
+
+  <span class="lbl">stacked cashflow bar</span>
+  <div>
+    <div class="cash-bar">
+      <div style="flex: 56; background: var(--navy-700);"></div>
+      <div style="flex: 22; background: var(--chart-3);"></div>
+      <div style="flex: 14; background: var(--chart-4);"></div>
+      <div style="flex: 8;  background: var(--accent-neg);"></div>
+    </div>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--navy-700)"></span>Operaciones 56%</span>
+      <span><span class="sw" style="background:var(--chart-3)"></span>Impuestos 22%</span>
+      <span><span class="sw" style="background:var(--chart-4)"></span>Sueldos 14%</span>
+      <span><span class="sw" style="background:var(--accent-neg)"></span>Otros 8%</span>
+    </div>
+  </div>
+</body></html>

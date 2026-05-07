@@ -54,7 +54,7 @@ const SUB_BASES = new Set([
 ]);
 
 /** Leyenda completa (índice por `sigla`). */
-export const LEYENDA_FORMULA_SOS: ReadonlyArray<{ sigla: string; texto: string }> =
+export const LEYENDA_FORMULA_SOS: readonly { sigla: string; texto: string }[] =
   [
     {
       sigla: 'SL',
@@ -89,8 +89,7 @@ export const LEYENDA_FORMULA_SOS: ReadonlyArray<{ sigla: string; texto: string }
     },
     {
       sigla: 'S411-469',
-      texto:
-        'Total no remunerativos: suma de conceptos en el rango 411 a 469.',
+      texto: 'Total no remunerativos: suma de conceptos en el rango 411 a 469.',
     },
     {
       sigla: 'S1-199 + S411-469',
@@ -107,7 +106,8 @@ export const LEYENDA_FORMULA_SOS: ReadonlyArray<{ sigla: string; texto: string }
     },
     {
       sigla: 'imp',
-      texto: 'Importe ingresado en el recibo (a veces actúa como multiplicador).',
+      texto:
+        'Importe ingresado en el recibo (a veces actúa como multiplicador).',
     },
     {
       sigla: 'imp ⚠',
@@ -137,11 +137,7 @@ const leyendaPorSigla = new Map(
   LEYENDA_FORMULA_SOS.map((item) => [item.sigla, item])
 );
 
-function agregarClamp(
-  hasMin: boolean,
-  hasMax: boolean,
-  orden: string[]
-): void {
+function agregarClamp(hasMin: boolean, hasMax: boolean, orden: string[]): void {
   if (hasMin && hasMax) orden.push('[mín/máx]');
   else if (hasMin) orden.push('[mín]');
   else if (hasMax) orden.push('[máx]');
@@ -210,9 +206,9 @@ export function siglasUsadasFormulaSos(c: ConceptoSosMetadata): string[] {
  */
 export function leyendaRelacionadaFormulaSos(
   c: ConceptoSosMetadata
-): Array<{ sigla: string; texto: string }> {
+): { sigla: string; texto: string }[] {
   const siglas = siglasUsadasFormulaSos(c);
-  const out: Array<{ sigla: string; texto: string }> = [];
+  const out: { sigla: string; texto: string }[] = [];
   for (const s of siglas) {
     const row = leyendaPorSigla.get(s);
     if (row) out.push(row);
