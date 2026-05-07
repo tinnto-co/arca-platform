@@ -21,6 +21,7 @@ import '@copilotkit/react-ui/styles.css';
 import { CopilotActions } from '@/components/copilot/CopilotActions';
 import { CopilotAttachmentProvider } from '@/components/copilot/AttachmentContext';
 import { CopilotBottomPanel } from '@/components/copilot/CopilotBottomPanel';
+import { CopilotSuggestions } from '@/components/copilot/CopilotSuggestions';
 import { cn } from '@/lib/utils';
 
 export const Route = createFileRoute('/_authed')({
@@ -90,6 +91,7 @@ function RouteComponent() {
       <CopilotKit runtimeUrl="/api/copilotkit" agent="default">
         <CopilotAttachmentProvider>
           <CopilotActions />
+          <CopilotSuggestions />
           {shell(!hideAgentInput ? <AgentInput /> : null)}
           {!isChatRoute && <CopilotBottomPanel />}
         </CopilotAttachmentProvider>
