@@ -106,7 +106,7 @@
         "Read the updated doc end-to-end and confirm it makes sense"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "This is documentation hygiene — keeps the PRD live and trustworthy. Future agents/devs reading docs/copilotkit-prd.md should see what's been done."
     }
   ]

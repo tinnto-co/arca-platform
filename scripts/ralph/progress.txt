@@ -132,3 +132,32 @@ Project: ARCA Platform — CopilotKit Phase 2
   - Hard-limit 6 instructions: registramos 4 (clients/$id, clients, sueldos, notifications). Cada vez que se agregue una nueva, revisar si conviene fusionarla a alguna existente para evitar que el system prompt se infle y el modelo se confunda con reglas que no aplican a la pantalla actual.
   - Las 3 rutas Copilot registrars (`CopilotSuggestions`, `FrontendTools`, `AdditionalInstructions`) comparten exactamente el mismo patrón: client-only, return null, mounted dentro de `<CopilotKit>`, dispatchean según `useRouterState`. Si nace una 4ta o 5ta, vale extraer un `useRoutePathname()` helper, pero por ahora 3 instancias inline es ok (regla de tres).
 ---
+
+## 2026-05-07 - US-004
+- Updated `docs/copilotkit-prd.md` para reflejar que las features 2.1 (suggestions), 2.2 (frontend tools) y 2.4 (additional instructions) ya fueron adoptadas en feb 2026 (Sprint CopilotKit Phase 2 — US-001, US-002, US-003).
+- Cambios en el doc:
+  - Sección 1 ("Estado actual" → tabla "Hooks ya implementados"): se agregaron 3 filas para `useCopilotChatSuggestions`, `useFrontendTool`, `useCopilotAdditionalInstructions` con archivo y story de referencia.
+  - Secciones 2.1, 2.2, 2.4: header note "✅ ADOPTADO en feb 2026" enlazando a las US correspondientes y al archivo donde vive la implementación.
+  - Sección 3 (Matriz de evaluación): columna "Recomendación" para 2.1/2.2/2.4 cambiada a "✅ Adoptado feb 2026 (US-XXX)".
+  - Sección 4 (Roadmap): nuevo bucket "✅ Adoptado en feb 2026" arriba con 2.1, 2.2 y 2.4 (cada uno con bullet detallando lo que se implementó). El bucket "Sprint inmediato" queda explícitamente vacío para que sea claro que esos quick-wins ya están hechos.
+  - Sección 8 NUEVA: "Aprendizajes del Sprint 1 (feb 2026)" con 7 sub-secciones recogiendo gotchas no obvios — patrón registrar component, custom-event bridge, enum narrowing trap, navigate() floating promise, available field semantics, tab-level limitation sin URL search params, hard-limit en cantidad de instructions, y nota operativa sobre el lint baseline. Apuntan a salvar tiempo en futuras iteraciones.
+  - Apéndice (renumerado a Sección 9): los hooks adoptados en el listado pasan de "← propuesta 2.X" a "← ✅ en uso (US-XXX, feb 2026)".
+
+- Files changed:
+  - docs/copilotkit-prd.md (~50 líneas modificadas/agregadas)
+  - scripts/ralph/prd.json (US-004 passes: false → true)
+
+- **How to verify:**
+  - Abrir `docs/copilotkit-prd.md` y leer las secciones 2.1, 2.2, 2.4 — cada una arranca con un quote-block "✅ ADOPTADO en feb 2026" que enlaza a la user story y al archivo de implementación.
+  - Buscar `Adoptado en feb 2026` en el doc → debe aparecer 3 veces: header de sub-sección en Roadmap (4) + 3 menciones en la matriz (sección 3) + en cada quote-block 2.1/2.2/2.4.
+  - Confirmar que la sección 4 (Roadmap) ya no lista 2.1/2.2/2.4 en "Sprint inmediato" sino en el nuevo bucket "✅ Adoptado en feb 2026".
+  - Leer la sección 8 "Aprendizajes del Sprint 1" end-to-end: debería mencionar el patrón de registrar component, el custom-event bridge para tabs, la trampa de narrowing de enum, el `void navigate(...)`, el toggle via `available`, y la limitación de tab-level sin URL search params.
+  - Markdown no se lintea pero verificar manualmente que no hay headers rotos: `grep -n "^## " docs/copilotkit-prd.md` debería mostrar secciones 1..9 en orden.
+  - El doc completo se renderiza limpio en cualquier viewer markdown (probar `bunx markdown-cli docs/copilotkit-prd.md` si está disponible, o pegarlo en un preview).
+
+- **Learnings for future iterations:**
+  - Cuando agregues una sección NUEVA al medio de un doc numerado, renumerá hacia abajo todas las secciones siguientes Y los `## N. ...` headers — sino el TOC mental queda inconsistente. Revisamos que no hubiera referencias internas a "sección 8" antes de renumerar 8→9.
+  - Para "marcar adoptado" en docs de PRD/roadmap, conviene hacerlo en MÚLTIPLES lugares en lugar de uno solo: el header de la sección, la matriz de evaluación, el roadmap, el listado de hooks del apéndice y la tabla de "estado actual". Cada lugar tiene un público distinto (lector que escanea matriz, lector que lee narrativa, etc.), y dejar uno desactualizado erosiona la confianza en el doc.
+  - La sección "Aprendizajes" no debería repetir lo que ya está en `progress.txt`/CLAUDE.md — debería ser un destilado de los gotchas más útiles de cara a futuros sprints, escritos en prosa (no bullet-soup) y con lenguaje accionable. Para Sprint 1 elegí 7 mini-secciones temáticas en lugar de un único bullet-list, lo cual le da más densidad informativa.
+  - Esta es una tarea solo-de-docs; no toca código de la app. No hace falta correr `bun run dev` ni eslint. Sí conviene un `grep` final sobre el doc para verificar que no quedaron referencias rotas (ej. "section 8" pointing to lo que ahora es la sección 9). En este caso no había referencias internas, pero el reflejo de chequear es valioso.
+---
