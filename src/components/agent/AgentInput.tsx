@@ -8,10 +8,13 @@ import {
 import type { ChangeEvent } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import {
   getMessageCount,
+  getPanelState,
   openPanel,
   subscribeMessageCount,
+  subscribePanelState,
   submitMessageToSidebar,
 } from '@/components/copilot/copilot-control';
 import { useCopilotAttachment } from '@/components/copilot/AttachmentContext';
@@ -51,6 +54,11 @@ export function AgentInput() {
     subscribeMessageCount,
     getMessageCount,
     () => 0
+  );
+  const panelState = useSyncExternalStore(
+    subscribePanelState,
+    getPanelState,
+    getPanelState
   );
   const hasConversation = messageCount > 0;
   const { file, setFile, clear } = useCopilotAttachment();
@@ -117,8 +125,18 @@ export function AgentInput() {
     ? 'Continuar conversación con el asistente…'
     : 'Preguntale al asistente sobre tus clientes...';
 
+  // When the bottom panel is open, hide this floating input entirely so the
+  // user types into the panel's own input. We unmount instead of just hiding
+  // visually; otherwise the hidden <input> still has focus and keystrokes
+  // land here instead of the panel's textarea.
+  if (panelState.open) return null;
+
   return (
-    <div className="pointer-events-none sticky bottom-0 left-0 right-0 p-3 pb-20 md:pb-3 z-10">
+    <div
+      className={cn(
+        'pointer-events-none absolute bottom-0 left-0 right-0 p-3 pb-20 md:pb-3 z-10'
+      )}
+    >
       <div className="pointer-events-auto mx-auto flex max-w-2xl flex-col gap-2">
         {file && (
           <div

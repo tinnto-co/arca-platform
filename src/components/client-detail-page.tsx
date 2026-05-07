@@ -66,7 +66,6 @@ import {
 import { scrapSingleJob } from '@/actions/client';
 import { listOrgModules } from '@/actions/admin';
 import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
-import { ARCA_EVENT_SET_CLIENT_TAB } from '@/components/copilot/FrontendTools';
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
 import {
@@ -117,6 +116,8 @@ import { userQuery } from '@/lib/user-query';
 
 interface ClientDetailPageProps {
   clientId: string;
+  activeTab: string;
+  onTabChange: (tab: string) => void;
 }
 
 const INVOICE_TYPE_MAP = new Map(
@@ -260,9 +261,12 @@ function findBestMatchingProfileId(
   return profiles[0].id;
 }
 
-export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
+export function ClientDetailPage({
+  clientId,
+  activeTab,
+  onTabChange,
+}: ClientDetailPageProps) {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<string>('resumen');
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [editClientDialogOpen, setEditClientDialogOpen] = useState(false);
   const now = new Date();
@@ -543,16 +547,6 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
 
     mediaQuery.addListener(update);
     return () => mediaQuery.removeListener(update);
-  }, []);
-
-  // Listen to CopilotKit frontend tool `cambiarTabClienteDetalle`.
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const handler = (e: WindowEventMap[typeof ARCA_EVENT_SET_CLIENT_TAB]) => {
-      if (e.detail?.tab) setActiveTab(e.detail.tab);
-    };
-    window.addEventListener(ARCA_EVENT_SET_CLIENT_TAB, handler);
-    return () => window.removeEventListener(ARCA_EVENT_SET_CLIENT_TAB, handler);
   }, []);
 
   const { data: debts = [], isLoading: loadingDebts } = useQuery({
@@ -1504,7 +1498,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
       )}
       <Tabs
         value={activeTab}
-        onValueChange={setActiveTab}
+        onValueChange={onTabChange}
         className="flex flex-col"
       >
         {/* ── Sticky client header ── */}

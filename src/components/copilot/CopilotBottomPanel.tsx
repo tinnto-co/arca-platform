@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { CopilotChat } from '@copilotkit/react-ui';
 import { useCopilotChat } from '@copilotkit/react-core';
 import { TextMessage, Role } from '@copilotkit/runtime-client-gql';
@@ -9,9 +9,15 @@ import { cn } from '@/lib/utils';
 import {
   registerCopilotControl,
   setMessageCount,
+  setPanelState,
   unregisterCopilotControl,
 } from './copilot-control';
 import { AttachmentBar } from './AttachmentBar';
+
+const PANEL_HEIGHT_STORAGE_KEY = 'arca-copilot-panel-height-px';
+const PANEL_DEFAULT_HEIGHT_VH = 45;
+const PANEL_MIN_HEIGHT_PX = 240;
+const PANEL_MAX_HEIGHT_RATIO = 0.92;
 
 /**
  * Panel inferior que reemplaza al CopilotSidebar lateral. Vive como overlay
@@ -29,7 +35,80 @@ import { AttachmentBar } from './AttachmentBar';
 export function CopilotBottomPanel() {
   const [open, setOpen] = useState(false);
   const [sidebarOffset, setSidebarOffset] = useState(0);
+  const [panelHeightPx, setPanelHeightPx] = useState<number | null>(null);
+  const heightRef = useRef<number>(0);
   const { appendMessage } = useCopilotChat();
+
+  // Initialize panel height: read localStorage if present, otherwise default
+  // to PANEL_DEFAULT_HEIGHT_VH of viewport. Clamp on every read so a stale
+  // value from a tiny window doesn't persist.
+  useEffect(() => {
+    const maxAllowed = window.innerHeight * PANEL_MAX_HEIGHT_RATIO;
+    const saved = window.localStorage.getItem(PANEL_HEIGHT_STORAGE_KEY);
+    let next: number;
+    if (saved) {
+      const parsed = Number.parseInt(saved, 10);
+      next = Number.isFinite(parsed)
+        ? Math.min(Math.max(parsed, PANEL_MIN_HEIGHT_PX), maxAllowed)
+        : (window.innerHeight * PANEL_DEFAULT_HEIGHT_VH) / 100;
+    } else {
+      next = (window.innerHeight * PANEL_DEFAULT_HEIGHT_VH) / 100;
+    }
+    setPanelHeightPx(next);
+    heightRef.current = next;
+  }, []);
+
+  // Publish open/height to the floating AgentInput so it can shift above the
+  // panel instead of being covered.
+  useEffect(() => {
+    setPanelState({ open, height: panelHeightPx ?? 0 });
+  }, [open, panelHeightPx]);
+
+  // When the panel transitions to open, focus the CopilotChat textarea so the
+  // user can keep typing without an extra click. Without this, focus stays on
+  // wherever the user clicked last (the AgentInput, which we just unmounted —
+  // resulting in keystrokes landing on document.body).
+  useEffect(() => {
+    if (!open) return;
+    const timer = setTimeout(() => {
+      const textarea = document.querySelector<HTMLTextAreaElement>(
+        '.copilot-bottom-panel .copilotKitInput textarea'
+      );
+      textarea?.focus();
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [open]);
+
+  const handleResizeStart = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startHeight = heightRef.current;
+    document.body.style.cursor = 'ns-resize';
+    document.body.style.userSelect = 'none';
+
+    const onMove = (ev: PointerEvent) => {
+      const deltaY = startY - ev.clientY;
+      const maxAllowed = window.innerHeight * PANEL_MAX_HEIGHT_RATIO;
+      const next = Math.min(
+        Math.max(startHeight + deltaY, PANEL_MIN_HEIGHT_PX),
+        maxAllowed
+      );
+      heightRef.current = next;
+      setPanelHeightPx(next);
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.localStorage.setItem(
+        PANEL_HEIGHT_STORAGE_KEY,
+        String(Math.round(heightRef.current))
+      );
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }, []);
 
   useEffect(() => {
     registerCopilotControl(
@@ -91,11 +170,20 @@ export function CopilotBottomPanel() {
       )}
       style={{
         left: sidebarOffset,
-        height: '72vh',
+        height: panelHeightPx ?? `${PANEL_DEFAULT_HEIGHT_VH}vh`,
         transform: open ? 'translateY(0)' : 'translateY(100%)',
       }}
       aria-hidden={!open}
     >
+      <div
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="Redimensionar asistente"
+        onPointerDown={handleResizeStart}
+        className="absolute top-0 left-0 right-0 h-1.5 -translate-y-1/2 cursor-ns-resize group"
+      >
+        <div className="h-full w-full transition-colors group-hover:bg-[#139ed9]/40" />
+      </div>
       <header className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-muted/30">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-[#139ed9]" />
@@ -113,7 +201,6 @@ export function CopilotBottomPanel() {
       <div className="flex-1 min-h-0">
         <CopilotChat
           labels={{
-            initial: '¿En qué puedo ayudarte?',
             placeholder: 'Preguntale al asistente…',
           }}
         />

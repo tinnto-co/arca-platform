@@ -29,6 +29,7 @@ import { Route as AuthedAdminIndexRouteImport } from './routes/_authed/admin/ind
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AuthedProductsIdRouteImport } from './routes/_authed/products/$id'
 import { Route as AuthedChatIdRouteImport } from './routes/_authed/chat/$id'
+import { Route as AuthedSueldosProfileIdIndexRouteImport } from './routes/_authed/sueldos/$profileId/index'
 import { Route as AuthedClientsClientIdIndexRouteImport } from './routes/_authed/clients/$clientId/index'
 import { Route as AuthedClientsClientIdProfileIdIndexRouteImport } from './routes/_authed/clients/$clientId/$profileId/index'
 
@@ -132,6 +133,12 @@ const AuthedChatIdRoute = AuthedChatIdRouteImport.update({
   path: '/chat/$id',
   getParentRoute: () => AuthedRouteRoute,
 } as any)
+const AuthedSueldosProfileIdIndexRoute =
+  AuthedSueldosProfileIdIndexRouteImport.update({
+    id: '/sueldos/$profileId/',
+    path: '/sueldos/$profileId/',
+    getParentRoute: () => AuthedRouteRoute,
+  } as any)
 const AuthedClientsClientIdIndexRoute =
   AuthedClientsClientIdIndexRouteImport.update({
     id: '/clients/$clientId/',
@@ -166,6 +173,7 @@ export interface FileRoutesByFullPath {
   '/sueldos/': typeof AuthedSueldosIndexRoute
   '/vencimientos/': typeof AuthedVencimientosIndexRoute
   '/clients/$clientId/': typeof AuthedClientsClientIdIndexRoute
+  '/sueldos/$profileId/': typeof AuthedSueldosProfileIdIndexRoute
   '/clients/$clientId/$profileId/': typeof AuthedClientsClientIdProfileIdIndexRoute
 }
 export interface FileRoutesByTo {
@@ -189,6 +197,7 @@ export interface FileRoutesByTo {
   '/sueldos': typeof AuthedSueldosIndexRoute
   '/vencimientos': typeof AuthedVencimientosIndexRoute
   '/clients/$clientId': typeof AuthedClientsClientIdIndexRoute
+  '/sueldos/$profileId': typeof AuthedSueldosProfileIdIndexRoute
   '/clients/$clientId/$profileId': typeof AuthedClientsClientIdProfileIdIndexRoute
 }
 export interface FileRoutesById {
@@ -214,6 +223,7 @@ export interface FileRoutesById {
   '/_authed/sueldos/': typeof AuthedSueldosIndexRoute
   '/_authed/vencimientos/': typeof AuthedVencimientosIndexRoute
   '/_authed/clients/$clientId/': typeof AuthedClientsClientIdIndexRoute
+  '/_authed/sueldos/$profileId/': typeof AuthedSueldosProfileIdIndexRoute
   '/_authed/clients/$clientId/$profileId/': typeof AuthedClientsClientIdProfileIdIndexRoute
 }
 export interface FileRouteTypes {
@@ -239,6 +249,7 @@ export interface FileRouteTypes {
     | '/sueldos/'
     | '/vencimientos/'
     | '/clients/$clientId/'
+    | '/sueldos/$profileId/'
     | '/clients/$clientId/$profileId/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -262,6 +273,7 @@ export interface FileRouteTypes {
     | '/sueldos'
     | '/vencimientos'
     | '/clients/$clientId'
+    | '/sueldos/$profileId'
     | '/clients/$clientId/$profileId'
   id:
     | '__root__'
@@ -286,6 +298,7 @@ export interface FileRouteTypes {
     | '/_authed/sueldos/'
     | '/_authed/vencimientos/'
     | '/_authed/clients/$clientId/'
+    | '/_authed/sueldos/$profileId/'
     | '/_authed/clients/$clientId/$profileId/'
   fileRoutesById: FileRoutesById
 }
@@ -441,6 +454,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedChatIdRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
+    '/_authed/sueldos/$profileId/': {
+      id: '/_authed/sueldos/$profileId/'
+      path: '/sueldos/$profileId'
+      fullPath: '/sueldos/$profileId/'
+      preLoaderRoute: typeof AuthedSueldosProfileIdIndexRouteImport
+      parentRoute: typeof AuthedRouteRoute
+    }
     '/_authed/clients/$clientId/': {
       id: '/_authed/clients/$clientId/'
       path: '/clients/$clientId'
@@ -473,6 +493,7 @@ interface AuthedRouteRouteChildren {
   AuthedSueldosIndexRoute: typeof AuthedSueldosIndexRoute
   AuthedVencimientosIndexRoute: typeof AuthedVencimientosIndexRoute
   AuthedClientsClientIdIndexRoute: typeof AuthedClientsClientIdIndexRoute
+  AuthedSueldosProfileIdIndexRoute: typeof AuthedSueldosProfileIdIndexRoute
   AuthedClientsClientIdProfileIdIndexRoute: typeof AuthedClientsClientIdProfileIdIndexRoute
 }
 
@@ -491,6 +512,7 @@ const AuthedRouteRouteChildren: AuthedRouteRouteChildren = {
   AuthedSueldosIndexRoute: AuthedSueldosIndexRoute,
   AuthedVencimientosIndexRoute: AuthedVencimientosIndexRoute,
   AuthedClientsClientIdIndexRoute: AuthedClientsClientIdIndexRoute,
+  AuthedSueldosProfileIdIndexRoute: AuthedSueldosProfileIdIndexRoute,
   AuthedClientsClientIdProfileIdIndexRoute:
     AuthedClientsClientIdProfileIdIndexRoute,
 }

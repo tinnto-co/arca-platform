@@ -71,3 +71,35 @@ export function subscribeMessageCount(cb: () => void) {
 export function getMessageCount() {
   return messageCount;
 }
+
+/**
+ * Module-level tracker of the bottom panel's open state and current height
+ * (in px). The floating AgentInput subscribes so it can shift up out of the
+ * way when the panel is open instead of being hidden behind it.
+ */
+export interface PanelState {
+  open: boolean;
+  height: number;
+}
+
+let panelState: PanelState = { open: false, height: 0 };
+const panelStateSubs = new Set<() => void>();
+
+export function setPanelState(next: PanelState) {
+  if (panelState.open === next.open && panelState.height === next.height) {
+    return;
+  }
+  panelState = next;
+  panelStateSubs.forEach((cb) => cb());
+}
+
+export function subscribePanelState(cb: () => void) {
+  panelStateSubs.add(cb);
+  return () => {
+    panelStateSubs.delete(cb);
+  };
+}
+
+export function getPanelState(): PanelState {
+  return panelState;
+}

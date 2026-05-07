@@ -1,0 +1,113 @@
+{
+  "project": "ARCA Platform — CopilotKit Phase 2 (Suggestions, Frontend Tools, Per-Screen Instructions)",
+  "branchName": "ralph/copilotkit-suggestions-tools-instructions",
+  "description": "Layer three additional CopilotKit features on top of the existing integration to make the assistant more proactive and context-aware: contextual chat suggestions per screen (useCopilotChatSuggestions), frontend-only navigation/UI tools that the agent can invoke without server round-trips (useFrontendTool), and per-screen system prompt augmentation (useCopilotAdditionalInstructions). All features gated by the existing 'ai_agent' module flag. Existing CopilotBottomPanel, AgentInput, generative UI components, and useCopilotAction handlers must keep working unchanged.",
+  "globalConstraints": [
+    "All features gated by the 'ai_agent' module flag (via listOrgModules from src/actions/admin.tsx, useQuery key ['orgModules'])",
+    "All hooks must coexist with existing useCopilotAction and useCopilotReadable usage — do not remove or break any of the 8 actions registered in src/components/copilot/CopilotActions.tsx",
+    "All Spanish-facing copy in español rioplatense, professional tone, no inventing data",
+    "Multi-tenancy: any new server fn (if needed) calls getSessionWithOrg() first and scopes by orgId",
+    "Container queries (@container, @[XXrem]:) must be used for any new generative UI components — see docs/copilotkit-prd.md section 6 'Reglas transversales'",
+    "Never expose AFIP credentials (client.password) or any sensitive PII to the agent context",
+    "Frontend tools must respect the user role (member/owner/viewer): no destructive frontend tools available to viewer",
+    "Keep the page /chat (Vercel AI SDK) untouched — these features apply only to the CopilotBottomPanel",
+    "Lint scope: Ralph only validates files it actually modifies. Use 'npx eslint <changed-files>' instead of 'bun run lint'. The project has a pre-existing baseline of ~576 errors (in .claude/skills/, src/scripts/, and scattered production files) that Ralph MUST NOT attempt to fix in this run. New errors introduced by Ralph in files it modifies must be 0. TypeScript typecheck via tsc is also OK if you want to verify, but lint via the targeted eslint command is the canonical check."
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add per-screen contextual chat suggestions with useCopilotChatSuggestions",
+      "description": "As a studio operator, I want the assistant to suggest 3-4 useful prompts based on what I'm currently looking at, so that I discover capabilities and get faster to answers without having to think what to type.",
+      "acceptanceCriteria": [
+        "Import `useCopilotChatSuggestions` from `@copilotkit/react-ui` (already installed). Verify with `grep -n useCopilotChatSuggestions node_modules/@copilotkit/react-ui/src/index.tsx`",
+        "Add a new client-only component `src/components/copilot/CopilotSuggestions.tsx` that registers suggestions via the hook, returns null. The hook accepts `{ instructions: string, available: 'enabled' | 'disabled', minSuggestions?: number, maxSuggestions?: number }`",
+        "Compute the active route inside the component using `useRouterState({ select: (s) => s.location.pathname })` from @tanstack/react-router",
+        "Map pathname → instructions using a switch/match: \n  - `/` (dashboard): 'Sugerí 3 prompts útiles para ver el resumen del estudio: KPIs principales, deudas críticas, próximos vencimientos.'\n  - `/clients` (lista): 'Sugerí 3-4 prompts: clientes con errores, ranking de facturación, búsqueda multi-criterio, total de clientes activos.'\n  - `/clients/$clientId` (detalle): 'Sugerí 3-4 prompts contextuales al cliente activo: cómo está este cliente, resumen IVA, deudas vencidas, marcar notificaciones como leídas.'\n  - `/sueldos` (con cliente seleccionado en el contexto): 'Sugerí 3-4 prompts: resumen de la última liquidación, comparar con mes anterior, validar fórmulas, empleados sin convenio.'\n  - `/notifications`: 'Sugerí 3 prompts: priorizar urgentes, marcar leídas en lote, resumen por cliente.'\n  - `/vencimientos`: 'Sugerí 3 prompts: próximos 7 días, agrupar por impuesto, total estimado.'\n  - Default (otra ruta): no registrar instructions (avoid noise)",
+        "Set `available: 'enabled'` always when ai_agent is on; default minSuggestions=3, maxSuggestions=4",
+        "Mount `<CopilotSuggestions />` inside `<CopilotKit>` provider in `src/routes/_authed/route.tsx`, AT THE SAME LEVEL as `<CopilotActions />`. Only when `aiAgentEnabled` is true.",
+        "Verify suggestions appear ABOVE the input inside the CopilotBottomPanel WHEN the conversation is empty (no messages yet). They should disappear after the first message.",
+        "Lint check: run `npx eslint src/components/copilot/CopilotSuggestions.tsx src/routes/_authed/route.tsx` — must show 0 NEW errors vs baseline. DO NOT run `bun run lint` (project has 576 baseline errors out of scope for this run).",
+        "Run `bun run dev` — manual verification:",
+        " - Go to / (dashboard), open the panel from AgentInput → see 3-4 suggestions like 'KPIs del estudio', 'deudas críticas'",
+        " - Click one suggestion → it sends the prompt automatically",
+        " - Go to /clients/<some-id>, open panel → suggestions adapt to the client context (mention 'este cliente')",
+        " - Go to /sueldos with a client selected → suggestions mention the period or liquidation",
+        " - On a route without specific instructions, suggestions either disappear or show generic ones",
+        "Verify with ai_agent disabled (toggle in /admin or skip this if no UI to toggle): the component does not register suggestions and no console errors"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Reference: docs.copilotkit.ai/reference/hooks/useCopilotChatSuggestions. The hook is reactive — re-evaluates when its `instructions` prop changes. Existing `useCopilotReadable` registrations on each page (sueldos, clients-table, client-detail-page) provide the actual context that the model reads when generating suggestions; the `instructions` prop tells it WHAT to suggest based on that context. Avoid hardcoding cliente names or IDs in instructions — let the model use the readable context."
+    },
+    {
+      "id": "US-002",
+      "title": "Add frontend tools for in-app navigation and UI control with useFrontendTool",
+      "description": "As a studio operator, I want to ask the assistant to navigate me somewhere or change a tab/filter without having to click manually, so that natural-language UI control becomes possible. The assistant invokes a frontend tool that runs entirely in the browser (no server round-trip).",
+      "acceptanceCriteria": [
+        "Import `useFrontendTool` from `@copilotkit/react-core` and verify with `grep -n useFrontendTool node_modules/@copilotkit/react-core/src/hooks/use-frontend-tool.ts`",
+        "Create `src/components/copilot/FrontendTools.tsx` — client-only component that registers frontend tools, returns null",
+        "Register at least 4 frontend tools:",
+        " 1. `navegarA(ruta: string)`: navigates to one of: '/', '/clients', '/notifications', '/sueldos', '/vencimientos', '/facturas', '/trabajos', '/chats'. Uses `useNavigate()` from @tanstack/react-router. Validates route is in whitelist; if not, returns 'Ruta no válida'.",
+        " 2. `abrirCliente(clientId: string, clientName?: string)`: navigates to `/clients/$id`. Resolves clientId via useCopilotReadable context if name given. Uses navigate({ to: '/clients/$clientId', params: { clientId } }).",
+        " 3. `cambiarTabClienteDetalle(tab: 'resumen' | 'deudas' | 'vencimientos' | 'notificaciones' | 'facturas' | 'iva' | 'convenio-multilateral')`: dispatches a custom event 'arca:set-client-tab' that the client-detail-page listens to and calls setActiveTab(). Document this contract.",
+        " 4. `cambiarTabSueldos(tab: 'dashboard' | 'empleados' | 'convenios' | 'conceptos' | 'simulador' | 'recibo' | 'firma-digital')`: same pattern via custom event 'arca:set-sueldos-tab'. Sueldos route adds a listener that updates `activeTab` state.",
+        "Each tool has clear `description` in Spanish, with parameters validated. NO destructive tools (no delete, no scrape, no write).",
+        "Wire up the listeners in `src/components/client-detail-page.tsx` and `src/routes/_authed/sueldos/index.tsx` using useEffect to subscribe/unsubscribe to window.addEventListener for the respective custom events. Each listener calls the corresponding setActiveTab.",
+        "Mount `<FrontendTools />` inside the `<CopilotKit>` provider in `src/routes/_authed/route.tsx`, only when `aiAgentEnabled`",
+        "Add type declarations for the custom events in a shared d.ts (or inline) so TypeScript is happy",
+        "Lint check: run `npx eslint src/components/copilot/FrontendTools.tsx src/routes/_authed/route.tsx src/components/client-detail-page.tsx src/routes/_authed/sueldos/index.tsx` — must show 0 NEW errors vs baseline. DO NOT run `bun run lint`.",
+        "Run `bun run dev` — manual verification:",
+        " - From /, ask 'llevame a clientes' → URL changes to /clients, no full page reload",
+        " - From /, ask 'abrime Admip Srl' (if exists) → URL changes to /clients/<id>, detail page renders",
+        " - From /clients/<id>, ask 'mostrame el IVA' → tab changes to 'iva' without reload",
+        " - From /sueldos with client selected, ask 'andá a empleados' → tab changes to 'empleados'",
+        " - Ask the assistant 'navegáme a una ruta inexistente' → returns 'Ruta no válida' politely"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "useFrontendTool is similar to useCopilotAction but the handler runs in the browser. Same `name`, `description`, `parameters`, `handler`, optional `render` shape. Custom-event pattern for cross-component tab control avoids prop drilling and lets the tool dispatch from anywhere. If a future tool needs to mutate persisted data, use useCopilotAction (server fn) instead — frontend tools are for in-memory state and routing only."
+    },
+    {
+      "id": "US-003",
+      "title": "Add per-screen system prompt augmentation with useCopilotAdditionalInstructions",
+      "description": "As a studio operator, I want the assistant to know specific business rules or context relevant to the screen I'm on, without me having to repeat them, so that I get more accurate and contextual answers.",
+      "acceptanceCriteria": [
+        "Verify hook exists: `grep -n useCopilotAdditionalInstructions node_modules/@copilotkit/react-core/src/hooks/use-copilot-additional-instructions.ts`",
+        "Create `src/components/copilot/AdditionalInstructions.tsx` — client-only component that registers per-screen instructions, returns null",
+        "Inside, use `useRouterState({ select: (s) => s.location.pathname })` and a switch to decide which instruction(s) to register",
+        "Register at MOST one instruction per screen; each instruction <200 characters; in Spanish; specific not cosmetic. Examples:",
+        " - `/sueldos`: 'Solo el mes anterior es liquidable. mesLiquidable está en el contexto. Si te piden liquidar otro mes, explicá la regla y ofrecé el mes correcto.'",
+        " - `/clients/$id` con tab=iva: 'El IVA se publica el 5to día hábil del mes siguiente. Si el período actual no tiene scrape, sugerí esperar o disparar scrape manual con dispararScrape.'",
+        " - `/clients/$id` con tab=deudas: 'Priorizá deudas por fecha de vencimiento más próxima y monto. Sugerí dispararScrape de tipo deuda si los datos son viejos (>7 días).'",
+        " - `/clients/$id` con tab=notificaciones: 'Categorizá notificaciones AFIP por urgencia: penalización > rechazo > informativa. Sugerí marcarNotificacionLeida para las informativas en lote.'",
+        " - `/clients` (lista): 'Si el usuario menciona un cliente por nombre, identificá el clientId del contexto del listado antes de invocar acciones. No inventes UUIDs.'",
+        " - `/notifications`: 'Cuando el usuario marca una notificación como leída, invocá marcarNotificacionLeida con el id del contexto. Confirmá visualmente con el componente HITL.'",
+        "Use `useRouterState` to also read the active tab if relevant (currently the tab state lives in component-level state — for now, it's OK to detect tab via URL search params or skip tab-specific instructions and register only path-based ones. Document this limitation).",
+        "Mount `<AdditionalInstructions />` inside `<CopilotKit>` in `src/routes/_authed/route.tsx`, alongside `<CopilotActions />` and `<CopilotSuggestions />`, only when ai_agent enabled",
+        "Lint check: run `npx eslint src/components/copilot/AdditionalInstructions.tsx src/routes/_authed/route.tsx` — must show 0 NEW errors vs baseline. DO NOT run `bun run lint`.",
+        "Run `bun run dev` — manual verification:",
+        " - Go to /sueldos, open panel, ask 'puedo liquidar el mes actual?' → respuesta debería mencionar la regla del mes anterior",
+        " - Go to /clients/<id>/iva, ask 'cuándo se publica el IVA?' → respuesta debería mencionar 5to día hábil",
+        " - Go to /clients (lista), ask sobre un cliente por nombre → modelo no inventa UUIDs, busca en el contexto del listado"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "useCopilotAdditionalInstructions takes `{ instructions: string }`. It augments the system prompt while the component is mounted; auto-cleanup on unmount. Avoid contradicting instructions and avoid hardcoding values that change (use the instruction to TELL the model how to use the readable context). Hard limit yourself to at most 6 distinct instructions across the app — too many and the model gets confused."
+    },
+    {
+      "id": "US-004",
+      "title": "Update docs/copilotkit-prd.md to mark adopted features",
+      "description": "As a developer/maintainer, I want the PRD evaluation document updated so the team knows which features were adopted, so the roadmap stays accurate.",
+      "acceptanceCriteria": [
+        "Update `docs/copilotkit-prd.md`: mark sections 2.1, 2.2 and 2.4 with a header note '✅ ADOPTADO' linking to the user story IDs in this run (US-001, US-002, US-003)",
+        "In section 4 (Roadmap propuesto), move 2.1, 2.2 and 2.4 from 'Sprint inmediato' to a new section called '✅ Adoptado en feb 2026' (or current date)",
+        "Append a section 'Aprendizajes del Sprint 1' with any non-trivial discoveries from implementing the 3 features (e.g. how custom events were used for tab control, gotchas with useCopilotChatSuggestions reactivity)",
+        "Markdown is not linted. Just verify no broken internal links or section references in the doc.",
+        "Read the updated doc end-to-end and confirm it makes sense"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "This is documentation hygiene — keeps the PRD live and trustworthy. Future agents/devs reading docs/copilotkit-prd.md should see what's been done."
+    }
+  ]
+}

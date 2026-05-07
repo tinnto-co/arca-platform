@@ -19,11 +19,10 @@ import { useQuery } from '@tanstack/react-query';
 import { CopilotKit } from '@copilotkit/react-core';
 import '@copilotkit/react-ui/styles.css';
 import { CopilotActions } from '@/components/copilot/CopilotActions';
-import { AdditionalInstructions } from '@/components/copilot/AdditionalInstructions';
 import { CopilotAttachmentProvider } from '@/components/copilot/AttachmentContext';
 import { CopilotBottomPanel } from '@/components/copilot/CopilotBottomPanel';
-import { CopilotSuggestions } from '@/components/copilot/CopilotSuggestions';
 import { FrontendTools } from '@/components/copilot/FrontendTools';
+import { GlobalCopilotReadables } from '@/components/copilot/GlobalCopilotReadables';
 import { cn } from '@/lib/utils';
 
 export const Route = createFileRoute('/_authed')({
@@ -70,13 +69,13 @@ function RouteComponent() {
     <OrgSwitchProvider>
       <SidebarProvider defaultOpen={true} className="h-svh">
         <AppSidebar />
-        <SidebarInset className="min-h-0 overflow-y-auto">
+        <SidebarInset className="relative flex min-h-0 flex-col">
           <div
             className={cn(
-              'min-w-0',
+              'min-w-0 flex-1 min-h-0 overflow-y-auto',
               isChatDetail
                 ? 'h-full overflow-hidden'
-                : 'bg-[var(--arca-bg)] pb-20 md:pb-0'
+                : 'bg-[var(--arca-bg)] pb-28 md:pb-24'
             )}
           >
             <Outlet />
@@ -93,9 +92,8 @@ function RouteComponent() {
       <CopilotKit runtimeUrl="/api/copilotkit" agent="default">
         <CopilotAttachmentProvider>
           <CopilotActions />
-          <CopilotSuggestions />
-          <AdditionalInstructions />
           <FrontendTools />
+          <GlobalCopilotReadables />
           {shell(!hideAgentInput ? <AgentInput /> : null)}
           {!isChatRoute && <CopilotBottomPanel />}
         </CopilotAttachmentProvider>

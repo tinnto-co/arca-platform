@@ -1,0 +1,218 @@
+{
+  "project": "ARCA Platform — CopilotKit Integration",
+  "branchName": "ralph/copilotkit-integration",
+  "description": "Integrate CopilotKit on top of the existing Vercel AI SDK agent. Add a floating popup assistant accessible from any authenticated page, generative UI that renders existing components inline (RenderIvaResume, VencimientosList, MiniKpiCards, RenderPdfInfo), contextual readability of the active client/profile, human-in-the-loop mutations for safe actions (scrape jobs, mark notification opened), and PDF drag-and-drop for bank statement scanning. The existing /chat page and its /api/agent endpoint MUST continue working unchanged — CopilotKit runs in parallel, not as a replacement. Gated by the existing 'ai_agent' module flag.",
+  "globalConstraints": [
+    "NEVER modify src/routes/api/agent.ts",
+    "NEVER modify src/routes/_authed/chat/$id.tsx or src/routes/_authed/chat/index.tsx",
+    "All CopilotKit features must be gated by the 'ai_agent' module flag (via listOrgModules from src/actions/admin.tsx)",
+    "All server functions must call getSessionWithOrg() first and scope by orgId (multi-tenancy)",
+    "Never expose client.password or any AFIP credentials to the client/agent",
+    "Mutations must use human-in-the-loop confirmation (renderAndWaitForResponse pattern)",
+    "All commits must pass: bun run lint and TypeScript typecheck"
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Install CopilotKit deps and create runtime endpoint",
+      "description": "As a developer, I need CopilotKit installed and a runtime endpoint mounted on the server so that the frontend can connect to a CopilotKit-compatible backend, without affecting the existing /api/agent endpoint.",
+      "acceptanceCriteria": [
+        "Run `bun add @copilotkit/react-core @copilotkit/react-ui @copilotkit/runtime` and verify package.json updated",
+        "Create src/routes/api/copilotkit.ts as a TanStack Route exposing POST handler using `copilotRuntimeNodeHttpEndpoint` or `copilotRuntimeNextJSAppRouterEndpoint`-compatible adapter wired to Web standard Request/Response (TanStack Start uses Web Request)",
+        "Use `CopilotRuntime` from @copilotkit/runtime with a Google Generative AI service adapter using process.env.GEMINI_API_KEY and model 'gemini-2.5-flash'",
+        "Endpoint MUST call getSessionWithOrg() before processing; return 401 if no session, 403 if no active org",
+        "Minimal system instruction: 'Sos Arca Asistente, integrado en la plataforma del estudio contable. Respondés siempre en español rioplatense, tono profesional y directo. Nunca inventás datos.'",
+        "DO NOT modify src/routes/api/agent.ts, src/routes/_authed/chat/$id.tsx, or src/routes/_authed/chat/index.tsx",
+        "Run `bun run lint` — passes with no new errors",
+        "Run `bun run dev` — server boots without errors; manually open /chat and send a test message — existing agent at /api/agent continues to work and stream responses"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Phase 1 — Foundation. The TanStack Start route handler signature is `{ server: { handlers: { POST: async ({ request }) => Response } } }` — see existing src/routes/api/agent.ts for the pattern. CopilotKit's runtime accepts a Web Request and returns a Response, which fits TanStack Start. If the runtime requires Node-style req/res, wrap it. Reference: https://docs.copilotkit.ai/reference/classes/CopilotRuntime"
+    },
+    {
+      "id": "US-002",
+      "title": "Mount CopilotKit provider in _authed layout, gated by ai_agent module",
+      "description": "As a studio operator, I want the CopilotKit provider only mounted when the 'ai_agent' module is enabled for my organization so that orgs without the module are not affected and don't pay for unused capacity.",
+      "acceptanceCriteria": [
+        "In src/routes/_authed/route.tsx, fetch listOrgModules() via useQuery(['orgModules']) — same pattern as src/components/app-sidebar.tsx",
+        "When `ai_agent` is enabled, wrap children with `<CopilotKit runtimeUrl=\"/api/copilotkit\" agent=\"default\">` from @copilotkit/react-core",
+        "When `ai_agent` is disabled, render children WITHOUT the provider — no CopilotKit code paths run",
+        "Import CSS once: `import '@copilotkit/react-ui/styles.css'` (place inside the conditional branch or at the top of the route file — verify it does not leak when module is disabled)",
+        "Run `bun run lint` — passes",
+        "Manual: with ai_agent enabled in /admin → app loads, no console errors; with ai_agent disabled → app loads, no CopilotKit-related network calls or runtime errors",
+        "Manual: existing /chat page continues working in both states"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Phase 1. The provider must NOT block render. Reference: useQuery key ['orgModules'] used by app-sidebar.tsx. Module flag values from src/actions/admin.tsx listOrgModules()."
+    },
+    {
+      "id": "US-003",
+      "title": "Render CopilotPopup as floating assistant, hidden on /chat routes",
+      "description": "As a studio operator, I want a floating assistant button visible on every page except the dedicated /chat page so that I can ask questions without navigating away from my current context.",
+      "acceptanceCriteria": [
+        "Add `<CopilotPopup>` from @copilotkit/react-ui inside the CopilotKit provider in src/routes/_authed/route.tsx",
+        "Use `useLocation()` from @tanstack/react-router to hide the popup when pathname starts with `/chat` (avoid double UI on the dedicated chat page)",
+        "Provide Spanish labels via the `labels` prop: title='Asistente Arca', initial='¿En qué puedo ayudarte?', placeholder='Preguntale al asistente…'",
+        "The popup loads even with zero registered actions (just chat with the model)",
+        "Run `bun run lint` — passes",
+        "Verify in browser:",
+        " - Go to / (dashboard), /clients, /sueldos, /notifications — popup button visible bottom-right",
+        " - Open the popup, send 'hola' → model responds in Spanish",
+        " - Go to /chat or /chat/<some-id> → popup button is NOT visible",
+        " - Existing /chat conversation continues working with no regression"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Phase 1. CopilotPopup is preferred over CopilotSidebar for low-intrusion UX (no layout shift). Reference: https://docs.copilotkit.ai/reference/components/CopilotPopup"
+    },
+    {
+      "id": "US-004",
+      "title": "Generative UI for IVA position via useCopilotAction",
+      "description": "As a studio operator, I want to ask the assistant for a client's IVA position and see the result rendered as the existing RenderIvaResume component inline in the chat so that I get the full visual breakdown without navigating to the client page.",
+      "acceptanceCriteria": [
+        "Create src/actions/copilot.tsx with a server function `getIvaPositionForCopilot` that mirrors the logic in src/routes/api/agent.ts lines ~410-580 (the getIvaPosition tool). It MUST: call getSessionWithOrg(), validate clientName matches exactly one client in the org, fetch profiles, fetch ivaScrape for prevMonth, fetch invoices for displayMonth, call calcularIvaDesdeFacturas from @/lib/iva-calc, return the same shape as the existing tool",
+        "Create src/components/copilot/CopilotActions.tsx — a client component that registers actions via hooks. It returns null (no UI of its own).",
+        "Inside CopilotActions.tsx, register `useCopilotAction({ name: 'getIvaPosition', description, parameters: [{name: 'clientName', type: 'string', required: true}, {name: 'displayMonth', type: 'string', required: false, description: 'MM/YYYY'}], handler: async (args) => await getIvaPositionForCopilot({data: args}), render: ({status, args, result}) => <RenderIvaResume data={result} /> })`",
+        "Mount `<CopilotActions />` inside the CopilotKit provider scope in src/routes/_authed/route.tsx, only when ai_agent module is enabled",
+        "Run `bun run lint` — passes",
+        "Verify in browser: go to /, open popup, ask 'IVA de [un cliente real] en marzo 2026' → after a brief loading state, RenderIvaResume renders inline with the IVA breakdown for that client",
+        "DO NOT modify src/routes/api/agent.ts"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Phase 2 — Generative UI. The existing component is at src/components/render-iva-resume.tsx — inspect its props before wiring. The IVA logic is duplicated for now from /api/agent.ts; future stories may consolidate into a shared lib in src/lib/iva-position.ts. Use calcularIvaDesdeFacturas from @/lib/iva-calc as the existing agent does."
+    },
+    {
+      "id": "US-005",
+      "title": "Generative UI for upcoming due dates via useCopilotAction",
+      "description": "As a studio operator, I want to ask the assistant for upcoming due dates and see them rendered as the existing VencimientosList component so that I can review what's due in days/weeks ahead at a glance.",
+      "acceptanceCriteria": [
+        "In src/components/copilot/CopilotActions.tsx, register `useCopilotAction({ name: 'getVencimientos', description: 'Lista los próximos vencimientos fiscales', parameters: [{name: 'daysAhead', type: 'number', required: false, description: 'Días hacia adelante, default 30'}], handler: async (args) => await getUpcomingDueDates({data: {daysAhead: args.daysAhead ?? 30}}), render: ({status, result}) => <VencimientosList items={result} /> })`",
+        "Reuse the existing server function getUpcomingDueDates from src/actions/dashboard.tsx (verify its input schema; if it doesn't accept daysAhead, adapt by either extending the action or computing from today + N days inside the handler)",
+        "Reuse the existing component VencimientosList from src/components/dashboard/vencimientos-list.tsx (verify its props before wiring)",
+        "Run `bun run lint` — passes",
+        "Verify in browser: open popup on /, ask 'qué vencimientos tengo en los próximos 7 días' → VencimientosList renders inline with the items",
+        "DO NOT modify src/routes/api/agent.ts"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Phase 2. If VencimientosList expects a specific shape, adapt the handler's return value before passing to render. Inspect src/components/dashboard/vencimientos-list.tsx for the exact props."
+    },
+    {
+      "id": "US-006",
+      "title": "Generative UI for dashboard KPIs via useCopilotAction",
+      "description": "As a studio operator, I want to ask 'mostrame el resumen del estudio' and see the org-level KPIs rendered as the existing MiniKpiCards component so that I get a snapshot without navigating away.",
+      "acceptanceCriteria": [
+        "In src/components/copilot/CopilotActions.tsx, register `useCopilotAction({ name: 'getDashboardKpis', description: 'Resumen ejecutivo del estudio (KPIs)', parameters: [], handler: async () => await getDashboardStats(), render: ({status, result}) => <MiniKpiCards data={result} /> })`",
+        "Reuse the existing server function getDashboardStats from src/actions/dashboard.tsx",
+        "Reuse the existing component MiniKpiCards from src/components/dashboard/mini-kpi-cards.tsx (verify its props)",
+        "Run `bun run lint` — passes",
+        "Verify in browser: open popup, ask 'dame el resumen del estudio' or 'cuáles son los KPIs' → MiniKpiCards renders inline",
+        "DO NOT modify src/routes/api/agent.ts"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Phase 2. Inspect MiniKpiCards props vs getDashboardStats return shape — adapt the render callback if necessary."
+    },
+    {
+      "id": "US-007",
+      "title": "Active client/profile context via useCopilotReadable",
+      "description": "As a studio operator, when I'm on a client or profile detail page, I want the assistant to know which entity I'm looking at so that I can ask 'qué facturó este mes' without restating the client name.",
+      "acceptanceCriteria": [
+        "In src/components/client-detail-page.tsx, add `useCopilotReadable({ description: 'Cliente actualmente visible en pantalla', value: { id: client.id, name: client.name, identityNumber: client.identityNumber, fiscalCondition: client.fiscalCondition, status: client.status } })` — NEVER include client.password or any credential",
+        "In src/components/profile-detail-page.tsx, add `useCopilotReadable({ description: 'Profile fiscal actualmente visible en pantalla', value: { id: profile.id, name: profile.name, identityNumber: profile.identityNumber, clientId: profile.clientId, status: profile.status } })`",
+        "Both hooks must be safe when CopilotKit provider is not mounted (ai_agent disabled) — `useCopilotReadable` is a no-op outside provider scope; verify no errors thrown",
+        "Run `bun run lint` — passes",
+        "Verify in browser:",
+        " - Go to /clients/<some-id>, open the popup, ask 'qué cliente estoy viendo' → assistant responds with the client's name and identity number",
+        " - Go to /clients/<some-id>/<profile-id>, open the popup, ask 'qué profile estoy viendo' → assistant responds with the profile's name and CUIT",
+        "DO NOT modify src/routes/api/agent.ts"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "Phase 3 — Contexto. useCopilotReadable from @copilotkit/react-core. Only expose non-sensitive fields. Never include client.password (AFIP credential)."
+    },
+    {
+      "id": "US-008",
+      "title": "Human-in-the-loop action: dispararScrape via useCopilotAction",
+      "description": "As a studio operator, when looking at a client, I want to ask the assistant to dispatch a scrape job, see a confirmation card with the details, and only execute on my approval so that I never trigger a job by accident.",
+      "acceptanceCriteria": [
+        "Create src/components/copilot/ScrapeConfirmation.tsx — a presentation component that takes `{ clientName, jobType, onConfirm, onCancel }` and renders a card with two buttons (Confirmar / Cancelar)",
+        "In src/components/copilot/CopilotActions.tsx, register `useCopilotAction({ name: 'dispararScrape', description: 'Dispara un job de scraping para un cliente. Pide confirmación antes de ejecutar.', parameters: [{name: 'clientId', type: 'string', required: true}, {name: 'jobType', type: 'string', enum: ['iva','comprobantes','notificaciones','deuda','vencimientos'], required: true}], renderAndWaitForResponse: ({args, respond, status}) => status === 'executing' ? <ScrapeConfirmation clientName={...} jobType={args.jobType} onConfirm={() => respond('confirmado')} onCancel={() => respond('cancelado')} /> : null, handler: async (args, response) => { if (response !== 'confirmado') return { cancelled: true }; return await scrapSingleJob({data: {clientId: args.clientId, type: args.jobType}}) } })`",
+        "Use the existing server function scrapSingleJob from src/actions/client.tsx",
+        "Combine with US-007: in /clients/$id, the assistant has the client context — asking 'scrapeame las facturas' uses the active client's id",
+        "Run `bun run lint` — passes",
+        "Verify in browser:",
+        " - Go to /clients/<some-id> with US-007 context active",
+        " - Open popup, ask 'scrapeame las facturas de este cliente' (or 'corré comprobantes')",
+        " - Confirmation card appears with client name + job type",
+        " - Click Cancelar → no job dispatched (verify in /jobs that no new job appeared)",
+        " - Repeat and click Confirmar → job appears in /jobs with status pending or running",
+        "DO NOT modify src/routes/api/agent.ts"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "Phase 3 — HITL. CopilotKit's renderAndWaitForResponse pattern is documented at https://docs.copilotkit.ai/guides/human-in-the-loop. The component in src/components/copilot/ScrapeConfirmation.tsx should use shadcn UI primitives (Card, Button) consistent with the rest of the app."
+    },
+    {
+      "id": "US-009",
+      "title": "Human-in-the-loop action: marcarNotificacionLeida via useCopilotAction",
+      "description": "As a studio operator, when looking at /notifications, I want to ask the assistant to mark a specific notification as opened, see a confirmation, and have it applied so that I can triage notifications conversationally.",
+      "acceptanceCriteria": [
+        "In src/routes/_authed/notifications/index.tsx (or src/components/notifications-view.tsx if logic lives there), add `useCopilotReadable({ description: 'Notificaciones AFIP no leídas visibles en pantalla', value: unreadList.map(n => ({ id: n.id, message: n.message, publicationDate: n.publicationDate })) })` — limit to first 20 unread notifications",
+        "In src/components/copilot/CopilotActions.tsx, register `useCopilotAction({ name: 'marcarNotificacionLeida', description: 'Marca una notificación AFIP como leída. Pide confirmación.', parameters: [{name: 'notificationId', type: 'string', required: true}], renderAndWaitForResponse: ({args, respond, status}) => <ConfirmationCard text={`Marcar notificación ${args.notificationId.slice(0,8)}… como leída?`} onConfirm={...} onCancel={...} />, handler: async (args, response) => response === 'confirmado' ? await markNotificationOpened({data: {id: args.notificationId}}) : {cancelled:true} })`",
+        "Create src/components/copilot/ConfirmationCard.tsx — generic Confirmar/Cancelar card (reusable for any HITL)",
+        "Use the existing server function markNotificationOpened from src/actions/notification.tsx",
+        "Run `bun run lint` — passes",
+        "Verify in browser: go to /notifications with at least one unread notification, open popup, ask 'marcala como leída la primera' → confirmation appears → confirm → notification status updates (refresh to verify)",
+        "DO NOT modify src/routes/api/agent.ts"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": "Phase 3. The ConfirmationCard component is generic — reuse for future HITL actions. Verify the existing notification component listing logic (src/components/notifications-view.tsx) has access to the unread list to expose via readable."
+    },
+    {
+      "id": "US-010",
+      "title": "PDF drag-and-drop attachment in CopilotPopup",
+      "description": "As a studio operator, I want to drag a PDF onto the assistant popup so that I can attach a bank statement or document for processing without leaving my current context.",
+      "acceptanceCriteria": [
+        "Create src/components/copilot/AttachmentBar.tsx — a small bar mounted above the CopilotPopup input that: accepts drag-and-drop of PDF files (single file at a time, max 10MB), reads file as base64, stores in a context/state, shows preview (filename, size, X to clear)",
+        "Use a React Context `CopilotAttachmentContext` (src/components/copilot/AttachmentContext.tsx) that holds `{ file: { name, size, base64 } | null, setFile, clear }` so actions can read the attached file",
+        "Wire CopilotPopup so the AttachmentBar appears inside or just above the input area; alternatively, register a custom InputProps slot if the API supports it. Acceptable workaround: render `<AttachmentBar />` as a floating element inside the popup using fixed positioning + z-index",
+        "Reject non-PDF files with a toast: `toast.error('Solo se aceptan archivos PDF')`",
+        "Reject files > 10MB with a toast: `toast.error('Archivo demasiado grande (máximo 10MB)')`",
+        "Run `bun run lint` — passes",
+        "Verify in browser: open popup, drag a PDF onto it → preview shows filename and size; click X → preview clears; drag a non-PDF → toast error; drag a 15MB file → toast error",
+        "DO NOT modify src/routes/api/agent.ts"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": "Phase 4 — Scan PDF. CopilotKit may not have first-class file upload yet; use a custom approach. Reference Sonner toast pattern from src/conventions. The AttachmentContext is consumed by US-011 action."
+    },
+    {
+      "id": "US-011",
+      "title": "Scan PDF action wired to scanBankStatement with Generative UI",
+      "description": "As a studio operator, after attaching a PDF bank statement to the popup, I want to ask 'guardalo como movimientos del cliente X' so that the assistant scans the PDF, shows me the extracted preview, and on my confirmation persists the movements — without navigating to /scan_pdf.",
+      "acceptanceCriteria": [
+        "In src/components/copilot/CopilotActions.tsx, register `useCopilotAction({ name: 'escanearExtractoBancario', description: 'Escanea el PDF adjunto y guarda los movimientos para un cliente. Requiere PDF adjunto y confirmación.', parameters: [{name: 'clientId', type: 'string', required: true}], renderAndWaitForResponse: ({args, respond, status, result}) => result?.preview ? <RenderPdfInfo info={result.preview} onConfirm={() => respond('confirmado')} onCancel={() => respond('cancelado')} /> : <div>Procesando…</div>, handler: async (args, response) => { /* read attached file from context, call scanBankStatement first to extract, then on confirm persist movements */ } })`",
+        "The handler reads the attached file via `useContext(CopilotAttachmentContext)` (or a plain getter exposed alongside the context) — if no file is attached, return `{ error: 'No hay PDF adjunto' }`",
+        "First step: call existing scanBankStatement from src/actions/scannerAi.tsx with the file's base64 → extract movements → return as `result.preview`",
+        "Render uses the existing component RenderPdfInfo from src/components/render-pdf-info.tsx (verify props before wiring)",
+        "On user Confirmar, persist movements (if scanBankStatement only extracts, add a follow-up persistence call — verify whether scanBankStatement already persists or just extracts; do not duplicate persistence)",
+        "Run `bun run lint` — passes",
+        "Verify in browser:",
+        " - Open popup, drag a real PDF bank statement",
+        " - Ask 'escaneá esto y guardalo como movimientos del cliente <name>'",
+        " - The assistant resolves the clientId by name, then RenderPdfInfo shows the extracted preview",
+        " - Click Cancelar → no persistence",
+        " - Repeat and click Confirmar → movements persisted (verify in DB or via the bank UI if it exists)",
+        "DO NOT modify src/routes/api/agent.ts"
+      ],
+      "priority": 11,
+      "passes": true,
+      "notes": "Phase 4. Inspect scanBankStatement signature (src/actions/scannerAi.tsx) before designing — does it persist or just extract? If it persists, split the flow: extract + preview, then a separate persist call. RenderPdfInfo is at src/components/render-pdf-info.tsx."
+    }
+  ]
+}
