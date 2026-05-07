@@ -236,7 +236,13 @@ export function SueldosSimulador({
   const isCopyMode = !!flowHeader?.copiarUltimoRecibo;
   const isLoadingTable =
     loadingPlantilla || (isCopyMode && loadingUltimo);
-  const showTable = !!flowHeader && !isLoadingTable && plantillaManual.length > 0;
+  const showBase =
+    !!flowHeader && !isLoadingTable && plantillaManual.length > 0;
+  /** Tabla con datos del último recibo importado (solo si hay último recibo). */
+  const showImportadoTable = showBase && isCopyMode && !!ultimoRecibo;
+  /** Plantilla manual: sin copia, o copia pero sin recibo previo. */
+  const showManualTable =
+    showBase && (!isCopyMode || (isCopyMode && !ultimoRecibo));
 
   // Para modo copia: muestra todos los conceptos SOS con valores del último recibo pre-cargados.
   // Para modo manual: muestra todos los conceptos SOS con valores vacíos.
@@ -314,9 +320,14 @@ export function SueldosSimulador({
     plantillaKey,
   ]);
 
-  // Resetear códigos activos cuando cambia empleado/período/modo/plantilla
+  // Resetear códigos activos cuando cambia empleado/período/modo/plantilla.
+  // En modo manual (no copiar) los 5 conceptos obligatorios quedan pre-activos;
+  // en modo copia el effect posterior los reemplaza con los del último recibo.
   useEffect(() => {
-    setActiveCodigos(new Set());
+    const copiar = !!flowHeader?.copiarUltimoRecibo;
+    setActiveCodigos(
+      copiar ? new Set() : new Set(['1', '3', '201', '202', '203'])
+    );
   }, [
     flowHeader?.importEmpleadoId,
     flowHeader?.periodo,
@@ -496,7 +507,7 @@ export function SueldosSimulador({
 
   const puedeGuardar =
     !!flowHeader &&
-    showTable &&
+    (showImportadoTable || showManualTable) &&
     permiteLiquidar &&
     !guardarRecibo.isPending;
 
@@ -571,24 +582,25 @@ export function SueldosSimulador({
         </p>
       )}
 
-      {showTable && (
+      {showImportadoTable && (
         <Card className="border border-border/70 shadow-sm">
           <CardHeader>
             <CardTitle className="text-base">
-              {isCopyMode ? 'Conceptos — copia del último recibo' : 'Conceptos — carga manual'}
+              Conceptos — copia del último recibo
             </CardTitle>
             <p className="text-sm text-muted-foreground">
-              {isCopyMode
-                ? 'Conceptos del último recibo pre-cargados. Podés editar cualquier fila o agregar conceptos extra con el botón "+".'
-                : 'Usá el botón "+" de cada sección para agregar los conceptos que necesites. Los montos se pre-calculan con el básico de escala vigente.'}
+              Conceptos del último recibo pre-cargados. Podés editar cualquier fila o agregar
+              conceptos extra con el botón + de cada sección.
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="rounded-lg border bg-background p-3">
             <TablaReciboSos
               variant="importado"
-              recibo={ultimoRecibo!.recibo}
-              conceptos={ultimoRecibo!.conceptos}
+              recibo={ultimoRecibo.recibo}
+              conceptos={ultimoRecibo.conceptos}
+              basico={basicoEscala}
+              recalculateWithBasico={recalcularConEscalaVigente}
               onChange={handleTablaChange}
               firmaEmpleadorUrl={firmaEmpleadorUrl}
             />
@@ -678,11 +690,18 @@ export function SueldosSimulador({
                 </div>
                 <div className="rounded-lg border bg-background p-3">
                 <TablaReciboSos
-                  key={plantillaManual.map((c) => c.id).join('|')}
+                  key={`${plantillaKey}|${[...activeCodigos].sort().join(',')}`}
                   variant="manual"
                   recibo={reciboHeaderSimulado}
-                  conceptos={plantillaManual}
+                  conceptos={conceptosFilas}
                   basico={basicoEscala}
+                  activeCodigos={activeCodigos}
+                  catalogoCompleto={conceptosFilas}
+                  onAddConcepto={handleAddConcepto}
+                  onRemoveConcepto={handleRemoveConcepto}
+                  recalculateWithBasico={
+                    isCopyMode && recalcularConEscalaVigente && !ultimoRecibo
+                  }
                   onChange={handleTablaChange}
                   firmaEmpleadorUrl={firmaEmpleadorUrl}
                 />
