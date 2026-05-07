@@ -19,6 +19,7 @@ import { useQuery } from '@tanstack/react-query';
 import { CopilotKit } from '@copilotkit/react-core';
 import '@copilotkit/react-ui/styles.css';
 import { CopilotActions } from '@/components/copilot/CopilotActions';
+import { AdditionalInstructions } from '@/components/copilot/AdditionalInstructions';
 import { CopilotAttachmentProvider } from '@/components/copilot/AttachmentContext';
 import { CopilotBottomPanel } from '@/components/copilot/CopilotBottomPanel';
 import { CopilotSuggestions } from '@/components/copilot/CopilotSuggestions';
@@ -93,6 +94,7 @@ function RouteComponent() {
         <CopilotAttachmentProvider>
           <CopilotActions />
           <CopilotSuggestions />
+          <AdditionalInstructions />
           <FrontendTools />
           {shell(!hideAgentInput ? <AgentInput /> : null)}
           {!isChatRoute && <CopilotBottomPanel />}

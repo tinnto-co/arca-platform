@@ -98,3 +98,37 @@ Project: ARCA Platform — CopilotKit Phase 2
   - Custom-event pattern works cleanly for cross-subtree tab control (no extra context provider, no prop drilling). Augment `WindowEventMap` once in the tool file so both dispatcher and listener get type inference on `e.detail`. Keep the event name as an exported `const` so the listener side imports the same string and you don't get drift.
   - Tab tools only have effect when the user is on the matching page — that's by design (the listener only mounts when the page is rendered). The assistant should still respond gracefully ("Pestaña cambiada a 'iva'.") even if the user isn't on the page; in practice the suggestions/instructions in the next stories will hint the model when to use which tool.
 ---
+
+## 2026-05-07 - US-003
+- Implemented per-screen system-prompt augmentation for the CopilotBottomPanel using `useCopilotAdditionalInstructions` from `@copilotkit/react-core`. The hook auto-cleans up on unmount, so swapping routes effectively swaps which rule is in the system prompt.
+- Created `src/components/copilot/AdditionalInstructions.tsx`: client-only registrar (returns null) that reads the active pathname via `useRouterState` and registers ONE Spanish-rioplatense instruction per relevant screen. All instructions ≤200 chars and tell the model HOW to use the existing readable context — they never hardcode IDs/values.
+- Registered 4 instructions total (under the AC's hard limit of 6):
+  - `/clients/$id`: prioridad de deudas, fecha de publicación de IVA (5to día hábil), categorización de notificaciones AFIP por urgencia.
+  - `/clients` (lista): identificá clientId del contexto antes de invocar acciones; no inventes UUIDs.
+  - `/sueldos` (+ subrutas): regla del mes liquidable (solo el mes anterior).
+  - `/notifications`: usar marcarNotificacionLeida con id del contexto y confirmar visualmente con el HITL.
+- Tab-level instructions for `/clients/$id?tab=iva|deudas|notificaciones` were intentionally collapsed into a single path-level instruction because the active tab lives in component-level state (no URL search params). Documented this limitation in the component's JSDoc — if tabs ever move to search params, separar el instruction en uno por tab.
+- Mounted `<AdditionalInstructions />` inside the `<CopilotKit>` provider in `src/routes/_authed/route.tsx`, alongside `<CopilotActions />`, `<CopilotSuggestions />` y `<FrontendTools />`. Solo se monta cuando `aiAgentEnabled` es true (todo el subárbol está gateado por el mismo flag).
+
+- Files changed:
+  - src/components/copilot/AdditionalInstructions.tsx (new)
+  - src/routes/_authed/route.tsx (+1 import, +1 JSX line)
+
+- **How to verify:**
+  - Run `bun run dev`, log in con un org que tenga el módulo `ai_agent` habilitado.
+  - Ir a `/sueldos` con un cliente seleccionado → abrir CopilotBottomPanel → preguntar "¿puedo liquidar el mes actual?" → la respuesta debería citar la regla del mes anterior (mesLiquidable) y ofrecer el mes correcto.
+  - Ir a `/clients/<id>` → preguntar "¿cuándo se publica el IVA?" → la respuesta debería mencionar el 5to día hábil del mes siguiente.
+  - Ir a `/clients/<id>` → preguntar "¿cuáles deudas debo priorizar?" → la respuesta debería ordenar por fecha de vencimiento más próxima.
+  - Ir a `/clients` (lista) → preguntar sobre un cliente por nombre → el modelo NO debería inventar UUIDs; en su lugar debería buscar el `clientId` en el contexto del listado expuesto por `useCopilotReadable`.
+  - Ir a `/notifications` → pedir "marcá la notificación de AFIP como leída" → el modelo invoca `marcarNotificacionLeida` con el id del contexto y confirma visualmente con el componente HITL.
+  - Ir a una ruta sin instruction registrada (ej. `/admin`) → el comportamiento del modelo vuelve al system prompt base; no se inyecta ninguna línea adicional.
+  - Lint check: `npx eslint src/components/copilot/AdditionalInstructions.tsx src/routes/_authed/route.tsx` → 0 NEW errors. AdditionalInstructions.tsx = 0 issues. route.tsx mantiene los mismos 7 baseline issues que en US-001/US-002 (líneas corren por +2 por los imports nuevos).
+  - Typecheck: `npx tsc --noEmit` no reporta errores nuevos en los archivos modificados.
+
+- **Learnings for future iterations:**
+  - `useCopilotAdditionalInstructions` ya tiene cleanup automático: cuando el componente desmonta, o cuando `available` flipea a 'disabled', la línea de instructions se quita del system prompt. Por eso usar `available: instructions ? 'enabled' : 'disabled'` en lugar de un `if (!instructions) return null` mantiene la regla de hooks de React intacta y deja al hook hacer su propio toggle.
+  - El array de dependencias del hook (`[instructions]`) es lo que dispara la re-registración cuando cambia la ruta. Sin ese array, la línea inicial se queda pegada al system prompt aunque cambies de pantalla — mismo gotcha que documentamos en US-001 para `useCopilotChatSuggestions`.
+  - Tab-level instructions sin URL search params: el `<AdditionalInstructions />` corre arriba de los page components y no tiene acceso al `activeTab` que viven en estado local. Para soportarlo sin reestructurar, habría que: (a) llevar el tab a `useSearch()`, o (b) montar un segundo registrar adentro de cada page que lea su estado local. Para esta sprint se eligió (a)/(b)? — ninguno: collapse a un solo instruction por path. Documented the limitation en el JSDoc del componente.
+  - Hard-limit 6 instructions: registramos 4 (clients/$id, clients, sueldos, notifications). Cada vez que se agregue una nueva, revisar si conviene fusionarla a alguna existente para evitar que el system prompt se infle y el modelo se confunda con reglas que no aplican a la pantalla actual.
+  - Las 3 rutas Copilot registrars (`CopilotSuggestions`, `FrontendTools`, `AdditionalInstructions`) comparten exactamente el mismo patrón: client-only, return null, mounted dentro de `<CopilotKit>`, dispatchean según `useRouterState`. Si nace una 4ta o 5ta, vale extraer un `useRoutePathname()` helper, pero por ahora 3 instancias inline es ok (regla de tres).
+---

@@ -91,7 +91,7 @@
         " - Go to /clients (lista), ask sobre un cliente por nombre → modelo no inventa UUIDs, busca en el contexto del listado"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "useCopilotAdditionalInstructions takes `{ instructions: string }`. It augments the system prompt while the component is mounted; auto-cleanup on unmount. Avoid contradicting instructions and avoid hardcoding values that change (use the instruction to TELL the model how to use the readable context). Hard limit yourself to at most 6 distinct instructions across the app — too many and the model gets confused."
     },
     {
