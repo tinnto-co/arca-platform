@@ -599,9 +599,9 @@ function ReciboPdfPage({
   const cbu       = cab.cbu       ?? valorCabeceraLegible(empleado.cbu);
 
   // Datos de empresa
-  const empresaNombre   = clientData?.razonSocial ?? clientData?.name ?? '—';
-  const empresaCUIT     = clientData?.cuitEmpresa ?? clientData?.identityNumber ?? '—';
-  const empresaDirec    = clientData?.address ?? null;
+  const empresaNombre   = clientData?.razonSocial || clientData?.name || '—';
+  const empresaCUIT     = clientData?.cuitEmpresa || clientData?.identityNumber || '—';
+  const empresaDirec    = clientData?.address || null;
 
   return (
     <Page size="A4" style={S.page}>
