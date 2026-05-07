@@ -66,6 +66,7 @@ import {
 import { scrapSingleJob } from '@/actions/client';
 import { listOrgModules } from '@/actions/admin';
 import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
+import { ARCA_EVENT_SET_CLIENT_TAB } from '@/components/copilot/FrontendTools';
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
 import {
@@ -542,6 +543,16 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
 
     mediaQuery.addListener(update);
     return () => mediaQuery.removeListener(update);
+  }, []);
+
+  // Listen to CopilotKit frontend tool `cambiarTabClienteDetalle`.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handler = (e: WindowEventMap[typeof ARCA_EVENT_SET_CLIENT_TAB]) => {
+      if (e.detail?.tab) setActiveTab(e.detail.tab);
+    };
+    window.addEventListener(ARCA_EVENT_SET_CLIENT_TAB, handler);
+    return () => window.removeEventListener(ARCA_EVENT_SET_CLIENT_TAB, handler);
   }, []);
 
   const { data: debts = [], isLoading: loadingDebts } = useQuery({

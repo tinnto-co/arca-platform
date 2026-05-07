@@ -30,6 +30,9 @@ Project: ARCA Platform — CopilotKit Phase 2
 - Actions that take a clientId should ALSO accept clientName as fallback — Gemini sometimes regenerates UUIDs incorrectly
 - **CopilotKit per-screen hooks pattern**: dedicated client-only "registrar" components (return null) that mount inside `<CopilotKit>` provider. Use `useRouterState({ select: (s) => s.location.pathname })` to detect the active route and switch instructions reactively. See CopilotSuggestions.tsx — pattern reusable for AdditionalInstructions/FrontendTools too.
 - **`useCopilotChatSuggestions` available values**: `'enabled' | 'disabled' | 'always' | 'before-first-message' | 'after-first-message'`. With `'enabled'` the hook internally maps it to `'always'`. Pass `'disabled'` to skip registration entirely on routes where you don't want suggestions.
+- **Custom-event bridge for CopilotKit frontend tools → page state**: when a frontend tool needs to mutate component-level state in a different subtree (e.g. tab state in `client-detail-page.tsx` or `/sueldos`), dispatch a `CustomEvent` on `window` from the tool handler and add a `useEffect` listener on the page that calls `setActiveTab(e.detail.tab)`. Define the event name as a `const` and augment `WindowEventMap` so TS infers `e.detail` correctly. See `src/components/copilot/FrontendTools.tsx` (`ARCA_EVENT_SET_CLIENT_TAB`, `ARCA_EVENT_SET_SUELDOS_TAB`).
+- **`useFrontendTool` enum params auto-narrow**: when you pass `enum: [...TUPLE]` in `parameters`, the handler receives `tab` typed as the union — TypeScript narrows to `never` in the false branch of a runtime guard. Coerce via `String(tab)` and validate with a separate type-guard helper that takes `string`, otherwise prettier/typescript-eslint complains about template literals on `never`.
+- **Always `void navigate(...)` inside `useFrontendTool` handlers**: TanStack Router's `navigate()` returns a Promise; a non-async handler that drops it triggers `@typescript-eslint/no-floating-promises`. Same applies anywhere a non-async function calls navigate.
 
 ---
 
@@ -61,4 +64,37 @@ Project: ARCA Platform — CopilotKit Phase 2
   - Spreading instructions to `''` and `available: 'disabled'` on default routes is cleaner than conditionally calling the hook — React rule-of-hooks forbids conditional calls. Always invoke; toggle via `available`.
   - Pattern `/^\/clients\/[^/]+/` matches `/clients/:id` AND any nested subroute under it; check this BEFORE the literal `/clients` match to avoid matching the list page on detail URLs.
   - All screen-specific instructions assume the corresponding `useCopilotReadable` is mounted on that page (already done in prior runs for sueldos, clients-table, client-detail-page, notifications-view). If you add new screens later, add the readable BEFORE adding suggestions for that screen.
+---
+
+## 2026-05-07 - US-002
+- Implemented frontend-only tools the CopilotKit assistant can invoke without a server round-trip: navigation between main pages, opening a client by id, and switching tabs in `client-detail-page` and `/sueldos`. All run entirely in the browser via `useFrontendTool` from `@copilotkit/react-core`.
+- Created `src/components/copilot/FrontendTools.tsx`: registrar component (returns null) with 4 tools: `navegarA(ruta)`, `abrirCliente(clientId, clientName?)`, `cambiarTabClienteDetalle(tab)`, `cambiarTabSueldos(tab)`. Uses `useNavigate()` from @tanstack/react-router. Tab tools dispatch `window` `CustomEvent`s (`arca:set-client-tab`, `arca:set-sueldos-tab`) so they can drive component-level tab state across subtrees without prop drilling. Event names are exported as named constants and augmented into `WindowEventMap` so listeners get full type inference on `e.detail.tab`.
+- Wired `useEffect` listeners in `src/components/client-detail-page.tsx` and `src/routes/_authed/sueldos/index.tsx`: each subscribes/unsubscribes to its own custom event and calls the existing `setActiveTab` setter. Imports the event name constant from `FrontendTools.tsx` to keep the contract single-sourced.
+- Mounted `<FrontendTools />` inside the `<CopilotKit>` provider in `src/routes/_authed/route.tsx`, alongside `<CopilotActions />` and `<CopilotSuggestions />`. Only mounted when `aiAgentEnabled` is true (entire CopilotKit subtree is gated by the same flag).
+- All tools are non-destructive (navigation + in-memory tab state only). Validation is done both via the LLM-facing `enum` parameter and a runtime type guard, so an off-spec value returns a polite "Pestaña no válida"/"Ruta no válida" string instead of throwing.
+
+- Files changed:
+  - src/components/copilot/FrontendTools.tsx (new)
+  - src/routes/_authed/route.tsx (+1 import, +1 JSX line)
+  - src/components/client-detail-page.tsx (+1 import, +1 useEffect block listening on `arca:set-client-tab`)
+  - src/routes/_authed/sueldos/index.tsx (+1 import, +1 useEffect block listening on `arca:set-sueldos-tab`)
+
+- **How to verify:**
+  - Run `bun run dev`, log in to an org with `ai_agent` module enabled.
+  - Open the CopilotBottomPanel via `AgentInput` from the dashboard `/`.
+  - Ask "llevame a clientes" → URL changes to `/clients` without a full page reload, no console errors.
+  - Ask "navegáme a vencimientos" → URL changes to `/vencimientos`.
+  - Ask "navegáme a una ruta inexistente" → assistant replies that the route is invalid and lists available ones.
+  - Go to `/clients`, ensure the listing's `CopilotReadableEntity` has a `clientesResumen` array with ids visible to the agent. Ask "abrime <nombre del cliente>" → URL changes to `/clients/<id>`, detail page renders, no full reload.
+  - On `/clients/<id>`, ask "mostrame el IVA" → tab in the detail page switches to "iva". Repeat with "andá a deudas", "andá a notificaciones", "abrí convenio multilateral" — all should switch the active tab without reloading.
+  - Go to `/sueldos`, select a cliente in the searchable select, ask "andá a empleados" → tab switches to "empleados". Try "andá a recibos", "andá al simulador".
+  - Lint check: `npx eslint src/components/copilot/FrontendTools.tsx src/routes/_authed/route.tsx src/components/client-detail-page.tsx src/routes/_authed/sueldos/index.tsx` → 0 NEW errors vs baseline (FrontendTools.tsx: 0 issues; route.tsx: 7 baseline issues; sueldos: 10 baseline; client-detail-page: 472 baseline). All pre-existing.
+  - Typecheck: `npx tsc --noEmit` shows the same 3 pre-existing TS errors (CardDescription/copiedField/copyToClipboard unused in client-detail-page); `FrontendTools.tsx` has no TS errors.
+
+- **Learnings for future iterations:**
+  - `useFrontendTool` and `useCopilotAction` share the same `name`/`description`/`parameters`/`handler`/`render` shape — anything you've learned about prompting `useCopilotAction` (clientId-from-context, no-inventes-UUIDs, "INVOCÁ ESTA ACTION DIRECTAMENTE") applies. Frontend tools just skip the server trip.
+  - `useNavigate()` from `@tanstack/react-router` returns a Promise. Inside non-async tool handlers you must `void navigate(...)` or eslint flags `no-floating-promises`.
+  - When `parameters` declares an `enum`, the handler receives a union-typed argument. A type-guard helper that returns false narrows the param to `never` in the failure branch — template literals on `never` then trip `restrict-template-expressions`. Workaround: coerce to `String(tab)` first and operate on the string.
+  - Custom-event pattern works cleanly for cross-subtree tab control (no extra context provider, no prop drilling). Augment `WindowEventMap` once in the tool file so both dispatcher and listener get type inference on `e.detail`. Keep the event name as an exported `const` so the listener side imports the same string and you don't get drift.
+  - Tab tools only have effect when the user is on the matching page — that's by design (the listener only mounts when the page is rendered). The assistant should still respond gracefully ("Pestaña cambiada a 'iva'.") even if the user isn't on the page; in practice the suggestions/instructions in the next stories will hint the model when to use which tool.
 ---

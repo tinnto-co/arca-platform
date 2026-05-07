@@ -64,7 +64,7 @@
         " - Ask the assistant 'navegáme a una ruta inexistente' → returns 'Ruta no válida' politely"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "useFrontendTool is similar to useCopilotAction but the handler runs in the browser. Same `name`, `description`, `parameters`, `handler`, optional `render` shape. Custom-event pattern for cross-component tab control avoids prop drilling and lets the tool dispatch from anywhere. If a future tool needs to mutate persisted data, use useCopilotAction (server fn) instead — frontend tools are for in-memory state and routing only."
     },
     {

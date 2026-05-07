@@ -26,6 +26,7 @@ import { getClientsForSueldos } from '@/actions/client';
 import { listOrgModules } from '@/actions/admin';
 import { PageHeader } from '@/components/shared/page-header';
 import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
+import { ARCA_EVENT_SET_SUELDOS_TAB } from '@/components/copilot/FrontendTools';
 import {
   getPeriodoMesActual,
   getPeriodoMesAnterior,
@@ -73,6 +74,17 @@ function RouteComponent() {
       setSelectedOptionId('');
     }
   }, [clients, selectedOptionId]);
+
+  // Listen to CopilotKit frontend tool `cambiarTabSueldos`.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handler = (e: WindowEventMap[typeof ARCA_EVENT_SET_SUELDOS_TAB]) => {
+      if (e.detail?.tab) setActiveTab(e.detail.tab);
+    };
+    window.addEventListener(ARCA_EVENT_SET_SUELDOS_TAB, handler);
+    return () =>
+      window.removeEventListener(ARCA_EVENT_SET_SUELDOS_TAB, handler);
+  }, []);
 
   return (
     <div className="space-y-4 overflow-x-hidden p-4 md:space-y-6 md:px-[3rem] md:pt-[3rem] md:pb-6">
