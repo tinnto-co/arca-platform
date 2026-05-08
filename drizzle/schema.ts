@@ -54,6 +54,12 @@ export const client = pgTable("client", {
   fiscalCondition: text("fiscal_condition"),
   liquidaSueldos: boolean("liquida_sueldos").notNull().default(false),
   cuitEmpresa: text("cuit_empresa").notNull().default(""),
+  /**
+   * Campos legacy todavía presentes en BD productiva.
+   * Se mantienen en schema para evitar que drizzle-kit push intente eliminarlos.
+   */
+  esPersonaFisica: boolean("es_persona_fisica").notNull().default(true),
+  razonSocial: text("razon_social").notNull().default(""),
   hasErrors: boolean("has_errors").default(false).notNull(),
   errorMessage: text("error_message").default(""),
   registeredAt: timestamp("registered_at").notNull(),
@@ -76,9 +82,20 @@ export const profile = pgTable("profile", {
   email: text("email").notNull(),
   status: text("status").notNull(),
   liquidaSueldos: boolean("liquida_sueldos").notNull().default(false),
+  /**
+   * Compatibilidad con flujo legado LSD:
+   * cuando está activo, el sistema conserva importados como referencia y permite
+   * generar recibos propios en paralelo (mismo período/tipo, distinto origen).
+   */
+  usaLsdReferencia: boolean("usa_lsd_referencia").notNull().default(false),
   scrapedAt: timestamp("scraped_at"),
   /** Firma digital del empleador (data URL base64) para impresión de recibos. */
   firmaDigitalEmpleador: text("firma_digital_empleador"),
+  /** Indica si este perfil es administrado por el estudio. */
+  managedByStudy: boolean("managed_by_study").notNull().default(true),
+  disabledAt: timestamp("disabled_at"),
+  disabledReason: text("disabled_reason"),
+  profileType: text("profile_type").notNull().default("unknown"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -95,6 +112,9 @@ export const afipEmpleadoresConvenio = pgTable(
     profileId: uuid("profile_id")
       .notNull()
       .references(() => profile.id, { onDelete: "cascade" }),
+    /** FK al catálogo global. Poblado automáticamente por trigger al insertar/actualizar. */
+    convenioId: uuid("convenio_id")
+      .references(() => conveniosDeTrabajo.id, { onDelete: "set null" }),
     cct: text("cct").notNull(),
     actividad: text("actividad").notNull(),
     signatarios: text("signatarios").notNull(),
@@ -109,6 +129,25 @@ export const afipEmpleadoresConvenio = pgTable(
     ),
   ]
 );
+
+/**
+ * Catálogo global de convenios colectivos de trabajo conocidos.
+ * Se popula automáticamente a medida que el scraper detecta nuevos CCT
+ * en afip_empleadores_convenio. Un registro por número de CCT.
+ */
+export const conveniosDeTrabajo = pgTable("convenios_de_trabajo", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  cct: text("cct").unique().notNull(),
+  nombre: text("nombre").notNull(),
+  signatarios: text("signatarios"),
+  descripcion: text("descripcion"),
+  activo: boolean("activo").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at")
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+});
 
 /**
  * Conceptos AFIP para el servicio "Simplificación Registral - Empleadores".
@@ -217,6 +256,11 @@ export const document = pgTable("document", {
   type: text("type").notNull(),
   name: text("name").notNull(),
   url: text("url").notNull(),
+  storageProvider: text("storage_provider").notNull().default("external"),
+  storageKey: text("storage_key"),
+  mimeType: text("mime_type"),
+  sizeBytes: integer("size_bytes"),
+  checksum: text("checksum"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -243,10 +287,18 @@ export const notification = pgTable("notification", {
   expirationDate: timestamp("expiration_date").notNull(),
   publicationDate: timestamp("publication_date").notNull(),
   opened: boolean("opened").default(false).notNull(),
+  severity: text("severity").default("unclassified").notNull(),
+  category: text("category"),
+  aiSummary: text("ai_summary"),
+  aiClassifiedAt: timestamp("ai_classified_at"),
+  assignedToUserId: text("assigned_to_user_id").references(() => user.id, { onDelete: "set null" }),
+  resolvedAt: timestamp("resolved_at"),
+  resolvedByUserId: text("resolved_by_user_id").references(() => user.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   index('idx_notification_client_opened').on(table.client, table.opened),
+  index('idx_notification_severity').on(table.client, table.severity),
 ]);
 
 export const invoice = pgTable("invoice", {
@@ -322,6 +374,8 @@ export const dueDate = pgTable("due_date", {
   quotaNumber: numeric("quota_number").notNull().default("0"),
   dueDate: timestamp("due_date").notNull().default(new Date()),
   detail: text("detail").notNull().default(""),
+  completedAt: timestamp("completed_at"),
+  completedByUserId: text("completed_by_user_id").references(() => user.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
@@ -343,6 +397,10 @@ export const debt = pgTable("debt", {
   balance: numeric("balance").notNull().default("0"),
   compensatoryInterest: numeric("compensatory_interest").notNull().default("0"),
   punitiveInterest: numeric("punitive_interest").notNull().default("0"),
+  status: text("status").notNull().default("open"),
+  detectedAt: timestamp("detected_at").defaultNow().notNull(),
+  sourcePeriod: text("source_period"),
+  isIntimated: boolean("is_intimated").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
@@ -404,6 +462,8 @@ export const ivaScrape = pgTable(
     saldoLibreDisponibilidadPeriodoAnteriorNeto: numeric("saldo_libre_disponibilidad_periodo_anterior_neto", { precision: 18, scale: 2 }),
     totalRetencionesPercepcionesPeriodo: numeric("total_retenciones_percepciones_periodo", { precision: 18, scale: 2 }),
     saldoLibreDisponibilidadFavorContribuyentePeriodo: numeric("saldo_libre_disponibilidad_favor_contribuyente_periodo", { precision: 18, scale: 2 }),
+    sourceConfidence: text("source_confidence").notNull().default("unknown"),
+    importedManually: boolean("imported_manually").notNull().default(false),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -485,6 +545,70 @@ export const obraSocial = pgTable("obra_social", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+/** Catálogo de situaciones de revista (códigos SOS/AFIP). */
+export const payrollSituacion = pgTable("payroll_situacion", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  codigo: text("codigo").notNull().unique(),
+  nombre: text("nombre").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/** Catálogo de condiciones de trabajo (códigos SOS/AFIP). */
+export const payrollCondicion = pgTable("payroll_condicion", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  codigo: text("codigo").notNull().unique(),
+  nombre: text("nombre").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/** Catálogo de actividades/rubros del empleador (códigos SOS/AFIP). */
+export const payrollActividad = pgTable("payroll_actividad", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  codigo: text("codigo").notNull().unique(),
+  nombre: text("nombre").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/** Catálogo de modalidades de contratación (códigos SOS/AFIP). */
+export const payrollModalidadContratacion = pgTable("payroll_modalidad_contratacion", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  codigo: text("codigo").notNull().unique(),
+  nombre: text("nombre").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/** Catálogo de tipos de siniestro ART (códigos SOS/AFIP). */
+export const payrollSiniestrado = pgTable("payroll_siniestrado", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  codigo: text("codigo").notNull().unique(),
+  nombre: text("nombre").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/** Catálogo de provincias argentinas (códigos SOS). */
+export const payrollProvincia = pgTable("payroll_provincia", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  codigo: text("codigo").notNull().unique(),
+  nombre: text("nombre").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/** Catálogo de nacionalidades / países (códigos SOS). */
+export const payrollNacionalidad = pgTable("payroll_nacionalidad", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  codigo: text("codigo").notNull().unique(),
+  nombre: text("nombre").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/** Catálogo de zonas geográficas con reducción de cargas patronales (códigos SOS/AFIP históricos). */
+export const payrollZona = pgTable("payroll_zona", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  codigo: text("codigo").notNull().unique(),
+  nombre: text("nombre").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const payrollConvenioTipoJornadaEnum = pgEnum("payroll_tipo_jornada", [
   "full_time",
   "part_time",
@@ -507,6 +631,31 @@ export const payrollConvenio = pgTable("payroll_convenio", {
     .$onUpdate(() => new Date())
     .notNull(),
 });
+
+/** Fuentes de información que enriquecen cada convenio (AFIP, estudios, etc.). */
+export const payrollConvenioFuente = pgTable(
+  "payroll_convenio_fuente",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    convenioId: uuid("convenio_id")
+      .notNull()
+      .references(() => payrollConvenio.id, { onDelete: "cascade" }),
+    fuente: text("fuente").notNull(),
+    detalle: text("detalle"),
+    lastSyncedAt: timestamp("last_synced_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    unique("payroll_convenio_fuente_convenio_id_fuente_unique").on(
+      table.convenioId,
+      table.fuente
+    ),
+  ]
+);
 
 /** Categorías dentro de un convenio */
 export const payrollConvenioCategoria = pgTable("payroll_convenio_categoria", {
@@ -587,6 +736,8 @@ export const conceptosCompletosSos = pgTable("conceptos_completos_sos", {
   divHsNorm: integer("div_hs_norm").default(1),
   /** Divisor de días (1, 25 o 30). */
   divCantidad: integer("div_cantidad").default(1),
+  /** Porcentaje fijo del concepto (no editable por el usuario, ej. 8.33 para Presentismo). */
+  pctFijo: numeric("pct_fijo"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().$onUpdate(() => new Date()).notNull(),
 });
@@ -687,6 +838,7 @@ export const liquidacionImportEmpleado = pgTable(
     legajo: text("legajo").notNull(),
     nombre: text("nombre").notNull(),
     fechaAlta: timestamp("fecha_alta", { mode: "date" }),
+    fechaAntiguedadReconocida: timestamp("fecha_antiguedad_reconocida", { mode: "date" }),
     fechaBaja: timestamp("fecha_baja", { mode: "date" }),
     modoContrato: text("modo_contrato"),
     /** Categoría en texto libre (tal como viene del archivo importado). */
@@ -718,7 +870,7 @@ export const liquidacionImportEmpleado = pgTable(
     banco: text("banco"),
     activo: boolean("activo").default(true).notNull(),
     // --- Datos demográficos y de legajo (fuente: planilla Excel SOS) ---
-    nacionalidad: text("nacionalidad"),
+    nacionalidadId: uuid("nacionalidad_id").references(() => payrollNacionalidad.id, { onDelete: "set null" }),
     fechaNacimiento: timestamp("fecha_nacimiento", { mode: "date" }),
     conyuge: integer("conyuge"),
     hijos: integer("hijos"),
@@ -727,17 +879,18 @@ export const liquidacionImportEmpleado = pgTable(
     domicilio: text("domicilio"),
     localidad: text("localidad"),
     codigoPostal: text("codigo_postal"),
-    provincia: text("provincia"),
+    provinciaId: uuid("provincia_id").references(() => payrollProvincia.id, { onDelete: "set null" }),
+    modalidadContratacionId: uuid("modalidad_contratacion_id").references(() => payrollModalidadContratacion.id, { onDelete: "set null" }),
     codigoModalidadContratacion: text("codigo_modalidad_contratacion"),
-    situacion: text("situacion"),
+    situacionId: uuid("situacion_id").references(() => payrollSituacion.id, { onDelete: "set null" }),
     codigoSituacion: text("codigo_situacion"),
-    zona: text("zona"),
+    zonaId: uuid("zona_id").references(() => payrollZona.id, { onDelete: "set null" }),
     codigoZona: text("codigo_zona"),
-    condicion: text("condicion"),
+    condicionId: uuid("condicion_id").references(() => payrollCondicion.id, { onDelete: "set null" }),
     codigoCondicion: text("codigo_condicion"),
-    actividad: text("actividad"),
+    actividadId: uuid("actividad_id").references(() => payrollActividad.id, { onDelete: "set null" }),
     codigoActividad: text("codigo_actividad"),
-    siniestrado: text("siniestrado"),
+    siniestradoId: uuid("siniestrado_id").references(() => payrollSiniestrado.id, { onDelete: "set null" }),
     codigoSiniestrado: text("codigo_siniestrado"),
     observaciones: text("observaciones"),
     obraSocialId: uuid("obra_social_id").references(() => obraSocial.id, { onDelete: "set null" }),
@@ -814,10 +967,11 @@ export const liquidacionImportRecibo = pgTable(
       .notNull(),
   },
   (table) => [
-    unique("liquidacion_import_recibo_empleado_periodo_tipo_unique").on(
+    unique("liquidacion_import_recibo_empleado_periodo_tipo_origen_unique").on(
       table.empleadoId,
       table.periodo,
       table.tipo,
+      table.origen,
     ),
   ],
 );
@@ -878,6 +1032,28 @@ export const liquidacionImportConceptoValor = pgTable(
   ],
 );
 
+/**
+ * Audit trail for every important data point, tracing its origin
+ * (scraper job, manual entry, AI classification, import).
+ * Source values: 'scraper', 'manual', 'ai', 'import'
+ * Action values: 'created', 'updated', 'classified'
+ */
+export const dataSourceEvent = pgTable("data_source_event", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  clientId: uuid("client_id").references(() => client.id, { onDelete: "cascade" }),
+  profileId: uuid("profile_id").references(() => profile.id, { onDelete: "cascade" }),
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id").notNull(),
+  source: text("source").notNull(),
+  sourceJobId: uuid("source_job_id").references(() => job.id, { onDelete: "set null" }),
+  action: text("action").notNull(),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const agentConversation = pgTable("agent_conversation", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: text("organization_id")
@@ -901,5 +1077,376 @@ export const agentMessage = pgTable("agent_message", {
     .references(() => agentConversation.id, { onDelete: "cascade" }),
   role: text("role").notNull(),
   content: text("content").notNull(),
+  metadata: jsonb("metadata"),
+  toolCalls: jsonb("tool_calls"),
+  citations: jsonb("citations"),
+  confidence: text("confidence"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+export const agentRun = pgTable("agent_run", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  conversationId: uuid("conversation_id")
+    .notNull()
+    .references(() => agentConversation.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  clientId: uuid("client_id").references(() => client.id, { onDelete: "set null" }),
+  profileId: uuid("profile_id").references(() => profile.id, { onDelete: "set null" }),
+  status: text("status").notNull().default("running"),
+  intent: text("intent"),
+  input: text("input").notNull(),
+  output: text("output"),
+  toolTrace: jsonb("tool_trace"),
+  error: text("error"),
+  startedAt: timestamp("started_at").defaultNow().notNull(),
+  finishedAt: timestamp("finished_at"),
+});
+
+/**
+ * Fiscal year end date configuration per client for balance alerts.
+ */
+export const clientBalanceConfig = pgTable("client_balance_config", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  clientId: uuid("client_id")
+    .notNull()
+    .unique()
+    .references(() => client.id, { onDelete: "cascade" }),
+  fiscalYearEndMonth: integer("fiscal_year_end_month").notNull(),
+  fiscalYearEndDay: integer("fiscal_year_end_day").notNull(),
+  presentationDueDays: integer("presentation_due_days"),
+  /** Days before fiscal year end to send alerts. Stored as JSON array, e.g. [60, 30, 15, 7] */
+  alertDaysBefore: jsonb("alert_days_before").default([60, 30, 15, 7]),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+/**
+ * Periodic risk snapshots per profile for tracking risk trends over time.
+ * risk_level values: low, medium, high, critical
+ */
+export const profileRiskSnapshot = pgTable("profile_risk_snapshot", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  profileId: uuid("profile_id")
+    .notNull()
+    .references(() => profile.id, { onDelete: "cascade" }),
+  period: text("period").notNull(),
+  score: numeric("score", { precision: 5, scale: 2 }).notNull(),
+  riskLevel: text("risk_level").notNull(),
+  factors: jsonb("factors"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  unique("profile_risk_snapshot_profile_id_period_unique").on(table.profileId, table.period),
+]);
+
+/**
+ * Centralized alert table for risks from different sources.
+ * Types: overdue_debt, critical_notification, upcoming_due_date, scraper_error, balance_due_soon, missing_activity
+ */
+export const alert = pgTable("alert", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  clientId: uuid("client_id").references(() => client.id, { onDelete: "cascade" }),
+  profileId: uuid("profile_id").references(() => profile.id, { onDelete: "set null" }),
+  type: text("type").notNull(),
+  severity: text("severity").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  sourceEntityType: text("source_entity_type"),
+  sourceEntityId: text("source_entity_id"),
+  status: text("status").notNull().default("open"),
+  assignedToUserId: text("assigned_to_user_id").references(() => user.id, { onDelete: "set null" }),
+  dueAt: timestamp("due_at"),
+  resolvedAt: timestamp("resolved_at"),
+  resolvedByUserId: text("resolved_by_user_id").references(() => user.id, { onDelete: "set null" }),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_alert_org_status").on(table.organizationId, table.status),
+]);
+
+/**
+ * Client portal access control: scoped access per client user.
+ * Controls which sections a client user can view.
+ */
+export const clientUserAccess = pgTable("client_user_access", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => client.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  role: text("role").notNull().default("client_viewer"),
+  canUploadDocuments: boolean("can_upload_documents").notNull().default(true),
+  canViewDebts: boolean("can_view_debts").notNull().default(true),
+  canViewIva: boolean("can_view_iva").notNull().default(true),
+  canViewPayroll: boolean("can_view_payroll").notNull().default(false),
+  canChatAi: boolean("can_chat_ai").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  unique("client_user_access_client_id_user_id_unique").on(table.clientId, table.userId),
+]);
+
+/**
+ * Studio-to-client requests: tasks or document requests sent to client portal users.
+ * Types: document, information, signature, other
+ * Status: open, in_progress, completed, cancelled
+ */
+/** Employee event legajo history */
+export const employeeEvent = pgTable("employee_event", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  empleadoId: uuid("empleado_id")
+    .notNull()
+    .references(() => liquidacionImportEmpleado.id, { onDelete: "cascade" }),
+  type: text("type").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  eventDate: timestamp("event_date").notNull(),
+  affectsPayroll: boolean("affects_payroll").notNull().default(false),
+  metadata: jsonb("metadata"),
+  createdByUserId: text("created_by_user_id").references(() => user.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const payrollPeriodNovelty = pgTable("payroll_period_novelty", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  empleadoId: uuid("empleado_id")
+    .notNull()
+    .references(() => liquidacionImportEmpleado.id, { onDelete: "cascade" }),
+  periodo: text("periodo").notNull(),
+  type: text("type").notNull(),
+  quantity: numeric("quantity", { precision: 10, scale: 2 }),
+  amount: numeric("amount", { precision: 14, scale: 2 }),
+  description: text("description"),
+  appliedToReciboId: uuid("applied_to_recibo_id").references(
+    () => liquidacionImportRecibo.id,
+    { onDelete: "set null" }
+  ),
+  status: text("status").notNull().default("pending"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const payrollReceiptTemplate = pgTable("payroll_receipt_template", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  profileId: uuid("profile_id")
+    .notNull()
+    .references(() => profile.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  receiptType: text("receipt_type").notNull().default("sueldo"),
+  conceptIds: jsonb("concept_ids"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/**
+ * Bank account per client/profile for reconciliation.
+ */
+export const bankAccount = pgTable("bank_account", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => client.id, { onDelete: "cascade" }),
+  profileId: uuid("profile_id").references(() => profile.id, { onDelete: "set null" }),
+  bankName: text("bank_name").notNull(),
+  accountNumber: text("account_number"),
+  currency: text("currency").notNull().default("ARS"),
+  alias: text("alias"),
+  cbu: text("cbu"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/**
+ * Bank transactions imported for reconciliation.
+ * direction values: 'credit', 'debit'
+ */
+export const bankTransaction = pgTable("bank_transaction", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  bankAccountId: uuid("bank_account_id")
+    .notNull()
+    .references(() => bankAccount.id, { onDelete: "cascade" }),
+  transactionDate: timestamp("transaction_date").notNull(),
+  description: text("description"),
+  amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+  direction: text("direction").notNull(),
+  counterpartyName: text("counterparty_name"),
+  counterpartyIdentityNumber: text("counterparty_identity_number"),
+  externalId: text("external_id"),
+  rawData: jsonb("raw_data"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/**
+ * Matches between bank transactions and invoices.
+ * match_type values: 'auto', 'manual'
+ */
+export const bankInvoiceMatch = pgTable("bank_invoice_match", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  bankTransactionId: uuid("bank_transaction_id")
+    .notNull()
+    .references(() => bankTransaction.id, { onDelete: "cascade" }),
+  invoiceId: uuid("invoice_id")
+    .notNull()
+    .references(() => invoice.id, { onDelete: "cascade" }),
+  matchType: text("match_type").notNull(),
+  confidence: numeric("confidence", { precision: 5, scale: 2 }),
+  reviewedByUserId: text("reviewed_by_user_id").references(() => user.id, { onDelete: "set null" }),
+  reviewedAt: timestamp("reviewed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/**
+ * Classification of financial movements for accounting and tax analysis.
+ * source_type values: 'bank_transaction', 'invoice', 'movement'
+ * classified_by values: 'system', 'user', 'ai'
+ */
+export const financialMovementClassification = pgTable("financial_movement_classification", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sourceType: text("source_type").notNull(),
+  sourceId: uuid("source_id").notNull(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => client.id, { onDelete: "cascade" }),
+  profileId: uuid("profile_id").references(() => profile.id, { onDelete: "set null" }),
+  category: text("category").notNull(),
+  isBusinessRelated: boolean("is_business_related").notNull().default(true),
+  isTaxRelevant: boolean("is_tax_relevant").notNull().default(true),
+  isCashflowReal: boolean("is_cashflow_real").notNull().default(true),
+  notes: text("notes"),
+  classifiedBy: text("classified_by").notNull().default("system"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const clientRequest = pgTable("client_request", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => client.id, { onDelete: "cascade" }),
+  profileId: uuid("profile_id").references(() => profile.id, { onDelete: "set null" }),
+  requestedByUserId: text("requested_by_user_id").references(() => user.id, { onDelete: "set null" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  type: text("type").notNull(),
+  status: text("status").notNull().default("open"),
+  dueAt: timestamp("due_at"),
+  completedAt: timestamp("completed_at"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/**
+ * Chart of accounts per client for formal bookkeeping.
+ * Account types: asset, liability, equity, income, expense
+ */
+export const accountingAccount = pgTable(
+  "accounting_account",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => client.id, { onDelete: "cascade" }),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    type: text("type").notNull(),
+    parentId: uuid("parent_id"),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("accounting_account_client_id_code_unique").on(table.clientId, table.code),
+    foreignKey({
+      columns: [table.parentId],
+      foreignColumns: [table.id],
+      name: "accounting_account_parent_id_fkey",
+    }).onDelete("set null"),
+  ],
+);
+
+/**
+ * Journal entries for double-entry bookkeeping.
+ * Status values: draft, posted, void
+ */
+export const journalEntry = pgTable("journal_entry", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => client.id, { onDelete: "cascade" }),
+  profileId: uuid("profile_id").references(() => profile.id, { onDelete: "set null" }),
+  entryDate: timestamp("entry_date").notNull(),
+  description: text("description"),
+  sourceType: text("source_type"),
+  sourceId: uuid("source_id"),
+  status: text("status").notNull().default("draft"),
+  createdByUserId: text("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/**
+ * Individual debit/credit lines within a journal entry.
+ * Sum of debits must equal sum of credits per entry.
+ */
+export const journalEntryLine = pgTable("journal_entry_line", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  journalEntryId: uuid("journal_entry_id")
+    .notNull()
+    .references(() => journalEntry.id, { onDelete: "cascade" }),
+  accountId: uuid("account_id")
+    .notNull()
+    .references(() => accountingAccount.id, { onDelete: "restrict" }),
+  debit: numeric("debit", { precision: 14, scale: 2 }).notNull().default("0"),
+  credit: numeric("credit", { precision: 14, scale: 2 }).notNull().default("0"),
+  description: text("description"),
+});
+
+/**
+ * Tax projections per profile and period for estimated vs actual tracking.
+ * Unique on (profile_id, period, tax).
+ */
+export const taxProjection = pgTable("tax_projection", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  profileId: uuid("profile_id")
+    .notNull()
+    .references(() => profile.id, { onDelete: "cascade" }),
+  period: text("period").notNull(),
+  tax: text("tax").notNull(),
+  projectedAmount: numeric("projected_amount", { precision: 14, scale: 2 }).notNull(),
+  confidence: text("confidence"),
+  factors: jsonb("factors"),
+  generatedAt: timestamp("generated_at").defaultNow().notNull(),
+}, (table) => [
+  unique("tax_projection_profile_id_period_tax_unique").on(table.profileId, table.period, table.tax),
+]);
+
+/**
+ * Feature flags per organization to enable/disable modules.
+ * Modules: sueldos, banco, contabilidad, analytics, portal_cliente, ai_agent
+ */
+export const organizationModule = pgTable(
+  "organization_module",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    module: text("module").notNull(),
+    enabled: boolean("enabled").notNull().default(false),
+    enabledAt: timestamp("enabled_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("organization_module_org_id_module_unique").on(table.organizationId, table.module),
+  ],
+);

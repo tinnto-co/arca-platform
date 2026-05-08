@@ -1,4 +1,5 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router';
+import { listOrgModules } from '@/actions/admin';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import {
@@ -27,6 +28,13 @@ import {
 } from '@/components/ui/alert-dialog';
 
 export const Route = createFileRoute('/_authed/chat/')({
+  beforeLoad: async () => {
+    const modules = await listOrgModules();
+    const enabled =
+      modules.find((m) => m.module === 'ai_agent')?.enabled ?? false;
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    if (!enabled) throw redirect({ to: '/' });
+  },
   component: ChatIndexPage,
 });
 
@@ -100,7 +108,8 @@ function ChatIndexPage() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => deleteConversation({ data: { conversationId: id } }),
+    mutationFn: (id: string) =>
+      deleteConversation({ data: { conversationId: id } }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agentConversations'] });
       setDeleteTarget(null);
@@ -116,7 +125,7 @@ function ChatIndexPage() {
   };
 
   const displayList = searchTerm.trim()
-    ? (searchResults as Conv[] | undefined) ?? []
+    ? ((searchResults as Conv[] | undefined) ?? [])
     : (conversations as Conv[]);
 
   const grouped = searchTerm.trim() ? null : groupByDate(displayList);
@@ -220,18 +229,24 @@ function ChatIndexPage() {
       )}
 
       {/* Delete dialog */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+      <AlertDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Eliminar conversación</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta acción no se puede deshacer. Se eliminará permanentemente la conversación y todos sus mensajes.
+              Esta acción no se puede deshacer. Se eliminará permanentemente la
+              conversación y todos sus mensajes.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget)}
+              onClick={() =>
+                deleteTarget && deleteMutation.mutate(deleteTarget)
+              }
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Eliminar

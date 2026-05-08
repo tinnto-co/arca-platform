@@ -13,13 +13,12 @@ interface VencimientosListProps {
 
 export function VencimientosList({ items }: VencimientosListProps = {}) {
   const skipQuery = items !== undefined;
-  const { data: queryData = [], isLoading: queryLoading } = useQuery({
+  const { data: queryDueDates = [], isLoading } = useQuery({
     queryKey: ['upcomingDueDates30'],
     queryFn: () => getUpcomingDueDates({ data: { days: 30, limit: 5 } }),
     enabled: !skipQuery,
   });
-  const dueDates = items ?? queryData;
-  const isLoading = !skipQuery && queryLoading;
+  const dueDates = items ?? queryDueDates;
 
   // Count urgent (within 3 days)
   const now = new Date();
@@ -113,7 +112,11 @@ export function VencimientosList({ items }: VencimientosListProps = {}) {
         )}
       </div>
 
-      <ArcaCardFoot leftText="Próximos 30 días" linkText="Ver calendario →" linkHref="/vencimientos" />
+      <ArcaCardFoot
+        leftText="Próximos 30 días"
+        linkText="Ver calendario →"
+        linkHref="/vencimientos"
+      />
     </ArcaCard>
   );
 }

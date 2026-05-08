@@ -15,5 +15,6 @@ dist
 # Local Claude Code settings (may contain credentials in command history)
 .claude/settings.local.json
 
-# Database dumps
+# Local DB dumps
 *.dump
+*.sql.gz

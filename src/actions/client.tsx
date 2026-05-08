@@ -10,6 +10,7 @@ import {
   dueDate,
   ivaScrape,
   job,
+  clientBalanceConfig,
 } from '@/drizzle/schema';
 import { auth } from '@/lib/auth';
 import {
@@ -42,6 +43,9 @@ const clientBaseSelect = {
   convenioMultilateral: client.convenioMultilateral,
   regimenLocal: client.regimenLocal,
   fiscalCondition: client.fiscalCondition,
+  cuitEmpresa: client.cuitEmpresa,
+  esPersonaFisica: client.esPersonaFisica,
+  razonSocial: client.razonSocial,
   hasErrors: client.hasErrors,
   errorMessage: client.errorMessage,
   registeredAt: client.registeredAt,
@@ -284,18 +288,18 @@ export const getClientsWithProfiles = createServerFn({
     }
 
     const profiles = await db
-      .select({ clientId: profile.client, id: profile.id, name: profile.name })
+      .select({ clientId: profile.client, id: profile.id, name: profile.name, identityNumber: profile.identityNumber })
       .from(profile)
       .where(inArray(profile.client, clientIds));
 
     const profilesByClientId = new Map<
       string,
-      { id: string; name: string }[]
+      { id: string; name: string; identityNumber: string }[]
     >();
     for (const p of profiles) {
       if (p.clientId) {
         const list = profilesByClientId.get(p.clientId) ?? [];
-        list.push({ id: p.id, name: p.name });
+        list.push({ id: p.id, name: p.name, identityNumber: p.identityNumber });
         profilesByClientId.set(p.clientId, list);
       }
     }
@@ -568,6 +572,38 @@ export const getClientDebts = createServerFn({
     return debts;
   });
 
+export const updateDebtStatus = createServerFn({
+  method: 'POST',
+})
+  .inputValidator(
+    z.object({
+      id: z.string().uuid(),
+      status: z.enum(['open', 'in_plan', 'paid', 'disputed']),
+      isIntimated: z.boolean(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    // Validate debt belongs to this org via client
+    const [existing] = await db
+      .select({ id: debt.id, clientId: debt.client })
+      .from(debt)
+      .innerJoin(client, eq(debt.client, client.id))
+      .where(and(eq(debt.id, ctx.data.id), eq(client.organizationId, orgId)));
+
+    if (!existing) throw new Error('Deuda no encontrada o sin acceso');
+
+    await db
+      .update(debt)
+      .set({ status: ctx.data.status, isIntimated: ctx.data.isIntimated })
+      .where(eq(debt.id, ctx.data.id));
+
+    return { ok: true };
+  });
+
 export const getClientDueDates = createServerFn({
   method: 'GET',
 })
@@ -763,12 +799,17 @@ export const scrapSingleJob = createServerFn({
     })
   )
   .handler(async (ctx) => {
+    console.log('[scrapSingleJob] start', ctx.data);
     await getSessionWithOrg();
+    console.log('[scrapSingleJob] session ok');
     const role = await getMemberRole();
+    console.log('[scrapSingleJob] role:', role);
     assertCanWrite(role);
+    console.log('[scrapSingleJob] canWrite ok');
 
     const baseUrl = JOBS_API_URL;
     const { clientId, jobType } = ctx.data;
+    console.log('[scrapSingleJob] posting to', `${baseUrl}/api/jobs`);
 
     try {
       const { data: job } = await axios.post(`${baseUrl}/api/jobs`, {
@@ -797,6 +838,46 @@ export const scrapSingleJob = createServerFn({
         `Error al ejecutar job ${jobType}`;
       throw new Error(msg);
     }
+  });
+
+/**
+ * Fire-and-forget: creates a batch job for each selected client.
+ * Does NOT wait for completion — returns job IDs immediately.
+ */
+export const scrapBatchClients = createServerFn({
+  method: 'POST',
+})
+  .inputValidator(
+    z.object({
+      clientIds: z.array(z.string()).min(1),
+    })
+  )
+  .handler(async (ctx) => {
+    await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const baseUrl = JOBS_API_URL;
+    const { clientIds } = ctx.data;
+    const created: { clientId: string; jobId: string }[] = [];
+    const errors: { clientId: string; error: string }[] = [];
+
+    for (const clientId of clientIds) {
+      try {
+        const { data: job } = await axios.post(`${baseUrl}/api/jobs`, {
+          type: 'batch',
+          clientId,
+        });
+        created.push({ clientId, jobId: job.id });
+      } catch (error: any) {
+        errors.push({
+          clientId,
+          error: error.response?.data?.error || error.message,
+        });
+      }
+    }
+
+    return { created, errors, total: clientIds.length };
   });
 
 /** Último job comprobantes_full para un cliente (por created_at), con estado success/error. */
@@ -953,4 +1034,115 @@ export const getRunningJobByType = createServerFn({
       status: runningJob.status,
       progress: runningJob.progress,
     };
+  });
+
+export const markDueDateCompleted = createServerFn({
+  method: 'POST',
+})
+  .inputValidator(
+    z.object({
+      id: z.string().uuid(),
+      completed: z.boolean(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    // Validate due_date belongs to this org via client
+    const [existing] = await db
+      .select({ id: dueDate.id })
+      .from(dueDate)
+      .innerJoin(client, eq(dueDate.client, client.id))
+      .where(
+        and(eq(dueDate.id, ctx.data.id), eq(client.organizationId, orgId))
+      );
+
+    if (!existing) throw new Error('Vencimiento no encontrado o sin acceso');
+
+    await db
+      .update(dueDate)
+      .set({
+        completedAt: ctx.data.completed ? new Date() : null,
+        completedByUserId: ctx.data.completed ? userId : null,
+      })
+      .where(eq(dueDate.id, ctx.data.id));
+
+    return { ok: true };
+  });
+
+export const getBalanceConfig = createServerFn({ method: 'GET' })
+  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+
+    const [c] = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(
+        and(eq(client.id, ctx.data.clientId), eq(client.organizationId, orgId))
+      );
+    if (!c) throw new Error('Cliente no encontrado o sin acceso');
+
+    const [config] = await db
+      .select()
+      .from(clientBalanceConfig)
+      .where(eq(clientBalanceConfig.clientId, ctx.data.clientId));
+
+    return (config ?? null) as
+      | (typeof config & { alertDaysBefore: number[] })
+      | null;
+  });
+
+export const upsertBalanceConfig = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearEndMonth: z.number().int().min(1).max(12),
+      fiscalYearEndDay: z.number().int().min(1).max(31),
+      presentationDueDays: z.number().int().nullable().optional(),
+      alertDaysBefore: z.array(z.number().int()).optional(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const {
+      clientId,
+      fiscalYearEndMonth,
+      fiscalYearEndDay,
+      presentationDueDays,
+      alertDaysBefore,
+    } = ctx.data;
+
+    const [c] = await db
+      .select({ id: client.id })
+      .from(client)
+      .where(and(eq(client.id, clientId), eq(client.organizationId, orgId)));
+    if (!c) throw new Error('Cliente no encontrado o sin acceso');
+
+    await db
+      .insert(clientBalanceConfig)
+      .values({
+        clientId,
+        fiscalYearEndMonth,
+        fiscalYearEndDay,
+        presentationDueDays: presentationDueDays ?? null,
+        alertDaysBefore: alertDaysBefore ?? [60, 30, 15, 7],
+      })
+      .onConflictDoUpdate({
+        target: clientBalanceConfig.clientId,
+        set: {
+          fiscalYearEndMonth,
+          fiscalYearEndDay,
+          presentationDueDays: presentationDueDays ?? null,
+          alertDaysBefore: alertDaysBefore ?? [60, 30, 15, 7],
+          updatedAt: new Date(),
+        },
+      });
+
+    return { ok: true };
   });

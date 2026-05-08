@@ -23,7 +23,7 @@ import {
 
 
 const googleAI = createGoogleGenerativeAI({
-  apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY!,
+  apiKey: process.env.GEMINI_API_KEY!,
 });
 
 const buildSchema = (orgId: string) => `
@@ -278,12 +278,14 @@ export const Route = createFileRoute('/api/agent')({
           .orderBy(agentMessage.createdAt)
           .limit(12);
 
-        const historyUiMessages = prevMessages.map((m) => ({
-          id: m.id,
-          role: m.role as 'user' | 'assistant',
-          parts: [{ type: 'text' as const, text: m.content }],
-          content: m.content,
-        }));
+        const historyUiMessages = prevMessages
+          .filter((m) => m.role === 'user' || m.role === 'assistant')
+          .map((m) => ({
+            id: m.id,
+            role: m.role as 'user' | 'assistant',
+            parts: [{ type: 'text' as const, text: m.content }],
+            content: m.content,
+          }));
 
         const agent = new ToolLoopAgent({
           model: googleAI('gemini-2.5-flash'),

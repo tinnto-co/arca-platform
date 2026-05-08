@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { format } from 'date-fns';
+import { format, startOfMonth } from 'date-fns';
 import {
   Plus,
   ChevronDown,
@@ -12,6 +12,7 @@ import {
   Trash2,
   Loader2,
   CheckCircle2,
+  Pencil,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardTitle } from '@/components/ui/card';
@@ -47,6 +48,7 @@ import {
   listConveniosAfipEmpleadores,
   agregarConvenioDesdeAfipEmpleadores,
   createConvenio,
+  updateConvenio,
   createCategoria,
   upsertEscala,
   deleteEscala,
@@ -58,13 +60,11 @@ interface SueldosConveniosProps {
   profileId: string;
 }
 
-export function SueldosConvenios({
-  clientId,
-  profileId,
-}: SueldosConveniosProps) {
+export function SueldosConvenios({ clientId, profileId }: SueldosConveniosProps) {
   const queryClient = useQueryClient();
   const [newConvenioOpen, setNewConvenioOpen] = useState(false);
   const [newConvenioNombre, setNewConvenioNombre] = useState('');
+  const [newConvenioCct, setNewConvenioCct] = useState('');
 
   const { data: convenios = [] } = useQuery({
     queryKey: ['convenios', clientId, profileId],
@@ -73,11 +73,18 @@ export function SueldosConvenios({
   });
 
   const createConv = useMutation({
-    mutationFn: (nombre: string) =>
-      createConvenio({ data: { clientId, nombre, descripcion: undefined } }),
+    mutationFn: () =>
+      createConvenio({
+        data: {
+          clientId,
+          nombre: newConvenioNombre,
+          cctCodigo: newConvenioCct.trim() || undefined,
+        },
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['convenios', clientId] });
       setNewConvenioNombre('');
+      setNewConvenioCct('');
       setNewConvenioOpen(false);
       toast.success('Convenio creado');
     },
@@ -93,7 +100,7 @@ export function SueldosConvenios({
 
   const convenioYaTieneCct = (cct: string) =>
     (convenios ?? []).some(
-      (c) => c.nombre === cct || (c.descripcion ?? '').includes(cct)
+      (c) => c.nombre === cct || (c.cctCodigo ?? '') === cct
     );
 
   const agregarDesdeAfip = useMutation({
@@ -138,14 +145,14 @@ export function SueldosConvenios({
         <DialogContent className="max-w-md sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Seleccionar CCT (AFIP) para este cliente</DialogTitle>
-            <p className="text-sm text-[var(--arca-ink-3)]">
+            <p className="text-sm text-muted-foreground">
               Seleccioná el CCT descargado de AFIP para este cliente. Luego
               cargá las categorías y escalas manualmente.
             </p>
           </DialogHeader>
           <div className="grid gap-2 py-4">
             {conveniosAfip.length === 0 ? (
-              <p className="text-sm text-[var(--arca-ink-3)]">
+              <p className="text-sm text-muted-foreground">
                 No hay convenios AFIP scrapeados para este cliente todavía.
               </p>
             ) : (
@@ -157,30 +164,30 @@ export function SueldosConvenios({
                     type="button"
                     onClick={() => !yaTiene && agregarDesdeAfip.mutate(c.id)}
                     disabled={yaTiene || agregarDesdeAfip.isPending}
-                    className="flex items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-[var(--arca-surface-2)] disabled:opacity-60 disabled:hover:bg-transparent"
+                    className="flex items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50 disabled:opacity-60 disabled:hover:bg-transparent"
                   >
                     <div className="min-w-0 flex-1">
                       <p className="font-medium">{c.cct}</p>
                       {c.actividad && (
-                        <p className="mt-0.5 text-xs text-[var(--arca-ink-3)] break-words">
+                        <p className="mt-0.5 text-xs text-muted-foreground break-words">
                           {c.actividad}
                         </p>
                       )}
                       {c.fechaNovedad && (
-                        <p className="mt-0.5 text-[11px] text-[var(--arca-ink-3)] break-words">
+                        <p className="mt-0.5 text-[11px] text-muted-foreground break-words">
                           Novedad: {c.fechaNovedad}
                         </p>
                       )}
                     </div>
                     <span className="shrink-0">
                       {yaTiene ? (
-                        <span className="text-xs text-[var(--arca-ink-3)]">
+                        <span className="text-xs text-muted-foreground">
                           Ya asignado
                         </span>
                       ) : agregarDesdeAfip.isPending ? (
-                        <Loader2 className="h-4 w-4 animate-spin text-[var(--arca-ink-3)]" />
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                       ) : (
-                        <CheckCircle2 className="h-5 w-5 text-[var(--arca-ink)]" />
+                        <CheckCircle2 className="h-5 w-5 text-primary" />
                       )}
                     </span>
                   </button>
@@ -205,10 +212,18 @@ export function SueldosConvenios({
                 placeholder="Ej. Comercio"
               />
             </div>
+            <div>
+              <Label>Número CCT</Label>
+              <Input
+                value={newConvenioCct}
+                onChange={(e) => setNewConvenioCct(e.target.value)}
+                placeholder="Ej. 130/75"
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button
-              onClick={() => createConv.mutate(newConvenioNombre)}
+              onClick={() => createConv.mutate()}
               disabled={!newConvenioNombre.trim() || createConv.isPending}
             >
               Crear
@@ -245,7 +260,9 @@ function ConvenioCard({
     id: string;
     nombre: string;
     cctCodigo: string | null;
-    descripcion: string | null;
+    signatarios: string | null;
+    fuentes?: string[];
+    afipUpdatedAt?: Date | string | null;
   };
   onRefresh: () => void;
 }) {
@@ -253,6 +270,9 @@ function ConvenioCard({
   const [open, setOpen] = useState(false);
   const [addCategoria, setAddCategoria] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editNombre, setEditNombre] = useState('');
+  const [editCct, setEditCct] = useState('');
   const [codigo, setCodigo] = useState('');
   const [nombreCat, setNombreCat] = useState('');
 
@@ -263,6 +283,25 @@ function ConvenioCard({
       queryClient.invalidateQueries({ queryKey: ['convenios', clientId] });
       setDeleteOpen(false);
       toast.success('Convenio eliminado');
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const updateConv = useMutation({
+    mutationFn: () =>
+      updateConvenio({
+        data: {
+          id: convenio.id,
+          clientId,
+          nombre: editNombre,
+          cctCodigo: editCct.trim() || undefined,
+        },
+      }),
+    onSuccess: () => {
+      onRefresh();
+      queryClient.invalidateQueries({ queryKey: ['convenios', clientId] });
+      setEditOpen(false);
+      toast.success('Convenio actualizado');
     },
     onError: (e) => toast.error(e.message),
   });
@@ -295,10 +334,31 @@ function ConvenioCard({
         <CollapsibleTrigger asChild>
           <button className="flex w-full items-center justify-between px-6 py-4 text-left">
             <div className="flex items-center gap-2">
-              <Building2 className="h-5 w-5 text-[var(--arca-ink-3)]" />
-              <CardTitle className="text-lg">
-                {convenio.cctCodigo ?? convenio.nombre}
-              </CardTitle>
+              <Building2 className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <CardTitle className="text-lg">
+                  {convenio.nombre}
+                </CardTitle>
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                  {convenio.cctCodigo ? (
+                    <span className="rounded border px-2 py-0.5 text-muted-foreground">
+                      CCT: {convenio.cctCodigo}
+                    </span>
+                  ) : null}
+                  <span className="rounded border px-2 py-0.5 text-muted-foreground">
+                    Fuentes:{' '}
+                    {convenio.fuentes && convenio.fuentes.length > 0
+                      ? convenio.fuentes.join(', ')
+                      : 'Sin fuente identificada'}
+                  </span>
+                  {convenio.afipUpdatedAt ? (
+                    <span className="rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-emerald-700">
+                      AFIP actualizado:{' '}
+                      {format(new Date(convenio.afipUpdatedAt), 'dd/MM/yyyy')}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
             </div>
             <div
               className="flex items-center gap-1"
@@ -308,7 +368,22 @@ function ConvenioCard({
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 text-[var(--arca-ink-3)] hover:text-[var(--arca-accent-neg)]"
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setEditNombre(convenio.nombre);
+                  setEditCct(convenio.cctCodigo ?? '');
+                  setEditOpen(true);
+                }}
+                title="Editar convenio"
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-destructive"
                 onClick={(e) => {
                   e.preventDefault();
                   setDeleteOpen(true);
@@ -337,7 +412,7 @@ function ConvenioCard({
               <AlertDialogCancel>Cancelar</AlertDialogCancel>
               <AlertDialogAction
                 onClick={() => deleteConv.mutate()}
-                className="bg-destructive text-[var(--arca-accent-neg)]-foreground hover:bg-destructive/90"
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 disabled={deleteConv.isPending}
               >
                 {deleteConv.isPending ? 'Eliminando…' : 'Eliminar'}
@@ -345,10 +420,44 @@ function ConvenioCard({
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+        <Dialog open={editOpen} onOpenChange={setEditOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Editar convenio</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div>
+                <Label>Nombre</Label>
+                <Input
+                  value={editNombre}
+                  onChange={(e) => setEditNombre(e.target.value)}
+                  placeholder="Ej. Comercio"
+                />
+              </div>
+              <div>
+                <Label>Número CCT</Label>
+                <Input
+                  value={editCct}
+                  onChange={(e) => setEditCct(e.target.value)}
+                  placeholder="Ej. 130/75"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                onClick={() => updateConv.mutate()}
+                disabled={!editNombre.trim() || updateConv.isPending}
+              >
+                {updateConv.isPending ? 'Guardando…' : 'Guardar'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <CollapsibleContent>
           <CardContent className="pt-0">
-            <p className="mb-4 text-sm text-[var(--arca-ink-3)]">
-              {convenio.descripcion || 'Sin descripción.'}
+            <p className="mb-4 text-sm text-muted-foreground">
+              {convenio.signatarios || 'Sin signatarios registrados.'}
             </p>
             <div className="flex justify-end gap-2">
               <Button
@@ -418,10 +527,7 @@ function CategoriaRow({
 }) {
   const getCategoriaDisplay = (codigo: string, nombre: string) => {
     if (!nombre.includes(' - ')) {
-      return {
-        titulo: `${codigo} - ${nombre}`,
-        subtitulo: null as string | null,
-      };
+      return { titulo: `${codigo} - ${nombre}`, subtitulo: null as string | null };
     }
     const [grupo, detalle] = nombre.split(' - ', 2);
     return {
@@ -429,15 +535,12 @@ function CategoriaRow({
       subtitulo: detalle || null,
     };
   };
-  const categoriaDisplay = getCategoriaDisplay(
-    categoria.codigo,
-    categoria.nombre
-  );
+  const categoriaDisplay = getCategoriaDisplay(categoria.codigo, categoria.nombre);
 
   const queryClient = useQueryClient();
   const [showEscala, setShowEscala] = useState(false);
   const [vigenciaDesde, setVigenciaDesde] = useState(
-    format(new Date(), 'yyyy-MM-dd')
+    format(startOfMonth(new Date()), 'yyyy-MM-dd')
   );
   const [monto, setMonto] = useState('');
 
@@ -487,11 +590,11 @@ function CategoriaRow({
     <li className="rounded-lg border p-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Layers className="h-4 w-4 text-[var(--arca-ink-3)]" />
+          <Layers className="h-4 w-4 text-muted-foreground" />
           <div className="min-w-0">
             <span className="font-medium">{categoriaDisplay.titulo}</span>
             {categoriaDisplay.subtitulo ? (
-              <p className="text-xs text-[var(--arca-ink-3)] break-words">
+              <p className="text-xs text-muted-foreground break-words">
                 {categoriaDisplay.subtitulo}
               </p>
             ) : null}
@@ -528,7 +631,7 @@ function CategoriaRow({
           </Button>
         </div>
       )}
-      <ul className="mt-2 space-y-1 text-sm text-[var(--arca-ink-3)]">
+      <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
         {escalas.map((e) => (
           <li
             key={e.id}
@@ -544,7 +647,7 @@ function CategoriaRow({
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 shrink-0 text-[var(--arca-accent-neg)] hover:bg-destructive/10 hover:text-[var(--arca-accent-neg)]"
+              className="h-8 w-8 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
               onClick={() =>
                 setEscalaToDelete({
                   id: e.id,
@@ -578,7 +681,7 @@ function CategoriaRow({
               Cancelar
             </AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-[var(--arca-accent-neg)]-foreground hover:bg-destructive/90"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() =>
                 escalaToDelete && deleteEscalaMutation.mutate(escalaToDelete.id)
               }

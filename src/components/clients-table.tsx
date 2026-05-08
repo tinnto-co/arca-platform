@@ -9,6 +9,8 @@ import {
   MoreHorizontal,
   CircleAlert,
   CheckCircle2,
+  Play,
+  Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -35,7 +37,11 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { getClientsWithProfiles, deleteClient } from '@/actions/client';
+import {
+  getClientsWithProfiles,
+  deleteClient,
+  scrapBatchClients,
+} from '@/actions/client';
 import { listOrgModules } from '@/actions/admin';
 import { EditClientDialog } from '@/components/edit-client-dialog';
 import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
@@ -59,6 +65,8 @@ export function ClientsTable() {
   const [clientToDelete, setClientToDelete] = useState<string | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [clientToEditId, setClientToEditId] = useState<string | null>(null);
+  const [selectedClients, setSelectedClients] = useState<Client[]>([]);
+  const [isScraping, setIsScraping] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: clients = [], isLoading } = useQuery({
@@ -67,11 +75,12 @@ export function ClientsTable() {
     retry: 1,
   });
 
-  const { data: orgModules } = useQuery({
+  const { data: orgModules = [] } = useQuery({
     queryKey: ['orgModules'],
     queryFn: () => listOrgModules(),
   });
-  const aiAgentEnabled = orgModules?.ai_agent ?? false;
+  const aiAgentEnabled =
+    orgModules.find((m) => m.module === 'ai_agent')?.enabled ?? false;
 
   const clientsTyped = clients as Client[];
   const clientsConErrores = clientsTyped.filter((c) => c.hasErrors === true);
@@ -219,6 +228,31 @@ export function ClientsTable() {
     },
   ];
 
+  const handleScrapSelected = async () => {
+    if (selectedClients.length === 0) return;
+    setIsScraping(true);
+    try {
+      const result = await scrapBatchClients({
+        data: { clientIds: selectedClients.map((c) => c.id) },
+      });
+      if (result.errors.length > 0) {
+        toast.warning(
+          `${result.created.length} jobs creados, ${result.errors.length} errores`
+        );
+      } else {
+        toast.success(
+          `${result.created.length} jobs de scraping encolados`
+        );
+      }
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Error al encolar scraping'
+      );
+    } finally {
+      setIsScraping(false);
+    }
+  };
+
   return (
     <>
       {aiAgentEnabled && (
@@ -252,6 +286,23 @@ export function ClientsTable() {
           },
         ]}
         onRowClick={(client) => navigate({ to: `/clients/${client.id}` })}
+        onSelectionChange={(rows) => setSelectedClients(rows as Client[])}
+        toolbar={
+          selectedClients.length > 0 ? (
+            <Button
+              size="sm"
+              onClick={handleScrapSelected}
+              disabled={isScraping}
+            >
+              {isScraping ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Play className="h-3.5 w-3.5" />
+              )}
+              Scrapear {selectedClients.length} cliente{selectedClients.length > 1 ? 's' : ''}
+            </Button>
+          ) : null
+        }
         emptyMessage="No hay clientes registrados."
       />
 

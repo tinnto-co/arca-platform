@@ -51,7 +51,7 @@ function RouteComponent() {
   const isChatDetail = pathname.startsWith('/chat/');
   const isChatRoute = isChatDetail || pathname === '/chat';
 
-  const { data: orgModules, isLoading: isModulesLoading } = useQuery({
+  const { data: orgModules = [], isLoading: isModulesLoading } = useQuery({
     queryKey: ['orgModules'],
     queryFn: () => listOrgModules(),
   });
@@ -62,7 +62,8 @@ function RouteComponent() {
   // conditions inside the library (see useCopilotChatInternal).
   if (isModulesLoading) return null;
 
-  const aiAgentEnabled = orgModules?.ai_agent ?? false;
+  const aiAgentEnabled =
+    orgModules.find((m) => m.module === 'ai_agent')?.enabled ?? false;
   const hideAgentInput = isChatRoute || !aiAgentEnabled;
 
   const shell = (agentInputSlot: React.ReactNode) => (

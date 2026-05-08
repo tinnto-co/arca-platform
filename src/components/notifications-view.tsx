@@ -8,6 +8,10 @@ import {
   User,
   Trash2,
   CheckCheck,
+  CheckCircle,
+  XCircle,
+  UserCheck,
+  Sparkles,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -30,12 +34,50 @@ import {
   markNotificationOpened,
   markNotificationUnread,
   markAllNotificationsRead,
+  assignNotification,
+  resolveNotification,
+  unresolveNotification,
+  listOrgMembersForAssignment,
+  classifyNotification,
+  classifyUnclassifiedNotifications,
 } from '@/actions/notification';
 import { getClients, getClientProfiles } from '@/actions/client';
 import { listOrgModules } from '@/actions/admin';
 import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
 import { cn } from '@/lib/utils';
 import { userQuery } from '../lib/user-query';
+
+const SEVERITY_ORDER: Record<string, number> = {
+  critical: 0,
+  medium: 1,
+  low: 2,
+  informational: 3,
+  unclassified: 4,
+};
+
+function SeverityBadge({ severity }: { severity: string | null }) {
+  if (!severity || severity === 'unclassified') return null;
+  const styles: Record<string, string> = {
+    critical: 'bg-red-100 text-red-700',
+    medium: 'bg-orange-100 text-orange-700',
+    low: 'bg-blue-100 text-blue-700',
+    informational: 'bg-gray-100 text-gray-600',
+  };
+  const labels: Record<string, string> = {
+    critical: 'Crítica',
+    medium: 'Media',
+    low: 'Baja',
+    informational: 'Info',
+  };
+  const cls = styles[severity] ?? 'bg-gray-100 text-gray-500';
+  return (
+    <span
+      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold shrink-0 ${cls}`}
+    >
+      {labels[severity] ?? severity}
+    </span>
+  );
+}
 
 interface NotificationData {
   id: string;
@@ -50,6 +92,12 @@ interface NotificationData {
   profileId?: string | null;
   profileName?: string | null;
   profileIdentityNumber?: string | null;
+  severity?: string | null;
+  category?: string | null;
+  aiSummary?: string | null;
+  assignedToUserId?: string | null;
+  resolvedAt?: Date | null;
+  resolvedByUserId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -74,11 +122,12 @@ export function NotificationsView({
   const queryClient = useQueryClient();
   const { data: user } = useQuery(userQuery);
   const orgKey = user?.activeOrganizationId ?? '__pending__';
-  const { data: orgModules } = useQuery({
+  const { data: orgModules = [] } = useQuery({
     queryKey: ['orgModules'],
     queryFn: () => listOrgModules(),
   });
-  const aiAgentEnabled = orgModules?.ai_agent ?? false;
+  const aiAgentEnabled =
+    orgModules.find((m) => m.module === 'ai_agent')?.enabled ?? false;
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [notificationToDelete, setNotificationToDelete] = useState<
     string | null
@@ -88,6 +137,8 @@ export function NotificationsView({
     clientIdProp ?? 'all'
   );
   const [profileFilter, setProfileFilter] = useState<string>('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [onlyUnresolved, setOnlyUnresolved] = useState(false);
   const [selectedNotificationId, setSelectedNotificationId] = useState<
     string | null
   >(initialNotificationId ?? null);
@@ -125,13 +176,25 @@ export function NotificationsView({
   const { data: notificationsData, isLoading } = useQuery({
     queryKey: clientIdProp
       ? [
-        'clientNotifications',
-        orgKey,
-        clientIdProp,
-        effectiveProfileFilter,
-        searchTerm,
-      ]
-      : ['notifications', orgKey, 1, clientFilter, '', '', searchTerm],
+          'clientNotifications',
+          orgKey,
+          clientIdProp,
+          effectiveProfileFilter,
+          categoryFilter,
+          onlyUnresolved,
+          searchTerm,
+        ]
+      : [
+          'notifications',
+          orgKey,
+          1,
+          clientFilter,
+          '',
+          '',
+          categoryFilter,
+          onlyUnresolved,
+          searchTerm,
+        ],
     queryFn: () =>
       getNotifications({
         data: {
@@ -141,6 +204,8 @@ export function NotificationsView({
             effectiveClientFilter === 'all' ? undefined : effectiveClientFilter,
           profileId: effectiveProfileFilter,
           search: searchTerm || undefined,
+          category: categoryFilter === 'all' ? undefined : categoryFilter,
+          onlyUnresolved: onlyUnresolved || undefined,
         },
       }),
   });
@@ -150,6 +215,12 @@ export function NotificationsView({
     queryKey: ['notification', orgKey, selectedNotificationId],
     queryFn: () => getNotification({ data: { id: selectedNotificationId! } }),
     enabled: !!selectedNotificationId,
+  });
+
+  // Get org members for assignment dropdown
+  const { data: orgMembers = [] } = useQuery({
+    queryKey: ['orgMembersForAssignment', orgKey],
+    queryFn: () => listOrgMembersForAssignment(),
   });
 
   const invalidateNotificationQueries = () => {
@@ -189,7 +260,9 @@ export function NotificationsView({
     mutationFn: (id: string) => markNotificationOpened({ data: { id } }),
     onSuccess: () => {
       invalidateNotificationQueries();
-      queryClient.invalidateQueries({ queryKey: ['pendingNotificationsCount'] });
+      queryClient.invalidateQueries({
+        queryKey: ['pendingNotificationsCount'],
+      });
     },
   });
 
@@ -197,7 +270,9 @@ export function NotificationsView({
     mutationFn: (id: string) => markNotificationUnread({ data: { id } }),
     onSuccess: () => {
       invalidateNotificationQueries();
-      queryClient.invalidateQueries({ queryKey: ['pendingNotificationsCount'] });
+      queryClient.invalidateQueries({
+        queryKey: ['pendingNotificationsCount'],
+      });
     },
   });
 
@@ -205,13 +280,69 @@ export function NotificationsView({
     mutationFn: () => markAllNotificationsRead(),
     onSuccess: (result) => {
       invalidateNotificationQueries();
-      queryClient.invalidateQueries({ queryKey: ['pendingNotificationsCount'] });
+      queryClient.invalidateQueries({
+        queryKey: ['pendingNotificationsCount'],
+      });
       toast.success(
         result.count > 0
           ? `${result.count} notificación(es) marcadas como leídas`
           : 'No hay notificaciones sin leer'
       );
     },
+  });
+
+  const assignMutation = useMutation({
+    mutationFn: (vars: { id: string; userId: string | null }) =>
+      assignNotification({ data: vars }),
+    onSuccess: () => {
+      invalidateNotificationQueries();
+      toast.success('Notificación asignada');
+    },
+    onError: () => toast.error('Error al asignar la notificación'),
+  });
+
+  const resolveMutation = useMutation({
+    mutationFn: (id: string) => resolveNotification({ data: { id } }),
+    onSuccess: () => {
+      invalidateNotificationQueries();
+      toast.success('Notificación resuelta');
+    },
+    onError: () => toast.error('Error al resolver la notificación'),
+  });
+
+  const unresolveMutation = useMutation({
+    mutationFn: (id: string) => unresolveNotification({ data: { id } }),
+    onSuccess: () => {
+      invalidateNotificationQueries();
+      toast.success('Notificación reabierta');
+    },
+    onError: () => toast.error('Error al reabrir la notificación'),
+  });
+
+  const classifyMutation = useMutation({
+    mutationFn: (id: string) => classifyNotification({ data: { id } }),
+    onSuccess: (result: any) => {
+      invalidateNotificationQueries();
+      toast.success(
+        `Clasificada: severity=${result?.severity}, category=${result?.category}`
+      );
+    },
+    onError: (err: unknown) => {
+      toast.error(
+        `Error al clasificar: ${err instanceof Error ? err.message : 'desconocido'}`
+      );
+    },
+  });
+
+  const classifyAllMutation = useMutation({
+    mutationFn: () => classifyUnclassifiedNotifications(),
+    onSuccess: (result: { classified: number; errors: number }) => {
+      invalidateNotificationQueries();
+      toast.success(
+        `Clasificación batch: ${result.classified} ok, ${result.errors} errores`
+      );
+    },
+    onError: () => toast.error('Error en la clasificación batch'),
   });
 
   const handleNotificationClick = (notification: {
@@ -284,24 +415,31 @@ export function NotificationsView({
   };
 
   const rawNotifications = notificationsData?.notifications || [];
-  const notifications = clientIdProp
-    ? // En el detalle de cliente: solo mostrar notificaciones con perfil asociado
-    rawNotifications.filter(
-      (n: any) => n.profileName || n.profileIdentityNumber
-    )
-    : // En la vista global: solo mostrar notificaciones con cliente asociado
-    rawNotifications.filter((n: any) => n.clientName || n.clientId);
+  const filteredNotifications = clientIdProp
+    ? rawNotifications.filter(
+        (n: any) => n.profileName || n.profileIdentityNumber
+      )
+    : rawNotifications.filter((n: any) => n.clientName || n.clientId);
+  const notifications = [...filteredNotifications].sort((a: any, b: any) => {
+    const sa = SEVERITY_ORDER[a.severity ?? 'unclassified'] ?? 4;
+    const sb = SEVERITY_ORDER[b.severity ?? 'unclassified'] ?? 4;
+    if (sa !== sb) return sa - sb;
+    return (
+      new Date(b.publicationDate).getTime() -
+      new Date(a.publicationDate).getTime()
+    );
+  });
 
   const unreadForCopilot = aiAgentEnabled
     ? notifications
-      .filter((n: any) => n.opened === false)
-      .slice(0, 20)
-      .map((n: any) => ({
-        id: n.id,
-        message: n.message,
-        publicationDate: n.publicationDate,
-        clientName: n.clientName ?? null,
-      }))
+        .filter((n: any) => n.opened === false)
+        .slice(0, 20)
+        .map((n: any) => ({
+          id: n.id,
+          message: n.message,
+          publicationDate: n.publicationDate,
+          clientName: n.clientName ?? null,
+        }))
     : [];
 
   return (
@@ -348,6 +486,16 @@ export function NotificationsView({
               >
                 <CheckCheck className="h-4 w-4" />
               </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => classifyAllMutation.mutate()}
+                disabled={classifyAllMutation.isPending}
+                title="Clasificar pendientes con IA"
+              >
+                <Sparkles className="h-4 w-4" />
+                {classifyAllMutation.isPending ? '…' : null}
+              </Button>
             </div>
             {!clientIdProp ? (
               <SearchableSelect
@@ -378,6 +526,34 @@ export function NotificationsView({
                 disabled={loadingProfiles || profiles.length === 0}
               />
             )}
+            <SearchableSelect
+              options={[
+                { value: 'all', label: 'Todas las categorías' },
+                { value: 'requerimiento', label: 'Requerimiento' },
+                { value: 'intimacion', label: 'Intimación' },
+                { value: 'deuda', label: 'Deuda' },
+                { value: 'vencimiento', label: 'Vencimiento' },
+                { value: 'comunicacion_general', label: 'Comunicación' },
+                { value: 'inspeccion', label: 'Inspección' },
+                { value: 'otro', label: 'Otro' },
+              ]}
+              value={categoryFilter}
+              onValueChange={setCategoryFilter}
+              placeholder="Filtrar por categoría"
+              searchPlaceholder="Buscar categoría..."
+              width="100%"
+            />
+            <button
+              onClick={() => setOnlyUnresolved((v) => !v)}
+              className={cn(
+                'text-xs px-3 py-1.5 rounded border transition-colors w-full text-left',
+                onlyUnresolved
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-background text-muted-foreground border-border hover:bg-muted'
+              )}
+            >
+              Solo sin resolver
+            </button>
           </div>
 
           {/* Notifications List */}
@@ -402,8 +578,9 @@ export function NotificationsView({
                       className={cn(
                         'p-4 cursor-pointer hover:bg-muted/50 transition-colors',
                         selectedNotificationId === notification.id &&
-                        'bg-muted border-l-4 border-l-primary',
-                        notification.opened === false && 'bg-primary/5'
+                          'bg-muted border-l-4 border-l-primary',
+                        notification.opened === false && 'bg-primary/5',
+                        (notification as any).resolvedAt && 'opacity-50'
                       )}
                     >
                       <div className="flex items-start justify-between gap-2">
@@ -426,11 +603,19 @@ export function NotificationsView({
                             >
                               {clientIdProp
                                 ? notification.profileName ||
-                                notification.profileIdentityNumber ||
-                                'Sin perfil'
+                                  notification.profileIdentityNumber ||
+                                  'Sin perfil'
                                 : notification.clientName || 'Sin cliente'}
                             </p>
+                            <SeverityBadge
+                              severity={(notification as any).severity ?? null}
+                            />
                           </div>
+                          {(notification as any).aiSummary ? (
+                            <p className="text-xs text-muted-foreground italic line-clamp-1 mb-1">
+                              {(notification as any).aiSummary}
+                            </p>
+                          ) : null}
                           <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
                             {notification.message}
                           </p>
@@ -451,7 +636,11 @@ export function NotificationsView({
                             }
                           }}
                           className="shrink-0 p-1 rounded hover:bg-muted transition-colors"
-                          title={notification.opened ? 'Marcar como no leída' : 'Marcar como leída'}
+                          title={
+                            notification.opened
+                              ? 'Marcar como no leída'
+                              : 'Marcar como leída'
+                          }
                         >
                           {notification.opened ? (
                             <Mail className="h-3.5 w-3.5 text-muted-foreground" />
@@ -480,7 +669,9 @@ export function NotificationsView({
                       <h2 className="text-xl font-semibold">
                         {selectedNotification.clientName || 'Sin cliente'}
                       </h2>
-                      <span className="font-light text-muted-foreground text-xs">ID Externo: {selectedNotification.externalId}</span>
+                      <span className="font-light text-muted-foreground text-xs">
+                        ID Externo: {selectedNotification.externalId}
+                      </span>
                     </div>
                     <div className="flex items-center gap-4 text-sm text-muted-foreground">
                       <div className="flex items-center gap-2">
@@ -509,6 +700,77 @@ export function NotificationsView({
               {/* Content */}
               <div className="flex-1 overflow-y-auto p-6">
                 <div className="space-y-6">
+                  {/* Assignment & Resolution actions */}
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <div className="flex items-center gap-2 flex-1 min-w-[180px]">
+                      <UserCheck className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <SearchableSelect
+                        options={[
+                          { value: '__none__', label: 'Sin asignar' },
+                          ...orgMembers.map((m) => ({
+                            value: m.userId,
+                            label: m.name || m.email,
+                          })),
+                        ]}
+                        value={
+                          (selectedNotification as any).assignedToUserId ??
+                          '__none__'
+                        }
+                        onValueChange={(val) =>
+                          assignMutation.mutate({
+                            id: selectedNotification.id,
+                            userId: val === '__none__' ? null : val,
+                          })
+                        }
+                        placeholder="Asignar a..."
+                        searchPlaceholder="Buscar miembro..."
+                        width="100%"
+                      />
+                    </div>
+                    {(!(selectedNotification as any).severity ||
+                      (selectedNotification as any).severity ===
+                        'unclassified') && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          classifyMutation.mutate(selectedNotification.id)
+                        }
+                        disabled={classifyMutation.isPending}
+                      >
+                        <Sparkles className="h-4 w-4 mr-1" />
+                        {classifyMutation.isPending
+                          ? 'Clasificando…'
+                          : 'Clasificar con IA'}
+                      </Button>
+                    )}
+                    {(selectedNotification as any).resolvedAt ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          unresolveMutation.mutate(selectedNotification.id)
+                        }
+                        disabled={unresolveMutation.isPending}
+                      >
+                        <XCircle className="h-4 w-4 mr-1" />
+                        Reabrir
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() =>
+                          resolveMutation.mutate(selectedNotification.id)
+                        }
+                        disabled={resolveMutation.isPending}
+                      >
+                        <CheckCircle className="h-4 w-4 mr-1" />
+                        Resolver
+                      </Button>
+                    )}
+                  </div>
+
                   {/* Message */}
                   <div>
                     <h3 className="text-sm font-semibold mb-2">Mensaje</h3>
@@ -536,15 +798,39 @@ export function NotificationsView({
                     selectedNotification.attachments.length > 0 && (
                       <div className="space-y-4">
                         {selectedNotification.attachments.map(
-                          (attachment: any) => (
-                            <div key={attachment.id}>
-                              <iframe
-                                src={attachment.documentUrl}
-                                title={attachment.documentName}
-                                className="w-full h-[600px] rounded-lg border border-[var(--arca-border)]"
-                              />
-                            </div>
-                          )
+                          (attachment: any) => {
+                            const isPdf = /\.pdf$/i.test(
+                              attachment.documentName ?? ''
+                            );
+                            return (
+                              <div key={attachment.id} className="space-y-2">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-sm font-medium truncate">
+                                    {attachment.documentName}
+                                  </span>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() =>
+                                      handleDownloadAttachment(
+                                        attachment.documentUrl,
+                                        attachment.documentName
+                                      )
+                                    }
+                                  >
+                                    Descargar
+                                  </Button>
+                                </div>
+                                {isPdf && (
+                                  <iframe
+                                    src={attachment.documentUrl}
+                                    title={attachment.documentName}
+                                    className="w-full h-[600px] rounded-lg border border-[var(--arca-border)]"
+                                  />
+                                )}
+                              </div>
+                            );
+                          }
                         )}
                       </div>
                     )}

@@ -838,9 +838,9 @@ export const RenderIvaResume = React.forwardRef<
   }
 
   return (
-    <div className="@container space-y-4">
+    <div className="space-y-4">
       {/* Resumen en cajas: Ventas, Compras, Saldo Final */}
-      <div className="grid grid-cols-1 @[44rem]:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-4">
         <div className="min-w-0 rounded-lg border-2 border-border bg-card p-5 shadow-sm">
           <div className="text-sm font-bold uppercase tracking-wide text-foreground mb-3">
             Ventas
@@ -912,7 +912,9 @@ export const RenderIvaResume = React.forwardRef<
           ) : (
             <div
               className={`text-2xl font-bold tabular-nums truncate ${
-                saldoFinal < 0 ? 'text-[var(--arca-accent-neg)]' : 'text-[var(--arca-accent-pos-fg)]'
+                saldoFinal < 0
+                  ? 'text-[var(--arca-accent-neg)]'
+                  : 'text-[var(--arca-accent-pos-fg)]'
               }`}
             >
               {formatCurrency(saldoFinal)}
@@ -1070,7 +1072,7 @@ export const RenderIvaResume = React.forwardRef<
               </p>
             ) : (
               <>
-                <div className="grid grid-cols-2 @[24rem]:grid-cols-3 @[36rem]:grid-cols-4 @[60rem]:grid-cols-6 gap-x-6 gap-y-3 text-sm">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-x-6 gap-y-3 text-sm">
                   <div>
                     <div className="text-xs text-muted-foreground">
                       Período fiscal

@@ -33,13 +33,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import {
   Dialog,
   DialogContent,
@@ -831,154 +825,78 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
             )}
 
             {!clientId && !profileId && (
-              <Select value={clientFilter} onValueChange={setClientFilter}>
-                <SelectTrigger className="w-full md:w-48">
-                  <SelectValue placeholder="Filtrar por cliente" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos los clientes</SelectItem>
-                  {clients.map((client) => (
-                    <SelectItem key={client.id} value={client.id}>
-                      {client.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={clientFilter}
+                onValueChange={setClientFilter}
+                placeholder="Filtrar por cliente"
+                searchPlaceholder="Buscar cliente..."
+                options={[
+                  { value: 'all', label: 'Todos los clientes' },
+                  ...clients.map((client) => ({
+                    value: client.id,
+                    label: client.name,
+                  })),
+                ]}
+                width={192}
+              />
             )}
 
             {!isFiltersControlled && !profileId && clientForProfiles && (
-              <Select
+              <SearchableSelect
                 value={profileFilter}
                 onValueChange={(v) => {
                   setProfileFilter(v);
                   setCurrentPage(1);
                 }}
-              >
-                <SelectTrigger className="w-full md:w-48">
-                  <SelectValue placeholder="Perfil" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos los perfiles</SelectItem>
-                  {profiles.map(
+                placeholder="Perfil"
+                searchPlaceholder="Buscar perfil..."
+                options={[
+                  { value: 'all', label: 'Todos los perfiles' },
+                  ...profiles.map(
                     (p: {
                       id: string;
                       name?: string;
                       identityNumber?: string;
-                    }) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.name || p.identityNumber || p.id}
-                      </SelectItem>
-                    )
-                  )}
-                </SelectContent>
-              </Select>
+                    }) => ({
+                      value: p.id,
+                      label: p.name || p.identityNumber || p.id,
+                    })
+                  ),
+                ]}
+                width={192}
+              />
             )}
 
             {!isFiltersControlled && (
-              <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger className="w-full md:w-64">
-                  <SelectValue placeholder="Tipo" />
-                </SelectTrigger>
-                <SelectContent className="max-h-[300px]">
-                  <SelectItem value="all">Todas las facturas</SelectItem>
-                  <SelectItem value="1">Factura A</SelectItem>
-                  <SelectItem value="2">Nota de Débito A</SelectItem>
-                  <SelectItem value="3">Nota de Crédito A</SelectItem>
-                  <SelectItem value="4">Recibo A</SelectItem>
-                  <SelectItem value="5">Nota de Venta al Contado A</SelectItem>
-                  <SelectItem value="6">Factura B</SelectItem>
-                  <SelectItem value="7">Nota de Débito B</SelectItem>
-                  <SelectItem value="8">Nota de Crédito B</SelectItem>
-                  <SelectItem value="9">Recibo B</SelectItem>
-                  <SelectItem value="10">Nota de Venta al Contado B</SelectItem>
-                  <SelectItem value="11">Factura C</SelectItem>
-                  <SelectItem value="12">Nota de Débito C</SelectItem>
-                  <SelectItem value="13">Nota de Crédito C</SelectItem>
-                  <SelectItem value="15">Recibo C</SelectItem>
-                  <SelectItem value="16">Nota de Venta al Contado C</SelectItem>
-                  <SelectItem value="17">Liquidación</SelectItem>
-                  <SelectItem value="18">Liquidación A</SelectItem>
-                  <SelectItem value="19">Factura E</SelectItem>
-                  <SelectItem value="20">Nota de Débito E</SelectItem>
-                  <SelectItem value="21">Nota de Crédito E</SelectItem>
-                  <SelectItem value="22">Factura – Crédito Fiscal</SelectItem>
-                  <SelectItem value="34">
-                    Comprobante A del Sector Público
-                  </SelectItem>
-                  <SelectItem value="35">
-                    Nota de Débito A del Sector Público
-                  </SelectItem>
-                  <SelectItem value="36">
-                    Nota de Crédito A del Sector Público
-                  </SelectItem>
-                  <SelectItem value="37">
-                    Recibo A del Sector Público
-                  </SelectItem>
-                  <SelectItem value="38">
-                    Comprobante B del Sector Público
-                  </SelectItem>
-                  <SelectItem value="39">
-                    Nota de Débito B del Sector Público
-                  </SelectItem>
-                  <SelectItem value="40">
-                    Nota de Crédito B del Sector Público
-                  </SelectItem>
-                  <SelectItem value="41">
-                    Recibo B del Sector Público
-                  </SelectItem>
-                  <SelectItem value="51">Factura M</SelectItem>
-                  <SelectItem value="52">Nota de Débito M</SelectItem>
-                  <SelectItem value="53">Nota de Crédito M</SelectItem>
-                  <SelectItem value="54">Recibo M</SelectItem>
-                  <SelectItem value="81">Ticket Factura A</SelectItem>
-                  <SelectItem value="82">Ticket Factura B</SelectItem>
-                  <SelectItem value="83">Ticket</SelectItem>
-                  <SelectItem value="110">Ticket Nota de Crédito</SelectItem>
-                  <SelectItem value="201">
-                    Factura de Crédito Electrónica MiPyME A
-                  </SelectItem>
-                  <SelectItem value="202">
-                    Nota de Débito Electrónica MiPyME A
-                  </SelectItem>
-                  <SelectItem value="203">
-                    Nota de Crédito Electrónica MiPyME A
-                  </SelectItem>
-                  <SelectItem value="206">
-                    Factura de Crédito Electrónica MiPyME B
-                  </SelectItem>
-                  <SelectItem value="207">
-                    Nota de Débito Electrónica MiPyME B
-                  </SelectItem>
-                  <SelectItem value="208">
-                    Nota de Crédito Electrónica MiPyME B
-                  </SelectItem>
-                  <SelectItem value="211">
-                    Factura de Crédito Electrónica MiPyME C
-                  </SelectItem>
-                  <SelectItem value="212">
-                    Nota de Débito Electrónica MiPyME C
-                  </SelectItem>
-                  <SelectItem value="213">
-                    Nota de Crédito Electrónica MiPyME C
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={typeFilter}
+                onValueChange={setTypeFilter}
+                placeholder="Tipo"
+                searchPlaceholder="Buscar tipo..."
+                options={[
+                  { value: 'all', label: 'Todas las facturas' },
+                  ...Object.entries(INVOICE_TYPE_LABELS).map(([code, label]) => ({
+                    value: code,
+                    label,
+                  })),
+                ]}
+                width={256}
+              />
             )}
 
             {!isFiltersControlled && (
-              <Select
+              <SearchableSelect
                 value={directionFilter}
                 onValueChange={setDirectionFilter}
-              >
-                <SelectTrigger className="w-full md:w-56">
-                  <SelectValue placeholder="Dirección" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas las direcciones</SelectItem>
-                  <SelectItem value="Outbound">Emitida</SelectItem>
-                  <SelectItem value="Inbound">Recibida</SelectItem>
-                </SelectContent>
-              </Select>
+                placeholder="Dirección"
+                searchPlaceholder="Buscar dirección..."
+                options={[
+                  { value: 'all', label: 'Todas las direcciones' },
+                  { value: 'Outbound', label: 'Emitida' },
+                  { value: 'Inbound', label: 'Recibida' },
+                ]}
+                width={224}
+              />
             )}
 
             {!isFiltersControlled &&
@@ -1068,179 +986,198 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
 
         {/* Table */}
         <Table className="table-fixed text-xs">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10 px-2">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-10 px-2">
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-navy-900)]"
+                  checked={
+                    (invoicesData?.invoices ?? []).length > 0 &&
+                    (invoicesData?.invoices ?? []).every((inv) =>
+                      selectedIds.has(inv.id)
+                    )
+                  }
+                  ref={(el) => {
+                    if (el)
+                      el.indeterminate =
+                        (invoicesData?.invoices ?? []).some((inv) =>
+                          selectedIds.has(inv.id)
+                        ) &&
+                        !(invoicesData?.invoices ?? []).every((inv) =>
+                          selectedIds.has(inv.id)
+                        );
+                  }}
+                  onChange={() =>
+                    toggleAllInvoices(
+                      (invoicesData?.invoices ?? []).map((inv) => inv.id)
+                    )
+                  }
+                />
+              </TableHead>
+              <TableHead className="w-[10%] px-2 py-2 align-top">
+                Tipo
+              </TableHead>
+              <TableHead className="w-[14%] px-2 py-2 align-top">
+                Cliente
+              </TableHead>
+              <TableHead className="w-[17%] px-2 py-2 align-top">
+                Emisor
+              </TableHead>
+              <TableHead className="w-[17%] px-2 py-2 align-top">
+                Destinatario
+              </TableHead>
+              <TableHead className="w-[9%] px-2 py-2 align-middle">
+                <button
+                  className="flex items-center gap-1 group text-white text-[11px] font-semibold"
+                  onClick={handleSortByDate}
+                >
+                  Fecha
+                  {sortBy === 'emitionDate' && sortOrder === 'asc' ? (
+                    <ArrowUp className="ml-1 h-3 w-3" />
+                  ) : sortBy === 'emitionDate' && sortOrder === 'desc' ? (
+                    <ArrowDown className="ml-1 h-3 w-3" />
+                  ) : (
+                    <ArrowUpDown className="ml-1 h-3 w-3 opacity-50 group-hover:opacity-100 transition-opacity" />
+                  )}
+                </button>
+              </TableHead>
+              <TableHead className="w-[14%] px-2 py-2 align-middle">
+                <button
+                  className="flex items-center gap-1 group text-white text-[11px] font-semibold"
+                  onClick={handleSortByAmount}
+                >
+                  Monto
+                  {sortBy === 'amount' && sortOrder === 'asc' ? (
+                    <ArrowUp className="ml-1 h-3 w-3" />
+                  ) : sortBy === 'amount' && sortOrder === 'desc' ? (
+                    <ArrowDown className="ml-1 h-3 w-3" />
+                  ) : (
+                    <ArrowUpDown className="ml-1 h-3 w-3 opacity-50 group-hover:opacity-100 transition-opacity" />
+                  )}
+                </button>
+              </TableHead>
+              <TableHead className="w-[14%] px-2 py-2 align-middle">
+                Dirección
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={8} className="h-24 text-center">
+                  Cargando facturas...
+                </TableCell>
+              </TableRow>
+            ) : invoicesData?.invoices.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={8} className="h-24 text-center">
+                  No se encontraron facturas.
+                </TableCell>
+              </TableRow>
+            ) : (
+              invoicesData?.invoices.map((invoice) => (
+                <TableRow
+                  key={invoice.id}
+                  onClick={() => handleViewInvoice(invoice)}
+                  className="cursor-pointer"
+                  data-state={
+                    selectedIds.has(invoice.id) ? 'selected' : undefined
+                  }
+                >
+                  <TableCell
+                    className="w-10 px-2"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <input
                       type="checkbox"
                       className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-navy-900)]"
-                      checked={(invoicesData?.invoices ?? []).length > 0 && (invoicesData?.invoices ?? []).every((inv) => selectedIds.has(inv.id))}
-                      ref={(el) => {
-                        if (el) el.indeterminate = (invoicesData?.invoices ?? []).some((inv) => selectedIds.has(inv.id)) && !(invoicesData?.invoices ?? []).every((inv) => selectedIds.has(inv.id));
-                      }}
-                      onChange={() => toggleAllInvoices((invoicesData?.invoices ?? []).map((inv) => inv.id))}
+                      checked={selectedIds.has(invoice.id)}
+                      onChange={() => toggleInvoiceRow(invoice.id)}
                     />
-                  </TableHead>
-                  <TableHead className="w-[10%] px-2 py-2 align-top">
-                    Tipo
-                  </TableHead>
-                  <TableHead className="w-[14%] px-2 py-2 align-top">
-                    Cliente
-                  </TableHead>
-                  <TableHead className="w-[17%] px-2 py-2 align-top">
-                    Emisor
-                  </TableHead>
-                  <TableHead className="w-[17%] px-2 py-2 align-top">
-                    Destinatario
-                  </TableHead>
-                  <TableHead className="w-[9%] px-2 py-2 align-middle">
-                    <button
-                      className="flex items-center gap-1 group text-white text-[11px] font-semibold"
-                      onClick={handleSortByDate}
-                    >
-                      Fecha
-                      {sortBy === 'emitionDate' && sortOrder === 'asc' ? (
-                        <ArrowUp className="ml-1 h-3 w-3" />
-                      ) : sortBy === 'emitionDate' && sortOrder === 'desc' ? (
-                        <ArrowDown className="ml-1 h-3 w-3" />
-                      ) : (
-                        <ArrowUpDown className="ml-1 h-3 w-3 opacity-50 group-hover:opacity-100 transition-opacity" />
-                      )}
-                    </button>
-                  </TableHead>
-                  <TableHead className="w-[14%] px-2 py-2 align-middle">
-                    <button
-                      className="flex items-center gap-1 group text-white text-[11px] font-semibold"
-                      onClick={handleSortByAmount}
-                    >
-                      Monto
-                      {sortBy === 'amount' && sortOrder === 'asc' ? (
-                        <ArrowUp className="ml-1 h-3 w-3" />
-                      ) : sortBy === 'amount' && sortOrder === 'desc' ? (
-                        <ArrowDown className="ml-1 h-3 w-3" />
-                      ) : (
-                        <ArrowUpDown className="ml-1 h-3 w-3 opacity-50 group-hover:opacity-100 transition-opacity" />
-                      )}
-                    </button>
-                  </TableHead>
-                  <TableHead className="w-[14%] px-2 py-2 align-middle">
-                    Dirección
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={8} className="h-24 text-center">
-                      Cargando facturas...
-                    </TableCell>
-                  </TableRow>
-                ) : invoicesData?.invoices.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={8} className="h-24 text-center">
-                      No se encontraron facturas.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  invoicesData?.invoices.map((invoice) => (
-                    <TableRow
-                      key={invoice.id}
-                      onClick={() => handleViewInvoice(invoice)}
-                      className="cursor-pointer"
-                      data-state={selectedIds.has(invoice.id) ? 'selected' : undefined}
-                    >
-                      <TableCell className="w-10 px-2" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-navy-900)]"
-                          checked={selectedIds.has(invoice.id)}
-                          onChange={() => toggleInvoiceRow(invoice.id)}
-                        />
-                      </TableCell>
-                      <TableCell className="w-[10%] px-2 py-2 align-top">
-                        <div className="truncate">
-                          {getTypeBadge(invoice.type)}
+                  </TableCell>
+                  <TableCell className="w-[10%] px-2 py-2 align-top">
+                    <div className="truncate">{getTypeBadge(invoice.type)}</div>
+                  </TableCell>
+                  <TableCell className="w-[15%] px-2 py-2 align-top">
+                    {invoice.clientName || invoice.profileName ? (
+                      <div className="space-y-0.5">
+                        <div
+                          className="font-medium truncate text-xs"
+                          title={invoice.clientName ?? undefined}
+                        >
+                          {invoice.clientName ?? '—'}
                         </div>
-                      </TableCell>
-                      <TableCell className="w-[15%] px-2 py-2 align-top">
-                        {invoice.clientName || invoice.profileName ? (
-                          <div className="space-y-0.5">
-                            <div
-                              className="font-medium truncate text-xs"
-                              title={invoice.clientName ?? undefined}
-                            >
-                              {invoice.clientName ?? '—'}
-                            </div>
-                            {invoice.profileName && (
-                              <div
-                                className="text-xs text-[var(--arca-ink-3)] truncate"
-                                title={invoice.profileName}
-                              >
-                                {invoice.profileName}
-                              </div>
-                            )}
-                            {invoice.clientEmail && (
-                              <div
-                                className="text-xs text-[var(--arca-ink-3)] truncate"
-                                title={invoice.clientEmail}
-                              >
-                                {invoice.clientEmail}
-                              </div>
-                            )}
+                        {invoice.profileName && (
+                          <div
+                            className="text-xs text-[var(--arca-ink-3)] truncate"
+                            title={invoice.profileName}
+                          >
+                            {invoice.profileName}
                           </div>
-                        ) : (
-                          <span className="text-[var(--arca-ink-3)] text-xs">
-                            Sin cliente
-                          </span>
                         )}
-                      </TableCell>
-                      <TableCell className="w-[18%] px-2 py-2 align-top">
-                        <div className="space-y-0.5">
-                          <div
-                            className="font-medium truncate text-xs"
-                            title={invoice.emitterName}
-                          >
-                            {invoice.emitterName}
-                          </div>
+                        {invoice.clientEmail && (
                           <div
                             className="text-xs text-[var(--arca-ink-3)] truncate"
-                            title={`${invoice.emitterIdentityType}: ${invoice.emitterIdentityNumber}`}
+                            title={invoice.clientEmail}
                           >
-                            {invoice.emitterIdentityType}:{' '}
-                            {invoice.emitterIdentityNumber}
+                            {invoice.clientEmail}
                           </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="w-[18%] px-2 py-2 align-top">
-                        <div className="space-y-0.5">
-                          <div
-                            className="font-medium truncate text-xs"
-                            title={invoice.recipientName}
-                          >
-                            {invoice.recipientName}
-                          </div>
-                          <div
-                            className="text-xs text-[var(--arca-ink-3)] truncate"
-                            title={`${invoice.recipientIdentityType}: ${invoice.recipientIdentityNumber}`}
-                          >
-                            {invoice.recipientIdentityType}:{' '}
-                            {invoice.recipientIdentityNumber}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="w-[9%] px-2 py-2 align-middle whitespace-nowrap">
-                        {formatDate(invoice.emitionDate)}
-                      </TableCell>
-                      <TableCell className="w-[15%] px-2 py-2 align-middle whitespace-nowrap font-medium">
-                        {formatCurrency(invoice.amount, invoice.currency)}
-                      </TableCell>
-                      <TableCell className="w-[15%] px-2 py-2 align-middle whitespace-nowrap">
-                        {getDirectionBadge(invoice.direction.toLowerCase())}
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-[var(--arca-ink-3)] text-xs">
+                        Sin cliente
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="w-[18%] px-2 py-2 align-top">
+                    <div className="space-y-0.5">
+                      <div
+                        className="font-medium truncate text-xs"
+                        title={invoice.emitterName}
+                      >
+                        {invoice.emitterName}
+                      </div>
+                      <div
+                        className="text-xs text-[var(--arca-ink-3)] truncate"
+                        title={`${invoice.emitterIdentityType}: ${invoice.emitterIdentityNumber}`}
+                      >
+                        {invoice.emitterIdentityType}:{' '}
+                        {invoice.emitterIdentityNumber}
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="w-[18%] px-2 py-2 align-top">
+                    <div className="space-y-0.5">
+                      <div
+                        className="font-medium truncate text-xs"
+                        title={invoice.recipientName}
+                      >
+                        {invoice.recipientName}
+                      </div>
+                      <div
+                        className="text-xs text-[var(--arca-ink-3)] truncate"
+                        title={`${invoice.recipientIdentityType}: ${invoice.recipientIdentityNumber}`}
+                      >
+                        {invoice.recipientIdentityType}:{' '}
+                        {invoice.recipientIdentityNumber}
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="w-[9%] px-2 py-2 align-middle whitespace-nowrap">
+                    {formatDate(invoice.emitionDate)}
+                  </TableCell>
+                  <TableCell className="w-[15%] px-2 py-2 align-middle whitespace-nowrap font-medium">
+                    {formatCurrency(invoice.amount, invoice.currency)}
+                  </TableCell>
+                  <TableCell className="w-[15%] px-2 py-2 align-middle whitespace-nowrap">
+                    {getDirectionBadge(invoice.direction.toLowerCase())}
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
         </Table>
 
         {/* Pagination */}
@@ -1563,7 +1500,9 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                           </span>
                         </div>
                         <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-[var(--arca-ink-3)]">IVA 5%:</span>
+                          <span className="text-[var(--arca-ink-3)]">
+                            IVA 5%:
+                          </span>
                           <span className="font-medium">
                             {formatCurrency(
                               invoiceDetails.IVA5,

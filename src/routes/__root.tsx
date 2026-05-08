@@ -12,8 +12,8 @@ import { Toaster } from '@/components/ui/sonner';
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 30_000,         // 30s — no refetch si datos son frescos
-      gcTime: 5 * 60_000,        // 5min — mantener en cache
+      staleTime: 30_000, // 30s — no refetch si datos son frescos
+      gcTime: 5 * 60_000, // 5min — mantener en cache
       refetchOnWindowFocus: false, // no refetch al volver al tab
     },
   },

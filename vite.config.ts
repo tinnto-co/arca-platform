@@ -5,6 +5,7 @@ import viteTsConfigPaths from "vite-tsconfig-paths";
 import tailwindcss from "@tailwindcss/vite";
 export default defineConfig({
   server: {
+    // port: 3000, // rollback: cambiar a 3000
     port: 3000,
     allowedHosts: [
       "familycapitalfunds.com",
@@ -18,7 +19,7 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    include: ["gridstack"],
+    include: ["gridstack", "@react-pdf/renderer"],
   },
 
 

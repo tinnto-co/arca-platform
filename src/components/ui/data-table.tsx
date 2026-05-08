@@ -52,6 +52,7 @@ interface DataTableProps<TData, TValue> {
   pagination?: boolean;
   pageSize?: number;
   onRowClick?: (row: TData) => void;
+  onSelectionChange?: (selectedRows: TData[]) => void;
   isLoading?: boolean;
   toolbar?: React.ReactNode;
   emptyMessage?: string;
@@ -66,13 +67,17 @@ export function DataTable<TData, TValue>({
   pagination = true,
   pageSize = 20,
   onRowClick,
+  onSelectionChange,
   isLoading = false,
   toolbar,
   emptyMessage = 'Sin resultados.',
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
-  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
-  const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({});
+  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
+    []
+  );
+  const [columnVisibility, setColumnVisibility] =
+    React.useState<VisibilityState>({});
   const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
 
   const selectColumn: ColumnDef<TData, unknown> = {
@@ -114,7 +119,17 @@ export function DataTable<TData, TValue>({
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
-    onRowSelectionChange: setRowSelection,
+    onRowSelectionChange: (updater) => {
+      setRowSelection((prev) => {
+        const next = typeof updater === 'function' ? updater(prev) : updater;
+        if (onSelectionChange) {
+          const selectedIndices = Object.keys(next).filter((k) => next[k]);
+          const selectedRows = selectedIndices.map((i) => data[Number(i)]);
+          onSelectionChange(selectedRows);
+        }
+        return next;
+      });
+    },
     initialState: { pagination: { pageSize } },
     state: { sorting, columnFilters, columnVisibility, rowSelection },
   });

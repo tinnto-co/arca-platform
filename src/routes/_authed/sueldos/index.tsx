@@ -34,11 +34,12 @@ function RouteComponent() {
     queryFn: () => getClientsForSueldos(),
   });
 
-  const { data: orgModules } = useQuery({
+  const { data: orgModules = [] } = useQuery({
     queryKey: ['orgModules'],
     queryFn: () => listOrgModules(),
   });
-  const aiAgentEnabled = orgModules?.ai_agent ?? false;
+  const aiAgentEnabled =
+    orgModules.find((m) => m.module === 'ai_agent')?.enabled ?? false;
 
   const columns: ColumnDef<SueldosClientRow>[] = [
     {

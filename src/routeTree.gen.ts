@@ -11,11 +11,13 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as NoOrganizationRouteImport } from './routes/no-organization'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as ClientRouteRouteImport } from './routes/_client/route'
 import { Route as AuthedRouteRouteImport } from './routes/_authed/route'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
 import { Route as InviteInvitationIdRouteImport } from './routes/invite.$invitationId'
 import { Route as ApiCopilotkitRouteImport } from './routes/api/copilotkit'
 import { Route as ApiAgentRouteImport } from './routes/api/agent'
+import { Route as ClientPortalIndexRouteImport } from './routes/_client/portal/index'
 import { Route as AuthedVencimientosIndexRouteImport } from './routes/_authed/vencimientos/index'
 import { Route as AuthedSueldosIndexRouteImport } from './routes/_authed/sueldos/index'
 import { Route as AuthedScan_pdfIndexRouteImport } from './routes/_authed/scan_pdf/index'
@@ -25,10 +27,15 @@ import { Route as AuthedJobsIndexRouteImport } from './routes/_authed/jobs/index
 import { Route as AuthedInvoicesIndexRouteImport } from './routes/_authed/invoices/index'
 import { Route as AuthedClientsIndexRouteImport } from './routes/_authed/clients/index'
 import { Route as AuthedChatIndexRouteImport } from './routes/_authed/chat/index'
+import { Route as AuthedBankIndexRouteImport } from './routes/_authed/bank/index'
+import { Route as AuthedAnalyticsIndexRouteImport } from './routes/_authed/analytics/index'
+import { Route as AuthedAlertsIndexRouteImport } from './routes/_authed/alerts/index'
 import { Route as AuthedAdminIndexRouteImport } from './routes/_authed/admin/index'
+import { Route as AuthedAccountingIndexRouteImport } from './routes/_authed/accounting/index'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AuthedProductsIdRouteImport } from './routes/_authed/products/$id'
 import { Route as AuthedChatIdRouteImport } from './routes/_authed/chat/$id'
+import { Route as ClientPortalSolicitudesIndexRouteImport } from './routes/_client/portal/solicitudes/index'
 import { Route as AuthedSueldosProfileIdIndexRouteImport } from './routes/_authed/sueldos/$profileId/index'
 import { Route as AuthedClientsClientIdIndexRouteImport } from './routes/_authed/clients/$clientId/index'
 import { Route as AuthedClientsClientIdProfileIdIndexRouteImport } from './routes/_authed/clients/$clientId/$profileId/index'
@@ -41,6 +48,10 @@ const NoOrganizationRoute = NoOrganizationRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ClientRouteRoute = ClientRouteRouteImport.update({
+  id: '/_client',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthedRouteRoute = AuthedRouteRouteImport.update({
@@ -66,6 +77,11 @@ const ApiAgentRoute = ApiAgentRouteImport.update({
   id: '/api/agent',
   path: '/api/agent',
   getParentRoute: () => rootRouteImport,
+} as any)
+const ClientPortalIndexRoute = ClientPortalIndexRouteImport.update({
+  id: '/portal/',
+  path: '/portal/',
+  getParentRoute: () => ClientRouteRoute,
 } as any)
 const AuthedVencimientosIndexRoute = AuthedVencimientosIndexRouteImport.update({
   id: '/vencimientos/',
@@ -113,9 +129,29 @@ const AuthedChatIndexRoute = AuthedChatIndexRouteImport.update({
   path: '/chat/',
   getParentRoute: () => AuthedRouteRoute,
 } as any)
+const AuthedBankIndexRoute = AuthedBankIndexRouteImport.update({
+  id: '/bank/',
+  path: '/bank/',
+  getParentRoute: () => AuthedRouteRoute,
+} as any)
+const AuthedAnalyticsIndexRoute = AuthedAnalyticsIndexRouteImport.update({
+  id: '/analytics/',
+  path: '/analytics/',
+  getParentRoute: () => AuthedRouteRoute,
+} as any)
+const AuthedAlertsIndexRoute = AuthedAlertsIndexRouteImport.update({
+  id: '/alerts/',
+  path: '/alerts/',
+  getParentRoute: () => AuthedRouteRoute,
+} as any)
 const AuthedAdminIndexRoute = AuthedAdminIndexRouteImport.update({
   id: '/admin/',
   path: '/admin/',
+  getParentRoute: () => AuthedRouteRoute,
+} as any)
+const AuthedAccountingIndexRoute = AuthedAccountingIndexRouteImport.update({
+  id: '/accounting/',
+  path: '/accounting/',
   getParentRoute: () => AuthedRouteRoute,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
@@ -133,6 +169,12 @@ const AuthedChatIdRoute = AuthedChatIdRouteImport.update({
   path: '/chat/$id',
   getParentRoute: () => AuthedRouteRoute,
 } as any)
+const ClientPortalSolicitudesIndexRoute =
+  ClientPortalSolicitudesIndexRouteImport.update({
+    id: '/portal/solicitudes/',
+    path: '/portal/solicitudes/',
+    getParentRoute: () => ClientRouteRoute,
+  } as any)
 const AuthedSueldosProfileIdIndexRoute =
   AuthedSueldosProfileIdIndexRouteImport.update({
     id: '/sueldos/$profileId/',
@@ -162,7 +204,11 @@ export interface FileRoutesByFullPath {
   '/chat/$id': typeof AuthedChatIdRoute
   '/products/$id': typeof AuthedProductsIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/accounting/': typeof AuthedAccountingIndexRoute
   '/admin/': typeof AuthedAdminIndexRoute
+  '/alerts/': typeof AuthedAlertsIndexRoute
+  '/analytics/': typeof AuthedAnalyticsIndexRoute
+  '/bank/': typeof AuthedBankIndexRoute
   '/chat/': typeof AuthedChatIndexRoute
   '/clients/': typeof AuthedClientsIndexRoute
   '/invoices/': typeof AuthedInvoicesIndexRoute
@@ -172,21 +218,27 @@ export interface FileRoutesByFullPath {
   '/scan_pdf/': typeof AuthedScan_pdfIndexRoute
   '/sueldos/': typeof AuthedSueldosIndexRoute
   '/vencimientos/': typeof AuthedVencimientosIndexRoute
+  '/portal/': typeof ClientPortalIndexRoute
   '/clients/$clientId/': typeof AuthedClientsClientIdIndexRoute
   '/sueldos/$profileId/': typeof AuthedSueldosProfileIdIndexRoute
+  '/portal/solicitudes/': typeof ClientPortalSolicitudesIndexRoute
   '/clients/$clientId/$profileId/': typeof AuthedClientsClientIdProfileIdIndexRoute
 }
 export interface FileRoutesByTo {
+  '/': typeof AuthedIndexRoute
   '/login': typeof LoginRoute
   '/no-organization': typeof NoOrganizationRoute
   '/api/agent': typeof ApiAgentRoute
   '/api/copilotkit': typeof ApiCopilotkitRoute
   '/invite/$invitationId': typeof InviteInvitationIdRoute
-  '/': typeof AuthedIndexRoute
   '/chat/$id': typeof AuthedChatIdRoute
   '/products/$id': typeof AuthedProductsIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/accounting': typeof AuthedAccountingIndexRoute
   '/admin': typeof AuthedAdminIndexRoute
+  '/alerts': typeof AuthedAlertsIndexRoute
+  '/analytics': typeof AuthedAnalyticsIndexRoute
+  '/bank': typeof AuthedBankIndexRoute
   '/chat': typeof AuthedChatIndexRoute
   '/clients': typeof AuthedClientsIndexRoute
   '/invoices': typeof AuthedInvoicesIndexRoute
@@ -196,13 +248,16 @@ export interface FileRoutesByTo {
   '/scan_pdf': typeof AuthedScan_pdfIndexRoute
   '/sueldos': typeof AuthedSueldosIndexRoute
   '/vencimientos': typeof AuthedVencimientosIndexRoute
+  '/portal': typeof ClientPortalIndexRoute
   '/clients/$clientId': typeof AuthedClientsClientIdIndexRoute
   '/sueldos/$profileId': typeof AuthedSueldosProfileIdIndexRoute
+  '/portal/solicitudes': typeof ClientPortalSolicitudesIndexRoute
   '/clients/$clientId/$profileId': typeof AuthedClientsClientIdProfileIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authed': typeof AuthedRouteRouteWithChildren
+  '/_client': typeof ClientRouteRouteWithChildren
   '/login': typeof LoginRoute
   '/no-organization': typeof NoOrganizationRoute
   '/api/agent': typeof ApiAgentRoute
@@ -212,7 +267,11 @@ export interface FileRoutesById {
   '/_authed/chat/$id': typeof AuthedChatIdRoute
   '/_authed/products/$id': typeof AuthedProductsIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/_authed/accounting/': typeof AuthedAccountingIndexRoute
   '/_authed/admin/': typeof AuthedAdminIndexRoute
+  '/_authed/alerts/': typeof AuthedAlertsIndexRoute
+  '/_authed/analytics/': typeof AuthedAnalyticsIndexRoute
+  '/_authed/bank/': typeof AuthedBankIndexRoute
   '/_authed/chat/': typeof AuthedChatIndexRoute
   '/_authed/clients/': typeof AuthedClientsIndexRoute
   '/_authed/invoices/': typeof AuthedInvoicesIndexRoute
@@ -222,8 +281,10 @@ export interface FileRoutesById {
   '/_authed/scan_pdf/': typeof AuthedScan_pdfIndexRoute
   '/_authed/sueldos/': typeof AuthedSueldosIndexRoute
   '/_authed/vencimientos/': typeof AuthedVencimientosIndexRoute
+  '/_client/portal/': typeof ClientPortalIndexRoute
   '/_authed/clients/$clientId/': typeof AuthedClientsClientIdIndexRoute
   '/_authed/sueldos/$profileId/': typeof AuthedSueldosProfileIdIndexRoute
+  '/_client/portal/solicitudes/': typeof ClientPortalSolicitudesIndexRoute
   '/_authed/clients/$clientId/$profileId/': typeof AuthedClientsClientIdProfileIdIndexRoute
 }
 export interface FileRouteTypes {
@@ -238,7 +299,11 @@ export interface FileRouteTypes {
     | '/chat/$id'
     | '/products/$id'
     | '/api/auth/$'
+    | '/accounting/'
     | '/admin/'
+    | '/alerts/'
+    | '/analytics/'
+    | '/bank/'
     | '/chat/'
     | '/clients/'
     | '/invoices/'
@@ -248,21 +313,27 @@ export interface FileRouteTypes {
     | '/scan_pdf/'
     | '/sueldos/'
     | '/vencimientos/'
+    | '/portal/'
     | '/clients/$clientId/'
     | '/sueldos/$profileId/'
+    | '/portal/solicitudes/'
     | '/clients/$clientId/$profileId/'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/'
     | '/login'
     | '/no-organization'
     | '/api/agent'
     | '/api/copilotkit'
     | '/invite/$invitationId'
-    | '/'
     | '/chat/$id'
     | '/products/$id'
     | '/api/auth/$'
+    | '/accounting'
     | '/admin'
+    | '/alerts'
+    | '/analytics'
+    | '/bank'
     | '/chat'
     | '/clients'
     | '/invoices'
@@ -272,12 +343,15 @@ export interface FileRouteTypes {
     | '/scan_pdf'
     | '/sueldos'
     | '/vencimientos'
+    | '/portal'
     | '/clients/$clientId'
     | '/sueldos/$profileId'
+    | '/portal/solicitudes'
     | '/clients/$clientId/$profileId'
   id:
     | '__root__'
     | '/_authed'
+    | '/_client'
     | '/login'
     | '/no-organization'
     | '/api/agent'
@@ -287,7 +361,11 @@ export interface FileRouteTypes {
     | '/_authed/chat/$id'
     | '/_authed/products/$id'
     | '/api/auth/$'
+    | '/_authed/accounting/'
     | '/_authed/admin/'
+    | '/_authed/alerts/'
+    | '/_authed/analytics/'
+    | '/_authed/bank/'
     | '/_authed/chat/'
     | '/_authed/clients/'
     | '/_authed/invoices/'
@@ -297,13 +375,16 @@ export interface FileRouteTypes {
     | '/_authed/scan_pdf/'
     | '/_authed/sueldos/'
     | '/_authed/vencimientos/'
+    | '/_client/portal/'
     | '/_authed/clients/$clientId/'
     | '/_authed/sueldos/$profileId/'
+    | '/_client/portal/solicitudes/'
     | '/_authed/clients/$clientId/$profileId/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   AuthedRouteRoute: typeof AuthedRouteRouteWithChildren
+  ClientRouteRoute: typeof ClientRouteRouteWithChildren
   LoginRoute: typeof LoginRoute
   NoOrganizationRoute: typeof NoOrganizationRoute
   ApiAgentRoute: typeof ApiAgentRoute
@@ -326,6 +407,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_client': {
+      id: '/_client'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof ClientRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authed': {
@@ -362,6 +450,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/agent'
       preLoaderRoute: typeof ApiAgentRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_client/portal/': {
+      id: '/_client/portal/'
+      path: '/portal'
+      fullPath: '/portal/'
+      preLoaderRoute: typeof ClientPortalIndexRouteImport
+      parentRoute: typeof ClientRouteRoute
     }
     '/_authed/vencimientos/': {
       id: '/_authed/vencimientos/'
@@ -426,11 +521,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedChatIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
+    '/_authed/bank/': {
+      id: '/_authed/bank/'
+      path: '/bank'
+      fullPath: '/bank/'
+      preLoaderRoute: typeof AuthedBankIndexRouteImport
+      parentRoute: typeof AuthedRouteRoute
+    }
+    '/_authed/analytics/': {
+      id: '/_authed/analytics/'
+      path: '/analytics'
+      fullPath: '/analytics/'
+      preLoaderRoute: typeof AuthedAnalyticsIndexRouteImport
+      parentRoute: typeof AuthedRouteRoute
+    }
+    '/_authed/alerts/': {
+      id: '/_authed/alerts/'
+      path: '/alerts'
+      fullPath: '/alerts/'
+      preLoaderRoute: typeof AuthedAlertsIndexRouteImport
+      parentRoute: typeof AuthedRouteRoute
+    }
     '/_authed/admin/': {
       id: '/_authed/admin/'
       path: '/admin'
       fullPath: '/admin/'
       preLoaderRoute: typeof AuthedAdminIndexRouteImport
+      parentRoute: typeof AuthedRouteRoute
+    }
+    '/_authed/accounting/': {
+      id: '/_authed/accounting/'
+      path: '/accounting'
+      fullPath: '/accounting/'
+      preLoaderRoute: typeof AuthedAccountingIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
     '/api/auth/$': {
@@ -453,6 +576,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/chat/$id'
       preLoaderRoute: typeof AuthedChatIdRouteImport
       parentRoute: typeof AuthedRouteRoute
+    }
+    '/_client/portal/solicitudes/': {
+      id: '/_client/portal/solicitudes/'
+      path: '/portal/solicitudes'
+      fullPath: '/portal/solicitudes/'
+      preLoaderRoute: typeof ClientPortalSolicitudesIndexRouteImport
+      parentRoute: typeof ClientRouteRoute
     }
     '/_authed/sueldos/$profileId/': {
       id: '/_authed/sueldos/$profileId/'
@@ -482,7 +612,11 @@ interface AuthedRouteRouteChildren {
   AuthedIndexRoute: typeof AuthedIndexRoute
   AuthedChatIdRoute: typeof AuthedChatIdRoute
   AuthedProductsIdRoute: typeof AuthedProductsIdRoute
+  AuthedAccountingIndexRoute: typeof AuthedAccountingIndexRoute
   AuthedAdminIndexRoute: typeof AuthedAdminIndexRoute
+  AuthedAlertsIndexRoute: typeof AuthedAlertsIndexRoute
+  AuthedAnalyticsIndexRoute: typeof AuthedAnalyticsIndexRoute
+  AuthedBankIndexRoute: typeof AuthedBankIndexRoute
   AuthedChatIndexRoute: typeof AuthedChatIndexRoute
   AuthedClientsIndexRoute: typeof AuthedClientsIndexRoute
   AuthedInvoicesIndexRoute: typeof AuthedInvoicesIndexRoute
@@ -501,7 +635,11 @@ const AuthedRouteRouteChildren: AuthedRouteRouteChildren = {
   AuthedIndexRoute: AuthedIndexRoute,
   AuthedChatIdRoute: AuthedChatIdRoute,
   AuthedProductsIdRoute: AuthedProductsIdRoute,
+  AuthedAccountingIndexRoute: AuthedAccountingIndexRoute,
   AuthedAdminIndexRoute: AuthedAdminIndexRoute,
+  AuthedAlertsIndexRoute: AuthedAlertsIndexRoute,
+  AuthedAnalyticsIndexRoute: AuthedAnalyticsIndexRoute,
+  AuthedBankIndexRoute: AuthedBankIndexRoute,
   AuthedChatIndexRoute: AuthedChatIndexRoute,
   AuthedClientsIndexRoute: AuthedClientsIndexRoute,
   AuthedInvoicesIndexRoute: AuthedInvoicesIndexRoute,
@@ -521,8 +659,23 @@ const AuthedRouteRouteWithChildren = AuthedRouteRoute._addFileChildren(
   AuthedRouteRouteChildren,
 )
 
+interface ClientRouteRouteChildren {
+  ClientPortalIndexRoute: typeof ClientPortalIndexRoute
+  ClientPortalSolicitudesIndexRoute: typeof ClientPortalSolicitudesIndexRoute
+}
+
+const ClientRouteRouteChildren: ClientRouteRouteChildren = {
+  ClientPortalIndexRoute: ClientPortalIndexRoute,
+  ClientPortalSolicitudesIndexRoute: ClientPortalSolicitudesIndexRoute,
+}
+
+const ClientRouteRouteWithChildren = ClientRouteRoute._addFileChildren(
+  ClientRouteRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   AuthedRouteRoute: AuthedRouteRouteWithChildren,
+  ClientRouteRoute: ClientRouteRouteWithChildren,
   LoginRoute: LoginRoute,
   NoOrganizationRoute: NoOrganizationRoute,
   ApiAgentRoute: ApiAgentRoute,

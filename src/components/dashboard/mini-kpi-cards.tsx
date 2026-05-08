@@ -146,26 +146,24 @@ export function MiniKpiCardsRow({
       footLeft: 'Total acumulado',
       footRight: `${notifCount}`,
     },
-    {
-      label: 'Deudas vencidas',
-      icon: <AlertCircle className="w-3 h-3" />,
-      value: String(overdueCount),
-      valueSub: 'clientes',
-      progressKind: 'neg',
-      progressPct: overdueCount > 0 ? Math.min(overdueCount * 5, 100) : 0,
-      footLeft: `Total: ${formatArs(totalOverdue)}`,
-      footRight: overdueCount > 0 ? `${overdueCount} pendientes` : 'Sin deuda',
-      footAlert: overdueCount > 0,
-    },
+    // {
+    //   label: 'Deudas vencidas',
+    //   icon: <AlertCircle className="w-3 h-3" />,
+    //   value: String(overdueCount),
+    //   valueSub: 'clientes',
+    //   progressKind: 'neg',
+    //   progressPct: overdueCount > 0 ? Math.min(overdueCount * 5, 100) : 0,
+    //   footLeft: `Total: ${formatArs(totalOverdue)}`,
+    //   footRight: overdueCount > 0 ? `${overdueCount} pendientes` : 'Sin deuda',
+    //   footAlert: overdueCount > 0,
+    // },
   ];
 
   return (
-    <section className="@container mb-5">
-      <div className="grid grid-cols-1 @[20rem]:grid-cols-2 @[56rem]:grid-cols-4 gap-3.5">
-        {miniKpis.map((kpi) => (
-          <MiniKpiCard key={kpi.label} data={kpi} />
-        ))}
-      </div>
+    <section className="grid grid-cols-2 xl:grid-cols-4 gap-3.5 mb-5">
+      {miniKpis.map((kpi) => (
+        <MiniKpiCard key={kpi.label} data={kpi} />
+      ))}
     </section>
   );
 }

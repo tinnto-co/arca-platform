@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Loader2, User, Eye, EyeOff, Info, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
 
 import {
   Dialog,
@@ -52,6 +53,7 @@ export function CreateClientDialog({ children }: CreateClientDialogProps) {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const queryClient = useQueryClient();
 
   const form = useForm<ClientFormValues>({
     resolver: zodResolver(clientSchema),
@@ -85,7 +87,6 @@ export function CreateClientDialog({ children }: CreateClientDialogProps) {
         },
       });
 
-      // Enviar el clientId al endpoint del backend
       if (newClient?.id) {
         try {
           await notifyBackendNewClient({ data: { clientId: newClient.id } });
@@ -94,10 +95,10 @@ export function CreateClientDialog({ children }: CreateClientDialogProps) {
             'Error al notificar al backend sobre el nuevo cliente:',
             error
           );
-          // No mostramos error al usuario ya que el cliente se creó exitosamente
         }
       }
 
+      queryClient.invalidateQueries({ queryKey: ['clientsWithProfiles'] });
       toast.success('Cliente creado exitosamente');
       form.reset();
       setOpen(false);
@@ -116,10 +117,12 @@ export function CreateClientDialog({ children }: CreateClientDialogProps) {
         className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto"
         showCloseButton={false}
       >
-        {/* Header Button */}
+        {/* Header */}
         <div className="mb-6 relative">
           <h3 className="text-lg font-bold">Nuevo Cliente</h3>
-          <p className="text-sm text-muted-foreground">Todos los campos son obligatorios</p>
+          <p className="text-sm text-muted-foreground">
+            Todos los campos son obligatorios
+          </p>
           {/* <Button
             type="button"
             variant="secondary"
@@ -172,39 +175,24 @@ export function CreateClientDialog({ children }: CreateClientDialogProps) {
               />
             </div>
 
-            {/* CUIT y Dirección */}
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="cuit"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>CUIT</FormLabel>
-                    <FormControl>
-                      <Input placeholder="CUIT" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="address"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Dirección (opcional)</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="Dirección"
-                        {...field}
-                        value={field.value || ''}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
+            {/* Dirección */}
+            <FormField
+              control={form.control}
+              name="address"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Dirección (opcional)</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="Dirección"
+                      {...field}
+                      value={field.value || ''}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             {/* Email y Teléfono */}
             <div className="grid grid-cols-2 gap-4">
@@ -245,7 +233,22 @@ export function CreateClientDialog({ children }: CreateClientDialogProps) {
               />
             </div>
 
-            {/* Contraseña de ARCA */}
+            {/* CUIT ARCA */}
+            <FormField
+              control={form.control}
+              name="cuit"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>CUIT ARCA</FormLabel>
+                  <FormControl>
+                    <Input placeholder="20-12345678-9" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Contraseña ARCA */}
             <FormField
               control={form.control}
               name="password"
@@ -318,7 +321,7 @@ export function CreateClientDialog({ children }: CreateClientDialogProps) {
               )}
             />
 
-            {/* Mensaje informativo */}
+            {/* Aviso */}
             <Alert>
               <Info className="h-4 w-4" />
               <AlertDescription>

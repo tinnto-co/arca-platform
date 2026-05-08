@@ -82,8 +82,8 @@ async function parseEscalasWithAI(
   pageText: string,
   cctNombre: string
 ): Promise<ParsedResult> {
-  const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-  if (!apiKey) throw new Error('GOOGLE_GENERATIVE_AI_API_KEY no configurada');
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY no configurada');
 
   const ai = new GoogleGenAI({ apiKey });
 
@@ -329,9 +329,9 @@ export function startPayrollCron(): void {
     );
     return;
   }
-  if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+  if (!process.env.GEMINI_API_KEY) {
     console.log(
-      '[payroll-cron] GOOGLE_GENERATIVE_AI_API_KEY no configurada — cron desactivado'
+      '[payroll-cron] GEMINI_API_KEY no configurada — cron desactivado'
     );
     return;
   }
