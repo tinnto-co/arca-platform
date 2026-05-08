@@ -72,15 +72,15 @@ export function ExceptionsBar() {
   } = data;
 
   const cards = [
-    {
-      count: overdueDebtCount,
-      label: 'Deudas vencidas',
-      description: 'deudas abiertas y vencidas',
-      href: '/clients' as const,
-      colorVar: 'var(--arca-accent-neg)',
-      bgVar: 'var(--arca-accent-neg-bg)',
-      icon: <AlertTriangle size={16} />,
-    },
+    // {
+    //   count: overdueDebtCount,
+    //   label: 'Deudas vencidas',
+    //   description: 'deudas abiertas y vencidas',
+    //   href: '/clients' as const,
+    //   colorVar: 'var(--arca-accent-neg)',
+    //   bgVar: 'var(--arca-accent-neg-bg)',
+    //   icon: <AlertTriangle size={16} />,
+    // },
     {
       count: criticalNotificationCount,
       label: 'Notificaciones críticas',
@@ -90,24 +90,24 @@ export function ExceptionsBar() {
       bgVar: 'var(--arca-accent-neg-bg)',
       icon: <Bell size={16} />,
     },
-    {
-      count: upcomingDueDateCount,
-      label: 'Vencimientos próximos',
-      description: 'en los próximos 3 días',
-      href: '/vencimientos' as const,
-      colorVar: 'var(--arca-accent-warn)',
-      bgVar: 'var(--arca-accent-warn-bg)',
-      icon: <Calendar size={16} />,
-    },
-    {
-      count: clientErrorCount,
-      label: 'Clientes con errores',
-      description: 'requieren atención',
-      href: '/clients' as const,
-      colorVar: 'var(--arca-accent-warn)',
-      bgVar: 'var(--arca-accent-warn-bg)',
-      icon: <Users size={16} />,
-    },
+    // {
+    //   count: upcomingDueDateCount,
+    //   label: 'Vencimientos próximos',
+    //   description: 'en los próximos 3 días',
+    //   href: '/vencimientos' as const,
+    //   colorVar: 'var(--arca-accent-warn)',
+    //   bgVar: 'var(--arca-accent-warn-bg)',
+    //   icon: <Calendar size={16} />,
+    // },
+    // {
+    //   count: clientErrorCount,
+    //   label: 'Clientes con errores',
+    //   description: 'requieren atención',
+    //   href: '/clients' as const,
+    //   colorVar: 'var(--arca-accent-warn)',
+    //   bgVar: 'var(--arca-accent-warn-bg)',
+    //   icon: <Users size={16} />,
+    // },
   ].filter((c) => c.count > 0);
 
   if (cards.length === 0) return null;
