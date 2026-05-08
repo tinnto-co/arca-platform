@@ -8,6 +8,7 @@ import {
   getMemberRole,
 } from '@/actions/helpers';
 import { eq, and } from 'drizzle-orm';
+import { encrypt, safeDecrypt } from '@/lib/crypto';
 
 const arcaCredentialSchema = z.object({
   cuit: z.string().min(1, 'El CUIT es requerido'),
@@ -39,12 +40,17 @@ export const createCredential = createServerFn({
       arcaCredentialSchema.parse(data);
     }
 
+    const encryptedData = {
+      ...data,
+      password: encrypt(data.password),
+    };
+
     const [newCredential] = await db
       .insert(credential)
       .values({
         client: clientId,
         provider,
-        data,
+        data: encryptedData,
       })
       .returning();
 
@@ -91,7 +97,15 @@ export const getCredential = createServerFn({
 
     if (!credentialData) throw new Error('Credencial no encontrada');
 
-    return credentialData;
+    return {
+      ...credentialData,
+      data: {
+        ...credentialData.data,
+        password: credentialData.data.password
+          ? safeDecrypt(credentialData.data.password)
+          : undefined,
+      },
+    };
   });
 
 export const updateCredential = createServerFn({
@@ -116,11 +130,16 @@ export const updateCredential = createServerFn({
       arcaCredentialSchema.parse(data);
     }
 
+    const encryptedData = {
+      ...data,
+      password: data.password ? encrypt(data.password) : undefined,
+    };
+
     const [updatedCredential] = await db
       .update(credential)
       .set({
         provider,
-        data,
+        data: encryptedData,
         updatedAt: new Date(),
       })
       .where(eq(credential.id, id))
