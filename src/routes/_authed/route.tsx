@@ -90,7 +90,11 @@ function RouteComponent() {
 
   if (aiAgentEnabled) {
     return (
-      <CopilotKit runtimeUrl="/api/copilotkit" agent="default">
+      <CopilotKit
+        runtimeUrl="/api/copilotkit"
+        showDevConsole={false}
+        enableInspector={false}
+      >
         <CopilotAttachmentProvider>
           <CopilotActions />
           <FrontendTools />

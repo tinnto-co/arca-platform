@@ -1,6 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { JobsTable } from '@/components/jobs-table';
-import { PageHeader } from '@/components/shared/page-header';
 import z from 'zod';
 
 export const Route = createFileRoute('/_authed/jobs/')({
@@ -10,7 +9,7 @@ export const Route = createFileRoute('/_authed/jobs/')({
     type: z.enum(['all', 'iva', 'comprobantes', 'comprobantes_full', 'notificaciones', 'deuda', 'vencimientos']).catch('all'),
     clientId: z.string().catch('all'),
     search: z.string().catch(''),
-    date: z.string().catch(() => new Date().toISOString().split('T')[0]),
+    date: z.string().catch(''),
     fromTime: z.string().catch(''),
   }),
   component: RouteComponent,
@@ -19,10 +18,6 @@ export const Route = createFileRoute('/_authed/jobs/')({
 function RouteComponent() {
   return (
     <div className="p-[28px_36px_60px] max-w-[1440px]">
-      <PageHeader
-        title="Jobs"
-        subtitle="Historial de jobs de scraping por cliente, tipo y estado."
-      />
       <JobsTable />
     </div>
   );

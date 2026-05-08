@@ -19,6 +19,7 @@ import {
   EyeOff,
   Eye,
   Play,
+  Settings2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -55,6 +56,12 @@ import {
 } from '@/components/ui/pagination';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { PageHeader } from '@/components/shared/page-header';
 import {
   getJobs,
   getJobLogs,
@@ -328,36 +335,85 @@ export function JobsTable() {
 
   return (
     <div className="flex flex-col h-full gap-4">
-      <div className="flex items-start justify-between gap-4 flex-shrink-0">
-        <div className="flex flex-col gap-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-[var(--arca-ink-3)]" />
-              <Input
-                placeholder="Buscar por ID, cliente o tipo..."
-                value={searchTerm}
-                onChange={(e) => setFilter({ search: e.target.value })}
-                className="pl-8 w-72"
-              />
-            </div>
+      <PageHeader
+        title="Jobs"
+        subtitle="Historial de jobs de scraping por cliente, tipo y estado."
+        actions={
+          <>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  title="Opciones avanzadas"
+                  aria-label="Opciones avanzadas"
+                >
+                  <Settings2 className="h-4 w-4" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-72">
+                <div className="flex flex-col gap-2">
+                  <div className="text-sm font-medium">Modo dev</div>
+                  <p className="text-xs text-[var(--arca-ink-3)]">
+                    Limita la cantidad de clientes a disparar. Útil para probar
+                    sin saturar el scrapper. Vacío = todos.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min={1}
+                      value={dispatchLimit}
+                      onChange={(e) => setDispatchLimit(e.target.value)}
+                      placeholder="Cantidad de clientes"
+                      className="text-sm"
+                    />
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+            <Button
+              onClick={() => dispatchMutation.mutate()}
+              disabled={dispatchMutation.isPending}
+            >
+              {dispatchMutation.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Play className="h-3.5 w-3.5" strokeWidth={2.2} />
+              )}
+              Disparar jobs
+            </Button>
+          </>
+        }
+      />
 
+      <div className="flex flex-col gap-2 flex-shrink-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-[2] min-w-[200px]">
+            <Search className="absolute left-2 top-2.5 h-4 w-4 text-[var(--arca-ink-3)]" />
             <Input
-              type="date"
-              value={date}
-              onChange={(e) => setFilter({ date: e.target.value })}
-              className="w-40"
-            />
-
-            <Input
-              type="time"
-              value={fromTime}
-              onChange={(e) => setFilter({ fromTime: e.target.value })}
-              placeholder="Desde"
-              className="w-32"
+              placeholder="Buscar por ID, cliente o tipo..."
+              value={searchTerm}
+              onChange={(e) => setFilter({ search: e.target.value })}
+              className="pl-8 w-full"
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <Input
+            type="date"
+            value={date}
+            onChange={(e) => setFilter({ date: e.target.value })}
+            className="flex-1 min-w-[140px]"
+          />
+
+          <Input
+            type="time"
+            value={fromTime}
+            onChange={(e) => setFilter({ fromTime: e.target.value })}
+            placeholder="Desde"
+            className="flex-1 min-w-[110px]"
+          />
+
+          <div className="flex-[2] min-w-[180px]">
             <SearchableSelect
               options={[
                 { value: 'all', label: 'Todos los clientes' },
@@ -367,9 +423,11 @@ export function JobsTable() {
               onValueChange={(value) => setFilter({ clientId: value })}
               placeholder="Filtrar por cliente"
               searchPlaceholder="Buscar cliente..."
-              width={224}
+              width="100%"
             />
+          </div>
 
+          <div className="flex-1 min-w-[140px]">
             <SearchableSelect
               options={[
                 { value: 'all', label: 'Todos' },
@@ -382,9 +440,11 @@ export function JobsTable() {
               onValueChange={(value) => setFilter({ status: value })}
               placeholder="Estado"
               searchPlaceholder="Buscar estado..."
-              width={160}
+              width="100%"
             />
+          </div>
 
+          <div className="flex-1 min-w-[150px]">
             <SearchableSelect
               options={[
                 { value: 'all', label: 'Todos los tipos' },
@@ -399,12 +459,12 @@ export function JobsTable() {
               onValueChange={(value) => setFilter({ type: value })}
               placeholder="Tipo de job"
               searchPlaceholder="Buscar tipo..."
-              width={192}
+              width="100%"
             />
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center justify-end gap-2">
           <Button
             variant="outline"
             size="sm"
@@ -426,34 +486,13 @@ export function JobsTable() {
                 clientId: 'all',
                 status: 'all',
                 type: 'all',
-                date: new Date().toISOString().split('T')[0],
+                date: '',
                 fromTime: '',
                 page: 1,
               })
             }
           >
             Limpiar filtros
-          </Button>
-          <Input
-            type="number"
-            min={1}
-            value={dispatchLimit}
-            onChange={(e) => setDispatchLimit(e.target.value)}
-            placeholder="Todos"
-            className="w-24 text-sm"
-            title="Límite de clientes (vacío = todos)"
-          />
-          <Button
-            size="sm"
-            onClick={() => dispatchMutation.mutate()}
-            disabled={dispatchMutation.isPending}
-          >
-            {dispatchMutation.isPending ? (
-              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-            ) : (
-              <Play className="mr-1.5 h-4 w-4" />
-            )}
-            Disparar jobs
           </Button>
         </div>
       </div>
@@ -610,30 +649,32 @@ export function JobsTable() {
                   if (Math.abs(page - currentPage) <= 1) return true;
                   return false;
                 })
-                .map((page, index, visiblePages) => {
+                .flatMap((page, index, visiblePages) => {
                   const prevPage = visiblePages[index - 1];
                   const showEllipsis = prevPage && page - prevPage > 1;
 
-                  return (
-                    <>
-                      {showEllipsis && (
-                        <PaginationItem key={`ellipsis-${page}`}>
-                          <span className="px-2 text-[var(--arca-ink-3)]">
-                            ...
-                          </span>
-                        </PaginationItem>
-                      )}
-                      <PaginationItem key={page}>
-                        <PaginationLink
-                          onClick={() => setFilter({ page })}
-                          isActive={currentPage === page}
-                          className="cursor-pointer"
-                        >
-                          {page}
-                        </PaginationLink>
+                  const items = [];
+                  if (showEllipsis) {
+                    items.push(
+                      <PaginationItem key={`ellipsis-${page}`}>
+                        <span className="px-2 text-[var(--arca-ink-3)]">
+                          ...
+                        </span>
                       </PaginationItem>
-                    </>
+                    );
+                  }
+                  items.push(
+                    <PaginationItem key={page}>
+                      <PaginationLink
+                        onClick={() => setFilter({ page })}
+                        isActive={currentPage === page}
+                        className="cursor-pointer"
+                      >
+                        {page}
+                      </PaginationLink>
+                    </PaginationItem>
                   );
+                  return items;
                 })}
 
               <PaginationItem>
