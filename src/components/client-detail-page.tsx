@@ -77,7 +77,11 @@ import {
   markNotificationOpened,
 } from '@/actions/notification';
 import { updateProfileManagement } from '@/actions/profile';
-import { scrapSingleJob, updateDebtStatus } from '@/actions/client';
+import {
+  scrapSingleJob,
+  scrapBatchClients,
+  updateDebtStatus,
+} from '@/actions/client';
 import {
   listClientRequests,
   createClientRequest,
@@ -93,6 +97,7 @@ import {
   Loader2,
   EyeOff,
   Eye,
+  Play,
 } from 'lucide-react';
 import {
   Table,
@@ -350,6 +355,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   const [scrapingSection, setScrapingSection] = useState<
     'iva' | 'deudas' | 'vencimientos' | 'facturas' | 'notificaciones' | null
   >(null);
+  const [scrapingAll, setScrapingAll] = useState(false);
   /** Filtros del módulo de deudas (vacío = todos). */
   const [debtFilterImpuesto, setDebtFilterImpuesto] = useState<string>('');
   const [debtFilterConcepto, setDebtFilterConcepto] = useState<string>('');
@@ -1721,13 +1727,39 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 </div>
               </div>
               {/* Actions */}
-              <button
-                onClick={() => setEditClientDialogOpen(true)}
-                className="w-[24px] h-[24px] shrink-0 rounded-[var(--arca-r-sm)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-3)] inline-flex items-center justify-center hover:bg-[var(--arca-surface-2)] transition-colors"
-                title="Editar cliente"
-              >
-                <Edit className="h-3 w-3" />
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={scrapingAll || !!scrapingSection}
+                  onClick={async () => {
+                    setScrapingAll(true);
+                    try {
+                      await scrapBatchClients({ data: { clientIds: [clientId] } });
+                      toast.success('Scraping completo encolado');
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : 'Error al encolar scraping');
+                    } finally {
+                      setScrapingAll(false);
+                    }
+                  }}
+                  title="Scrapear todo (deuda, vencimientos, IVA, notificaciones)"
+                >
+                  {scrapingAll ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Play className="h-3 w-3" />
+                  )}
+                  Scrapear todo
+                </Button>
+                <button
+                  onClick={() => setEditClientDialogOpen(true)}
+                  className="w-[24px] h-[24px] shrink-0 rounded-[var(--arca-r-sm)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-3)] inline-flex items-center justify-center hover:bg-[var(--arca-surface-2)] transition-colors"
+                  title="Editar cliente"
+                >
+                  <Edit className="h-3 w-3" />
+                </button>
+              </div>
             </div>
 
             {/* Tab bar */}
