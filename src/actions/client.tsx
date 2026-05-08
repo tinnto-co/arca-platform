@@ -18,6 +18,7 @@ import {
   assertCanWrite,
   getMemberRole,
 } from '@/actions/helpers';
+import { encrypt, safeDecrypt } from '@/lib/crypto';
 import { eq, and, inArray, desc, asc } from 'drizzle-orm';
 const JOBS_API_URL =
   process.env.SCRAPPER_JOBS_URL ||
@@ -37,7 +38,6 @@ const clientBaseSelect = {
   address: client.address,
   identityNumber: client.identityNumber,
   identityType: client.identityType,
-  password: client.password,
   image: client.image,
   status: client.status,
   convenioMultilateral: client.convenioMultilateral,
@@ -122,7 +122,7 @@ export const createClient = createServerFn({
         address: address || '',
         identityNumber,
         identityType,
-        password,
+        password: password ? encrypt(password) : '',
         image: image || null,
         status: 'active',
         convenioMultilateral: convenioMultilateral ?? false,
@@ -332,6 +332,26 @@ export const getClient = createServerFn({
     if (!clientData) throw new Error('Cliente no encontrado');
 
     return clientData;
+  });
+
+export const getClientPassword = createServerFn({
+  method: 'GET',
+})
+  .inputValidator(z.object({ clientId: z.string() }))
+  .handler(async (ctx) => {
+    await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const [row] = await db
+      .select({ password: client.password })
+      .from(client)
+      .where(eq(client.id, ctx.data.clientId))
+      .limit(1);
+
+    if (!row) throw new Error('Cliente no encontrado');
+
+    return { password: safeDecrypt(row.password) };
   });
 
 /**

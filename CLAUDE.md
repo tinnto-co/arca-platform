@@ -135,6 +135,7 @@ VITE_BETTER_AUTH_URL=http://localhost:3000/api/auth
 BETTER_AUTH_SECRET=<secret>
 SCRAPPER_JOBS_URL=http://localhost:3002
 GEMINI_API_KEY=<key>
+CREDENTIAL_ENCRYPTION_KEY=<64-char-hex>  # AES-256-GCM key for encrypting AFIP credentials (generate with: openssl rand -hex 32)
 ```
 
 ## Conventions
