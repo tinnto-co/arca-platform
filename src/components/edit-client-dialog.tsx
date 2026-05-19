@@ -26,7 +26,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { getClient, updateClient } from '@/actions/client';
+import { getRepresentative, updateRepresentative } from '@/actions/client';
 
 const clientSchema = z.object({
   name: z.string().min(1, 'El nombre es requerido'),
@@ -45,19 +45,19 @@ const clientSchema = z.object({
 
 type ClientFormValues = z.infer<typeof clientSchema>;
 
-interface EditClientDialogProps {
-  clientId: string;
+interface EditRepresentativeDialogProps {
+  representativeId: string;
   children?: React.ReactNode;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }
 
-export function EditClientDialog({
-  clientId,
+export function EditRepresentativeDialog({
+  representativeId,
   children,
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
-}: EditClientDialogProps) {
+}: EditRepresentativeDialogProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const queryClient = useQueryClient();
@@ -71,10 +71,10 @@ export function EditClientDialog({
 
   const initializedRef = React.useRef<string | null>(null);
 
-  const { data: client, isLoading: loadingClient } = useQuery({
-    queryKey: ['client', clientId],
-    queryFn: () => getClient({ data: { id: clientId } }),
-    enabled: open && !!clientId,
+  const { data: representative, isLoading: loadingRepresentative } = useQuery({
+    queryKey: ['representative', representativeId],
+    queryFn: () => getRepresentative({ data: { id: representativeId } }),
+    enabled: open && !!representativeId,
   });
 
   const form = useForm<ClientFormValues>({
@@ -89,17 +89,17 @@ export function EditClientDialog({
   });
 
   React.useEffect(() => {
-    if (client && initializedRef.current !== clientId) {
-      initializedRef.current = clientId;
+    if (representative && initializedRef.current !== representativeId) {
+      initializedRef.current = representativeId;
       form.reset({
-        name: client.name,
-        email: client.email || '',
-        phone: client.phone || '',
-        address: client.address || '',
-        image: client.image || '',
+        name: representative.name,
+        email: representative.email || '',
+        phone: representative.phone || '',
+        address: representative.address || '',
+        image: representative.image || '',
       });
     }
-  }, [client, clientId, form]);
+  }, [representative, representativeId, form]);
 
   React.useEffect(() => {
     if (!open) {
@@ -108,11 +108,11 @@ export function EditClientDialog({
   }, [open]);
 
   const updateMutation = useMutation({
-    mutationFn: (data: any) => updateClient({ data }),
+    mutationFn: (data: any) => updateRepresentative({ data }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['clients'] });
-      queryClient.invalidateQueries({ queryKey: ['clientsWithProfiles'] });
-      queryClient.invalidateQueries({ queryKey: ['client', clientId] });
+      queryClient.invalidateQueries({ queryKey: ['representatives'] });
+      queryClient.invalidateQueries({ queryKey: ['representativesWithClients'] });
+      queryClient.invalidateQueries({ queryKey: ['representative', representativeId] });
       toast.success('Cliente actualizado exitosamente');
       setOpen(false);
     },
@@ -126,7 +126,7 @@ export function EditClientDialog({
     setLoading(true);
     try {
       await updateMutation.mutateAsync({
-        id: clientId,
+        id: representativeId,
         ...values,
       });
     } finally {
@@ -150,7 +150,7 @@ export function EditClientDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {loadingClient ? (
+        {loadingRepresentative ? (
           <div className="flex items-center justify-center h-32">
             <div className="text-muted-foreground">Cargando...</div>
           </div>

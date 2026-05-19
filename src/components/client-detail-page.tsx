@@ -43,11 +43,11 @@ import {
 } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
-  getClient,
-  getClientProfiles,
-  getClientDebts,
-  getClientDueDates,
-  getClientIvaCredit,
+  getRepresentative,
+  getRepresentativeClients,
+  getRepresentativeDebts,
+  getRepresentativeDueDates,
+  getRepresentativeIvaCredit,
   getLastJobByType,
   getRunningJobByType,
   getBalanceConfig,
@@ -60,7 +60,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { EditClientDialog } from '@/components/edit-client-dialog';
+import { EditRepresentativeDialog } from '@/components/edit-client-dialog';
 import { NotificationsView } from '@/components/notifications-view';
 import {
   InvoicesTable,
@@ -76,10 +76,10 @@ import {
   getNotifications,
   markNotificationOpened,
 } from '@/actions/notification';
-import { updateProfileManagement } from '@/actions/profile';
+import { updateClientManagement } from '@/actions/profile';
 import {
   scrapSingleJob,
-  scrapBatchClients,
+  scrapBatchRepresentatives,
   updateDebtStatus,
 } from '@/actions/client';
 import {
@@ -144,8 +144,8 @@ import {
 } from 'recharts';
 import { userQuery } from '@/lib/user-query';
 
-interface ClientDetailPageProps {
-  clientId: string;
+interface RepresentativeDetailPageProps {
+  representativeId: string;
 }
 
 const INVOICE_TYPE_MAP = new Map(
@@ -290,10 +290,10 @@ function findBestMatchingProfileId(
   return profiles[0].id;
 }
 
-export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
+export function RepresentativeDetailPage({ representativeId }: RepresentativeDetailPageProps) {
   const navigate = useNavigate();
   const [copiedField, setCopiedField] = useState<string | null>(null);
-  const [editClientDialogOpen, setEditClientDialogOpen] = useState(false);
+  const [editRepresentativeDialogOpen, setEditRepresentativeDialogOpen] = useState(false);
   const now = new Date();
   const initialMultilateralRange = getMonthBounds(
     now.getFullYear(),
@@ -357,9 +357,12 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   >(null);
   const [scrapingAll, setScrapingAll] = useState(false);
   /** Filtros del módulo de deudas (vacío = todos). */
+  const [debtFilterProfileId, setDebtFilterProfileId] = useState<string>('');
   const [debtFilterImpuesto, setDebtFilterImpuesto] = useState<string>('');
   const [debtFilterConcepto, setDebtFilterConcepto] = useState<string>('');
   const [debtPage, setDebtPage] = useState(1);
+  const [debtSortKey, setDebtSortKey] = useState<'profileName' | 'tax' | 'concept' | 'period' | 'dueDate' | 'detectedAt'>('detectedAt');
+  const [debtSortDir, setDebtSortDir] = useState<'asc' | 'desc'>('desc');
   const [dueDatePage, setDueDatePage] = useState(1);
 
   /** Período para el módulo Facturas: sin período, por año, por mes o rango de días. */
@@ -414,16 +417,16 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     mutationFn: (id: string) => markNotificationOpened({ data: { id } }),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ['unreadNotifications', orgKey, clientId],
+        queryKey: ['unreadNotifications', orgKey, representativeId],
       });
     },
   });
 
-  const toggleProfileManagementMutation = useMutation({
-    mutationFn: (vars: { profileId: string; managedByStudy: boolean }) =>
-      updateProfileManagement({ data: vars }),
+  const toggleClientManagementMutation = useMutation({
+    mutationFn: (vars: { clientId: string; managedByStudy: boolean }) =>
+      updateClientManagement({ data: vars }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['clientProfiles', clientId] });
+      queryClient.invalidateQueries({ queryKey: ['representativeClients', representativeId] });
       toast.success('Perfil actualizado');
     },
     onError: () => {
@@ -437,7 +440,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
       isIntimated: boolean;
     }) => updateDebtStatus({ data: vars }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['clientDebts', clientId] });
+      queryClient.invalidateQueries({ queryKey: ['representativeDebts', representativeId] });
       toast.success('Deuda actualizada');
     },
     onError: () => {
@@ -465,7 +468,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   interface RequestRow {
     id: string;
     organizationId: string;
-    clientId: string;
+    representativeId: string;
     profileId: string | null;
     requestedByUserId: string | null;
     title: string;
@@ -481,19 +484,19 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     data: clientRequestsData = [] as RequestRow[],
     refetch: refetchRequests,
   } = useQuery({
-    queryKey: ['clientRequests', clientId, solicitudesStatusFilter],
+    queryKey: ['clientRequests', representativeId, solicitudesStatusFilter],
     queryFn: () =>
       listClientRequests({
-        data: { clientId, status: solicitudesStatusFilter || undefined },
+        data: { clientId: representativeId, status: solicitudesStatusFilter || undefined },
       }),
-    enabled: !!clientId,
+    enabled: !!representativeId,
   });
 
   const createRequestMutation = useMutation({
     mutationFn: () =>
       createClientRequest({
         data: {
-          clientId,
+          clientId: representativeId,
           title: newRequestTitle,
           description: newRequestDescription || undefined,
           type: newRequestType,
@@ -523,9 +526,9 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   });
 
   const { data: balanceConfig } = useQuery({
-    queryKey: ['balanceConfig', clientId],
-    queryFn: () => getBalanceConfig({ data: { clientId } }),
-    enabled: !!clientId,
+    queryKey: ['balanceConfig', representativeId],
+    queryFn: () => getBalanceConfig({ data: { representativeId } }),
+    enabled: !!representativeId,
   });
 
   // Sync form state when config loads
@@ -549,9 +552,9 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
       fiscalYearEndDay: number;
       presentationDueDays: number | null;
       alertDaysBefore: number[];
-    }) => upsertBalanceConfig({ data: { clientId, ...vars } }),
+    }) => upsertBalanceConfig({ data: { representativeId, ...vars } }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['balanceConfig', clientId] });
+      queryClient.invalidateQueries({ queryKey: ['balanceConfig', representativeId] });
       toast.success('Configuración guardada');
     },
     onError: () => {
@@ -601,16 +604,16 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   );
 
   const { data: client, isLoading: loadingClient } = useQuery({
-    queryKey: ['client', clientId],
+    queryKey: ['representative', representativeId],
     queryFn: async () => {
-      const result = await getClient({ data: { id: clientId } });
+      const result = await getRepresentative({ data: { id: representativeId } });
       return result;
     },
   });
 
   const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
-    queryKey: ['clientProfiles', clientId],
-    queryFn: () => getClientProfiles({ data: { clientId } }),
+    queryKey: ['representativeClients', representativeId],
+    queryFn: () => getRepresentativeClients({ data: { representativeId } }),
   });
 
   /** Perfil IVA por defecto (según nombre del cliente). Se calcula cuando hay client + profiles. */
@@ -643,15 +646,15 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   } = useQuery({
     queryKey: [
       'clientIva',
-      clientId,
+      representativeId,
       effectiveIvaProfileId,
       periodoFiscalResumen,
     ],
     queryFn: () =>
-      getClientIvaCredit({
+      getRepresentativeIvaCredit({
         data: {
-          clientId,
-          profileId: effectiveIvaProfileId ?? undefined,
+          representativeId,
+          clientId: effectiveIvaProfileId ?? undefined,
           periodoFiscalResumen: periodoFiscalResumen ?? undefined,
         },
       }),
@@ -666,15 +669,15 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     useQuery({
       queryKey: [
         'clientIva',
-        clientId,
+        representativeId,
         effectiveResumenProfileId,
         periodoFiscalResumen,
       ],
       queryFn: () =>
-        getClientIvaCredit({
+        getRepresentativeIvaCredit({
           data: {
-            clientId,
-            profileId: effectiveResumenProfileId ?? undefined,
+            representativeId,
+            clientId: effectiveResumenProfileId ?? undefined,
             periodoFiscalResumen: periodoFiscalResumen ?? undefined,
           },
         }),
@@ -693,7 +696,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     setMultilateralPeriod(range);
     setMultilateralDateFrom(range.from.toISOString().slice(0, 10));
     setMultilateralDateTo(range.to.toISOString().slice(0, 10));
-  }, [clientId]);
+  }, [representativeId]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -711,40 +714,40 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   }, []);
 
   const { data: debts = [], isLoading: loadingDebts } = useQuery({
-    queryKey: ['clientDebts', clientId],
-    queryFn: () => getClientDebts({ data: { clientId } }),
+    queryKey: ['representativeDebts', representativeId, debtFilterProfileId],
+    queryFn: () => getRepresentativeDebts({ data: { representativeId, clientId: debtFilterProfileId || undefined } }),
   });
 
   const { data: dueDates = [], isLoading: loadingDueDates } = useQuery({
-    queryKey: ['clientDueDates', clientId],
-    queryFn: () => getClientDueDates({ data: { clientId } }),
+    queryKey: ['representativeDueDates', representativeId],
+    queryFn: () => getRepresentativeDueDates({ data: { representativeId } }),
   });
 
   // Últimos jobs por tipo para mostrar errores en Resumen
   const { data: lastComprobantesJob } = useQuery({
-    queryKey: ['lastComprobantesJob', clientId],
+    queryKey: ['lastComprobantesJob', representativeId],
     queryFn: () =>
-      getLastJobByType({ data: { clientId, jobType: 'comprobantes' } }),
-    enabled: !!clientId,
+      getLastJobByType({ data: { representativeId, jobType: 'comprobantes' } }),
+    enabled: !!representativeId,
   });
 
   const { data: lastIvaJob } = useQuery({
-    queryKey: ['lastIvaJob', clientId],
-    queryFn: () => getLastJobByType({ data: { clientId, jobType: 'iva' } }),
-    enabled: !!clientId,
+    queryKey: ['lastIvaJob', representativeId],
+    queryFn: () => getLastJobByType({ data: { representativeId, jobType: 'iva' } }),
+    enabled: !!representativeId,
   });
 
   const { data: lastNotificacionesJob } = useQuery({
-    queryKey: ['lastNotificacionesJob', clientId],
+    queryKey: ['lastNotificacionesJob', representativeId],
     queryFn: () =>
-      getLastJobByType({ data: { clientId, jobType: 'notificaciones' } }),
-    enabled: !!clientId,
+      getLastJobByType({ data: { representativeId, jobType: 'notificaciones' } }),
+    enabled: !!representativeId,
   });
 
   const { data: lastDeudaJob } = useQuery({
-    queryKey: ['lastDeudaJob', clientId],
-    queryFn: () => getLastJobByType({ data: { clientId, jobType: 'deuda' } }),
-    enabled: !!clientId,
+    queryKey: ['lastDeudaJob', representativeId],
+    queryFn: () => getLastJobByType({ data: { representativeId, jobType: 'deuda' } }),
+    enabled: !!representativeId,
   });
 
   const { data: unreadNotifications, isLoading: loadingUnreadNotifications } =
@@ -752,14 +755,14 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
       queryKey: [
         'unreadNotifications',
         orgKey,
-        clientId,
+        representativeId,
         resumenNotifProfileId,
       ],
       queryFn: () =>
         getNotifications({
           data: {
-            clientFilter: clientId,
-            profileId:
+            representativeFilter: representativeId,
+            clientId:
               resumenNotifProfileId !== 'all'
                 ? resumenNotifProfileId
                 : undefined,
@@ -768,35 +771,35 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
             page: 1,
           },
         }),
-      enabled: !!clientId,
+      enabled: !!representativeId,
     });
 
   const { data: lastVencimientosJob } = useQuery({
-    queryKey: ['lastVencimientosJob', clientId],
+    queryKey: ['lastVencimientosJob', representativeId],
     queryFn: () =>
-      getLastJobByType({ data: { clientId, jobType: 'vencimientos' } }),
-    enabled: !!clientId,
+      getLastJobByType({ data: { representativeId, jobType: 'vencimientos' } }),
+    enabled: !!representativeId,
   });
 
   // Job incremental de comprobantes en curso (para mostrar loader de IVA aunque se haya iniciado en otro lado)
   const { data: runningComprobantesJob } = useQuery({
-    queryKey: ['runningComprobantesJob', clientId],
+    queryKey: ['runningComprobantesJob', representativeId],
     queryFn: () =>
-      getRunningJobByType({ data: { clientId, jobType: 'comprobantes' } }),
-    enabled: !!clientId,
+      getRunningJobByType({ data: { representativeId, jobType: 'comprobantes' } }),
+    enabled: !!representativeId,
     // Refrescar cada 5s para reflejar cambios de estado
     refetchInterval: 5000,
   });
 
   // Get all invoices for the client to calculate totals
   const { data: allInvoicesData } = useQuery({
-    queryKey: ['clientAllInvoices', clientId],
+    queryKey: ['clientAllInvoices', representativeId],
     queryFn: () =>
       getInvoices({
         data: {
           page: 1,
           limit: 10000, // Get all invoices
-          clientFilter: clientId,
+          clientFilter: representativeId,
         },
       }),
   });
@@ -807,7 +810,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   } = useQuery({
     queryKey: [
       'clientMultilateralSummary',
-      clientId,
+      representativeId,
       effectiveMultilateralProfileId,
       multilateralDateFrom,
       multilateralDateTo,
@@ -815,13 +818,13 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     queryFn: () =>
       getClientMultilateralSummary({
         data: {
-          clientId,
+          clientId: representativeId,
           profileId: effectiveMultilateralProfileId ?? undefined,
           dateFrom: multilateralDateFrom || undefined,
           dateTo: multilateralDateTo || undefined,
         },
       }),
-    enabled: !!clientId,
+    enabled: !!representativeId,
   });
 
   const multilateralPrevDateFrom = multilateralPrevPeriod
@@ -834,7 +837,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   const { data: multilateralSummaryPrev = [] } = useQuery({
     queryKey: [
       'clientMultilateralSummaryPrev',
-      clientId,
+      representativeId,
       effectiveMultilateralProfileId,
       multilateralPrevDateFrom,
       multilateralPrevDateTo,
@@ -842,14 +845,14 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     queryFn: () =>
       getClientMultilateralSummary({
         data: {
-          clientId,
+          clientId: representativeId,
           profileId: effectiveMultilateralProfileId ?? undefined,
           dateFrom: multilateralPrevDateFrom,
           dateTo: multilateralPrevDateTo,
         },
       }),
     enabled:
-      !!clientId && !!multilateralPrevDateFrom && !!multilateralPrevDateTo,
+      !!representativeId && !!multilateralPrevDateFrom && !!multilateralPrevDateTo,
   });
 
   interface MultilateralAgg {
@@ -981,7 +984,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
   } = useQuery({
     queryKey: [
       'clientMultilateralInvoices',
-      clientId,
+      representativeId,
       effectiveMultilateralProfileId,
       multilateralDateFrom,
       multilateralDateTo,
@@ -990,14 +993,14 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     queryFn: () =>
       getClientMultilateralInvoices({
         data: {
-          clientId,
+          clientId: representativeId,
           profileId: effectiveMultilateralProfileId ?? undefined,
           receiptProvince: selectedMultilateralProvince,
           dateFrom: multilateralDateFrom || undefined,
           dateTo: multilateralDateTo || undefined,
         },
       }),
-    enabled: !!clientId && multilateralDetailOpen,
+    enabled: !!representativeId && multilateralDetailOpen,
   });
 
   const multilateralDetailTotals = useMemo(() => {
@@ -1101,12 +1104,25 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
     });
   }, [debts, debtFilterImpuesto, debtFilterConcepto]);
 
+  const sortedDebts = useMemo(() => {
+    const sorted = [...filteredDebts].sort((a, b) => {
+      let cmp = 0;
+      if (debtSortKey === 'dueDate' || debtSortKey === 'detectedAt') {
+        cmp = new Date(a[debtSortKey] ?? 0).getTime() - new Date(b[debtSortKey] ?? 0).getTime();
+      } else {
+        cmp = (a[debtSortKey] ?? '').localeCompare(b[debtSortKey] ?? '');
+      }
+      return debtSortDir === 'asc' ? cmp : -cmp;
+    });
+    return sorted;
+  }, [filteredDebts, debtSortKey, debtSortDir]);
+
   const ITEMS_PER_PAGE = 10;
   const debtTotalPages = Math.max(
     1,
-    Math.ceil(filteredDebts.length / ITEMS_PER_PAGE)
+    Math.ceil(sortedDebts.length / ITEMS_PER_PAGE)
   );
-  const pagedDebts = filteredDebts.slice(
+  const pagedDebts = sortedDebts.slice(
     (debtPage - 1) * ITEMS_PER_PAGE,
     debtPage * ITEMS_PER_PAGE
   );
@@ -1735,7 +1751,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                   onClick={async () => {
                     setScrapingAll(true);
                     try {
-                      await scrapBatchClients({ data: { clientIds: [clientId] } });
+                      await scrapBatchRepresentatives({ data: { representativeIds: [representativeId] } });
                       toast.success('Scraping completo encolado');
                     } catch (err) {
                       toast.error(err instanceof Error ? err.message : 'Error al encolar scraping');
@@ -1753,7 +1769,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                   Scrapear todo
                 </Button>
                 <button
-                  onClick={() => setEditClientDialogOpen(true)}
+                  onClick={() => setEditRepresentativeDialogOpen(true)}
                   className="w-[24px] h-[24px] shrink-0 rounded-[var(--arca-r-sm)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-3)] inline-flex items-center justify-center hover:bg-[var(--arca-surface-2)] transition-colors"
                   title="Editar cliente"
                 >
@@ -1847,7 +1863,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                   </span>
                   <div className="flex-1" />
                   <button
-                    onClick={() => setEditClientDialogOpen(true)}
+                    onClick={() => setEditRepresentativeDialogOpen(true)}
                     className="text-[12px] font-medium text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors"
                   >
                     Editar →
@@ -1924,8 +1940,8 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleProfileManagementMutation.mutate({
-                                  profileId: prof.id,
+                                toggleClientManagementMutation.mutate({
+                                  clientId: prof.id,
                                   managedByStudy: !prof.managedByStudy,
                                 });
                               }}
@@ -1979,7 +1995,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                         <Link
                           to="/clients/$clientId/$profileId"
                           params={{
-                            clientId,
+                            clientId: representativeId,
                             profileId: selectedResumenProfile.id,
                           }}
                           className="text-[12px] font-medium text-[var(--arca-navy-700)] hover:underline"
@@ -2642,6 +2658,32 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                   )}
               </div>
               <div className="flex-1" />
+              {profiles.length > 1 && (
+                <Select
+                  value={debtFilterProfileId || 'all'}
+                  onValueChange={(v) => {
+                    setDebtFilterProfileId(v === 'all' ? '' : v);
+                    setDebtFilterImpuesto('');
+                    setDebtFilterConcepto('');
+                    setDebtPage(1);
+                  }}
+                >
+                  <SelectTrigger className="h-8 gap-1.5 px-3 text-[12px] border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] bg-[var(--arca-surface)] min-w-[150px]">
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+                      Empresa
+                    </span>
+                    <SelectValue placeholder="Todas" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas</SelectItem>
+                    {profiles.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               {!loadingDebts && debts.length > 0 && (
                 <>
                   <Select
@@ -2688,9 +2730,10 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                       ))}
                     </SelectContent>
                   </Select>
-                  {(debtFilterImpuesto || debtFilterConcepto) && (
+                  {(debtFilterImpuesto || debtFilterConcepto || debtFilterProfileId) && (
                     <button
                       onClick={() => {
+                        setDebtFilterProfileId('');
                         setDebtFilterImpuesto('');
                         setDebtFilterConcepto('');
                         setDebtPage(1);
@@ -2710,14 +2753,14 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                   setScrapingSection('deudas');
                   try {
                     await scrapSingleJob({
-                      data: { clientId, jobType: 'deuda' },
+                      data: { representativeId, jobType: 'deuda' },
                     });
                     await Promise.all([
                       queryClient.invalidateQueries({
-                        queryKey: ['clientDebts', clientId],
+                        queryKey: ['representativeDebts', representativeId],
                       }),
                       queryClient.invalidateQueries({
-                        queryKey: ['lastDeudaJob', clientId],
+                        queryKey: ['lastDeudaJob', representativeId],
                       }),
                     ]);
                     toast.success('Deudas actualizadas correctamente');
@@ -2728,7 +2771,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                         : 'Error al actualizar deudas'
                     );
                     queryClient.invalidateQueries({
-                      queryKey: ['lastDeudaJob', clientId],
+                      queryKey: ['lastDeudaJob', representativeId],
                     });
                   } finally {
                     setScrapingSection(null);
@@ -2781,19 +2824,28 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                   >
                     <thead>
                       <tr className="bg-[var(--arca-surface-2)]">
-                        {(
-                          [
-                            'Impuesto',
-                            'Concepto',
-                            'Período',
-                            'Vencimiento',
-                          ] as const
-                        ).map((h) => (
+                        {([
+                            ...(profiles.length > 1 ? [{ label: 'Perfil', key: 'profileName' as const }] : []),
+                            { label: 'Impuesto', key: 'tax' as const },
+                            { label: 'Concepto', key: 'concept' as const },
+                            { label: 'Período', key: 'period' as const },
+                            { label: 'Vencimiento', key: 'dueDate' as const },
+                            { label: 'Últ. Actualización', key: 'detectedAt' as const },
+                          ]).map(({ label, key }) => (
                           <th
-                            key={h}
-                            className="px-[14px] py-[9px] text-left text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] border-b border-[var(--arca-border)] whitespace-nowrap"
+                            key={key}
+                            className="px-[14px] py-[9px] text-left text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] border-b border-[var(--arca-border)] whitespace-nowrap cursor-pointer select-none hover:text-[var(--arca-ink-2)] transition-colors"
+                            onClick={() => {
+                              if (debtSortKey === key) {
+                                setDebtSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+                              } else {
+                                setDebtSortKey(key);
+                                setDebtSortDir(key === 'detectedAt' ? 'desc' : 'asc');
+                              }
+                              setDebtPage(1);
+                            }}
                           >
-                            {h}
+                            {label} {debtSortKey === key ? (debtSortDir === 'asc' ? '▲' : '▼') : ''}
                           </th>
                         ))}
                         {(['Saldo', 'Int. Comp.', 'Int. Punit.'] as const).map(
@@ -2855,6 +2907,11 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                             className="border-b border-[var(--arca-border)] hover:brightness-95 transition-colors cursor-default"
                             style={{ background: rowBg }}
                           >
+                            {profiles.length > 1 && (
+                              <td className="px-[14px] py-[10px] whitespace-nowrap text-[var(--arca-ink-2)] text-[11.5px]">
+                                {debt.profileName || '-'}
+                              </td>
+                            )}
                             <td
                               className="px-[14px] py-[10px] whitespace-nowrap text-[var(--arca-ink)] font-medium"
                               title={debt.tax || '-'}
@@ -2874,6 +2931,15 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                               {new Date(debt.dueDate).toLocaleDateString(
                                 'es-AR'
                               )}
+                            </td>
+                            <td className="px-[14px] py-[10px] whitespace-nowrap text-[11px] text-[var(--arca-ink-4)]">
+                              {debt.detectedAt
+                                ? new Date(debt.detectedAt).toLocaleDateString('es-AR', {
+                                    day: '2-digit',
+                                    month: 'short',
+                                    year: 'numeric',
+                                  })
+                                : '-'}
                             </td>
                             <td
                               className={cn(
@@ -3183,14 +3249,14 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                     setScrapingSection('vencimientos');
                     try {
                       await scrapSingleJob({
-                        data: { clientId, jobType: 'vencimientos' },
+                        data: { representativeId, jobType: 'vencimientos' },
                       });
                       await Promise.all([
                         queryClient.invalidateQueries({
-                          queryKey: ['clientDueDates', clientId],
+                          queryKey: ['representativeDueDates', representativeId],
                         }),
                         queryClient.invalidateQueries({
-                          queryKey: ['lastVencimientosJob', clientId],
+                          queryKey: ['lastVencimientosJob', representativeId],
                         }),
                       ]);
                       toast.success('Vencimientos actualizados correctamente');
@@ -3201,7 +3267,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                           : 'Error al actualizar vencimientos'
                       );
                       queryClient.invalidateQueries({
-                        queryKey: ['lastVencimientosJob', clientId],
+                        queryKey: ['lastVencimientosJob', representativeId],
                       });
                     } finally {
                       setScrapingSection(null);
@@ -3446,13 +3512,13 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                     setScrapingSection('notificaciones');
                     try {
                       await scrapSingleJob({
-                        data: { clientId, jobType: 'notificaciones' },
+                        data: { representativeId, jobType: 'notificaciones' },
                       });
                       await queryClient.invalidateQueries({
-                        queryKey: ['clientNotifications', clientId],
+                        queryKey: ['clientNotifications', representativeId],
                       });
                       await queryClient.invalidateQueries({
-                        queryKey: ['lastNotificacionesJob', clientId],
+                        queryKey: ['lastNotificacionesJob', representativeId],
                       });
                       toast.success(
                         'Notificaciones actualizadas correctamente'
@@ -3464,7 +3530,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                           : 'Error al actualizar notificaciones'
                       );
                       queryClient.invalidateQueries({
-                        queryKey: ['lastNotificacionesJob', clientId],
+                        queryKey: ['lastNotificacionesJob', representativeId],
                       });
                     } finally {
                       setScrapingSection(null);
@@ -3482,7 +3548,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 </Button>
               </div>
             </div>
-            <NotificationsView clientId={clientId} className="min-h-[500px]" />
+            <NotificationsView representativeId={representativeId} className="min-h-[500px]" />
           </TabsContent>
 
           {/* Facturas Tab */}
@@ -3496,12 +3562,12 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 setScrapingSection("facturas");
                 try {
                   await scrapSingleJob({
-                    data: { clientId, jobType: "comprobantes" },
+                    data: { representativeId, jobType: "comprobantes" },
                   });
                   await Promise.all([
-                    queryClient.invalidateQueries({ queryKey: ["clientAllInvoices", clientId] }),
+                    queryClient.invalidateQueries({ queryKey: ["clientAllInvoices", representativeId] }),
                     queryClient.invalidateQueries({ queryKey: ["invoices"] }),
-                    queryClient.invalidateQueries({ queryKey: ["lastComprobantesFullJob", clientId] }),
+                    queryClient.invalidateQueries({ queryKey: ["lastComprobantesFullJob", representativeId] }),
                   ]);
                   toast.success("Facturas (comprobantes) actualizadas correctamente");
                 } catch (err) {
@@ -3560,20 +3626,20 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                     setScrapingSection('facturas');
                     try {
                       await scrapSingleJob({
-                        data: { clientId, jobType: 'comprobantes' },
+                        data: { representativeId, jobType: 'comprobantes' },
                       });
                       await Promise.all([
                         queryClient.invalidateQueries({
-                          queryKey: ['clientAllInvoices', clientId],
+                          queryKey: ['clientAllInvoices', representativeId],
                         }),
                         queryClient.invalidateQueries({
                           queryKey: ['invoices'],
                         }),
                         queryClient.invalidateQueries({
-                          queryKey: ['lastComprobantesFullJob', clientId],
+                          queryKey: ['lastComprobantesFullJob', representativeId],
                         }),
                         queryClient.invalidateQueries({
-                          queryKey: ['lastComprobantesJob', clientId],
+                          queryKey: ['lastComprobantesJob', representativeId],
                         }),
                       ]);
                       toast.success(
@@ -3586,7 +3652,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                           : 'Error al actualizar facturas'
                       );
                       queryClient.invalidateQueries({
-                        queryKey: ['lastComprobantesJob', clientId],
+                        queryKey: ['lastComprobantesJob', representativeId],
                       });
                     } finally {
                       setScrapingSection(null);
@@ -4046,7 +4112,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
 
             <InvoicesTable
               ref={invoicesTableRef}
-              clientId={clientId}
+              representativeId={representativeId}
               controlledDateFrom={facturasBounds.dateFrom}
               controlledDateTo={facturasBounds.dateTo}
               controlledProfileFilter={facturasProfileFilter}
@@ -4073,7 +4139,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                   </span>
                   {effectiveMultilateralProfileId ? (
                     <Select
-                      key={`multilateral-${clientId}`}
+                      key={`multilateral-${representativeId}`}
                       defaultValue={effectiveMultilateralProfileId}
                       onValueChange={(value) =>
                         setMultilateralProfileId(value || undefined)
@@ -4587,26 +4653,26 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                       setScrapingSection('iva');
                       try {
                         await scrapSingleJob({
-                          data: { clientId, jobType: 'comprobantes' },
+                          data: { representativeId, jobType: 'comprobantes' },
                         });
                         await scrapSingleJob({
-                          data: { clientId, jobType: 'iva' },
+                          data: { representativeId, jobType: 'iva' },
                         });
                         await Promise.all([
                           queryClient.invalidateQueries({
-                            queryKey: ['clientIva', clientId],
+                            queryKey: ['clientIva', representativeId],
                           }),
                           queryClient.invalidateQueries({
-                            queryKey: ['clientAllInvoices', clientId],
+                            queryKey: ['clientAllInvoices', representativeId],
                           }),
                           queryClient.invalidateQueries({
                             queryKey: ['invoices'],
                           }),
                           queryClient.invalidateQueries({
-                            queryKey: ['lastComprobantesFullJob', clientId],
+                            queryKey: ['lastComprobantesFullJob', representativeId],
                           }),
                           queryClient.invalidateQueries({
-                            queryKey: ['lastIvaJob', clientId],
+                            queryKey: ['lastIvaJob', representativeId],
                           }),
                         ]);
                         toast.success(
@@ -4619,10 +4685,10 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                             : 'Error al actualizar IVA'
                         );
                         queryClient.invalidateQueries({
-                          queryKey: ['lastIvaJob', clientId],
+                          queryKey: ['lastIvaJob', representativeId],
                         });
                         queryClient.invalidateQueries({
-                          queryKey: ['lastComprobantesJob', clientId],
+                          queryKey: ['lastComprobantesJob', representativeId],
                         });
                       } finally {
                         setScrapingSection(null);
@@ -4656,7 +4722,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
                 </span>
                 {effectiveIvaProfileId ? (
                   <Select
-                    key={`iva-${clientId}`}
+                    key={`iva-${representativeId}`}
                     defaultValue={effectiveIvaProfileId}
                     onValueChange={(value) =>
                       setIvaProfileId(value || undefined)
@@ -4767,7 +4833,7 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
               ) : (
                 <RenderIvaResume
                   ref={ivaResumeRef}
-                  clientId={clientId}
+                  representativeId={representativeId}
                   clientName={client?.name}
                   clientIva={clientIva ?? undefined}
                   selectedProfileId={effectiveIvaProfileId ?? undefined}
@@ -5114,10 +5180,10 @@ export function ClientDetailPage({ clientId }: ClientDetailPageProps) {
         {/* end content area */}
       </Tabs>
 
-      <EditClientDialog
-        clientId={clientId}
-        open={editClientDialogOpen}
-        onOpenChange={setEditClientDialogOpen}
+      <EditRepresentativeDialog
+        representativeId={representativeId}
+        open={editRepresentativeDialogOpen}
+        onOpenChange={setEditRepresentativeDialogOpen}
       />
 
       {/* Modal de detalle de facturas por provincia (Convenio Multilateral) */}

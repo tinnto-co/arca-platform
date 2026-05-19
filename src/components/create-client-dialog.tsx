@@ -24,7 +24,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { createClient, notifyBackendNewClient } from '@/actions/client';
+import { createRepresentative, notifyBackendNewRepresentative } from '@/actions/client';
 
 const clientSchema = z
   .object({
@@ -44,11 +44,11 @@ const clientSchema = z
 
 type ClientFormValues = z.infer<typeof clientSchema>;
 
-interface CreateClientDialogProps {
+interface CreateRepresentativeDialogProps {
   children: React.ReactNode;
 }
 
-export function CreateClientDialog({ children }: CreateClientDialogProps) {
+export function CreateRepresentativeDialog({ children }: CreateRepresentativeDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -72,7 +72,7 @@ export function CreateClientDialog({ children }: CreateClientDialogProps) {
   const onSubmit = async (values: ClientFormValues) => {
     setLoading(true);
     try {
-      const newClient = await createClient({
+      const newRepresentative = await createRepresentative({
         data: {
           firstName: values.firstName,
           lastName: values.lastName,
@@ -82,14 +82,13 @@ export function CreateClientDialog({ children }: CreateClientDialogProps) {
           phone: values.phone || undefined,
           address: values.address || undefined,
           identityNumber: values.cuit,
-          identityType: 'CUIT',
           password: values.password,
         },
       });
 
-      if (newClient?.id) {
+      if (newRepresentative?.id) {
         try {
-          await notifyBackendNewClient({ data: { clientId: newClient.id } });
+          await notifyBackendNewRepresentative({ data: { representativeId: newRepresentative.id } });
         } catch (error) {
           console.error(
             'Error al notificar al backend sobre el nuevo cliente:',
@@ -98,7 +97,7 @@ export function CreateClientDialog({ children }: CreateClientDialogProps) {
         }
       }
 
-      queryClient.invalidateQueries({ queryKey: ['clientsWithProfiles'] });
+      queryClient.invalidateQueries({ queryKey: ['representativesWithClients'] });
       toast.success('Cliente creado exitosamente');
       form.reset();
       setOpen(false);

@@ -2,7 +2,7 @@ import { auth } from '@/lib/auth';
 import { getRequestHeaders } from '@tanstack/react-start/server';
 import { db } from '@/lib/db';
 import { member } from '@/drizzle/auth';
-import { client, clientUserAccess, organizationModule } from '@/drizzle/schema';
+import { representative, representativeUserAccess, organizationModule } from '@/drizzle/schema';
 import { and, eq } from 'drizzle-orm';
 
 export async function getAuthSession() {
@@ -47,34 +47,34 @@ export function assertCanWrite(role: string) {
   }
 }
 
-export async function getOrgClientIds(orgId: string): Promise<string[]> {
-  const clients = await db
-    .select({ id: client.id })
-    .from(client)
-    .where(eq(client.organizationId, orgId));
-  return clients.map((c) => c.id);
+export async function getOrgRepresentativeIds(orgId: string): Promise<string[]> {
+  const representatives = await db
+    .select({ id: representative.id })
+    .from(representative)
+    .where(eq(representative.organizationId, orgId));
+  return representatives.map((c) => c.id);
 }
 
 /**
- * Returns auth session + the first clientUserAccess row for the calling user.
- * Used by client portal routes to validate access and resolve the clientId.
- * Throws if the user has no clientUserAccess rows.
+ * Returns auth session + the first representativeUserAccess row for the calling user.
+ * Used by client portal routes to validate access and resolve the representativeId.
+ * Throws if the user has no representativeUserAccess rows.
  */
-export async function getClientPortalSession() {
+export async function getRepresentativePortalSession() {
   const session = await getAuthSession();
   const userId = session.user.id;
 
   const [access] = await db
     .select()
-    .from(clientUserAccess)
-    .where(eq(clientUserAccess.userId, userId))
+    .from(representativeUserAccess)
+    .where(eq(representativeUserAccess.userId, userId))
     .limit(1);
 
   if (!access) {
     throw new Error('Sin acceso al portal del cliente');
   }
 
-  return { session, userId, clientId: access.clientId, access };
+  return { session, userId, representativeId: access.representativeId, access };
 }
 
 /**

@@ -1,7 +1,7 @@
 import { createServerFn } from '@tanstack/react-start';
 import z from 'zod';
 import { db } from '@/lib/db';
-import { profile, client } from '@/drizzle/schema';
+import { client, representative } from '@/drizzle/schema';
 import {
   getSessionWithOrg,
   assertCanWrite,
@@ -9,54 +9,54 @@ import {
 } from '@/actions/helpers';
 import { eq, and } from 'drizzle-orm';
 
-export const getProfile = createServerFn({
+export const getClient = createServerFn({
   method: 'GET',
 })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    // Get profile with client information
-    const [profileData] = await db
+    // Get client with representative information
+    const [clientData] = await db
       .select({
-        id: profile.id,
-        clientId: profile.client,
-        name: profile.name,
-        identityNumber: profile.identityNumber,
-        identityType: profile.identityType,
-        address: profile.address,
-        phone: profile.phone,
-        email: profile.email,
-        status: profile.status,
-        createdAt: profile.createdAt,
-        updatedAt: profile.updatedAt,
+        id: client.id,
+        representativeId: client.representativeId,
+        name: client.name,
+        identityNumber: client.identityNumber,
+        identityType: client.identityType,
+        address: client.address,
+        phone: client.phone,
+        email: client.email,
+        status: client.status,
+        createdAt: client.createdAt,
+        updatedAt: client.updatedAt,
       })
-      .from(profile)
-      .where(eq(profile.id, ctx.data.id))
+      .from(client)
+      .where(eq(client.id, ctx.data.id))
       .limit(1);
 
-    if (!profileData) throw new Error('Perfil no encontrado');
+    if (!clientData) throw new Error('Perfil no encontrado');
 
-    // Verify the client belongs to the user
-    if (profileData.clientId) {
-      const [clientData] = await db
+    // Verify the representative belongs to the user
+    if (clientData.representativeId) {
+      const [representativeData] = await db
         .select()
-        .from(client)
-        .where(eq(client.id, profileData.clientId))
+        .from(representative)
+        .where(eq(representative.id, clientData.representativeId))
         .limit(1);
 
-      if (!clientData || clientData.organizationId !== orgId) {
+      if (!representativeData || representativeData.organizationId !== orgId) {
         throw new Error('No autorizado');
       }
     }
 
-    return profileData;
+    return clientData;
   });
 
-export const updateProfileManagement = createServerFn({ method: 'POST' })
+export const updateClientManagement = createServerFn({ method: 'POST' })
   .inputValidator(
     z.object({
-      profileId: z.string().uuid(),
+      clientId: z.string().uuid(),
       managedByStudy: z.boolean(),
       disabledReason: z.string().nullable().optional(),
     })
@@ -66,32 +66,32 @@ export const updateProfileManagement = createServerFn({ method: 'POST' })
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    // Verify profile belongs to org via client
-    const [profileData] = await db
-      .select({ id: profile.id, clientId: profile.client })
-      .from(profile)
-      .where(eq(profile.id, ctx.data.profileId))
+    // Verify client belongs to org via representative
+    const [clientData] = await db
+      .select({ id: client.id, representativeId: client.representativeId })
+      .from(client)
+      .where(eq(client.id, ctx.data.clientId))
       .limit(1);
 
-    if (!profileData) throw new Error('Perfil no encontrado');
+    if (!clientData) throw new Error('Perfil no encontrado');
 
-    if (profileData.clientId) {
-      const [clientData] = await db
-        .select({ id: client.id })
-        .from(client)
+    if (clientData.representativeId) {
+      const [representativeData] = await db
+        .select({ id: representative.id })
+        .from(representative)
         .where(
           and(
-            eq(client.id, profileData.clientId),
-            eq(client.organizationId, orgId)
+            eq(representative.id, clientData.representativeId),
+            eq(representative.organizationId, orgId)
           )
         )
         .limit(1);
-      if (!clientData) throw new Error('No autorizado');
+      if (!representativeData) throw new Error('No autorizado');
     }
 
     const now = new Date();
     await db
-      .update(profile)
+      .update(client)
       .set({
         managedByStudy: ctx.data.managedByStudy,
         disabledAt: ctx.data.managedByStudy ? null : now,
@@ -99,39 +99,39 @@ export const updateProfileManagement = createServerFn({ method: 'POST' })
           ? null
           : (ctx.data.disabledReason ?? null),
       })
-      .where(eq(profile.id, ctx.data.profileId));
+      .where(eq(client.id, ctx.data.clientId));
 
     return { success: true };
   });
 
-export const updateProfileLiquidaSueldos = createServerFn({
+export const updateClientLiquidaSueldos = createServerFn({
   method: 'POST',
 })
-  .inputValidator(z.object({ profileId: z.string(), liquidaSueldos: z.boolean() }))
+  .inputValidator(z.object({ clientId: z.string(), liquidaSueldos: z.boolean() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    // Verificar que el perfil pertenece a un cliente de la organización
-    const [profileData] = await db
-      .select({ id: profile.id, clientId: profile.client })
-      .from(profile)
-      .where(eq(profile.id, ctx.data.profileId))
-      .limit(1);
-
-    if (!profileData) throw new Error('Perfil no encontrado');
-
+    // Verificar que el cliente pertenece a un representante de la organizacion
     const [clientData] = await db
-      .select({ id: client.id })
+      .select({ id: client.id, representativeId: client.representativeId })
       .from(client)
-      .where(and(eq(client.id, profileData.clientId!), eq(client.organizationId, orgId)))
+      .where(eq(client.id, ctx.data.clientId))
       .limit(1);
 
-    if (!clientData) throw new Error('No autorizado');
+    if (!clientData) throw new Error('Perfil no encontrado');
+
+    const [representativeData] = await db
+      .select({ id: representative.id })
+      .from(representative)
+      .where(and(eq(representative.id, clientData.representativeId!), eq(representative.organizationId, orgId)))
+      .limit(1);
+
+    if (!representativeData) throw new Error('No autorizado');
 
     await db
-      .update(profile)
+      .update(client)
       .set({ liquidaSueldos: ctx.data.liquidaSueldos, updatedAt: new Date() })
-      .where(eq(profile.id, ctx.data.profileId));
+      .where(eq(client.id, ctx.data.clientId));
 
     return { success: true };
   });

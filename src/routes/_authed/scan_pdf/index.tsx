@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { scanBankStatement } from '@/actions/scannerAi';
 import { Button } from '@/components/ui/button';
 import { RenderPdfInfo } from '@/components/render-pdf-info';
-import { getClients } from '@/actions/client';
+import { getRepresentatives } from '@/actions/client';
 import { useQuery } from '@tanstack/react-query';
 import { Label } from '@/components/ui/label';
 import {
@@ -35,7 +35,7 @@ function RouteComponent() {
 
   const { data: clients = [] } = useQuery({
     queryKey: ['clients'],
-    queryFn: () => getClients(),
+    queryFn: () => getRepresentatives(),
   });
 
   const fileToBase64 = (file: File): Promise<string> => {

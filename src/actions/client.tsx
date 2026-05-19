@@ -4,13 +4,13 @@ import z from 'zod';
 import axios from 'axios';
 import { db } from '@/lib/db';
 import {
+  representative,
   client,
-  profile,
   debt,
   dueDate,
   ivaScrape,
   job,
-  clientBalanceConfig,
+  representativeBalanceConfig,
 } from '@/drizzle/schema';
 import { auth } from '@/lib/auth';
 import {
@@ -28,29 +28,25 @@ const JOBS_API_URL =
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLL_ATTEMPTS = 300; // ~15 min max per job
 
-const clientBaseSelect = {
-  id: client.id,
-  organizationId: client.organizationId,
-  userId: client.userId,
-  name: client.name,
-  email: client.email,
-  phone: client.phone,
-  address: client.address,
-  identityNumber: client.identityNumber,
-  identityType: client.identityType,
-  image: client.image,
-  status: client.status,
-  convenioMultilateral: client.convenioMultilateral,
-  regimenLocal: client.regimenLocal,
-  fiscalCondition: client.fiscalCondition,
-  cuitEmpresa: client.cuitEmpresa,
-  esPersonaFisica: client.esPersonaFisica,
-  razonSocial: client.razonSocial,
-  hasErrors: client.hasErrors,
-  errorMessage: client.errorMessage,
-  registeredAt: client.registeredAt,
-  createdAt: client.createdAt,
-  updatedAt: client.updatedAt,
+const representativeBaseSelect = {
+  id: representative.id,
+  organizationId: representative.organizationId,
+  userId: representative.userId,
+  name: representative.name,
+  email: representative.email,
+  phone: representative.phone,
+  address: representative.address,
+  cuit: representative.cuit,
+  image: representative.image,
+  status: representative.status,
+  convenioMultilateral: representative.convenioMultilateral,
+  regimenLocal: representative.regimenLocal,
+  fiscalCondition: representative.fiscalCondition,
+  hasErrors: representative.hasErrors,
+  errorMessage: representative.errorMessage,
+  registeredAt: representative.registeredAt,
+  createdAt: representative.createdAt,
+  updatedAt: representative.updatedAt,
 };
 
 function getErrorMessage(error: unknown): string {
@@ -64,7 +60,7 @@ function getErrorMessage(error: unknown): string {
   return 'Unknown error';
 }
 
-export const createClient = createServerFn({
+export const createRepresentative = createServerFn({
   method: 'POST',
 })
   .inputValidator(
@@ -73,10 +69,9 @@ export const createClient = createServerFn({
       lastName: z.string().min(1, 'El apellido es requerido'),
       name: z.string().min(1, 'El nombre completo es requerido'),
       cuit: z.string().min(1, 'El CUIT es requerido'),
-      identityNumber: z.string().min(1, 'El número de identidad es requerido'),
-      identityType: z.string().min(1, 'El tipo de identidad es requerido'),
-      password: z.string().min(1, 'La contraseña es requerida'),
-      email: z.string().email('Email inválido').optional(),
+      identityNumber: z.string().min(1, 'El numero de identidad es requerido'),
+      password: z.string().min(1, 'La contrasena es requerida'),
+      email: z.string().email('Email invalido').optional(),
       phone: z.string().optional(),
       address: z.string().optional(),
       image: z.string().optional(),
@@ -100,7 +95,6 @@ export const createClient = createServerFn({
     const {
       name,
       identityNumber,
-      identityType,
       password,
       email,
       phone,
@@ -111,18 +105,17 @@ export const createClient = createServerFn({
       fiscalCondition,
     } = ctx.data;
 
-    const [newClient] = await db
-      .insert(client)
+    const [newRepresentative] = await db
+      .insert(representative)
       .values({
         userId: userId,
         organizationId: orgId,
         name,
+        cuit: identityNumber,
+        afipPassword: password ? encrypt(password) : '',
         email: email || '',
         phone: phone || '',
         address: address || '',
-        identityNumber,
-        identityType,
-        password: password ? encrypt(password) : '',
         image: image || null,
         status: 'active',
         convenioMultilateral: convenioMultilateral ?? false,
@@ -132,36 +125,36 @@ export const createClient = createServerFn({
       })
       .returning();
 
-    if (!newClient) throw new Error('Error al crear el cliente');
+    if (!newRepresentative) throw new Error('Error al crear el cliente');
 
-    return newClient;
+    return newRepresentative;
   });
 
-export const notifyBackendNewClient = createServerFn({
+export const notifyBackendNewRepresentative = createServerFn({
   method: 'POST',
 })
-  .inputValidator(z.object({ clientId: z.string() }))
+  .inputValidator(z.object({ representativeId: z.string() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const [clientData] = await db
-      .select({ id: client.id })
-      .from(client)
+    const [representativeData] = await db
+      .select({ id: representative.id })
+      .from(representative)
       .where(
-        and(eq(client.id, ctx.data.clientId), eq(client.organizationId, orgId))
+        and(eq(representative.id, ctx.data.representativeId), eq(representative.organizationId, orgId))
       )
       .limit(1);
 
-    if (!clientData) {
+    if (!representativeData) {
       throw new Error('Cliente no encontrado o no autorizado');
     }
 
     try {
       await axios.post(`${JOBS_API_URL}/api/jobs`, {
         type: 'comprobantes',
-        clientId: ctx.data.clientId,
+        representativeId: ctx.data.representativeId,
       });
       return { success: true, type: 'comprobantes' };
     } catch (error) {
@@ -171,37 +164,37 @@ export const notifyBackendNewClient = createServerFn({
     }
   });
 
-export const updateOldClient = createServerFn({
+export const updateOldRepresentative = createServerFn({
   method: 'POST',
 })
-  .inputValidator(z.object({ clientId: z.string() }))
+  .inputValidator(z.object({ representativeId: z.string() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const [clientData] = await db
-      .select({ id: client.id })
-      .from(client)
+    const [representativeData] = await db
+      .select({ id: representative.id })
+      .from(representative)
       .where(
-        and(eq(client.id, ctx.data.clientId), eq(client.organizationId, orgId))
+        and(eq(representative.id, ctx.data.representativeId), eq(representative.organizationId, orgId))
       )
       .limit(1);
 
-    if (!clientData) {
+    if (!representativeData) {
       throw new Error('Cliente no encontrado o no autorizado');
     }
 
-    // Initiate scraping for old client
+    // Initiate scraping for old representative
     const backendUrl = process.env.BACKEND_API_URL || 'http://localhost:3001';
     try {
       const response = await axios.post(`${backendUrl}/api/scrap/old-client`, {
-        clientId: ctx.data.clientId,
+        clientId: ctx.data.representativeId,
       });
       return {
         success: true,
         message: response.data.message || 'Scraping iniciado',
-        clientId: ctx.data.clientId,
+        representativeId: ctx.data.representativeId,
       };
     } catch (error: any) {
       throw new Error(
@@ -211,26 +204,26 @@ export const updateOldClient = createServerFn({
     }
   });
 
-export const getClients = createServerFn({
+export const getRepresentatives = createServerFn({
   method: 'GET',
 }).handler(async () => {
   try {
     const { orgId } = await getSessionWithOrg();
 
-    const clients = await db
-      .select(clientBaseSelect)
-      .from(client)
-      .where(eq(client.organizationId, orgId))
-      .orderBy(asc(client.name));
+    const representatives = await db
+      .select(representativeBaseSelect)
+      .from(representative)
+      .where(eq(representative.organizationId, orgId))
+      .orderBy(asc(representative.name));
 
-    return clients;
+    return representatives;
   } catch (error) {
     throw new Error(`Error loading clients: ${getErrorMessage(error)}`);
   }
 });
 
-/** Clientes habilitados para el módulo de liquidación de sueldos. */
-export const getClientsForSueldos = createServerFn({
+/** Clientes habilitados para el modulo de liquidacion de sueldos. */
+export const getRepresentativesForSueldos = createServerFn({
   method: 'GET',
 }).handler(async () => {
   try {
@@ -238,75 +231,75 @@ export const getClientsForSueldos = createServerFn({
 
     const rows = await db
       .select({
-        profileId: profile.id,
-        profileName: profile.name,
-        profileIdentityNumber: profile.identityNumber,
         clientId: client.id,
+        clientName: client.name,
         clientIdentityNumber: client.identityNumber,
+        representativeId: representative.id,
+        representativeIdentityNumber: representative.cuit,
       })
-      .from(profile)
-      .innerJoin(client, eq(profile.client, client.id))
+      .from(client)
+      .innerJoin(representative, eq(client.representativeId, representative.id))
       .where(
-        and(eq(client.organizationId, orgId), eq(profile.liquidaSueldos, true))
+        and(eq(representative.organizationId, orgId), eq(client.liquidaSueldos, true))
       )
-      .orderBy(asc(profile.name));
+      .orderBy(asc(client.name));
 
     return rows.map((p) => ({
-      id: `profile:${p.profileId}`,
+      id: `client:${p.clientId}`,
+      representativeId: p.representativeId,
       clientId: p.clientId,
-      profileId: p.profileId,
-      name: p.profileName,
-      label: `${p.profileName}${
-        p.profileIdentityNumber || p.clientIdentityNumber
-          ? ` (${p.profileIdentityNumber ?? p.clientIdentityNumber})`
+      name: p.clientName,
+      label: `${p.clientName}${
+        p.clientIdentityNumber || p.representativeIdentityNumber
+          ? ` (${p.clientIdentityNumber ?? p.representativeIdentityNumber})`
           : ''
       }`,
-      type: 'profile' as const,
+      type: 'client' as const,
     }));
   } catch (error) {
     throw new Error(`Error loading clients: ${getErrorMessage(error)}`);
   }
 });
 
-export const getClientsWithProfiles = createServerFn({
+export const getRepresentativesWithClients = createServerFn({
   method: 'GET',
 }).handler(async () => {
   try {
     const { orgId } = await getSessionWithOrg();
 
-    const clients = await db
-      .select(clientBaseSelect)
-      .from(client)
-      .where(eq(client.organizationId, orgId))
-      .orderBy(asc(client.name));
-    const clientIds = clients.map((c) => c.id);
-    if (clientIds.length === 0) {
-      return clients.map((c) => ({
+    const representatives = await db
+      .select(representativeBaseSelect)
+      .from(representative)
+      .where(eq(representative.organizationId, orgId))
+      .orderBy(asc(representative.name));
+    const representativeIds = representatives.map((c) => c.id);
+    if (representativeIds.length === 0) {
+      return representatives.map((c) => ({
         ...c,
-        profiles: [] as { id: string; name: string }[],
+        clients: [] as { id: string; name: string }[],
       }));
     }
 
-    const profiles = await db
-      .select({ clientId: profile.client, id: profile.id, name: profile.name, identityNumber: profile.identityNumber })
-      .from(profile)
-      .where(inArray(profile.client, clientIds));
+    const clients = await db
+      .select({ representativeId: client.representativeId, id: client.id, name: client.name, identityNumber: client.identityNumber })
+      .from(client)
+      .where(inArray(client.representativeId, representativeIds));
 
-    const profilesByClientId = new Map<
+    const clientsByRepresentativeId = new Map<
       string,
       { id: string; name: string; identityNumber: string }[]
     >();
-    for (const p of profiles) {
-      if (p.clientId) {
-        const list = profilesByClientId.get(p.clientId) ?? [];
+    for (const p of clients) {
+      if (p.representativeId) {
+        const list = clientsByRepresentativeId.get(p.representativeId) ?? [];
         list.push({ id: p.id, name: p.name, identityNumber: p.identityNumber });
-        profilesByClientId.set(p.clientId, list);
+        clientsByRepresentativeId.set(p.representativeId, list);
       }
     }
 
-    return clients.map((c) => ({
+    return representatives.map((c) => ({
       ...c,
-      profiles: profilesByClientId.get(c.id) ?? [],
+      clients: clientsByRepresentativeId.get(c.id) ?? [],
     }));
   } catch (error) {
     throw new Error(
@@ -315,7 +308,7 @@ export const getClientsWithProfiles = createServerFn({
   }
 });
 
-export const getClient = createServerFn({
+export const getRepresentative = createServerFn({
   method: 'GET',
 })
   .inputValidator(z.object({ id: z.string() }))
@@ -323,40 +316,40 @@ export const getClient = createServerFn({
     const session = await auth.api.getSession({ headers: getRequestHeaders() });
     if (!session?.user?.id) throw new Error('Unauthorized');
 
-    const [clientData] = await db
-      .select(clientBaseSelect)
-      .from(client)
-      .where(eq(client.id, ctx.data.id))
+    const [representativeData] = await db
+      .select(representativeBaseSelect)
+      .from(representative)
+      .where(eq(representative.id, ctx.data.id))
       .limit(1);
 
-    if (!clientData) throw new Error('Cliente no encontrado');
+    if (!representativeData) throw new Error('Cliente no encontrado');
 
-    return clientData;
+    return representativeData;
   });
 
-export const getClientPassword = createServerFn({
+export const getRepresentativePassword = createServerFn({
   method: 'GET',
 })
-  .inputValidator(z.object({ clientId: z.string() }))
+  .inputValidator(z.object({ representativeId: z.string() }))
   .handler(async (ctx) => {
     await getSessionWithOrg();
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const [row] = await db
-      .select({ password: client.password })
-      .from(client)
-      .where(eq(client.id, ctx.data.clientId))
+    const [rep] = await db
+      .select({ afipPassword: representative.afipPassword })
+      .from(representative)
+      .where(eq(representative.id, ctx.data.representativeId))
       .limit(1);
 
-    if (!row) throw new Error('Cliente no encontrado');
+    if (!rep) throw new Error('Representante no encontrado');
 
-    return { password: safeDecrypt(row.password) };
+    return { password: rep.afipPassword ? safeDecrypt(rep.afipPassword) : '' };
   });
 
 /**
- * Período fiscal del mes anterior en formato "MM/YYYY".
- * Ej: hoy 30/1/26 → "12/2025"
+ * Periodo fiscal del mes anterior en formato "MM/YYYY".
+ * Ej: hoy 30/1/26 -> "12/2025"
  */
 function getPreviousMonthPeriodoFiscal(): string {
   const now = new Date();
@@ -367,8 +360,8 @@ function getPreviousMonthPeriodoFiscal(): string {
 }
 
 /**
- * Dado un período fiscal "MM/YYYY" del resumen que ve el usuario, devuelve el período anterior
- * (el scrape que se usa para "saldo a favor" etc.). Ej: "01/2026" → "12/2025"
+ * Dado un periodo fiscal "MM/YYYY" del resumen que ve el usuario, devuelve el periodo anterior
+ * (el scrape que se usa para "saldo a favor" etc.). Ej: "01/2026" -> "12/2025"
  */
 function getPreviousMonthFromPeriod(periodoFiscalResumen: string): string {
   const parts = periodoFiscalResumen.trim().split('/');
@@ -381,30 +374,30 @@ function getPreviousMonthFromPeriod(periodoFiscalResumen: string): string {
   return `${String(mm - 1).padStart(2, '0')}/${yyyy}`;
 }
 
-export const getClientIvaCredit = createServerFn({
+export const getRepresentativeIvaCredit = createServerFn({
   method: 'POST',
 })
   .inputValidator(
     z.object({
-      clientId: z.string(),
-      /** Si se pasa, se devuelve IVA solo de este perfil (del mes anterior al indicado o al actual). */
-      profileId: z.string().optional(),
-      /** Período fiscal del resumen que ve el usuario ("MM/YYYY"). Si se pasa, se devuelve el scrape del período anterior a este. */
+      representativeId: z.string(),
+      /** Si se pasa, se devuelve IVA solo de este cliente (del mes anterior al indicado o al actual). */
+      clientId: z.string().optional(),
+      /** Periodo fiscal del resumen que ve el usuario ("MM/YYYY"). Si se pasa, se devuelve el scrape del periodo anterior a este. */
       periodoFiscalResumen: z.string().optional(),
     })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const [clientData] = await db
-      .select(clientBaseSelect)
-      .from(client)
+    const [representativeData] = await db
+      .select(representativeBaseSelect)
+      .from(representative)
       .where(
-        and(eq(client.id, ctx.data.clientId), eq(client.organizationId, orgId))
+        and(eq(representative.id, ctx.data.representativeId), eq(representative.organizationId, orgId))
       )
       .limit(1);
 
-    if (!clientData) {
+    if (!representativeData) {
       throw new Error('Cliente no encontrado o no autorizado');
     }
 
@@ -412,43 +405,43 @@ export const getClientIvaCredit = createServerFn({
       ? getPreviousMonthFromPeriod(ctx.data.periodoFiscalResumen)
       : getPreviousMonthPeriodoFiscal();
 
-    // Si hay profileId, validar que pertenezca al cliente
-    if (ctx.data.profileId) {
-      const [profileRow] = await db
-        .select({ id: profile.id })
-        .from(profile)
+    // Si hay clientId, validar que pertenezca al representante
+    if (ctx.data.clientId) {
+      const [clientRow] = await db
+        .select({ id: client.id })
+        .from(client)
         .where(
           and(
-            eq(profile.id, ctx.data.profileId),
-            eq(profile.client, clientData.id)
+            eq(client.id, ctx.data.clientId),
+            eq(client.representativeId, representativeData.id)
           )
         )
         .limit(1);
-      if (!profileRow) {
+      if (!clientRow) {
         return {
-          cuit: clientData.identityNumber,
+          cuit: representativeData.cuit,
           data: null,
         };
       }
-      // IVA scrape del período anterior (al resumen o al mes actual) para este perfil
+      // IVA scrape del periodo anterior (al resumen o al mes actual) para este cliente
       const [ivaRow] = await db
         .select()
         .from(ivaScrape)
         .where(
           and(
-            eq(ivaScrape.profileId, ctx.data.profileId),
+            eq(ivaScrape.clientId, ctx.data.clientId),
             eq(ivaScrape.periodoFiscal, periodoFiscal)
           )
         )
         .limit(1);
       if (!ivaRow) {
         return {
-          cuit: clientData.identityNumber,
+          cuit: representativeData.cuit,
           data: null,
         };
       }
       return {
-        cuit: clientData.identityNumber,
+        cuit: representativeData.cuit,
         data: {
           periodoFiscal: ivaRow.periodoFiscal,
           fechaPresentacion: ivaRow.fechaPresentacion ?? undefined,
@@ -467,25 +460,25 @@ export const getClientIvaCredit = createServerFn({
             ivaRow.saldoLibreDisponibilidadFavorContribuyentePeriodo,
           ok: ivaRow.ok,
         },
-        message: 'Datos del período fiscal (scrape mensual).',
+        message: 'Datos del periodo fiscal (scrape mensual).',
       };
     }
 
-    // Sin profileId: sin datos (la UI debe elegir perfil)
+    // Sin clientId: sin datos (la UI debe elegir cliente)
     return {
-      cuit: clientData.identityNumber,
+      cuit: representativeData.cuit,
       data: null,
     };
   });
 
-export const updateClient = createServerFn({
+export const updateRepresentative = createServerFn({
   method: 'POST',
 })
   .inputValidator(
     z.object({
       id: z.string(),
       name: z.string().min(1, 'El nombre es requerido'),
-      email: z.string().email('Email inválido').optional().or(z.literal('')),
+      email: z.string().email('Email invalido').optional().or(z.literal('')),
       phone: z.string().optional().or(z.literal('')),
       address: z.string().optional().or(z.literal('')),
       image: z.string().optional(),
@@ -509,8 +502,8 @@ export const updateClient = createServerFn({
 
     const { id, ...updateData } = ctx.data;
 
-    const [updatedClient] = await db
-      .update(client)
+    const [updatedRepresentative] = await db
+      .update(representative)
       .set({
         name: updateData.name,
         email: updateData.email || '',
@@ -531,15 +524,15 @@ export const updateClient = createServerFn({
             : (updateData.fiscalCondition ?? undefined),
         updatedAt: new Date(),
       })
-      .where(eq(client.id, id))
+      .where(eq(representative.id, id))
       .returning();
 
-    if (!updatedClient) throw new Error('Error al actualizar el cliente');
+    if (!updatedRepresentative) throw new Error('Error al actualizar el cliente');
 
-    return updatedClient;
+    return updatedRepresentative;
   });
 
-export const deleteClient = createServerFn({
+export const deleteRepresentative = createServerFn({
   method: 'POST',
 })
   .inputValidator(z.object({ id: z.string() }))
@@ -548,45 +541,72 @@ export const deleteClient = createServerFn({
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const [deletedClient] = await db
-      .delete(client)
-      .where(eq(client.id, ctx.data.id))
+    const [deletedRepresentative] = await db
+      .delete(representative)
+      .where(eq(representative.id, ctx.data.id))
       .returning();
 
-    if (!deletedClient) throw new Error('Error al eliminar el cliente');
+    if (!deletedRepresentative) throw new Error('Error al eliminar el cliente');
 
     return { success: true };
   });
 
-export const getClientProfiles = createServerFn({
+export const getRepresentativeClients = createServerFn({
   method: 'GET',
 })
-  .inputValidator(z.object({ clientId: z.string() }))
+  .inputValidator(z.object({ representativeId: z.string() }))
   .handler(async (ctx) => {
     const session = await auth.api.getSession({ headers: getRequestHeaders() });
     if (!session?.user?.id) throw new Error('Unauthorized');
 
-    const profiles = await db
+    const clients = await db
       .select()
-      .from(profile)
-      .where(eq(profile.client, ctx.data.clientId))
-      .orderBy(profile.createdAt);
+      .from(client)
+      .where(eq(client.representativeId, ctx.data.representativeId))
+      .orderBy(client.createdAt);
 
-    return profiles;
+    return clients;
   });
 
-export const getClientDebts = createServerFn({
+export const getRepresentativeDebts = createServerFn({
   method: 'GET',
 })
-  .inputValidator(z.object({ clientId: z.string() }))
+  .inputValidator(z.object({ representativeId: z.string(), clientId: z.string().optional() }))
   .handler(async (ctx) => {
     const session = await auth.api.getSession({ headers: getRequestHeaders() });
     if (!session?.user?.id) throw new Error('Unauthorized');
 
+    const conditions = [eq(debt.representativeId, ctx.data.representativeId)];
+    if (ctx.data.clientId) {
+      conditions.push(eq(debt.clientId, ctx.data.clientId));
+    }
+
     const debts = await db
-      .select()
+      .select({
+        id: debt.id,
+        representativeId: debt.representativeId,
+        clientId: debt.clientId,
+        clientName: client.name,
+        establishment: debt.establishment,
+        tax: debt.tax,
+        concept: debt.concept,
+        subConcept: debt.subConcept,
+        period: debt.period,
+        quotaNumber: debt.quotaNumber,
+        dueDate: debt.dueDate,
+        balance: debt.balance,
+        compensatoryInterest: debt.compensatoryInterest,
+        punitiveInterest: debt.punitiveInterest,
+        status: debt.status,
+        detectedAt: debt.detectedAt,
+        sourcePeriod: debt.sourcePeriod,
+        isIntimated: debt.isIntimated,
+        createdAt: debt.createdAt,
+        updatedAt: debt.updatedAt,
+      })
       .from(debt)
-      .where(eq(debt.client, ctx.data.clientId))
+      .leftJoin(client, eq(debt.clientId, client.id))
+      .where(and(...conditions))
       .orderBy(debt.dueDate);
 
     return debts;
@@ -607,12 +627,12 @@ export const updateDebtStatus = createServerFn({
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    // Validate debt belongs to this org via client
+    // Validate debt belongs to this org via representative
     const [existing] = await db
-      .select({ id: debt.id, clientId: debt.client })
+      .select({ id: debt.id, representativeId: debt.representativeId })
       .from(debt)
-      .innerJoin(client, eq(debt.client, client.id))
-      .where(and(eq(debt.id, ctx.data.id), eq(client.organizationId, orgId)));
+      .innerJoin(representative, eq(debt.representativeId, representative.id))
+      .where(and(eq(debt.id, ctx.data.id), eq(representative.organizationId, orgId)));
 
     if (!existing) throw new Error('Deuda no encontrada o sin acceso');
 
@@ -624,10 +644,10 @@ export const updateDebtStatus = createServerFn({
     return { ok: true };
   });
 
-export const getClientDueDates = createServerFn({
+export const getRepresentativeDueDates = createServerFn({
   method: 'GET',
 })
-  .inputValidator(z.object({ clientId: z.string() }))
+  .inputValidator(z.object({ representativeId: z.string() }))
   .handler(async (ctx) => {
     const session = await auth.api.getSession({ headers: getRequestHeaders() });
     if (!session?.user?.id) throw new Error('Unauthorized');
@@ -635,16 +655,16 @@ export const getClientDueDates = createServerFn({
     const dueDates = await db
       .select()
       .from(dueDate)
-      .where(eq(dueDate.client, ctx.data.clientId))
+      .where(eq(dueDate.representativeId, ctx.data.representativeId))
       .orderBy(dueDate.dueDate);
 
     return dueDates;
   });
 
-export const scrapOldClient = createServerFn({
+export const scrapOldRepresentative = createServerFn({
   method: 'POST',
 })
-  .inputValidator(z.object({ clientId: z.string() }))
+  .inputValidator(z.object({ representativeId: z.string() }))
   .handler(async (ctx) => {
     await getSessionWithOrg();
     const role = await getMemberRole();
@@ -653,12 +673,12 @@ export const scrapOldClient = createServerFn({
     const backendUrl = process.env.BACKEND_API_URL || 'http://localhost:3001';
     try {
       const response = await axios.post(`${backendUrl}/api/scrap/old-client`, {
-        clientId: ctx.data.clientId,
+        clientId: ctx.data.representativeId,
       });
       return {
         success: true,
         message: response.data.message || 'Scraping iniciado',
-        clientId: ctx.data.clientId,
+        representativeId: ctx.data.representativeId,
       };
     } catch (error: any) {
       throw new Error(
@@ -682,23 +702,23 @@ async function waitForJob(
   throw new Error('Tiempo de espera agotado esperando el job');
 }
 
-export const scrapUpdateClient = createServerFn({
+export const scrapUpdateRepresentative = createServerFn({
   method: 'POST',
 })
-  .inputValidator(z.object({ clientId: z.string() }))
+  .inputValidator(z.object({ representativeId: z.string() }))
   .handler(async (ctx) => {
     await getSessionWithOrg();
     const role = await getMemberRole();
     assertCanWrite(role);
 
     const baseUrl = JOBS_API_URL;
-    const { clientId } = ctx.data;
+    const { representativeId } = ctx.data;
 
     try {
       // 1. Crear job comprobantes_full y esperar a que termine
       const { data: compJob } = await axios.post(`${baseUrl}/api/jobs`, {
         type: 'comprobantes_full',
-        clientId,
+        representativeId,
       });
 
       const compResult = await waitForJob(baseUrl, compJob.id);
@@ -711,7 +731,7 @@ export const scrapUpdateClient = createServerFn({
       // 2. Crear job iva y esperar a que termine
       const { data: ivaJob } = await axios.post(`${baseUrl}/api/jobs`, {
         type: 'iva',
-        clientId,
+        representativeId,
       });
 
       const ivaResult = await waitForJob(baseUrl, ivaJob.id);
@@ -722,7 +742,7 @@ export const scrapUpdateClient = createServerFn({
       // 3. Crear job deuda y esperar a que termine
       const { data: deudaJob } = await axios.post(`${baseUrl}/api/jobs`, {
         type: 'deuda',
-        clientId,
+        representativeId,
       });
 
       const deudaResult = await waitForJob(baseUrl, deudaJob.id);
@@ -736,13 +756,13 @@ export const scrapUpdateClient = createServerFn({
         success: true,
         message:
           'Cliente actualizado correctamente (comprobantes, IVA y deudas)',
-        clientId,
+        representativeId,
         comprobantes: compResult.result ?? {},
         iva: ivaResult.result ?? {},
         deuda: deudaResult.result ?? {},
       };
     } catch (error: any) {
-      console.error('[scrapUpdateClient]', error?.response?.data ?? error);
+      console.error('[scrapUpdateRepresentative]', error?.response?.data ?? error);
       const msg =
         error.response?.data?.error ||
         error.message ||
@@ -751,25 +771,25 @@ export const scrapUpdateClient = createServerFn({
     }
   });
 
-/** Encola la actualización de todos los módulos (deudas, vencimientos, novedades, facturas, IVA) para un cliente. */
-export const updateClientModules = createServerFn({
+/** Encola la actualizacion de todos los modulos (deudas, vencimientos, novedades, facturas, IVA) para un representante. */
+export const updateRepresentativeModules = createServerFn({
   method: 'POST',
 })
-  .inputValidator(z.object({ clientId: z.string() }))
+  .inputValidator(z.object({ representativeId: z.string() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const { clientId } = ctx.data;
+    const { representativeId } = ctx.data;
 
-    const [clientData] = await db
-      .select({ id: client.id })
-      .from(client)
-      .where(and(eq(client.id, clientId), eq(client.organizationId, orgId)))
+    const [representativeData] = await db
+      .select({ id: representative.id })
+      .from(representative)
+      .where(and(eq(representative.id, representativeId), eq(representative.organizationId, orgId)))
       .limit(1);
 
-    if (!clientData) {
+    if (!representativeData) {
       throw new Error('Cliente no encontrado o no autorizado');
     }
 
@@ -781,22 +801,22 @@ export const updateClientModules = createServerFn({
       'comprobantes_full',
       'iva',
     ] as const;
-    const jobs = types.map((type) => ({ type, clientId }));
+    const jobs = types.map((type) => ({ type, representativeId }));
 
     try {
       await axios.post(`${baseUrl}/api/jobs/batch`, { jobs });
       return {
         success: true,
         message:
-          'Actualización encolada: deudas, vencimientos, novedades, facturas e IVA',
-        clientId,
+          'Actualizacion encolada: deudas, vencimientos, novedades, facturas e IVA',
+        representativeId,
       };
     } catch (error: any) {
-      console.error('[updateClientModules]', error?.response?.data ?? error);
+      console.error('[updateRepresentativeModules]', error?.response?.data ?? error);
       const msg =
         error.response?.data?.error ||
         error.message ||
-        'Error al encolar la actualización';
+        'Error al encolar la actualizacion';
       throw new Error(msg);
     }
   });
@@ -807,7 +827,7 @@ export const scrapSingleJob = createServerFn({
 })
   .inputValidator(
     z.object({
-      clientId: z.string(),
+      representativeId: z.string(),
       jobType: z.enum([
         'comprobantes_full',
         'comprobantes',
@@ -828,13 +848,13 @@ export const scrapSingleJob = createServerFn({
     console.log('[scrapSingleJob] canWrite ok');
 
     const baseUrl = JOBS_API_URL;
-    const { clientId, jobType } = ctx.data;
+    const { representativeId, jobType } = ctx.data;
     console.log('[scrapSingleJob] posting to', `${baseUrl}/api/jobs`);
 
     try {
       const { data: job } = await axios.post(`${baseUrl}/api/jobs`, {
         type: jobType,
-        clientId,
+        representativeId,
       });
 
       const result = await waitForJob(baseUrl, job.id);
@@ -847,7 +867,7 @@ export const scrapSingleJob = createServerFn({
       return {
         success: true,
         jobType,
-        clientId,
+        representativeId,
         result: result.result ?? {},
       };
     } catch (error: any) {
@@ -861,15 +881,15 @@ export const scrapSingleJob = createServerFn({
   });
 
 /**
- * Fire-and-forget: creates a batch job for each selected client.
- * Does NOT wait for completion — returns job IDs immediately.
+ * Fire-and-forget: creates a batch job for each selected representative.
+ * Does NOT wait for completion -- returns job IDs immediately.
  */
-export const scrapBatchClients = createServerFn({
+export const scrapBatchRepresentatives = createServerFn({
   method: 'POST',
 })
   .inputValidator(
     z.object({
-      clientIds: z.array(z.string()).min(1),
+      representativeIds: z.array(z.string()).min(1),
     })
   )
   .handler(async (ctx) => {
@@ -878,43 +898,43 @@ export const scrapBatchClients = createServerFn({
     assertCanWrite(role);
 
     const baseUrl = JOBS_API_URL;
-    const { clientIds } = ctx.data;
-    const created: { clientId: string; jobId: string }[] = [];
-    const errors: { clientId: string; error: string }[] = [];
+    const { representativeIds } = ctx.data;
+    const created: { representativeId: string; jobId: string }[] = [];
+    const errors: { representativeId: string; error: string }[] = [];
 
-    for (const clientId of clientIds) {
+    for (const representativeId of representativeIds) {
       try {
         const { data: job } = await axios.post(`${baseUrl}/api/jobs`, {
           type: 'batch',
-          clientId,
+          representativeId,
         });
-        created.push({ clientId, jobId: job.id });
+        created.push({ representativeId, jobId: job.id });
       } catch (error: any) {
         errors.push({
-          clientId,
+          representativeId,
           error: error.response?.data?.error || error.message,
         });
       }
     }
 
-    return { created, errors, total: clientIds.length };
+    return { created, errors, total: representativeIds.length };
   });
 
-/** Último job comprobantes_full para un cliente (por created_at), con estado success/error. */
+/** Ultimo job comprobantes_full para un representante (por created_at), con estado success/error. */
 export const getLastComprobantesFullJob = createServerFn({
   method: 'GET',
 })
-  .inputValidator(z.object({ clientId: z.string() }))
+  .inputValidator(z.object({ representativeId: z.string() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const { clientId } = ctx.data;
+    const { representativeId } = ctx.data;
 
-    const orgClients = await db
-      .select({ id: client.id })
-      .from(client)
-      .where(eq(client.organizationId, orgId));
-    const canAccess = orgClients.some((c) => c.id === clientId);
+    const orgRepresentatives = await db
+      .select({ id: representative.id })
+      .from(representative)
+      .where(eq(representative.organizationId, orgId));
+    const canAccess = orgRepresentatives.some((c) => c.id === representativeId);
     if (!canAccess) return null;
 
     const [lastJob] = await db
@@ -924,7 +944,7 @@ export const getLastComprobantesFullJob = createServerFn({
         status: job.status,
       })
       .from(job)
-      .where(and(eq(job.clientId, clientId), eq(job.type, 'comprobantes')))
+      .where(and(eq(job.representativeId, representativeId), eq(job.type, 'comprobantes')))
       .orderBy(desc(job.createdAt))
       .limit(1);
 
@@ -937,13 +957,13 @@ export const getLastComprobantesFullJob = createServerFn({
     };
   });
 
-/** Último job de un tipo dado para un cliente (por created_at), con estado success/error. */
+/** Ultimo job de un tipo dado para un representante (por created_at), con estado success/error. */
 export const getLastJobByType = createServerFn({
   method: 'GET',
 })
   .inputValidator(
     z.object({
-      clientId: z.string(),
+      representativeId: z.string(),
       jobType: z.enum([
         'iva',
         'comprobantes',
@@ -957,13 +977,13 @@ export const getLastJobByType = createServerFn({
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const { clientId, jobType } = ctx.data;
+    const { representativeId, jobType } = ctx.data;
 
-    const orgClients = await db
-      .select({ id: client.id })
-      .from(client)
-      .where(eq(client.organizationId, orgId));
-    const canAccess = orgClients.some((c) => c.id === clientId);
+    const orgRepresentatives = await db
+      .select({ id: representative.id })
+      .from(representative)
+      .where(eq(representative.organizationId, orgId));
+    const canAccess = orgRepresentatives.some((c) => c.id === representativeId);
     if (!canAccess) return null;
 
     const [lastJob] = await db
@@ -974,7 +994,7 @@ export const getLastJobByType = createServerFn({
         result: job.result,
       })
       .from(job)
-      .where(and(eq(job.clientId, clientId), eq(job.type, jobType)))
+      .where(and(eq(job.representativeId, representativeId), eq(job.type, jobType)))
       .orderBy(desc(job.createdAt))
       .limit(1);
 
@@ -999,13 +1019,13 @@ export const getLastJobByType = createServerFn({
     };
   });
 
-/** Último job RUNNING de un tipo dado para un cliente (o null si no hay). */
+/** Ultimo job RUNNING de un tipo dado para un representante (o null si no hay). */
 export const getRunningJobByType = createServerFn({
   method: 'GET',
 })
   .inputValidator(
     z.object({
-      clientId: z.string(),
+      representativeId: z.string(),
       jobType: z.enum([
         'iva',
         'comprobantes',
@@ -1019,13 +1039,13 @@ export const getRunningJobByType = createServerFn({
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const { clientId, jobType } = ctx.data;
+    const { representativeId, jobType } = ctx.data;
 
-    const orgClients = await db
-      .select({ id: client.id })
-      .from(client)
-      .where(eq(client.organizationId, orgId));
-    const canAccess = orgClients.some((c) => c.id === clientId);
+    const orgRepresentatives = await db
+      .select({ id: representative.id })
+      .from(representative)
+      .where(eq(representative.organizationId, orgId));
+    const canAccess = orgRepresentatives.some((c) => c.id === representativeId);
     if (!canAccess) return null;
 
     const [runningJob] = await db
@@ -1038,7 +1058,7 @@ export const getRunningJobByType = createServerFn({
       .from(job)
       .where(
         and(
-          eq(job.clientId, clientId),
+          eq(job.representativeId, representativeId),
           eq(job.type, jobType),
           eq(job.status, 'running')
         )
@@ -1070,13 +1090,13 @@ export const markDueDateCompleted = createServerFn({
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    // Validate due_date belongs to this org via client
+    // Validate due_date belongs to this org via representative
     const [existing] = await db
       .select({ id: dueDate.id })
       .from(dueDate)
-      .innerJoin(client, eq(dueDate.client, client.id))
+      .innerJoin(representative, eq(dueDate.representativeId, representative.id))
       .where(
-        and(eq(dueDate.id, ctx.data.id), eq(client.organizationId, orgId))
+        and(eq(dueDate.id, ctx.data.id), eq(representative.organizationId, orgId))
       );
 
     if (!existing) throw new Error('Vencimiento no encontrado o sin acceso');
@@ -1093,22 +1113,22 @@ export const markDueDateCompleted = createServerFn({
   });
 
 export const getBalanceConfig = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .inputValidator(z.object({ representativeId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
     const [c] = await db
-      .select({ id: client.id })
-      .from(client)
+      .select({ id: representative.id })
+      .from(representative)
       .where(
-        and(eq(client.id, ctx.data.clientId), eq(client.organizationId, orgId))
+        and(eq(representative.id, ctx.data.representativeId), eq(representative.organizationId, orgId))
       );
     if (!c) throw new Error('Cliente no encontrado o sin acceso');
 
     const [config] = await db
       .select()
-      .from(clientBalanceConfig)
-      .where(eq(clientBalanceConfig.clientId, ctx.data.clientId));
+      .from(representativeBalanceConfig)
+      .where(eq(representativeBalanceConfig.representativeId, ctx.data.representativeId));
 
     return (config ?? null) as
       | (typeof config & { alertDaysBefore: number[] })
@@ -1118,7 +1138,7 @@ export const getBalanceConfig = createServerFn({ method: 'GET' })
 export const upsertBalanceConfig = createServerFn({ method: 'POST' })
   .inputValidator(
     z.object({
-      clientId: z.string().uuid(),
+      representativeId: z.string().uuid(),
       fiscalYearEndMonth: z.number().int().min(1).max(12),
       fiscalYearEndDay: z.number().int().min(1).max(31),
       presentationDueDays: z.number().int().nullable().optional(),
@@ -1131,7 +1151,7 @@ export const upsertBalanceConfig = createServerFn({ method: 'POST' })
     assertCanWrite(role);
 
     const {
-      clientId,
+      representativeId,
       fiscalYearEndMonth,
       fiscalYearEndDay,
       presentationDueDays,
@@ -1139,22 +1159,22 @@ export const upsertBalanceConfig = createServerFn({ method: 'POST' })
     } = ctx.data;
 
     const [c] = await db
-      .select({ id: client.id })
-      .from(client)
-      .where(and(eq(client.id, clientId), eq(client.organizationId, orgId)));
+      .select({ id: representative.id })
+      .from(representative)
+      .where(and(eq(representative.id, representativeId), eq(representative.organizationId, orgId)));
     if (!c) throw new Error('Cliente no encontrado o sin acceso');
 
     await db
-      .insert(clientBalanceConfig)
+      .insert(representativeBalanceConfig)
       .values({
-        clientId,
+        representativeId,
         fiscalYearEndMonth,
         fiscalYearEndDay,
         presentationDueDays: presentationDueDays ?? null,
         alertDaysBefore: alertDaysBefore ?? [60, 30, 15, 7],
       })
       .onConflictDoUpdate({
-        target: clientBalanceConfig.clientId,
+        target: representativeBalanceConfig.representativeId,
         set: {
           fiscalYearEndMonth,
           fiscalYearEndDay,

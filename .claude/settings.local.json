@@ -85,7 +85,9 @@
       "Bash(npx vite:*)",
       "Bash(node:*)",
       "Bash(bun vite:*)",
-      "Bash(pkill -f \"vite\\\\|bun run dev\")"
+      "Bash(pkill -f \"vite\\\\|bun run dev\")",
+      "Bash(git status:*)",
+      "Bash(git push:*)"
     ]
   }
 }
