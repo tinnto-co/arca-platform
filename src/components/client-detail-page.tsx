@@ -1698,17 +1698,6 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                   <h1 className="font-display text-[24px] font-semibold tracking-tight text-[var(--arca-ink)] leading-none truncate">
                     {client.name}
                   </h1>
-                  {client.hasErrors ? (
-                    <span className="inline-flex items-center gap-[5px] px-[8px] py-[3px] rounded-full text-[11.5px] font-semibold bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)] shrink-0">
-                      <span className="w-[6px] h-[6px] rounded-full bg-[var(--arca-accent-warn)] shrink-0" />
-                      Con errores
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-[5px] px-[8px] py-[3px] rounded-full text-[11.5px] font-semibold bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)] shrink-0">
-                      <span className="w-[6px] h-[6px] rounded-full bg-[var(--arca-accent-pos)] shrink-0" />
-                      Al día
-                    </span>
-                  )}
                 </div>
                 <div className="mt-[4px] flex flex-wrap items-center gap-x-[10px] gap-y-[2px] text-[11.5px] text-[var(--arca-ink-3)]">
                   {client.identityNumber && (

@@ -7,8 +7,6 @@ import {
   Edit,
   Trash2,
   MoreHorizontal,
-  CircleAlert,
-  CheckCircle2,
   Play,
   Loader2,
 } from 'lucide-react';
@@ -33,11 +31,6 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import {
   getRepresentativesWithClients,
   deleteRepresentative,
   scrapBatchRepresentatives,
@@ -51,8 +44,6 @@ interface Representative {
   identityNumber: string;
   phone: string;
   createdAt: string | Date;
-  hasErrors?: boolean;
-  errorMessage?: string | null;
   status?: string;
   clients?: { name: string }[];
 }
@@ -102,48 +93,6 @@ export function RepresentativesTable() {
           )}
         </div>
       ),
-    },
-    {
-      accessorKey: 'hasErrors',
-      header: 'Estado',
-      enableSorting: false,
-      filterFn: (row, _columnId, filterValue) => {
-        if (!filterValue) return true;
-        if (filterValue === 'error') return row.original.hasErrors === true;
-        if (filterValue === 'ok') return row.original.hasErrors !== true;
-        return true;
-      },
-      cell: ({ row }) =>
-        row.original.hasErrors ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span
-                className="inline-flex text-[var(--arca-accent-warn-fg)]"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <CircleAlert className="h-4 w-4" />
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top" sideOffset={6}>
-              {row.original.errorMessage?.trim() ||
-                'Cliente con errores en jobs de scraping'}
-            </TooltipContent>
-          </Tooltip>
-        ) : (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span
-                className="inline-flex text-[var(--arca-accent-pos-fg)]"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <CheckCircle2 className="h-4 w-4" />
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top" sideOffset={6}>
-              Cliente sin errores en jobs de scraping
-            </TooltipContent>
-          </Tooltip>
-        ),
     },
     {
       accessorKey: 'identityNumber',
@@ -242,16 +191,7 @@ export function RepresentativesTable() {
         isLoading={isLoading}
         searchKey="name"
         searchPlaceholder="Buscar por nombre, CUIT..."
-        filters={[
-          {
-            columnId: 'hasErrors',
-            label: 'Estado',
-            options: [
-              { label: 'Sin errores', value: 'ok' },
-              { label: 'Con errores', value: 'error' },
-            ],
-          },
-        ]}
+        filters={[]}
         onRowClick={(representative) => navigate({ to: `/clients/${representative.id}` })}
         onSelectionChange={(rows) => setSelectedRepresentatives(rows as Representative[])}
         toolbar={

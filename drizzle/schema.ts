@@ -55,8 +55,6 @@ export const representative = pgTable("representative", {
   regimenLocal: boolean("regimen_local").notNull().default(false),
   fiscalCondition: text("fiscal_condition"),
   liquidaSueldos: boolean("liquida_sueldos").notNull().default(false),
-  hasErrors: boolean("has_errors").default(false).notNull(),
-  errorMessage: text("error_message").default(""),
   registeredAt: timestamp("registered_at").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

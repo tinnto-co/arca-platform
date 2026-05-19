@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import {
   profile,
   client,
+  alert,
   debt,
   notification,
   dueDate,
@@ -71,7 +72,7 @@ export async function calculateRiskScore(
     overdueDebtCount,
     criticalNotificationCount,
     upcomingDueDateCount,
-    clientRow,
+    hasScraperError,
     ivaRow,
   ] = await Promise.all([
     // 1. Overdue open debts (30% weight)
@@ -118,15 +119,20 @@ export async function calculateRiskScore(
           .then((r) => Number(r[0]?.n ?? 0))
       : Promise.resolve(0),
 
-    // 4. Scraper errors on the client (10% weight)
+    // 4. Scraper errors on the client (10% weight) — check open scraper_error alerts
     clientId
       ? db
-          .select({ hasErrors: client.hasErrors })
-          .from(client)
-          .where(eq(client.id, clientId))
-          .limit(1)
-          .then((r) => r[0] ?? null)
-      : Promise.resolve(null),
+          .select({ n: sql<number>`COUNT(*)` })
+          .from(alert)
+          .where(
+            and(
+              eq(alert.clientId, clientId),
+              eq(alert.type, 'scraper_error'),
+              eq(alert.status, 'open')
+            )
+          )
+          .then((r) => Number(r[0]?.n ?? 0) > 0)
+      : Promise.resolve(false),
 
     // 5. IVA scrape for the period (10% weight)
     db
@@ -187,8 +193,7 @@ export async function calculateRiskScore(
     }
   }
 
-  // Scraper errors: hasErrors→10, none→0
-  const hasScraperError = clientRow?.hasErrors ?? false;
+  // Scraper errors: open alerts→10, none→0
   const scraperErrorScore = hasScraperError ? 10 : 0;
 
   const score = Math.min(

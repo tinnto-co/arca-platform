@@ -1,7 +1,7 @@
 import { createServerFn } from '@tanstack/react-start';
 import z from 'zod';
 import { db } from '@/lib/db';
-import { representative, invoice, debt, dueDate, notification } from '@/drizzle/schema';
+import { representative, invoice, debt, dueDate, notification, alert } from '@/drizzle/schema';
 import { eq, and, gte, lte, sql, inArray, isNull } from 'drizzle-orm';
 import { getSessionWithOrg } from '@/actions/helpers';
 
@@ -663,12 +663,16 @@ export const getExceptionsSummary = createServerFn({ method: 'GET' }).handler(
             )
           ),
 
-        // Clients with errors
+        // Representatives with open scraper_error alerts
         db
-          .select({ count: sql<number>`count(*)` })
-          .from(representative)
+          .select({ count: sql<number>`count(DISTINCT ${alert.representativeId})` })
+          .from(alert)
           .where(
-            and(eq(representative.organizationId, orgId), eq(representative.hasErrors, true))
+            and(
+              eq(alert.organizationId, orgId),
+              eq(alert.type, 'scraper_error'),
+              eq(alert.status, 'open')
+            )
           ),
       ]);
 

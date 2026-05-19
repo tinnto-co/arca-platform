@@ -42,8 +42,6 @@ const representativeBaseSelect = {
   convenioMultilateral: representative.convenioMultilateral,
   regimenLocal: representative.regimenLocal,
   fiscalCondition: representative.fiscalCondition,
-  hasErrors: representative.hasErrors,
-  errorMessage: representative.errorMessage,
   registeredAt: representative.registeredAt,
   createdAt: representative.createdAt,
   updatedAt: representative.updatedAt,
@@ -128,6 +126,87 @@ export const createRepresentative = createServerFn({
     if (!newRepresentative) throw new Error('Error al crear el cliente');
 
     return newRepresentative;
+  });
+
+/**
+ * Creates a representative + selected clients in one transaction.
+ * Called from the new 2-step creation dialog after profile discovery.
+ */
+export const createRepresentativeWithClients = createServerFn({
+  method: 'POST',
+})
+  .inputValidator(
+    z.object({
+      cuit: z.string().min(1),
+      password: z.string().min(1),
+      name: z.string().optional(),
+      email: z.string().optional(),
+      phone: z.string().optional(),
+      clients: z.array(z.object({
+        cuit: z.string().min(1),
+        name: z.string().min(1),
+      })).min(1, 'Debe seleccionar al menos un cliente'),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const { cuit, password, name, email, phone, clients: selectedClients } = ctx.data;
+
+    const result = await db.transaction(async (tx) => {
+      // 1. Create representative
+      const [rep] = await tx
+        .insert(representative)
+        .values({
+          userId,
+          organizationId: orgId,
+          name: name || null,
+          cuit,
+          afipPassword: encrypt(password),
+          email: email || '',
+          phone: phone || '',
+          status: 'active',
+          registeredAt: new Date(),
+        })
+        .returning();
+
+      if (!rep) throw new Error('Error al crear el representante');
+
+      // 2. Create selected clients
+      const createdClients = [];
+      for (const cl of selectedClients) {
+        const [newClient] = await tx
+          .insert(client)
+          .values({
+            representativeId: rep.id,
+            name: cl.name,
+            identityNumber: cl.cuit,
+            identityType: 'cuit',
+            address: '',
+            phone: '',
+            email: '',
+            status: 'active',
+          })
+          .returning();
+        if (newClient) createdClients.push(newClient);
+      }
+
+      return { representative: rep, clients: createdClients };
+    });
+
+    // 3. Trigger initial scraping
+    try {
+      await axios.post(`${JOBS_API_URL}/api/jobs`, {
+        type: 'comprobantes',
+        representativeId: result.representative.id,
+      });
+    } catch (error) {
+      console.error('Error triggering initial scraping:', error);
+    }
+
+    return result;
   });
 
 export const notifyBackendNewRepresentative = createServerFn({
