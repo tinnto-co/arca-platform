@@ -89,6 +89,8 @@ export const client = pgTable("client", {
   disabledAt: timestamp("disabled_at"),
   disabledReason: text("disabled_reason"),
   profileType: text("profile_type").notNull().default("unknown"),
+  /** ID de contribuyente en AFIP FES (Mis Comprobantes). Se cachea del discovery. */
+  afipContribuyenteId: integer("afip_contribuyente_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
