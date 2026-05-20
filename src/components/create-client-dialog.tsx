@@ -50,6 +50,22 @@ interface DiscoveredProfile {
   name: string;
 }
 
+function friendlyError(msg: string): string {
+  const technical = [
+    'detached Frame',
+    'Target closed',
+    'Session closed',
+    'Protocol error',
+    'Navigation timeout',
+    'Execution context was destroyed',
+    'net::ERR_',
+  ];
+  if (technical.some((t) => msg.includes(t))) {
+    return 'Hubo un problema de conexión con AFIP. Por favor intentá de nuevo en unos minutos.';
+  }
+  return msg;
+}
+
 interface CreateRepresentativeDialogProps {
   children: React.ReactNode;
 }
@@ -147,7 +163,7 @@ export function CreateRepresentativeDialog({ children }: CreateRepresentativeDia
                 setOpen(true);
               } else if (eventType === 'error') {
                 setOpen(true);
-                setError(data.error);
+                setError(friendlyError(data.error));
               }
             } catch {}
             eventType = '';
@@ -155,7 +171,7 @@ export function CreateRepresentativeDialog({ children }: CreateRepresentativeDia
         }
       }
     } catch (err: any) {
-      setError(err?.message || 'Error al descubrir perfiles');
+      setError(friendlyError(err?.message || 'Error al descubrir perfiles'));
     } finally {
       setDiscovering(false);
       setProgressMessage(null);

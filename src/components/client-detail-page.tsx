@@ -23,6 +23,7 @@ import {
   Plus,
   Paperclip,
   FileDown,
+  RefreshCw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -129,6 +130,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogClose,
+  DialogTrigger,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { INVOICE_TYPES } from '@/lib/invoicesTypes';
@@ -4634,65 +4636,97 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                       })}
                     </span>
                   )}
-                  <Button
-                    variant="default"
-                    size="sm"
-                    disabled={!!scrapingSection || !!runningComprobantesJob}
-                    onClick={async () => {
-                      setScrapingSection('iva');
-                      try {
-                        await scrapSingleJob({
-                          data: { representativeId, jobType: 'comprobantes' },
-                        });
-                        await scrapSingleJob({
-                          data: { representativeId, jobType: 'iva' },
-                        });
-                        await Promise.all([
-                          queryClient.invalidateQueries({
-                            queryKey: ['clientIva', representativeId],
-                          }),
-                          queryClient.invalidateQueries({
-                            queryKey: ['clientAllInvoices', representativeId],
-                          }),
-                          queryClient.invalidateQueries({
-                            queryKey: ['invoices'],
-                          }),
-                          queryClient.invalidateQueries({
-                            queryKey: ['lastComprobantesFullJob', representativeId],
-                          }),
-                          queryClient.invalidateQueries({
-                            queryKey: ['lastIvaJob', representativeId],
-                          }),
-                        ]);
-                        toast.success(
-                          'IVA y comprobantes actualizados correctamente'
-                        );
-                      } catch (err) {
-                        toast.error(
-                          err instanceof Error
-                            ? err.message
-                            : 'Error al actualizar IVA'
-                        );
-                        queryClient.invalidateQueries({
-                          queryKey: ['lastIvaJob', representativeId],
-                        });
-                        queryClient.invalidateQueries({
-                          queryKey: ['lastComprobantesJob', representativeId],
-                        });
-                      } finally {
-                        setScrapingSection(null);
-                      }
-                    }}
-                  >
-                    {scrapingSection === 'iva' || runningComprobantesJob ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Actualizando…
-                      </>
-                    ) : (
-                      'Actualizar IVA'
-                    )}
-                  </Button>
+                  {scrapingSection === 'iva' || runningComprobantesJob ? (
+                    <Button variant="default" size="sm" disabled>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Actualizando…
+                    </Button>
+                  ) : (
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button
+                          variant="default"
+                          size="sm"
+                          disabled={!!scrapingSection}
+                        >
+                          Actualizar IVA
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="sm:max-w-[360px] p-0 overflow-hidden rounded-[var(--arca-r-lg,14px)] border border-[var(--arca-border)]">
+                        <div className="px-5 pt-5 pb-3">
+                          <h3 className="font-display text-[15px] font-semibold tracking-[-0.01em] text-[var(--arca-ink)]">Actualizar IVA</h3>
+                          <p className="text-[12px] leading-relaxed text-[var(--arca-ink-4)] mt-1">
+                            Si las facturas ya están al día, podés scrapear solo IVA para ir más rápido.
+                          </p>
+                        </div>
+                        <div className="px-3 pb-3 space-y-1.5">
+                          <DialogClose asChild>
+                            <button
+                              className="w-full flex items-start gap-3 rounded-[var(--arca-r-md,10px)] px-3 py-3 text-left transition-colors duration-[120ms] hover:bg-[var(--arca-surface-2)] border border-transparent hover:border-[var(--arca-border)] cursor-pointer group"
+                              onClick={async () => {
+                                setScrapingSection('iva');
+                                try {
+                                  await scrapSingleJob({ data: { representativeId, jobType: 'comprobantes' } });
+                                  await scrapSingleJob({ data: { representativeId, jobType: 'iva' } });
+                                  await Promise.all([
+                                    queryClient.invalidateQueries({ queryKey: ['clientIva', representativeId] }),
+                                    queryClient.invalidateQueries({ queryKey: ['clientAllInvoices', representativeId] }),
+                                    queryClient.invalidateQueries({ queryKey: ['invoices'] }),
+                                    queryClient.invalidateQueries({ queryKey: ['lastComprobantesFullJob', representativeId] }),
+                                    queryClient.invalidateQueries({ queryKey: ['lastIvaJob', representativeId] }),
+                                  ]);
+                                  toast.success('IVA y comprobantes actualizados');
+                                } catch (err) {
+                                  toast.error(err instanceof Error ? err.message : 'Error al actualizar');
+                                  queryClient.invalidateQueries({ queryKey: ['lastIvaJob', representativeId] });
+                                  queryClient.invalidateQueries({ queryKey: ['lastComprobantesJob', representativeId] });
+                                } finally {
+                                  setScrapingSection(null);
+                                }
+                              }}
+                            >
+                              <div className="shrink-0 mt-0.5 w-8 h-8 rounded-[var(--arca-r-sm,6px)] bg-[var(--arca-surface-2)] flex items-center justify-center text-[var(--arca-ink-3)] group-hover:text-[var(--arca-ink)]">
+                                <FileText className="w-4 h-4" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-[13px] font-medium text-[var(--arca-ink)]">Comprobantes + IVA</div>
+                                <div className="text-[11px] leading-snug text-[var(--arca-ink-4)] mt-0.5">Actualiza facturas primero, después IVA. Más lento pero completo.</div>
+                              </div>
+                            </button>
+                          </DialogClose>
+                          <DialogClose asChild>
+                            <button
+                              className="w-full flex items-start gap-3 rounded-[var(--arca-r-md,10px)] px-3 py-3 text-left transition-colors duration-[120ms] hover:bg-[var(--arca-surface-2)] border border-transparent hover:border-[var(--arca-border)] cursor-pointer group"
+                              onClick={async () => {
+                                setScrapingSection('iva');
+                                try {
+                                  await scrapSingleJob({ data: { representativeId, jobType: 'iva' } });
+                                  await Promise.all([
+                                    queryClient.invalidateQueries({ queryKey: ['clientIva', representativeId] }),
+                                    queryClient.invalidateQueries({ queryKey: ['lastIvaJob', representativeId] }),
+                                  ]);
+                                  toast.success('IVA actualizado correctamente');
+                                } catch (err) {
+                                  toast.error(err instanceof Error ? err.message : 'Error al actualizar IVA');
+                                  queryClient.invalidateQueries({ queryKey: ['lastIvaJob', representativeId] });
+                                } finally {
+                                  setScrapingSection(null);
+                                }
+                              }}
+                            >
+                              <div className="shrink-0 mt-0.5 w-8 h-8 rounded-[var(--arca-r-sm,6px)] bg-[var(--arca-surface-2)] flex items-center justify-center text-[var(--arca-ink-3)] group-hover:text-[var(--arca-ink)]">
+                                <RefreshCw className="w-4 h-4" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-[13px] font-medium text-[var(--arca-ink)]">Solo IVA</div>
+                                <div className="text-[11px] leading-snug text-[var(--arca-ink-4)] mt-0.5">Más rápido. Usá esta opción si las facturas ya están al día.</div>
+                              </div>
+                            </button>
+                          </DialogClose>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                  )}
                   <Button
                     variant="outline"
                     size="sm"
