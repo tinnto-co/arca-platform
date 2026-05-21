@@ -4,7 +4,7 @@ import path from 'node:path';
 import * as XLSX from 'xlsx';
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { client, liquidacionImportEmpleado, profile } from '@/drizzle/schema';
+import { representative, liquidacionImportEmpleado, client } from '@/drizzle/schema';
 import {
   getCuilFromLegajoRow,
   getLegajoFromLegajoRow,
@@ -59,14 +59,14 @@ async function main() {
 
   const perfiles = await db
     .select({
-      profileId: profile.id,
       clientId: client.id,
-      clientName: client.name,
-      cuit: profile.identityNumber,
+      representativeId: representative.id,
+      representativeName: representative.name,
+      cuit: client.identityNumber,
     })
-    .from(profile)
-    .innerJoin(client, eq(profile.client, client.id))
-    .where(eq(profile.liquidaSueldos, true));
+    .from(client)
+    .innerJoin(representative, eq(client.representative, representative.id))
+    .where(eq(client.liquidaSueldos, true));
 
   const perfilByCuit = new Map(
     perfiles
@@ -106,7 +106,7 @@ async function main() {
         legajo: liquidacionImportEmpleado.legajo,
       })
       .from(liquidacionImportEmpleado)
-      .where(eq(liquidacionImportEmpleado.profileId, perfil.profileId));
+      .where(eq(liquidacionImportEmpleado.profileId, perfil.clientId));
 
     const byCuil = new Map(
       empleados
@@ -121,7 +121,7 @@ async function main() {
 
     if (!filePath) {
       reportes.push({
-        clientName: perfil.clientName,
+        clientName: perfil.representativeName,
         cuit,
         filePath: null,
         excelFilas: 0,
@@ -138,7 +138,7 @@ async function main() {
     const sheet = wb.Sheets[wb.SheetNames[0] ?? ''];
     if (!sheet) {
       reportes.push({
-        clientName: perfil.clientName,
+        clientName: perfil.representativeName,
         cuit,
         filePath,
         excelFilas: 0,
@@ -181,7 +181,7 @@ async function main() {
     }
 
     reportes.push({
-      clientName: perfil.clientName,
+      clientName: perfil.representativeName,
       cuit,
       filePath,
       excelFilas: rows.length,

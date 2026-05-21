@@ -5,7 +5,7 @@
  * Uso:
  *   bun run src/scripts/run-risk-engine.ts                                       # lista orgs
  *   bun run src/scripts/run-risk-engine.ts <orgId> <period>                      # batch para una org
- *   bun run src/scripts/run-risk-engine.ts --profile <profileId> <period>        # un solo perfil (debug)
+ *   bun run src/scripts/run-risk-engine.ts --client <clientId> <period>          # un solo cliente (debug)
  *
  * period en formato YYYY-MM (ej: 2026-03).
  * Requiere DATABASE_URL en el entorno.
@@ -14,7 +14,7 @@ import 'dotenv/config';
 import { db } from '@/lib/db';
 import { eq } from 'drizzle-orm';
 import { organization } from '@/drizzle/auth';
-import { client, profile, profileRiskSnapshot } from '@/drizzle/schema';
+import { representative, client, clientRiskSnapshot } from '@/drizzle/schema';
 import { calculateRiskScore, generateRiskSnapshots } from '@/lib/risk-engine';
 
 async function listOrgs() {
@@ -26,7 +26,7 @@ async function listOrgs() {
   console.log(
     '\nUsá: bun run src/scripts/run-risk-engine.ts <orgId> <period>'
   );
-  console.log('     bun run src/scripts/run-risk-engine.ts --profile <id> <period>');
+  console.log('     bun run src/scripts/run-risk-engine.ts --client <id> <period>');
 }
 
 async function runForOrg(orgId: string, period: string) {
@@ -37,28 +37,28 @@ async function runForOrg(orgId: string, period: string) {
   );
 
   // Show distribution by risk level
-  const profiles = await db
-    .select({ id: profile.id })
-    .from(profile)
-    .innerJoin(client, eq(profile.client, client.id))
-    .where(eq(client.organizationId, orgId));
+  const clients = await db
+    .select({ id: client.id })
+    .from(client)
+    .innerJoin(representative, eq(client.representative, representative.id))
+    .where(eq(representative.organizationId, orgId));
 
-  if (profiles.length === 0) {
-    console.log('La org no tiene perfiles.');
+  if (clients.length === 0) {
+    console.log('La org no tiene clientes.');
     return;
   }
 
   const snapshots = await db
     .select({
-      profileId: profileRiskSnapshot.profileId,
-      score: profileRiskSnapshot.score,
-      riskLevel: profileRiskSnapshot.riskLevel,
+      clientId: clientRiskSnapshot.clientId,
+      score: clientRiskSnapshot.score,
+      riskLevel: clientRiskSnapshot.riskLevel,
     })
-    .from(profileRiskSnapshot)
-    .where(eq(profileRiskSnapshot.period, period));
+    .from(clientRiskSnapshot)
+    .where(eq(clientRiskSnapshot.period, period));
 
   const filtered = snapshots.filter((s) =>
-    profiles.some((p) => p.id === s.profileId)
+    clients.some((c) => c.id === s.clientId)
   );
 
   const dist = filtered.reduce<Record<string, number>>((acc, s) => {
@@ -68,9 +68,9 @@ async function runForOrg(orgId: string, period: string) {
   console.log(`Distribución por nivel:`, dist);
 }
 
-async function runForProfile(profileId: string, period: string) {
-  const result = await calculateRiskScore(profileId, period);
-  console.log(`Profile ${profileId} / ${period}:`);
+async function runForClient(clientId: string, period: string) {
+  const result = await calculateRiskScore(clientId, period);
+  console.log(`Client ${clientId} / ${period}:`);
   console.log(`  score    = ${result.score}`);
   console.log(`  level    = ${result.riskLevel}`);
   console.log(`  factors  =`, result.factors);
@@ -94,14 +94,14 @@ async function main() {
     process.exit(0);
   }
 
-  if (args[0] === '--profile') {
-    const profileId = args[1];
+  if (args[0] === '--client') {
+    const clientId = args[1];
     const period = args[2];
-    if (!profileId || !period) {
-      console.error('--profile requiere <profileId> <period>');
+    if (!clientId || !period) {
+      console.error('--client requiere <clientId> <period>');
       process.exit(1);
     }
-    await runForProfile(profileId, period);
+    await runForClient(clientId, period);
     process.exit(0);
   }
 
