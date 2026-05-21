@@ -3,13 +3,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as XLSX from 'xlsx';
 import { db } from '@/lib/db';
-import { client, profile } from '@/drizzle/schema';
+import { representative, client } from '@/drizzle/schema';
 import { eq } from 'drizzle-orm';
 
 interface PerfilSueldos {
+  representativeId: string;
+  representativeName: string;
   clientId: string;
-  clientName: string;
-  profileId: string;
   cuit: string;
 }
 
@@ -117,21 +117,21 @@ function sugerirCamposNoCubiertos(headers: string[]): string[] {
 async function obtenerPerfilesConSueldos(): Promise<PerfilSueldos[]> {
   const rows = await db
     .select({
+      representativeId: representative.id,
+      representativeName: representative.name,
       clientId: client.id,
-      clientName: client.name,
-      profileId: profile.id,
-      cuit: profile.identityNumber,
-      liquidaSueldos: profile.liquidaSueldos,
+      cuit: client.identityNumber,
+      liquidaSueldos: client.liquidaSueldos,
     })
-    .from(profile)
-    .innerJoin(client, eq(profile.client, client.id))
-    .where(eq(profile.liquidaSueldos, true));
+    .from(client)
+    .innerJoin(representative, eq(client.representative, representative.id))
+    .where(eq(client.liquidaSueldos, true));
 
   return rows
     .map((r) => ({
+      representativeId: r.representativeId,
+      representativeName: r.representativeName,
       clientId: r.clientId,
-      clientName: r.clientName,
-      profileId: r.profileId,
       cuit: normalizarCuit(r.cuit ?? ''),
     }))
     .filter((r) => r.cuit.length === 11);
@@ -171,7 +171,7 @@ async function main() {
     const headers = obtenerHeadersDesdeExcel(a.filePath);
     const noCubiertos = sugerirCamposNoCubiertos(headers);
     return {
-      clientName: perfil.clientName,
+      representativeName: perfil.representativeName,
       cuit: a.cuit,
       filePath: a.filePath,
       headers,
@@ -189,14 +189,14 @@ async function main() {
   if (sinExcel.length > 0) {
     console.log('=== PERFILES SIN EXCEL EN CARPETA ===');
     for (const p of sinExcel) {
-      console.log(`- ${p.clientName} (${p.cuit})`);
+      console.log(`- ${p.representativeName} (${p.cuit})`);
     }
     console.log('');
   }
 
   console.log('=== ANALISIS POR PERFIL CRUZADO ===');
   for (const a of analisis) {
-    console.log(`- ${a.clientName} (${a.cuit})`);
+    console.log(`- ${a.representativeName} (${a.cuit})`);
     console.log(`  Archivo: ${a.filePath}`);
     console.log(`  Headers detectados: ${a.headers.join(' | ') || 'N/D'}`);
     if (a.noCubiertos.length === 0) {
