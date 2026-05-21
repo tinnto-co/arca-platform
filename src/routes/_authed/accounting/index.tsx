@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { ArcaCard } from '@/components/dashboard/shared';
-import { getClients } from '@/actions/client';
+import { getRepresentatives } from '@/actions/client';
 import {
   listAccounts,
   createAccount,
@@ -1263,7 +1263,7 @@ function AccountingPage() {
   /* Clients */
   const { data: clientsRaw = [] } = useQuery({
     queryKey: ['clients'],
-    queryFn: () => getClients(),
+    queryFn: () => getRepresentatives(),
     staleTime: 60_000,
   });
   const clients = clientsRaw as { id: string; name: string }[];

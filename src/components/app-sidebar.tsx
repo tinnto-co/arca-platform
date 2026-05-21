@@ -36,7 +36,7 @@ import { authClient } from '@/lib/auth-client';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate } from '@tanstack/react-router';
-import { CreateClientDialog } from './create-client-dialog';
+import { CreateRepresentativeDialog } from './create-client-dialog';
 import { useOrgSwitch } from '@/contexts/org-switch-context';
 import { useQueryClient } from '@tanstack/react-query';
 import { userQuery } from '../lib/user-query';
@@ -295,7 +295,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
         {/* Crear nuevo CTA */}
         {!isViewer && (
-          <CreateClientDialog>
+          <CreateRepresentativeDialog>
             <button
               className="flex items-center gap-2 px-3 py-[9px] rounded-[10px] w-full text-[13px] font-semibold mb-3 transition-colors duration-[120ms]"
               style={{ background: '#F7F6F2', color: 'var(--arca-navy-900)' }}
@@ -307,7 +307,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <Plus className="w-3.5 h-3.5" strokeWidth={2.2} />
               Crear nuevo
             </button>
-          </CreateClientDialog>
+          </CreateRepresentativeDialog>
         )}
 
         {/* ─── Nav ─── */}
