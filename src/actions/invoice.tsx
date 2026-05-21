@@ -3,10 +3,10 @@ import z from 'zod';
 import { db } from '@/lib/db';
 import {
   invoice,
-  client,
+  representative,
   invoiceAttachment,
   document,
-  profile,
+  client,
 } from '@/drizzle/schema';
 import {
   getSessionWithOrg,
@@ -63,14 +63,14 @@ export const getInvoices = createServerFn({
     const offset = (page - 1) * limit;
 
     // Get clients associated with the current organization
-    const userClients = await db
-      .select({ id: client.id })
-      .from(client)
-      .where(eq(client.organizationId, orgId));
+    const userRepresentatives = await db
+      .select({ id: representative.id })
+      .from(representative)
+      .where(eq(representative.organizationId, orgId));
 
-    const userClientIds = userClients.map((c) => c.id);
+    const userRepresentativeIds = userRepresentatives.map((c) => c.id);
 
-    if (userClientIds.length === 0) {
+    if (userRepresentativeIds.length === 0) {
       return {
         invoices: [],
         totalCount: 0,
@@ -81,30 +81,30 @@ export const getInvoices = createServerFn({
 
     // Build where conditions
     const conditions = [
-      inArray(invoice.client, userClientIds), // Filter by user's clients
+      inArray(invoice.representativeId, userRepresentativeIds), // Filter by user's clients
     ];
 
     if (clientFilter && clientFilter !== 'all') {
       // Verify the client belongs to the user
-      if (userClientIds.includes(clientFilter)) {
-        conditions.push(eq(invoice.client, clientFilter));
+      if (userRepresentativeIds.includes(clientFilter)) {
+        conditions.push(eq(invoice.representativeId, clientFilter));
       }
     }
 
     if (profileFilter && profileFilter !== 'all') {
       // Verify profile belongs to one of user's clients
       const [profileRow] = await db
-        .select({ id: profile.id })
-        .from(profile)
+        .select({ id: client.id })
+        .from(client)
         .where(
           and(
-            eq(profile.id, profileFilter),
-            inArray(profile.client, userClientIds)
+            eq(client.id, profileFilter),
+            inArray(client.representativeId, userRepresentativeIds)
           )
         )
         .limit(1);
       if (profileRow) {
-        conditions.push(eq(invoice.profile, profileFilter));
+        conditions.push(eq(invoice.clientId, profileFilter));
       }
     }
 
@@ -155,7 +155,7 @@ export const getInvoices = createServerFn({
     const [{ count }] = await db
       .select({ count: sql<number>`count(*)` })
       .from(invoice)
-      .leftJoin(client, eq(invoice.client, client.id))
+      .leftJoin(representative, eq(invoice.representativeId, representative.id))
       .where(whereCondition);
 
     // Get invoices with client and profile data
@@ -179,17 +179,17 @@ export const getInvoices = createServerFn({
         idFrom: invoice.idFrom,
         idTo: invoice.idTo,
         amount: invoice.amount,
-        clientId: invoice.client,
-        clientName: client.name,
-        clientEmail: client.email,
-        profileId: invoice.profile,
-        profileName: profile.name,
+        clientId: invoice.representativeId,
+        representativeName: representative.name,
+        clientEmail: representative.email,
+        profileId: invoice.clientId,
+        profileName: client.name,
         createdAt: invoice.createdAt,
         updatedAt: invoice.updatedAt,
       })
       .from(invoice)
-      .leftJoin(client, eq(invoice.client, client.id))
-      .leftJoin(profile, eq(invoice.profile, profile.id))
+      .leftJoin(representative, eq(invoice.representativeId, representative.id))
+      .leftJoin(client, eq(invoice.clientId, client.id))
       .where(whereCondition)
       .orderBy(
         sortBy === 'amount'
@@ -231,9 +231,9 @@ export const getClientMultilateralSummary = createServerFn({
 
     // Verificar que el cliente pertenece a la organización
     const [clientRow] = await db
-      .select({ id: client.id })
-      .from(client)
-      .where(and(eq(client.id, clientId), eq(client.organizationId, orgId)))
+      .select({ id: representative.id })
+      .from(representative)
+      .where(and(eq(representative.id, clientId), eq(representative.organizationId, orgId)))
       .limit(1);
 
     if (!clientRow) {
@@ -244,9 +244,9 @@ export const getClientMultilateralSummary = createServerFn({
     let profileFilter: string | undefined;
     if (profileId && profileId !== 'all') {
       const [profileRow] = await db
-        .select({ id: profile.id })
-        .from(profile)
-        .where(and(eq(profile.id, profileId), eq(profile.client, clientId)))
+        .select({ id: client.id })
+        .from(client)
+        .where(and(eq(client.id, profileId), eq(client.representativeId, clientId)))
         .limit(1);
       if (profileRow) {
         profileFilter = profileId;
@@ -254,9 +254,9 @@ export const getClientMultilateralSummary = createServerFn({
     }
 
     const conditions = [
-      eq(invoice.client, clientId),
+      eq(invoice.representativeId, clientId),
       eq(invoice.direction, 'Outbound'),
-      profileFilter ? eq(invoice.profile, profileFilter) : sql`true`,
+      profileFilter ? eq(invoice.clientId, profileFilter) : sql`true`,
     ];
     if (dateFrom) {
       conditions.push(gte(invoice.emitionDate, new Date(dateFrom)));
@@ -310,9 +310,9 @@ export const getClientMultilateralInvoices = createServerFn({
 
     // Verificar que el cliente pertenece a la organización
     const [clientRow] = await db
-      .select({ id: client.id })
-      .from(client)
-      .where(and(eq(client.id, clientId), eq(client.organizationId, orgId)))
+      .select({ id: representative.id })
+      .from(representative)
+      .where(and(eq(representative.id, clientId), eq(representative.organizationId, orgId)))
       .limit(1);
 
     if (!clientRow) {
@@ -323,9 +323,9 @@ export const getClientMultilateralInvoices = createServerFn({
     let profileFilter: string | undefined;
     if (profileId && profileId !== 'all') {
       const [profileRow] = await db
-        .select({ id: profile.id })
-        .from(profile)
-        .where(and(eq(profile.id, profileId), eq(profile.client, clientId)))
+        .select({ id: client.id })
+        .from(client)
+        .where(and(eq(client.id, profileId), eq(client.representativeId, clientId)))
         .limit(1);
       if (profileRow) {
         profileFilter = profileId;
@@ -333,9 +333,9 @@ export const getClientMultilateralInvoices = createServerFn({
     }
 
     const conditions = [
-      eq(invoice.client, clientId),
+      eq(invoice.representativeId, clientId),
       eq(invoice.direction, 'Outbound'),
-      profileFilter ? eq(invoice.profile, profileFilter) : sql`true`,
+      profileFilter ? eq(invoice.clientId, profileFilter) : sql`true`,
     ];
 
     if (receiptProvince !== undefined) {
@@ -389,14 +389,14 @@ export const getInvoice = createServerFn({
     const { orgId } = await getSessionWithOrg();
 
     // Get clients associated with the current organization
-    const userClients = await db
-      .select({ id: client.id })
-      .from(client)
-      .where(eq(client.organizationId, orgId));
+    const userRepresentatives = await db
+      .select({ id: representative.id })
+      .from(representative)
+      .where(eq(representative.organizationId, orgId));
 
-    const userClientIds = userClients.map((c) => c.id);
+    const userRepresentativeIds = userRepresentatives.map((c) => c.id);
 
-    if (userClientIds.length === 0) {
+    if (userRepresentativeIds.length === 0) {
       throw new Error('Factura no encontrada');
     }
 
@@ -437,16 +437,16 @@ export const getInvoice = createServerFn({
         amountExempt: invoice.amountExempt,
         other_taxes: invoice.other_taxes,
         totalIVA: invoice.totalIVA,
-        clientId: invoice.client,
-        clientName: client.name,
-        clientEmail: client.email,
+        clientId: invoice.representativeId,
+        representativeName: representative.name,
+        clientEmail: representative.email,
         createdAt: invoice.createdAt,
         updatedAt: invoice.updatedAt,
       })
       .from(invoice)
-      .leftJoin(client, eq(invoice.client, client.id))
+      .leftJoin(representative, eq(invoice.representativeId, representative.id))
       .where(
-        and(eq(invoice.id, ctx.data.id), inArray(invoice.client, userClientIds))
+        and(eq(invoice.id, ctx.data.id), inArray(invoice.representativeId, userRepresentativeIds))
       )
       .limit(1);
 
@@ -483,25 +483,25 @@ export const getInvoiceAttachments = createServerFn({
     const { orgId } = await getSessionWithOrg();
 
     // Get clients associated with the current organization
-    const userClients = await db
-      .select({ id: client.id })
-      .from(client)
-      .where(eq(client.organizationId, orgId));
+    const userRepresentatives = await db
+      .select({ id: representative.id })
+      .from(representative)
+      .where(eq(representative.organizationId, orgId));
 
-    const userClientIds = userClients.map((c) => c.id);
+    const userRepresentativeIds = userRepresentatives.map((c) => c.id);
 
-    if (userClientIds.length === 0) {
+    if (userRepresentativeIds.length === 0) {
       return [];
     }
 
     // Verify invoice belongs to user's clients
     const [invoiceData] = await db
-      .select({ clientId: invoice.client })
+      .select({ clientId: invoice.representativeId })
       .from(invoice)
       .where(
         and(
           eq(invoice.id, ctx.data.invoiceId),
-          inArray(invoice.client, userClientIds)
+          inArray(invoice.representativeId, userRepresentativeIds)
         )
       )
       .limit(1);
@@ -576,10 +576,10 @@ export const createInvoice = createServerFn({
 
     // Verify client belongs to organization
     const [clientData] = await db
-      .select({ id: client.id })
-      .from(client)
+      .select({ id: representative.id })
+      .from(representative)
       .where(
-        and(eq(client.id, ctx.data.clientId), eq(client.organizationId, orgId))
+        and(eq(representative.id, ctx.data.clientId), eq(representative.organizationId, orgId))
       )
       .limit(1);
 
@@ -590,12 +590,12 @@ export const createInvoice = createServerFn({
     // Verify profile belongs to client if provided
     if (ctx.data.profileId) {
       const [profileData] = await db
-        .select({ id: profile.id })
-        .from(profile)
+        .select({ id: client.id })
+        .from(client)
         .where(
           and(
-            eq(profile.id, ctx.data.profileId),
-            eq(profile.client, ctx.data.clientId)
+            eq(client.id, ctx.data.profileId),
+            eq(client.representativeId, ctx.data.clientId)
           )
         )
         .limit(1);
@@ -624,8 +624,8 @@ export const createInvoice = createServerFn({
         idFrom: ctx.data.idFrom,
         idTo: ctx.data.idTo,
         amount: ctx.data.amount,
-        client: ctx.data.clientId,
-        profile: ctx.data.profileId || null,
+        representativeId: ctx.data.clientId,
+        clientId: ctx.data.profileId || null,
         amountIVA0: ctx.data.amountIVA0 || '0',
         IVA25: ctx.data.IVA25 || '0',
         amountIVA25: ctx.data.amountIVA25 || '0',
@@ -696,23 +696,23 @@ export const updateInvoice = createServerFn({
     assertCanWrite(role);
 
     // Get clients associated with the current organization
-    const userClients = await db
-      .select({ id: client.id })
-      .from(client)
-      .where(eq(client.organizationId, orgId));
+    const userRepresentatives = await db
+      .select({ id: representative.id })
+      .from(representative)
+      .where(eq(representative.organizationId, orgId));
 
-    const userClientIds = userClients.map((c) => c.id);
+    const userRepresentativeIds = userRepresentatives.map((c) => c.id);
 
-    if (userClientIds.length === 0) {
+    if (userRepresentativeIds.length === 0) {
       throw new Error('Factura no encontrada');
     }
 
     // Verify invoice belongs to user's clients
     const [existingInvoice] = await db
-      .select({ id: invoice.id, clientId: invoice.client })
+      .select({ id: invoice.id, clientId: invoice.representativeId })
       .from(invoice)
       .where(
-        and(eq(invoice.id, ctx.data.id), inArray(invoice.client, userClientIds))
+        and(eq(invoice.id, ctx.data.id), inArray(invoice.representativeId, userRepresentativeIds))
       )
       .limit(1);
 
@@ -722,7 +722,7 @@ export const updateInvoice = createServerFn({
 
     // Verify new client belongs to user if provided
     if (ctx.data.clientId && ctx.data.clientId !== existingInvoice.clientId) {
-      if (!userClientIds.includes(ctx.data.clientId)) {
+      if (!userRepresentativeIds.includes(ctx.data.clientId)) {
         throw new Error('Cliente no autorizado');
       }
     }
@@ -732,12 +732,12 @@ export const updateInvoice = createServerFn({
       const clientIdToCheck = ctx.data.clientId || existingInvoice.clientId;
       if (clientIdToCheck) {
         const [profileData] = await db
-          .select({ id: profile.id })
-          .from(profile)
+          .select({ id: client.id })
+          .from(client)
           .where(
             and(
-              eq(profile.id, ctx.data.profileId),
-              eq(profile.client, clientIdToCheck)
+              eq(client.id, ctx.data.profileId),
+              eq(client.representativeId, clientIdToCheck)
             )
           )
           .limit(1);
@@ -773,9 +773,9 @@ export const updateInvoice = createServerFn({
     if (ctx.data.idFrom) updateData.idFrom = ctx.data.idFrom;
     if (ctx.data.idTo) updateData.idTo = ctx.data.idTo;
     if (ctx.data.amount) updateData.amount = ctx.data.amount;
-    if (ctx.data.clientId) updateData.client = ctx.data.clientId;
+    if (ctx.data.clientId) updateData.representativeId = ctx.data.clientId;
     if (ctx.data.profileId !== undefined)
-      updateData.profile = ctx.data.profileId || null;
+      updateData.clientId = ctx.data.profileId || null;
     if (ctx.data.amountIVA0) updateData.amountIVA0 = ctx.data.amountIVA0;
     if (ctx.data.IVA25) updateData.IVA25 = ctx.data.IVA25;
     if (ctx.data.amountIVA25) updateData.amountIVA25 = ctx.data.amountIVA25;
@@ -813,14 +813,14 @@ export const deleteInvoice = createServerFn({
     assertCanWrite(role);
 
     // Get clients associated with the current organization
-    const userClients = await db
-      .select({ id: client.id })
-      .from(client)
-      .where(eq(client.organizationId, orgId));
+    const userRepresentatives = await db
+      .select({ id: representative.id })
+      .from(representative)
+      .where(eq(representative.organizationId, orgId));
 
-    const userClientIds = userClients.map((c) => c.id);
+    const userRepresentativeIds = userRepresentatives.map((c) => c.id);
 
-    if (userClientIds.length === 0) {
+    if (userRepresentativeIds.length === 0) {
       throw new Error('Factura no encontrada');
     }
 
@@ -829,7 +829,7 @@ export const deleteInvoice = createServerFn({
       .select({ id: invoice.id })
       .from(invoice)
       .where(
-        and(eq(invoice.id, ctx.data.id), inArray(invoice.client, userClientIds))
+        and(eq(invoice.id, ctx.data.id), inArray(invoice.representativeId, userRepresentativeIds))
       )
       .limit(1);
 
@@ -852,35 +852,35 @@ export const getInvoiceTotalsByClient = createServerFn({
   }
 
   // Get clients associated with the current organization
-  const userClients = await db
-    .select({ id: client.id })
-    .from(client)
-    .where(eq(client.organizationId, orgId));
+  const userRepresentatives = await db
+    .select({ id: representative.id })
+    .from(representative)
+    .where(eq(representative.organizationId, orgId));
 
-  const userClientIds = userClients.map((c) => c.id);
+  const userRepresentativeIds = userRepresentatives.map((c) => c.id);
 
   if (process.env.NODE_ENV === 'development') {
     console.log('[getInvoiceTotalsByClient] user clients', {
-      count: userClientIds.length,
-      sampleIds: userClientIds.slice(0, 5),
+      count: userRepresentativeIds.length,
+      sampleIds: userRepresentativeIds.slice(0, 5),
     });
   }
 
-  if (userClientIds.length === 0) {
+  if (userRepresentativeIds.length === 0) {
     return {};
   }
 
   // Get all invoices for user's clients
   const invoices = await db
     .select({
-      clientId: invoice.client,
+      clientId: invoice.representativeId,
       direction: invoice.direction,
       amount: invoice.amount,
       currency: invoice.currency,
       currencyRate: invoice.cureencyRate,
     })
     .from(invoice)
-    .where(inArray(invoice.client, userClientIds));
+    .where(inArray(invoice.representativeId, userRepresentativeIds));
 
   if (process.env.NODE_ENV === 'development') {
     console.log('[getInvoiceTotalsByClient] raw invoices', {
@@ -947,14 +947,14 @@ export const getInvoicesByProfile = createServerFn({
     const offset = (page - 1) * limit;
 
     // Get clients associated with the current organization
-    const userClients = await db
-      .select({ id: client.id })
-      .from(client)
-      .where(eq(client.organizationId, orgId));
+    const userRepresentatives = await db
+      .select({ id: representative.id })
+      .from(representative)
+      .where(eq(representative.organizationId, orgId));
 
-    const userClientIds = userClients.map((c) => c.id);
+    const userRepresentativeIds = userRepresentatives.map((c) => c.id);
 
-    if (userClientIds.length === 0) {
+    if (userRepresentativeIds.length === 0) {
       return {
         invoices: [],
         totalCount: 0,
@@ -965,10 +965,10 @@ export const getInvoicesByProfile = createServerFn({
 
     // Verify profile belongs to one of user's clients
     const [profileData] = await db
-      .select({ id: profile.id, clientId: profile.client })
-      .from(profile)
+      .select({ id: client.id, clientId: client.representativeId })
+      .from(client)
       .where(
-        and(eq(profile.id, profileId), inArray(profile.client, userClientIds))
+        and(eq(client.id, profileId), inArray(client.representativeId, userRepresentativeIds))
       )
       .limit(1);
 
@@ -978,8 +978,8 @@ export const getInvoicesByProfile = createServerFn({
 
     // Build where conditions
     const conditions = [
-      eq(invoice.profile, profileId),
-      inArray(invoice.client, userClientIds),
+      eq(invoice.clientId, profileId),
+      inArray(invoice.representativeId, userRepresentativeIds),
     ];
 
     const whereCondition = and(...conditions);
@@ -1010,16 +1010,16 @@ export const getInvoicesByProfile = createServerFn({
         idFrom: invoice.idFrom,
         idTo: invoice.idTo,
         amount: invoice.amount,
-        clientId: invoice.client,
-        clientName: client.name,
-        clientEmail: client.email,
-        profileName: profile.name,
+        clientId: invoice.representativeId,
+        representativeName: representative.name,
+        clientEmail: representative.email,
+        profileName: client.name,
         createdAt: invoice.createdAt,
         updatedAt: invoice.updatedAt,
       })
       .from(invoice)
-      .leftJoin(client, eq(invoice.client, client.id))
-      .leftJoin(profile, eq(invoice.profile, profile.id))
+      .leftJoin(representative, eq(invoice.representativeId, representative.id))
+      .leftJoin(client, eq(invoice.clientId, client.id))
       .where(whereCondition)
       .orderBy(desc(invoice.emitionDate))
       .limit(limit)
@@ -1050,23 +1050,23 @@ export const getInvoicesByProfileInRange = createServerFn({
       const { profileId, dateFrom, dateTo } = ctx.data;
 
       // Get clients associated with the current organization
-      const userClients = await db
-        .select({ id: client.id })
-        .from(client)
-        .where(eq(client.organizationId, orgId));
+      const userRepresentatives = await db
+        .select({ id: representative.id })
+        .from(representative)
+        .where(eq(representative.organizationId, orgId));
 
-      const userClientIds = userClients.map((c) => c.id);
+      const userRepresentativeIds = userRepresentatives.map((c) => c.id);
 
-      if (userClientIds.length === 0) {
+      if (userRepresentativeIds.length === 0) {
         return [];
       }
 
       // Verify profile belongs to one of user's clients
       const [profileData] = await db
-        .select({ id: profile.id, clientId: profile.client })
-        .from(profile)
+        .select({ id: client.id, clientId: client.representativeId })
+        .from(client)
         .where(
-          and(eq(profile.id, profileId), inArray(profile.client, userClientIds))
+          and(eq(client.id, profileId), inArray(client.representativeId, userRepresentativeIds))
         )
         .limit(1);
 
@@ -1075,8 +1075,8 @@ export const getInvoicesByProfileInRange = createServerFn({
       }
 
       const whereCondition = and(
-        eq(invoice.profile, profileId),
-        inArray(invoice.client, userClientIds),
+        eq(invoice.clientId, profileId),
+        inArray(invoice.representativeId, userRepresentativeIds),
         gte(invoice.emitionDate, new Date(dateFrom)),
         lte(invoice.emitionDate, new Date(dateTo))
       );
@@ -1115,14 +1115,14 @@ export const getInvoiceStatsByProfile = createServerFn({
     const { profileId, dateFrom, dateTo } = ctx.data;
 
     // Get clients associated with the current organization
-    const userClients = await db
-      .select({ id: client.id })
-      .from(client)
-      .where(eq(client.organizationId, orgId));
+    const userRepresentatives = await db
+      .select({ id: representative.id })
+      .from(representative)
+      .where(eq(representative.organizationId, orgId));
 
-    const userClientIds = userClients.map((c) => c.id);
+    const userRepresentativeIds = userRepresentatives.map((c) => c.id);
 
-    if (userClientIds.length === 0) {
+    if (userRepresentativeIds.length === 0) {
       return {
         totalInvoices: 0,
         totalOutbound: 0,
@@ -1149,10 +1149,10 @@ export const getInvoiceStatsByProfile = createServerFn({
 
     // Verify profile belongs to one of user's clients
     const [profileData] = await db
-      .select({ id: profile.id, clientId: profile.client })
-      .from(profile)
+      .select({ id: client.id, clientId: client.representativeId })
+      .from(client)
       .where(
-        and(eq(profile.id, profileId), inArray(profile.client, userClientIds))
+        and(eq(client.id, profileId), inArray(client.representativeId, userRepresentativeIds))
       )
       .limit(1);
 
@@ -1161,8 +1161,8 @@ export const getInvoiceStatsByProfile = createServerFn({
     }
 
     const conditions = [
-      eq(invoice.profile, profileId),
-      inArray(invoice.client, userClientIds),
+      eq(invoice.clientId, profileId),
+      inArray(invoice.representativeId, userRepresentativeIds),
     ];
     if (dateFrom) conditions.push(gte(invoice.emitionDate, new Date(dateFrom)));
     if (dateTo) conditions.push(lte(invoice.emitionDate, new Date(dateTo)));

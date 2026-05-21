@@ -4,8 +4,8 @@ import { GoogleGenAI } from '@google/genai';
 import { db } from '@/lib/db';
 import {
   notification,
+  representative,
   client,
-  profile,
   invoiceAttachment,
   document,
   dataSourceEvent,
@@ -15,7 +15,7 @@ import {
   getSessionWithOrg,
   assertCanWrite,
   getMemberRole,
-  getOrgClientIds,
+  getOrgRepresentativeIds,
 } from '@/actions/helpers';
 import { eq, desc, and, gte, lte, sql, inArray, isNull } from 'drizzle-orm';
 
@@ -26,10 +26,10 @@ export const getNotifications = createServerFn({
     z.object({
       page: z.number().default(1),
       limit: z.number().default(10),
-      clientFilter: z.string().optional(),
+      representativeFilter: z.string().optional(),
       dateFrom: z.string().optional(),
       dateTo: z.string().optional(),
-      profileId: z.string().optional(),
+      clientId: z.string().optional(),
       search: z.string().optional(),
       opened: z.boolean().optional(),
       category: z.string().optional(),
@@ -38,22 +38,22 @@ export const getNotifications = createServerFn({
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-    const orgClientIds = await getOrgClientIds(orgId);
+    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
 
     const {
       page,
       limit,
-      clientFilter,
+      representativeFilter,
       dateFrom,
       dateTo,
-      profileId,
+      clientId,
       opened,
       category,
       onlyUnresolved,
     } = ctx.data;
     const offset = (page - 1) * limit;
 
-    if (orgClientIds.length === 0) {
+    if (orgRepresentativeIds.length === 0) {
       return {
         notifications: [],
         totalCount: 0,
@@ -63,10 +63,10 @@ export const getNotifications = createServerFn({
     }
 
     // Build where conditions (always scoped to active organization via clients)
-    const conditions = [inArray(notification.client, orgClientIds)];
+    const conditions = [inArray(notification.representativeId, orgRepresentativeIds)];
 
-    if (clientFilter && clientFilter !== 'all') {
-      if (!orgClientIds.includes(clientFilter)) {
+    if (representativeFilter && representativeFilter !== 'all') {
+      if (!orgRepresentativeIds.includes(representativeFilter)) {
         return {
           notifications: [],
           totalCount: 0,
@@ -74,11 +74,11 @@ export const getNotifications = createServerFn({
           currentPage: page,
         };
       }
-      conditions.push(eq(notification.client, clientFilter));
+      conditions.push(eq(notification.representativeId, representativeFilter));
     }
 
-    if (profileId && profileId !== 'all') {
-      conditions.push(eq(notification.profile, profileId));
+    if (clientId && clientId !== 'all') {
+      conditions.push(eq(notification.clientId, clientId));
     }
 
     if (dateFrom) {
@@ -107,7 +107,7 @@ export const getNotifications = createServerFn({
     const [{ count }] = await db
       .select({ count: sql<number>`count(*)` })
       .from(notification)
-      .leftJoin(client, eq(notification.client, client.id))
+      .leftJoin(representative, eq(notification.representativeId, representative.id))
       .where(whereCondition);
 
     // Get notifications with client + profile data
@@ -119,12 +119,12 @@ export const getNotifications = createServerFn({
         expirationDate: notification.expirationDate,
         publicationDate: notification.publicationDate,
         opened: notification.opened,
-        clientId: notification.client,
-        clientName: client.name,
-        clientEmail: client.email,
-        profileId: notification.profile,
-        profileName: profile.name,
-        profileIdentityNumber: profile.identityNumber,
+        clientId: notification.representativeId,
+        clientName: representative.name,
+        clientEmail: representative.email,
+        profileId: notification.clientId,
+        profileName: client.name,
+        profileIdentityNumber: client.identityNumber,
         severity: notification.severity,
         category: notification.category,
         aiSummary: notification.aiSummary,
@@ -135,8 +135,8 @@ export const getNotifications = createServerFn({
         updatedAt: notification.updatedAt,
       })
       .from(notification)
-      .leftJoin(client, eq(notification.client, client.id))
-      .leftJoin(profile, eq(notification.profile, profile.id))
+      .leftJoin(representative, eq(notification.representativeId, representative.id))
+      .leftJoin(client, eq(notification.clientId, client.id))
       .where(whereCondition)
       .orderBy(desc(notification.publicationDate))
       .limit(limit)
@@ -155,8 +155,8 @@ export const getNotification = createServerFn({
   .inputValidator(z.object({ id: z.string() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-    const orgClientIds = await getOrgClientIds(orgId);
-    if (orgClientIds.length === 0)
+    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
+    if (orgRepresentativeIds.length === 0)
       throw new Error('Notificación no encontrada');
 
     // Get notification with client and profile data (only if client belongs to org)
@@ -168,18 +168,18 @@ export const getNotification = createServerFn({
         expirationDate: notification.expirationDate,
         publicationDate: notification.publicationDate,
         opened: notification.opened,
-        clientId: notification.client,
-        clientName: client.name,
-        clientEmail: client.email,
+        clientId: notification.representativeId,
+        clientName: representative.name,
+        clientEmail: representative.email,
         createdAt: notification.createdAt,
         updatedAt: notification.updatedAt,
       })
       .from(notification)
-      .leftJoin(client, eq(notification.client, client.id))
+      .leftJoin(representative, eq(notification.representativeId, representative.id))
       .where(
         and(
           eq(notification.id, ctx.data.id),
-          inArray(notification.client, orgClientIds)
+          inArray(notification.representativeId, orgRepresentativeIds)
         )
       )
       .limit(1);
@@ -213,8 +213,8 @@ export const getNotificationAttachments = createServerFn({
   .inputValidator(z.object({ id: z.string() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-    const orgClientIds = await getOrgClientIds(orgId);
-    if (orgClientIds.length === 0) return [];
+    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
+    if (orgRepresentativeIds.length === 0) return [];
 
     const [n] = await db
       .select({ id: notification.id })
@@ -222,7 +222,7 @@ export const getNotificationAttachments = createServerFn({
       .where(
         and(
           eq(notification.id, ctx.data.id),
-          inArray(notification.client, orgClientIds)
+          inArray(notification.representativeId, orgRepresentativeIds)
         )
       )
       .limit(1);
@@ -251,8 +251,8 @@ export const createNotification = createServerFn({
   .inputValidator(
     z.object({
       externalId: z.string().min(1, 'El ID externo es requerido'),
-      clientId: z.string().uuid('ID de cliente inválido'),
-      profileId: z.string().uuid('ID de perfil inválido').optional(),
+      representativeId: z.string().uuid('ID de cliente inválido'),
+      clientId: z.string().uuid('ID de perfil inválido').optional(),
       message: z.string().min(1, 'El mensaje es requerido'),
       expirationDate: z.string().transform((str) => new Date(str)),
       publicationDate: z.string().transform((str) => new Date(str)),
@@ -263,17 +263,17 @@ export const createNotification = createServerFn({
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const orgClientIds = await getOrgClientIds(orgId);
+    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
     const {
       externalId,
+      representativeId,
       clientId,
-      profileId,
       message,
       expirationDate,
       publicationDate,
     } = ctx.data;
 
-    if (!orgClientIds.includes(clientId)) {
+    if (!orgRepresentativeIds.includes(representativeId)) {
       throw new Error('El cliente no pertenece a la organización activa');
     }
 
@@ -281,8 +281,8 @@ export const createNotification = createServerFn({
       .insert(notification)
       .values({
         externalId,
-        client: clientId,
-        profile: profileId || null,
+        representativeId,
+        clientId: clientId || null,
         message,
         expirationDate,
         publicationDate,
@@ -301,8 +301,8 @@ export const updateNotification = createServerFn({
     z.object({
       id: z.string(),
       externalId: z.string().min(1, 'El ID externo es requerido'),
-      clientId: z.string().uuid('ID de cliente inválido'),
-      profileId: z.string().uuid('ID de perfil inválido').optional(),
+      representativeId: z.string().uuid('ID de cliente inválido'),
+      clientId: z.string().uuid('ID de perfil inválido').optional(),
       message: z.string().min(1, 'El mensaje es requerido'),
       expirationDate: z.string().transform((str) => new Date(str)),
       publicationDate: z.string().transform((str) => new Date(str)),
@@ -313,18 +313,18 @@ export const updateNotification = createServerFn({
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const orgClientIds = await getOrgClientIds(orgId);
+    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
     const {
       id,
       externalId,
+      representativeId,
       clientId,
-      profileId,
       message,
       expirationDate,
       publicationDate,
     } = ctx.data;
 
-    if (!orgClientIds.includes(clientId)) {
+    if (!orgRepresentativeIds.includes(representativeId)) {
       throw new Error('El cliente no pertenece a la organización activa');
     }
 
@@ -332,15 +332,15 @@ export const updateNotification = createServerFn({
       .update(notification)
       .set({
         externalId,
-        client: clientId,
-        profile: profileId || null,
+        representativeId,
+        clientId: clientId || null,
         message,
         expirationDate,
         publicationDate,
         updatedAt: new Date(),
       })
       .where(
-        and(eq(notification.id, id), inArray(notification.client, orgClientIds))
+        and(eq(notification.id, id), inArray(notification.representativeId, orgRepresentativeIds))
       )
       .returning();
 
@@ -357,12 +357,12 @@ export const markNotificationOpened = createServerFn({
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const userClients = await db
-      .select({ id: client.id })
-      .from(client)
-      .where(eq(client.organizationId, orgId));
-    const userClientIds = userClients.map((c) => c.id);
-    if (userClientIds.length === 0) throw new Error('Unauthorized');
+    const userRepresentatives = await db
+      .select({ id: representative.id })
+      .from(representative)
+      .where(eq(representative.organizationId, orgId));
+    const userRepresentativeIds = userRepresentatives.map((c) => c.id);
+    if (userRepresentativeIds.length === 0) throw new Error('Unauthorized');
 
     const [updated] = await db
       .update(notification)
@@ -370,7 +370,7 @@ export const markNotificationOpened = createServerFn({
       .where(
         and(
           eq(notification.id, ctx.data.id),
-          inArray(notification.client, userClientIds)
+          inArray(notification.representativeId, userRepresentativeIds)
         )
       )
       .returning();
@@ -385,8 +385,8 @@ export const markNotificationUnread = createServerFn({
   .inputValidator(z.object({ id: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-    const orgClientIds = await getOrgClientIds(orgId);
-    if (orgClientIds.length === 0) throw new Error('Unauthorized');
+    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
+    if (orgRepresentativeIds.length === 0) throw new Error('Unauthorized');
 
     const [updated] = await db
       .update(notification)
@@ -394,7 +394,7 @@ export const markNotificationUnread = createServerFn({
       .where(
         and(
           eq(notification.id, ctx.data.id),
-          inArray(notification.client, orgClientIds)
+          inArray(notification.representativeId, orgRepresentativeIds)
         )
       )
       .returning();
@@ -407,15 +407,15 @@ export const markAllNotificationsRead = createServerFn({
   method: 'POST',
 }).handler(async () => {
   const { orgId } = await getSessionWithOrg();
-  const orgClientIds = await getOrgClientIds(orgId);
-  if (orgClientIds.length === 0) return { count: 0 };
+  const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
+  if (orgRepresentativeIds.length === 0) return { count: 0 };
 
   const updated = await db
     .update(notification)
     .set({ opened: true, updatedAt: new Date() })
     .where(
       and(
-        inArray(notification.client, orgClientIds),
+        inArray(notification.representativeId, orgRepresentativeIds),
         eq(notification.opened, false)
       )
     )
@@ -433,8 +433,8 @@ export const deleteNotification = createServerFn({
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const orgClientIds = await getOrgClientIds(orgId);
-    if (orgClientIds.length === 0) {
+    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
+    if (orgRepresentativeIds.length === 0) {
       throw new Error('Error al eliminar la notificación');
     }
 
@@ -443,7 +443,7 @@ export const deleteNotification = createServerFn({
       .where(
         and(
           eq(notification.id, ctx.data.id),
-          inArray(notification.client, orgClientIds)
+          inArray(notification.representativeId, orgRepresentativeIds)
         )
       )
       .returning();
@@ -490,8 +490,8 @@ export const assignNotification = createServerFn({
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const orgClientIds = await getOrgClientIds(orgId);
-    if (orgClientIds.length === 0)
+    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
+    if (orgRepresentativeIds.length === 0)
       throw new Error('Notificación no encontrada');
 
     const [updated] = await db
@@ -500,7 +500,7 @@ export const assignNotification = createServerFn({
       .where(
         and(
           eq(notification.id, ctx.data.id),
-          inArray(notification.client, orgClientIds)
+          inArray(notification.representativeId, orgRepresentativeIds)
         )
       )
       .returning();
@@ -518,8 +518,8 @@ export const resolveNotification = createServerFn({
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const orgClientIds = await getOrgClientIds(orgId);
-    if (orgClientIds.length === 0)
+    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
+    if (orgRepresentativeIds.length === 0)
       throw new Error('Notificación no encontrada');
 
     const now = new Date();
@@ -529,7 +529,7 @@ export const resolveNotification = createServerFn({
       .where(
         and(
           eq(notification.id, ctx.data.id),
-          inArray(notification.client, orgClientIds)
+          inArray(notification.representativeId, orgRepresentativeIds)
         )
       )
       .returning();
@@ -547,8 +547,8 @@ export const unresolveNotification = createServerFn({
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const orgClientIds = await getOrgClientIds(orgId);
-    if (orgClientIds.length === 0)
+    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
+    if (orgRepresentativeIds.length === 0)
       throw new Error('Notificación no encontrada');
 
     const [updated] = await db
@@ -557,7 +557,7 @@ export const unresolveNotification = createServerFn({
       .where(
         and(
           eq(notification.id, ctx.data.id),
-          inArray(notification.client, orgClientIds)
+          inArray(notification.representativeId, orgRepresentativeIds)
         )
       )
       .returning();
@@ -637,22 +637,22 @@ export const classifyNotification = createServerFn({
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const orgClientIds = await getOrgClientIds(orgId);
-    if (orgClientIds.length === 0)
+    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
+    if (orgRepresentativeIds.length === 0)
       throw new Error('Notificación no encontrada');
 
     const [notif] = await db
       .select({
         id: notification.id,
         message: notification.message,
-        clientId: notification.client,
-        profileId: notification.profile,
+        representativeId: notification.representativeId,
+        clientId: notification.clientId,
       })
       .from(notification)
       .where(
         and(
           eq(notification.id, ctx.data.id),
-          inArray(notification.client, orgClientIds)
+          inArray(notification.representativeId, orgRepresentativeIds)
         )
       )
       .limit(1);
@@ -676,8 +676,8 @@ export const classifyNotification = createServerFn({
 
     await db.insert(dataSourceEvent).values({
       organizationId: orgId,
+      representativeId: notif.representativeId ?? undefined,
       clientId: notif.clientId ?? undefined,
-      profileId: notif.profileId ?? undefined,
       entityType: 'notification',
       entityId: notif.id,
       source: 'ai',
@@ -704,21 +704,21 @@ export const classifyUnclassifiedNotifications = createServerFn({
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const orgClientIds = await getOrgClientIds(orgId);
-    if (orgClientIds.length === 0) return { classified: 0, errors: 0 };
+    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
+    if (orgRepresentativeIds.length === 0) return { classified: 0, errors: 0 };
 
     const limit = ctx.data?.limit;
     const baseQuery = db
       .select({
         id: notification.id,
         message: notification.message,
-        clientId: notification.client,
-        profileId: notification.profile,
+        representativeId: notification.representativeId,
+        clientId: notification.clientId,
       })
       .from(notification)
       .where(
         and(
-          inArray(notification.client, orgClientIds),
+          inArray(notification.representativeId, orgRepresentativeIds),
           eq(notification.severity, 'unclassified'),
           isNull(notification.aiClassifiedAt)
         )

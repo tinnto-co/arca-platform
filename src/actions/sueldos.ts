@@ -2,12 +2,12 @@ import { createServerFn } from '@tanstack/react-start';
 import z from 'zod';
 import { db } from '@/lib/db';
 import {
+  representative,
   client,
-  profile,
   lsdConceptoAfip,
   lsdPerfilConcepto,
   conceptoSos,
-  conceptoSosProfile,
+  conceptoSosClient,
   conceptosCompletosSos,
   payrollConvenio,
   payrollConvenioFuente,
@@ -60,13 +60,13 @@ async function ensureClientBelongsToOrg(
   orgId: string
 ): Promise<void> {
   const [c] = await db
-    .select({ id: client.id })
-    .from(client)
+    .select({ id: representative.id })
+    .from(representative)
     .innerJoin(
-      profile,
-      and(eq(profile.client, client.id), eq(profile.liquidaSueldos, true))
+      client,
+      and(eq(client.representativeId, representative.id), eq(client.liquidaSueldos, true))
     )
-    .where(and(eq(client.id, clientId), eq(client.organizationId, orgId)))
+    .where(and(eq(representative.id, clientId), eq(representative.organizationId, orgId)))
     .limit(1);
   if (!c) {
     throw new Error(
@@ -75,14 +75,14 @@ async function ensureClientBelongsToOrg(
   }
 }
 
-async function ensureProfileBelongsToClient(
-  profileId: string,
-  clientId: string
+async function ensureClientBelongsToRepresentative(
+  clientId: string,
+  representativeId: string
 ): Promise<void> {
   const [p] = await db
-    .select({ id: profile.id })
-    .from(profile)
-    .where(and(eq(profile.id, profileId), eq(profile.client, clientId)))
+    .select({ id: client.id })
+    .from(client)
+    .where(and(eq(client.id, clientId), eq(client.representativeId, representativeId)))
     .limit(1);
   if (!p) throw new Error('Perfil no encontrado o no autorizado');
 }
@@ -94,15 +94,15 @@ async function resolveSueldosProfileId(
   preferredProfileId?: string | null
 ): Promise<string> {
   if (preferredProfileId) {
-    await ensureProfileBelongsToClient(preferredProfileId, clientId);
+    await ensureClientBelongsToRepresentative(preferredProfileId, clientId);
     const [p] = await db
-      .select({ id: profile.id })
-      .from(profile)
+      .select({ id: client.id })
+      .from(client)
       .where(
         and(
-          eq(profile.id, preferredProfileId),
-          eq(profile.client, clientId),
-          eq(profile.liquidaSueldos, true)
+          eq(client.id, preferredProfileId),
+          eq(client.representativeId, clientId),
+          eq(client.liquidaSueldos, true)
         )
       )
       .limit(1);
@@ -114,17 +114,17 @@ async function resolveSueldosProfileId(
     return p.id;
   }
   const [p] = await db
-    .select({ id: profile.id })
-    .from(profile)
-    .innerJoin(client, eq(profile.client, client.id))
+    .select({ id: client.id })
+    .from(client)
+    .innerJoin(representative, eq(client.representativeId, representative.id))
     .where(
       and(
-        eq(client.id, clientId),
-        eq(client.organizationId, orgId),
-        eq(profile.liquidaSueldos, true)
+        eq(representative.id, clientId),
+        eq(representative.organizationId, orgId),
+        eq(client.liquidaSueldos, true)
       )
     )
-    .orderBy(asc(profile.name))
+    .orderBy(asc(client.name))
     .limit(1);
   if (!p) {
     throw new Error(
@@ -223,7 +223,7 @@ export const listConvenios = createServerFn({ method: 'GET' })
     const convenios = await db
       .select({
         id: payrollConvenio.id,
-        clientId: payrollConvenio.clientId,
+        clientId: payrollConvenio.representativeId,
         nombre: payrollConvenio.nombre,
         cctCodigo: payrollConvenio.cctCodigo,
         activo: payrollConvenio.activo,
@@ -238,11 +238,11 @@ export const listConvenios = createServerFn({ method: 'GET' })
           OR ${payrollConvenio.cctCodigo} = REGEXP_REPLACE(${conveniosDeTrabajo.cct}, '^0+', '')
           OR '0' || ${payrollConvenio.cctCodigo} = ${conveniosDeTrabajo.cct}`
       )
-      .where(eq(payrollConvenio.clientId, ctx.data.clientId))
+      .where(eq(payrollConvenio.representativeId, ctx.data.clientId))
       .orderBy(payrollConvenio.nombre);
 
     if (ctx.data.profileId) {
-      await ensureProfileBelongsToClient(ctx.data.profileId, ctx.data.clientId);
+      await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
     }
 
     const afipRows = await db
@@ -251,8 +251,8 @@ export const listConvenios = createServerFn({ method: 'GET' })
         updatedAt: afipEmpleadoresConvenio.updatedAt,
       })
       .from(afipEmpleadoresConvenio)
-      .innerJoin(profile, eq(afipEmpleadoresConvenio.profileId, profile.id))
-      .where(eq(profile.client, ctx.data.clientId));
+      .innerJoin(client, eq(afipEmpleadoresConvenio.profileId, client.id))
+      .where(eq(client.representativeId, ctx.data.clientId));
 
     const afipByCct = new Map<string, Date>();
     for (const row of afipRows) {
@@ -274,7 +274,7 @@ export const listConvenios = createServerFn({ method: 'GET' })
         payrollConvenio,
         eq(payrollConvenioFuente.convenioId, payrollConvenio.id)
       )
-      .where(eq(payrollConvenio.clientId, ctx.data.clientId));
+      .where(eq(payrollConvenio.representativeId, ctx.data.clientId));
 
     const fuentesEscalasRows = await db
       .select({
@@ -290,7 +290,7 @@ export const listConvenios = createServerFn({ method: 'GET' })
         payrollConvenio,
         eq(payrollConvenioCategoria.convenioId, payrollConvenio.id)
       )
-      .where(eq(payrollConvenio.clientId, ctx.data.clientId));
+      .where(eq(payrollConvenio.representativeId, ctx.data.clientId));
 
     const fuentesByConvenio = new Map<string, Set<string>>();
     for (const row of fuentesConvenioRows) {
@@ -392,7 +392,7 @@ export const updateConvenio = createServerFn({ method: 'POST' })
       .where(
         and(
           eq(payrollConvenio.id, ctx.data.id),
-          eq(payrollConvenio.clientId, ctx.data.clientId)
+          eq(payrollConvenio.representativeId, ctx.data.clientId)
         )
       )
       .returning();
@@ -426,7 +426,7 @@ export const deleteConvenio = createServerFn({ method: 'POST' })
       .where(
         and(
           eq(payrollConvenio.id, ctx.data.id),
-          eq(payrollConvenio.clientId, ctx.data.clientId)
+          eq(payrollConvenio.representativeId, ctx.data.clientId)
         )
       );
     return { ok: true };
@@ -450,9 +450,9 @@ export const listConveniosAfipEmpleadores = createServerFn({ method: 'GET' })
         updatedAt: afipEmpleadoresConvenio.updatedAt,
       })
       .from(afipEmpleadoresConvenio)
-      .innerJoin(profile, eq(afipEmpleadoresConvenio.profileId, profile.id))
+      .innerJoin(client, eq(afipEmpleadoresConvenio.profileId, client.id))
       .leftJoin(conveniosDeTrabajo, eq(afipEmpleadoresConvenio.convenioId, conveniosDeTrabajo.id))
-      .where(eq(profile.client, ctx.data.clientId))
+      .where(eq(client.representativeId, ctx.data.clientId))
       .orderBy(desc(afipEmpleadoresConvenio.updatedAt));
 
     // Unificamos por CCT a nivel cliente para no duplicar convenios
@@ -476,7 +476,7 @@ export const listConceptosByPerfil = createServerFn({ method: 'GET' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
-    await ensureProfileBelongsToClient(ctx.data.profileId, ctx.data.clientId);
+    await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
 
     return db
       .select({
@@ -487,7 +487,7 @@ export const listConceptosByPerfil = createServerFn({ method: 'GET' })
         marcaRepetible: lsdPerfilConcepto.marcaRepetible,
         codigoSos: conceptoSos.codigo,
         nombreSos: conceptoSos.nombre,
-        sosVinculadoPerfil: sql<boolean>`${conceptoSosProfile.id} is not null`,
+        sosVinculadoPerfil: sql<boolean>`${conceptoSosClient.id} is not null`,
         aportesSipa: lsdPerfilConcepto.aportesSipa,
         contribucionesSipa: lsdPerfilConcepto.contribucionesSipa,
         aportesInssjyp: lsdPerfilConcepto.aportesInssjyp,
@@ -526,10 +526,10 @@ export const listConceptosByPerfil = createServerFn({ method: 'GET' })
         )
       )
       .leftJoin(
-        conceptoSosProfile,
+        conceptoSosClient,
         and(
-          eq(conceptoSosProfile.conceptoId, conceptoSos.id),
-          eq(conceptoSosProfile.profileId, lsdPerfilConcepto.profileId)
+          eq(conceptoSosClient.conceptoId, conceptoSos.id),
+          eq(conceptoSosClient.profileId, lsdPerfilConcepto.profileId)
         )
       )
       .leftJoin(
@@ -580,11 +580,11 @@ export const agregarConvenioDesdeAfipEmpleadores = createServerFn({
         fechaNovedad: afipEmpleadoresConvenio.fechaNovedad,
       })
       .from(afipEmpleadoresConvenio)
-      .innerJoin(profile, eq(afipEmpleadoresConvenio.profileId, profile.id))
+      .innerJoin(client, eq(afipEmpleadoresConvenio.profileId, client.id))
       .leftJoin(conveniosDeTrabajo, eq(afipEmpleadoresConvenio.convenioId, conveniosDeTrabajo.id))
       .where(
         and(
-          eq(profile.client, ctx.data.clientId),
+          eq(client.representativeId, ctx.data.clientId),
           eq(afipEmpleadoresConvenio.id, ctx.data.afipConvenioId)
         )
       )
@@ -604,7 +604,7 @@ export const agregarConvenioDesdeAfipEmpleadores = createServerFn({
       .from(payrollConvenio)
       .where(
         and(
-          eq(payrollConvenio.clientId, ctx.data.clientId),
+          eq(payrollConvenio.representativeId, ctx.data.clientId),
           or(
             afipRow.cct ? eq(payrollConvenio.nombre, afipRow.cct) : undefined,
             cctNormalizado ? eq(payrollConvenio.nombre, cctNormalizado) : undefined,
@@ -747,7 +747,7 @@ export const deleteEscala = createServerFn({ method: 'POST' })
       .where(
         and(
           eq(payrollEscala.id, ctx.data.escalaId),
-          eq(payrollConvenio.clientId, ctx.data.clientId)
+          eq(payrollConvenio.representativeId, ctx.data.clientId)
         )
       )
       .limit(1);
@@ -1046,7 +1046,7 @@ async function resolveConvenioIdParaEmpleado(
   const convenios = await db
     .select({ id: payrollConvenio.id })
     .from(payrollConvenio)
-    .where(eq(payrollConvenio.clientId, clientId));
+    .where(eq(payrollConvenio.representativeId, clientId));
   if (convenios.length === 1) return convenios[0]!.id;
   return null;
 }
@@ -1135,11 +1135,11 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
     const [emp] = await db
       .select()
       .from(liquidacionImportEmpleado)
-      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
       .where(
         and(
           eq(liquidacionImportEmpleado.id, ctx.data.importEmpleadoId),
-          eq(profile.client, ctx.data.clientId)
+          eq(client.representativeId, ctx.data.clientId)
         )
       )
       .limit(1);
@@ -1226,7 +1226,7 @@ export const listConceptos = createServerFn({ method: 'GET' })
     return db
       .select()
       .from(payrollConcepto)
-      .where(eq(payrollConcepto.clientId, ctx.data.clientId))
+      .where(eq(payrollConcepto.representativeId, ctx.data.clientId))
       .orderBy(payrollConcepto.orden, payrollConcepto.codigo);
   });
 
@@ -1298,7 +1298,7 @@ export const updateConcepto = createServerFn({ method: 'POST' })
       .update(payrollConcepto)
       .set(set)
       .where(
-        and(eq(payrollConcepto.id, id), eq(payrollConcepto.clientId, clientId))
+        and(eq(payrollConcepto.id, id), eq(payrollConcepto.representativeId, clientId))
       )
       .returning();
     return row;
@@ -1321,7 +1321,7 @@ export const deleteConcepto = createServerFn({ method: 'POST' })
       .where(
         and(
           eq(payrollConcepto.id, ctx.data.id),
-          eq(payrollConcepto.clientId, ctx.data.clientId)
+          eq(payrollConcepto.representativeId, ctx.data.clientId)
         )
       );
     return { ok: true };
@@ -1336,7 +1336,7 @@ export const listEmpleados = createServerFn({ method: 'GET' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
-    await ensureProfileBelongsToClient(ctx.data.profileId, ctx.data.clientId);
+    await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
     const rows = await db
       .select({
         empleado: liquidacionImportEmpleado,
@@ -1344,7 +1344,7 @@ export const listEmpleados = createServerFn({ method: 'GET' })
         categoriaNombre: payrollConvenioCategoria.nombre,
       })
       .from(liquidacionImportEmpleado)
-      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
       .leftJoin(
         payrollConvenio,
         eq(liquidacionImportEmpleado.convenioId, payrollConvenio.id)
@@ -1355,7 +1355,7 @@ export const listEmpleados = createServerFn({ method: 'GET' })
       )
       .where(
         and(
-          eq(profile.client, ctx.data.clientId),
+          eq(client.representativeId, ctx.data.clientId),
           eq(liquidacionImportEmpleado.profileId, ctx.data.profileId)
         )
       )
@@ -1374,8 +1374,8 @@ export const listImportEmpleados = createServerFn({ method: 'GET' })
     const rows = await db
       .select({
         empleado: liquidacionImportEmpleado,
-        profileName: profile.name,
-        profileIdentityNumber: profile.identityNumber,
+        profileName: client.name,
+        profileIdentityNumber: client.identityNumber,
         convenioNombre: payrollConvenio.nombre,
         categoriaNombre: payrollConvenioCategoria.nombre,
         obraSocialNombre: obraSocial.nombre,
@@ -1389,7 +1389,7 @@ export const listImportEmpleados = createServerFn({ method: 'GET' })
         provinciaNombre: payrollProvincia.nombre,
       })
       .from(liquidacionImportEmpleado)
-      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
       .leftJoin(payrollConvenio, eq(liquidacionImportEmpleado.convenioId, payrollConvenio.id))
       .leftJoin(payrollConvenioCategoria, eq(liquidacionImportEmpleado.categoriaId, payrollConvenioCategoria.id))
       .leftJoin(obraSocial, eq(liquidacionImportEmpleado.obraSocialId, obraSocial.id))
@@ -1402,7 +1402,7 @@ export const listImportEmpleados = createServerFn({ method: 'GET' })
       .leftJoin(payrollProvincia, eq(liquidacionImportEmpleado.provinciaId, payrollProvincia.id))
       .where(
         and(
-          eq(profile.client, ctx.data.clientId),
+          eq(client.representativeId, ctx.data.clientId),
           eq(liquidacionImportEmpleado.profileId, ctx.data.profileId)
         )
       )
@@ -1420,11 +1420,11 @@ export const getProfileSueldosConfig = createServerFn({ method: 'GET' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
-    await ensureProfileBelongsToClient(ctx.data.profileId, ctx.data.clientId);
+    await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
     const [row] = await db
-      .select({ usaLsdReferencia: profile.usaLsdReferencia })
-      .from(profile)
-      .where(eq(profile.id, ctx.data.profileId))
+      .select({ usaLsdReferencia: client.usaLsdReferencia })
+      .from(client)
+      .where(eq(client.id, ctx.data.profileId))
       .limit(1);
     return { usaLsdReferencia: row?.usaLsdReferencia ?? false };
   });
@@ -1477,7 +1477,7 @@ export const sincronizarConveniosEmpleados = createServerFn({ method: 'POST' })
     const role = await getMemberRole();
     assertCanWrite(role);
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
-    await ensureProfileBelongsToClient(ctx.data.profileId, ctx.data.clientId);
+    await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
 
     // 1. CCTs del perfil
     const afipRows = await db
@@ -1493,7 +1493,7 @@ export const sincronizarConveniosEmpleados = createServerFn({ method: 'POST' })
     const conveniosClient = await db
       .select()
       .from(payrollConvenio)
-      .where(eq(payrollConvenio.clientId, ctx.data.clientId));
+      .where(eq(payrollConvenio.representativeId, ctx.data.clientId));
 
     const conveniosFiltrados = cctSet.size > 0
       ? conveniosClient.filter((conv) => {
@@ -1583,7 +1583,7 @@ export const createManualEmpleado = createServerFn({ method: 'POST' })
     const role = await getMemberRole();
     assertCanWrite(role);
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
-    await ensureProfileBelongsToClient(ctx.data.profileId, ctx.data.clientId);
+    await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
 
     const [row] = await db
       .insert(liquidacionImportEmpleado)
@@ -1642,11 +1642,11 @@ export const listImportEmpleadosConConfig = createServerFn({ method: 'GET' })
         obraSocialCodigo: obraSocial.codigo,
       })
       .from(liquidacionImportEmpleado)
-      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
       .leftJoin(obraSocial, eq(liquidacionImportEmpleado.obraSocialId, obraSocial.id))
       .where(
         and(
-          eq(profile.client, ctx.data.clientId),
+          eq(client.representativeId, ctx.data.clientId),
           eq(liquidacionImportEmpleado.profileId, ctx.data.profileId),
           eq(liquidacionImportEmpleado.activo, true)
         )
@@ -1682,10 +1682,10 @@ export const listImportRecibosByPeriodo = createServerFn({ method: 'GET' })
         liquidacionImportEmpleado,
         eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
       )
-      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
       .where(
         and(
-          eq(profile.client, ctx.data.clientId),
+          eq(client.representativeId, ctx.data.clientId),
           eq(liquidacionImportRecibo.periodo, ctx.data.periodo)
         )
       )
@@ -1712,11 +1712,11 @@ export const getUltimoReciboImportado = createServerFn({ method: 'GET' })
         liquidacionImportEmpleado,
         eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
       )
-      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
       .where(
         and(
           eq(liquidacionImportRecibo.empleadoId, ctx.data.importEmpleadoId),
-          eq(profile.client, ctx.data.clientId)
+          eq(client.representativeId, ctx.data.clientId)
         )
       )
       .orderBy(desc(liquidacionImportRecibo.periodo))
@@ -1819,11 +1819,11 @@ export const getImportReciboDetalle = createServerFn({ method: 'GET' })
         liquidacionImportEmpleado,
         eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
       )
-      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
       .where(
         and(
           eq(liquidacionImportRecibo.id, ctx.data.reciboId),
-          eq(profile.client, ctx.data.clientId)
+          eq(client.representativeId, ctx.data.clientId)
         )
       )
       .limit(1);
@@ -2022,7 +2022,7 @@ export const guardarReciboDesdeTabla = createServerFn({ method: 'POST' })
     const role = await getMemberRole();
     assertCanWrite(role);
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
-    await ensureProfileBelongsToClient(ctx.data.profileId, ctx.data.clientId);
+    await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
     if (!puedeLiquidarPeriodo(ctx.data.periodo)) {
       throw new Error('No se puede liquidar períodos futuros.');
     }
@@ -2030,12 +2030,12 @@ export const guardarReciboDesdeTabla = createServerFn({ method: 'POST' })
     const [empRow] = await db
       .select({ id: liquidacionImportEmpleado.id })
       .from(liquidacionImportEmpleado)
-      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
       .where(
         and(
           eq(liquidacionImportEmpleado.id, ctx.data.importEmpleadoId),
           eq(liquidacionImportEmpleado.profileId, ctx.data.profileId),
-          eq(profile.client, ctx.data.clientId)
+          eq(client.representativeId, ctx.data.clientId)
         )
       )
       .limit(1);
@@ -2430,7 +2430,7 @@ export const createEmpleadosMasivo = createServerFn({ method: 'POST' })
     const convenios = await db
       .select()
       .from(payrollConvenio)
-      .where(eq(payrollConvenio.clientId, ctx.data.clientId));
+      .where(eq(payrollConvenio.representativeId, ctx.data.clientId));
     const convenioByName = new Map(
       convenios.map((c) => [c.nombre.trim().toLowerCase(), c] as const)
     );
@@ -2565,11 +2565,11 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
     const [empCheck] = await db
       .select({ id: liquidacionImportEmpleado.id })
       .from(liquidacionImportEmpleado)
-      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
       .where(
         and(
           eq(liquidacionImportEmpleado.id, ctx.data.id),
-          eq(profile.client, ctx.data.clientId)
+          eq(client.representativeId, ctx.data.clientId)
         )
       )
       .limit(1);
@@ -2676,11 +2676,11 @@ export const deleteEmpleado = createServerFn({ method: 'POST' })
     const [empCheck] = await db
       .select({ id: liquidacionImportEmpleado.id })
       .from(liquidacionImportEmpleado)
-      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
       .where(
         and(
           eq(liquidacionImportEmpleado.id, ctx.data.id),
-          eq(profile.client, ctx.data.clientId)
+          eq(client.representativeId, ctx.data.clientId)
         )
       )
       .limit(1);
@@ -2744,11 +2744,11 @@ async function calcularUnaLiquidacion(
       banco: liquidacionImportEmpleado.banco,
     })
     .from(liquidacionImportEmpleado)
-    .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+    .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
     .where(
       and(
         eq(liquidacionImportEmpleado.id, empleadoId),
-        eq(profile.client, clientId)
+        eq(client.representativeId, clientId)
       )
     )
     .limit(1);
@@ -2789,7 +2789,7 @@ async function calcularUnaLiquidacion(
   const conceptos = await db
     .select()
     .from(payrollConcepto)
-    .where(eq(payrollConcepto.clientId, clientId))
+    .where(eq(payrollConcepto.representativeId, clientId))
     .orderBy(payrollConcepto.orden, payrollConcepto.codigo);
 
   // Leer inputs existentes del recibo (si ya fue calculado antes)
@@ -3198,11 +3198,11 @@ export const calcularLiquidacionMasiva = createServerFn({ method: 'POST' })
     const role = await getMemberRole();
     assertCanWrite(role);
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
-    await ensureProfileBelongsToClient(ctx.data.profileId, ctx.data.clientId);
+    await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
     const [profileCfg] = await db
-      .select({ usaLsdReferencia: profile.usaLsdReferencia })
-      .from(profile)
-      .where(eq(profile.id, ctx.data.profileId))
+      .select({ usaLsdReferencia: client.usaLsdReferencia })
+      .from(client)
+      .where(eq(client.id, ctx.data.profileId))
       .limit(1);
     const usaLsdReferencia = profileCfg?.usaLsdReferencia ?? false;
     if (!puedeLiquidarPeriodo(ctx.data.periodo)) {
@@ -3215,10 +3215,10 @@ export const calcularLiquidacionMasiva = createServerFn({ method: 'POST' })
         legajo: liquidacionImportEmpleado.legajo,
       })
       .from(liquidacionImportEmpleado)
-      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
       .where(
         and(
-          eq(profile.client, ctx.data.clientId),
+          eq(client.representativeId, ctx.data.clientId),
           eq(liquidacionImportEmpleado.profileId, ctx.data.profileId),
           eq(liquidacionImportEmpleado.activo, true)
         )
@@ -3232,10 +3232,10 @@ export const calcularLiquidacionMasiva = createServerFn({ method: 'POST' })
         liquidacionImportEmpleado,
         eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
       )
-      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
       .where(
         and(
-          eq(profile.client, ctx.data.clientId),
+          eq(client.representativeId, ctx.data.clientId),
           eq(liquidacionImportEmpleado.profileId, ctx.data.profileId),
           eq(liquidacionImportRecibo.periodo, ctx.data.periodo),
           eq(liquidacionImportRecibo.tipo, 'sueldo'),
@@ -3315,10 +3315,10 @@ export const eliminarLiquidacionesDelPeriodo = createServerFn({
         liquidacionImportEmpleado,
         eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
       )
-      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
       .where(
         and(
-          eq(profile.client, ctx.data.clientId),
+          eq(client.representativeId, ctx.data.clientId),
           eq(liquidacionImportRecibo.periodo, ctx.data.periodo),
           eq(liquidacionImportRecibo.origen, 'generado')
         )
@@ -3353,11 +3353,11 @@ export const eliminarLiquidacion = createServerFn({ method: 'POST' })
         liquidacionImportEmpleado,
         eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
       )
-      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
       .where(
         and(
           eq(liquidacionImportRecibo.id, ctx.data.liquidacionId),
-          eq(profile.client, ctx.data.clientId)
+          eq(client.representativeId, ctx.data.clientId)
         )
       )
       .limit(1);
@@ -3396,11 +3396,11 @@ export const updateDetalleInputs = createServerFn({ method: 'POST' })
 
     // Verificar que el detalle pertenece a un empleado del cliente autorizado
     const [row] = await db
-      .select({ clientId: profile.client })
+      .select({ clientId: client.representativeId })
       .from(liquidacionImportConceptoValor)
       .innerJoin(liquidacionImportRecibo, eq(liquidacionImportConceptoValor.reciboId, liquidacionImportRecibo.id))
       .innerJoin(liquidacionImportEmpleado, eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id))
-      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
       .where(eq(liquidacionImportConceptoValor.id, ctx.data.detalleId))
       .limit(1);
     const resolvedClientId = row?.clientId;
@@ -3443,10 +3443,10 @@ export const listLiquidacionesByPeriodo = createServerFn({ method: 'GET' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
-    await ensureProfileBelongsToClient(ctx.data.profileId, ctx.data.clientId);
+    await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
     const conditions = [
       condicionPeriodoRecibo(ctx.data.periodo),
-      eq(profile.client, ctx.data.clientId),
+      eq(client.representativeId, ctx.data.clientId),
       eq(liquidacionImportEmpleado.profileId, ctx.data.profileId),
       ...(ctx.data.soloRecibosConfirmados
         ? [eq(liquidacionImportRecibo.reciboConfirmado, true)]
@@ -3462,7 +3462,7 @@ export const listLiquidacionesByPeriodo = createServerFn({ method: 'GET' })
         liquidacionImportEmpleado,
         eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
       )
-      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
       .where(and(...conditions))
       .orderBy(
         sql`(CASE WHEN ${liquidacionImportEmpleado.legajo} ~ '^[0-9]+$' THEN (${liquidacionImportEmpleado.legajo})::bigint END) NULLS LAST`,
@@ -3492,9 +3492,9 @@ export const listLiquidacionesByFiltros = createServerFn({ method: 'GET' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
-    await ensureProfileBelongsToClient(ctx.data.profileId, ctx.data.clientId);
+    await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
     const conditions = [
-      eq(profile.client, ctx.data.clientId),
+      eq(client.representativeId, ctx.data.clientId),
       eq(liquidacionImportEmpleado.profileId, ctx.data.profileId),
       eq(liquidacionImportRecibo.origen, 'generado'),
     ];
@@ -3515,7 +3515,7 @@ export const listLiquidacionesByFiltros = createServerFn({ method: 'GET' })
         liquidacionImportEmpleado,
         eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
       )
-      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
       .where(and(...conditions))
       .orderBy(
         desc(liquidacionImportRecibo.periodo),
@@ -3542,11 +3542,11 @@ export const confirmarReciboLiquidacion = createServerFn({ method: 'POST' })
         liquidacionImportEmpleado,
         eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
       )
-      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
       .where(
         and(
           eq(liquidacionImportRecibo.id, ctx.data.liquidacionId),
-          eq(profile.client, ctx.data.clientId)
+          eq(client.representativeId, ctx.data.clientId)
         )
       )
       .limit(1);
@@ -3565,9 +3565,9 @@ export const getPayrollEmployerConfig = createServerFn({ method: 'GET' })
     const { orgId } = await getSessionWithOrg();
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     const row = await db
-      .select({ firmaDigitalEmpleador: profile.firmaDigitalEmpleador })
-      .from(profile)
-      .where(eq(profile.id, ctx.data.profileId))
+      .select({ firmaDigitalEmpleador: client.firmaDigitalEmpleador })
+      .from(client)
+      .where(eq(client.id, ctx.data.profileId))
       .then((r) => r[0] ?? null);
     return {
       imprimirTotalRedondeado: false,
@@ -3589,9 +3589,9 @@ export const saveFirmaDigitalEmpleador = createServerFn({ method: 'POST' })
     await assertCanWrite(orgId);
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     await db
-      .update(profile)
+      .update(client)
       .set({ firmaDigitalEmpleador: ctx.data.firmaDigitalEmpleador, updatedAt: new Date() })
-      .where(eq(profile.id, ctx.data.profileId));
+      .where(eq(client.id, ctx.data.profileId));
     return { ok: true };
   });
 
@@ -3773,7 +3773,7 @@ export const getReciboDetalle = createServerFn({ method: 'GET' })
         liquidacionImportEmpleado,
         eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
       )
-      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
       .leftJoin(
         payrollConvenio,
         eq(liquidacionImportEmpleado.convenioId, payrollConvenio.id)
@@ -3786,7 +3786,7 @@ export const getReciboDetalle = createServerFn({ method: 'GET' })
       .where(
         and(
           eq(liquidacionImportRecibo.id, ctx.data.liquidacionId),
-          eq(profile.client, ctx.data.clientId)
+          eq(client.representativeId, ctx.data.clientId)
         )
       )
       .limit(1);
@@ -3899,12 +3899,12 @@ export const listRecibosDetalleParaPDF = createServerFn({ method: 'GET' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
-    await ensureProfileBelongsToClient(ctx.data.profileId, ctx.data.clientId);
+    await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
 
     const { ano, mes, empleadoIds } = ctx.data;
 
     const conditions = [
-      eq(profile.client, ctx.data.clientId),
+      eq(client.representativeId, ctx.data.clientId),
       eq(liquidacionImportEmpleado.profileId, ctx.data.profileId),
       eq(liquidacionImportRecibo.origen, 'generado'),
       eq(liquidacionImportEmpleado.activo, true),
@@ -3931,7 +3931,7 @@ export const listRecibosDetalleParaPDF = createServerFn({ method: 'GET' })
         liquidacionImportEmpleado,
         eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
       )
-      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
       .leftJoin(payrollConvenio, eq(liquidacionImportEmpleado.convenioId, payrollConvenio.id))
       .leftJoin(
         payrollConvenioCategoria,

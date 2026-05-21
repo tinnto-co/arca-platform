@@ -6,7 +6,7 @@ import {
   bankTransaction,
   bankInvoiceMatch,
   invoice,
-  client,
+  representative,
 } from '@/drizzle/schema';
 import {
   getSessionWithOrg,
@@ -21,11 +21,11 @@ async function ensureBankAccountBelongsToOrg(
   orgId: string
 ): Promise<{ bankAccountId: string; clientId: string }> {
   const [row] = await db
-    .select({ bankAccountId: bankAccount.id, clientId: bankAccount.clientId })
+    .select({ bankAccountId: bankAccount.id, clientId: bankAccount.representativeId })
     .from(bankAccount)
-    .innerJoin(client, eq(client.id, bankAccount.clientId))
+    .innerJoin(representative, eq(representative.id, bankAccount.representativeId))
     .where(
-      and(eq(bankAccount.id, bankAccountId), eq(client.organizationId, orgId))
+      and(eq(bankAccount.id, bankAccountId), eq(representative.organizationId, orgId))
     )
     .limit(1);
 
@@ -54,10 +54,10 @@ export const createBankAccount = createServerFn({ method: 'POST' })
 
     // Validate client belongs to org
     const [c] = await db
-      .select({ id: client.id })
-      .from(client)
+      .select({ id: representative.id })
+      .from(representative)
       .where(
-        and(eq(client.id, ctx.data.clientId), eq(client.organizationId, orgId))
+        and(eq(representative.id, ctx.data.clientId), eq(representative.organizationId, orgId))
       )
       .limit(1);
 
@@ -85,10 +85,10 @@ export const listBankAccounts = createServerFn({ method: 'GET' })
     const { orgId } = await getSessionWithOrg();
 
     const [c] = await db
-      .select({ id: client.id })
-      .from(client)
+      .select({ id: representative.id })
+      .from(representative)
       .where(
-        and(eq(client.id, ctx.data.clientId), eq(client.organizationId, orgId))
+        and(eq(representative.id, ctx.data.clientId), eq(representative.organizationId, orgId))
       )
       .limit(1);
 
@@ -99,7 +99,7 @@ export const listBankAccounts = createServerFn({ method: 'GET' })
       .from(bankAccount)
       .where(
         and(
-          eq(bankAccount.clientId, ctx.data.clientId),
+          eq(bankAccount.representativeId, ctx.data.clientId),
           eq(bankAccount.active, true)
         )
       )
@@ -288,7 +288,7 @@ export const autoMatchTransactions = createServerFn({ method: 'POST' })
         direction: invoice.direction,
       })
       .from(invoice)
-      .where(eq(invoice.client, clientId));
+      .where(eq(invoice.representativeId, clientId));
 
     let matched = 0;
     const toInsert: {
@@ -383,11 +383,11 @@ export const manualMatchTransaction = createServerFn({ method: 'POST' })
       })
       .from(bankTransaction)
       .innerJoin(bankAccount, eq(bankAccount.id, bankTransaction.bankAccountId))
-      .innerJoin(client, eq(client.id, bankAccount.clientId))
+      .innerJoin(representative, eq(representative.id, bankAccount.representativeId))
       .where(
         and(
           eq(bankTransaction.id, ctx.data.transactionId),
-          eq(client.organizationId, orgId)
+          eq(representative.organizationId, orgId)
         )
       )
       .limit(1);
@@ -398,11 +398,11 @@ export const manualMatchTransaction = createServerFn({ method: 'POST' })
     const [inv] = await db
       .select({ id: invoice.id })
       .from(invoice)
-      .innerJoin(client, eq(client.id, invoice.client))
+      .innerJoin(representative, eq(representative.id, invoice.representativeId))
       .where(
         and(
           eq(invoice.id, ctx.data.invoiceId),
-          eq(client.organizationId, orgId)
+          eq(representative.organizationId, orgId)
         )
       )
       .limit(1);
@@ -435,10 +435,10 @@ export const getReconciliationSummary = createServerFn({ method: 'GET' })
     const { orgId } = await getSessionWithOrg();
 
     const [c] = await db
-      .select({ id: client.id })
-      .from(client)
+      .select({ id: representative.id })
+      .from(representative)
       .where(
-        and(eq(client.id, ctx.data.clientId), eq(client.organizationId, orgId))
+        and(eq(representative.id, ctx.data.clientId), eq(representative.organizationId, orgId))
       )
       .limit(1);
 
@@ -450,7 +450,7 @@ export const getReconciliationSummary = createServerFn({ method: 'GET' })
       .from(bankAccount)
       .where(
         and(
-          eq(bankAccount.clientId, ctx.data.clientId),
+          eq(bankAccount.representativeId, ctx.data.clientId),
           eq(bankAccount.active, true)
         )
       );

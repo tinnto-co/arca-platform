@@ -1,7 +1,7 @@
 import { createServerFn } from '@tanstack/react-start';
 import z from 'zod';
 import { db } from '@/lib/db';
-import { client, invoice, debt, dueDate, notification } from '@/drizzle/schema';
+import { representative, invoice, debt, dueDate, notification, alert } from '@/drizzle/schema';
 import { eq, and, gte, lte, sql, inArray, isNull } from 'drizzle-orm';
 import { getSessionWithOrg } from '@/actions/helpers';
 
@@ -33,16 +33,16 @@ export const getDashboardStats = createServerFn({ method: 'GET' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const userClients = await db
-      .select({ id: client.id })
-      .from(client)
-      .where(eq(client.organizationId, orgId));
+    const userRepresentatives = await db
+      .select({ id: representative.id })
+      .from(representative)
+      .where(eq(representative.organizationId, orgId));
 
-    const userClientIds = userClients.map((c) => c.id);
+    const userRepresentativeIds = userRepresentatives.map((c) => c.id);
 
-    if (userClientIds.length === 0) {
+    if (userRepresentativeIds.length === 0) {
       return {
-        totalClients: 0,
+        totalRepresentatives: 0,
         totalSales: 0,
         totalPurchases: 0,
         totalInvoices: 0,
@@ -84,7 +84,7 @@ export const getDashboardStats = createServerFn({ method: 'GET' })
         .from(invoice)
         .where(
           and(
-            inArray(invoice.client, userClientIds),
+            inArray(invoice.representativeId, userRepresentativeIds),
             gte(invoice.emitionDate, currentFrom),
             lte(invoice.emitionDate, currentTo)
           )
@@ -99,7 +99,7 @@ export const getDashboardStats = createServerFn({ method: 'GET' })
         .from(invoice)
         .where(
           and(
-            inArray(invoice.client, userClientIds),
+            inArray(invoice.representativeId, userRepresentativeIds),
             gte(invoice.emitionDate, previousFrom),
             lte(invoice.emitionDate, previousTo)
           )
@@ -113,7 +113,7 @@ export const getDashboardStats = createServerFn({ method: 'GET' })
           totalInvoices: sql<number>`COUNT(*)`,
         })
         .from(invoice)
-        .where(inArray(invoice.client, userClientIds)),
+        .where(inArray(invoice.representativeId, userRepresentativeIds)),
     ]);
 
     const cur = currentStats[0];
@@ -121,7 +121,7 @@ export const getDashboardStats = createServerFn({ method: 'GET' })
     const total = totalStats[0];
 
     return {
-      totalClients: userClientIds.length,
+      totalRepresentatives: userRepresentativeIds.length,
       totalSales: Number(total?.totalSales ?? 0),
       totalPurchases: Number(total?.totalPurchases ?? 0),
       totalInvoices: Number(total?.totalInvoices ?? 0),
@@ -146,14 +146,14 @@ export const getMonthlyEvolution = createServerFn({ method: 'GET' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const userClients = await db
-      .select({ id: client.id })
-      .from(client)
-      .where(eq(client.organizationId, orgId));
+    const userRepresentatives = await db
+      .select({ id: representative.id })
+      .from(representative)
+      .where(eq(representative.organizationId, orgId));
 
-    const userClientIds = userClients.map((c) => c.id);
+    const userRepresentativeIds = userRepresentatives.map((c) => c.id);
 
-    if (userClientIds.length === 0) return [];
+    if (userRepresentativeIds.length === 0) return [];
 
     const now = new Date();
     const monthCount = ctx.data.months ?? 6;
@@ -179,7 +179,7 @@ export const getMonthlyEvolution = createServerFn({ method: 'GET' })
       .from(invoice)
       .where(
         and(
-          inArray(invoice.client, userClientIds),
+          inArray(invoice.representativeId, userRepresentativeIds),
           gte(invoice.emitionDate, from),
           lte(invoice.emitionDate, to)
         )
@@ -256,14 +256,14 @@ export const getUpcomingDueDates = createServerFn({ method: 'GET' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const userClients = await db
-      .select({ id: client.id })
-      .from(client)
-      .where(eq(client.organizationId, orgId));
+    const userRepresentatives = await db
+      .select({ id: representative.id })
+      .from(representative)
+      .where(eq(representative.organizationId, orgId));
 
-    const userClientIds = userClients.map((c) => c.id);
+    const userRepresentativeIds = userRepresentatives.map((c) => c.id);
 
-    if (userClientIds.length === 0) return [];
+    if (userRepresentativeIds.length === 0) return [];
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -277,14 +277,14 @@ export const getUpcomingDueDates = createServerFn({ method: 'GET' })
         tax: dueDate.tax,
         concept: dueDate.concept,
         dueDate: dueDate.dueDate,
-        clientId: dueDate.client,
-        clientName: client.name,
+        clientId: dueDate.representativeId,
+        clientName: representative.name,
       })
       .from(dueDate)
-      .leftJoin(client, eq(dueDate.client, client.id))
+      .leftJoin(representative, eq(dueDate.representativeId, representative.id))
       .where(
         and(
-          inArray(dueDate.client, userClientIds),
+          inArray(dueDate.representativeId, userRepresentativeIds),
           gte(dueDate.dueDate, today),
           lte(dueDate.dueDate, futureDate)
         )
@@ -306,14 +306,14 @@ export const getOverdueDebts = createServerFn({ method: 'GET' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const userClients = await db
-      .select({ id: client.id })
-      .from(client)
-      .where(eq(client.organizationId, orgId));
+    const userRepresentatives = await db
+      .select({ id: representative.id })
+      .from(representative)
+      .where(eq(representative.organizationId, orgId));
 
-    const userClientIds = userClients.map((c) => c.id);
+    const userRepresentativeIds = userRepresentatives.map((c) => c.id);
 
-    if (userClientIds.length === 0) return [];
+    if (userRepresentativeIds.length === 0) return [];
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -325,12 +325,12 @@ export const getOverdueDebts = createServerFn({ method: 'GET' })
         concept: debt.concept,
         dueDate: debt.dueDate,
         balance: debt.balance,
-        clientId: debt.client,
-        clientName: client.name,
+        clientId: debt.representativeId,
+        clientName: representative.name,
       })
       .from(debt)
-      .leftJoin(client, eq(debt.client, client.id))
-      .where(and(inArray(debt.client, userClientIds), lte(debt.dueDate, today)))
+      .leftJoin(representative, eq(debt.representativeId, representative.id))
+      .where(and(inArray(debt.representativeId, userRepresentativeIds), lte(debt.dueDate, today)))
       .orderBy(debt.dueDate)
       .limit(ctx.data.limit);
 
@@ -350,16 +350,16 @@ export const getRecentInvoices = createServerFn({ method: 'GET' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const userClients = await db
-      .select({ id: client.id })
-      .from(client)
-      .where(eq(client.organizationId, orgId));
+    const userRepresentatives = await db
+      .select({ id: representative.id })
+      .from(representative)
+      .where(eq(representative.organizationId, orgId));
 
-    const userClientIds = userClients.map((c) => c.id);
+    const userRepresentativeIds = userRepresentatives.map((c) => c.id);
 
-    if (userClientIds.length === 0) return [];
+    if (userRepresentativeIds.length === 0) return [];
 
-    const conditions = [inArray(invoice.client, userClientIds)];
+    const conditions = [inArray(invoice.representativeId, userRepresentativeIds)];
 
     if (ctx.data.from) {
       conditions.push(gte(invoice.emitionDate, new Date(ctx.data.from)));
@@ -378,11 +378,11 @@ export const getRecentInvoices = createServerFn({ method: 'GET' })
         amount: invoice.amount,
         currency: invoice.currency,
         emitionDate: invoice.emitionDate,
-        clientId: invoice.client,
-        clientName: client.name,
+        clientId: invoice.representativeId,
+        clientName: representative.name,
       })
       .from(invoice)
-      .leftJoin(client, eq(invoice.client, client.id))
+      .leftJoin(representative, eq(invoice.representativeId, representative.id))
       .where(and(...conditions))
       .orderBy(sql`${invoice.createdAt} DESC`)
       .limit(ctx.data.limit);
@@ -390,9 +390,9 @@ export const getRecentInvoices = createServerFn({ method: 'GET' })
     return invoices;
   });
 
-// ── getTopClients ──────────────────────────────────────────────────────────
+// ── getTopRepresentatives ──────────────────────────────────────────────────────────
 
-export const getTopClients = createServerFn({ method: 'GET' })
+export const getTopRepresentatives = createServerFn({ method: 'GET' })
   .inputValidator(
     z.object({
       limit: z.number().default(5),
@@ -403,18 +403,18 @@ export const getTopClients = createServerFn({ method: 'GET' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const userClients = await db
+    const userRepresentatives = await db
       .select({
-        id: client.id,
-        name: client.name,
-        cuit: client.identityNumber,
+        id: representative.id,
+        name: representative.name,
+        cuit: representative.cuit,
       })
-      .from(client)
-      .where(eq(client.organizationId, orgId));
+      .from(representative)
+      .where(eq(representative.organizationId, orgId));
 
-    const userClientIds = userClients.map((c) => c.id);
+    const userRepresentativeIds = userRepresentatives.map((c) => c.id);
 
-    if (userClientIds.length === 0) return [];
+    if (userRepresentativeIds.length === 0) return [];
 
     const now = new Date();
     const rangeFrom = parseDateParam(
@@ -429,7 +429,7 @@ export const getTopClients = createServerFn({ method: 'GET' })
 
     const clientInvoices = await db
       .select({
-        clientId: invoice.client,
+        clientId: invoice.representativeId,
         totalAmount: sql<string>`SUM(${invoice.amount}::numeric)`,
         invoiceCount: sql<number>`COUNT(*)`,
         lastActivity: sql<string>`MAX(${invoice.createdAt})`,
@@ -437,26 +437,26 @@ export const getTopClients = createServerFn({ method: 'GET' })
       .from(invoice)
       .where(
         and(
-          inArray(invoice.client, userClientIds),
+          inArray(invoice.representativeId, userRepresentativeIds),
           gte(invoice.emitionDate, rangeFrom),
           lte(invoice.emitionDate, rangeTo)
         )
       )
-      .groupBy(invoice.client)
+      .groupBy(invoice.representativeId)
       .orderBy(sql`SUM(${invoice.amount}::numeric) DESC`)
       .limit(ctx.data.limit);
 
     const overdueDebts = await db
       .select({
-        clientId: debt.client,
+        clientId: debt.representativeId,
         overdueCount: sql<number>`COUNT(*)`,
         maxOverdueDays: sql<number>`MAX(EXTRACT(EPOCH FROM NOW() - ${debt.dueDate}::timestamptz) / 86400)`,
       })
       .from(debt)
       .where(
-        and(inArray(debt.client, userClientIds), lte(debt.dueDate, new Date()))
+        and(inArray(debt.representativeId, userRepresentativeIds), lte(debt.dueDate, new Date()))
       )
-      .groupBy(debt.client)
+      .groupBy(debt.representativeId)
       .catch(
         () =>
           [] as {
@@ -466,7 +466,7 @@ export const getTopClients = createServerFn({ method: 'GET' })
           }[]
       );
 
-    const clientMap = new Map(userClients.map((c) => [c.id, c]));
+    const clientMap = new Map(userRepresentatives.map((c) => [c.id, c]));
     const overdueMap = new Map(overdueDebts.map((d) => [d.clientId, d]));
 
     return clientInvoices.map((ci) => {
@@ -504,21 +504,21 @@ export const getPendingNotificationsCount = createServerFn({
 }).handler(async () => {
   const { orgId } = await getSessionWithOrg();
 
-  const userClients = await db
-    .select({ id: client.id })
-    .from(client)
-    .where(eq(client.organizationId, orgId));
+  const userRepresentatives = await db
+    .select({ id: representative.id })
+    .from(representative)
+    .where(eq(representative.organizationId, orgId));
 
-  const userClientIds = userClients.map((c) => c.id);
+  const userRepresentativeIds = userRepresentatives.map((c) => c.id);
 
-  if (userClientIds.length === 0) return { count: 0 };
+  if (userRepresentativeIds.length === 0) return { count: 0 };
 
   const [result] = await db
     .select({ count: sql<number>`count(*)` })
     .from(notification)
     .where(
       and(
-        inArray(notification.client, userClientIds),
+        inArray(notification.representativeId, userRepresentativeIds),
         eq(notification.opened, false)
       )
     );
@@ -538,13 +538,13 @@ export const getCalendarDueDates = createServerFn({ method: 'GET' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const userClients = await db
-      .select({ id: client.id })
-      .from(client)
-      .where(eq(client.organizationId, orgId));
+    const userRepresentatives = await db
+      .select({ id: representative.id })
+      .from(representative)
+      .where(eq(representative.organizationId, orgId));
 
-    const userClientIds = userClients.map((c) => c.id);
-    if (userClientIds.length === 0) return { dueDates: [], debts: [] };
+    const userRepresentativeIds = userRepresentatives.map((c) => c.id);
+    if (userRepresentativeIds.length === 0) return { dueDates: [], debts: [] };
 
     const from = new Date(ctx.data.from);
     const to = new Date(ctx.data.to);
@@ -557,15 +557,15 @@ export const getCalendarDueDates = createServerFn({ method: 'GET' })
           tax: dueDate.tax,
           concept: dueDate.concept,
           dueDate: dueDate.dueDate,
-          clientId: dueDate.client,
-          clientName: client.name,
+          clientId: dueDate.representativeId,
+          clientName: representative.name,
           completedAt: dueDate.completedAt,
         })
         .from(dueDate)
-        .leftJoin(client, eq(dueDate.client, client.id))
+        .leftJoin(representative, eq(dueDate.representativeId, representative.id))
         .where(
           and(
-            inArray(dueDate.client, userClientIds),
+            inArray(dueDate.representativeId, userRepresentativeIds),
             gte(dueDate.dueDate, from),
             lte(dueDate.dueDate, to)
           )
@@ -578,14 +578,14 @@ export const getCalendarDueDates = createServerFn({ method: 'GET' })
           concept: debt.concept,
           dueDate: debt.dueDate,
           balance: debt.balance,
-          clientId: debt.client,
-          clientName: client.name,
+          clientId: debt.representativeId,
+          clientName: representative.name,
         })
         .from(debt)
-        .leftJoin(client, eq(debt.client, client.id))
+        .leftJoin(representative, eq(debt.representativeId, representative.id))
         .where(
           and(
-            inArray(debt.client, userClientIds),
+            inArray(debt.representativeId, userRepresentativeIds),
             gte(debt.dueDate, from),
             lte(debt.dueDate, to)
           )
@@ -602,19 +602,19 @@ export const getExceptionsSummary = createServerFn({ method: 'GET' }).handler(
   async () => {
     const { orgId } = await getSessionWithOrg();
 
-    const userClients = await db
-      .select({ id: client.id })
-      .from(client)
-      .where(eq(client.organizationId, orgId));
+    const userRepresentatives = await db
+      .select({ id: representative.id })
+      .from(representative)
+      .where(eq(representative.organizationId, orgId));
 
-    const userClientIds = userClients.map((c) => c.id);
+    const userRepresentativeIds = userRepresentatives.map((c) => c.id);
 
-    if (userClientIds.length === 0) {
+    if (userRepresentativeIds.length === 0) {
       return {
         overdueDebtCount: 0,
         criticalNotificationCount: 0,
         upcomingDueDateCount: 0,
-        clientErrorCount: 0,
+        representativeErrorCount: 0,
       };
     }
 
@@ -624,7 +624,7 @@ export const getExceptionsSummary = createServerFn({ method: 'GET' }).handler(
     threeDaysFromNow.setDate(today.getDate() + 3);
     threeDaysFromNow.setHours(23, 59, 59, 999);
 
-    const [overdueDebts, criticalNotifs, upcomingDueDates, clientErrors] =
+    const [overdueDebts, criticalNotifs, upcomingDueDates, representativeErrors] =
       await Promise.all([
         // Overdue open debts: status='open' and dueDate < today
         db
@@ -632,7 +632,7 @@ export const getExceptionsSummary = createServerFn({ method: 'GET' }).handler(
           .from(debt)
           .where(
             and(
-              inArray(debt.client, userClientIds),
+              inArray(debt.representativeId, userRepresentativeIds),
               eq(debt.status, 'open'),
               lte(debt.dueDate, today)
             )
@@ -644,7 +644,7 @@ export const getExceptionsSummary = createServerFn({ method: 'GET' }).handler(
           .from(notification)
           .where(
             and(
-              inArray(notification.client, userClientIds),
+              inArray(notification.representativeId, userRepresentativeIds),
               eq(notification.severity, 'critical'),
               isNull(notification.resolvedAt)
             )
@@ -656,19 +656,23 @@ export const getExceptionsSummary = createServerFn({ method: 'GET' }).handler(
           .from(dueDate)
           .where(
             and(
-              inArray(dueDate.client, userClientIds),
+              inArray(dueDate.representativeId, userRepresentativeIds),
               gte(dueDate.dueDate, today),
               lte(dueDate.dueDate, threeDaysFromNow),
               isNull(dueDate.completedAt)
             )
           ),
 
-        // Clients with errors
+        // Representatives with open scraper_error alerts
         db
-          .select({ count: sql<number>`count(*)` })
-          .from(client)
+          .select({ count: sql<number>`count(DISTINCT ${alert.representativeId})` })
+          .from(alert)
           .where(
-            and(eq(client.organizationId, orgId), eq(client.hasErrors, true))
+            and(
+              eq(alert.organizationId, orgId),
+              eq(alert.type, 'scraper_error'),
+              eq(alert.status, 'open')
+            )
           ),
       ]);
 
@@ -676,7 +680,7 @@ export const getExceptionsSummary = createServerFn({ method: 'GET' }).handler(
       overdueDebtCount: Number(overdueDebts[0]?.count ?? 0),
       criticalNotificationCount: Number(criticalNotifs[0]?.count ?? 0),
       upcomingDueDateCount: Number(upcomingDueDates[0]?.count ?? 0),
-      clientErrorCount: Number(clientErrors[0]?.count ?? 0),
+      representativeErrorCount: Number(representativeErrors[0]?.count ?? 0),
     };
   }
 );

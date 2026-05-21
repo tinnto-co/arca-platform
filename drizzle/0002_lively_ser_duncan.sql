@@ -1,2 +1,0 @@
-ALTER TABLE "debt" ALTER COLUMN "due_date" SET DEFAULT '2026-01-26 13:55:18.666';--> statement-breakpoint
-ALTER TABLE "due_date" ALTER COLUMN "due_date" SET DEFAULT '2026-01-26 13:55:18.666';

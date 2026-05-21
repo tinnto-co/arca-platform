@@ -59,7 +59,7 @@ import {
   getInvoice,
   getInvoicesByProfile,
 } from '@/actions/invoice';
-import { getClients, getClientProfiles } from '@/actions/client';
+import { getRepresentatives, getRepresentativeClients } from '@/actions/client';
 import { cn } from '@/lib/utils';
 
 const ExcelJS = ExcelJSRaw as unknown as {
@@ -355,18 +355,18 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
         ? controlledSearchTerm
         : debouncedSearchTerm;
 
-    const { data: clients = [] } = useQuery({
-      queryKey: ['clients'],
-      queryFn: () => getClients(),
+    const { data: representatives = [] } = useQuery({
+      queryKey: ['representatives'],
+      queryFn: () => getRepresentatives(),
     });
 
-    const clientForProfiles =
+    const representativeForClients =
       clientId ?? (clientFilter !== 'all' ? clientFilter : undefined);
-    const { data: profiles = [] } = useQuery({
-      queryKey: ['clientProfiles', clientForProfiles],
+    const { data: representativeClients = [] } = useQuery({
+      queryKey: ['representativeClients', representativeForClients],
       queryFn: () =>
-        getClientProfiles({ data: { clientId: clientForProfiles! } }),
-      enabled: !!clientForProfiles,
+        getRepresentativeClients({ data: { representativeId: representativeForClients! } }),
+      enabled: !!representativeForClients,
     });
 
     /** Con filtros controlados por el padre, undefined = Sin período = sin filtro (todas las facturas). */
@@ -832,16 +832,16 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                 searchPlaceholder="Buscar cliente..."
                 options={[
                   { value: 'all', label: 'Todos los clientes' },
-                  ...clients.map((client) => ({
-                    value: client.id,
-                    label: client.name,
+                  ...representatives.map((rep) => ({
+                    value: rep.id,
+                    label: rep.name,
                   })),
                 ]}
                 width={192}
               />
             )}
 
-            {!isFiltersControlled && !profileId && clientForProfiles && (
+            {!isFiltersControlled && !profileId && representativeForClients && (
               <SearchableSelect
                 value={profileFilter}
                 onValueChange={(v) => {
@@ -852,7 +852,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                 searchPlaceholder="Buscar perfil..."
                 options={[
                   { value: 'all', label: 'Todos los perfiles' },
-                  ...profiles.map(
+                  ...representativeClients.map(
                     (p: {
                       id: string;
                       name?: string;

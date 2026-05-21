@@ -21,7 +21,7 @@ export const listAlerts = createServerFn({ method: 'GET' })
       status: z.string().optional(),
       severity: z.string().optional(),
       type: z.string().optional(),
-      clientId: z.string().uuid().optional(),
+      representativeId: z.string().uuid().optional(),
       errorCategory: z.string().optional(),
       limit: z.number().int().min(1).max(200).default(50),
     })
@@ -42,8 +42,8 @@ export const listAlerts = createServerFn({ method: 'GET' })
     if (ctx.data.type) {
       conditions.push(eq(alertTable.type, ctx.data.type) as any);
     }
-    if (ctx.data.clientId) {
-      conditions.push(eq(alertTable.clientId, ctx.data.clientId) as any);
+    if (ctx.data.representativeId) {
+      conditions.push(eq(alertTable.representativeId, ctx.data.representativeId) as any);
     }
     if (ctx.data.errorCategory) {
       conditions.push(
@@ -62,8 +62,8 @@ export const listAlerts = createServerFn({ method: 'GET' })
 export const createAlert = createServerFn({ method: 'POST' })
   .inputValidator(
     z.object({
+      representativeId: z.string().uuid().optional(),
       clientId: z.string().uuid().optional(),
-      profileId: z.string().uuid().optional(),
       type: z.string(),
       severity: z.string(),
       title: z.string(),
@@ -83,8 +83,8 @@ export const createAlert = createServerFn({ method: 'POST' })
       .insert(alertTable)
       .values({
         organizationId: orgId,
+        representativeId: ctx.data.representativeId,
         clientId: ctx.data.clientId,
-        profileId: ctx.data.profileId,
         type: ctx.data.type,
         severity: ctx.data.severity,
         title: ctx.data.title,
@@ -221,7 +221,7 @@ export const retryAlertJobs = createServerFn({ method: 'POST' })
     if (failedJobIds.length === 0) throw new Error('No hay jobs para reintentar');
 
     const jobsToRetry = await db
-      .select({ id: job.id, type: job.type, clientId: job.clientId })
+      .select({ id: job.id, type: job.type, clientId: job.representativeId })
       .from(job)
       .where(inArray(job.id, failedJobIds));
 
@@ -269,7 +269,7 @@ export const retryAllRetryable = createServerFn({ method: 'POST' })
 
     if (allJobIds.length > 0) {
       const jobsToRetry = await db
-        .select({ id: job.id, type: job.type, clientId: job.clientId })
+        .select({ id: job.id, type: job.type, clientId: job.representativeId })
         .from(job)
         .where(inArray(job.id, allJobIds));
 
