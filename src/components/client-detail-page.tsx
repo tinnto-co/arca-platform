@@ -226,13 +226,12 @@ const MetricDelta = ({
 
   return (
     <p
-      className={`text-xs mt-1 ${
-        diff > 0
+      className={`text-xs mt-1 ${diff > 0
           ? 'text-[var(--arca-accent-pos-fg)]'
           : diff < 0
             ? 'text-[var(--arca-accent-neg-fg)]'
             : 'text-muted-foreground'
-      }`}
+        }`}
     >
       {label}: {formattedPct}
     </p>
@@ -1338,17 +1337,17 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
           ? 0
           : null
         : ((invoiceStatsFiltered.totalSales - invoiceStatsPrevious.totalSales) /
-            invoiceStatsPrevious.totalSales) *
-          100;
+          invoiceStatsPrevious.totalSales) *
+        100;
     const purchasesPct =
       invoiceStatsPrevious.totalPurchases === 0
         ? invoiceStatsFiltered.totalPurchases === 0
           ? 0
           : null
         : ((invoiceStatsFiltered.totalPurchases -
-            invoiceStatsPrevious.totalPurchases) /
-            invoiceStatsPrevious.totalPurchases) *
-          100;
+          invoiceStatsPrevious.totalPurchases) /
+          invoiceStatsPrevious.totalPurchases) *
+        100;
     return { salesPct, purchasesPct };
   }, [invoiceStatsFiltered, invoiceStatsPrevious, facturasPeriodType]);
 
@@ -1426,7 +1425,7 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
       );
       const byMonthKey: Record<string, { ventas: number; compras: number }> =
         {};
-      for (let t = from.getTime(); t <= to.getTime(); ) {
+      for (let t = from.getTime(); t <= to.getTime();) {
         const d = new Date(t);
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         byMonthKey[key] = { ventas: 0, compras: 0 };
@@ -1797,7 +1796,7 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                 value="notificaciones"
                 className={tabTriggerCls(
                   (lastNotificacionesJob && !lastNotificacionesJob.success) ||
-                    !!lastNotificacionesJob?.notificationFetchWarning
+                  !!lastNotificacionesJob?.notificationFetchWarning
                 )}
               >
                 <Bell className="h-[14px] w-[14px]" />
@@ -2141,7 +2140,7 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                           Number(
                             resumenClientIva.data
                               .saldoLibreDisponibilidadFavorContribuyentePeriodo ??
-                              0
+                            0
                           ) > 0
                             ? 'text-[var(--arca-accent-pos-fg)]'
                             : 'text-[var(--arca-ink-3)]'
@@ -2278,9 +2277,9 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                         pid === 'all'
                           ? 'Todos'
                           : profiles.find((p) => p.id === pid)?.name ||
-                            profiles.find((p) => p.id === pid)
-                              ?.identityNumber ||
-                            pid;
+                          profiles.find((p) => p.id === pid)
+                            ?.identityNumber ||
+                          pid;
                       const on = resumenNotifProfileId === pid;
                       return (
                         <button
@@ -2338,10 +2337,10 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                           <p className="text-[10px] font-mono text-[var(--arca-ink-4)] mt-0.5">
                             {notif.publicationDate
                               ? format(
-                                  new Date(notif.publicationDate),
-                                  'dd/MM/yyyy',
-                                  { locale: es }
-                                )
+                                new Date(notif.publicationDate),
+                                'dd/MM/yyyy',
+                                { locale: es }
+                              )
                               : '—'}
                           </p>
                         </button>
@@ -2816,13 +2815,13 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                     <thead>
                       <tr className="bg-[var(--arca-surface-2)]">
                         {([
-                            ...(profiles.length > 1 ? [{ label: 'Perfil', key: 'profileName' as const }] : []),
-                            { label: 'Impuesto', key: 'tax' as const },
-                            { label: 'Concepto', key: 'concept' as const },
-                            { label: 'Período', key: 'period' as const },
-                            { label: 'Vencimiento', key: 'dueDate' as const },
-                            { label: 'Últ. Actualización', key: 'detectedAt' as const },
-                          ]).map(({ label, key }) => (
+                          ...(profiles.length > 1 ? [{ label: 'Perfil', key: 'profileName' as const }] : []),
+                          { label: 'Impuesto', key: 'tax' as const },
+                          { label: 'Concepto', key: 'concept' as const },
+                          { label: 'Período', key: 'period' as const },
+                          { label: 'Vencimiento', key: 'dueDate' as const },
+                          { label: 'Últ. Actualización', key: 'detectedAt' as const },
+                        ]).map(({ label, key }) => (
                           <th
                             key={key}
                             className="px-[14px] py-[9px] text-left text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] border-b border-[var(--arca-border)] whitespace-nowrap cursor-pointer select-none hover:text-[var(--arca-ink-2)] transition-colors"
@@ -2926,10 +2925,10 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                             <td className="px-[14px] py-[10px] whitespace-nowrap text-[11px] text-[var(--arca-ink-4)]">
                               {debt.detectedAt
                                 ? new Date(debt.detectedAt).toLocaleDateString('es-AR', {
-                                    day: '2-digit',
-                                    month: 'short',
-                                    year: 'numeric',
-                                  })
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric',
+                                })
                                 : '-'}
                             </td>
                             <td
@@ -3790,8 +3789,8 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                           ? facturasDateRange?.to
                             ? `${format(facturasDateRange.from, 'dd/MM/yyyy', { locale: es })} – ${format(facturasDateRange.to, 'dd/MM/yyyy', { locale: es })}`
                             : format(facturasDateRange.from, 'dd/MM/yyyy', {
-                                locale: es,
-                              })
+                              locale: es,
+                            })
                           : 'Elegir fechas'}
                       </Button>
                     </PopoverTrigger>
@@ -3909,11 +3908,11 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                       {invoiceStatsFiltered == null
                         ? '—'
                         : new Intl.NumberFormat('es-AR', {
-                            style: 'currency',
-                            currency: 'ARS',
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          }).format(invoiceStatsFiltered.totalSales)}
+                          style: 'currency',
+                          currency: 'ARS',
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        }).format(invoiceStatsFiltered.totalSales)}
                     </div>
                     {facturasVariationPct?.salesPct !== undefined && (
                       <div
@@ -3922,7 +3921,7 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                           facturasVariationPct.salesPct === 0
                             ? 'text-muted-foreground'
                             : facturasVariationPct.salesPct !== null &&
-                                facturasVariationPct.salesPct > 0
+                              facturasVariationPct.salesPct > 0
                               ? 'text-[var(--arca-accent-pos-fg)]'
                               : 'text-[var(--arca-accent-neg-fg)]'
                         )}
@@ -3947,11 +3946,11 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                       {invoiceStatsFiltered == null
                         ? '—'
                         : new Intl.NumberFormat('es-AR', {
-                            style: 'currency',
-                            currency: 'ARS',
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          }).format(invoiceStatsFiltered.totalPurchases)}
+                          style: 'currency',
+                          currency: 'ARS',
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        }).format(invoiceStatsFiltered.totalPurchases)}
                     </div>
                     {facturasVariationPct?.purchasesPct !== undefined && (
                       <div
@@ -3960,7 +3959,7 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                           facturasVariationPct.purchasesPct === 0
                             ? 'text-muted-foreground'
                             : facturasVariationPct.purchasesPct !== null &&
-                                facturasVariationPct.purchasesPct > 0
+                              facturasVariationPct.purchasesPct > 0
                               ? 'text-[var(--arca-accent-pos-fg)]'
                               : 'text-[var(--arca-accent-neg-fg)]'
                         )}
@@ -3986,8 +3985,8 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                         'text-xl font-bold tabular-nums break-all',
                         invoiceStatsFiltered != null &&
                           invoiceStatsFiltered.totalSales -
-                            invoiceStatsFiltered.totalPurchases <
-                            0
+                          invoiceStatsFiltered.totalPurchases <
+                          0
                           ? 'text-[var(--arca-accent-neg-fg)]'
                           : 'text-foreground'
                       )}
@@ -3995,14 +3994,14 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                       {invoiceStatsFiltered == null
                         ? '—'
                         : new Intl.NumberFormat('es-AR', {
-                            style: 'currency',
-                            currency: 'ARS',
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          }).format(
-                            invoiceStatsFiltered.totalSales -
-                              invoiceStatsFiltered.totalPurchases
-                          )}
+                          style: 'currency',
+                          currency: 'ARS',
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        }).format(
+                          invoiceStatsFiltered.totalSales -
+                          invoiceStatsFiltered.totalPurchases
+                        )}
                     </div>
                   </div>
                 </CardContent>
@@ -5006,8 +5005,8 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                             <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)] whitespace-nowrap">
                               {req.dueAt
                                 ? new Date(
-                                    req.dueAt as unknown as string
-                                  ).toLocaleDateString('es-AR')
+                                  req.dueAt as unknown as string
+                                ).toLocaleDateString('es-AR')
                                 : '—'}
                             </td>
                             <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)] whitespace-nowrap">
@@ -5334,13 +5333,13 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                           <TableCell className="text-[11px]">
                             {inv.emitionDate
                               ? new Date(inv.emitionDate).toLocaleDateString(
-                                  'es-AR',
-                                  {
-                                    day: '2-digit',
-                                    month: '2-digit',
-                                    year: 'numeric',
-                                  }
-                                )
+                                'es-AR',
+                                {
+                                  day: '2-digit',
+                                  month: '2-digit',
+                                  year: 'numeric',
+                                }
+                              )
                               : '—'}
                           </TableCell>
                           <TableCell className="text-[11px]">
@@ -5396,13 +5395,13 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                         <span className="text-muted-foreground">
                           {inv.emitionDate
                             ? new Date(inv.emitionDate).toLocaleDateString(
-                                'es-AR',
-                                {
-                                  day: '2-digit',
-                                  month: '2-digit',
-                                  year: 'numeric',
-                                }
-                              )
+                              'es-AR',
+                              {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric',
+                              }
+                            )
                             : '—'}
                         </span>
                       </div>

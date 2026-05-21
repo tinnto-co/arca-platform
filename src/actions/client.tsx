@@ -426,6 +426,26 @@ export const getRepresentativePassword = createServerFn({
     return { password: rep.afipPassword ? safeDecrypt(rep.afipPassword) : '' };
   });
 
+export const getClientPassword = createServerFn({
+  method: 'GET',
+})
+  .inputValidator(z.object({ clientId: z.string() }))
+  .handler(async (ctx) => {
+    await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const [row] = await db
+      .select({ password: client.password })
+      .from(client)
+      .where(eq(client.id, ctx.data.clientId))
+      .limit(1);
+
+    if (!row) throw new Error('Cliente no encontrado');
+
+    return { password: safeDecrypt(row.password) };
+  });
+
 /**
  * Periodo fiscal del mes anterior en formato "MM/YYYY".
  * Ej: hoy 30/1/26 -> "12/2025"
