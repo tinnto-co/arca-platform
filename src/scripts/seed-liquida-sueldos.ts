@@ -1,12 +1,12 @@
 /**
- * Data migration: set liquida_sueldos = true on profiles whose CUIT matches
+ * Data migration: set liquida_sueldos = true on clients whose CUIT matches
  * the authorized payroll companies list.
  *
  * Run after `bun run db:push`:
  *   bun src/scripts/seed-liquida-sueldos.ts
  */
 import { db } from '@/lib/db';
-import { profile } from '@/drizzle/schema';
+import { client } from '@/drizzle/schema';
 import { inArray } from 'drizzle-orm';
 
 // CUITs of companies that liquidate payroll, in both formats (with and without dashes).
@@ -74,21 +74,21 @@ const CUIL_LIST = [
 ];
 
 async function main() {
-  console.log('Setting liquida_sueldos = false for all profiles...');
-  await db.update(profile).set({ liquidaSueldos: false });
+  console.log('Setting liquida_sueldos = false for all clients...');
+  await db.update(client).set({ liquidaSueldos: false });
 
-  console.log('Setting liquida_sueldos = true for authorized profiles...');
+  console.log('Setting liquida_sueldos = true for authorized clients...');
   const result = await db
-    .update(profile)
+    .update(client)
     .set({ liquidaSueldos: true })
-    .where(inArray(profile.identityNumber, CUIL_LIST))
+    .where(inArray(client.identityNumber, CUIL_LIST))
     .returning({
-      id: profile.id,
-      name: profile.name,
-      identityNumber: profile.identityNumber,
+      id: client.id,
+      name: client.name,
+      identityNumber: client.identityNumber,
     });
 
-  console.log(`Updated ${result.length} profile(s):`);
+  console.log(`Updated ${result.length} client(s):`);
   for (const p of result) {
     console.log(`  - ${p.name} (${p.identityNumber})`);
   }
