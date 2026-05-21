@@ -19,7 +19,7 @@ import {
   getReciboDetalle,
   getPayrollEmployerConfig,
 } from '@/actions/sueldos';
-import { getClient } from '@/actions/client';
+import { getClient } from '@/actions/profile';
 import { legajoParaMostrar } from '@/lib/legajo';
 import { Button } from '@/components/ui/button';
 import { ImprimirRecibosDialog } from '@/components/sueldos/ImprimirRecibosDialog';

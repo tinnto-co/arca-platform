@@ -32,7 +32,7 @@ export const jobTypeEnum = pgEnum("job_type", [
   "vencimientos",
 ]);
 
-export const client = pgTable("client", {
+export const representative = pgTable("representative", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: text("organization_id")
     .notNull()
@@ -40,38 +40,31 @@ export const client = pgTable("client", {
   userId: text("user_id")
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
+  /** Nombre de la persona física. Puede ser null si aún no se scrapeó de AFIP. */
+  name: text("name"),
+  /** CUIT de la persona física (login AFIP) */
+  cuit: text("cuit").notNull().default(""),
+  /** Password encriptado de AFIP */
+  afipPassword: text("afip_password").notNull().default(""),
   email: text("email").notNull().default(""),
   phone: text("phone").notNull().default(""),
   address: text("address").notNull().default(""),
-  identityNumber: text("identity_number").notNull().default(""),
-  identityType: text("identity_type").notNull().default("cuit"),
-  password: text("password").notNull().default(""),
   image: text("image").default(""),
   status: text("status").notNull().default("active"),
   convenioMultilateral: boolean("convenio_multilateral").notNull().default(false),
   regimenLocal: boolean("regimen_local").notNull().default(false),
   fiscalCondition: text("fiscal_condition"),
   liquidaSueldos: boolean("liquida_sueldos").notNull().default(false),
-  cuitEmpresa: text("cuit_empresa").notNull().default(""),
-  /**
-   * Campos legacy todavía presentes en BD productiva.
-   * Se mantienen en schema para evitar que drizzle-kit push intente eliminarlos.
-   */
-  esPersonaFisica: boolean("es_persona_fisica").notNull().default(true),
-  razonSocial: text("razon_social").notNull().default(""),
-  hasErrors: boolean("has_errors").default(false).notNull(),
-  errorMessage: text("error_message").default(""),
   registeredAt: timestamp("registered_at").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
-  index('idx_client_org').on(table.organizationId),
+  index('idx_representative_org').on(table.organizationId),
 ]);
 
-export const profile = pgTable("profile", {
+export const client = pgTable("client", {
   id: uuid("id").primaryKey().defaultRandom(),
-  client: uuid("client_id").references(() => client.id, {
+  representativeId: uuid("representative_id").references(() => representative.id, {
     onDelete: "cascade",
   }),
   name: text("name").notNull(),
@@ -96,6 +89,8 @@ export const profile = pgTable("profile", {
   disabledAt: timestamp("disabled_at"),
   disabledReason: text("disabled_reason"),
   profileType: text("profile_type").notNull().default("unknown"),
+  /** ID de contribuyente en AFIP FES (Mis Comprobantes). Se cachea del discovery. */
+  afipContribuyenteId: integer("afip_contribuyente_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -103,15 +98,15 @@ export const profile = pgTable("profile", {
 /**
  * Convenios colectivos de trabajo (CCT) obtenidos desde AFIP -
  * "Simplificación Registral - Empleadores".
- * Se persiste por `profile_id` y `cct`.
+ * Se persiste por `client_id` y `cct`.
  */
 export const afipEmpleadoresConvenio = pgTable(
   "afip_empleadores_convenio",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    profileId: uuid("profile_id")
+    clientId: uuid("client_id")
       .notNull()
-      .references(() => profile.id, { onDelete: "cascade" }),
+      .references(() => client.id, { onDelete: "cascade" }),
     /** FK al catálogo global. Poblado automáticamente por trigger al insertar/actualizar. */
     convenioId: uuid("convenio_id")
       .references(() => conveniosDeTrabajo.id, { onDelete: "set null" }),
@@ -123,8 +118,8 @@ export const afipEmpleadoresConvenio = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [
-    unique("afip_empleadores_convenio_profile_id_cct_unique").on(
-      table.profileId,
+    unique("afip_empleadores_convenio_client_id_cct_unique").on(
+      table.clientId,
       table.cct
     ),
   ]
@@ -151,7 +146,7 @@ export const conveniosDeTrabajo = pgTable("convenios_de_trabajo", {
 
 /**
  * Conceptos AFIP para el servicio "Simplificación Registral - Empleadores".
- * Se mapean por `profile_id` y `concepto_afip_id`.
+ * Se mapean por `client_id` y `concepto_afip_id`.
  */
 export const lsdConceptoAfip = pgTable(
   "lsd_concepto_afip",
@@ -169,9 +164,9 @@ export const lsdPerfilConcepto = pgTable(
   "lsd_perfil_concepto",
   {
     id: uuid("id").primaryKey().defaultRandom().notNull(),
-    profileId: uuid("profile_id")
+    clientId: uuid("client_id")
       .notNull()
-      .references(() => profile.id, { onDelete: "cascade" }),
+      .references(() => client.id, { onDelete: "cascade" }),
     conceptoAfipId: uuid("concepto_afip_id")
       .notNull()
       .references(() => lsdConceptoAfip.id, { onDelete: "cascade" }),
@@ -197,8 +192,8 @@ export const lsdPerfilConcepto = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [
-    unique("lsd_perfil_concepto_profile_id_codigo_contribuyente_unique").on(
-      table.profileId,
+    unique("lsd_perfil_concepto_client_id_codigo_contribuyente_unique").on(
+      table.clientId,
       table.codigoContribuyente
     ),
   ]
@@ -220,37 +215,28 @@ export const conceptoSos = pgTable(
   (table) => [unique("concepto_sos_codigo_unique").on(table.codigo)]
 );
 
-export const conceptoSosProfile = pgTable(
-  "concepto_sos_profile",
+export const conceptoSosClient = pgTable(
+  "concepto_sos_client",
   {
     id: uuid("id").primaryKey().defaultRandom().notNull(),
     conceptoId: uuid("concepto_id")
       .notNull()
       .references(() => conceptoSos.id, { onDelete: "cascade" }),
-    profileId: uuid("profile_id")
+    clientId: uuid("client_id")
       .notNull()
-      .references(() => profile.id, { onDelete: "cascade" }),
+      .references(() => client.id, { onDelete: "cascade" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
-    unique("concepto_sos_profile_concepto_profile_unique").on(table.conceptoId, table.profileId),
+    unique("concepto_sos_client_concepto_client_unique").on(table.conceptoId, table.clientId),
   ]
 );
 
-export const credential = pgTable("credential", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  client: uuid("client_id").references(() => client.id, {
-    onDelete: "cascade",
-  }),
-  provider: text("provider").notNull(),
-  data: jsonb("data").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+
 
 export const document = pgTable("document", {
   id: uuid("id").primaryKey().defaultRandom(),
-  client: uuid("client_id").references(() => client.id, {
+  representativeId: uuid("representative_id").references(() => representative.id, {
     onDelete: "cascade",
   }),
   type: text("type").notNull(),
@@ -277,10 +263,10 @@ export const invoiceAttachment = pgTable("invoice_attachment", {
 export const notification = pgTable("notification", {
   id: uuid("id").primaryKey().defaultRandom(),
   externalId: text("external_id").notNull(),
-  client: uuid("client_id").references(() => client.id, {
+  representativeId: uuid("representative_id").references(() => representative.id, {
     onDelete: "cascade",
   }),
-  profile: uuid("profile_id").references(() => profile.id, {
+  clientId: uuid("client_id").references(() => client.id, {
     onDelete: "cascade",
   }),
   message: text("message").notNull(),
@@ -297,8 +283,8 @@ export const notification = pgTable("notification", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
-  index('idx_notification_client_opened').on(table.client, table.opened),
-  index('idx_notification_severity').on(table.client, table.severity),
+  index('idx_notification_representative_opened').on(table.representativeId, table.opened),
+  index('idx_notification_severity').on(table.representativeId, table.severity),
 ]);
 
 export const invoice = pgTable("invoice", {
@@ -315,12 +301,12 @@ export const invoice = pgTable("invoice", {
   currency: text("currency").notNull(),
   cureencyRate: numeric("currency_rate").notNull(),
   salePoint: text("sale_point").notNull(),
-  client: uuid("client_id").references(() => client.id, {
+  representativeId: uuid("representative_id").references(() => representative.id, {
     onDelete: "cascade",
   }),
   receiptProvince: text("receipt_province"),
 
-  profile: uuid("profile_id").references(() => profile.id, {
+  clientId: uuid("client_id").references(() => client.id, {
     onDelete: "cascade",
   }),
   authorizationNumber: text("authorization_number").notNull(),
@@ -348,23 +334,26 @@ export const invoice = pgTable("invoice", {
 
 }, (table) => [
   foreignKey({
-    columns: [table.client],
+    columns: [table.representativeId],
+    foreignColumns: [representative.id],
+    name: "invoice_representative_id_representative_id_fk"
+  }).onDelete("cascade"),
+  foreignKey({
+    columns: [table.clientId],
     foreignColumns: [client.id],
     name: "invoice_client_id_client_id_fk"
   }).onDelete("cascade"),
-  foreignKey({
-    columns: [table.profile],
-    foreignColumns: [profile.id],
-    name: "invoice_profile_id_profile_id_fk"
-  }).onDelete("cascade"),
-  unique("invoice_client_auth_type_unique").on(table.client, table.authorizationNumber, table.type),
-  index('idx_invoice_client').on(table.client),
-  index('idx_invoice_client_date').on(table.client, table.emitionDate),
+  unique("invoice_representative_auth_type_unique").on(table.representativeId, table.authorizationNumber, table.type),
+  index('idx_invoice_representative').on(table.representativeId),
+  index('idx_invoice_representative_date').on(table.representativeId, table.emitionDate),
 ]);
 
 export const dueDate = pgTable("due_date", {
   id: uuid("id").primaryKey().defaultRandom(),
-  client: uuid("client_id").references(() => client.id, {
+  representativeId: uuid("representative_id").references(() => representative.id, {
+    onDelete: "cascade",
+  }),
+  clientId: uuid("client_id").references(() => client.id, {
     onDelete: "cascade",
   }),
   tax: text("tax").notNull().default(""),
@@ -379,12 +368,15 @@ export const dueDate = pgTable("due_date", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
-  index('idx_duedate_client_date').on(table.client, table.dueDate),
+  index('idx_duedate_representative_date').on(table.representativeId, table.dueDate),
 ]);
 
 export const debt = pgTable("debt", {
   id: uuid("id").primaryKey().defaultRandom(),
-  client: uuid("client_id").references(() => client.id, {
+  representativeId: uuid("representative_id").notNull().references(() => representative.id, {
+    onDelete: "cascade",
+  }),
+  clientId: uuid("client_id").references(() => client.id, {
     onDelete: "cascade",
   }),
   establishment: text("establishment").notNull().default(""),
@@ -404,7 +396,7 @@ export const debt = pgTable("debt", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
-  index('idx_debt_client_date').on(table.client, table.dueDate),
+  index('idx_debt_representative_date').on(table.representativeId, table.dueDate),
 ]);
 
 
@@ -438,16 +430,16 @@ export const movements = pgTable("movements", {
 });
 
 /**
- * Resultado del scrape mensual de IVA (AFIP). Un registro por perfil por período.
+ * Resultado del scrape mensual de IVA (AFIP). Un registro por client por período.
  * El scrape se ejecuta una vez al mes, no cada vez que se abre la pestaña IVA.
  */
 export const ivaScrape = pgTable(
   "iva_scrape",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    profileId: uuid("profile_id")
+    clientId: uuid("client_id")
       .notNull()
-      .references(() => profile.id, { onDelete: "cascade" }),
+      .references(() => client.id, { onDelete: "cascade" }),
     periodoFiscal: text("periodo_fiscal").notNull(), // ej. "12/2025"
     fechaPresentacion: text("fecha_presentacion"), // ej. "15/01/2026"
     ok: boolean("ok").notNull(),
@@ -471,8 +463,8 @@ export const ivaScrape = pgTable(
       .notNull(),
   },
   (table) => [
-    // Un solo registro por perfil por período (upsert mensual)
-    unique("iva_scrape_profile_periodo_unique").on(table.profileId, table.periodoFiscal),
+    // Un solo registro por client por período (upsert mensual)
+    unique("iva_scrape_client_periodo_unique").on(table.clientId, table.periodoFiscal),
   ]
 );
 
@@ -481,9 +473,9 @@ export const job = pgTable("job", {
   id: uuid("id").primaryKey().defaultRandom(),
   status: jobStatusEnum("status").notNull().default("pending"),
   type: jobTypeEnum("type").notNull(),
-  clientId: uuid("client_id")
+  representativeId: uuid("representative_id")
     .notNull()
-    .references(() => client.id, { onDelete: "cascade" }),
+    .references(() => representative.id, { onDelete: "cascade" }),
   params: jsonb("params").default({}),
   result: jsonb("result"),
   failedReason: text("failed_reason"),
@@ -615,12 +607,12 @@ export const payrollConvenioTipoJornadaEnum = pgEnum("payroll_tipo_jornada", [
   "reducida",
 ]);
 
-/** Convenios colectivos de trabajo (por cliente) */
+/** Convenios colectivos de trabajo (por representative) */
 export const payrollConvenio = pgTable("payroll_convenio", {
   id: uuid("id").primaryKey().defaultRandom(),
-  clientId: uuid("client_id")
+  representativeId: uuid("representative_id")
     .notNull()
-    .references(() => client.id, { onDelete: "cascade" }),
+    .references(() => representative.id, { onDelete: "cascade" }),
   nombre: text("nombre").notNull(),
   cctCodigo: text("cct_codigo"),
   descripcion: text("descripcion"),
@@ -785,12 +777,12 @@ export const payrollSituacionRevistaEnum = pgEnum("payroll_situacion_revista", [
   "otro",
 ]);
 
-/** Conceptos salariales configurables (fórmula, %, monto fijo, base) — por cliente */
+/** Conceptos salariales configurables (fórmula, %, monto fijo, base) — por representative */
 export const payrollConcepto = pgTable("payroll_concepto", {
   id: uuid("id").primaryKey().defaultRandom(),
-  clientId: uuid("client_id")
+  representativeId: uuid("representative_id")
     .notNull()
-    .references(() => client.id, { onDelete: "cascade" }),
+    .references(() => representative.id, { onDelete: "cascade" }),
   codigo: text("codigo").notNull(),
   nombre: text("nombre").notNull(),
   tipo: payrollConceptoTipoEnum("tipo").notNull(),
@@ -826,14 +818,14 @@ export const payrollConcepto = pgTable("payroll_concepto", {
     .notNull(),
 });
 
-/** Empleados del perfil que liquida sueldos — fuente de verdad unificada (importados + manuales) */
+/** Empleados del client que liquida sueldos — fuente de verdad unificada (importados + manuales) */
 export const liquidacionImportEmpleado = pgTable(
   "liquidacion_import_empleado",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    profileId: uuid("profile_id")
+    clientId: uuid("client_id")
       .notNull()
-      .references(() => profile.id, { onDelete: "cascade" }),
+      .references(() => client.id, { onDelete: "cascade" }),
     cuil: text("cuil").notNull(),
     legajo: text("legajo").notNull(),
     nombre: text("nombre").notNull(),
@@ -901,8 +893,8 @@ export const liquidacionImportEmpleado = pgTable(
       .notNull(),
   },
   (table) => [
-    unique("liquidacion_import_empleado_profile_id_cuil_unique").on(
-      table.profileId,
+    unique("liquidacion_import_empleado_client_id_cuil_unique").on(
+      table.clientId,
       table.cuil,
     ),
   ],
@@ -1043,8 +1035,8 @@ export const dataSourceEvent = pgTable("data_source_event", {
   organizationId: text("organization_id")
     .notNull()
     .references(() => organization.id, { onDelete: "cascade" }),
+  representativeId: uuid("representative_id").references(() => representative.id, { onDelete: "cascade" }),
   clientId: uuid("client_id").references(() => client.id, { onDelete: "cascade" }),
-  profileId: uuid("profile_id").references(() => profile.id, { onDelete: "cascade" }),
   entityType: text("entity_type").notNull(),
   entityId: text("entity_id").notNull(),
   source: text("source").notNull(),
@@ -1095,8 +1087,8 @@ export const agentRun = pgTable("agent_run", {
   organizationId: text("organization_id")
     .notNull()
     .references(() => organization.id, { onDelete: "cascade" }),
+  representativeId: uuid("representative_id").references(() => representative.id, { onDelete: "set null" }),
   clientId: uuid("client_id").references(() => client.id, { onDelete: "set null" }),
-  profileId: uuid("profile_id").references(() => profile.id, { onDelete: "set null" }),
   status: text("status").notNull().default("running"),
   intent: text("intent"),
   input: text("input").notNull(),
@@ -1108,14 +1100,14 @@ export const agentRun = pgTable("agent_run", {
 });
 
 /**
- * Fiscal year end date configuration per client for balance alerts.
+ * Fiscal year end date configuration per representative for balance alerts.
  */
-export const clientBalanceConfig = pgTable("client_balance_config", {
+export const representativeBalanceConfig = pgTable("representative_balance_config", {
   id: uuid("id").primaryKey().defaultRandom(),
-  clientId: uuid("client_id")
+  representativeId: uuid("representative_id")
     .notNull()
     .unique()
-    .references(() => client.id, { onDelete: "cascade" }),
+    .references(() => representative.id, { onDelete: "cascade" }),
   fiscalYearEndMonth: integer("fiscal_year_end_month").notNull(),
   fiscalYearEndDay: integer("fiscal_year_end_day").notNull(),
   presentationDueDays: integer("presentation_due_days"),
@@ -1126,21 +1118,21 @@ export const clientBalanceConfig = pgTable("client_balance_config", {
 });
 
 /**
- * Periodic risk snapshots per profile for tracking risk trends over time.
+ * Periodic risk snapshots per client for tracking risk trends over time.
  * risk_level values: low, medium, high, critical
  */
-export const profileRiskSnapshot = pgTable("profile_risk_snapshot", {
+export const clientRiskSnapshot = pgTable("client_risk_snapshot", {
   id: uuid("id").primaryKey().defaultRandom(),
-  profileId: uuid("profile_id")
+  clientId: uuid("client_id")
     .notNull()
-    .references(() => profile.id, { onDelete: "cascade" }),
+    .references(() => client.id, { onDelete: "cascade" }),
   period: text("period").notNull(),
   score: numeric("score", { precision: 5, scale: 2 }).notNull(),
   riskLevel: text("risk_level").notNull(),
   factors: jsonb("factors"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
-  unique("profile_risk_snapshot_profile_id_period_unique").on(table.profileId, table.period),
+  unique("client_risk_snapshot_client_id_period_unique").on(table.clientId, table.period),
 ]);
 
 /**
@@ -1152,8 +1144,8 @@ export const alert = pgTable("alert", {
   organizationId: text("organization_id")
     .notNull()
     .references(() => organization.id, { onDelete: "cascade" }),
-  clientId: uuid("client_id").references(() => client.id, { onDelete: "cascade" }),
-  profileId: uuid("profile_id").references(() => profile.id, { onDelete: "set null" }),
+  representativeId: uuid("representative_id").references(() => representative.id, { onDelete: "cascade" }),
+  clientId: uuid("client_id").references(() => client.id, { onDelete: "set null" }),
   type: text("type").notNull(),
   severity: text("severity").notNull(),
   title: text("title").notNull(),
@@ -1173,14 +1165,14 @@ export const alert = pgTable("alert", {
 ]);
 
 /**
- * Client portal access control: scoped access per client user.
- * Controls which sections a client user can view.
+ * Representative portal access control: scoped access per representative user.
+ * Controls which sections a representative user can view.
  */
-export const clientUserAccess = pgTable("client_user_access", {
+export const representativeUserAccess = pgTable("representative_user_access", {
   id: uuid("id").primaryKey().defaultRandom(),
-  clientId: uuid("client_id")
+  representativeId: uuid("representative_id")
     .notNull()
-    .references(() => client.id, { onDelete: "cascade" }),
+    .references(() => representative.id, { onDelete: "cascade" }),
   userId: text("user_id")
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),
@@ -1192,7 +1184,7 @@ export const clientUserAccess = pgTable("client_user_access", {
   canChatAi: boolean("can_chat_ai").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
-  unique("client_user_access_client_id_user_id_unique").on(table.clientId, table.userId),
+  unique("representative_user_access_representative_id_user_id_unique").on(table.representativeId, table.userId),
 ]);
 
 /**
@@ -1238,9 +1230,9 @@ export const payrollPeriodNovelty = pgTable("payroll_period_novelty", {
 
 export const payrollReceiptTemplate = pgTable("payroll_receipt_template", {
   id: uuid("id").primaryKey().defaultRandom(),
-  profileId: uuid("profile_id")
+  clientId: uuid("client_id")
     .notNull()
-    .references(() => profile.id, { onDelete: "cascade" }),
+    .references(() => client.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   receiptType: text("receipt_type").notNull().default("sueldo"),
   conceptIds: jsonb("concept_ids"),
@@ -1253,10 +1245,10 @@ export const payrollReceiptTemplate = pgTable("payroll_receipt_template", {
  */
 export const bankAccount = pgTable("bank_account", {
   id: uuid("id").primaryKey().defaultRandom(),
-  clientId: uuid("client_id")
+  representativeId: uuid("representative_id")
     .notNull()
-    .references(() => client.id, { onDelete: "cascade" }),
-  profileId: uuid("profile_id").references(() => profile.id, { onDelete: "set null" }),
+    .references(() => representative.id, { onDelete: "cascade" }),
+  clientId: uuid("client_id").references(() => client.id, { onDelete: "set null" }),
   bankName: text("bank_name").notNull(),
   accountNumber: text("account_number"),
   currency: text("currency").notNull().default("ARS"),
@@ -1314,10 +1306,10 @@ export const financialMovementClassification = pgTable("financial_movement_class
   id: uuid("id").primaryKey().defaultRandom(),
   sourceType: text("source_type").notNull(),
   sourceId: uuid("source_id").notNull(),
-  clientId: uuid("client_id")
+  representativeId: uuid("representative_id")
     .notNull()
-    .references(() => client.id, { onDelete: "cascade" }),
-  profileId: uuid("profile_id").references(() => profile.id, { onDelete: "set null" }),
+    .references(() => representative.id, { onDelete: "cascade" }),
+  clientId: uuid("client_id").references(() => client.id, { onDelete: "set null" }),
   category: text("category").notNull(),
   isBusinessRelated: boolean("is_business_related").notNull().default(true),
   isTaxRelevant: boolean("is_tax_relevant").notNull().default(true),
@@ -1327,15 +1319,15 @@ export const financialMovementClassification = pgTable("financial_movement_class
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export const clientRequest = pgTable("client_request", {
+export const representativeRequest = pgTable("representative_request", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: text("organization_id")
     .notNull()
     .references(() => organization.id, { onDelete: "cascade" }),
-  clientId: uuid("client_id")
+  representativeId: uuid("representative_id")
     .notNull()
-    .references(() => client.id, { onDelete: "cascade" }),
-  profileId: uuid("profile_id").references(() => profile.id, { onDelete: "set null" }),
+    .references(() => representative.id, { onDelete: "cascade" }),
+  clientId: uuid("client_id").references(() => client.id, { onDelete: "set null" }),
   requestedByUserId: text("requested_by_user_id").references(() => user.id, { onDelete: "set null" }),
   title: text("title").notNull(),
   description: text("description"),
@@ -1355,9 +1347,9 @@ export const accountingAccount = pgTable(
   "accounting_account",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    clientId: uuid("client_id")
+    representativeId: uuid("representative_id")
       .notNull()
-      .references(() => client.id, { onDelete: "cascade" }),
+      .references(() => representative.id, { onDelete: "cascade" }),
     code: text("code").notNull(),
     name: text("name").notNull(),
     type: text("type").notNull(),
@@ -1366,7 +1358,7 @@ export const accountingAccount = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
-    unique("accounting_account_client_id_code_unique").on(table.clientId, table.code),
+    unique("accounting_account_representative_id_code_unique").on(table.representativeId, table.code),
     foreignKey({
       columns: [table.parentId],
       foreignColumns: [table.id],
@@ -1381,10 +1373,10 @@ export const accountingAccount = pgTable(
  */
 export const journalEntry = pgTable("journal_entry", {
   id: uuid("id").primaryKey().defaultRandom(),
-  clientId: uuid("client_id")
+  representativeId: uuid("representative_id")
     .notNull()
-    .references(() => client.id, { onDelete: "cascade" }),
-  profileId: uuid("profile_id").references(() => profile.id, { onDelete: "set null" }),
+    .references(() => representative.id, { onDelete: "cascade" }),
+  clientId: uuid("client_id").references(() => client.id, { onDelete: "set null" }),
   entryDate: timestamp("entry_date").notNull(),
   description: text("description"),
   sourceType: text("source_type"),
@@ -1412,14 +1404,14 @@ export const journalEntryLine = pgTable("journal_entry_line", {
 });
 
 /**
- * Tax projections per profile and period for estimated vs actual tracking.
- * Unique on (profile_id, period, tax).
+ * Tax projections per client and period for estimated vs actual tracking.
+ * Unique on (client_id, period, tax).
  */
 export const taxProjection = pgTable("tax_projection", {
   id: uuid("id").primaryKey().defaultRandom(),
-  profileId: uuid("profile_id")
+  clientId: uuid("client_id")
     .notNull()
-    .references(() => profile.id, { onDelete: "cascade" }),
+    .references(() => client.id, { onDelete: "cascade" }),
   period: text("period").notNull(),
   tax: text("tax").notNull(),
   projectedAmount: numeric("projected_amount", { precision: 14, scale: 2 }).notNull(),
@@ -1427,7 +1419,7 @@ export const taxProjection = pgTable("tax_projection", {
   factors: jsonb("factors"),
   generatedAt: timestamp("generated_at").defaultNow().notNull(),
 }, (table) => [
-  unique("tax_projection_profile_id_period_tax_unique").on(table.profileId, table.period, table.tax),
+  unique("tax_projection_client_id_period_tax_unique").on(table.clientId, table.period, table.tax),
 ]);
 
 /**

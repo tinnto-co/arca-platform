@@ -62,7 +62,7 @@ import {
   deleteNotification,
   getNotification,
 } from '@/actions/notification';
-import { getClients } from '@/actions/client';
+import { getRepresentatives } from '@/actions/client';
 import { userQuery } from '../lib/user-query';
 
 interface NotificationData {
@@ -100,10 +100,10 @@ export function NotificationsTable() {
 
   const pageSize = 10;
 
-  // Get clients for filter dropdown
-  const { data: clients = [] } = useQuery({
-    queryKey: ['clients'],
-    queryFn: () => getClients(),
+  // Get representatives for filter dropdown
+  const { data: representatives = [] } = useQuery({
+    queryKey: ['representatives'],
+    queryFn: () => getRepresentatives(),
   });
 
   // Get notifications
@@ -214,9 +214,9 @@ export function NotificationsTable() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos los clientes</SelectItem>
-              {clients.map((client) => (
-                <SelectItem key={client.id} value={client.id}>
-                  {client.name}
+              {representatives.map((rep) => (
+                <SelectItem key={rep.id} value={rep.id}>
+                  {rep.name}
                 </SelectItem>
               ))}
             </SelectContent>

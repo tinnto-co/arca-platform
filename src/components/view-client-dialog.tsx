@@ -13,23 +13,22 @@ import {
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { getClient } from '@/actions/client';
-import { CredentialsTable } from './credentials-table';
+import { getRepresentative } from '@/actions/client';
 
-interface ViewClientDialogProps {
-  clientId: string;
+interface ViewRepresentativeDialogProps {
+  representativeId: string;
   children: React.ReactNode;
 }
 
-export function ViewClientDialog({
-  clientId,
+export function ViewRepresentativeDialog({
+  representativeId,
   children,
-}: ViewClientDialogProps) {
+}: ViewRepresentativeDialogProps) {
   const [open, setOpen] = useState(false);
 
-  const { data: client, isLoading } = useQuery({
-    queryKey: ['client', clientId],
-    queryFn: () => getClient({ data: { id: clientId } }),
+  const { data: representative, isLoading } = useQuery({
+    queryKey: ['representative', representativeId],
+    queryFn: () => getRepresentative({ data: { id: representativeId } }),
     enabled: open,
   });
 
@@ -75,23 +74,23 @@ export function ViewClientDialog({
           <div className="flex items-center justify-center h-32">
             <div className="text-muted-foreground">Cargando...</div>
           </div>
-        ) : client ? (
+        ) : representative ? (
           <div className="space-y-6">
-            {/* Client Header */}
+            {/* Representative Header */}
             <div className="flex items-center gap-4">
               <Avatar className="h-16 w-16">
-                {client.image && (
-                  <AvatarImage src={client.image} alt={client.name} />
+                {representative.image && (
+                  <AvatarImage src={representative.image} alt={representative.name} />
                 )}
                 <AvatarFallback className="text-lg">
-                  {client.name.slice(0, 2).toUpperCase()}
+                  {(representative.name ?? '??').slice(0, 2).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1">
-                <h3 className="text-xl font-semibold">{client.name}</h3>
+                <h3 className="text-xl font-semibold">{representative.name}</h3>
                 <div className="flex items-center gap-2 mt-1">
-                  {getStatusBadge(client.status)}
-                  <Badge variant="outline">{getTypeLabel(client.type)}</Badge>
+                  {getStatusBadge(representative.status)}
+                  <Badge variant="outline">{getTypeLabel(representative.type)}</Badge>
                 </div>
               </div>
             </div>
@@ -104,15 +103,15 @@ export function ViewClientDialog({
               <div className="grid gap-3">
                 <div className="flex items-center gap-3">
                   <Mail className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm">{client.email}</span>
+                  <span className="text-sm">{representative.email}</span>
                 </div>
                 <div className="flex items-center gap-3">
                   <Phone className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm">{client.phone}</span>
+                  <span className="text-sm">{representative.phone}</span>
                 </div>
                 <div className="flex items-start gap-3">
                   <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
-                  <span className="text-sm">{client.address}</span>
+                  <span className="text-sm">{representative.address}</span>
                 </div>
               </div>
             </div>
@@ -130,7 +129,7 @@ export function ViewClientDialog({
                       Registrado:
                     </span>
                     <span className="text-sm ml-2">
-                      {new Date(client.registeredAt).toLocaleDateString(
+                      {new Date(representative.registeredAt).toLocaleDateString(
                         'es-ES',
                         {
                           year: 'numeric',
@@ -148,7 +147,7 @@ export function ViewClientDialog({
                       Última actualización:
                     </span>
                     <span className="text-sm ml-2">
-                      {new Date(client.updatedAt).toLocaleDateString('es-ES', {
+                      {new Date(representative.updatedAt).toLocaleDateString('es-ES', {
                         year: 'numeric',
                         month: 'long',
                         day: 'numeric',
@@ -159,10 +158,6 @@ export function ViewClientDialog({
               </div>
             </div>
 
-            {/* Credentials Section */}
-            <div className="mt-8">
-              <CredentialsTable clientId={clientId} />
-            </div>
           </div>
         ) : (
           <div className="flex items-center justify-center h-32">

@@ -2,7 +2,7 @@ import { createServerFn } from '@tanstack/react-start';
 import z from 'zod';
 import axios from 'axios';
 import { db } from '@/lib/db';
-import { job, client, jobLog } from '@/drizzle/schema';
+import { job, representative, jobLog } from '@/drizzle/schema';
 import { getSessionWithOrg, getMemberRole, assertCanWrite } from '@/actions/helpers';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 
@@ -28,8 +28,8 @@ export interface JobRow {
   id: string;
   status: JobStatus;
   type: JobType;
-  clientId: string;
-  clientName: string | null;
+  representativeId: string;
+  representativeName: string | null;
   params: Record<string, {}> | null;
   result: Record<string, {}> | null;
   failedReason: string | null;
@@ -63,7 +63,7 @@ export const getJobs = createServerFn({
     z.object({
       page: z.number().default(1),
       limit: z.number().default(20),
-      clientId: z.string().optional(),
+      representativeId: z.string().optional(),
       status: jobStatusEnum.optional(),
       type: jobTypeEnum.optional(),
       date: z.string().optional(), // YYYY-MM-DD
@@ -73,13 +73,13 @@ export const getJobs = createServerFn({
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const { page, limit, clientId, status, type, date, fromTime } = ctx.data;
+    const { page, limit, representativeId, status, type, date, fromTime } = ctx.data;
     const offset = (page - 1) * limit;
 
     const userClients = await db
-      .select({ id: client.id })
-      .from(client)
-      .where(eq(client.organizationId, orgId));
+      .select({ id: representative.id })
+      .from(representative)
+      .where(eq(representative.organizationId, orgId));
 
     const clientIds = userClients.map((c) => c.id);
     if (clientIds.length === 0) {
@@ -91,10 +91,10 @@ export const getJobs = createServerFn({
       };
     }
 
-    const conditions = [inArray(job.clientId, clientIds)];
+    const conditions = [inArray(job.representativeId, clientIds)];
 
-    if (clientId) {
-      conditions.push(eq(job.clientId, clientId));
+    if (representativeId) {
+      conditions.push(eq(job.representativeId, representativeId));
     }
 
     if (status) {
@@ -127,8 +127,8 @@ export const getJobs = createServerFn({
         id: job.id,
         status: job.status,
         type: job.type,
-        clientId: job.clientId,
-        clientName: client.name,
+        representativeId: job.representativeId,
+        representativeName: representative.name,
         params: job.params,
         result: job.result,
         failedReason: job.failedReason,
@@ -139,7 +139,7 @@ export const getJobs = createServerFn({
         progress: job.progress,
       })
       .from(job)
-      .leftJoin(client, eq(job.clientId, client.id))
+      .leftJoin(representative, eq(job.representativeId, representative.id))
       .where(whereCondition)
       .orderBy(
         sql`CASE ${job.status} WHEN 'running' THEN 0 WHEN 'failed' THEN 1 WHEN 'finished' THEN 2 ELSE 3 END`,
@@ -179,9 +179,9 @@ export const getJobLogs = createServerFn({
     const { jobId, limit } = ctx.data;
 
     const userClients = await db
-      .select({ id: client.id })
-      .from(client)
-      .where(eq(client.organizationId, orgId));
+      .select({ id: representative.id })
+      .from(representative)
+      .where(eq(representative.organizationId, orgId));
 
     const clientIds = userClients.map((c) => c.id);
     if (clientIds.length === 0) {
@@ -189,7 +189,7 @@ export const getJobLogs = createServerFn({
     }
 
     const [jobRow] = await db
-      .select({ id: job.id, clientId: job.clientId })
+      .select({ id: job.id, clientId: job.representativeId })
       .from(job)
       .where(eq(job.id, jobId))
       .limit(1);
@@ -222,25 +222,25 @@ export const dispatchAllJobs = createServerFn({ method: 'POST' })
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    let clients = await db
-      .select({ id: client.id })
-      .from(client)
-      .where(eq(client.organizationId, orgId));
+    let representatives = await db
+      .select({ id: representative.id })
+      .from(representative)
+      .where(eq(representative.organizationId, orgId));
 
     if (ctx.data.limit) {
-      clients = clients.slice(0, ctx.data.limit);
+      representatives = representatives.slice(0, ctx.data.limit);
     }
 
-    if (clients.length === 0) return { success: true, dispatched: 0 };
+    if (representatives.length === 0) return { success: true, dispatched: 0 };
 
-    const clientIds = clients.map((c) => c.id);
+    const representativeIds = representatives.map((c) => c.id);
 
     const [activeJobs] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(job)
       .where(
         and(
-          inArray(job.clientId, clientIds),
+          inArray(job.representativeId, representativeIds),
           sql`${job.status} IN ('running', 'pending')`
         )
       );
@@ -258,7 +258,7 @@ export const dispatchAllJobs = createServerFn({ method: 'POST' })
       'comprobantes_full',
       'iva',
     ] as const;
-    const jobs = clients.flatMap((c) =>
+    const jobs = representatives.flatMap((c) =>
       types.map((type) => ({ type, clientId: c.id }))
     );
 

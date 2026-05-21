@@ -21,7 +21,7 @@ import { SueldosConceptos } from '@/components/sueldos/SueldosConceptos';
 import { SueldosSimulador } from '@/components/sueldos/SueldosSimulador';
 import { SueldosRecibo } from '@/components/sueldos/SueldosRecibo';
 import { SueldosFirmaDigital } from '@/components/sueldos/SueldosFirmaDigital';
-import { getClientsForSueldos } from '@/actions/client';
+import { getRepresentativesForSueldos } from '@/actions/client';
 import { cn } from '@/lib/utils';
 
 export const Route = createFileRoute('/_authed/sueldos/')({
@@ -47,7 +47,7 @@ function RouteComponent() {
 
   const { data: clients = [] } = useQuery({
     queryKey: ['clients', 'sueldos'],
-    queryFn: () => getClientsForSueldos(),
+    queryFn: () => getRepresentativesForSueldos(),
   });
 
   const selectedOption = clients.find((c) => c.id === selectedOptionId);

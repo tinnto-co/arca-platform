@@ -65,7 +65,7 @@ import {
   type JobsResponse,
   type JobLogRow,
 } from '@/actions/job';
-import { getClients } from '@/actions/client';
+import { getRepresentatives } from '@/actions/client';
 
 export function JobsTable() {
   const routerNavigate = useNavigate();
@@ -126,9 +126,9 @@ export function JobsTable() {
 
   const pageSize = 20;
 
-  const { data: clients = [] } = useQuery({
-    queryKey: ['clients'],
-    queryFn: () => getClients(),
+  const { data: representatives = [] } = useQuery({
+    queryKey: ['representatives'],
+    queryFn: () => getRepresentatives(),
   });
 
   const { data, isLoading } = useQuery<JobsResponse>({
@@ -361,7 +361,7 @@ export function JobsTable() {
             <SearchableSelect
               options={[
                 { value: 'all', label: 'Todos los clientes' },
-                ...clients.map((c) => ({ value: c.id, label: c.name })),
+                ...representatives.map((c) => ({ value: c.id, label: c.name })),
               ]}
               value={clientFilter}
               onValueChange={(value) => setFilter({ clientId: value })}

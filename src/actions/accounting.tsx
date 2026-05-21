@@ -5,7 +5,7 @@ import {
   accountingAccount,
   journalEntry,
   journalEntryLine,
-  client,
+  representative,
 } from '@/drizzle/schema';
 import {
   getSessionWithOrg,
@@ -14,15 +14,15 @@ import {
 } from '@/actions/helpers';
 import { eq, and, desc, gte, lte, sql, asc } from 'drizzle-orm';
 
-/** Validate a client belongs to the calling user's org */
-async function ensureClientBelongsToOrg(
-  clientId: string,
+/** Validate a representative belongs to the calling user's org */
+async function ensureRepresentativeBelongsToOrg(
+  representativeId: string,
   orgId: string
 ): Promise<void> {
   const [row] = await db
-    .select({ id: client.id })
-    .from(client)
-    .where(and(eq(client.id, clientId), eq(client.organizationId, orgId)))
+    .select({ id: representative.id })
+    .from(representative)
+    .where(and(eq(representative.id, representativeId), eq(representative.organizationId, orgId)))
     .limit(1);
 
   if (!row) {
@@ -34,13 +34,13 @@ async function ensureClientBelongsToOrg(
 async function ensureAccountBelongsToOrg(
   accountId: string,
   orgId: string
-): Promise<{ clientId: string }> {
+): Promise<{ representativeId: string }> {
   const [row] = await db
-    .select({ clientId: accountingAccount.clientId })
+    .select({ representativeId: accountingAccount.representativeId })
     .from(accountingAccount)
-    .innerJoin(client, eq(client.id, accountingAccount.clientId))
+    .innerJoin(representative, eq(representative.id, accountingAccount.representativeId))
     .where(
-      and(eq(accountingAccount.id, accountId), eq(client.organizationId, orgId))
+      and(eq(accountingAccount.id, accountId), eq(representative.organizationId, orgId))
     )
     .limit(1);
 
@@ -54,12 +54,12 @@ async function ensureAccountBelongsToOrg(
 async function ensureJournalEntryBelongsToOrg(
   entryId: string,
   orgId: string
-): Promise<{ clientId: string }> {
+): Promise<{ representativeId: string }> {
   const [row] = await db
-    .select({ clientId: journalEntry.clientId })
+    .select({ representativeId: journalEntry.representativeId })
     .from(journalEntry)
-    .innerJoin(client, eq(client.id, journalEntry.clientId))
-    .where(and(eq(journalEntry.id, entryId), eq(client.organizationId, orgId)))
+    .innerJoin(representative, eq(representative.id, journalEntry.representativeId))
+    .where(and(eq(journalEntry.id, entryId), eq(representative.organizationId, orgId)))
     .limit(1);
 
   if (!row) {
@@ -69,22 +69,22 @@ async function ensureJournalEntryBelongsToOrg(
 }
 
 export const listAccounts = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .inputValidator(z.object({ representativeId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureRepresentativeBelongsToOrg(ctx.data.representativeId, orgId);
 
     return db
       .select()
       .from(accountingAccount)
-      .where(eq(accountingAccount.clientId, ctx.data.clientId))
+      .where(eq(accountingAccount.representativeId, ctx.data.representativeId))
       .orderBy(asc(accountingAccount.code));
   });
 
 export const createAccount = createServerFn({ method: 'POST' })
   .inputValidator(
     z.object({
-      clientId: z.string().uuid(),
+      representativeId: z.string().uuid(),
       code: z.string(),
       name: z.string(),
       type: z.enum(['asset', 'liability', 'equity', 'income', 'expense']),
@@ -96,7 +96,7 @@ export const createAccount = createServerFn({ method: 'POST' })
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureRepresentativeBelongsToOrg(ctx.data.representativeId, orgId);
 
     if (ctx.data.parentId) {
       await ensureAccountBelongsToOrg(ctx.data.parentId, orgId);
@@ -105,7 +105,7 @@ export const createAccount = createServerFn({ method: 'POST' })
     const [account] = await db
       .insert(accountingAccount)
       .values({
-        clientId: ctx.data.clientId,
+        representativeId: ctx.data.representativeId,
         code: ctx.data.code,
         name: ctx.data.name,
         type: ctx.data.type,
@@ -154,8 +154,8 @@ const journalLineSchema = z.object({
 export const createJournalEntry = createServerFn({ method: 'POST' })
   .inputValidator(
     z.object({
-      clientId: z.string().uuid(),
-      profileId: z.string().uuid().optional(),
+      representativeId: z.string().uuid(),
+      clientId: z.string().uuid().optional(),
       entryDate: z.string(),
       description: z.string().optional(),
       sourceType: z.string().optional(),
@@ -168,7 +168,7 @@ export const createJournalEntry = createServerFn({ method: 'POST' })
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureRepresentativeBelongsToOrg(ctx.data.representativeId, orgId);
 
     // Validate double-entry: sum of debits must equal sum of credits
     const totalDebit = ctx.data.lines.reduce((sum, l) => sum + l.debit, 0);
@@ -176,11 +176,11 @@ export const createJournalEntry = createServerFn({ method: 'POST' })
 
     if (Math.abs(totalDebit - totalCredit) > 0.001) {
       throw new Error(
-        `El asiento no está balanceado: débitos ${totalDebit.toFixed(2)} ≠ créditos ${totalCredit.toFixed(2)}`
+        `El asiento no esta balanceado: debitos ${totalDebit.toFixed(2)} ≠ creditos ${totalCredit.toFixed(2)}`
       );
     }
 
-    // Validate all accounts belong to this client/org
+    // Validate all accounts belong to this representative/org
     for (const line of ctx.data.lines) {
       const [acc] = await db
         .select({ id: accountingAccount.id })
@@ -188,7 +188,7 @@ export const createJournalEntry = createServerFn({ method: 'POST' })
         .where(
           and(
             eq(accountingAccount.id, line.accountId),
-            eq(accountingAccount.clientId, ctx.data.clientId)
+            eq(accountingAccount.representativeId, ctx.data.representativeId)
           )
         )
         .limit(1);
@@ -203,8 +203,8 @@ export const createJournalEntry = createServerFn({ method: 'POST' })
     const [entry] = await db
       .insert(journalEntry)
       .values({
+        representativeId: ctx.data.representativeId,
         clientId: ctx.data.clientId,
-        profileId: ctx.data.profileId,
         entryDate: new Date(ctx.data.entryDate),
         description: ctx.data.description,
         sourceType: ctx.data.sourceType,
@@ -230,7 +230,7 @@ export const createJournalEntry = createServerFn({ method: 'POST' })
 export const listJournalEntries = createServerFn({ method: 'GET' })
   .inputValidator(
     z.object({
-      clientId: z.string().uuid(),
+      representativeId: z.string().uuid(),
       from: z.string().optional(),
       to: z.string().optional(),
       limit: z.number().int().min(1).max(500).default(100),
@@ -238,9 +238,9 @@ export const listJournalEntries = createServerFn({ method: 'GET' })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureRepresentativeBelongsToOrg(ctx.data.representativeId, orgId);
 
-    const conditions = [eq(journalEntry.clientId, ctx.data.clientId)];
+    const conditions = [eq(journalEntry.representativeId, ctx.data.representativeId)];
 
     if (ctx.data.from) {
       conditions.push(gte(journalEntry.entryDate, new Date(ctx.data.from)));
@@ -295,7 +295,7 @@ export const getJournalEntry = createServerFn({ method: 'GET' })
 export const getLedger = createServerFn({ method: 'GET' })
   .inputValidator(
     z.object({
-      clientId: z.string().uuid(),
+      representativeId: z.string().uuid(),
       accountId: z.string().uuid(),
       from: z.string().optional(),
       to: z.string().optional(),
@@ -303,10 +303,10 @@ export const getLedger = createServerFn({ method: 'GET' })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureRepresentativeBelongsToOrg(ctx.data.representativeId, orgId);
     await ensureAccountBelongsToOrg(ctx.data.accountId, orgId);
 
-    const entryConditions = [eq(journalEntry.clientId, ctx.data.clientId)];
+    const entryConditions = [eq(journalEntry.representativeId, ctx.data.representativeId)];
 
     if (ctx.data.from) {
       entryConditions.push(
@@ -353,14 +353,14 @@ export const getLedger = createServerFn({ method: 'GET' })
 export const getTrialBalance = createServerFn({ method: 'GET' })
   .inputValidator(
     z.object({
-      clientId: z.string().uuid(),
+      representativeId: z.string().uuid(),
       from: z.string(),
       to: z.string(),
     })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureRepresentativeBelongsToOrg(ctx.data.representativeId, orgId);
 
     const rows = await db
       .select({
@@ -386,7 +386,7 @@ export const getTrialBalance = createServerFn({ method: 'GET' })
       )
       .where(
         and(
-          eq(accountingAccount.clientId, ctx.data.clientId),
+          eq(accountingAccount.representativeId, ctx.data.representativeId),
           eq(accountingAccount.active, true)
         )
       )
