@@ -114,7 +114,7 @@ function RouteComponent() {
                   >
                     {selectedClientId
                       ? clients.find((c: any) => c.id === selectedClientId)
-                          ?.name
+                        ?.name
                       : 'Seleccionar cliente'}
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>

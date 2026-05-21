@@ -18,6 +18,8 @@
     "sync-payroll-convenios-referencia": "bun run src/scripts/sync-payroll-convenios-referencia.ts",
     "link-cct-and-refresh-reference-scales": "bun run src/scripts/link-cct-and-refresh-reference-scales.ts",
     "map-import-empleados-a-convenios": "bun run src/scripts/map-import-empleados-a-convenios.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "db:ensure-empleado-pago": "bun run src/scripts/ensure-empleado-datos-pago-columns.ts",
