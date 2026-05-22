@@ -1741,14 +1741,7 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                     setScrapingAll(true);
                     try {
                       const modules = ['deuda', 'vencimientos', 'iva', 'notificaciones', 'comprobantes'] as const;
-                      for (const jobType of modules) {
-                        try {
-                          await scrapSingleJob({ data: { representativeId, jobType } });
-                          toast.success(`${jobType} actualizado`);
-                        } catch (err) {
-                          toast.error(`Error en ${jobType}: ${err instanceof Error ? err.message : 'Error desconocido'}`);
-                        }
-                        // Invalidar queries del módulo completado para actualizar la UI en tiempo real
+                      const invalidateAll = () => {
                         queryClient.invalidateQueries({ queryKey: ['representativeDebts', representativeId] });
                         queryClient.invalidateQueries({ queryKey: ['representativeDueDates', representativeId] });
                         queryClient.invalidateQueries({ queryKey: ['clientIva', representativeId] });
@@ -1760,8 +1753,28 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                         queryClient.invalidateQueries({ queryKey: ['lastIvaJob', representativeId] });
                         queryClient.invalidateQueries({ queryKey: ['lastNotificacionesJob', representativeId] });
                         queryClient.invalidateQueries({ queryKey: ['lastComprobantesFullJob', representativeId] });
+                      };
+                      let completedCount = 0;
+                      for (const jobType of modules) {
+                        try {
+                          await scrapSingleJob({ data: { representativeId, jobType } });
+                          completedCount++;
+                          toast.success(`${jobType} actualizado`);
+                        } catch (err) {
+                          const msg = err instanceof Error ? err.message : 'Error desconocido';
+                          // Si las credenciales son inválidas, cortar todo
+                          if (msg.includes('incorrecto') || msg.includes('inválida') || msg.includes('Credenciales')) {
+                            toast.error(`Credenciales AFIP inválidas. Scraping detenido.`);
+                            invalidateAll();
+                            break;
+                          }
+                          toast.error(`Error en ${jobType}: ${msg}`);
+                        }
+                        invalidateAll();
                       }
-                      toast.success('Scraping completo');
+                      if (completedCount === modules.length) {
+                        toast.success('Scraping completo');
+                      }
                     } catch (err) {
                       toast.error(err instanceof Error ? err.message : 'Error al encolar scraping');
                     } finally {
