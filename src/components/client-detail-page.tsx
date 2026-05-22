@@ -226,10 +226,10 @@ const MetricDelta = ({
   return (
     <p
       className={`text-xs mt-1 ${diff > 0
-          ? 'text-[var(--arca-accent-pos-fg)]'
-          : diff < 0
-            ? 'text-[var(--arca-accent-neg-fg)]'
-            : 'text-muted-foreground'
+        ? 'text-[var(--arca-accent-pos-fg)]'
+        : diff < 0
+          ? 'text-[var(--arca-accent-neg-fg)]'
+          : 'text-muted-foreground'
         }`}
     >
       {label}: {formattedPct}
