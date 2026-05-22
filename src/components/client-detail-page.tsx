@@ -1741,17 +1741,19 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                     setScrapingAll(true);
                     toast('Iniciando scrapeo');
                     const jobTypes = ['deuda', 'vencimientos', 'iva', 'notificaciones', 'comprobantes_full'] as const;
+                    let failed = 0;
                     try {
-                      const results = await Promise.allSettled(
-                        jobTypes.map((jobType) =>
-                          scrapSingleJob({ data: { representativeId, jobType } })
-                        )
-                      );
-                      const failed = results.filter((r) => r.status === 'rejected');
-                      if (failed.length === 0) {
+                      for (const jobType of jobTypes) {
+                        try {
+                          await scrapSingleJob({ data: { representativeId, jobType } });
+                        } catch {
+                          failed++;
+                        }
+                      }
+                      if (failed === 0) {
                         toast.success('Scraping completado');
-                      } else if (failed.length < jobTypes.length) {
-                        toast.warning(`Scraping parcial: ${failed.length} job(s) fallaron`);
+                      } else if (failed < jobTypes.length) {
+                        toast.warning(`Scraping parcial: ${failed} job(s) fallaron`);
                       } else {
                         toast.error('Todos los jobs fallaron');
                       }
