@@ -1018,7 +1018,6 @@ export const scrapBatchRepresentatives = createServerFn({
 
     return { created, errors, total: representativeIds.length };
   });
-
 /** Ultimo job comprobantes_full para un representante (por created_at), con estado success/error. */
 export const getLastComprobantesFullJob = createServerFn({
   method: 'GET',

@@ -1742,7 +1742,7 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                     setScrapingAll(true);
                     try {
                       await scrapBatchRepresentatives({ data: { representativeIds: [representativeId] } });
-                      toast.success('Scraping completo encolado');
+                      toast.success('Scraping encolado');
                     } catch (err) {
                       toast.error(err instanceof Error ? err.message : 'Error al encolar scraping');
                     } finally {
