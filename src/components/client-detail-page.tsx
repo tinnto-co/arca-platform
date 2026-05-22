@@ -80,7 +80,6 @@ import {
 import { updateClientManagement } from '@/actions/profile';
 import {
   scrapSingleJob,
-  scrapBatchRepresentatives,
   updateDebtStatus,
 } from '@/actions/client';
 import {
@@ -1741,21 +1740,27 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                   onClick={async () => {
                     setScrapingAll(true);
                     try {
-                      await scrapBatchRepresentatives({ data: { representativeIds: [representativeId] } });
-                      // Invalidar todos los query keys para que la UI se actualice
-                      await Promise.all([
-                        queryClient.invalidateQueries({ queryKey: ['representativeDebts', representativeId] }),
-                        queryClient.invalidateQueries({ queryKey: ['representativeDueDates', representativeId] }),
-                        queryClient.invalidateQueries({ queryKey: ['clientIva', representativeId] }),
-                        queryClient.invalidateQueries({ queryKey: ['clientAllInvoices', representativeId] }),
-                        queryClient.invalidateQueries({ queryKey: ['invoices'] }),
-                        queryClient.invalidateQueries({ queryKey: ['notifications', representativeId] }),
-                        queryClient.invalidateQueries({ queryKey: ['lastDeudaJob', representativeId] }),
-                        queryClient.invalidateQueries({ queryKey: ['lastVencimientosJob', representativeId] }),
-                        queryClient.invalidateQueries({ queryKey: ['lastIvaJob', representativeId] }),
-                        queryClient.invalidateQueries({ queryKey: ['lastNotificacionesJob', representativeId] }),
-                        queryClient.invalidateQueries({ queryKey: ['lastComprobantesFullJob', representativeId] }),
-                      ]);
+                      const modules = ['deuda', 'vencimientos', 'iva', 'notificaciones', 'comprobantes'] as const;
+                      for (const jobType of modules) {
+                        try {
+                          await scrapSingleJob({ data: { representativeId, jobType } });
+                          toast.success(`${jobType} actualizado`);
+                        } catch (err) {
+                          toast.error(`Error en ${jobType}: ${err instanceof Error ? err.message : 'Error desconocido'}`);
+                        }
+                        // Invalidar queries del módulo completado para actualizar la UI en tiempo real
+                        queryClient.invalidateQueries({ queryKey: ['representativeDebts', representativeId] });
+                        queryClient.invalidateQueries({ queryKey: ['representativeDueDates', representativeId] });
+                        queryClient.invalidateQueries({ queryKey: ['clientIva', representativeId] });
+                        queryClient.invalidateQueries({ queryKey: ['clientAllInvoices', representativeId] });
+                        queryClient.invalidateQueries({ queryKey: ['invoices'] });
+                        queryClient.invalidateQueries({ queryKey: ['notifications', representativeId] });
+                        queryClient.invalidateQueries({ queryKey: ['lastDeudaJob', representativeId] });
+                        queryClient.invalidateQueries({ queryKey: ['lastVencimientosJob', representativeId] });
+                        queryClient.invalidateQueries({ queryKey: ['lastIvaJob', representativeId] });
+                        queryClient.invalidateQueries({ queryKey: ['lastNotificacionesJob', representativeId] });
+                        queryClient.invalidateQueries({ queryKey: ['lastComprobantesFullJob', representativeId] });
+                      }
                       toast.success('Scraping completo');
                     } catch (err) {
                       toast.error(err instanceof Error ? err.message : 'Error al encolar scraping');
