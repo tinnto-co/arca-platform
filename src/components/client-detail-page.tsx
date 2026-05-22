@@ -1740,6 +1740,7 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                   disabled={scrapingAll || !!scrapingSection}
                   onClick={async () => {
                     setScrapingAll(true);
+                    toast('Iniciando scrapeo');
                     try {
                       await scrapBatchRepresentatives({ data: { representativeIds: [representativeId] } });
                       toast.success('Scraping encolado');
