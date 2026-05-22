@@ -170,9 +170,7 @@ export function RepresentativesTable() {
           `${result.created.length} jobs creados, ${result.errors.length} errores`
         );
       } else {
-        toast.success(
-          `${result.created.length} jobs de scraping encolados`
-        );
+        toast.success(`${result.created.length} jobs de scraping encolados`);
       }
     } catch (err) {
       toast.error(
