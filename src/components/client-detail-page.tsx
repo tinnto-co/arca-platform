@@ -80,6 +80,7 @@ import {
 import { updateClientManagement } from '@/actions/profile';
 import {
   scrapSingleJob,
+  scrapBatchRepresentatives,
   updateDebtStatus,
 } from '@/actions/client';
 import {
@@ -226,10 +227,10 @@ const MetricDelta = ({
   return (
     <p
       className={`text-xs mt-1 ${diff > 0
-        ? 'text-[var(--arca-accent-pos-fg)]'
-        : diff < 0
-          ? 'text-[var(--arca-accent-neg-fg)]'
-          : 'text-muted-foreground'
+          ? 'text-[var(--arca-accent-pos-fg)]'
+          : diff < 0
+            ? 'text-[var(--arca-accent-neg-fg)]'
+            : 'text-muted-foreground'
         }`}
     >
       {label}: {formattedPct}
@@ -1740,41 +1741,8 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                   onClick={async () => {
                     setScrapingAll(true);
                     try {
-                      const modules = ['deuda', 'vencimientos', 'iva', 'notificaciones', 'comprobantes'] as const;
-                      const invalidateAll = () => {
-                        queryClient.invalidateQueries({ queryKey: ['representativeDebts', representativeId] });
-                        queryClient.invalidateQueries({ queryKey: ['representativeDueDates', representativeId] });
-                        queryClient.invalidateQueries({ queryKey: ['clientIva', representativeId] });
-                        queryClient.invalidateQueries({ queryKey: ['clientAllInvoices', representativeId] });
-                        queryClient.invalidateQueries({ queryKey: ['invoices'] });
-                        queryClient.invalidateQueries({ queryKey: ['notifications', representativeId] });
-                        queryClient.invalidateQueries({ queryKey: ['lastDeudaJob', representativeId] });
-                        queryClient.invalidateQueries({ queryKey: ['lastVencimientosJob', representativeId] });
-                        queryClient.invalidateQueries({ queryKey: ['lastIvaJob', representativeId] });
-                        queryClient.invalidateQueries({ queryKey: ['lastNotificacionesJob', representativeId] });
-                        queryClient.invalidateQueries({ queryKey: ['lastComprobantesFullJob', representativeId] });
-                      };
-                      let completedCount = 0;
-                      for (const jobType of modules) {
-                        try {
-                          await scrapSingleJob({ data: { representativeId, jobType } });
-                          completedCount++;
-                          toast.success(`${jobType} actualizado`);
-                        } catch (err) {
-                          const msg = err instanceof Error ? err.message : 'Error desconocido';
-                          // Si las credenciales son inválidas, cortar todo
-                          if (msg.includes('incorrecto') || msg.includes('inválida') || msg.includes('Credenciales')) {
-                            toast.error(`Credenciales AFIP inválidas. Scraping detenido.`);
-                            invalidateAll();
-                            break;
-                          }
-                          toast.error(`Error en ${jobType}: ${msg}`);
-                        }
-                        invalidateAll();
-                      }
-                      if (completedCount === modules.length) {
-                        toast.success('Scraping completo');
-                      }
+                      await scrapBatchRepresentatives({ data: { representativeIds: [representativeId] } });
+                      toast.success('Scraping encolado');
                     } catch (err) {
                       toast.error(err instanceof Error ? err.message : 'Error al encolar scraping');
                     } finally {

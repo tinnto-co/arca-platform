@@ -33,7 +33,7 @@ import { Button } from '@/components/ui/button';
 import {
   getRepresentativesWithClients,
   deleteRepresentative,
-  scrapSingleJob,
+  scrapBatchRepresentatives,
 } from '@/actions/client';
 import { EditRepresentativeDialog } from '@/components/edit-client-dialog';
 import { relativeTime } from '@/components/dashboard/shared';
@@ -162,23 +162,15 @@ export function RepresentativesTable() {
     if (selectedRepresentatives.length === 0) return;
     setIsScraping(true);
     try {
-      const modules = ['deuda', 'vencimientos', 'iva', 'notificaciones', 'comprobantes'] as const;
-      let created = 0;
-      let errors = 0;
-      for (const rep of selectedRepresentatives) {
-        for (const jobType of modules) {
-          try {
-            await scrapSingleJob({ data: { representativeId: rep.id, jobType } });
-            created++;
-          } catch {
-            errors++;
-          }
-        }
-      }
-      if (errors > 0) {
-        toast.warning(`${created} módulos completados, ${errors} errores`);
+      const result = await scrapBatchRepresentatives({
+        data: { representativeIds: selectedRepresentatives.map((c) => c.id) },
+      });
+      if (result.errors.length > 0) {
+        toast.warning(
+          `${result.created.length} jobs creados, ${result.errors.length} errores`
+        );
       } else {
-        toast.success(`${created} módulos de scraping completados`);
+        toast.success(`${result.created.length} jobs de scraping encolados`);
       }
     } catch (err) {
       toast.error(
