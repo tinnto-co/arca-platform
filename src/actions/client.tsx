@@ -979,45 +979,7 @@ export const scrapSingleJob = createServerFn({
     }
   });
 
-/**
- * Fire-and-forget: creates a batch job for each selected representative.
- * Does NOT wait for completion -- returns job IDs immediately.
- */
-export const scrapBatchRepresentatives = createServerFn({
-  method: 'POST',
-})
-  .inputValidator(
-    z.object({
-      representativeIds: z.array(z.string()).min(1),
-    })
-  )
-  .handler(async (ctx) => {
-    await getSessionWithOrg();
-    const role = await getMemberRole();
-    assertCanWrite(role);
 
-    const baseUrl = JOBS_API_URL;
-    const { representativeIds } = ctx.data;
-    const created: { representativeId: string; jobId: string }[] = [];
-    const errors: { representativeId: string; error: string }[] = [];
-
-    for (const representativeId of representativeIds) {
-      try {
-        const { data: job } = await axios.post(`${baseUrl}/api/jobs`, {
-          type: 'batch',
-          representativeId,
-        });
-        created.push({ representativeId, jobId: job.id });
-      } catch (error: any) {
-        errors.push({
-          representativeId,
-          error: error.response?.data?.error || error.message,
-        });
-      }
-    }
-
-    return { created, errors, total: representativeIds.length };
-  });
 /** Ultimo job comprobantes_full para un representante (por created_at), con estado success/error. */
 export const getLastComprobantesFullJob = createServerFn({
   method: 'GET',
