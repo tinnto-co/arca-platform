@@ -1742,7 +1742,21 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                     setScrapingAll(true);
                     try {
                       await scrapBatchRepresentatives({ data: { representativeIds: [representativeId] } });
-                      toast.success('Scraping completo encolado');
+                      // Invalidar todos los query keys para que la UI se actualice
+                      await Promise.all([
+                        queryClient.invalidateQueries({ queryKey: ['representativeDebts', representativeId] }),
+                        queryClient.invalidateQueries({ queryKey: ['representativeDueDates', representativeId] }),
+                        queryClient.invalidateQueries({ queryKey: ['clientIva', representativeId] }),
+                        queryClient.invalidateQueries({ queryKey: ['clientAllInvoices', representativeId] }),
+                        queryClient.invalidateQueries({ queryKey: ['invoices'] }),
+                        queryClient.invalidateQueries({ queryKey: ['notifications', representativeId] }),
+                        queryClient.invalidateQueries({ queryKey: ['lastDeudaJob', representativeId] }),
+                        queryClient.invalidateQueries({ queryKey: ['lastVencimientosJob', representativeId] }),
+                        queryClient.invalidateQueries({ queryKey: ['lastIvaJob', representativeId] }),
+                        queryClient.invalidateQueries({ queryKey: ['lastNotificacionesJob', representativeId] }),
+                        queryClient.invalidateQueries({ queryKey: ['lastComprobantesFullJob', representativeId] }),
+                      ]);
+                      toast.success('Scraping completo');
                     } catch (err) {
                       toast.error(err instanceof Error ? err.message : 'Error al encolar scraping');
                     } finally {
