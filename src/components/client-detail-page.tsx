@@ -724,12 +724,28 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
   });
 
   // Últimos jobs por tipo para mostrar errores en Resumen
-  const { data: lastComprobantesJob } = useQuery({
+  const { data: lastComprobantesJobIncremental } = useQuery({
     queryKey: ['lastComprobantesJob', representativeId],
     queryFn: () =>
       getLastJobByType({ data: { representativeId, jobType: 'comprobantes' } }),
     enabled: !!representativeId,
   });
+
+  const { data: lastComprobantesFullJob } = useQuery({
+    queryKey: ['lastComprobantesFullJob', representativeId],
+    queryFn: () =>
+      getLastJobByType({ data: { representativeId, jobType: 'comprobantes_full' } }),
+    enabled: !!representativeId,
+  });
+
+  // Mostrar el más reciente entre comprobantes y comprobantes_full
+  const lastComprobantesJob = (() => {
+    const a = lastComprobantesJobIncremental;
+    const b = lastComprobantesFullJob;
+    if (!a?.createdAt) return b;
+    if (!b?.createdAt) return a;
+    return new Date(b.createdAt) > new Date(a.createdAt) ? b : a;
+  })();
 
   const { data: lastIvaJob } = useQuery({
     queryKey: ['lastIvaJob', representativeId],
