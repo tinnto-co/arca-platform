@@ -1,8 +1,8 @@
 import { createServerFn } from '@tanstack/react-start';
 import z from 'zod';
 import { db } from '@/lib/db';
-import { representative, invoice, debt, dueDate, notification, alert } from '@/drizzle/schema';
-import { eq, and, gte, lte, sql, inArray, isNull } from 'drizzle-orm';
+import { representative, invoice, debt, dueDate, notification, alert, job } from '@/drizzle/schema';
+import { eq, and, gte, lte, sql, inArray, isNull, desc } from 'drizzle-orm';
 import { getSessionWithOrg } from '@/actions/helpers';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -684,3 +684,45 @@ export const getExceptionsSummary = createServerFn({ method: 'GET' }).handler(
     };
   }
 );
+
+// ── getTodayScrapedRepresentatives ──────────────────────────────────────────
+
+export const getTodayScrapedRepresentatives = createServerFn({
+  method: 'GET',
+}).handler(async () => {
+  const { orgId } = await getSessionWithOrg();
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const userReps = await db
+    .select({ id: representative.id })
+    .from(representative)
+    .where(eq(representative.organizationId, orgId));
+  const repIds = userReps.map((r) => r.id);
+  if (repIds.length === 0) return [];
+
+  // Get distinct representatives that had jobs created today
+  const rows = await db
+    .select({
+      representativeId: job.representativeId,
+      name: representative.name,
+      cuit: representative.cuit,
+      jobCount: sql<number>`count(*)::int`,
+      successCount: sql<number>`count(*) filter (where ${job.status} = 'finished')::int`,
+      failedCount: sql<number>`count(*) filter (where ${job.status} = 'failed')::int`,
+      pendingCount: sql<number>`count(*) filter (where ${job.status} in ('pending', 'running'))::int`,
+    })
+    .from(job)
+    .innerJoin(representative, eq(job.representativeId, representative.id))
+    .where(
+      and(
+        inArray(job.representativeId, repIds),
+        gte(job.createdAt, today)
+      )
+    )
+    .groupBy(job.representativeId, representative.name, representative.cuit)
+    .orderBy(desc(sql`max(${job.createdAt})`));
+
+  return rows;
+});

@@ -14,6 +14,7 @@ import { ClientesTable } from '@/components/dashboard/clientes-table';
 import { VencimientosList } from '@/components/dashboard/vencimientos-list';
 import { ActividadFeed } from '@/components/dashboard/actividad-feed';
 import { ExceptionsBar } from '@/components/dashboard/exceptions-bar';
+import { TodayScrapedCard } from '@/components/dashboard/today-scraped';
 
 export const Route = createFileRoute('/_authed/')({
   component: DashboardPage,
@@ -66,8 +67,11 @@ function DashboardPage() {
           <VencimientosList />
         </section>
 
-        {/* Activity feed */}
-        <ActividadFeed from={dateRange.from} to={dateRange.to} />
+        {/* Today's scraping + Activity feed */}
+        <section className="grid grid-cols-1 lg:grid-cols-[1fr_1.4fr] gap-3.5">
+          <TodayScrapedCard />
+          <ActividadFeed from={dateRange.from} to={dateRange.to} />
+        </section>
       </div>
     </>
   );
