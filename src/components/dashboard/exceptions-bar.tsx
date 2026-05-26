@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { AlertTriangle, Bell, Calendar, Users } from 'lucide-react';
+import { AlertTriangle, Bell, Calendar, KeyRound } from 'lucide-react';
 import { getExceptionsSummary } from '@/actions/dashboard';
 
 interface ExceptionCardProps {
@@ -68,7 +68,7 @@ export function ExceptionsBar() {
     overdueDebtCount,
     criticalNotificationCount,
     upcomingDueDateCount,
-    clientErrorCount,
+    representativeErrorCount,
   } = data;
 
   const cards = [
@@ -100,13 +100,13 @@ export function ExceptionsBar() {
     //   icon: <Calendar size={16} />,
     // },
     // {
-    //   count: clientErrorCount,
-    //   label: 'Clientes con errores',
-    //   description: 'requieren atención',
+    //   count: representativeErrorCount,
+    //   label: 'Errores de scraping',
+    //   description: 'representantes con fallos',
     //   href: '/clients' as const,
     //   colorVar: 'var(--arca-accent-warn)',
     //   bgVar: 'var(--arca-accent-warn-bg)',
-    //   icon: <Users size={16} />,
+    //   icon: <AlertTriangle size={16} />,
     // },
   ].filter((c) => c.count > 0);
 

@@ -1,8 +1,8 @@
 import { createServerFn } from '@tanstack/react-start';
 import z from 'zod';
 import { db } from '@/lib/db';
-import { representative, invoice, debt, dueDate, notification, alert } from '@/drizzle/schema';
-import { eq, and, gte, lte, sql, inArray, isNull } from 'drizzle-orm';
+import { representative, invoice, debt, dueDate, notification, alert, job } from '@/drizzle/schema';
+import { eq, and, gte, lte, sql, inArray, isNull, desc } from 'drizzle-orm';
 import { getSessionWithOrg } from '@/actions/helpers';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -682,5 +682,211 @@ export const getExceptionsSummary = createServerFn({ method: 'GET' }).handler(
       upcomingDueDateCount: Number(upcomingDueDates[0]?.count ?? 0),
       representativeErrorCount: Number(representativeErrors[0]?.count ?? 0),
     };
+  }
+);
+
+// ── getTodayScrapedRepresentatives ──────────────────────────────────────────
+
+export const getTodayScrapedRepresentatives = createServerFn({
+  method: 'GET',
+}).handler(async () => {
+  const { orgId } = await getSessionWithOrg();
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const userReps = await db
+    .select({ id: representative.id })
+    .from(representative)
+    .where(eq(representative.organizationId, orgId));
+  const repIds = userReps.map((r) => r.id);
+  if (repIds.length === 0) return [];
+
+  // Get distinct representatives that had jobs created today
+  const rows = await db
+    .select({
+      representativeId: job.representativeId,
+      name: representative.name,
+      cuit: representative.cuit,
+      jobCount: sql<number>`count(*)::int`,
+      successCount: sql<number>`count(*) filter (where ${job.status} = 'finished')::int`,
+      failedCount: sql<number>`count(*) filter (where ${job.status} = 'failed')::int`,
+      pendingCount: sql<number>`count(*) filter (where ${job.status} in ('pending', 'running'))::int`,
+    })
+    .from(job)
+    .innerJoin(representative, eq(job.representativeId, representative.id))
+    .where(
+      and(
+        inArray(job.representativeId, repIds),
+        gte(job.createdAt, today)
+      )
+    )
+    .groupBy(job.representativeId, representative.name, representative.cuit)
+    .orderBy(desc(sql`max(${job.createdAt})`));
+
+  return rows;
+});
+
+// ── getCredentialAlerts ──────────────────────────────────────────────────────
+
+export const getCredentialAlerts = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    const { orgId } = await getSessionWithOrg();
+
+    const rows = await db
+      .select({
+        alertId: alert.id,
+        representativeId: alert.representativeId,
+        name: representative.name,
+        cuit: representative.cuit,
+        description: alert.description,
+        createdAt: alert.createdAt,
+      })
+      .from(alert)
+      .innerJoin(representative, eq(alert.representativeId, representative.id))
+      .where(
+        and(
+          eq(alert.organizationId, orgId),
+          eq(alert.type, 'scraper_error'),
+          eq(alert.status, 'open'),
+          sql`${alert.metadata}->>'errorCategory' = 'credentials'`
+        )
+      )
+      .orderBy(desc(alert.createdAt));
+
+    // Deduplicate by representativeId (a rep may have alerts for multiple job types)
+    const seen = new Set<string>();
+    return rows.filter((row) => {
+      if (!row.representativeId || seen.has(row.representativeId)) return false;
+      seen.add(row.representativeId);
+      return true;
+    });
+  }
+);
+
+// ── getScheduleStatus ────────────────────────────────────────────────────────
+
+const SCHEDULE_CONFIG = {
+  daily: { modules: ['comprobantes', 'notificaciones'], freq: 'daily' },
+  weekly: { modules: ['deuda', 'vencimientos'], freq: 'weekly' },
+  monthly_iva: { modules: ['iva'], freq: 'monthly' },
+} as const;
+
+const MODULE_FREQ: Record<string, string> = {};
+for (const cfg of Object.values(SCHEDULE_CONFIG)) {
+  for (const mod of cfg.modules) {
+    MODULE_FREQ[mod] = cfg.freq;
+  }
+}
+
+const ALL_MODULES = Object.keys(MODULE_FREQ);
+
+function getNextScheduledAfter(frequency: string, now: Date): string {
+  const day = now.getDay();
+  const date = now.getDate();
+  const month = now.getMonth();
+  const year = now.getFullYear();
+
+  if (frequency === 'daily') {
+    let daysToAdd = 1;
+    if (day === 5) daysToAdd = 3;
+    if (day === 6) daysToAdd = 2;
+    const next = new Date(year, month, date + daysToAdd);
+    next.setHours(8, 0, 0, 0);
+    return next.toISOString();
+  }
+
+  if (frequency === 'weekly') {
+    const daysToMon = day === 0 ? 1 : 8 - day;
+    const next = new Date(year, month, date + daysToMon);
+    next.setHours(6, 0, 0, 0);
+    return next.toISOString();
+  }
+
+  // monthly (IVA)
+  if (date <= 28) {
+    const startDay = Math.max(date + 1, 20);
+    const next = new Date(year, month, startDay);
+    const dow = next.getDay();
+    if (dow === 0) next.setDate(next.getDate() + 1);
+    if (dow === 6) next.setDate(next.getDate() + 2);
+    if (next.getDate() <= 28) {
+      next.setHours(8, 0, 0, 0);
+      return next.toISOString();
+    }
+  }
+  const next = new Date(year, month + 1, 20);
+  const dow = next.getDay();
+  if (dow === 0) next.setDate(next.getDate() + 1);
+  if (dow === 6) next.setDate(next.getDate() + 2);
+  next.setHours(8, 0, 0, 0);
+  return next.toISOString();
+}
+
+export const getScheduleStatus = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    const { orgId } = await getSessionWithOrg();
+
+    const reps = await db
+      .select({ id: representative.id, name: representative.name, cuit: representative.cuit })
+      .from(representative)
+      .where(and(eq(representative.organizationId, orgId), eq(representative.status, 'active')));
+
+    if (reps.length === 0) return [];
+
+    const repIds = reps.map((r) => r.id);
+
+    // Credential alerts
+    const credAlerts = await db
+      .select({ representativeId: alert.representativeId })
+      .from(alert)
+      .where(
+        and(
+          eq(alert.organizationId, orgId),
+          eq(alert.type, 'scraper_error'),
+          eq(alert.status, 'open'),
+          sql`${alert.metadata}->>'errorCategory' = 'credentials'`
+        )
+      );
+    const blockedIds = new Set(credAlerts.map((r) => r.representativeId));
+
+    // Last successful scrape per (rep, type)
+    const lastJobs = await db
+      .select({
+        representativeId: job.representativeId,
+        type: job.type,
+        finishedAt: sql<string>`MAX(${job.finishedAt})`,
+      })
+      .from(job)
+      .where(
+        and(inArray(job.representativeId, repIds), eq(job.status, 'finished'))
+      )
+      .groupBy(job.representativeId, job.type);
+
+    const lastMap = new Map<string, string>();
+    for (const row of lastJobs) {
+      lastMap.set(`${row.representativeId}:${row.type}`, row.finishedAt);
+    }
+
+    const now = new Date();
+
+    return reps.map((rep) => {
+      const modules: Record<string, { frequency: string; lastScrapedAt: string | null; nextScheduledAfter: string | null }> = {};
+      for (const mod of ALL_MODULES) {
+        const freq = MODULE_FREQ[mod];
+        modules[mod] = {
+          frequency: freq,
+          lastScrapedAt: lastMap.get(`${rep.id}:${mod}`) || null,
+          nextScheduledAfter: blockedIds.has(rep.id) ? null : getNextScheduledAfter(freq, now),
+        };
+      }
+      return {
+        representativeId: rep.id,
+        name: rep.name,
+        cuit: rep.cuit,
+        hasCredentialAlert: blockedIds.has(rep.id),
+        modules,
+      };
+    });
   }
 );
