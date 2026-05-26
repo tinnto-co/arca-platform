@@ -1755,40 +1755,23 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                   disabled={scrapingAll || !!scrapingSection}
                   onClick={async () => {
                     setScrapingAll(true);
+                    toast('Iniciando scrapeo');
+                    const jobTypes = ['deuda', 'vencimientos', 'iva', 'notificaciones', 'comprobantes_full'] as const;
+                    let failed = 0;
                     try {
-                      const modules = ['deuda', 'vencimientos', 'iva', 'notificaciones', 'comprobantes'] as const;
-                      const invalidateAll = () => {
-                        queryClient.invalidateQueries({ queryKey: ['representativeDebts', representativeId] });
-                        queryClient.invalidateQueries({ queryKey: ['representativeDueDates', representativeId] });
-                        queryClient.invalidateQueries({ queryKey: ['clientIva', representativeId] });
-                        queryClient.invalidateQueries({ queryKey: ['clientAllInvoices', representativeId] });
-                        queryClient.invalidateQueries({ queryKey: ['invoices'] });
-                        queryClient.invalidateQueries({ queryKey: ['notifications', representativeId] });
-                        queryClient.invalidateQueries({ queryKey: ['lastDeudaJob', representativeId] });
-                        queryClient.invalidateQueries({ queryKey: ['lastVencimientosJob', representativeId] });
-                        queryClient.invalidateQueries({ queryKey: ['lastIvaJob', representativeId] });
-                        queryClient.invalidateQueries({ queryKey: ['lastNotificacionesJob', representativeId] });
-                        queryClient.invalidateQueries({ queryKey: ['lastComprobantesFullJob', representativeId] });
-                      };
-                      let completedCount = 0;
-                      for (const jobType of modules) {
+                      for (const jobType of jobTypes) {
                         try {
                           await scrapSingleJob({ data: { representativeId, jobType } });
-                          completedCount++;
-                          toast.success(`${jobType} actualizado`);
-                        } catch (err) {
-                          const msg = err instanceof Error ? err.message : 'Error desconocido';
-                          if (msg.includes('incorrecto') || msg.includes('inválida') || msg.includes('Credenciales')) {
-                            toast.error('Credenciales AFIP inválidas. Scraping detenido.');
-                            invalidateAll();
-                            break;
-                          }
-                          toast.error(`Error en ${jobType}: ${msg}`);
+                        } catch {
+                          failed++;
                         }
-                        invalidateAll();
                       }
-                      if (completedCount === modules.length) {
-                        toast.success('Scraping completo');
+                      if (failed === 0) {
+                        toast.success('Scraping completado');
+                      } else if (failed < jobTypes.length) {
+                        toast.warning(`Scraping parcial: ${failed} job(s) fallaron`);
+                      } else {
+                        toast.error('Todos los jobs fallaron');
                       }
                     } catch (err) {
                       toast.error(err instanceof Error ? err.message : 'Error al encolar scraping');
