@@ -87,7 +87,10 @@
       "Bash(bun vite:*)",
       "Bash(pkill -f \"vite\\\\|bun run dev\")",
       "Bash(git status:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(git commit:*)",
+      "Bash(git pull:*)",
+      "Bash(git fetch:*)"
     ]
   }
 }
