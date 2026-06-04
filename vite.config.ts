@@ -19,7 +19,13 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    include: ["gridstack", "@react-pdf/renderer"],
+    include: [
+      "gridstack",
+      "@react-pdf/renderer",
+      "@copilotkit/react-core",
+      "@copilotkit/react-ui",
+      "@copilotkit/runtime-client-gql",
+    ],
   },
 
 

@@ -23,6 +23,7 @@ import { CopilotAttachmentProvider } from '@/components/copilot/AttachmentContex
 import { CopilotBottomPanel } from '@/components/copilot/CopilotBottomPanel';
 import { FrontendTools } from '@/components/copilot/FrontendTools';
 import { GlobalCopilotReadables } from '@/components/copilot/GlobalCopilotReadables';
+import { VisiblePageReadable } from '@/components/copilot/VisiblePageReadable';
 import { cn } from '@/lib/utils';
 
 export const Route = createFileRoute('/_authed')({
@@ -72,6 +73,7 @@ function RouteComponent() {
         <AppSidebar />
         <SidebarInset className="relative flex min-h-0 flex-col">
           <div
+            data-arca-content
             className={cn(
               'min-w-0 flex-1 min-h-0 overflow-y-auto',
               isChatDetail
@@ -99,6 +101,7 @@ function RouteComponent() {
           <CopilotActions />
           <FrontendTools />
           <GlobalCopilotReadables />
+          <VisiblePageReadable />
           {shell(!hideAgentInput ? <AgentInput /> : null)}
           {!isChatRoute && <CopilotBottomPanel />}
         </CopilotAttachmentProvider>

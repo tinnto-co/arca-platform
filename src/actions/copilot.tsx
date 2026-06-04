@@ -163,7 +163,7 @@ export const getIvaPositionForCopilot = createServerFn({ method: 'POST' })
       const rows = await dbReadonly.execute(
         sql.raw(
           `SELECT periodo_fiscal FROM iva_scrape
-           WHERE profile_id = ANY(ARRAY[${profileIds.map((id) => `'${id}'`).join(',')}]::uuid[])
+           WHERE client_id = ANY(ARRAY[${profileIds.map((id) => `'${id}'`).join(',')}]::uuid[])
            ORDER BY TO_DATE(periodo_fiscal, 'MM/YYYY') DESC LIMIT 1`
         )
       );

@@ -96,7 +96,23 @@
       "Bash(awk ' *)",
       "Bash(awk 'NR>1 && /CONFLICT line \\(21|75|98|148|236|307|446\\) /{skip=1} /CONFLICT line \\(1842|1912|2013|2113|2203|2264|2461|2485|2561|2611|4443\\) /{skip=0} skip!=1')",
       "Bash(grep -E 'client-detail-page|clients-table|notifications-view|sueldos/index|sueldos/\\\\$profileId|clients/\\\\$clientId/index|GlobalCopilotReadables')",
-      "Bash(python3 -)"
+      "Bash(python3 -)",
+      "Read(//Users/adrianacuellar/Downloads/**)",
+      "Bash(xxd)",
+      "Bash(pg_restore --version)",
+      "Bash(docker version *)",
+      "Bash(docker compose *)",
+      "Bash(docker exec *)",
+      "Bash(docker cp *)",
+      "Bash(curl -s \"http://localhost:3000/src/routes/_authed/route.tsx?tsr-split=component\")",
+      "mcp__chrome-devtools__new_page",
+      "mcp__chrome-devtools__list_network_requests",
+      "mcp__chrome-devtools__list_console_messages",
+      "mcp__chrome-devtools__list_pages",
+      "mcp__chrome-devtools__navigate_page",
+      "mcp__chrome-devtools__evaluate_script",
+      "Bash(awk \"/name: '/{match\\(\\\\$0,/name: '\\([^']+\\)'/,m\\); name=m[1]} /description:/{getline d; gsub\\(/^ +| +$|,$/,\\\\\"\\\\\",d\\); gsub\\(/'/,\\\\\"\\\\\",d\\); if\\(name\\){print \\\\\"• \\\\\"name\\\\\": \\\\\"d; name=\\\\\"\\\\\"}}\" src/components/copilot/CopilotActions.tsx)",
+      "Bash(awk \"/name: '/{match\\(\\\\$0,/name: '\\([^']+\\)'/,m\\); name=m[1]} /description:/{getline d; gsub\\(/^ +| +$|,$/,\\\\\"\\\\\",d\\); gsub\\(/'/,\\\\\"\\\\\",d\\); if\\(name\\){print \\\\\"• \\\\\"name\\\\\": \\\\\"d; name=\\\\\"\\\\\"}}\" src/components/copilot/FrontendTools.tsx)"
     ]
   }
 }

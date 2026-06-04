@@ -11,7 +11,7 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { db, dbReadonly } from '@/lib/db';
-import { agentConversation, agentMessage, ivaScrape, client, invoice, representative } from '@/drizzle/schema';
+import { agentConversation, agentMessage, ivaScrape, client, invoice, representative, organization } from '@/drizzle/schema';
 import { eq, and, sql, ilike, gte, lte } from 'drizzle-orm';
 import {
   INVOICE_TYPES_A,
@@ -219,6 +219,15 @@ export const Route = createFileRoute('/api/agent')({
           return new Response('No active organization', { status: 403 });
         const userId = session.user.id;
 
+        // Nombre del estudio/organización activa, para que el agente pueda
+        // responder preguntas sobre la propia org sin tener que adivinar.
+        const [orgRow] = await db
+          .select({ name: organization.name })
+          .from(organization)
+          .where(eq(organization.id, orgId))
+          .limit(1);
+        const orgName = orgRow?.name ?? 'el estudio';
+
         const body = (await request.json()) as {
           message: {
             id: string;
@@ -292,6 +301,7 @@ export const Route = createFileRoute('/api/agent')({
           instructions: `Sos Arca, analista financiero virtual del estudio contable. Tenés acceso directo a la base de datos de la organización y podés ejecutar queries SQL para responder preguntas sobre clientes, facturas, deudas, vencimientos, nómina y posición IVA.
 
 IDENTIDAD Y TONO
+- Contexto de sesión: trabajás para el estudio contable "${orgName}". Usá este dato cuando la pregunta se refiera al propio estudio/organización; no hace falta consultarlo en la DB.
 - Respondés siempre en español rioplatense, tono profesional.
 - Sos directo: primero el dato, después el contexto si hace falta.
 - Usás el nombre del cliente en la respuesta, nunca el UUID.
@@ -333,8 +343,9 @@ REGLAS AL ESCRIBIR QUERIES
 3. Montos en ARS: CASE WHEN UPPER(currency)='USD' THEN amount::numeric * currency_rate::numeric ELSE amount::numeric END
 4. Facturas — direction: "facturó/vendió" → WHERE LOWER(direction)='outbound' | "gastó/compró" → WHERE LOWER(direction)='inbound'
 5. Notificaciones: para las atribuibles a una entidad fiscal, WHERE client_id IS NOT NULL
-6. Búsquedas por nombre de cliente: ILIKE '%texto%'
-7. Si la pregunta no puede responderse con los datos disponibles, respondé: "No tengo información suficiente en la base de datos para responder eso."
+6. Búsquedas por nombre de cliente: ILIKE '%texto%'. IMPORTANTE: cuando el usuario nombra un "cliente" (ej: "Produsel S.A"), casi siempre se refiere a representative.name (la razón social que gestiona el estudio), NO a client.name. Resolvé el nombre contra representative.name. Para datos de actividad usá la FK directa al representante: invoice, debt, due_date, notification y job tienen representative_id, así que podés filtrar por r.id sin necesidad de pasar por client. Recién filtrá por client.name si el usuario nombra explícitamente una entidad fiscal específica dentro del representante.
+7. No agregues el sufijo societario exacto al ILIKE: para "Produsel S.A" buscá ILIKE '%Produsel%' (sin "S.A."/"S.A"/puntos), porque la razón social guardada puede variar en el sufijo.
+8. Si la pregunta no puede responderse con los datos disponibles, respondé: "No tengo información suficiente en la base de datos para responder eso."
 
 HERRAMIENTAS DISPONIBLES
 - executeQuery: para cualquier consulta SQL general (clientes, facturas, deudas, vencimientos, nómina).
