@@ -387,6 +387,32 @@ export const getRepresentativesWithClients = createServerFn({
   }
 });
 
+export const getClients = createServerFn({
+  method: 'GET',
+}).handler(async () => {
+  try {
+    const { orgId } = await getSessionWithOrg();
+
+    return await db
+      .select({
+        id: client.id,
+        name: client.name,
+        identityNumber: client.identityNumber,
+        status: client.status,
+        createdAt: client.createdAt,
+        representativeId: client.representativeId,
+        representativeName: representative.name,
+        representativeCuit: representative.cuit,
+      })
+      .from(client)
+      .innerJoin(representative, eq(client.representativeId, representative.id))
+      .where(eq(representative.organizationId, orgId))
+      .orderBy(asc(client.name));
+  } catch (error) {
+    throw new Error(`Error loading clients: ${getErrorMessage(error)}`);
+  }
+});
+
 export const getRepresentative = createServerFn({
   method: 'GET',
 })

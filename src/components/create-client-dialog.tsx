@@ -240,6 +240,7 @@ export function CreateRepresentativeDialog({ children }: CreateRepresentativeDia
       });
 
       queryClient.invalidateQueries({ queryKey: ['representativesWithClients'] });
+      queryClient.invalidateQueries({ queryKey: ['clients'] });
       toast.success('Representante y clientes creados exitosamente');
       reset();
       setOpen(false);
