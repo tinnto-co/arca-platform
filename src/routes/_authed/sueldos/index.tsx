@@ -4,7 +4,7 @@ import type { ColumnDef } from '@tanstack/react-table';
 import { ChevronRight, UserCircle } from 'lucide-react';
 import { DataTable } from '@/components/ui/data-table';
 import { Card, CardContent } from '@/components/ui/card';
-import { getClientsForSueldos } from '@/actions/client';
+import { getRepresentativesForSueldos } from '@/actions/client';
 import { listOrgModules } from '@/actions/admin';
 import { PageHeader } from '@/components/shared/page-header';
 import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
@@ -15,11 +15,13 @@ import {
 
 interface SueldosClientRow {
   id: string;
+  // En el nuevo modelo de main: representativeId = agrupador (ex client),
+  // clientId = entidad fiscal con CUIT (ex profile).
+  representativeId: string;
   clientId: string;
-  profileId: string;
   name: string;
   label: string;
-  type: 'profile';
+  type: 'client';
 }
 
 export const Route = createFileRoute('/_authed/sueldos/')({
@@ -31,7 +33,7 @@ function RouteComponent() {
 
   const { data: clients = [], isLoading } = useQuery({
     queryKey: ['clients', 'sueldos'],
-    queryFn: () => getClientsForSueldos(),
+    queryFn: () => getRepresentativesForSueldos(),
   });
 
   const { data: orgModules = [] } = useQuery({
@@ -86,8 +88,8 @@ function RouteComponent() {
             mesActual: getPeriodoMesActual(),
             mesLiquidable: getPeriodoMesAnterior(),
             clientes: clients.map((c) => ({
-              clientId: c.clientId,
-              profileId: c.profileId,
+              clientId: c.representativeId,
+              profileId: c.clientId,
               nombre: c.name,
               label: c.label,
             })),
@@ -119,7 +121,7 @@ function RouteComponent() {
           onRowClick={(row) =>
             void navigate({
               to: '/sueldos/$profileId',
-              params: { profileId: row.profileId },
+              params: { profileId: row.clientId },
             })
           }
         />

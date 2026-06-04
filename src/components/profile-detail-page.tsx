@@ -4,7 +4,7 @@ import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { getProfile } from '@/actions/profile';
+import { getClient } from '@/actions/profile';
 import { getInvoiceStatsByProfile } from '@/actions/invoice';
 import { listOrgModules } from '@/actions/admin';
 import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
@@ -27,9 +27,9 @@ import {
   Legend,
 } from 'recharts';
 
-interface ProfileDetailPageProps {
-  profileId: string;
+interface ClientDetailProps {
   clientId: string;
+  representativeId: string;
 }
 
 const chartConfig = {
@@ -54,20 +54,20 @@ const COLORS = [
   '#374151', // gray-700 (repeat for more items)
 ];
 
-export function ProfileDetailPage({
-  profileId,
+export function ClientDetailView({
   clientId,
-}: ProfileDetailPageProps) {
+  representativeId,
+}: ClientDetailProps) {
   const navigate = useNavigate();
 
-  const { data: profile, isLoading: loadingProfile } = useQuery({
-    queryKey: ['profile', profileId],
-    queryFn: () => getProfile({ data: { id: profileId } }),
+  const { data: client, isLoading: loadingClient } = useQuery({
+    queryKey: ['client', clientId],
+    queryFn: () => getClient({ data: { id: clientId } }),
   });
 
   const { data: stats, isLoading: loadingStats } = useQuery({
-    queryKey: ['profileStats', profileId],
-    queryFn: () => getInvoiceStatsByProfile({ data: { profileId } }),
+    queryKey: ['clientStats', clientId],
+    queryFn: () => getInvoiceStatsByProfile({ data: { profileId: clientId } }),
   });
 
   const { data: orgModules = [] } = useQuery({
@@ -144,18 +144,18 @@ export function ProfileDetailPage({
     return typeMap[type] || `Tipo ${type}`;
   };
 
-  if (loadingProfile) {
+  if (loadingClient) {
     return (
       <div className="flex items-center justify-center h-screen">
-        <div className="text-muted-foreground">Cargando perfil...</div>
+        <div className="text-muted-foreground">Cargando cliente...</div>
       </div>
     );
   }
 
-  if (!profile) {
+  if (!client) {
     return (
       <div className="flex items-center justify-center h-screen">
-        <div className="text-muted-foreground">Perfil no encontrado</div>
+        <div className="text-muted-foreground">Cliente no encontrado</div>
       </div>
     );
   }
@@ -187,11 +187,11 @@ export function ProfileDetailPage({
             variant="ghost"
             size="icon"
             className="shrink-0"
-            onClick={() => navigate({ to: `/clients/${clientId}` })}
+            onClick={() => navigate({ to: `/clients/${representativeId}` })}
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <h1 className="text-2xl font-bold truncate">{profile.name}</h1>
+          <h1 className="text-2xl font-bold truncate">{client.name}</h1>
         </div>
       </div>
 
@@ -210,30 +210,30 @@ export function ProfileDetailPage({
                 Número de Identidad
               </div>
               <div className="text-sm font-medium">
-                {profile.identityNumber || '-'}
+                {client.identityNumber || '-'}
               </div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground mb-1">Tipo</div>
-              <div className="text-sm">{profile.identityType || '-'}</div>
+              <div className="text-sm">{client.identityType || '-'}</div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground mb-1">Teléfono</div>
-              <div className="text-sm">{profile.phone || '-'}</div>
+              <div className="text-sm">{client.phone || '-'}</div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground mb-1">Email</div>
-              <div className="text-sm">{profile.email || '-'}</div>
+              <div className="text-sm">{client.email || '-'}</div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground mb-1">
                 Dirección
               </div>
-              <div className="text-sm">{profile.address || '-'}</div>
+              <div className="text-sm">{client.address || '-'}</div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground mb-1">Estado</div>
-              <div>{getStatusBadge(profile.status)}</div>
+              <div>{getStatusBadge(client.status)}</div>
             </div>
           </CardContent>
         </Card>
@@ -400,7 +400,7 @@ export function ProfileDetailPage({
 
       {/* Invoices Section */}
       <div className="pb-8">
-        <InvoicesTable profileId={profileId} />
+        <InvoicesTable profileId={clientId} />
       </div>
     </div>
   );

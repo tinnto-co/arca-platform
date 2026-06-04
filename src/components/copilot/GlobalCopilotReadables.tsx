@@ -2,13 +2,16 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useCopilotReadable } from '@copilotkit/react-core';
-import { getClientsWithProfiles, getClientsForSueldos } from '@/actions/client';
+import {
+  getRepresentativesWithClients,
+  getRepresentativesForSueldos,
+} from '@/actions/client';
 
 interface ClientRow {
   id: string;
   name: string;
-  identityNumber: string | null;
-  profiles?: { id: string; name: string }[];
+  cuit: string | null;
+  clients?: { id: string; name: string }[];
 }
 
 /**
@@ -24,13 +27,13 @@ interface ClientRow {
 export function GlobalCopilotReadables() {
   const { data: allClients } = useQuery({
     queryKey: ['clientsWithProfiles'],
-    queryFn: () => getClientsWithProfiles(),
+    queryFn: () => getRepresentativesWithClients(),
     staleTime: 60_000,
   });
 
   const { data: sueldosClients } = useQuery({
     queryKey: ['clients', 'sueldos'],
-    queryFn: () => getClientsForSueldos(),
+    queryFn: () => getRepresentativesForSueldos(),
     staleTime: 60_000,
   });
 
@@ -39,13 +42,13 @@ export function GlobalCopilotReadables() {
     .map((c) => ({
       clientId: c.id,
       nombre: c.name,
-      cuit: c.identityNumber ?? null,
-      perfilPrincipal: c.profiles?.[0]?.name ?? null,
+      cuit: c.cuit ?? null,
+      perfilPrincipal: c.clients?.[0]?.name ?? null,
     }));
 
   const sueldosGlobal = (sueldosClients ?? []).slice(0, 100).map((c) => ({
-    profileId: c.profileId,
-    clientId: c.clientId,
+    profileId: c.clientId,
+    clientId: c.representativeId,
     nombre: c.name,
     label: c.label,
   }));

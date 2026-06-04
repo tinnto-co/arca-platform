@@ -1,20 +1,12 @@
 import { relations } from "drizzle-orm/relations";
-import { client, credential, invoice, profile, user, session, document, invoiceAttachment, notification, account, dueDate, debt } from "./schema";
+import { representative, client, invoice, user, session, document, invoiceAttachment, notification, account, dueDate, debt } from "./schema";
 
-export const credentialRelations = relations(credential, ({one}) => ({
-	client: one(client, {
-		fields: [credential.clientId],
-		references: [client.id]
-	}),
-}));
-
-export const clientRelations = relations(client, ({one, many}) => ({
-	credentials: many(credential),
+export const representativeRelations = relations(representative, ({one, many}) => ({
+	clients: many(client),
 	invoices: many(invoice),
 	documents: many(document),
-	profiles: many(profile),
 	user: one(user, {
-		fields: [client.userId],
+		fields: [representative.userId],
 		references: [user.id]
 	}),
 	notifications: many(notification),
@@ -22,24 +14,24 @@ export const clientRelations = relations(client, ({one, many}) => ({
 	debts: many(debt),
 }));
 
+export const clientRelations = relations(client, ({one, many}) => ({
+	invoices: many(invoice),
+	representative: one(representative, {
+		fields: [client.representativeId],
+		references: [representative.id]
+	}),
+	notifications: many(notification),
+}));
+
 export const invoiceRelations = relations(invoice, ({one}) => ({
+	representative: one(representative, {
+		fields: [invoice.representativeId],
+		references: [representative.id]
+	}),
 	client: one(client, {
 		fields: [invoice.clientId],
 		references: [client.id]
 	}),
-	profile: one(profile, {
-		fields: [invoice.profileId],
-		references: [profile.id]
-	}),
-}));
-
-export const profileRelations = relations(profile, ({one, many}) => ({
-	invoices: many(invoice),
-	client: one(client, {
-		fields: [profile.clientId],
-		references: [client.id]
-	}),
-	notifications: many(notification),
 }));
 
 export const sessionRelations = relations(session, ({one}) => ({
@@ -52,7 +44,7 @@ export const sessionRelations = relations(session, ({one}) => ({
 export const userRelations = relations(user, ({many}) => ({
 	sessions: many(session),
 	accounts: many(account),
-	clients: many(client),
+	representatives: many(representative),
 }));
 
 export const invoiceAttachmentRelations = relations(invoiceAttachment, ({one}) => ({
@@ -68,21 +60,21 @@ export const invoiceAttachmentRelations = relations(invoiceAttachment, ({one}) =
 
 export const documentRelations = relations(document, ({one, many}) => ({
 	invoiceAttachments: many(invoiceAttachment),
-	client: one(client, {
-		fields: [document.clientId],
-		references: [client.id]
+	representative: one(representative, {
+		fields: [document.representativeId],
+		references: [representative.id]
 	}),
 }));
 
 export const notificationRelations = relations(notification, ({one, many}) => ({
 	invoiceAttachments: many(invoiceAttachment),
+	representative: one(representative, {
+		fields: [notification.representativeId],
+		references: [representative.id]
+	}),
 	client: one(client, {
 		fields: [notification.clientId],
 		references: [client.id]
-	}),
-	profile: one(profile, {
-		fields: [notification.profileId],
-		references: [profile.id]
 	}),
 }));
 
@@ -94,13 +86,17 @@ export const accountRelations = relations(account, ({one}) => ({
 }));
 
 export const dueDateRelations = relations(dueDate, ({one}) => ({
-	client: one(client, {
-		fields: [dueDate.clientId],
-		references: [client.id]
+	representative: one(representative, {
+		fields: [dueDate.representativeId],
+		references: [representative.id]
 	}),
 }));
 
 export const debtRelations = relations(debt, ({one}) => ({
+	representative: one(representative, {
+		fields: [debt.representativeId],
+		references: [representative.id]
+	}),
 	client: one(client, {
 		fields: [debt.clientId],
 		references: [client.id]

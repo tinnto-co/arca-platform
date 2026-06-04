@@ -9,7 +9,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { getClient } from '@/actions/client';
+import { getRepresentative } from '@/actions/client';
 import {
   persistBankStatementMovements,
   resolveClientForCopilot,
@@ -100,7 +100,7 @@ export function ScanPdfConfirmation({
     queryKey: ['client', resolvedClientId],
     queryFn: () =>
       resolvedClientId
-        ? getClient({ data: { id: resolvedClientId } })
+        ? getRepresentative({ data: { id: resolvedClientId } })
         : Promise.resolve(null),
     enabled: !!resolvedClientId,
     staleTime: 60_000,

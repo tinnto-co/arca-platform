@@ -7,8 +7,6 @@ import {
   Edit,
   Trash2,
   MoreHorizontal,
-  CircleAlert,
-  CheckCircle2,
   Play,
   Loader2,
 } from 'lucide-react';
@@ -33,45 +31,40 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import {
-  getClientsWithProfiles,
-  deleteClient,
-  scrapBatchClients,
+  getRepresentativesWithClients,
+  deleteRepresentative,
+  scrapSingleJob,
 } from '@/actions/client';
 import { listOrgModules } from '@/actions/admin';
-import { EditClientDialog } from '@/components/edit-client-dialog';
+import { EditRepresentativeDialog } from '@/components/edit-client-dialog';
 import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
 import { relativeTime } from '@/components/dashboard/shared';
 
-interface Client {
+interface Representative {
   id: string;
   name: string;
   identityNumber: string;
   phone: string;
   createdAt: string | Date;
+  status?: string;
+  clients?: { name: string }[];
   hasErrors?: boolean;
   errorMessage?: string | null;
-  status?: string;
-  profiles?: { name: string }[];
 }
 
-export function ClientsTable() {
+export function RepresentativesTable() {
   const navigate = useNavigate();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [clientToDelete, setClientToDelete] = useState<string | null>(null);
+  const [representativeToDelete, setRepresentativeToDelete] = useState<string | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [clientToEditId, setClientToEditId] = useState<string | null>(null);
-  const [selectedClients, setSelectedClients] = useState<Client[]>([]);
+  const [representativeToEditId, setRepresentativeToEditId] = useState<string | null>(null);
+  const [selectedRepresentatives, setSelectedRepresentatives] = useState<Representative[]>([]);
   const [isScraping, setIsScraping] = useState(false);
   const queryClient = useQueryClient();
 
-  const { data: clients = [], isLoading } = useQuery({
-    queryKey: ['clientsWithProfiles'],
-    queryFn: () => getClientsWithProfiles(),
+  const { data: representatives = [], isLoading } = useQuery({
+    queryKey: ['representativesWithClients'],
+    queryFn: () => getRepresentativesWithClients(),
     retry: 1,
   });
 
@@ -82,7 +75,7 @@ export function ClientsTable() {
   const aiAgentEnabled =
     orgModules.find((m) => m.module === 'ai_agent')?.enabled ?? false;
 
-  const clientsTyped = clients as Client[];
+  const clientsTyped = representatives as Representative[];
   const clientsConErrores = clientsTyped.filter((c) => c.hasErrors === true);
   const clientesResumen = clientsTyped.slice(0, 30).map((c) => ({
     id: c.id,
@@ -93,19 +86,19 @@ export function ClientsTable() {
   }));
 
   const deleteMutation = useMutation({
-    mutationFn: (data: { id: string }) => deleteClient({ data }),
+    mutationFn: (data: { id: string }) => deleteRepresentative({ data }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['clientsWithProfiles'] });
+      queryClient.invalidateQueries({ queryKey: ['representativesWithClients'] });
       toast.success('Cliente eliminado exitosamente');
       setDeleteDialogOpen(false);
-      setClientToDelete(null);
+      setRepresentativeToDelete(null);
     },
     onError: () => {
       toast.error('Error al eliminar el cliente');
     },
   });
 
-  const columns: ColumnDef<Client>[] = [
+  const columns: ColumnDef<Representative>[] = [
     {
       accessorKey: 'name',
       header: 'Cliente',
@@ -114,55 +107,13 @@ export function ClientsTable() {
           <div className="font-medium text-[var(--arca-ink)]">
             {row.original.name}
           </div>
-          {row.original.profiles?.[0] && (
+          {row.original.clients?.[0] && (
             <div className="text-[11px] text-[var(--arca-ink-4)] mt-0.5">
-              {row.original.profiles[0].name}
+              {row.original.clients[0].name}
             </div>
           )}
         </div>
       ),
-    },
-    {
-      accessorKey: 'hasErrors',
-      header: 'Estado',
-      enableSorting: false,
-      filterFn: (row, _columnId, filterValue) => {
-        if (!filterValue) return true;
-        if (filterValue === 'error') return row.original.hasErrors === true;
-        if (filterValue === 'ok') return row.original.hasErrors !== true;
-        return true;
-      },
-      cell: ({ row }) =>
-        row.original.hasErrors ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span
-                className="inline-flex text-[var(--arca-accent-warn-fg)]"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <CircleAlert className="h-4 w-4" />
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top" sideOffset={6}>
-              {row.original.errorMessage?.trim() ||
-                'Cliente con errores en jobs de scraping'}
-            </TooltipContent>
-          </Tooltip>
-        ) : (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span
-                className="inline-flex text-[var(--arca-accent-pos-fg)]"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <CheckCircle2 className="h-4 w-4" />
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top" sideOffset={6}>
-              Cliente sin errores en jobs de scraping
-            </TooltipContent>
-          </Tooltip>
-        ),
     },
     {
       accessorKey: 'identityNumber',
@@ -205,7 +156,7 @@ export function ClientsTable() {
             </DropdownMenuItem>
             <DropdownMenuItem
               onSelect={() => {
-                setClientToEditId(row.original.id);
+                setRepresentativeToEditId(row.original.id);
                 setEditDialogOpen(true);
               }}
             >
@@ -214,7 +165,7 @@ export function ClientsTable() {
             </DropdownMenuItem>
             <DropdownMenuItem
               onSelect={() => {
-                setClientToDelete(row.original.id);
+                setRepresentativeToDelete(row.original.id);
                 setDeleteDialogOpen(true);
               }}
               className="text-destructive"
@@ -229,20 +180,26 @@ export function ClientsTable() {
   ];
 
   const handleScrapSelected = async () => {
-    if (selectedClients.length === 0) return;
+    if (selectedRepresentatives.length === 0) return;
     setIsScraping(true);
     try {
-      const result = await scrapBatchClients({
-        data: { clientIds: selectedClients.map((c) => c.id) },
-      });
-      if (result.errors.length > 0) {
-        toast.warning(
-          `${result.created.length} jobs creados, ${result.errors.length} errores`
-        );
+      const modules = ['deuda', 'vencimientos', 'iva', 'notificaciones', 'comprobantes'] as const;
+      let created = 0;
+      let errors = 0;
+      for (const rep of selectedRepresentatives) {
+        for (const jobType of modules) {
+          try {
+            await scrapSingleJob({ data: { representativeId: rep.id, jobType } });
+            created++;
+          } catch {
+            errors++;
+          }
+        }
+      }
+      if (errors > 0) {
+        toast.warning(`${created} módulos completados, ${errors} errores`);
       } else {
-        toast.success(
-          `${result.created.length} jobs de scraping encolados`
-        );
+        toast.success(`${created} módulos de scraping completados`);
       }
     } catch (err) {
       toast.error(
@@ -275,20 +232,11 @@ export function ClientsTable() {
         isLoading={isLoading}
         searchKey="name"
         searchPlaceholder="Buscar por nombre, CUIT..."
-        filters={[
-          {
-            columnId: 'hasErrors',
-            label: 'Estado',
-            options: [
-              { label: 'Sin errores', value: 'ok' },
-              { label: 'Con errores', value: 'error' },
-            ],
-          },
-        ]}
-        onRowClick={(client) => navigate({ to: `/clients/${client.id}` })}
-        onSelectionChange={(rows) => setSelectedClients(rows as Client[])}
+        filters={[]}
+        onRowClick={(representative) => navigate({ to: `/clients/${representative.id}` })}
+        onSelectionChange={(rows) => setSelectedRepresentatives(rows as Representative[])}
         toolbar={
-          selectedClients.length > 0 ? (
+          selectedRepresentatives.length > 0 ? (
             <Button
               size="sm"
               onClick={handleScrapSelected}
@@ -299,20 +247,20 @@ export function ClientsTable() {
               ) : (
                 <Play className="h-3.5 w-3.5" />
               )}
-              Scrapear {selectedClients.length} cliente{selectedClients.length > 1 ? 's' : ''}
+              Scrapear {selectedRepresentatives.length} cliente{selectedRepresentatives.length > 1 ? 's' : ''}
             </Button>
           ) : null
         }
         emptyMessage="No hay clientes registrados."
       />
 
-      {clientToEditId && (
-        <EditClientDialog
-          clientId={clientToEditId}
+      {representativeToEditId && (
+        <EditRepresentativeDialog
+          representativeId={representativeToEditId}
           open={editDialogOpen}
           onOpenChange={(open) => {
             setEditDialogOpen(open);
-            if (!open) setClientToEditId(null);
+            if (!open) setRepresentativeToEditId(null);
           }}
         />
       )}
@@ -330,7 +278,7 @@ export function ClientsTable() {
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction
               onClick={() =>
-                clientToDelete && deleteMutation.mutate({ id: clientToDelete })
+                representativeToDelete && deleteMutation.mutate({ id: representativeToDelete })
               }
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >

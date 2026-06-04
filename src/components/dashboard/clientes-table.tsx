@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Users, SlidersHorizontal } from 'lucide-react';
-import { getDashboardStats, getTopClients } from '@/actions/dashboard';
+import { getDashboardStats, getTopRepresentatives } from '@/actions/dashboard';
 import {
   ArcaCard,
   ArcaCardHead,
@@ -36,10 +36,10 @@ export function ClientesTable({ from, to }: ClientesTableProps) {
     queryFn: () => getDashboardStats({ data: { from: fromStr, to: toStr } }),
   });
 
-  const { data: clients = [], isLoading } = useQuery({
-    queryKey: ['topClients', fromStr, toStr],
+  const { data: representatives = [], isLoading } = useQuery({
+    queryKey: ['topRepresentatives', fromStr, toStr],
     queryFn: () =>
-      getTopClients({ data: { limit: 5, from: fromStr, to: toStr } }),
+      getTopRepresentatives({ data: { limit: 5, from: fromStr, to: toStr } }),
   });
 
   return (
@@ -86,7 +86,7 @@ export function ClientesTable({ from, to }: ClientesTableProps) {
                 Cargando...
               </td>
             </tr>
-          ) : clients.length === 0 ? (
+          ) : representatives.length === 0 ? (
             <tr>
               <td
                 colSpan={4}
@@ -96,7 +96,7 @@ export function ClientesTable({ from, to }: ClientesTableProps) {
               </td>
             </tr>
           ) : (
-            clients.map((c, i) => (
+            representatives.map((c, i) => (
               <tr
                 key={c.clientId}
                 className="border-b border-[var(--arca-border)] last:border-b-0 hover:bg-[var(--arca-surface-2)] cursor-pointer transition-colors duration-[120ms]"
@@ -137,7 +137,7 @@ export function ClientesTable({ from, to }: ClientesTableProps) {
       </table>
 
       <ArcaCardFoot
-        leftText={`Mostrando ${clients.length} de ${stats?.totalClients || 0} clientes`}
+        leftText={`Mostrando ${representatives.length} de ${stats?.totalClients || 0} clientes`}
         linkText="Ver todos →"
         linkHref="/clients"
       />

@@ -41,7 +41,7 @@ import {
   classifyNotification,
   classifyUnclassifiedNotifications,
 } from '@/actions/notification';
-import { getClients, getClientProfiles } from '@/actions/client';
+import { getRepresentatives, getRepresentativeClients } from '@/actions/client';
 import { listOrgModules } from '@/actions/admin';
 import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
 import { cn } from '@/lib/utils';
@@ -144,19 +144,19 @@ export function NotificationsView({
   >(initialNotificationId ?? null);
   const [notificationDetails, setNotificationDetails] = useState<any>(null);
 
-  // Get clients for filter dropdown (only when not scoped to a single client)
-  const { data: clients = [] } = useQuery({
-    queryKey: ['clients'],
-    queryFn: () => getClients(),
+  // Get representatives for filter dropdown (only when not scoped to a single representative)
+  const { data: representatives = [] } = useQuery({
+    queryKey: ['representatives'],
+    queryFn: () => getRepresentatives(),
     enabled: !clientIdProp,
   });
 
-  // Perfiles del cliente (solo cuando estamos en el detalle de un cliente)
-  const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
-    queryKey: ['clientProfiles', clientIdProp],
+  // Clients of the representative (only when scoped to a single representative)
+  const { data: representativeClients = [], isLoading: loadingRepresentativeClients } = useQuery({
+    queryKey: ['representativeClients', clientIdProp],
     queryFn: () =>
-      getClientProfiles({
-        data: { clientId: clientIdProp! },
+      getRepresentativeClients({
+        data: { representativeId: clientIdProp! },
       }),
     enabled: !!clientIdProp,
   });
@@ -501,7 +501,7 @@ export function NotificationsView({
               <SearchableSelect
                 options={[
                   { value: 'all', label: 'Todos los clientes' },
-                  ...clients.map((c) => ({ value: c.id, label: c.name })),
+                  ...representatives.map((c) => ({ value: c.id, label: c.name })),
                 ]}
                 value={clientFilter}
                 onValueChange={setClientFilter}
@@ -513,7 +513,7 @@ export function NotificationsView({
               <SearchableSelect
                 options={[
                   { value: 'all', label: 'Todos los perfiles' },
-                  ...profiles.map((p: any) => ({
+                  ...representativeClients.map((p: any) => ({
                     value: p.id,
                     label: p.name || p.identityNumber || p.id,
                   })),
@@ -523,7 +523,7 @@ export function NotificationsView({
                 placeholder="Filtrar por perfil"
                 searchPlaceholder="Buscar perfil..."
                 width="100%"
-                disabled={loadingProfiles || profiles.length === 0}
+                disabled={loadingRepresentativeClients || representativeClients.length === 0}
               />
             )}
             <SearchableSelect

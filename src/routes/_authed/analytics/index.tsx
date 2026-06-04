@@ -28,7 +28,7 @@ import {
   ArcaCardHead,
   formatArs,
 } from '@/components/dashboard/shared';
-import { getClients, getClientsWithProfiles } from '@/actions/client';
+import { getRepresentatives, getRepresentativesWithClients } from '@/actions/client';
 import {
   getExecutiveSummary,
   getClientsAtRisk,
@@ -162,13 +162,13 @@ function AnalyticsPage() {
   /* Clients list for selectors */
   const { data: clients = [] } = useQuery({
     queryKey: ['clients'],
-    queryFn: () => getClients(),
+    queryFn: () => getRepresentatives(),
   });
 
   /* Clients with profiles (for IVA projection selector) */
   const { data: clientsWithProfiles = [] } = useQuery({
     queryKey: ['clientsWithProfiles'],
-    queryFn: () => getClientsWithProfiles(),
+    queryFn: () => getRepresentativesWithClients(),
   });
 
   /* Executive summary */

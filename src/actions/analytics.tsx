@@ -2,11 +2,11 @@ import { createServerFn } from '@tanstack/react-start';
 import z from 'zod';
 import { db } from '@/lib/db';
 import {
-  profile,
   client,
+  representative,
   ivaScrape,
   taxProjection,
-  profileRiskSnapshot,
+  clientRiskSnapshot,
   invoice,
   debt,
   notification,
@@ -39,11 +39,11 @@ export const generateIvaProjection = createServerFn({ method: 'POST' })
 
     // Validate profile belongs to org
     const profileRow = await db
-      .select({ id: profile.id, clientId: profile.client })
-      .from(profile)
-      .innerJoin(client, eq(profile.client, client.id))
+      .select({ id: client.id, clientId: client.representativeId })
+      .from(client)
+      .innerJoin(representative, eq(client.representativeId, representative.id))
       .where(
-        and(eq(profile.id, ctx.data.profileId), eq(client.organizationId, orgId as string))
+        and(eq(client.id, ctx.data.profileId), eq(representative.organizationId, orgId as string))
       )
       .limit(1)
       .then((r) => r[0]);
@@ -61,7 +61,7 @@ export const generateIvaProjection = createServerFn({ method: 'POST' })
         ok: ivaScrape.ok,
       })
       .from(ivaScrape)
-      .where(eq(ivaScrape.profileId, ctx.data.profileId))
+      .where(eq(ivaScrape.clientId, ctx.data.profileId))
       .orderBy(desc(ivaScrape.createdAt))
       .limit(6);
 
@@ -137,7 +137,7 @@ export const generateIvaProjection = createServerFn({ method: 'POST' })
       })
       .onConflictDoUpdate({
         target: [
-          taxProjection.profileId,
+          taxProjection.clientId,
           taxProjection.period,
           taxProjection.tax,
         ],
@@ -173,17 +173,17 @@ export const getRatios = createServerFn({ method: 'GET' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    // Validate client belongs to org
-    const clientRow = await db
-      .select({ id: client.id, name: client.name })
-      .from(client)
+    // Validate representative belongs to org
+    const representativeRow = await db
+      .select({ id: representative.id, name: representative.name })
+      .from(representative)
       .where(
-        and(eq(client.id, ctx.data.clientId), eq(client.organizationId, orgId as string))
+        and(eq(representative.id, ctx.data.clientId), eq(representative.organizationId, orgId as string))
       )
       .limit(1)
       .then((r) => r[0]);
 
-    if (!clientRow) throw new Error('Cliente no encontrado o no autorizado');
+    if (!representativeRow) throw new Error('Cliente no encontrado o no autorizado');
 
     const fromDate = new Date(ctx.data.from);
     const toDate = new Date(ctx.data.to);
@@ -210,7 +210,7 @@ export const getRatios = createServerFn({ method: 'GET' })
         .from(invoice)
         .where(
           and(
-            eq(invoice.client, ctx.data.clientId),
+            eq(invoice.representativeId, ctx.data.clientId),
             gte(invoice.emitionDate, fromDate),
             lte(invoice.emitionDate, toDate)
           )
@@ -224,7 +224,7 @@ export const getRatios = createServerFn({ method: 'GET' })
         .from(invoice)
         .where(
           and(
-            eq(invoice.client, ctx.data.clientId),
+            eq(invoice.representativeId, ctx.data.clientId),
             gte(invoice.emitionDate, prevFromDate),
             lte(invoice.emitionDate, prevToDate)
           )
@@ -255,7 +255,7 @@ export const getRatios = createServerFn({ method: 'GET' })
 
     return {
       clientId: ctx.data.clientId,
-      clientName: clientRow.name,
+      clientName: representativeRow.name,
       from: ctx.data.from,
       to: ctx.data.to,
       totalSales,
@@ -300,27 +300,27 @@ export const getClientsAtRisk = createServerFn({ method: 'GET' })
 
     const snapshots = await db
       .select({
-        snapshotId: profileRiskSnapshot.id,
-        profileId: profileRiskSnapshot.profileId,
-        score: profileRiskSnapshot.score,
-        riskLevel: profileRiskSnapshot.riskLevel,
-        factors: profileRiskSnapshot.factors,
-        profileName: profile.name,
+        snapshotId: clientRiskSnapshot.id,
+        profileId: clientRiskSnapshot.clientId,
+        score: clientRiskSnapshot.score,
+        riskLevel: clientRiskSnapshot.riskLevel,
+        factors: clientRiskSnapshot.factors,
+        profileName: client.name,
         clientId: client.id,
         clientName: client.name,
         clientCuit: client.identityNumber,
       })
-      .from(profileRiskSnapshot)
-      .innerJoin(profile, eq(profileRiskSnapshot.profileId, profile.id))
-      .innerJoin(client, eq(profile.client, client.id))
+      .from(clientRiskSnapshot)
+      .innerJoin(client, eq(clientRiskSnapshot.clientId, client.id))
+      .innerJoin(representative, eq(client.representativeId, representative.id))
       .where(
         and(
-          eq(profileRiskSnapshot.period, period),
-          eq(client.organizationId, orgId as string),
-          inArray(profileRiskSnapshot.riskLevel, targetLevels)
+          eq(clientRiskSnapshot.period, period),
+          eq(representative.organizationId, orgId as string),
+          inArray(clientRiskSnapshot.riskLevel, targetLevels)
         )
       )
-      .orderBy(desc(profileRiskSnapshot.score))
+      .orderBy(desc(clientRiskSnapshot.score))
       .limit(ctx.data.limit);
 
     return snapshots.map((s) => ({
@@ -337,12 +337,12 @@ export const getExecutiveSummary = createServerFn({
 }).handler(async () => {
   const { orgId } = await getSessionWithOrg();
 
-  const orgClients = await db
-    .select({ id: client.id })
-    .from(client)
-    .where(eq(client.organizationId, orgId as string));
+  const orgRepresentatives = await db
+    .select({ id: representative.id })
+    .from(representative)
+    .where(eq(representative.organizationId, orgId as string));
 
-  const clientIds = orgClients.map((c) => c.id);
+  const clientIds = orgRepresentatives.map((c) => c.id);
   const totalClients = clientIds.length;
 
   if (clientIds.length === 0) {
@@ -384,13 +384,13 @@ export const getExecutiveSummary = createServerFn({
     // Managed profiles
     db
       .select({ count: sql<number>`COUNT(*)` })
-      .from(profile)
-      .innerJoin(client, eq(profile.client, client.id))
+      .from(client)
+      .innerJoin(representative, eq(client.representativeId, representative.id))
       .where(
         and(
-          eq(client.organizationId, orgId as string),
-          eq(profile.managedByStudy, true),
-          isNull(profile.disabledAt)
+          eq(representative.organizationId, orgId as string),
+          eq(client.managedByStudy, true),
+          isNull(client.disabledAt)
         )
       ),
 
@@ -401,7 +401,7 @@ export const getExecutiveSummary = createServerFn({
         total: sql<number>`COALESCE(SUM(CAST(${debt.balance} AS DECIMAL)), 0)`,
       })
       .from(debt)
-      .where(and(inArray(debt.client, clientIds), eq(debt.status, 'open'))),
+      .where(and(inArray(debt.representativeId, clientIds), eq(debt.status, 'open'))),
 
     // Critical unresolved notifications
     db
@@ -409,7 +409,7 @@ export const getExecutiveSummary = createServerFn({
       .from(notification)
       .where(
         and(
-          inArray(notification.client, clientIds),
+          inArray(notification.representativeId, clientIds),
           eq(notification.severity, 'critical'),
           isNull(notification.resolvedAt)
         )
@@ -421,7 +421,7 @@ export const getExecutiveSummary = createServerFn({
       .from(dueDate)
       .where(
         and(
-          inArray(dueDate.client, clientIds),
+          inArray(dueDate.representativeId, clientIds),
           gte(dueDate.dueDate, now),
           lte(dueDate.dueDate, sevenDaysFromNow),
           isNull(dueDate.completedAt)
@@ -431,20 +431,20 @@ export const getExecutiveSummary = createServerFn({
     // High/critical risk profiles from latest snapshots
     db
       .select({
-        riskLevel: profileRiskSnapshot.riskLevel,
+        riskLevel: clientRiskSnapshot.riskLevel,
         count: sql<number>`COUNT(*)`,
       })
-      .from(profileRiskSnapshot)
-      .innerJoin(profile, eq(profileRiskSnapshot.profileId, profile.id))
-      .innerJoin(client, eq(profile.client, client.id))
+      .from(clientRiskSnapshot)
+      .innerJoin(client, eq(clientRiskSnapshot.clientId, client.id))
+      .innerJoin(representative, eq(client.representativeId, representative.id))
       .where(
         and(
-          eq(profileRiskSnapshot.period, currentPeriod),
-          eq(client.organizationId, orgId as string),
-          inArray(profileRiskSnapshot.riskLevel, ['high', 'critical'])
+          eq(clientRiskSnapshot.period, currentPeriod),
+          eq(representative.organizationId, orgId as string),
+          inArray(clientRiskSnapshot.riskLevel, ['high', 'critical'])
         )
       )
-      .groupBy(profileRiskSnapshot.riskLevel),
+      .groupBy(clientRiskSnapshot.riskLevel),
 
     // Current month sales/purchases
     db
@@ -455,7 +455,7 @@ export const getExecutiveSummary = createServerFn({
       .from(invoice)
       .where(
         and(
-          inArray(invoice.client, clientIds),
+          inArray(invoice.representativeId, clientIds),
           gte(invoice.emitionDate, monthStart),
           lte(invoice.emitionDate, monthEnd)
         )

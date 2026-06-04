@@ -18,6 +18,12 @@ import {
   Download,
   X,
   Search,
+  BookOpen,
+  ClipboardList,
+  Plus,
+  Paperclip,
+  FileDown,
+  RefreshCw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -29,16 +35,24 @@ import {
   PaginationPrevious,
 } from '@/components/ui/pagination';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
-  getClient,
-  getClientProfiles,
-  getClientDebts,
-  getClientDueDates,
-  getClientIvaCredit,
+  getRepresentative,
+  getRepresentativeClients,
+  getRepresentativeDebts,
+  getRepresentativeDueDates,
+  getRepresentativeIvaCredit,
   getLastJobByType,
   getRunningJobByType,
+  getBalanceConfig,
+  upsertBalanceConfig,
 } from '@/actions/client';
 import {
   Select,
@@ -47,7 +61,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { EditClientDialog } from '@/components/edit-client-dialog';
+import { EditRepresentativeDialog } from '@/components/edit-client-dialog';
 import { NotificationsView } from '@/components/notifications-view';
 import {
   InvoicesTable,
@@ -63,16 +77,27 @@ import {
   getNotifications,
   markNotificationOpened,
 } from '@/actions/notification';
-import { scrapSingleJob } from '@/actions/client';
-import { listOrgModules } from '@/actions/admin';
-import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
+import { updateClientManagement } from '@/actions/profile';
+import {
+  scrapSingleJob,
+  updateDebtStatus,
+} from '@/actions/client';
+import {
+  listClientRequests,
+  createClientRequest,
+  updateClientRequestStatus,
+  getRequestDocument,
+} from '@/actions/client-portal';
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
 import {
   Clock,
   CalendarCheck,
   CalendarX,
-  Loader2
+  Loader2,
+  EyeOff,
+  Eye,
+  Play,
 } from 'lucide-react';
 import {
   Table,
@@ -104,18 +129,26 @@ import {
   DialogHeader,
   DialogTitle,
   DialogClose,
+  DialogTrigger,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { INVOICE_TYPES } from '@/lib/invoicesTypes';
+import { ChartContainer, type ChartConfig } from '@/components/ui/chart';
 import {
-  ChartContainer,
-  type ChartConfig,
-} from '@/components/ui/chart';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend, Tooltip } from 'recharts';
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Legend,
+  Tooltip,
+} from 'recharts';
 import { userQuery } from '@/lib/user-query';
+import { listOrgModules } from '@/actions/admin';
+import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
 
-interface ClientDetailPageProps {
-  clientId: string;
+interface RepresentativeDetailPageProps {
+  representativeId: string;
   activeTab: string;
   onTabChange: (tab: string) => void;
 }
@@ -197,10 +230,10 @@ const MetricDelta = ({
   return (
     <p
       className={`text-xs mt-1 ${diff > 0
-        ? 'text-[var(--arca-accent-pos-fg)]'
-        : diff < 0
-          ? 'text-[var(--arca-accent-neg-fg)]'
-          : 'text-muted-foreground'
+          ? 'text-[var(--arca-accent-pos-fg)]'
+          : diff < 0
+            ? 'text-[var(--arca-accent-neg-fg)]'
+            : 'text-muted-foreground'
         }`}
     >
       {label}: {formattedPct}
@@ -261,14 +294,14 @@ function findBestMatchingProfileId(
   return profiles[0].id;
 }
 
-export function ClientDetailPage({
-  clientId,
+export function RepresentativeDetailPage({
+  representativeId,
   activeTab,
   onTabChange,
-}: ClientDetailPageProps) {
+}: RepresentativeDetailPageProps) {
   const navigate = useNavigate();
   const [copiedField, setCopiedField] = useState<string | null>(null);
-  const [editClientDialogOpen, setEditClientDialogOpen] = useState(false);
+  const [editRepresentativeDialogOpen, setEditRepresentativeDialogOpen] = useState(false);
   const now = new Date();
   const initialMultilateralRange = getMonthBounds(
     now.getFullYear(),
@@ -330,10 +363,14 @@ export function ClientDetailPage({
   const [scrapingSection, setScrapingSection] = useState<
     'iva' | 'deudas' | 'vencimientos' | 'facturas' | 'notificaciones' | null
   >(null);
+  const [scrapingAll, setScrapingAll] = useState(false);
   /** Filtros del módulo de deudas (vacío = todos). */
+  const [debtFilterProfileId, setDebtFilterProfileId] = useState<string>('');
   const [debtFilterImpuesto, setDebtFilterImpuesto] = useState<string>('');
   const [debtFilterConcepto, setDebtFilterConcepto] = useState<string>('');
   const [debtPage, setDebtPage] = useState(1);
+  const [debtSortKey, setDebtSortKey] = useState<'profileName' | 'tax' | 'concept' | 'period' | 'dueDate' | 'detectedAt'>('detectedAt');
+  const [debtSortDir, setDebtSortDir] = useState<'asc' | 'desc'>('desc');
   const [dueDatePage, setDueDatePage] = useState(1);
 
   /** Período para el módulo Facturas: sin período, por año, por mes o rango de días. */
@@ -388,10 +425,151 @@ export function ClientDetailPage({
     mutationFn: (id: string) => markNotificationOpened({ data: { id } }),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ['unreadNotifications', orgKey, clientId],
+        queryKey: ['unreadNotifications', orgKey, representativeId],
       });
     },
   });
+
+  const toggleClientManagementMutation = useMutation({
+    mutationFn: (vars: { clientId: string; managedByStudy: boolean }) =>
+      updateClientManagement({ data: vars }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['representativeClients', representativeId] });
+      toast.success('Perfil actualizado');
+    },
+    onError: () => {
+      toast.error('Error al actualizar el perfil');
+    },
+  });
+  const updateDebtStatusMutation = useMutation({
+    mutationFn: (vars: {
+      id: string;
+      status: 'open' | 'in_plan' | 'paid' | 'disputed';
+      isIntimated: boolean;
+    }) => updateDebtStatus({ data: vars }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['representativeDebts', representativeId] });
+      toast.success('Deuda actualizada');
+    },
+    onError: () => {
+      toast.error('Error al actualizar la deuda');
+    },
+  });
+
+  // Balance config state
+  const [balanceMonth, setBalanceMonth] = useState<string>('12');
+  const [balanceDay, setBalanceDay] = useState<string>('31');
+  const [balancePresentationDays, setBalancePresentationDays] =
+    useState<string>('');
+  const [balanceAlertDays, setBalanceAlertDays] =
+    useState<string>('60,30,15,7');
+
+  // Solicitudes state
+  const [solicitudesStatusFilter, setSolicitudesStatusFilter] =
+    useState<string>('');
+  const [newRequestDialogOpen, setNewRequestDialogOpen] = useState(false);
+  const [newRequestTitle, setNewRequestTitle] = useState('');
+  const [newRequestDescription, setNewRequestDescription] = useState('');
+  const [newRequestType, setNewRequestType] = useState('general');
+  const [newRequestDueAt, setNewRequestDueAt] = useState('');
+
+  interface RequestRow {
+    id: string;
+    organizationId: string;
+    representativeId: string;
+    profileId: string | null;
+    requestedByUserId: string | null;
+    title: string;
+    description: string | null;
+    type: string;
+    status: string;
+    dueAt: Date | null;
+    completedAt: Date | null;
+    metadata?: { documentId?: string; documentName?: string } | null;
+    createdAt: Date;
+  }
+  const {
+    data: clientRequestsData = [] as RequestRow[],
+    refetch: refetchRequests,
+  } = useQuery({
+    queryKey: ['clientRequests', representativeId, solicitudesStatusFilter],
+    queryFn: () =>
+      listClientRequests({
+        data: { clientId: representativeId, status: solicitudesStatusFilter || undefined },
+      }),
+    enabled: !!representativeId,
+  });
+
+  const createRequestMutation = useMutation({
+    mutationFn: () =>
+      createClientRequest({
+        data: {
+          clientId: representativeId,
+          title: newRequestTitle,
+          description: newRequestDescription || undefined,
+          type: newRequestType,
+          dueAt: newRequestDueAt || undefined,
+        },
+      }),
+    onSuccess: () => {
+      refetchRequests();
+      setNewRequestDialogOpen(false);
+      setNewRequestTitle('');
+      setNewRequestDescription('');
+      setNewRequestType('general');
+      setNewRequestDueAt('');
+      toast.success('Solicitud creada');
+    },
+    onError: () => toast.error('Error al crear solicitud'),
+  });
+
+  const updateRequestStatusMutation = useMutation({
+    mutationFn: (vars: { requestId: string; status: string }) =>
+      updateClientRequestStatus({ data: vars }),
+    onSuccess: () => {
+      refetchRequests();
+      toast.success('Estado actualizado');
+    },
+    onError: () => toast.error('Error al actualizar estado'),
+  });
+
+  const { data: balanceConfig } = useQuery({
+    queryKey: ['balanceConfig', representativeId],
+    queryFn: () => getBalanceConfig({ data: { representativeId } }),
+    enabled: !!representativeId,
+  });
+
+  // Sync form state when config loads
+  useEffect(() => {
+    if (balanceConfig) {
+      setBalanceMonth(String(balanceConfig.fiscalYearEndMonth));
+      setBalanceDay(String(balanceConfig.fiscalYearEndDay));
+      setBalancePresentationDays(
+        balanceConfig.presentationDueDays != null
+          ? String(balanceConfig.presentationDueDays)
+          : ''
+      );
+      const days = balanceConfig.alertDaysBefore;
+      setBalanceAlertDays(Array.isArray(days) ? days.join(',') : '60,30,15,7');
+    }
+  }, [balanceConfig]);
+
+  const upsertBalanceConfigMutation = useMutation({
+    mutationFn: (vars: {
+      fiscalYearEndMonth: number;
+      fiscalYearEndDay: number;
+      presentationDueDays: number | null;
+      alertDaysBefore: number[];
+    }) => upsertBalanceConfig({ data: { representativeId, ...vars } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['balanceConfig', representativeId] });
+      toast.success('Configuración guardada');
+    },
+    onError: () => {
+      toast.error('Error al guardar la configuración');
+    },
+  });
+
   const ivaResumeRef = useRef<RenderIvaResumeRef>(null);
   const ivaSelectedYear = ivaResumenDateRange.from.getFullYear();
   const ivaSelectedMonth = ivaResumenDateRange.from.getMonth();
@@ -434,9 +612,9 @@ export function ClientDetailPage({
   );
 
   const { data: client, isLoading: loadingClient } = useQuery({
-    queryKey: ['client', clientId],
+    queryKey: ['representative', representativeId],
     queryFn: async () => {
-      const result = await getClient({ data: { id: clientId } });
+      const result = await getRepresentative({ data: { id: representativeId } });
       return result;
     },
   });
@@ -449,8 +627,8 @@ export function ClientDetailPage({
     orgModules.find((m) => m.module === 'ai_agent')?.enabled ?? false;
 
   const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
-    queryKey: ['clientProfiles', clientId],
-    queryFn: () => getClientProfiles({ data: { clientId } }),
+    queryKey: ['representativeClients', representativeId],
+    queryFn: () => getRepresentativeClients({ data: { representativeId } }),
   });
 
   /** Perfil IVA por defecto (según nombre del cliente). Se calcula cuando hay client + profiles. */
@@ -483,15 +661,15 @@ export function ClientDetailPage({
   } = useQuery({
     queryKey: [
       'clientIva',
-      clientId,
+      representativeId,
       effectiveIvaProfileId,
       periodoFiscalResumen,
     ],
     queryFn: () =>
-      getClientIvaCredit({
+      getRepresentativeIvaCredit({
         data: {
-          clientId,
-          profileId: effectiveIvaProfileId ?? undefined,
+          representativeId,
+          clientId: effectiveIvaProfileId ?? undefined,
           periodoFiscalResumen: periodoFiscalResumen ?? undefined,
         },
       }),
@@ -506,15 +684,15 @@ export function ClientDetailPage({
     useQuery({
       queryKey: [
         'clientIva',
-        clientId,
+        representativeId,
         effectiveResumenProfileId,
         periodoFiscalResumen,
       ],
       queryFn: () =>
-        getClientIvaCredit({
+        getRepresentativeIvaCredit({
           data: {
-            clientId,
-            profileId: effectiveResumenProfileId ?? undefined,
+            representativeId,
+            clientId: effectiveResumenProfileId ?? undefined,
             periodoFiscalResumen: periodoFiscalResumen ?? undefined,
           },
         }),
@@ -533,7 +711,7 @@ export function ClientDetailPage({
     setMultilateralPeriod(range);
     setMultilateralDateFrom(range.from.toISOString().slice(0, 10));
     setMultilateralDateTo(range.to.toISOString().slice(0, 10));
-  }, [clientId]);
+  }, [representativeId]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -551,40 +729,56 @@ export function ClientDetailPage({
   }, []);
 
   const { data: debts = [], isLoading: loadingDebts } = useQuery({
-    queryKey: ['clientDebts', clientId],
-    queryFn: () => getClientDebts({ data: { clientId } }),
+    queryKey: ['representativeDebts', representativeId, debtFilterProfileId],
+    queryFn: () => getRepresentativeDebts({ data: { representativeId, clientId: debtFilterProfileId || undefined } }),
   });
 
   const { data: dueDates = [], isLoading: loadingDueDates } = useQuery({
-    queryKey: ['clientDueDates', clientId],
-    queryFn: () => getClientDueDates({ data: { clientId } }),
+    queryKey: ['representativeDueDates', representativeId],
+    queryFn: () => getRepresentativeDueDates({ data: { representativeId } }),
   });
 
   // Últimos jobs por tipo para mostrar errores en Resumen
-  const { data: lastComprobantesJob } = useQuery({
-    queryKey: ['lastComprobantesJob', clientId],
+  const { data: lastComprobantesJobIncremental } = useQuery({
+    queryKey: ['lastComprobantesJob', representativeId],
     queryFn: () =>
-      getLastJobByType({ data: { clientId, jobType: 'comprobantes' } }),
-    enabled: !!clientId,
+      getLastJobByType({ data: { representativeId, jobType: 'comprobantes' } }),
+    enabled: !!representativeId,
   });
 
+  const { data: lastComprobantesFullJob } = useQuery({
+    queryKey: ['lastComprobantesFullJob', representativeId],
+    queryFn: () =>
+      getLastJobByType({ data: { representativeId, jobType: 'comprobantes_full' } }),
+    enabled: !!representativeId,
+  });
+
+  // Mostrar el más reciente entre comprobantes y comprobantes_full
+  const lastComprobantesJob = (() => {
+    const a = lastComprobantesJobIncremental;
+    const b = lastComprobantesFullJob;
+    if (!a?.createdAt) return b;
+    if (!b?.createdAt) return a;
+    return new Date(b.createdAt) > new Date(a.createdAt) ? b : a;
+  })();
+
   const { data: lastIvaJob } = useQuery({
-    queryKey: ['lastIvaJob', clientId],
-    queryFn: () => getLastJobByType({ data: { clientId, jobType: 'iva' } }),
-    enabled: !!clientId,
+    queryKey: ['lastIvaJob', representativeId],
+    queryFn: () => getLastJobByType({ data: { representativeId, jobType: 'iva' } }),
+    enabled: !!representativeId,
   });
 
   const { data: lastNotificacionesJob } = useQuery({
-    queryKey: ['lastNotificacionesJob', clientId],
+    queryKey: ['lastNotificacionesJob', representativeId],
     queryFn: () =>
-      getLastJobByType({ data: { clientId, jobType: 'notificaciones' } }),
-    enabled: !!clientId,
+      getLastJobByType({ data: { representativeId, jobType: 'notificaciones' } }),
+    enabled: !!representativeId,
   });
 
   const { data: lastDeudaJob } = useQuery({
-    queryKey: ['lastDeudaJob', clientId],
-    queryFn: () => getLastJobByType({ data: { clientId, jobType: 'deuda' } }),
-    enabled: !!clientId,
+    queryKey: ['lastDeudaJob', representativeId],
+    queryFn: () => getLastJobByType({ data: { representativeId, jobType: 'deuda' } }),
+    enabled: !!representativeId,
   });
 
   const { data: unreadNotifications, isLoading: loadingUnreadNotifications } =
@@ -592,14 +786,14 @@ export function ClientDetailPage({
       queryKey: [
         'unreadNotifications',
         orgKey,
-        clientId,
+        representativeId,
         resumenNotifProfileId,
       ],
       queryFn: () =>
         getNotifications({
           data: {
-            clientFilter: clientId,
-            profileId:
+            representativeFilter: representativeId,
+            clientId:
               resumenNotifProfileId !== 'all'
                 ? resumenNotifProfileId
                 : undefined,
@@ -608,35 +802,35 @@ export function ClientDetailPage({
             page: 1,
           },
         }),
-      enabled: !!clientId,
+      enabled: !!representativeId,
     });
 
   const { data: lastVencimientosJob } = useQuery({
-    queryKey: ['lastVencimientosJob', clientId],
+    queryKey: ['lastVencimientosJob', representativeId],
     queryFn: () =>
-      getLastJobByType({ data: { clientId, jobType: 'vencimientos' } }),
-    enabled: !!clientId,
+      getLastJobByType({ data: { representativeId, jobType: 'vencimientos' } }),
+    enabled: !!representativeId,
   });
 
   // Job incremental de comprobantes en curso (para mostrar loader de IVA aunque se haya iniciado en otro lado)
   const { data: runningComprobantesJob } = useQuery({
-    queryKey: ['runningComprobantesJob', clientId],
+    queryKey: ['runningComprobantesJob', representativeId],
     queryFn: () =>
-      getRunningJobByType({ data: { clientId, jobType: 'comprobantes' } }),
-    enabled: !!clientId,
+      getRunningJobByType({ data: { representativeId, jobType: 'comprobantes' } }),
+    enabled: !!representativeId,
     // Refrescar cada 5s para reflejar cambios de estado
     refetchInterval: 5000,
   });
 
   // Get all invoices for the client to calculate totals
   const { data: allInvoicesData } = useQuery({
-    queryKey: ['clientAllInvoices', clientId],
+    queryKey: ['clientAllInvoices', representativeId],
     queryFn: () =>
       getInvoices({
         data: {
           page: 1,
           limit: 10000, // Get all invoices
-          clientFilter: clientId,
+          clientFilter: representativeId,
         },
       }),
   });
@@ -647,7 +841,7 @@ export function ClientDetailPage({
   } = useQuery({
     queryKey: [
       'clientMultilateralSummary',
-      clientId,
+      representativeId,
       effectiveMultilateralProfileId,
       multilateralDateFrom,
       multilateralDateTo,
@@ -655,13 +849,13 @@ export function ClientDetailPage({
     queryFn: () =>
       getClientMultilateralSummary({
         data: {
-          clientId,
+          clientId: representativeId,
           profileId: effectiveMultilateralProfileId ?? undefined,
           dateFrom: multilateralDateFrom || undefined,
           dateTo: multilateralDateTo || undefined,
         },
       }),
-    enabled: !!clientId,
+    enabled: !!representativeId,
   });
 
   const multilateralPrevDateFrom = multilateralPrevPeriod
@@ -674,7 +868,7 @@ export function ClientDetailPage({
   const { data: multilateralSummaryPrev = [] } = useQuery({
     queryKey: [
       'clientMultilateralSummaryPrev',
-      clientId,
+      representativeId,
       effectiveMultilateralProfileId,
       multilateralPrevDateFrom,
       multilateralPrevDateTo,
@@ -682,14 +876,14 @@ export function ClientDetailPage({
     queryFn: () =>
       getClientMultilateralSummary({
         data: {
-          clientId,
+          clientId: representativeId,
           profileId: effectiveMultilateralProfileId ?? undefined,
           dateFrom: multilateralPrevDateFrom,
           dateTo: multilateralPrevDateTo,
         },
       }),
     enabled:
-      !!clientId && !!multilateralPrevDateFrom && !!multilateralPrevDateTo,
+      !!representativeId && !!multilateralPrevDateFrom && !!multilateralPrevDateTo,
   });
 
   interface MultilateralAgg {
@@ -821,7 +1015,7 @@ export function ClientDetailPage({
   } = useQuery({
     queryKey: [
       'clientMultilateralInvoices',
-      clientId,
+      representativeId,
       effectiveMultilateralProfileId,
       multilateralDateFrom,
       multilateralDateTo,
@@ -830,14 +1024,14 @@ export function ClientDetailPage({
     queryFn: () =>
       getClientMultilateralInvoices({
         data: {
-          clientId,
+          clientId: representativeId,
           profileId: effectiveMultilateralProfileId ?? undefined,
           receiptProvince: selectedMultilateralProvince,
           dateFrom: multilateralDateFrom || undefined,
           dateTo: multilateralDateTo || undefined,
         },
       }),
-    enabled: !!clientId && multilateralDetailOpen,
+    enabled: !!representativeId && multilateralDetailOpen,
   });
 
   const multilateralDetailTotals = useMemo(() => {
@@ -941,12 +1135,25 @@ export function ClientDetailPage({
     });
   }, [debts, debtFilterImpuesto, debtFilterConcepto]);
 
+  const sortedDebts = useMemo(() => {
+    const sorted = [...filteredDebts].sort((a, b) => {
+      let cmp = 0;
+      if (debtSortKey === 'dueDate' || debtSortKey === 'detectedAt') {
+        cmp = new Date(a[debtSortKey] ?? 0).getTime() - new Date(b[debtSortKey] ?? 0).getTime();
+      } else {
+        cmp = (a[debtSortKey] ?? '').localeCompare(b[debtSortKey] ?? '');
+      }
+      return debtSortDir === 'asc' ? cmp : -cmp;
+    });
+    return sorted;
+  }, [filteredDebts, debtSortKey, debtSortDir]);
+
   const ITEMS_PER_PAGE = 10;
   const debtTotalPages = Math.max(
     1,
-    Math.ceil(filteredDebts.length / ITEMS_PER_PAGE)
+    Math.ceil(sortedDebts.length / ITEMS_PER_PAGE)
   );
-  const pagedDebts = filteredDebts.slice(
+  const pagedDebts = sortedDebts.slice(
     (debtPage - 1) * ITEMS_PER_PAGE,
     debtPage * ITEMS_PER_PAGE
   );
@@ -1323,20 +1530,35 @@ export function ClientDetailPage({
     // Build the 12 month buckets: from (currentYear, currentMonth - 11) to (currentYear, currentMonth)
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth(); // 0-indexed
-    const buckets: { year: number; month: number; ventas: number; compras: number }[] = [];
+    const buckets: {
+      year: number;
+      month: number;
+      ventas: number;
+      compras: number;
+    }[] = [];
     for (let i = 11; i >= 0; i--) {
       let m = currentMonth - i;
       let y = currentYear;
-      if (m < 0) { m += 12; y -= 1; }
+      if (m < 0) {
+        m += 12;
+        y -= 1;
+      }
       buckets.push({ year: y, month: m, ventas: 0, compras: 0 });
     }
     invoices.forEach((inv: any) => {
-      if (effectiveResumenProfileId && inv.profileId !== effectiveResumenProfileId) return;
+      if (
+        effectiveResumenProfileId &&
+        inv.profileId !== effectiveResumenProfileId
+      )
+        return;
       const d = new Date(inv.emitionDate);
-      const bucket = buckets.find((b) => b.year === d.getFullYear() && b.month === d.getMonth());
+      const bucket = buckets.find(
+        (b) => b.year === d.getFullYear() && b.month === d.getMonth()
+      );
       if (!bucket) return;
       let amount = parseFloat(inv.amount || '0');
-      if (inv.currency?.toUpperCase() === 'USD') amount *= parseFloat(inv.currencyRate || '1');
+      if (inv.currency?.toUpperCase() === 'USD')
+        amount *= parseFloat(inv.currencyRate || '1');
       const dir = inv.direction?.toLowerCase();
       if (dir === 'outbound') bucket.ventas += amount;
       else if (dir === 'inbound') bucket.compras += amount;
@@ -1483,15 +1705,15 @@ export function ClientDetailPage({
 
   return (
     <div>
-      {aiAgentEnabled && (
+      {aiAgentEnabled && client && (
         <CopilotReadableEntity
-          description="Cliente actualmente visible en pantalla y la sección que está mirando el usuario. Usá tabActiva para entender el foco actual: resumen=overview, deudas=AFIP debts, vencimientos=próximos, notificaciones=AFIP, facturas=invoices, iva=IVA scrape, convenio-multilateral=Multilateral."
+          description="Cliente actualmente visible en pantalla y la sección que está mirando el usuario. Usá tabActiva para entender el foco actual: resumen=overview, deudas=AFIP debts, vencimientos=próximos, notificaciones=AFIP, facturas=invoices, iva=IVA scrape, convenio-multilateral=Multilateral, solicitudes=requests."
           value={{
             modulo: 'cliente-detalle',
             tabActiva: activeTab,
             id: client.id,
             name: client.name,
-            identityNumber: client.identityNumber,
+            cuit: client.cuit,
             fiscalCondition: client.fiscalCondition,
             status: client.status,
           }}
@@ -1525,21 +1747,12 @@ export function ClientDetailPage({
                   <h1 className="font-display text-[24px] font-semibold tracking-tight text-[var(--arca-ink)] leading-none truncate">
                     {client.name}
                   </h1>
-                  {client.hasErrors ? (
-                    <span className="inline-flex items-center gap-[5px] px-[8px] py-[3px] rounded-full text-[11.5px] font-semibold bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)] shrink-0">
-                      <span className="w-[6px] h-[6px] rounded-full bg-[var(--arca-accent-warn)] shrink-0" />
-                      Con errores
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-[5px] px-[8px] py-[3px] rounded-full text-[11.5px] font-semibold bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)] shrink-0">
-                      <span className="w-[6px] h-[6px] rounded-full bg-[var(--arca-accent-pos)] shrink-0" />
-                      Al día
-                    </span>
-                  )}
                 </div>
                 <div className="mt-[4px] flex flex-wrap items-center gap-x-[10px] gap-y-[2px] text-[11.5px] text-[var(--arca-ink-3)]">
                   {client.identityNumber && (
-                    <span className="font-mono">CUIT {client.identityNumber}</span>
+                    <span className="font-mono">
+                      CUIT {client.identityNumber}
+                    </span>
                   )}
                   {client.fiscalCondition && (
                     <>
@@ -1556,19 +1769,66 @@ export function ClientDetailPage({
                   {client.registeredAt && (
                     <>
                       <span className="w-[3px] h-[3px] rounded-full bg-[var(--arca-ink-4)] shrink-0" />
-                      <span>Alta {new Date(client.registeredAt).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                      <span>
+                        Alta{' '}
+                        {new Date(client.registeredAt).toLocaleDateString(
+                          'es-AR',
+                          { day: 'numeric', month: 'short', year: 'numeric' }
+                        )}
+                      </span>
                     </>
                   )}
                 </div>
               </div>
               {/* Actions */}
-              <button
-                onClick={() => setEditClientDialogOpen(true)}
-                className="w-[24px] h-[24px] shrink-0 rounded-[var(--arca-r-sm)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-3)] inline-flex items-center justify-center hover:bg-[var(--arca-surface-2)] transition-colors"
-                title="Editar cliente"
-              >
-                <Edit className="h-3 w-3" />
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={scrapingAll || !!scrapingSection}
+                  onClick={async () => {
+                    setScrapingAll(true);
+                    toast('Iniciando scrapeo');
+                    const jobTypes = ['deuda', 'vencimientos', 'iva', 'notificaciones', 'comprobantes_full'] as const;
+                    let failed = 0;
+                    try {
+                      for (const jobType of jobTypes) {
+                        try {
+                          await scrapSingleJob({ data: { representativeId, jobType } });
+                        } catch {
+                          failed++;
+                        }
+                      }
+                      if (failed === 0) {
+                        toast.success('Scraping completado');
+                      } else if (failed < jobTypes.length) {
+                        toast.warning(`Scraping parcial: ${failed} job(s) fallaron`);
+                      } else {
+                        toast.error('Todos los jobs fallaron');
+                      }
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : 'Error al encolar scraping');
+                    } finally {
+                      setScrapingAll(false);
+                    }
+                  }}
+                  title="Scrapear todo (deuda, vencimientos, IVA, notificaciones)"
+                >
+                  {scrapingAll ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Play className="h-3 w-3" />
+                  )}
+                  Scrapear todo
+                </Button>
+                <button
+                  onClick={() => setEditRepresentativeDialogOpen(true)}
+                  className="w-[24px] h-[24px] shrink-0 rounded-[var(--arca-r-sm)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-3)] inline-flex items-center justify-center hover:bg-[var(--arca-surface-2)] transition-colors"
+                  title="Editar cliente"
+                >
+                  <Edit className="h-3 w-3" />
+                </button>
+              </div>
             </div>
 
             {/* Tab bar */}
@@ -1577,29 +1837,62 @@ export function ClientDetailPage({
                 <FileText className="h-[14px] w-[14px]" />
                 Resumen
               </TabsTrigger>
-              <TabsTrigger value="deudas" className={tabTriggerCls(lastDeudaJob ? !lastDeudaJob.success : false)}>
+              <TabsTrigger
+                value="deudas"
+                className={tabTriggerCls(
+                  lastDeudaJob ? !lastDeudaJob.success : false
+                )}
+              >
                 <DollarSign className="h-[14px] w-[14px]" />
                 Deudas
               </TabsTrigger>
-              <TabsTrigger value="vencimientos" className={tabTriggerCls(lastVencimientosJob ? !lastVencimientosJob.success : false)}>
+              <TabsTrigger
+                value="vencimientos"
+                className={tabTriggerCls(
+                  lastVencimientosJob ? !lastVencimientosJob.success : false
+                )}
+              >
                 <Calendar className="h-[14px] w-[14px]" />
                 Vencimientos
               </TabsTrigger>
-              <TabsTrigger value="notificaciones" className={tabTriggerCls((lastNotificacionesJob && !lastNotificacionesJob.success) || !!lastNotificacionesJob?.notificationFetchWarning)}>
+              <TabsTrigger
+                value="notificaciones"
+                className={tabTriggerCls(
+                  (lastNotificacionesJob && !lastNotificacionesJob.success) ||
+                  !!lastNotificacionesJob?.notificationFetchWarning
+                )}
+              >
                 <Bell className="h-[14px] w-[14px]" />
                 Notificaciones
               </TabsTrigger>
-              <TabsTrigger value="facturas" className={tabTriggerCls(lastComprobantesJob ? !lastComprobantesJob.success : false)}>
+              <TabsTrigger
+                value="facturas"
+                className={tabTriggerCls(
+                  lastComprobantesJob ? !lastComprobantesJob.success : false
+                )}
+              >
                 <Receipt className="h-[14px] w-[14px]" />
                 Facturas
               </TabsTrigger>
-              <TabsTrigger value="iva" className={tabTriggerCls(lastIvaJob ? !lastIvaJob.success : false)}>
+              <TabsTrigger
+                value="iva"
+                className={tabTriggerCls(
+                  lastIvaJob ? !lastIvaJob.success : false
+                )}
+              >
                 <BanknoteArrowUp className="h-[14px] w-[14px]" />
                 IVA
               </TabsTrigger>
-              <TabsTrigger value="convenio-multilateral" className={tabTriggerCls()}>
+              <TabsTrigger
+                value="convenio-multilateral"
+                className={tabTriggerCls()}
+              >
                 <MapPin className="h-[14px] w-[14px]" />
                 Convenio Multilateral
+              </TabsTrigger>
+              <TabsTrigger value="solicitudes" className={tabTriggerCls()}>
+                <ClipboardList className="h-[14px] w-[14px]" />
+                Solicitudes
               </TabsTrigger>
             </TabsList>
           </div>
@@ -1607,21 +1900,23 @@ export function ClientDetailPage({
 
         {/* ── Content area ── */}
         <div className="px-4 md:px-[28px] pt-5 pb-[60px]">
-
           {/* Resumen Tab */}
           <TabsContent value="resumen" className="mt-4 space-y-[14px]">
             {/* Row 1: Perfiles (3fr) | Facturación (2fr) | IVA (2fr) */}
             <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr_2fr] gap-[14px]">
-
               {/* Perfiles Asociados */}
               <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_20px] flex flex-col gap-[14px]">
                 <div className="flex items-center gap-2">
                   <User className="h-3.5 w-3.5 shrink-0 text-[var(--arca-ink-3)]" />
-                  <span className="text-[13px] font-semibold text-[var(--arca-ink)]">Perfiles asociados</span>
-                  <span className="text-[11px] font-mono text-[var(--arca-ink-4)]">{profiles.length}</span>
+                  <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+                    Perfiles asociados
+                  </span>
+                  <span className="text-[11px] font-mono text-[var(--arca-ink-4)]">
+                    {profiles.length}
+                  </span>
                   <div className="flex-1" />
                   <button
-                    onClick={() => setEditClientDialogOpen(true)}
+                    onClick={() => setEditRepresentativeDialogOpen(true)}
                     className="text-[12px] font-medium text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors"
                   >
                     Editar →
@@ -1633,66 +1928,139 @@ export function ClientDetailPage({
                     Cargando...
                   </div>
                 ) : profiles.length === 0 ? (
-                  <p className="text-[12.5px] text-[var(--arca-ink-4)]">Sin perfiles asociados.</p>
+                  <p className="text-[12.5px] text-[var(--arca-ink-4)]">
+                    Sin perfiles asociados.
+                  </p>
                 ) : (
                   <>
                     <div className="flex flex-wrap gap-[6px]">
                       {profiles.map((prof) => {
                         const normCuit = (s: string) => s.replace(/\D/g, '');
-                        const warningCuits = lastNotificacionesJob?.notificationFetchWarningCuits ?? [];
-                        const isWarning = warningCuits.some((c) => normCuit(c) === normCuit(prof.identityNumber ?? ''));
-                        const isSelected = effectiveResumenProfileId === prof.id;
-                        const initials = (prof.name || prof.identityNumber || '?')
-                          .split(' ').slice(0, 2).map((w: string) => w[0]).join('').toUpperCase();
+                        const warningCuits =
+                          lastNotificacionesJob?.notificationFetchWarningCuits ??
+                          [];
+                        const isWarning = warningCuits.some(
+                          (c) =>
+                            normCuit(c) === normCuit(prof.identityNumber ?? '')
+                        );
+                        const isSelected =
+                          effectiveResumenProfileId === prof.id;
+                        const isUnmanaged = prof.managedByStudy === false;
+                        const initials = (
+                          prof.name ||
+                          prof.identityNumber ||
+                          '?'
+                        )
+                          .split(' ')
+                          .slice(0, 2)
+                          .map((w: string) => w[0])
+                          .join('')
+                          .toUpperCase();
                         return (
-                          <button
-                            key={prof.id}
-                            onClick={() => setResumenProfileId(prof.id)}
-                            className={cn(
-                              'inline-flex items-center gap-[7px] px-[9px] py-[5px] rounded-[var(--arca-r-pill)] text-[11.5px] font-medium border transition-all',
-                              isSelected
-                                ? 'bg-[var(--arca-ink)] text-[#F7F6F2] border-[var(--arca-ink)]'
-                                : isWarning
-                                  ? 'bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)] border-[var(--arca-accent-warn)]/30'
-                                  : 'bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)] border-[var(--arca-border)] hover:text-[var(--arca-ink)]'
-                            )}
-                          >
-                            <span className={cn(
-                              'w-4 h-4 rounded-[4px] inline-flex items-center justify-center text-[8.5px] font-bold text-white shrink-0',
-                              isSelected ? 'bg-white/10' : 'bg-[#1E3460]'
-                            )}>
-                              {initials}
-                            </span>
-                            {prof.name || prof.identityNumber}
-                          </button>
+                          <div key={prof.id} className="relative group">
+                            <button
+                              onClick={() => setResumenProfileId(prof.id)}
+                              className={cn(
+                                'inline-flex items-center gap-[7px] px-[9px] py-[5px] rounded-[var(--arca-r-pill)] text-[11.5px] font-medium border transition-all',
+                                isUnmanaged
+                                  ? 'opacity-50 bg-[var(--arca-surface-2)] text-[var(--arca-ink-4)] border-[var(--arca-border)]'
+                                  : isSelected
+                                    ? 'bg-[var(--arca-ink)] text-[#F7F6F2] border-[var(--arca-ink)]'
+                                    : isWarning
+                                      ? 'bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)] border-[var(--arca-accent-warn)]/30'
+                                      : 'bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)] border-[var(--arca-border)] hover:text-[var(--arca-ink)]'
+                              )}
+                            >
+                              <span
+                                className={cn(
+                                  'w-4 h-4 rounded-[4px] inline-flex items-center justify-center text-[8.5px] font-bold text-white shrink-0',
+                                  isUnmanaged
+                                    ? 'bg-[var(--arca-ink-4)]'
+                                    : isSelected
+                                      ? 'bg-white/10'
+                                      : 'bg-[#1E3460]'
+                                )}
+                              >
+                                {initials}
+                              </span>
+                              {prof.name || prof.identityNumber}
+                              {isUnmanaged && (
+                                <span className="ml-1 text-[10px] font-semibold text-[var(--arca-ink-4)]">
+                                  No administrado
+                                </span>
+                              )}
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleClientManagementMutation.mutate({
+                                  clientId: prof.id,
+                                  managedByStudy: !prof.managedByStudy,
+                                });
+                              }}
+                              title={
+                                isUnmanaged
+                                  ? 'Marcar como administrado'
+                                  : 'Marcar como no administrado'
+                              }
+                              className="absolute -top-1 -right-1 hidden group-hover:flex items-center justify-center w-4 h-4 rounded-full bg-[var(--arca-surface)] border border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors shadow-sm"
+                            >
+                              {isUnmanaged ? (
+                                <Eye className="w-2.5 h-2.5" />
+                              ) : (
+                                <EyeOff className="w-2.5 h-2.5" />
+                              )}
+                            </button>
+                          </div>
                         );
                       })}
                     </div>
                     {selectedResumenProfile && (
                       <div className="grid grid-cols-3 gap-[14px] pt-[2px]">
                         <div>
-                          <div className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] mb-1">CUIT</div>
-                          <div className="font-mono text-[12.5px] text-[var(--arca-ink)]">{selectedResumenProfile.identityNumber || '—'}</div>
+                          <div className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] mb-1">
+                            CUIT
+                          </div>
+                          <div className="font-mono text-[12.5px] text-[var(--arca-ink)]">
+                            {selectedResumenProfile.identityNumber || '—'}
+                          </div>
                         </div>
                         <div>
-                          <div className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] mb-1">Teléfono</div>
-                          <div className="font-mono text-[12.5px] text-[var(--arca-ink)]">{client?.phone || '—'}</div>
+                          <div className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] mb-1">
+                            Teléfono
+                          </div>
+                          <div className="font-mono text-[12.5px] text-[var(--arca-ink)]">
+                            {client?.phone || '—'}
+                          </div>
                         </div>
                         <div className="min-w-0">
-                          <div className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] mb-1">Email</div>
-                          <div className="font-mono text-[12.5px] text-[var(--arca-ink)] truncate">{client?.email || '—'}</div>
+                          <div className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] mb-1">
+                            Email
+                          </div>
+                          <div className="font-mono text-[12.5px] text-[var(--arca-ink)] truncate">
+                            {client?.email || '—'}
+                          </div>
                         </div>
                       </div>
                     )}
                     {selectedResumenProfile && (
-                      <div className="pt-[6px] border-t border-[var(--arca-border)] flex items-center">
+                      <div className="pt-[6px] border-t border-[var(--arca-border)] flex items-center gap-3">
                         <Link
                           to="/clients/$clientId/$profileId"
-                          params={{ clientId, profileId: selectedResumenProfile.id }}
+                          params={{
+                            clientId: representativeId,
+                            profileId: selectedResumenProfile.id,
+                          }}
                           className="text-[12px] font-medium text-[var(--arca-navy-700)] hover:underline"
                         >
                           Ver perfil completo →
                         </Link>
+                        <div className="flex-1" />
+                        {selectedResumenProfile.managedByStudy === false && (
+                          <span className="text-[11px] font-medium text-[var(--arca-ink-4)] bg-[var(--arca-surface-2)] border border-[var(--arca-border)] px-2 py-0.5 rounded-full">
+                            No administrado
+                          </span>
+                        )}
                       </div>
                     )}
                   </>
@@ -1703,36 +2071,66 @@ export function ClientDetailPage({
               <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_20px] flex flex-col gap-[12px]">
                 <div className="flex items-center gap-2">
                   <Receipt className="h-3.5 w-3.5 shrink-0 text-[var(--arca-ink-3)]" />
-                  <span className="text-[13px] font-semibold text-[var(--arca-ink)]">Facturación</span>
+                  <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+                    Facturación
+                  </span>
                   <div className="flex-1" />
                   <span className="text-[11px] font-mono text-[var(--arca-ink-4)]">
-                    {MONTH_NAMES[now.getMonth()].toLowerCase()} {now.getFullYear()}
+                    {MONTH_NAMES[now.getMonth()].toLowerCase()}{' '}
+                    {now.getFullYear()}
                   </span>
                 </div>
                 <div className="flex flex-col gap-[10px]">
                   <div className="flex items-baseline gap-2">
-                    <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] min-w-[56px]">Ventas</span>
+                    <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] min-w-[56px]">
+                      Ventas
+                    </span>
                     <span className="flex-1 font-display font-semibold text-[15px] leading-none tracking-tight text-[var(--arca-ink)] tabular-nums text-right">
-                      {new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(resumenCurrentMonthStats.totalSales)}
+                      {new Intl.NumberFormat('es-AR', {
+                        style: 'currency',
+                        currency: 'ARS',
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 0,
+                      }).format(resumenCurrentMonthStats.totalSales)}
                     </span>
                   </div>
                   <div className="flex items-baseline gap-2">
-                    <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] min-w-[56px]">Compras</span>
+                    <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] min-w-[56px]">
+                      Compras
+                    </span>
                     <span className="flex-1 font-display font-semibold text-[15px] leading-none tracking-tight text-[var(--arca-ink)] tabular-nums text-right">
-                      {new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(resumenCurrentMonthStats.totalPurchases)}
+                      {new Intl.NumberFormat('es-AR', {
+                        style: 'currency',
+                        currency: 'ARS',
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 0,
+                      }).format(resumenCurrentMonthStats.totalPurchases)}
                     </span>
                   </div>
                   <div className="h-px bg-[var(--arca-border)]" />
                   {(() => {
-                    const saldo = resumenCurrentMonthStats.totalSales - resumenCurrentMonthStats.totalPurchases;
+                    const saldo =
+                      resumenCurrentMonthStats.totalSales -
+                      resumenCurrentMonthStats.totalPurchases;
                     return (
                       <div className="flex items-baseline gap-2">
-                        <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] min-w-[56px]">Saldo</span>
-                        <span className={cn(
-                          'flex-1 font-display font-semibold text-[20px] leading-none tracking-tight tabular-nums text-right',
-                          saldo < 0 ? 'text-[var(--arca-accent-neg-fg)]' : 'text-[var(--arca-ink)]'
-                        )}>
-                          {new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(saldo)}
+                        <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] min-w-[56px]">
+                          Saldo
+                        </span>
+                        <span
+                          className={cn(
+                            'flex-1 font-display font-semibold text-[20px] leading-none tracking-tight tabular-nums text-right',
+                            saldo < 0
+                              ? 'text-[var(--arca-accent-neg-fg)]'
+                              : 'text-[var(--arca-ink)]'
+                          )}
+                        >
+                          {new Intl.NumberFormat('es-AR', {
+                            style: 'currency',
+                            currency: 'ARS',
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 0,
+                          }).format(saldo)}
                         </span>
                       </div>
                     );
@@ -1744,7 +2142,9 @@ export function ClientDetailPage({
               <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_20px] flex flex-col gap-[12px]">
                 <div className="flex items-center gap-2">
                   <BanknoteArrowUp className="h-3.5 w-3.5 shrink-0 text-[var(--arca-ink-3)]" />
-                  <span className="text-[13px] font-semibold text-[var(--arca-ink)]">IVA</span>
+                  <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+                    IVA
+                  </span>
                   <div className="flex-1" />
                   <span className="text-[11px] font-mono text-[var(--arca-ink-4)]">
                     {periodoFiscalResumen
@@ -1763,32 +2163,56 @@ export function ClientDetailPage({
                       <span className="w-[6px] h-[6px] rounded-full bg-[var(--arca-accent-info)] shrink-0" />
                       Pendiente de carga
                     </div>
-                    <div className="text-[13px] font-medium text-[var(--arca-ink-3)]">Sin datos del período</div>
-                    <div className="text-[11.5px] text-[var(--arca-ink-4)]">El IVA se publica el 5to día hábil del mes siguiente.</div>
+                    <div className="text-[13px] font-medium text-[var(--arca-ink-3)]">
+                      Sin datos del período
+                    </div>
+                    <div className="text-[11.5px] text-[var(--arca-ink-4)]">
+                      El IVA se publica el 5to día hábil del mes siguiente.
+                    </div>
                   </div>
                 ) : (
                   <div className="flex flex-col gap-[10px]">
                     <div className="flex items-baseline gap-2">
-                      <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] min-w-[72px]">Saldo técnico</span>
-                      <span className={cn(
-                        'flex-1 font-display font-semibold text-[15px] leading-none tracking-tight tabular-nums text-right',
-                        Number(resumenClientIva.data.saldoTecnicoFavorContribuyente ?? 0) > 0
-                          ? 'text-[var(--arca-accent-pos-fg)]'
-                          : 'text-[var(--arca-ink-3)]'
-                      )}>
-                        {formatIvaCurrency(resumenClientIva.data.saldoTecnicoFavorContribuyente)}
+                      <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] min-w-[72px]">
+                        Saldo técnico
+                      </span>
+                      <span
+                        className={cn(
+                          'flex-1 font-display font-semibold text-[15px] leading-none tracking-tight tabular-nums text-right',
+                          Number(
+                            resumenClientIva.data
+                              .saldoTecnicoFavorContribuyente ?? 0
+                          ) > 0
+                            ? 'text-[var(--arca-accent-pos-fg)]'
+                            : 'text-[var(--arca-ink-3)]'
+                        )}
+                      >
+                        {formatIvaCurrency(
+                          resumenClientIva.data.saldoTecnicoFavorContribuyente
+                        )}
                       </span>
                     </div>
                     <div className="h-px bg-[var(--arca-border)]" />
                     <div className="flex items-baseline gap-2">
-                      <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] min-w-[72px]">Libre disp.</span>
-                      <span className={cn(
-                        'flex-1 font-display font-semibold text-[20px] leading-none tracking-tight tabular-nums text-right',
-                        Number(resumenClientIva.data.saldoLibreDisponibilidadFavorContribuyentePeriodo ?? 0) > 0
-                          ? 'text-[var(--arca-accent-pos-fg)]'
-                          : 'text-[var(--arca-ink-3)]'
-                      )}>
-                        {formatIvaCurrency(resumenClientIva.data.saldoLibreDisponibilidadFavorContribuyentePeriodo)}
+                      <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] min-w-[72px]">
+                        Libre disp.
+                      </span>
+                      <span
+                        className={cn(
+                          'flex-1 font-display font-semibold text-[20px] leading-none tracking-tight tabular-nums text-right',
+                          Number(
+                            resumenClientIva.data
+                              .saldoLibreDisponibilidadFavorContribuyentePeriodo ??
+                            0
+                          ) > 0
+                            ? 'text-[var(--arca-accent-pos-fg)]'
+                            : 'text-[var(--arca-ink-3)]'
+                        )}
+                      >
+                        {formatIvaCurrency(
+                          resumenClientIva.data
+                            .saldoLibreDisponibilidadFavorContribuyentePeriodo
+                        )}
                       </span>
                     </div>
                   </div>
@@ -1797,16 +2221,22 @@ export function ClientDetailPage({
             </div>
 
             {/* Row 2: Chart (1.7fr) | Notificaciones (1fr) */}
-            <div className={cn(
-              'grid grid-cols-1 gap-[14px] items-start',
-              resumenChartData.length > 0 ? 'md:grid-cols-[17fr_10fr]' : ''
-            )}>
+            <div
+              className={cn(
+                'grid grid-cols-1 gap-[14px] items-start',
+                resumenChartData.length > 0 ? 'md:grid-cols-[17fr_10fr]' : ''
+              )}
+            >
               {resumenChartData.length > 0 && (
                 <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_20px_14px] flex flex-col gap-[12px]">
                   <div className="flex items-center gap-[10px]">
                     <div className="flex-1">
-                      <div className="text-[13px] font-semibold text-[var(--arca-ink)]">Ventas y compras</div>
-                      <div className="text-[11.5px] text-[var(--arca-ink-4)] mt-[2px]">Últimos 12 meses · valores en ARS</div>
+                      <div className="text-[13px] font-semibold text-[var(--arca-ink)]">
+                        Ventas y compras
+                      </div>
+                      <div className="text-[11.5px] text-[var(--arca-ink-4)] mt-[2px]">
+                        Últimos 12 meses · valores en ARS
+                      </div>
                     </div>
                     <span className="inline-flex items-center gap-[5px] text-[11px] text-[var(--arca-ink-3)]">
                       <span className="w-2 h-2 rounded-[2px] bg-[#1E3460] shrink-0" />
@@ -1817,21 +2247,75 @@ export function ClientDetailPage({
                       Compras
                     </span>
                   </div>
-                  <ChartContainer config={facturasChartConfig} className="h-[200px] w-full">
-                    <BarChart data={resumenChartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }} barCategoryGap={4}>
-                      <CartesianGrid vertical={false} strokeDasharray="3 4" stroke="#ECEAE3" />
-                      <XAxis dataKey="period" tickLine={false} axisLine={false} tick={{ fill: '#6E7079', fontSize: 9 }} />
-                      <YAxis tickLine={false} axisLine={false} tick={{ fill: '#9B9CA3', fontSize: 9 }}
-                        tickFormatter={(v) => v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `${(v / 1e3).toFixed(0)}k` : String(v)} />
+                  <ChartContainer
+                    config={facturasChartConfig}
+                    className="h-[200px] w-full"
+                  >
+                    <BarChart
+                      data={resumenChartData}
+                      margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
+                      barCategoryGap={4}
+                    >
+                      <CartesianGrid
+                        vertical={false}
+                        strokeDasharray="3 4"
+                        stroke="#ECEAE3"
+                      />
+                      <XAxis
+                        dataKey="period"
+                        tickLine={false}
+                        axisLine={false}
+                        tick={{ fill: '#6E7079', fontSize: 9 }}
+                      />
+                      <YAxis
+                        tickLine={false}
+                        axisLine={false}
+                        tick={{ fill: '#9B9CA3', fontSize: 9 }}
+                        tickFormatter={(v) =>
+                          v >= 1e6
+                            ? `${(v / 1e6).toFixed(1)}M`
+                            : v >= 1e3
+                              ? `${(v / 1e3).toFixed(0)}k`
+                              : String(v)
+                        }
+                      />
                       <Tooltip
                         cursor={{ fill: 'rgba(30,52,96,0.06)' }}
-                        contentStyle={{ background: '#12131A', border: 'none', borderRadius: 8, padding: '8px 12px' }}
-                        labelStyle={{ color: '#9B9CA3', fontSize: 10, marginBottom: 4 }}
+                        contentStyle={{
+                          background: '#12131A',
+                          border: 'none',
+                          borderRadius: 8,
+                          padding: '8px 12px',
+                        }}
+                        labelStyle={{
+                          color: '#9B9CA3',
+                          fontSize: 10,
+                          marginBottom: 4,
+                        }}
                         itemStyle={{ color: '#E8E6DF', fontSize: 11 }}
-                        formatter={(value) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Number(value))}
+                        formatter={(value) =>
+                          new Intl.NumberFormat('es-AR', {
+                            style: 'currency',
+                            currency: 'ARS',
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 0,
+                          }).format(Number(value))
+                        }
                       />
-                      <Bar dataKey="ventas" fill="var(--color-ventas)" name="Ventas" maxBarSize={36} radius={[2, 2, 0, 0]} />
-                      <Bar dataKey="compras" fill="var(--color-compras)" name="Compras" maxBarSize={36} radius={[2, 2, 0, 0]} />
+                      <Bar
+                        dataKey="ventas"
+                        fill="var(--color-ventas)"
+                        name="Ventas"
+                        maxBarSize={36}
+                        radius={[2, 2, 0, 0]}
+                      />
+                      <Bar
+                        dataKey="compras"
+                        fill="var(--color-compras)"
+                        name="Compras"
+                        maxBarSize={36}
+                        radius={[2, 2, 0, 0]}
+                      />
                     </BarChart>
                   </ChartContainer>
                 </div>
@@ -1841,7 +2325,9 @@ export function ClientDetailPage({
               <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_20px] flex flex-col gap-[14px]">
                 <div className="flex items-center gap-2">
                   <Bell className="h-3.5 w-3.5 shrink-0 text-[var(--arca-ink-3)]" />
-                  <span className="text-[13px] font-semibold text-[var(--arca-ink)]">Notificaciones</span>
+                  <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+                    Notificaciones
+                  </span>
                   <div className="flex-1" />
                   <span className="text-[11px] font-mono text-[var(--arca-ink-4)]">
                     {unreadNotifications?.notifications.length ?? 0}
@@ -1849,10 +2335,14 @@ export function ClientDetailPage({
                 </div>
                 {profiles.length > 0 && (
                   <div className="flex flex-wrap gap-[6px]">
-                    {(['all', ...profiles.map((p) => p.id)]).map((pid) => {
-                      const label = pid === 'all'
-                        ? 'Todos'
-                        : (profiles.find((p) => p.id === pid)?.name || profiles.find((p) => p.id === pid)?.identityNumber || pid);
+                    {['all', ...profiles.map((p) => p.id)].map((pid) => {
+                      const label =
+                        pid === 'all'
+                          ? 'Todos'
+                          : profiles.find((p) => p.id === pid)?.name ||
+                          profiles.find((p) => p.id === pid)
+                            ?.identityNumber ||
+                          pid;
                       const on = resumenNotifProfileId === pid;
                       return (
                         <button
@@ -1881,8 +2371,12 @@ export function ClientDetailPage({
                     <div className="w-9 h-9 rounded-full bg-[var(--arca-surface-2)] border border-[var(--arca-border)] flex items-center justify-center">
                       <Check className="h-4 w-4 text-[var(--arca-ink-4)]" />
                     </div>
-                    <p className="text-[13px] text-[var(--arca-ink-3)] font-medium">Sin notificaciones pendientes</p>
-                    <p className="text-[11.5px] text-[var(--arca-ink-4)]">Te avisaremos cuando AFIP publique novedades.</p>
+                    <p className="text-[13px] text-[var(--arca-ink-3)] font-medium">
+                      Sin notificaciones pendientes
+                    </p>
+                    <p className="text-[11.5px] text-[var(--arca-ink-4)]">
+                      Te avisaremos cuando AFIP publique novedades.
+                    </p>
                   </div>
                 ) : (
                   <div className="space-y-1.5 overflow-y-auto pr-1 max-h-[280px]">
@@ -1891,15 +2385,26 @@ export function ClientDetailPage({
                         key={notif.id}
                         className="flex items-start gap-2 rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-3 py-2 hover:bg-[var(--arca-bg)] transition-colors"
                       >
-                        <button className="flex-1 min-w-0 text-left" onClick={() => setResumenNotifSelected(notif)}>
+                        <button
+                          className="flex-1 min-w-0 text-left"
+                          onClick={() => setResumenNotifSelected(notif)}
+                        >
                           {notif.profileName && (
                             <div className="text-[9.5px] text-[var(--arca-ink-4)] mb-0.5 font-semibold uppercase tracking-[0.06em]">
                               {notif.profileName}
                             </div>
                           )}
-                          <p className="text-[var(--arca-ink)] text-[12px] line-clamp-2 leading-snug">{notif.message}</p>
+                          <p className="text-[var(--arca-ink)] text-[12px] line-clamp-2 leading-snug">
+                            {notif.message}
+                          </p>
                           <p className="text-[10px] font-mono text-[var(--arca-ink-4)] mt-0.5">
-                            {notif.publicationDate ? format(new Date(notif.publicationDate), 'dd/MM/yyyy', { locale: es }) : '—'}
+                            {notif.publicationDate
+                              ? format(
+                                new Date(notif.publicationDate),
+                                'dd/MM/yyyy',
+                                { locale: es }
+                              )
+                              : '—'}
                           </p>
                         </button>
                         <button
@@ -1913,6 +2418,126 @@ export function ClientDetailPage({
                       </div>
                     ))}
                   </div>
+                )}
+              </div>
+            </div>
+
+            {/* Row 3: Cierre de ejercicio */}
+            <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_20px] flex flex-col gap-[14px]">
+              <div className="flex items-center gap-2">
+                <BookOpen className="h-3.5 w-3.5 shrink-0 text-[var(--arca-ink-3)]" />
+                <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+                  Cierre de ejercicio
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-[14px]">
+                <div className="flex flex-col gap-[6px]">
+                  <label className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)]">
+                    Mes de cierre
+                  </label>
+                  <select
+                    value={balanceMonth}
+                    onChange={(e) => setBalanceMonth(e.target.value)}
+                    className="h-8 rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-2 text-[12.5px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-navy-700)]"
+                  >
+                    {[
+                      'Enero',
+                      'Febrero',
+                      'Marzo',
+                      'Abril',
+                      'Mayo',
+                      'Junio',
+                      'Julio',
+                      'Agosto',
+                      'Septiembre',
+                      'Octubre',
+                      'Noviembre',
+                      'Diciembre',
+                    ].map((m, i) => (
+                      <option key={i + 1} value={String(i + 1)}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-[6px]">
+                  <label className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)]">
+                    Día de cierre
+                  </label>
+                  <select
+                    value={balanceDay}
+                    onChange={(e) => setBalanceDay(e.target.value)}
+                    className="h-8 rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-2 text-[12.5px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-navy-700)]"
+                  >
+                    {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                      <option key={d} value={String(d)}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-[6px]">
+                  <label className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)]">
+                    Días para presentación
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    placeholder="Opcional"
+                    value={balancePresentationDays}
+                    onChange={(e) => setBalancePresentationDays(e.target.value)}
+                    className="h-8 rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-2 text-[12.5px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-navy-700)]"
+                  />
+                </div>
+                <div className="flex flex-col gap-[6px]">
+                  <label className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)]">
+                    Alertas (días antes)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="60,30,15,7"
+                    value={balanceAlertDays}
+                    onChange={(e) => setBalanceAlertDays(e.target.value)}
+                    className="h-8 rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-2 text-[12.5px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-navy-700)]"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  disabled={upsertBalanceConfigMutation.isPending}
+                  onClick={() => {
+                    const month = parseInt(balanceMonth, 10);
+                    const day = parseInt(balanceDay, 10);
+                    const presentationDays = balancePresentationDays
+                      ? parseInt(balancePresentationDays, 10)
+                      : null;
+                    const alertDays = balanceAlertDays
+                      .split(',')
+                      .map((s) => parseInt(s.trim(), 10))
+                      .filter((n) => !isNaN(n) && n > 0);
+                    if (isNaN(month) || isNaN(day)) {
+                      toast.error('Mes y día son obligatorios');
+                      return;
+                    }
+                    upsertBalanceConfigMutation.mutate({
+                      fiscalYearEndMonth: month,
+                      fiscalYearEndDay: day,
+                      presentationDueDays: presentationDays,
+                      alertDaysBefore:
+                        alertDays.length > 0 ? alertDays : [60, 30, 15, 7],
+                    });
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--arca-r-md)] text-[12px] font-semibold bg-[var(--arca-ink)] text-[#F7F6F2] hover:bg-[var(--arca-ink)]/90 transition-colors disabled:opacity-50"
+                >
+                  {upsertBalanceConfigMutation.isPending
+                    ? 'Guardando...'
+                    : 'Guardar'}
+                </button>
+                {balanceConfig && (
+                  <span className="text-[11px] text-[var(--arca-ink-4)]">
+                    Cierre: {balanceConfig.fiscalYearEndDay}/
+                    {balanceConfig.fiscalYearEndMonth}
+                  </span>
                 )}
               </div>
             </div>
@@ -1997,19 +2622,58 @@ export function ClientDetailPage({
             {/* KPI Cards */}
             {!loadingDebts && debts.length > 0 && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px]">
-                {([
-                  { label: 'Total Deudas', value: debtStats.totalBalance, sub: `${debtStats.totalDebts} ${debtStats.totalDebts === 1 ? 'deuda' : 'deudas'}`, accent: 'var(--arca-accent-neg)' },
-                  { label: 'Total con Intereses', value: debtStats.totalDebt, sub: `+ ${new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(debtStats.totalCompensatoryInterest + debtStats.totalPunitiveInterest)} intereses`, accent: 'var(--arca-accent-neg)' },
-                  { label: 'Int. Compensatorio', value: debtStats.totalCompensatoryInterest, sub: null, accent: 'var(--arca-accent-warn)' },
-                  { label: 'Int. Punitorio', value: debtStats.totalPunitiveInterest, sub: null, accent: 'var(--arca-accent-warn)' },
-                ] as const).map((kpi) => (
-                  <div key={kpi.label} className="relative overflow-hidden bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_18px] flex flex-col gap-2">
-                    <div className="absolute left-0 top-[14px] bottom-[14px] w-[2px] rounded-[0_2px_2px_0]" style={{ background: kpi.accent }} />
-                    <span className="pl-[6px] text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">{kpi.label}</span>
+                {(
+                  [
+                    {
+                      label: 'Total Deudas',
+                      value: debtStats.totalBalance,
+                      sub: `${debtStats.totalDebts} ${debtStats.totalDebts === 1 ? 'deuda' : 'deudas'}`,
+                      accent: 'var(--arca-accent-neg)',
+                    },
+                    {
+                      label: 'Total con Intereses',
+                      value: debtStats.totalDebt,
+                      sub: `+ ${new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(debtStats.totalCompensatoryInterest + debtStats.totalPunitiveInterest)} intereses`,
+                      accent: 'var(--arca-accent-neg)',
+                    },
+                    {
+                      label: 'Int. Compensatorio',
+                      value: debtStats.totalCompensatoryInterest,
+                      sub: null,
+                      accent: 'var(--arca-accent-warn)',
+                    },
+                    {
+                      label: 'Int. Punitorio',
+                      value: debtStats.totalPunitiveInterest,
+                      sub: null,
+                      accent: 'var(--arca-accent-warn)',
+                    },
+                  ] as const
+                ).map((kpi) => (
+                  <div
+                    key={kpi.label}
+                    className="relative overflow-hidden bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_18px] flex flex-col gap-2"
+                  >
+                    <div
+                      className="absolute left-0 top-[14px] bottom-[14px] w-[2px] rounded-[0_2px_2px_0]"
+                      style={{ background: kpi.accent }}
+                    />
+                    <span className="pl-[6px] text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+                      {kpi.label}
+                    </span>
                     <div className="pl-[6px] font-display font-semibold text-[22px] leading-none tracking-tight text-[var(--arca-ink)] tabular-nums">
-                      {new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(kpi.value)}
+                      {new Intl.NumberFormat('es-AR', {
+                        style: 'currency',
+                        currency: 'ARS',
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 0,
+                      }).format(kpi.value)}
                     </div>
-                    {kpi.sub && <div className="pl-[6px] text-[11.5px] text-[var(--arca-ink-4)]">{kpi.sub}</div>}
+                    {kpi.sub && (
+                      <div className="pl-[6px] text-[11.5px] text-[var(--arca-ink-4)]">
+                        {kpi.sub}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -2022,45 +2686,111 @@ export function ClientDetailPage({
                   Últ. actualización{' '}
                   {lastDeudaJob?.createdAt ? (
                     <span
-                      className={cn('font-mono', lastDeudaJob.success ? 'text-[var(--arca-accent-pos-fg)]' : 'text-destructive')}
+                      className={cn(
+                        'font-mono',
+                        lastDeudaJob.success
+                          ? 'text-[var(--arca-accent-pos-fg)]'
+                          : 'text-destructive'
+                      )}
                       title={lastDeudaJob.failedReason ?? undefined}
                     >
                       {formatLastUpdateAt(lastDeudaJob.createdAt)}
                     </span>
                   ) : (
-                    <span className="font-mono text-[var(--arca-ink-2)]">—</span>
+                    <span className="font-mono text-[var(--arca-ink-2)]">
+                      —
+                    </span>
                   )}
                 </span>
-                {lastDeudaJob && !lastDeudaJob.success && lastDeudaJob.failedReason && (
-                  <p className="text-[11px] text-destructive max-w-md">{lastDeudaJob.failedReason}</p>
-                )}
+                {lastDeudaJob &&
+                  !lastDeudaJob.success &&
+                  lastDeudaJob.failedReason && (
+                    <p className="text-[11px] text-destructive max-w-md">
+                      {lastDeudaJob.failedReason}
+                    </p>
+                  )}
               </div>
               <div className="flex-1" />
+              {profiles.length > 1 && (
+                <Select
+                  value={debtFilterProfileId || 'all'}
+                  onValueChange={(v) => {
+                    setDebtFilterProfileId(v === 'all' ? '' : v);
+                    setDebtFilterImpuesto('');
+                    setDebtFilterConcepto('');
+                    setDebtPage(1);
+                  }}
+                >
+                  <SelectTrigger className="h-8 gap-1.5 px-3 text-[12px] border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] bg-[var(--arca-surface)] min-w-[150px]">
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+                      Empresa
+                    </span>
+                    <SelectValue placeholder="Todas" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas</SelectItem>
+                    {profiles.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               {!loadingDebts && debts.length > 0 && (
                 <>
-                  <Select value={debtFilterImpuesto || 'all'} onValueChange={(v) => { setDebtFilterImpuesto(v === 'all' ? '' : v); setDebtPage(1); }}>
+                  <Select
+                    value={debtFilterImpuesto || 'all'}
+                    onValueChange={(v) => {
+                      setDebtFilterImpuesto(v === 'all' ? '' : v);
+                      setDebtPage(1);
+                    }}
+                  >
                     <SelectTrigger className="h-8 gap-1.5 px-3 text-[12px] border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] bg-[var(--arca-surface)] min-w-[130px]">
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">Impuesto</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+                        Impuesto
+                      </span>
                       <SelectValue placeholder="Todos" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">Todos</SelectItem>
-                      {debtFilterOptions.impuestos.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}
+                      {debtFilterOptions.impuestos.map((v) => (
+                        <SelectItem key={v} value={v}>
+                          {v}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
-                  <Select value={debtFilterConcepto || 'all'} onValueChange={(v) => { setDebtFilterConcepto(v === 'all' ? '' : v); setDebtPage(1); }}>
+                  <Select
+                    value={debtFilterConcepto || 'all'}
+                    onValueChange={(v) => {
+                      setDebtFilterConcepto(v === 'all' ? '' : v);
+                      setDebtPage(1);
+                    }}
+                  >
                     <SelectTrigger className="h-8 gap-1.5 px-3 text-[12px] border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] bg-[var(--arca-surface)] min-w-[130px]">
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">Concepto</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+                        Concepto
+                      </span>
                       <SelectValue placeholder="Todos" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">Todos</SelectItem>
-                      {debtFilterOptions.conceptos.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}
+                      {debtFilterOptions.conceptos.map((v) => (
+                        <SelectItem key={v} value={v}>
+                          {v}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
-                  {(debtFilterImpuesto || debtFilterConcepto) && (
+                  {(debtFilterImpuesto || debtFilterConcepto || debtFilterProfileId) && (
                     <button
-                      onClick={() => { setDebtFilterImpuesto(''); setDebtFilterConcepto(''); setDebtPage(1); }}
+                      onClick={() => {
+                        setDebtFilterProfileId('');
+                        setDebtFilterImpuesto('');
+                        setDebtFilterConcepto('');
+                        setDebtPage(1);
+                      }}
                       className="inline-flex items-center gap-1 text-[11.5px] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors"
                     >
                       <X className="h-3 w-3" />
@@ -2075,15 +2805,27 @@ export function ClientDetailPage({
                 onClick={async () => {
                   setScrapingSection('deudas');
                   try {
-                    await scrapSingleJob({ data: { clientId, jobType: 'deuda' } });
+                    await scrapSingleJob({
+                      data: { representativeId, jobType: 'deuda' },
+                    });
                     await Promise.all([
-                      queryClient.invalidateQueries({ queryKey: ['clientDebts', clientId] }),
-                      queryClient.invalidateQueries({ queryKey: ['lastDeudaJob', clientId] }),
+                      queryClient.invalidateQueries({
+                        queryKey: ['representativeDebts', representativeId],
+                      }),
+                      queryClient.invalidateQueries({
+                        queryKey: ['lastDeudaJob', representativeId],
+                      }),
                     ]);
                     toast.success('Deudas actualizadas correctamente');
                   } catch (err) {
-                    toast.error(err instanceof Error ? err.message : 'Error al actualizar deudas');
-                    queryClient.invalidateQueries({ queryKey: ['lastDeudaJob', clientId] });
+                    toast.error(
+                      err instanceof Error
+                        ? err.message
+                        : 'Error al actualizar deudas'
+                    );
+                    queryClient.invalidateQueries({
+                      queryKey: ['lastDeudaJob', representativeId],
+                    });
                   } finally {
                     setScrapingSection(null);
                   }
@@ -2091,7 +2833,10 @@ export function ClientDetailPage({
                 className="bg-[var(--arca-ink)] hover:bg-black text-white text-[12.5px] h-8 px-3 rounded-[var(--arca-r-md)] shrink-0"
               >
                 {scrapingSection === 'deudas' ? (
-                  <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Actualizando…</>
+                  <>
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    Actualizando…
+                  </>
                 ) : (
                   'Actualizar deudas'
                 )}
@@ -2102,7 +2847,9 @@ export function ClientDetailPage({
             <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] overflow-hidden flex flex-col">
               <div className="px-[20px] py-[14px] border-b border-[var(--arca-border)] flex items-center gap-2">
                 <DollarSign className="h-3.5 w-3.5 shrink-0 text-[var(--arca-ink-3)]" />
-                <span className="text-[13px] font-semibold text-[var(--arca-ink)]">Deudas del cliente</span>
+                <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+                  Deudas del cliente
+                </span>
                 {debts.length > 0 && (
                   <span className="text-[11px] font-mono text-[var(--arca-ink-4)]">
                     {filteredDebts.length} mostradas · {debts.length} totales
@@ -2124,16 +2871,52 @@ export function ClientDetailPage({
                 </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full border-collapse text-[12.5px]" style={{ minWidth: 960 }}>
+                  <table
+                    className="w-full border-collapse text-[12.5px]"
+                    style={{ minWidth: 960 }}
+                  >
                     <thead>
                       <tr className="bg-[var(--arca-surface-2)]">
-                        {(['Impuesto', 'Concepto', 'Período', 'Vencimiento'] as const).map((h) => (
-                          <th key={h} className="px-[14px] py-[9px] text-left text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] border-b border-[var(--arca-border)] whitespace-nowrap">{h}</th>
+                        {([
+                          ...(profiles.length > 1 ? [{ label: 'Perfil', key: 'profileName' as const }] : []),
+                          { label: 'Impuesto', key: 'tax' as const },
+                          { label: 'Concepto', key: 'concept' as const },
+                          { label: 'Período', key: 'period' as const },
+                          { label: 'Vencimiento', key: 'dueDate' as const },
+                          { label: 'Últ. Actualización', key: 'detectedAt' as const },
+                        ]).map(({ label, key }) => (
+                          <th
+                            key={key}
+                            className="px-[14px] py-[9px] text-left text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] border-b border-[var(--arca-border)] whitespace-nowrap cursor-pointer select-none hover:text-[var(--arca-ink-2)] transition-colors"
+                            onClick={() => {
+                              if (debtSortKey === key) {
+                                setDebtSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+                              } else {
+                                setDebtSortKey(key);
+                                setDebtSortDir(key === 'detectedAt' ? 'desc' : 'asc');
+                              }
+                              setDebtPage(1);
+                            }}
+                          >
+                            {label} {debtSortKey === key ? (debtSortDir === 'asc' ? '▲' : '▼') : ''}
+                          </th>
                         ))}
-                        {(['Saldo', 'Int. Comp.', 'Int. Punit.'] as const).map((h) => (
-                          <th key={h} className="px-[14px] py-[9px] text-right text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] border-b border-[var(--arca-border)] whitespace-nowrap">{h}</th>
-                        ))}
-                        <th className="px-[14px] py-[9px] text-left text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] border-b border-[var(--arca-border)] whitespace-nowrap">Estado</th>
+                        {(['Saldo', 'Int. Comp.', 'Int. Punit.'] as const).map(
+                          (h) => (
+                            <th
+                              key={h}
+                              className="px-[14px] py-[9px] text-right text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] border-b border-[var(--arca-border)] whitespace-nowrap"
+                            >
+                              {h}
+                            </th>
+                          )
+                        )}
+                        <th className="px-[14px] py-[9px] text-left text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] border-b border-[var(--arca-border)] whitespace-nowrap">
+                          Estado
+                        </th>
+                        <th className="px-[14px] py-[9px] text-left text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] border-b border-[var(--arca-border)] whitespace-nowrap">
+                          Gestión
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2141,30 +2924,173 @@ export function ClientDetailPage({
                         const balance = Number(debt.balance || 0);
                         const intC = Number(debt.compensatoryInterest || 0);
                         const intP = Number(debt.punitiveInterest || 0);
-                        const today = new Date(); today.setHours(0, 0, 0, 0);
-                        const due = new Date(debt.dueDate); due.setHours(0, 0, 0, 0);
-                        const status = balance === 0 ? 'ok' : due < today ? 'late' : 'pend';
-                        const fmtD = (v: number) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 }).format(v);
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        const due = new Date(debt.dueDate);
+                        due.setHours(0, 0, 0, 0);
+                        const debtStatus = (debt.status ?? 'open') as
+                          | 'open'
+                          | 'in_plan'
+                          | 'paid'
+                          | 'disputed';
+                        const isIntimated = debt.isIntimated ?? false;
+                        const isOverdue = due < today && balance > 0;
+                        // Row background: red=open+overdue, orange=intimated, green=paid, gray=in_plan, default=disputed
+                        const rowBg =
+                          debtStatus === 'paid'
+                            ? 'rgba(34,197,94,0.06)'
+                            : debtStatus === 'in_plan'
+                              ? 'rgba(148,163,184,0.10)'
+                              : isIntimated
+                                ? 'rgba(249,115,22,0.08)'
+                                : isOverdue
+                                  ? 'rgba(239,68,68,0.07)'
+                                  : i % 2 === 1
+                                    ? 'var(--arca-bg)'
+                                    : undefined;
+                        const fmtD = (v: number) =>
+                          new Intl.NumberFormat('es-AR', {
+                            style: 'currency',
+                            currency: 'ARS',
+                            minimumFractionDigits: 2,
+                          }).format(v);
                         return (
                           <tr
                             key={debt.id}
-                            className="border-b border-[var(--arca-border)] hover:bg-[var(--arca-surface-2)] transition-colors cursor-default"
-                            style={{ background: i % 2 === 1 ? 'var(--arca-bg)' : undefined }}
+                            className="border-b border-[var(--arca-border)] hover:brightness-95 transition-colors cursor-default"
+                            style={{ background: rowBg }}
                           >
-                            <td className="px-[14px] py-[10px] whitespace-nowrap text-[var(--arca-ink)] font-medium" title={debt.tax || '-'}>{debt.tax || '-'}</td>
-                            <td className="px-[14px] py-[10px] whitespace-nowrap text-[var(--arca-ink-2)]" title={debt.concept || '-'}>{debt.concept || '-'}</td>
-                            <td className="px-[14px] py-[10px] whitespace-nowrap font-mono text-[var(--arca-ink-3)]">{debt.period || '-'}</td>
-                            <td className="px-[14px] py-[10px] whitespace-nowrap font-mono text-[var(--arca-ink-3)]">{new Date(debt.dueDate).toLocaleDateString('es-AR')}</td>
-                            <td className={cn('px-[14px] py-[10px] whitespace-nowrap text-right font-mono tabular-nums', balance === 0 ? 'text-[var(--arca-ink-4)]' : 'text-[var(--arca-ink)] font-semibold')}>{fmtD(balance)}</td>
-                            <td className={cn('px-[14px] py-[10px] whitespace-nowrap text-right font-mono tabular-nums', intC === 0 ? 'text-[var(--arca-ink-4)]' : 'text-[var(--arca-accent-warn-fg)]')}>{fmtD(intC)}</td>
-                            <td className="px-[14px] py-[10px] whitespace-nowrap text-right font-mono tabular-nums text-[var(--arca-ink-4)]">{fmtD(intP)}</td>
+                            {profiles.length > 1 && (
+                              <td className="px-[14px] py-[10px] whitespace-nowrap text-[var(--arca-ink-2)] text-[11.5px]">
+                                {debt.profileName || '-'}
+                              </td>
+                            )}
+                            <td
+                              className="px-[14px] py-[10px] whitespace-nowrap text-[var(--arca-ink)] font-medium"
+                              title={debt.tax || '-'}
+                            >
+                              {debt.tax || '-'}
+                            </td>
+                            <td
+                              className="px-[14px] py-[10px] whitespace-nowrap text-[var(--arca-ink-2)]"
+                              title={debt.concept || '-'}
+                            >
+                              {debt.concept || '-'}
+                            </td>
+                            <td className="px-[14px] py-[10px] whitespace-nowrap font-mono text-[var(--arca-ink-3)]">
+                              {debt.period || '-'}
+                            </td>
+                            <td className="px-[14px] py-[10px] whitespace-nowrap font-mono text-[var(--arca-ink-3)]">
+                              {new Date(debt.dueDate).toLocaleDateString(
+                                'es-AR'
+                              )}
+                            </td>
+                            <td className="px-[14px] py-[10px] whitespace-nowrap text-[11px] text-[var(--arca-ink-4)]">
+                              {debt.detectedAt
+                                ? new Date(debt.detectedAt).toLocaleDateString('es-AR', {
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric',
+                                })
+                                : '-'}
+                            </td>
+                            <td
+                              className={cn(
+                                'px-[14px] py-[10px] whitespace-nowrap text-right font-mono tabular-nums',
+                                balance === 0
+                                  ? 'text-[var(--arca-ink-4)]'
+                                  : 'text-[var(--arca-ink)] font-semibold'
+                              )}
+                            >
+                              {fmtD(balance)}
+                            </td>
+                            <td
+                              className={cn(
+                                'px-[14px] py-[10px] whitespace-nowrap text-right font-mono tabular-nums',
+                                intC === 0
+                                  ? 'text-[var(--arca-ink-4)]'
+                                  : 'text-[var(--arca-accent-warn-fg)]'
+                              )}
+                            >
+                              {fmtD(intC)}
+                            </td>
+                            <td className="px-[14px] py-[10px] whitespace-nowrap text-right font-mono tabular-nums text-[var(--arca-ink-4)]">
+                              {fmtD(intP)}
+                            </td>
                             <td className="px-[14px] py-[10px] whitespace-nowrap">
-                              {status === 'ok'
-                                ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)]">Saldada</span>
-                                : status === 'late'
-                                  ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]">Vencida</span>
-                                  : <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]">Pendiente</span>
-                              }
+                              {debtStatus === 'paid' ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)]">
+                                  Pagada
+                                </span>
+                              ) : debtStatus === 'in_plan' ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[rgba(148,163,184,0.25)] text-[var(--arca-ink-3)]">
+                                  En plan
+                                </span>
+                              ) : debtStatus === 'disputed' ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[rgba(139,92,246,0.15)] text-[rgba(139,92,246,0.9)]">
+                                  Disputada
+                                </span>
+                              ) : isOverdue ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]">
+                                  Vencida
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]">
+                                  Abierta
+                                </span>
+                              )}
+                              {isIntimated && (
+                                <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9.5px] font-semibold bg-orange-100 text-orange-700">
+                                  Intimada
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-[14px] py-[10px] whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                <select
+                                  value={debtStatus}
+                                  onChange={(e) => {
+                                    const newStatus = e.target.value as
+                                      | 'open'
+                                      | 'in_plan'
+                                      | 'paid'
+                                      | 'disputed';
+                                    updateDebtStatusMutation.mutate({
+                                      id: debt.id,
+                                      status: newStatus,
+                                      isIntimated,
+                                    });
+                                  }}
+                                  className="text-[11.5px] border border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] bg-[var(--arca-surface)] px-2 py-1 text-[var(--arca-ink)] cursor-pointer"
+                                >
+                                  <option value="open">Abierta</option>
+                                  <option value="in_plan">En plan</option>
+                                  <option value="paid">Pagada</option>
+                                  <option value="disputed">Disputada</option>
+                                </select>
+                                <button
+                                  onClick={() =>
+                                    updateDebtStatusMutation.mutate({
+                                      id: debt.id,
+                                      status: debtStatus,
+                                      isIntimated: !isIntimated,
+                                    })
+                                  }
+                                  className={cn(
+                                    'text-[11px] font-semibold px-2 py-1 rounded-[var(--arca-r-md)] border transition-colors',
+                                    isIntimated
+                                      ? 'bg-orange-100 text-orange-700 border-orange-300 hover:bg-orange-200'
+                                      : 'bg-[var(--arca-surface)] text-[var(--arca-ink-3)] border-[var(--arca-border-strong)] hover:bg-[var(--arca-surface-2)]'
+                                  )}
+                                  title={
+                                    isIntimated
+                                      ? 'Quitar intimación'
+                                      : 'Marcar como intimada'
+                                  }
+                                >
+                                  Intimada
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -2175,31 +3101,81 @@ export function ClientDetailPage({
               )}
               {debtTotalPages > 1 && (
                 <div className="px-[20px] py-[10px] border-t border-[var(--arca-border)] flex items-center gap-[10px] text-[11.5px] text-[var(--arca-ink-4)]">
-                  <span>Mostrando {pagedDebts.length} de {filteredDebts.length}</span>
+                  <span>
+                    Mostrando {pagedDebts.length} de {filteredDebts.length}
+                  </span>
                   <div className="flex-1" />
                   {(() => {
-                    const { startPage, endPage } = getPageRange(debtPage, debtTotalPages);
-                    const visiblePages = Array.from({ length: endPage - startPage + 1 }, (_, i) => startPage + i);
+                    const { startPage, endPage } = getPageRange(
+                      debtPage,
+                      debtTotalPages
+                    );
+                    const visiblePages = Array.from(
+                      { length: endPage - startPage + 1 },
+                      (_, i) => startPage + i
+                    );
                     return (
                       <div className="flex items-center gap-1">
-                        <button onClick={() => setDebtPage((p) => Math.max(1, p - 1))} disabled={debtPage === 1}
-                          className="px-2.5 py-1 text-[12px] border border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] disabled:opacity-40 hover:bg-[var(--arca-surface-2)] transition-colors">←</button>
-                        {startPage > 1 && (<>
-                          <button onClick={() => setDebtPage(1)} className="px-2.5 py-1 text-[12px] rounded-[var(--arca-r-md)] hover:bg-[var(--arca-surface-2)] transition-colors">1</button>
-                          {startPage > 2 && <span className="px-1 text-[var(--arca-ink-4)]">…</span>}
-                        </>)}
+                        <button
+                          onClick={() => setDebtPage((p) => Math.max(1, p - 1))}
+                          disabled={debtPage === 1}
+                          className="px-2.5 py-1 text-[12px] border border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] disabled:opacity-40 hover:bg-[var(--arca-surface-2)] transition-colors"
+                        >
+                          ←
+                        </button>
+                        {startPage > 1 && (
+                          <>
+                            <button
+                              onClick={() => setDebtPage(1)}
+                              className="px-2.5 py-1 text-[12px] rounded-[var(--arca-r-md)] hover:bg-[var(--arca-surface-2)] transition-colors"
+                            >
+                              1
+                            </button>
+                            {startPage > 2 && (
+                              <span className="px-1 text-[var(--arca-ink-4)]">
+                                …
+                              </span>
+                            )}
+                          </>
+                        )}
                         {visiblePages.map((page) => (
-                          <button key={page} onClick={() => setDebtPage(page)}
-                            className={cn('px-2.5 py-1 text-[12px] rounded-[var(--arca-r-md)] transition-colors', debtPage === page ? 'bg-[var(--arca-ink)] text-white font-semibold' : 'hover:bg-[var(--arca-surface-2)]')}>
+                          <button
+                            key={page}
+                            onClick={() => setDebtPage(page)}
+                            className={cn(
+                              'px-2.5 py-1 text-[12px] rounded-[var(--arca-r-md)] transition-colors',
+                              debtPage === page
+                                ? 'bg-[var(--arca-ink)] text-white font-semibold'
+                                : 'hover:bg-[var(--arca-surface-2)]'
+                            )}
+                          >
                             {page}
                           </button>
                         ))}
-                        {endPage < debtTotalPages && (<>
-                          {endPage < debtTotalPages - 1 && <span className="px-1 text-[var(--arca-ink-4)]">…</span>}
-                          <button onClick={() => setDebtPage(debtTotalPages)} className="px-2.5 py-1 text-[12px] rounded-[var(--arca-r-md)] hover:bg-[var(--arca-surface-2)] transition-colors">{debtTotalPages}</button>
-                        </>)}
-                        <button onClick={() => setDebtPage((p) => Math.min(debtTotalPages, p + 1))} disabled={debtPage === debtTotalPages}
-                          className="px-2.5 py-1 text-[12px] border border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] disabled:opacity-40 hover:bg-[var(--arca-surface-2)] transition-colors">→</button>
+                        {endPage < debtTotalPages && (
+                          <>
+                            {endPage < debtTotalPages - 1 && (
+                              <span className="px-1 text-[var(--arca-ink-4)]">
+                                …
+                              </span>
+                            )}
+                            <button
+                              onClick={() => setDebtPage(debtTotalPages)}
+                              className="px-2.5 py-1 text-[12px] rounded-[var(--arca-r-md)] hover:bg-[var(--arca-surface-2)] transition-colors"
+                            >
+                              {debtTotalPages}
+                            </button>
+                          </>
+                        )}
+                        <button
+                          onClick={() =>
+                            setDebtPage((p) => Math.min(debtTotalPages, p + 1))
+                          }
+                          disabled={debtPage === debtTotalPages}
+                          className="px-2.5 py-1 text-[12px] border border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] disabled:opacity-40 hover:bg-[var(--arca-surface-2)] transition-colors"
+                        >
+                          →
+                        </button>
                       </div>
                     );
                   })()}
@@ -2326,14 +3302,14 @@ export function ClientDetailPage({
                     setScrapingSection('vencimientos');
                     try {
                       await scrapSingleJob({
-                        data: { clientId, jobType: 'vencimientos' },
+                        data: { representativeId, jobType: 'vencimientos' },
                       });
                       await Promise.all([
                         queryClient.invalidateQueries({
-                          queryKey: ['clientDueDates', clientId],
+                          queryKey: ['representativeDueDates', representativeId],
                         }),
                         queryClient.invalidateQueries({
-                          queryKey: ['lastVencimientosJob', clientId],
+                          queryKey: ['lastVencimientosJob', representativeId],
                         }),
                       ]);
                       toast.success('Vencimientos actualizados correctamente');
@@ -2344,7 +3320,7 @@ export function ClientDetailPage({
                           : 'Error al actualizar vencimientos'
                       );
                       queryClient.invalidateQueries({
-                        queryKey: ['lastVencimientosJob', clientId],
+                        queryKey: ['lastVencimientosJob', representativeId],
                       });
                     } finally {
                       setScrapingSection(null);
@@ -2391,10 +3367,14 @@ export function ClientDetailPage({
                           <TableRow>
                             <TableHead className="w-[14%]">Impuesto</TableHead>
                             <TableHead className="w-[16%]">Concepto</TableHead>
-                            <TableHead className="w-[16%]">Subconcepto</TableHead>
+                            <TableHead className="w-[16%]">
+                              Subconcepto
+                            </TableHead>
                             <TableHead className="w-[10%]">Período</TableHead>
                             <TableHead className="w-[7%]">Cuota</TableHead>
-                            <TableHead className="w-[12%]">Vencimiento</TableHead>
+                            <TableHead className="w-[12%]">
+                              Vencimiento
+                            </TableHead>
                             <TableHead className="w-[25%]">Detalle</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -2585,15 +3565,17 @@ export function ClientDetailPage({
                     setScrapingSection('notificaciones');
                     try {
                       await scrapSingleJob({
-                        data: { clientId, jobType: 'notificaciones' },
+                        data: { representativeId, jobType: 'notificaciones' },
                       });
                       await queryClient.invalidateQueries({
-                        queryKey: ['clientNotifications', clientId],
+                        queryKey: ['clientNotifications', representativeId],
                       });
                       await queryClient.invalidateQueries({
-                        queryKey: ['lastNotificacionesJob', clientId],
+                        queryKey: ['lastNotificacionesJob', representativeId],
                       });
-                      toast.success('Notificaciones actualizadas correctamente');
+                      toast.success(
+                        'Notificaciones actualizadas correctamente'
+                      );
                     } catch (err) {
                       toast.error(
                         err instanceof Error
@@ -2601,7 +3583,7 @@ export function ClientDetailPage({
                           : 'Error al actualizar notificaciones'
                       );
                       queryClient.invalidateQueries({
-                        queryKey: ['lastNotificacionesJob', clientId],
+                        queryKey: ['lastNotificacionesJob', representativeId],
                       });
                     } finally {
                       setScrapingSection(null);
@@ -2619,7 +3601,7 @@ export function ClientDetailPage({
                 </Button>
               </div>
             </div>
-            <NotificationsView clientId={clientId} className="min-h-[500px]" />
+            <NotificationsView representativeId={representativeId} className="min-h-[500px]" />
           </TabsContent>
 
           {/* Facturas Tab */}
@@ -2633,12 +3615,12 @@ export function ClientDetailPage({
                 setScrapingSection("facturas");
                 try {
                   await scrapSingleJob({
-                    data: { clientId, jobType: "comprobantes" },
+                    data: { representativeId, jobType: "comprobantes" },
                   });
                   await Promise.all([
-                    queryClient.invalidateQueries({ queryKey: ["clientAllInvoices", clientId] }),
+                    queryClient.invalidateQueries({ queryKey: ["clientAllInvoices", representativeId] }),
                     queryClient.invalidateQueries({ queryKey: ["invoices"] }),
-                    queryClient.invalidateQueries({ queryKey: ["lastComprobantesFullJob", clientId] }),
+                    queryClient.invalidateQueries({ queryKey: ["lastComprobantesFullJob", representativeId] }),
                   ]);
                   toast.success("Facturas (comprobantes) actualizadas correctamente");
                 } catch (err) {
@@ -2697,18 +3679,20 @@ export function ClientDetailPage({
                     setScrapingSection('facturas');
                     try {
                       await scrapSingleJob({
-                        data: { clientId, jobType: 'comprobantes' },
+                        data: { representativeId, jobType: 'comprobantes' },
                       });
                       await Promise.all([
                         queryClient.invalidateQueries({
-                          queryKey: ['clientAllInvoices', clientId],
-                        }),
-                        queryClient.invalidateQueries({ queryKey: ['invoices'] }),
-                        queryClient.invalidateQueries({
-                          queryKey: ['lastComprobantesFullJob', clientId],
+                          queryKey: ['clientAllInvoices', representativeId],
                         }),
                         queryClient.invalidateQueries({
-                          queryKey: ['lastComprobantesJob', clientId],
+                          queryKey: ['invoices'],
+                        }),
+                        queryClient.invalidateQueries({
+                          queryKey: ['lastComprobantesFullJob', representativeId],
+                        }),
+                        queryClient.invalidateQueries({
+                          queryKey: ['lastComprobantesJob', representativeId],
                         }),
                       ]);
                       toast.success(
@@ -2721,7 +3705,7 @@ export function ClientDetailPage({
                           : 'Error al actualizar facturas'
                       );
                       queryClient.invalidateQueries({
-                        queryKey: ['lastComprobantesJob', clientId],
+                        queryKey: ['lastComprobantesJob', representativeId],
                       });
                     } finally {
                       setScrapingSection(null);
@@ -3011,7 +3995,9 @@ export function ClientDetailPage({
                             ? `+${facturasVariationPct.salesPct.toFixed(1)}%`
                             : `${facturasVariationPct.salesPct.toFixed(1)}%`}{' '}
                         vs{' '}
-                        {facturasPeriodType === 'month' ? 'mes ant.' : 'año ant.'}
+                        {facturasPeriodType === 'month'
+                          ? 'mes ant.'
+                          : 'año ant.'}
                       </div>
                     )}
                   </div>
@@ -3047,7 +4033,9 @@ export function ClientDetailPage({
                             ? `+${facturasVariationPct.purchasesPct.toFixed(1)}%`
                             : `${facturasVariationPct.purchasesPct.toFixed(1)}%`}{' '}
                         vs{' '}
-                        {facturasPeriodType === 'month' ? 'mes ant.' : 'año ant.'}
+                        {facturasPeriodType === 'month'
+                          ? 'mes ant.'
+                          : 'año ant.'}
                       </div>
                     )}
                   </div>
@@ -3138,7 +4126,11 @@ export function ClientDetailPage({
                             borderRadius: 8,
                             padding: '8px 12px',
                           }}
-                          labelStyle={{ color: '#9B9CA3', fontSize: 10, marginBottom: 4 }}
+                          labelStyle={{
+                            color: '#9B9CA3',
+                            fontSize: 10,
+                            marginBottom: 4,
+                          }}
                           itemStyle={{ color: '#E8E6DF', fontSize: 11 }}
                           formatter={(value) =>
                             new Intl.NumberFormat('es-AR', {
@@ -3173,7 +4165,7 @@ export function ClientDetailPage({
 
             <InvoicesTable
               ref={invoicesTableRef}
-              clientId={clientId}
+              representativeId={representativeId}
               controlledDateFrom={facturasBounds.dateFrom}
               controlledDateTo={facturasBounds.dateTo}
               controlledProfileFilter={facturasProfileFilter}
@@ -3200,7 +4192,7 @@ export function ClientDetailPage({
                   </span>
                   {effectiveMultilateralProfileId ? (
                     <Select
-                      key={`multilateral-${clientId}`}
+                      key={`multilateral-${representativeId}`}
                       defaultValue={effectiveMultilateralProfileId}
                       onValueChange={(value) =>
                         setMultilateralProfileId(value || undefined)
@@ -3259,7 +4251,10 @@ export function ClientDetailPage({
                             const y = Number(v);
                             const newMax =
                               y === now.getFullYear() ? now.getMonth() : 11;
-                            const m = Math.min(multilateralSelectedMonth, newMax);
+                            const m = Math.min(
+                              multilateralSelectedMonth,
+                              newMax
+                            );
                             const range = getMonthBounds(y, m);
                             setMultilateralPeriod(range);
                             setMultilateralDateFrom(
@@ -3441,7 +4436,11 @@ export function ClientDetailPage({
                                   borderRadius: 8,
                                   padding: '8px 12px',
                                 }}
-                                labelStyle={{ color: '#9B9CA3', fontSize: 10, marginBottom: 4 }}
+                                labelStyle={{
+                                  color: '#9B9CA3',
+                                  fontSize: 10,
+                                  marginBottom: 4,
+                                }}
                                 itemStyle={{ color: '#E8E6DF', fontSize: 11 }}
                                 formatter={(value) => String(value)}
                               />
@@ -3516,7 +4515,11 @@ export function ClientDetailPage({
                                   borderRadius: 8,
                                   padding: '8px 12px',
                                 }}
-                                labelStyle={{ color: '#9B9CA3', fontSize: 10, marginBottom: 4 }}
+                                labelStyle={{
+                                  color: '#9B9CA3',
+                                  fontSize: 10,
+                                  marginBottom: 4,
+                                }}
                                 itemStyle={{ color: '#E8E6DF', fontSize: 11 }}
                                 formatter={(value) =>
                                   new Intl.NumberFormat('es-AR', {
@@ -3695,65 +4698,97 @@ export function ClientDetailPage({
                       })}
                     </span>
                   )}
-                  <Button
-                    variant="default"
-                    size="sm"
-                    disabled={!!scrapingSection || !!runningComprobantesJob}
-                    onClick={async () => {
-                      setScrapingSection('iva');
-                      try {
-                        await scrapSingleJob({
-                          data: { clientId, jobType: 'comprobantes' },
-                        });
-                        await scrapSingleJob({
-                          data: { clientId, jobType: 'iva' },
-                        });
-                        await Promise.all([
-                          queryClient.invalidateQueries({
-                            queryKey: ['clientIva', clientId],
-                          }),
-                          queryClient.invalidateQueries({
-                            queryKey: ['clientAllInvoices', clientId],
-                          }),
-                          queryClient.invalidateQueries({
-                            queryKey: ['invoices'],
-                          }),
-                          queryClient.invalidateQueries({
-                            queryKey: ['lastComprobantesFullJob', clientId],
-                          }),
-                          queryClient.invalidateQueries({
-                            queryKey: ['lastIvaJob', clientId],
-                          }),
-                        ]);
-                        toast.success(
-                          'IVA y comprobantes actualizados correctamente'
-                        );
-                      } catch (err) {
-                        toast.error(
-                          err instanceof Error
-                            ? err.message
-                            : 'Error al actualizar IVA'
-                        );
-                        queryClient.invalidateQueries({
-                          queryKey: ['lastIvaJob', clientId],
-                        });
-                        queryClient.invalidateQueries({
-                          queryKey: ['lastComprobantesJob', clientId],
-                        });
-                      } finally {
-                        setScrapingSection(null);
-                      }
-                    }}
-                  >
-                    {scrapingSection === 'iva' || runningComprobantesJob ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Actualizando…
-                      </>
-                    ) : (
-                      'Actualizar IVA'
-                    )}
-                  </Button>
+                  {scrapingSection === 'iva' || runningComprobantesJob ? (
+                    <Button variant="default" size="sm" disabled>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Actualizando…
+                    </Button>
+                  ) : (
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button
+                          variant="default"
+                          size="sm"
+                          disabled={!!scrapingSection}
+                        >
+                          Actualizar IVA
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="sm:max-w-[360px] p-0 overflow-hidden rounded-[var(--arca-r-lg,14px)] border border-[var(--arca-border)]">
+                        <div className="px-5 pt-5 pb-3">
+                          <h3 className="font-display text-[15px] font-semibold tracking-[-0.01em] text-[var(--arca-ink)]">Actualizar IVA</h3>
+                          <p className="text-[12px] leading-relaxed text-[var(--arca-ink-4)] mt-1">
+                            Si las facturas ya están al día, podés scrapear solo IVA para ir más rápido.
+                          </p>
+                        </div>
+                        <div className="px-3 pb-3 space-y-1.5">
+                          <DialogClose asChild>
+                            <button
+                              className="w-full flex items-start gap-3 rounded-[var(--arca-r-md,10px)] px-3 py-3 text-left transition-colors duration-[120ms] hover:bg-[var(--arca-surface-2)] border border-transparent hover:border-[var(--arca-border)] cursor-pointer group"
+                              onClick={async () => {
+                                setScrapingSection('iva');
+                                try {
+                                  await scrapSingleJob({ data: { representativeId, jobType: 'comprobantes' } });
+                                  await scrapSingleJob({ data: { representativeId, jobType: 'iva' } });
+                                  await Promise.all([
+                                    queryClient.invalidateQueries({ queryKey: ['clientIva', representativeId] }),
+                                    queryClient.invalidateQueries({ queryKey: ['clientAllInvoices', representativeId] }),
+                                    queryClient.invalidateQueries({ queryKey: ['invoices'] }),
+                                    queryClient.invalidateQueries({ queryKey: ['lastComprobantesFullJob', representativeId] }),
+                                    queryClient.invalidateQueries({ queryKey: ['lastIvaJob', representativeId] }),
+                                  ]);
+                                  toast.success('IVA y comprobantes actualizados');
+                                } catch (err) {
+                                  toast.error(err instanceof Error ? err.message : 'Error al actualizar');
+                                  queryClient.invalidateQueries({ queryKey: ['lastIvaJob', representativeId] });
+                                  queryClient.invalidateQueries({ queryKey: ['lastComprobantesJob', representativeId] });
+                                } finally {
+                                  setScrapingSection(null);
+                                }
+                              }}
+                            >
+                              <div className="shrink-0 mt-0.5 w-8 h-8 rounded-[var(--arca-r-sm,6px)] bg-[var(--arca-surface-2)] flex items-center justify-center text-[var(--arca-ink-3)] group-hover:text-[var(--arca-ink)]">
+                                <FileText className="w-4 h-4" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-[13px] font-medium text-[var(--arca-ink)]">Comprobantes + IVA</div>
+                                <div className="text-[11px] leading-snug text-[var(--arca-ink-4)] mt-0.5">Actualiza facturas primero, después IVA. Más lento pero completo.</div>
+                              </div>
+                            </button>
+                          </DialogClose>
+                          <DialogClose asChild>
+                            <button
+                              className="w-full flex items-start gap-3 rounded-[var(--arca-r-md,10px)] px-3 py-3 text-left transition-colors duration-[120ms] hover:bg-[var(--arca-surface-2)] border border-transparent hover:border-[var(--arca-border)] cursor-pointer group"
+                              onClick={async () => {
+                                setScrapingSection('iva');
+                                try {
+                                  await scrapSingleJob({ data: { representativeId, jobType: 'iva' } });
+                                  await Promise.all([
+                                    queryClient.invalidateQueries({ queryKey: ['clientIva', representativeId] }),
+                                    queryClient.invalidateQueries({ queryKey: ['lastIvaJob', representativeId] }),
+                                  ]);
+                                  toast.success('IVA actualizado correctamente');
+                                } catch (err) {
+                                  toast.error(err instanceof Error ? err.message : 'Error al actualizar IVA');
+                                  queryClient.invalidateQueries({ queryKey: ['lastIvaJob', representativeId] });
+                                } finally {
+                                  setScrapingSection(null);
+                                }
+                              }}
+                            >
+                              <div className="shrink-0 mt-0.5 w-8 h-8 rounded-[var(--arca-r-sm,6px)] bg-[var(--arca-surface-2)] flex items-center justify-center text-[var(--arca-ink-3)] group-hover:text-[var(--arca-ink)]">
+                                <RefreshCw className="w-4 h-4" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-[13px] font-medium text-[var(--arca-ink)]">Solo IVA</div>
+                                <div className="text-[11px] leading-snug text-[var(--arca-ink-4)] mt-0.5">Más rápido. Usá esta opción si las facturas ya están al día.</div>
+                              </div>
+                            </button>
+                          </DialogClose>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                  )}
                   <Button
                     variant="outline"
                     size="sm"
@@ -3772,9 +4807,11 @@ export function ClientDetailPage({
                 </span>
                 {effectiveIvaProfileId ? (
                   <Select
-                    key={`iva-${clientId}`}
+                    key={`iva-${representativeId}`}
                     defaultValue={effectiveIvaProfileId}
-                    onValueChange={(value) => setIvaProfileId(value || undefined)}
+                    onValueChange={(value) =>
+                      setIvaProfileId(value || undefined)
+                    }
                     disabled={loadingProfiles || profiles.length <= 1}
                   >
                     <SelectTrigger className="h-9 min-w-[200px] w-auto">
@@ -3788,7 +4825,9 @@ export function ClientDetailPage({
                           identityNumber?: string;
                         }) => (
                           <SelectItem key={profile.id} value={profile.id}>
-                            {profile.name || profile.identityNumber || profile.id}
+                            {profile.name ||
+                              profile.identityNumber ||
+                              profile.id}
                           </SelectItem>
                         )
                       )}
@@ -3879,7 +4918,7 @@ export function ClientDetailPage({
               ) : (
                 <RenderIvaResume
                   ref={ivaResumeRef}
-                  clientId={clientId}
+                  representativeId={representativeId}
                   clientName={client?.name}
                   clientIva={clientIva ?? undefined}
                   selectedProfileId={effectiveIvaProfileId ?? undefined}
@@ -3891,13 +4930,345 @@ export function ClientDetailPage({
               )}
             </div>
           </TabsContent>
-        </div>{/* end content area */}
+
+          {/* Solicitudes Tab */}
+          <TabsContent value="solicitudes" className="mt-4">
+            <div className="space-y-4">
+              {/* Header row */}
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={solicitudesStatusFilter || 'all'}
+                    onValueChange={(v) =>
+                      setSolicitudesStatusFilter(v === 'all' ? '' : v)
+                    }
+                  >
+                    <SelectTrigger className="h-8 gap-1.5 px-3 text-[12px] border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] bg-[var(--arca-surface)] min-w-[130px]">
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+                        Estado
+                      </span>
+                      <SelectValue placeholder="Todos" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos</SelectItem>
+                      <SelectItem value="open">Abierta</SelectItem>
+                      <SelectItem value="completed">Completada</SelectItem>
+                      <SelectItem value="cancelled">Cancelada</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => setNewRequestDialogOpen(true)}
+                  className="bg-[var(--arca-ink)] hover:bg-black text-white text-[12.5px] h-8 px-3 rounded-[var(--arca-r-md)] shrink-0 gap-1.5"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Nueva solicitud
+                </Button>
+              </div>
+
+              {/* Requests list */}
+              <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] overflow-hidden">
+                <div className="px-[20px] py-[14px] border-b border-[var(--arca-border)] flex items-center gap-2">
+                  <ClipboardList className="h-3.5 w-3.5 shrink-0 text-[var(--arca-ink-3)]" />
+                  <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+                    Solicitudes al cliente
+                  </span>
+                  {clientRequestsData.length > 0 && (
+                    <span className="text-[11px] font-mono text-[var(--arca-ink-4)]">
+                      {clientRequestsData.length}
+                    </span>
+                  )}
+                </div>
+                {clientRequestsData.length === 0 ? (
+                  <div className="flex items-center justify-center h-24 text-[13px] text-[var(--arca-ink-4)]">
+                    No hay solicitudes registradas
+                  </div>
+                ) : (
+                  <table className="w-full border-collapse text-[12.5px]">
+                    <thead>
+                      <tr className="bg-[var(--arca-surface-2)]">
+                        {(
+                          [
+                            'Título',
+                            'Tipo',
+                            'Estado',
+                            'Vencimiento',
+                            'Creada',
+                            'Acciones',
+                          ] as const
+                        ).map((h) => (
+                          <th
+                            key={h}
+                            className="px-[14px] py-[9px] text-left text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] border-b border-[var(--arca-border)] whitespace-nowrap"
+                          >
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {clientRequestsData.map((req: RequestRow, i: number) => {
+                        const statusColors: Record<
+                          string,
+                          { bg: string; color: string; label: string }
+                        > = {
+                          open: {
+                            bg: 'var(--arca-accent-warn-bg)',
+                            color: 'var(--arca-accent-warn)',
+                            label: 'Abierta',
+                          },
+                          completed: {
+                            bg: 'var(--arca-accent-pos-bg)',
+                            color: 'var(--arca-accent-pos)',
+                            label: 'Completada',
+                          },
+                          cancelled: {
+                            bg: 'var(--arca-surface-2)',
+                            color: 'var(--arca-ink-3)',
+                            label: 'Cancelada',
+                          },
+                        };
+                        const sc =
+                          statusColors[req.status] ?? statusColors.open;
+                        return (
+                          <tr
+                            key={req.id}
+                            className={`border-b border-[var(--arca-border)] last:border-b-0 ${i % 2 === 1 ? 'bg-[var(--arca-surface-2)]' : ''}`}
+                          >
+                            <td className="px-[14px] py-[10px]">
+                              <p className="font-medium text-[var(--arca-ink)] flex items-center gap-1.5">
+                                {req.title}
+                                {req.metadata?.documentId && (
+                                  <Paperclip className="h-3 w-3 text-[var(--arca-accent-primary)] shrink-0" />
+                                )}
+                              </p>
+                              {req.description && (
+                                <p className="text-[11px] text-[var(--arca-ink-3)] mt-0.5 max-w-[280px] truncate">
+                                  {req.description}
+                                </p>
+                              )}
+                              {req.metadata?.documentName && (
+                                <p className="text-[11px] text-[var(--arca-accent-primary)] mt-0.5">
+                                  {req.metadata?.documentName}
+                                </p>
+                              )}
+                            </td>
+                            <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)]">
+                              {req.type}
+                            </td>
+                            <td className="px-[14px] py-[10px]">
+                              <span
+                                className="inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                                style={{ background: sc.bg, color: sc.color }}
+                              >
+                                {sc.label}
+                              </span>
+                            </td>
+                            <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)] whitespace-nowrap">
+                              {req.dueAt
+                                ? new Date(
+                                  req.dueAt as unknown as string
+                                ).toLocaleDateString('es-AR')
+                                : '—'}
+                            </td>
+                            <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)] whitespace-nowrap">
+                              {new Date(
+                                req.createdAt as unknown as string
+                              ).toLocaleDateString('es-AR')}
+                            </td>
+                            <td className="px-[14px] py-[10px]">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {/* Document download if metadata has documentId */}
+                                {req.metadata?.documentId && (
+                                  <>
+                                    <button
+                                      onClick={async () => {
+                                        try {
+                                          const doc = await getRequestDocument({
+                                            data: { requestId: req.id },
+                                          });
+                                          if (!doc?.url) {
+                                            toast.error(
+                                              'Documento no encontrado'
+                                            );
+                                            return;
+                                          }
+                                          const a = document.createElement('a');
+                                          a.href = doc.url;
+                                          a.download = doc.name ?? 'documento';
+                                          a.click();
+                                        } catch {
+                                          toast.error(
+                                            'Error al descargar el documento'
+                                          );
+                                        }
+                                      }}
+                                      className="inline-flex items-center gap-1 text-[11px] text-[var(--arca-accent-primary)] hover:underline font-medium"
+                                    >
+                                      <FileDown className="h-3 w-3" />
+                                      Doc
+                                    </button>
+                                    <span className="text-[var(--arca-border-strong)]">
+                                      ·
+                                    </span>
+                                  </>
+                                )}
+                                {req.status === 'open' && (
+                                  <>
+                                    <button
+                                      onClick={() =>
+                                        updateRequestStatusMutation.mutate({
+                                          requestId: req.id,
+                                          status: 'completed',
+                                        })
+                                      }
+                                      className="text-[11px] text-[var(--arca-accent-pos)] hover:underline font-medium"
+                                    >
+                                      Completar
+                                    </button>
+                                    <span className="text-[var(--arca-border-strong)]">
+                                      ·
+                                    </span>
+                                    <button
+                                      onClick={() =>
+                                        updateRequestStatusMutation.mutate({
+                                          requestId: req.id,
+                                          status: 'cancelled',
+                                        })
+                                      }
+                                      className="text-[11px] text-[var(--arca-ink-3)] hover:underline"
+                                    >
+                                      Cancelar
+                                    </button>
+                                  </>
+                                )}
+                                {req.status !== 'open' && (
+                                  <button
+                                    onClick={() =>
+                                      updateRequestStatusMutation.mutate({
+                                        requestId: req.id,
+                                        status: 'open',
+                                      })
+                                    }
+                                    className="text-[11px] text-[var(--arca-accent-primary)] hover:underline"
+                                  >
+                                    Reabrir
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            {/* Nueva solicitud dialog */}
+            <Dialog
+              open={newRequestDialogOpen}
+              onOpenChange={setNewRequestDialogOpen}
+            >
+              <DialogContent className="sm:max-w-[480px]">
+                <DialogHeader>
+                  <DialogTitle>Nueva solicitud al cliente</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-3 pt-2">
+                  <div>
+                    <label className="text-[12px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-[0.06em]">
+                      Título *
+                    </label>
+                    <Input
+                      value={newRequestTitle}
+                      onChange={(e) => setNewRequestTitle(e.target.value)}
+                      placeholder="Ej. Enviar balance del ejercicio"
+                      className="mt-1 h-9 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[12px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-[0.06em]">
+                      Descripción
+                    </label>
+                    <Input
+                      value={newRequestDescription}
+                      onChange={(e) => setNewRequestDescription(e.target.value)}
+                      placeholder="Instrucciones o contexto adicional"
+                      className="mt-1 h-9 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[12px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-[0.06em]">
+                      Tipo
+                    </label>
+                    <Select
+                      value={newRequestType}
+                      onValueChange={setNewRequestType}
+                    >
+                      <SelectTrigger className="mt-1 h-9 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="general">General</SelectItem>
+                        <SelectItem value="document">Documento</SelectItem>
+                        <SelectItem value="information">Información</SelectItem>
+                        <SelectItem value="signature">Firma</SelectItem>
+                        <SelectItem value="payment">Pago</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="text-[12px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-[0.06em]">
+                      Fecha límite
+                    </label>
+                    <Input
+                      type="date"
+                      value={newRequestDueAt}
+                      onChange={(e) => setNewRequestDueAt(e.target.value)}
+                      className="mt-1 h-9 text-sm"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setNewRequestDialogOpen(false)}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={
+                        !newRequestTitle.trim() ||
+                        createRequestMutation.isPending
+                      }
+                      onClick={() => createRequestMutation.mutate()}
+                      className="bg-[var(--arca-ink)] hover:bg-black text-white"
+                    >
+                      {createRequestMutation.isPending ? (
+                        <>
+                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                          Creando…
+                        </>
+                      ) : (
+                        'Crear solicitud'
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </TabsContent>
+        </div>
+        {/* end content area */}
       </Tabs>
 
-      <EditClientDialog
-        clientId={clientId}
-        open={editClientDialogOpen}
-        onOpenChange={setEditClientDialogOpen}
+      <EditRepresentativeDialog
+        representativeId={representativeId}
+        open={editRepresentativeDialogOpen}
+        onOpenChange={setEditRepresentativeDialogOpen}
       />
 
       {/* Modal de detalle de facturas por provincia (Convenio Multilateral) */}

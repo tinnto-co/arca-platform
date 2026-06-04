@@ -21,7 +21,7 @@ import { SueldosConceptos } from '@/components/sueldos/SueldosConceptos';
 import { SueldosSimulador } from '@/components/sueldos/SueldosSimulador';
 import { SueldosRecibo } from '@/components/sueldos/SueldosRecibo';
 import { SueldosFirmaDigital } from '@/components/sueldos/SueldosFirmaDigital';
-import { getClientsForSueldos } from '@/actions/client';
+import { getRepresentativesForSueldos } from '@/actions/client';
 import { listOrgModules } from '@/actions/admin';
 import { PageHeader } from '@/components/shared/page-header';
 import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
@@ -66,7 +66,7 @@ function RouteComponent() {
 
   const { data: clients = [], isLoading } = useQuery({
     queryKey: ['clients', 'sueldos'],
-    queryFn: () => getClientsForSueldos(),
+    queryFn: () => getRepresentativesForSueldos(),
   });
 
   const { data: orgModules = [] } = useQuery({
@@ -76,8 +76,11 @@ function RouteComponent() {
   const aiAgentEnabled =
     orgModules.find((m) => m.module === 'ai_agent')?.enabled ?? false;
 
-  const selectedOption = clients.find((c) => c.profileId === profileId);
-  const clientId = selectedOption?.clientId ?? '';
+  // En el modelo nuevo de main: el param `profileId` de la ruta lleva el id de
+  // la entidad fiscal (= clientId), y el prop `clientId` que esperan los
+  // componentes de payroll es el agrupador (= representativeId).
+  const selectedOption = clients.find((c) => c.clientId === profileId);
+  const clientId = selectedOption?.representativeId ?? '';
 
   const setTab = (next: SueldosTab) => {
     void navigate({

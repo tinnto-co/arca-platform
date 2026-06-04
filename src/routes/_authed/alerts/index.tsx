@@ -18,7 +18,7 @@ import {
   retryAlertJobs,
   retryAllRetryable,
 } from '@/actions/alert';
-import { getClients } from '@/actions/client';
+import { getRepresentatives } from '@/actions/client';
 import { listOrgMembersForAssignment } from '@/actions/notification';
 import { CATEGORY_LABELS } from '@/lib/error-classifier';
 import { SearchableSelect } from '@/components/ui/searchable-select';
@@ -368,7 +368,7 @@ function AlertsPage() {
 
   const { data: clientsRaw = [] } = useQuery({
     queryKey: ['clients'],
-    queryFn: () => getClients(),
+    queryFn: () => getRepresentatives(),
     staleTime: 60_000,
   });
   const clients = clientsRaw as { id: string; name: string }[];

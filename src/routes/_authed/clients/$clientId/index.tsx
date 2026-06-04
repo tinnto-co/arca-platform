@@ -1,6 +1,6 @@
 import { createFileRoute, Outlet, useNavigate } from '@tanstack/react-router';
 import { z } from 'zod';
-import { ClientDetailPage } from '@/components/client-detail-page';
+import { RepresentativeDetailPage } from '@/components/client-detail-page';
 
 const CLIENT_DETAIL_TABS = [
   'resumen',
@@ -10,6 +10,7 @@ const CLIENT_DETAIL_TABS = [
   'facturas',
   'iva',
   'convenio-multilateral',
+  'solicitudes',
 ] as const;
 
 export const Route = createFileRoute('/_authed/clients/$clientId/')({
@@ -36,8 +37,8 @@ function RouteComponent() {
 
   return (
     <>
-      <ClientDetailPage
-        clientId={clientId}
+      <RepresentativeDetailPage
+        representativeId={clientId}
         activeTab={activeTab}
         onTabChange={onTabChange}
       />

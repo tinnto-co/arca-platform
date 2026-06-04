@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { AlertTriangle, CheckCircle2, Loader2, XCircle } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { getClient, scrapSingleJob } from '@/actions/client';
+import { getRepresentative, scrapSingleJob } from '@/actions/client';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -47,7 +47,7 @@ export function ScrapeConfirmation({
 
   const { data: client, isLoading: clientLoading } = useQuery({
     queryKey: ['client', clientId],
-    queryFn: () => getClient({ data: { id: clientId } }),
+    queryFn: () => getRepresentative({ data: { id: clientId } }),
     staleTime: 60_000,
   });
 
@@ -59,7 +59,7 @@ export function ScrapeConfirmation({
     setErrorMsg(null);
     try {
       const result = await scrapSingleJob({
-        data: { clientId, jobType },
+        data: { representativeId: clientId, jobType },
       });
       setPhase('done');
       respond({

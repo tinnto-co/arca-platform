@@ -2,9 +2,9 @@ import { createServerFn } from '@tanstack/react-start';
 import z from 'zod';
 import { db } from '@/lib/db';
 import {
-  client,
-  clientUserAccess,
-  clientRequest,
+  representative,
+  representativeUserAccess,
+  representativeRequest,
   debt,
   dueDate,
   notification,
@@ -25,8 +25,8 @@ export const getPortalSession = createServerFn({ method: 'GET' }).handler(
 
     const [access] = await db
       .select()
-      .from(clientUserAccess)
-      .where(eq(clientUserAccess.userId, userId))
+      .from(representativeUserAccess)
+      .where(eq(representativeUserAccess.userId, userId))
       .limit(1);
 
     if (!access) throw new Error('Sin acceso al portal del cliente');
@@ -36,17 +36,17 @@ export const getPortalSession = createServerFn({ method: 'GET' }).handler(
 );
 
 /**
- * Validates that the calling user has a clientUserAccess row for the given client.
+ * Validates that the calling user has a representativeUserAccess row for the given client.
  * Returns the access row (with permission flags) or throws if not found.
  */
-async function getClientPortalAccess(userId: string, clientId: string) {
+async function getRepresentativePortalAccess(userId: string, representativeId: string) {
   const [access] = await db
     .select()
-    .from(clientUserAccess)
+    .from(representativeUserAccess)
     .where(
       and(
-        eq(clientUserAccess.userId, userId),
-        eq(clientUserAccess.clientId, clientId)
+        eq(representativeUserAccess.userId, userId),
+        eq(representativeUserAccess.representativeId, representativeId)
       )
     )
     .limit(1);
@@ -62,18 +62,18 @@ export const getClientPortalDashboard = createServerFn({ method: 'GET' })
   .handler(async ({ data }) => {
     const session = await getAuthSession();
     const userId = session.user.id;
-    const access = await getClientPortalAccess(userId, data.clientId);
+    const access = await getRepresentativePortalAccess(userId, data.clientId);
 
     const [clientData] = await db
       .select({
-        id: client.id,
-        name: client.name,
-        identityNumber: client.identityNumber,
-        fiscalCondition: client.fiscalCondition,
-        status: client.status,
+        id: representative.id,
+        name: representative.name,
+        cuit: representative.cuit,
+        fiscalCondition: representative.fiscalCondition,
+        status: representative.status,
       })
-      .from(client)
-      .where(eq(client.id, data.clientId))
+      .from(representative)
+      .where(eq(representative.id, data.clientId))
       .limit(1);
 
     if (!clientData) throw new Error('Cliente no encontrado');
@@ -94,7 +94,7 @@ export const getClientPortalDashboard = createServerFn({ method: 'GET' })
           .from(dueDate)
           .where(
             and(
-              eq(dueDate.client, data.clientId),
+              eq(dueDate.representativeId, data.clientId),
               isNull(dueDate.completedAt),
               gte(dueDate.dueDate, now)
             )
@@ -115,7 +115,7 @@ export const getClientPortalDashboard = createServerFn({ method: 'GET' })
               })
               .from(debt)
               .where(
-                and(eq(debt.client, data.clientId), eq(debt.status, 'open'))
+                and(eq(debt.representativeId, data.clientId), eq(debt.status, 'open'))
               )
               .orderBy(desc(debt.dueDate))
               .limit(5)
@@ -127,7 +127,7 @@ export const getClientPortalDashboard = createServerFn({ method: 'GET' })
           .from(notification)
           .where(
             and(
-              eq(notification.client, data.clientId),
+              eq(notification.representativeId, data.clientId),
               eq(notification.opened, false),
               isNull(notification.resolvedAt)
             )
@@ -136,21 +136,21 @@ export const getClientPortalDashboard = createServerFn({ method: 'GET' })
         // Pending requests
         db
           .select({
-            id: clientRequest.id,
-            title: clientRequest.title,
-            type: clientRequest.type,
-            status: clientRequest.status,
-            dueAt: clientRequest.dueAt,
-            createdAt: clientRequest.createdAt,
+            id: representativeRequest.id,
+            title: representativeRequest.title,
+            type: representativeRequest.type,
+            status: representativeRequest.status,
+            dueAt: representativeRequest.dueAt,
+            createdAt: representativeRequest.createdAt,
           })
-          .from(clientRequest)
+          .from(representativeRequest)
           .where(
             and(
-              eq(clientRequest.clientId, data.clientId),
-              eq(clientRequest.status, 'open')
+              eq(representativeRequest.representativeId, data.clientId),
+              eq(representativeRequest.status, 'open')
             )
           )
-          .orderBy(asc(clientRequest.dueAt))
+          .orderBy(asc(representativeRequest.dueAt))
           .limit(10),
       ]);
 
@@ -175,7 +175,7 @@ export const getClientPortalDebts = createServerFn({ method: 'GET' })
   .handler(async ({ data }) => {
     const session = await getAuthSession();
     const userId = session.user.id;
-    const access = await getClientPortalAccess(userId, data.clientId);
+    const access = await getRepresentativePortalAccess(userId, data.clientId);
 
     if (!access.canViewDebts) {
       throw new Error('No tienes permiso para ver las deudas');
@@ -197,7 +197,7 @@ export const getClientPortalDebts = createServerFn({ method: 'GET' })
         createdAt: debt.createdAt,
       })
       .from(debt)
-      .where(eq(debt.client, data.clientId))
+      .where(eq(debt.representativeId, data.clientId))
       .orderBy(desc(debt.dueDate));
 
     return debts;
@@ -213,9 +213,9 @@ export const getClientPortalDueDates = createServerFn({ method: 'GET' })
   .handler(async ({ data }) => {
     const session = await getAuthSession();
     const userId = session.user.id;
-    await getClientPortalAccess(userId, data.clientId);
+    await getRepresentativePortalAccess(userId, data.clientId);
 
-    const conditions = [eq(dueDate.client, data.clientId)];
+    const conditions = [eq(dueDate.representativeId, data.clientId)];
     if (!data.includeCompleted) {
       conditions.push(isNull(dueDate.completedAt));
     }
@@ -248,7 +248,7 @@ export const getClientPortalNotifications = createServerFn({ method: 'GET' })
   .handler(async ({ data }) => {
     const session = await getAuthSession();
     const userId = session.user.id;
-    await getClientPortalAccess(userId, data.clientId);
+    await getRepresentativePortalAccess(userId, data.clientId);
 
     const notifications = await db
       .select({
@@ -265,7 +265,7 @@ export const getClientPortalNotifications = createServerFn({ method: 'GET' })
       .from(notification)
       .where(
         and(
-          eq(notification.client, data.clientId),
+          eq(notification.representativeId, data.clientId),
           isNull(notification.resolvedAt)
         )
       )
@@ -285,28 +285,28 @@ export const getClientPortalRequests = createServerFn({ method: 'GET' })
   .handler(async ({ data }) => {
     const session = await getAuthSession();
     const userId = session.user.id;
-    await getClientPortalAccess(userId, data.clientId);
+    await getRepresentativePortalAccess(userId, data.clientId);
 
-    const conditions = [eq(clientRequest.clientId, data.clientId)];
+    const conditions = [eq(representativeRequest.representativeId, data.clientId)];
     if (data.status) {
-      conditions.push(eq(clientRequest.status, data.status));
+      conditions.push(eq(representativeRequest.status, data.status));
     }
 
     const requests = await db
       .select({
-        id: clientRequest.id,
-        title: clientRequest.title,
-        description: clientRequest.description,
-        type: clientRequest.type,
-        status: clientRequest.status,
-        dueAt: clientRequest.dueAt,
-        completedAt: clientRequest.completedAt,
-        metadata: clientRequest.metadata,
-        createdAt: clientRequest.createdAt,
+        id: representativeRequest.id,
+        title: representativeRequest.title,
+        description: representativeRequest.description,
+        type: representativeRequest.type,
+        status: representativeRequest.status,
+        dueAt: representativeRequest.dueAt,
+        completedAt: representativeRequest.completedAt,
+        metadata: representativeRequest.metadata,
+        createdAt: representativeRequest.createdAt,
       })
-      .from(clientRequest)
+      .from(representativeRequest)
       .where(and(...conditions))
-      .orderBy(desc(clientRequest.createdAt));
+      .orderBy(desc(representativeRequest.createdAt));
 
     return requests as any;
   });
@@ -319,20 +319,20 @@ export const completeClientRequest = createServerFn({ method: 'POST' })
 
     // Find the request to verify the user has access to this client
     const [request] = await db
-      .select({ id: clientRequest.id, clientId: clientRequest.clientId })
-      .from(clientRequest)
-      .where(eq(clientRequest.id, data.requestId))
+      .select({ id: representativeRequest.id, clientId: representativeRequest.representativeId })
+      .from(representativeRequest)
+      .where(eq(representativeRequest.id, data.requestId))
       .limit(1);
 
     if (!request) throw new Error('Solicitud no encontrada');
 
     // Validate user has access to the client
-    await getClientPortalAccess(userId, request.clientId);
+    await getRepresentativePortalAccess(userId, request.clientId);
 
     await db
-      .update(clientRequest)
+      .update(representativeRequest)
       .set({ status: 'completed', completedAt: new Date() })
-      .where(eq(clientRequest.id, data.requestId));
+      .where(eq(representativeRequest.id, data.requestId));
 
     return { success: true };
   });
@@ -351,38 +351,38 @@ export const listClientRequests = createServerFn({ method: 'GET' })
 
     // Validate client belongs to org
     const [clientRow] = await db
-      .select({ id: client.id })
-      .from(client)
+      .select({ id: representative.id })
+      .from(representative)
       .where(
-        and(eq(client.id, data.clientId), eq(client.organizationId, orgId))
+        and(eq(representative.id, data.clientId), eq(representative.organizationId, orgId))
       )
       .limit(1);
     if (!clientRow) throw new Error('Cliente no encontrado');
 
-    const conditions = [eq(clientRequest.clientId, data.clientId)];
+    const conditions = [eq(representativeRequest.representativeId, data.clientId)];
     if (data.status) {
-      conditions.push(eq(clientRequest.status, data.status));
+      conditions.push(eq(representativeRequest.status, data.status));
     }
 
     const rows = await db
       .select({
-        id: clientRequest.id,
-        organizationId: clientRequest.organizationId,
-        clientId: clientRequest.clientId,
-        profileId: clientRequest.profileId,
-        requestedByUserId: clientRequest.requestedByUserId,
-        title: clientRequest.title,
-        description: clientRequest.description,
-        type: clientRequest.type,
-        status: clientRequest.status,
-        dueAt: clientRequest.dueAt,
-        completedAt: clientRequest.completedAt,
-        metadata: clientRequest.metadata,
-        createdAt: clientRequest.createdAt,
+        id: representativeRequest.id,
+        organizationId: representativeRequest.organizationId,
+        clientId: representativeRequest.representativeId,
+        profileId: representativeRequest.profileId,
+        requestedByUserId: representativeRequest.requestedByUserId,
+        title: representativeRequest.title,
+        description: representativeRequest.description,
+        type: representativeRequest.type,
+        status: representativeRequest.status,
+        dueAt: representativeRequest.dueAt,
+        completedAt: representativeRequest.completedAt,
+        metadata: representativeRequest.metadata,
+        createdAt: representativeRequest.createdAt,
       })
-      .from(clientRequest)
+      .from(representativeRequest)
       .where(and(...conditions))
-      .orderBy(desc(clientRequest.createdAt));
+      .orderBy(desc(representativeRequest.createdAt));
     return rows as any;
   });
 
@@ -403,19 +403,19 @@ export const createClientRequest = createServerFn({ method: 'POST' })
 
     // Validate client belongs to org
     const [clientRow] = await db
-      .select({ id: client.id })
-      .from(client)
+      .select({ id: representative.id })
+      .from(representative)
       .where(
-        and(eq(client.id, data.clientId), eq(client.organizationId, orgId))
+        and(eq(representative.id, data.clientId), eq(representative.organizationId, orgId))
       )
       .limit(1);
     if (!clientRow) throw new Error('Cliente no encontrado');
 
     const [created] = await db
-      .insert(clientRequest)
+      .insert(representativeRequest)
       .values({
         organizationId: orgId,
-        clientId: data.clientId,
+        representativeId: data.clientId,
         requestedByUserId: userId,
         title: data.title,
         description: data.description ?? null,
@@ -424,18 +424,18 @@ export const createClientRequest = createServerFn({ method: 'POST' })
         dueAt: data.dueAt ? new Date(data.dueAt) : null,
       })
       .returning({
-        id: clientRequest.id,
-        organizationId: clientRequest.organizationId,
-        clientId: clientRequest.clientId,
-        profileId: clientRequest.profileId,
-        requestedByUserId: clientRequest.requestedByUserId,
-        title: clientRequest.title,
-        description: clientRequest.description,
-        type: clientRequest.type,
-        status: clientRequest.status,
-        dueAt: clientRequest.dueAt,
-        completedAt: clientRequest.completedAt,
-        createdAt: clientRequest.createdAt,
+        id: representativeRequest.id,
+        organizationId: representativeRequest.organizationId,
+        clientId: representativeRequest.representativeId,
+        profileId: representativeRequest.profileId,
+        requestedByUserId: representativeRequest.requestedByUserId,
+        title: representativeRequest.title,
+        description: representativeRequest.description,
+        type: representativeRequest.type,
+        status: representativeRequest.status,
+        dueAt: representativeRequest.dueAt,
+        completedAt: representativeRequest.completedAt,
+        createdAt: representativeRequest.createdAt,
       });
 
     return created;
@@ -457,19 +457,19 @@ export const uploadDocumentForRequest = createServerFn({ method: 'POST' })
 
     const [request] = await db
       .select({
-        id: clientRequest.id,
-        clientId: clientRequest.clientId,
-        status: clientRequest.status,
+        id: representativeRequest.id,
+        clientId: representativeRequest.representativeId,
+        status: representativeRequest.status,
       })
-      .from(clientRequest)
-      .where(eq(clientRequest.id, data.requestId))
+      .from(representativeRequest)
+      .where(eq(representativeRequest.id, data.requestId))
       .limit(1);
 
     if (!request) throw new Error('Solicitud no encontrada');
     if (request.status !== 'open')
       throw new Error('La solicitud no está abierta');
 
-    const access = await getClientPortalAccess(userId, request.clientId);
+    const access = await getRepresentativePortalAccess(userId, request.clientId);
     if (!access.canUploadDocuments) {
       throw new Error('No tienes permiso para subir documentos');
     }
@@ -478,7 +478,7 @@ export const uploadDocumentForRequest = createServerFn({ method: 'POST' })
     const [doc] = await db
       .insert(documentTable)
       .values({
-        client: request.clientId,
+        representativeId: request.representativeId,
         type: 'uploaded',
         name: data.fileName,
         url: dataUrl,
@@ -490,7 +490,7 @@ export const uploadDocumentForRequest = createServerFn({ method: 'POST' })
       .returning({ id: documentTable.id });
 
     await db
-      .update(clientRequest)
+      .update(representativeRequest)
       .set({
         metadata: {
           documentId: doc.id,
@@ -500,7 +500,7 @@ export const uploadDocumentForRequest = createServerFn({ method: 'POST' })
           uploadedByUserId: userId,
         } as any,
       })
-      .where(eq(clientRequest.id, data.requestId));
+      .where(eq(representativeRequest.id, data.requestId));
 
     return { documentId: doc.id, success: true };
   });
@@ -511,13 +511,13 @@ export const getRequestDocument = createServerFn({ method: 'GET' })
     const { orgId } = await getSessionWithOrg();
 
     const [requestRow] = await db
-      .select({ id: clientRequest.id, metadata: clientRequest.metadata })
-      .from(clientRequest)
-      .innerJoin(client, eq(client.id, clientRequest.clientId))
+      .select({ id: representativeRequest.id, metadata: representativeRequest.metadata })
+      .from(representativeRequest)
+      .innerJoin(representative, eq(representative.id, representativeRequest.representativeId))
       .where(
         and(
-          eq(clientRequest.id, data.requestId),
-          eq(client.organizationId, orgId)
+          eq(representativeRequest.id, data.requestId),
+          eq(representative.organizationId, orgId)
         )
       )
       .limit(1);
@@ -558,11 +558,11 @@ export const updateClientRequestStatus = createServerFn({ method: 'POST' })
     // Validate request belongs to org
     const [existing] = await db
       .select({
-        id: clientRequest.id,
-        organizationId: clientRequest.organizationId,
+        id: representativeRequest.id,
+        organizationId: representativeRequest.organizationId,
       })
-      .from(clientRequest)
-      .where(eq(clientRequest.id, data.requestId))
+      .from(representativeRequest)
+      .where(eq(representativeRequest.id, data.requestId))
       .limit(1);
     if (!existing || existing.organizationId !== orgId) {
       throw new Error('Solicitud no encontrada');
@@ -571,9 +571,9 @@ export const updateClientRequestStatus = createServerFn({ method: 'POST' })
     const completedAt = data.status === 'completed' ? new Date() : null;
 
     await db
-      .update(clientRequest)
+      .update(representativeRequest)
       .set({ status: data.status, completedAt })
-      .where(eq(clientRequest.id, data.requestId));
+      .where(eq(representativeRequest.id, data.requestId));
 
     return { success: true };
   });

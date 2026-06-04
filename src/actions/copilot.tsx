@@ -2,8 +2,8 @@ import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
 import { db, dbReadonly } from '@/lib/db';
 import {
+  representative,
   client,
-  profile,
   ivaScrape,
   invoice,
   movements,
@@ -89,12 +89,12 @@ export const getIvaPositionForCopilot = createServerFn({ method: 'POST' })
     const { clientName, displayMonth, profileName } = ctx.data;
 
     const matchingClients = await dbReadonly
-      .select({ id: client.id, name: client.name })
-      .from(client)
+      .select({ id: representative.id, name: sql<string>`coalesce(${representative.name}, '')` })
+      .from(representative)
       .where(
         and(
-          eq(client.organizationId, orgId),
-          ilike(client.name, `%${clientName}%`)
+          eq(representative.organizationId, orgId),
+          ilike(representative.name, `%${clientName}%`)
         )
       );
 
@@ -112,18 +112,18 @@ export const getIvaPositionForCopilot = createServerFn({ method: 'POST' })
 
     const profileWhere = profileName
       ? and(
-          eq(profile.client, foundClient.id),
-          ilike(profile.name, `%${profileName}%`)
+          eq(client.representativeId, foundClient.id),
+          ilike(client.name, `%${profileName}%`)
         )
-      : eq(profile.client, foundClient.id);
+      : eq(client.representativeId, foundClient.id);
 
     const profiles = await dbReadonly
       .select({
-        id: profile.id,
-        name: profile.name,
-        identityNumber: profile.identityNumber,
+        id: client.id,
+        name: client.name,
+        identityNumber: client.identityNumber,
       })
-      .from(profile)
+      .from(client)
       .where(profileWhere);
 
     if (profiles.length === 0) {
@@ -193,7 +193,7 @@ export const getIvaPositionForCopilot = createServerFn({ method: 'POST' })
         .from(ivaScrape)
         .where(
           and(
-            eq(ivaScrape.profileId, p.id),
+            eq(ivaScrape.clientId, p.id),
             eq(ivaScrape.periodoFiscal, ivaScrapeperiod)
           )
         )
@@ -217,7 +217,7 @@ export const getIvaPositionForCopilot = createServerFn({ method: 'POST' })
         .from(invoice)
         .where(
           and(
-            eq(invoice.profile, p.id),
+            eq(invoice.clientId, p.id),
             gte(invoice.emitionDate, dateFrom),
             lte(invoice.emitionDate, dateTo)
           )
@@ -362,21 +362,21 @@ export const resolveClientForCopilot = createServerFn({ method: 'POST' })
 
     if (clientId) {
       const [row] = await dbReadonly
-        .select({ id: client.id, name: client.name })
-        .from(client)
-        .where(and(eq(client.id, clientId), eq(client.organizationId, orgId)))
+        .select({ id: representative.id, name: sql<string>`coalesce(${representative.name}, '')` })
+        .from(representative)
+        .where(and(eq(representative.id, clientId), eq(representative.organizationId, orgId)))
         .limit(1);
       if (!row) return { error: 'Cliente no encontrado o fuera del estudio.' };
       return { id: row.id, name: row.name };
     }
 
     const matches = await dbReadonly
-      .select({ id: client.id, name: client.name })
-      .from(client)
+      .select({ id: representative.id, name: sql<string>`coalesce(${representative.name}, '')` })
+      .from(representative)
       .where(
         and(
-          eq(client.organizationId, orgId),
-          ilike(client.name, `%${clientName!}%`)
+          eq(representative.organizationId, orgId),
+          ilike(representative.name, `%${clientName!}%`)
         )
       );
     if (matches.length === 0) {
@@ -465,9 +465,9 @@ export const persistBankStatementMovements = createServerFn({ method: 'POST' })
     const { clientId, banco, ingresos, egresos } = ctx.data;
 
     const [target] = await db
-      .select({ id: client.id, name: client.name })
-      .from(client)
-      .where(and(eq(client.id, clientId), eq(client.organizationId, orgId)))
+      .select({ id: representative.id, name: sql<string>`coalesce(${representative.name}, '')` })
+      .from(representative)
+      .where(and(eq(representative.id, clientId), eq(representative.organizationId, orgId)))
       .limit(1);
     if (!target) {
       throw new Error('Cliente no encontrado o fuera del estudio.');
@@ -570,13 +570,13 @@ export const getResumenSaludCliente = createServerFn({ method: 'POST' })
     if (clientId) {
       const [byId] = await dbReadonly
         .select({
-          id: client.id,
-          name: client.name,
-          identityNumber: client.identityNumber,
+          id: representative.id,
+          name: sql<string>`coalesce(${representative.name}, '')`,
+          identityNumber: representative.cuit,
         })
-        .from(client)
+        .from(representative)
         .where(
-          and(eq(client.id, clientId), eq(client.organizationId, orgId))
+          and(eq(representative.id, clientId), eq(representative.organizationId, orgId))
         )
         .limit(1);
       if (byId) target = byId;
@@ -586,15 +586,15 @@ export const getResumenSaludCliente = createServerFn({ method: 'POST' })
     if (!target && clientName) {
       const matches = await dbReadonly
         .select({
-          id: client.id,
-          name: client.name,
-          identityNumber: client.identityNumber,
+          id: representative.id,
+          name: sql<string>`coalesce(${representative.name}, '')`,
+          identityNumber: representative.cuit,
         })
-        .from(client)
+        .from(representative)
         .where(
           and(
-            eq(client.organizationId, orgId),
-            ilike(client.name, `%${clientName}%`)
+            eq(representative.organizationId, orgId),
+            ilike(representative.name, `%${clientName}%`)
           )
         )
         .limit(5);
@@ -622,12 +622,12 @@ export const getResumenSaludCliente = createServerFn({ method: 'POST' })
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
     const [debtRows, notifRow, jobRows, invoiceAgg] = await Promise.all([
-      dbReadonly.select().from(debt).where(eq(debt.client, target.id)),
+      dbReadonly.select().from(debt).where(eq(debt.representativeId, target.id)),
       dbReadonly
         .select({ count: sql<number>`count(*)` })
         .from(notification)
         .where(
-          and(eq(notification.client, target.id), eq(notification.opened, false))
+          and(eq(notification.representativeId, target.id), eq(notification.opened, false))
         ),
       // Último job de cada tipo
       dbReadonly
@@ -639,7 +639,7 @@ export const getResumenSaludCliente = createServerFn({ method: 'POST' })
           failedReason: job.failedReason,
         })
         .from(job)
-        .where(eq(job.clientId, target.id))
+        .where(eq(job.representativeId, target.id))
         .orderBy(desc(job.createdAt))
         .limit(50),
       // Facturación del mes
@@ -650,10 +650,10 @@ export const getResumenSaludCliente = createServerFn({ method: 'POST' })
           count: sql<number>`count(*)`,
         })
         .from(invoice)
-        .innerJoin(profile, eq(invoice.profile, profile.id))
+        .innerJoin(client, eq(invoice.clientId, client.id))
         .where(
           and(
-            eq(profile.client, target.id),
+            eq(client.representativeId, target.id),
             gte(invoice.emitionDate, monthStart),
             lte(invoice.emitionDate, monthEnd)
           )
