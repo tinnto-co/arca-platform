@@ -1,0 +1,329 @@
+/**
+ * Exportes del Libro Mayor a Excel (exceljs) y PDF (@react-pdf/renderer).
+ * Formato "Libro Mayor" con disclaimer de valores históricos (PRD §6.11).
+ */
+import ExcelJSRaw from 'exceljs';
+import { Document, Page, View, Text, StyleSheet, pdf } from '@react-pdf/renderer';
+import { MONTH_NAMES, JOURNAL_ORIGIN_LABELS } from '@/lib/accounting-labels';
+
+interface XLBorderLine {
+  style: string;
+  color?: { argb: string };
+}
+interface XLCell {
+  value: unknown;
+  font?: { bold?: boolean; italic?: boolean; size?: number; color?: { argb: string } };
+  numFmt?: string;
+  alignment?: { horizontal?: 'left' | 'right' | 'center'; vertical?: string };
+  fill?: { type: 'pattern'; pattern: 'solid'; fgColor: { argb: string } };
+  border?: { top?: XLBorderLine; bottom?: XLBorderLine };
+}
+interface XLRow {
+  number: number;
+  height?: number;
+  getCell(col: number): XLCell;
+}
+interface XLWorksheet {
+  getColumn(col: number): { width?: number };
+  getRow(row: number): XLRow;
+  addRow(values: unknown[]): XLRow;
+  mergeCells(range: string): void;
+  columns: { width?: number }[];
+}
+const ExcelJS = ExcelJSRaw as unknown as {
+  Workbook: new () => {
+    addWorksheet(
+      name: string,
+      options?: { views?: { showGridLines?: boolean }[] }
+    ): XLWorksheet;
+    xlsx: { writeBuffer(): Promise<ArrayBuffer | Buffer> };
+  };
+};
+
+const GREY = 'FFEFEFEF';
+const BORDER_GREY = 'FFBBBBBB';
+const MONEY_FMT = '#,##0.00';
+/** Saldo numérico con sufijo D (positivo) / H (negativo). */
+const SALDO_FMT = '#,##0.00" D";#,##0.00" H";"0,00"';
+
+export interface MayorRow {
+  entryDate: string | Date;
+  number: number;
+  description: string | null;
+  lineDescription: string | null;
+  origin: string;
+  debit: number;
+  credit: number;
+  balance: number;
+}
+export interface MayorSection {
+  code: string;
+  name: string;
+  saldoInicial: number;
+  rows: MayorRow[];
+  totalDebit: number;
+  totalCredit: number;
+  saldoFinal: number;
+}
+export interface MayorExportData {
+  empresaName: string;
+  fiscalYearNumber: number | null;
+  from: string | Date;
+  to: string | Date;
+  sections: MayorSection[];
+}
+
+const DISCLAIMER =
+  'Valores históricos sin ajuste por inflación (RT 6). Uso interno / presentación informal.';
+
+function fmtDate(d: string | Date): string {
+  return new Date(d).toLocaleDateString('es-AR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+function fmtMoney(n: number): string {
+  return n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function saldoLabel(n: number): string {
+  if (Math.abs(n) < 0.005) return '0,00';
+  return `${fmtMoney(Math.abs(n))} ${n >= 0 ? 'D' : 'H'}`;
+}
+function sanitizeSheet(name: string): string {
+  return name.replace(/[\\/?*[\]:]/g, '-').slice(0, 31) || 'Mayor';
+}
+function triggerDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/* ─────────────────────────────── Excel ─────────────────────────────── */
+
+const HEADERS = ['Fecha', 'N° Asiento', 'Descripción', 'Origen', 'Debe', 'Haber', 'Saldo'];
+const NCOLS = 7;
+
+function setBold(row: XLRow, cols = NCOLS) {
+  for (let c = 1; c <= cols; c++) row.getCell(c).font = { bold: true };
+}
+function fillRow(row: XLRow, argb: string, cols = NCOLS) {
+  for (let c = 1; c <= cols; c++) {
+    row.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb } };
+  }
+}
+function rightAlignAmounts(row: XLRow) {
+  for (const c of [5, 6, 7]) row.getCell(c).alignment = { horizontal: 'right' };
+}
+
+function writeSection(ws: XLWorksheet, section: MayorSection) {
+  // Encabezado de cuenta (merge A:G, fondo gris).
+  const accRow = ws.addRow([`${section.code} · ${section.name}`]);
+  ws.mergeCells(`A${accRow.number}:G${accRow.number}`);
+  accRow.getCell(1).font = { bold: true, size: 11 };
+  fillRow(accRow, GREY);
+
+  // Columnas.
+  const head = ws.addRow(HEADERS);
+  setBold(head);
+  fillRow(head, 'FFF8F8F8');
+  rightAlignAmounts(head);
+  for (let c = 1; c <= NCOLS; c++) {
+    head.getCell(c).border = { bottom: { style: 'thin', color: { argb: BORDER_GREY } } };
+  }
+
+  // Saldo inicial.
+  const ini = ws.addRow(['', '', 'Saldo inicial', '', null, null, section.saldoInicial]);
+  ini.getCell(3).font = { italic: true, color: { argb: 'FF888888' } };
+  ini.getCell(7).numFmt = SALDO_FMT;
+  ini.getCell(7).alignment = { horizontal: 'right' };
+
+  // Movimientos.
+  for (const r of section.rows) {
+    const row = ws.addRow([
+      fmtDate(r.entryDate),
+      r.number,
+      r.description ?? r.lineDescription ?? '',
+      JOURNAL_ORIGIN_LABELS[r.origin] ?? r.origin,
+      r.debit > 0 ? r.debit : null,
+      r.credit > 0 ? r.credit : null,
+      r.balance,
+    ]);
+    row.getCell(5).numFmt = MONEY_FMT;
+    row.getCell(6).numFmt = MONEY_FMT;
+    row.getCell(7).numFmt = SALDO_FMT;
+    rightAlignAmounts(row);
+  }
+
+  // Totales.
+  const tot = ws.addRow([
+    '',
+    '',
+    'Totales',
+    '',
+    section.totalDebit,
+    section.totalCredit,
+    section.saldoFinal,
+  ]);
+  setBold(tot);
+  tot.getCell(5).numFmt = MONEY_FMT;
+  tot.getCell(6).numFmt = MONEY_FMT;
+  tot.getCell(7).numFmt = SALDO_FMT;
+  rightAlignAmounts(tot);
+  for (let c = 1; c <= NCOLS; c++) {
+    tot.getCell(c).border = { top: { style: 'thin', color: { argb: BORDER_GREY } } };
+  }
+  ws.addRow([]); // separación
+}
+
+function writeTitle(ws: XLWorksheet, data: MayorExportData) {
+  const t1 = ws.addRow([data.empresaName]);
+  t1.getCell(1).font = { bold: true, size: 14 };
+  const t2 = ws.addRow([
+    `Libro Mayor · Ejercicio N°${data.fiscalYearNumber ?? ''} · ${fmtDate(data.from)} a ${fmtDate(data.to)}`,
+  ]);
+  t2.getCell(1).font = { color: { argb: 'FF555555' } };
+  const t3 = ws.addRow([DISCLAIMER]);
+  t3.getCell(1).font = { italic: true, size: 8, color: { argb: 'FF999999' } };
+  ws.addRow([]);
+}
+
+function setWidths(ws: XLWorksheet) {
+  [13, 11, 42, 16, 15, 15, 16].forEach((w, i) => {
+    if (ws.columns[i]) ws.columns[i].width = w;
+  });
+}
+
+export async function exportMayorExcel(
+  data: MayorExportData,
+  opts: { sheetPerAccount: boolean }
+): Promise<void> {
+  const wb = new ExcelJS.Workbook();
+
+  if (opts.sheetPerAccount && data.sections.length > 1) {
+    for (const section of data.sections) {
+      const ws = wb.addWorksheet(sanitizeSheet(`${section.code} ${section.name}`), {
+        views: [{ showGridLines: false }],
+      });
+      writeTitle(ws, data);
+      writeSection(ws, section);
+      setWidths(ws);
+    }
+  } else {
+    const ws = wb.addWorksheet('Mayor', { views: [{ showGridLines: false }] });
+    writeTitle(ws, data);
+    for (const section of data.sections) writeSection(ws, section);
+    setWidths(ws);
+  }
+
+  const buffer = await wb.xlsx.writeBuffer();
+  triggerDownload(
+    new Blob([buffer as ArrayBuffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    }),
+    `mayor_${Date.now()}.xlsx`
+  );
+}
+
+/* ─────────────────────────────── PDF ─────────────────────────────── */
+
+const s = StyleSheet.create({
+  page: { padding: 28, fontSize: 8, fontFamily: 'Helvetica', color: '#1a1a1a' },
+  empresa: { fontSize: 13, fontFamily: 'Helvetica-Bold' },
+  sub: { fontSize: 9, marginTop: 2, color: '#444' },
+  disclaimer: { fontSize: 7, marginTop: 4, color: '#888', fontStyle: 'italic' },
+  acctHead: {
+    marginTop: 12,
+    marginBottom: 2,
+    fontSize: 9,
+    fontFamily: 'Helvetica-Bold',
+    backgroundColor: '#f0f0f0',
+    padding: 3,
+  },
+  row: { flexDirection: 'row', borderBottom: '0.5pt solid #e5e5e5', paddingVertical: 2 },
+  th: { flexDirection: 'row', borderBottom: '1pt solid #999', paddingVertical: 2, fontFamily: 'Helvetica-Bold' },
+  totalRow: { flexDirection: 'row', borderTop: '1pt solid #999', paddingVertical: 2, fontFamily: 'Helvetica-Bold' },
+  cFecha: { width: '11%' },
+  cNum: { width: '8%' },
+  cDesc: { width: '37%' },
+  cOrig: { width: '14%' },
+  cDebe: { width: '10%', textAlign: 'right' },
+  cHaber: { width: '10%', textAlign: 'right' },
+  cSaldo: { width: '10%', textAlign: 'right' },
+});
+
+function MayorPdfDoc({ data }: { data: MayorExportData }) {
+  return (
+    <Document>
+      <Page size="A4" orientation="landscape" style={s.page} wrap>
+        <Text style={s.empresa}>{data.empresaName}</Text>
+        <Text style={s.sub}>
+          Libro Mayor · Ejercicio N°{data.fiscalYearNumber ?? ''} · {fmtDate(data.from)} a{' '}
+          {fmtDate(data.to)}
+        </Text>
+        <Text style={s.disclaimer}>{DISCLAIMER}</Text>
+
+        {data.sections.map((section) => (
+          <View key={section.code} wrap={false}>
+            <Text style={s.acctHead}>
+              {section.code} · {section.name}
+            </Text>
+            <View style={s.th}>
+              <Text style={s.cFecha}>Fecha</Text>
+              <Text style={s.cNum}>Asiento</Text>
+              <Text style={s.cDesc}>Detalle</Text>
+              <Text style={s.cOrig}>Origen</Text>
+              <Text style={s.cDebe}>Debe</Text>
+              <Text style={s.cHaber}>Haber</Text>
+              <Text style={s.cSaldo}>Saldo</Text>
+            </View>
+            <View style={s.row}>
+              <Text style={s.cFecha} />
+              <Text style={s.cNum} />
+              <Text style={s.cDesc}>Saldo inicial</Text>
+              <Text style={s.cOrig} />
+              <Text style={s.cDebe} />
+              <Text style={s.cHaber} />
+              <Text style={s.cSaldo}>{saldoLabel(section.saldoInicial)}</Text>
+            </View>
+            {section.rows.map((r, i) => (
+              <View key={i} style={s.row}>
+                <Text style={s.cFecha}>{fmtDate(r.entryDate)}</Text>
+                <Text style={s.cNum}>{r.number}</Text>
+                <Text style={s.cDesc}>{r.description ?? r.lineDescription ?? ''}</Text>
+                <Text style={s.cOrig}>{JOURNAL_ORIGIN_LABELS[r.origin] ?? r.origin}</Text>
+                <Text style={s.cDebe}>{r.debit ? fmtMoney(r.debit) : ''}</Text>
+                <Text style={s.cHaber}>{r.credit ? fmtMoney(r.credit) : ''}</Text>
+                <Text style={s.cSaldo}>{saldoLabel(r.balance)}</Text>
+              </View>
+            ))}
+            <View style={s.totalRow}>
+              <Text style={s.cFecha} />
+              <Text style={s.cNum} />
+              <Text style={s.cDesc}>Totales</Text>
+              <Text style={s.cOrig} />
+              <Text style={s.cDebe}>{fmtMoney(section.totalDebit)}</Text>
+              <Text style={s.cHaber}>{fmtMoney(section.totalCredit)}</Text>
+              <Text style={s.cSaldo}>{saldoLabel(section.saldoFinal)}</Text>
+            </View>
+          </View>
+        ))}
+      </Page>
+    </Document>
+  );
+}
+
+export async function exportMayorPdf(data: MayorExportData): Promise<void> {
+  const blob = await pdf(<MayorPdfDoc data={data} />).toBlob();
+  triggerDownload(blob, `mayor_${Date.now()}.pdf`);
+}
+
+/* MONTH_NAMES re-export para evitar tree-shaking accidental si se usa en el futuro. */
+export { MONTH_NAMES };

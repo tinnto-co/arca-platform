@@ -21,7 +21,7 @@ import {
   user,
 } from '@/drizzle/schema';
 import { getSessionWithOrg, getMemberRole, assertCanWrite } from '@/actions/helpers';
-import { and, asc, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from 'drizzle-orm';
 import { CUSTOM_CODE_PREFIX, PENDING_REVIEW_CODE } from '@/lib/accounting-labels';
 
 /* ───────────────────────────── Helpers ───────────────────────────── */
@@ -1625,5 +1625,342 @@ export const getJournalEntry = createServerFn({ method: 'GET' })
         credit: parseFloat(l.credit),
       })),
       log: logRows,
+    };
+  });
+
+/* ═══════════════════════ MAYOR / LIBRO MAYOR (US 2.1.x) ═══════════════════════ */
+
+/** Resuelve el ejercicio: el indicado, o el abierto, o el más reciente. */
+async function resolveFiscalYear(
+  clientId: string,
+  orgId: string,
+  fiscalYearId?: string
+): Promise<FiscalYearRow | null> {
+  if (fiscalYearId) return loadFiscalYearForOrg(fiscalYearId, orgId);
+  const [fy] = await db
+    .select()
+    .from(fiscalYear)
+    .where(eq(fiscalYear.clientId, clientId))
+    .orderBy(
+      sql`case when ${fiscalYear.status} = 'open' then 0 else 1 end`,
+      desc(fiscalYear.number)
+    )
+    .limit(1);
+  return fy ?? null;
+}
+
+export interface LedgerRow {
+  entryId: string;
+  number: number;
+  entryDate: string | Date;
+  description: string | null;
+  lineDescription: string | null;
+  origin: string;
+  debit: number;
+  credit: number;
+  balance: number;
+}
+
+/** Mayor de una cuenta puntual con saldo inicial, movimientos y saldo final. (US 2.1.1) */
+export const getLedgerAccount = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      accountId: z.string().uuid(),
+      fiscalYearId: z.string().uuid().optional(),
+      from: z.string().optional(),
+      to: z.string().optional(),
+      origin: z
+        .enum([
+          'manual',
+          'auto_invoice',
+          'auto_payroll',
+          'auto_closing',
+          'auto_opening',
+          'import_excel',
+        ])
+        .optional(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const d = ctx.data;
+    await ensureClientBelongsToOrg(d.clientId, orgId);
+    const acc = await loadAccountForClient(d.accountId, orgId, d.clientId);
+    const fy = await resolveFiscalYear(d.clientId, orgId, d.fiscalYearId);
+    if (!fy) {
+      return null;
+    }
+
+    const fromDate = d.from ? new Date(`${d.from}T00:00:00Z`) : fy.startDate;
+    const toDate = d.to ? new Date(`${d.to}T00:00:00Z`) : fy.endDate;
+
+    // Saldo inicial = neto acumulado antes de `fromDate` dentro del ejercicio.
+    const [si] = await db
+      .select({
+        d: sql<string>`coalesce(sum(${journalEntryLine.debit}),0)`,
+        h: sql<string>`coalesce(sum(${journalEntryLine.credit}),0)`,
+      })
+      .from(journalEntryLine)
+      .innerJoin(journalEntry, eq(journalEntry.id, journalEntryLine.journalEntryId))
+      .where(
+        and(
+          eq(journalEntryLine.clientId, d.clientId),
+          eq(journalEntryLine.accountId, d.accountId),
+          eq(journalEntry.fiscalYearId, fy.id),
+          eq(journalEntry.isVoided, false),
+          lt(journalEntry.entryDate, fromDate)
+        )
+      );
+    const saldoInicial = parseFloat(si.d) - parseFloat(si.h);
+
+    const conds = [
+      eq(journalEntryLine.clientId, d.clientId),
+      eq(journalEntryLine.accountId, d.accountId),
+      eq(journalEntry.fiscalYearId, fy.id),
+      eq(journalEntry.isVoided, false),
+      gte(journalEntry.entryDate, fromDate),
+      lte(journalEntry.entryDate, toDate),
+    ];
+    if (d.origin) conds.push(eq(journalEntry.origin, d.origin));
+
+    const raw = await db
+      .select({
+        entryId: journalEntry.id,
+        number: journalEntry.number,
+        entryDate: journalEntry.entryDate,
+        description: journalEntry.description,
+        origin: journalEntry.origin,
+        lineDescription: journalEntryLine.description,
+        debit: journalEntryLine.debit,
+        credit: journalEntryLine.credit,
+        lineOrder: journalEntryLine.lineOrder,
+      })
+      .from(journalEntryLine)
+      .innerJoin(journalEntry, eq(journalEntry.id, journalEntryLine.journalEntryId))
+      .where(and(...conds))
+      .orderBy(
+        asc(journalEntry.entryDate),
+        asc(journalEntry.number),
+        asc(journalEntryLine.lineOrder)
+      );
+
+    let running = saldoInicial;
+    let totalDebit = 0;
+    let totalCredit = 0;
+    const rows: LedgerRow[] = raw.map((r) => {
+      const debit = parseFloat(r.debit);
+      const credit = parseFloat(r.credit);
+      running += debit - credit;
+      totalDebit += debit;
+      totalCredit += credit;
+      return {
+        entryId: r.entryId,
+        number: r.number,
+        entryDate: r.entryDate,
+        description: r.description,
+        lineDescription: r.lineDescription,
+        origin: r.origin,
+        debit,
+        credit,
+        balance: running,
+      };
+    });
+
+    return {
+      account: { id: acc.id, code: acc.code, name: acc.name },
+      fiscalYear: { id: fy.id, number: fy.number },
+      from: fromDate,
+      to: toDate,
+      saldoInicial,
+      rows,
+      totalDebit,
+      totalCredit,
+      saldoFinal: saldoInicial + totalDebit - totalCredit,
+    };
+  });
+
+export interface ConsolidatedAccount {
+  accountId: string;
+  code: string;
+  name: string;
+  saldoInicial: number;
+  movements: LedgerRow[];
+  totalDebit: number;
+  totalCredit: number;
+  saldoFinal: number;
+}
+
+/** Mayor consolidado: todas las cuentas con movimientos en el rango, agrupadas. (US 2.1.2) */
+export const getLedgerConsolidated = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid().optional(),
+      from: z.string().optional(),
+      to: z.string().optional(),
+      origin: z
+        .enum([
+          'manual',
+          'auto_invoice',
+          'auto_payroll',
+          'auto_closing',
+          'auto_opening',
+          'import_excel',
+        ])
+        .optional(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const d = ctx.data;
+    await ensureClientBelongsToOrg(d.clientId, orgId);
+    const fy = await resolveFiscalYear(d.clientId, orgId, d.fiscalYearId);
+    if (!fy) {
+      return { fiscalYear: null, accounts: [], grandTotalDebit: 0, grandTotalCredit: 0 };
+    }
+
+    const fromDate = d.from ? new Date(`${d.from}T00:00:00Z`) : fy.startDate;
+    const toDate = d.to ? new Date(`${d.to}T00:00:00Z`) : fy.endDate;
+
+    // Saldos iniciales por cuenta (antes de fromDate).
+    const initials = await db
+      .select({
+        accountId: journalEntryLine.accountId,
+        d: sql<string>`coalesce(sum(${journalEntryLine.debit}),0)`,
+        h: sql<string>`coalesce(sum(${journalEntryLine.credit}),0)`,
+      })
+      .from(journalEntryLine)
+      .innerJoin(journalEntry, eq(journalEntry.id, journalEntryLine.journalEntryId))
+      .where(
+        and(
+          eq(journalEntryLine.clientId, d.clientId),
+          eq(journalEntry.fiscalYearId, fy.id),
+          eq(journalEntry.isVoided, false),
+          lt(journalEntry.entryDate, fromDate)
+        )
+      )
+      .groupBy(journalEntryLine.accountId);
+    const initialByAccount = new Map(
+      initials.map((i) => [i.accountId, parseFloat(i.d) - parseFloat(i.h)])
+    );
+
+    const conds = [
+      eq(journalEntryLine.clientId, d.clientId),
+      eq(journalEntry.fiscalYearId, fy.id),
+      eq(journalEntry.isVoided, false),
+      gte(journalEntry.entryDate, fromDate),
+      lte(journalEntry.entryDate, toDate),
+    ];
+    if (d.origin) conds.push(eq(journalEntry.origin, d.origin));
+
+    const raw = await db
+      .select({
+        accountId: journalEntryLine.accountId,
+        code: account.code,
+        name: account.name,
+        entryId: journalEntry.id,
+        number: journalEntry.number,
+        entryDate: journalEntry.entryDate,
+        description: journalEntry.description,
+        origin: journalEntry.origin,
+        lineDescription: journalEntryLine.description,
+        debit: journalEntryLine.debit,
+        credit: journalEntryLine.credit,
+        lineOrder: journalEntryLine.lineOrder,
+      })
+      .from(journalEntryLine)
+      .innerJoin(journalEntry, eq(journalEntry.id, journalEntryLine.journalEntryId))
+      .innerJoin(account, eq(account.id, journalEntryLine.accountId))
+      .where(and(...conds))
+      .orderBy(
+        asc(account.code),
+        asc(journalEntry.entryDate),
+        asc(journalEntry.number),
+        asc(journalEntryLine.lineOrder)
+      );
+
+    const byAccount = new Map<string, ConsolidatedAccount>();
+    // Sembrar cuentas que tienen saldo inicial aunque no tengan movimientos en el rango.
+    for (const [accId, sIni] of initialByAccount) {
+      if (sIni === 0) continue;
+      byAccount.set(accId, {
+        accountId: accId,
+        code: '',
+        name: '',
+        saldoInicial: sIni,
+        movements: [],
+        totalDebit: 0,
+        totalCredit: 0,
+        saldoFinal: sIni,
+      });
+    }
+
+    for (const r of raw) {
+      let acc = byAccount.get(r.accountId);
+      if (!acc) {
+        const sIni = initialByAccount.get(r.accountId) ?? 0;
+        acc = {
+          accountId: r.accountId,
+          code: r.code,
+          name: r.name,
+          saldoInicial: sIni,
+          movements: [],
+          totalDebit: 0,
+          totalCredit: 0,
+          saldoFinal: sIni,
+        };
+        byAccount.set(r.accountId, acc);
+      }
+      acc.code = r.code;
+      acc.name = r.name;
+      const debit = parseFloat(r.debit);
+      const credit = parseFloat(r.credit);
+      acc.totalDebit += debit;
+      acc.totalCredit += credit;
+      acc.saldoFinal += debit - credit;
+      acc.movements.push({
+        entryId: r.entryId,
+        number: r.number,
+        entryDate: r.entryDate,
+        description: r.description,
+        lineDescription: r.lineDescription,
+        origin: r.origin,
+        debit,
+        credit,
+        balance: acc.saldoFinal,
+      });
+    }
+
+    // Completar code/name de cuentas que solo tenían saldo inicial (sin movimientos).
+    const missing = [...byAccount.values()].filter((a) => !a.code);
+    if (missing.length > 0) {
+      const metas = await db
+        .select({ id: account.id, code: account.code, name: account.name })
+        .from(account)
+        .where(inArray(account.id, missing.map((m) => m.accountId)));
+      const metaById = new Map(metas.map((m) => [m.id, m]));
+      for (const a of missing) {
+        const m = metaById.get(a.accountId);
+        if (m) {
+          a.code = m.code;
+          a.name = m.name;
+        }
+      }
+    }
+
+    const accounts = [...byAccount.values()].sort((a, b) =>
+      a.code.localeCompare(b.code, 'es', { numeric: true })
+    );
+    const grandTotalDebit = accounts.reduce((s, a) => s + a.totalDebit, 0);
+    const grandTotalCredit = accounts.reduce((s, a) => s + a.totalCredit, 0);
+
+    return {
+      fiscalYear: { id: fy.id, number: fy.number },
+      from: fromDate,
+      to: toDate,
+      accounts,
+      grandTotalDebit,
+      grandTotalCredit,
     };
   });

@@ -25,6 +25,8 @@ import {
   Ban,
   ChevronLeft,
   X,
+  Download,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { ArcaCard } from '@/components/dashboard/shared';
@@ -52,9 +54,19 @@ import {
   voidJournalEntry,
   getJournalEntry,
   getPostableAccounts,
+  getLedgerAccount,
+  getLedgerConsolidated,
   type ChartAccount,
   type PeriodView,
+  type LedgerRow,
+  type ConsolidatedAccount,
 } from '@/actions/accounting';
+import {
+  exportMayorExcel,
+  exportMayorPdf,
+  type MayorExportData,
+  type MayorSection,
+} from '@/lib/mayor-export';
 import {
   ACCOUNT_GROUP_LABELS,
   ACCOUNT_GROUP_SECTIONS,
@@ -156,7 +168,7 @@ function TabBar({
     { id: 'plan', label: 'Plan de cuentas', icon: List, ready: true },
     { id: 'ejercicios', label: 'Ejercicios', icon: CalendarDays, ready: true },
     { id: 'asientos', label: 'Asientos', icon: FileText, ready: true },
-    { id: 'mayor', label: 'Mayor', icon: BookOpen, ready: false },
+    { id: 'mayor', label: 'Mayor', icon: BookOpen, ready: true },
     { id: 'balance', label: 'Balance', icon: Scale, ready: false },
   ];
   return (
@@ -244,6 +256,12 @@ function AccountingPage() {
         <Ejercicios clientId={effectiveClientId} isOwner={isOwner} />
       ) : tab === 'asientos' ? (
         <Asientos clientId={effectiveClientId} canWrite={roleData?.role !== 'viewer'} />
+      ) : tab === 'mayor' ? (
+        <Mayor
+          clientId={effectiveClientId}
+          canWrite={roleData?.role !== 'viewer'}
+          clientName={clients.find((c) => c.id === effectiveClientId)?.name ?? ''}
+        />
       ) : (
         <ArcaCard>
           <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
@@ -2382,5 +2400,438 @@ function AsientoDetail({
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/* ════════════════════════ Mayor / Libro Mayor (US 2.1.x) ════════════════════════ */
+
+function saldoLabel(n: number): string {
+  if (Math.abs(n) < 0.005) return '$ 0,00';
+  return `$ ${fmtMoney(Math.abs(n))} ${n >= 0 ? 'D' : 'H'}`;
+}
+
+function Mayor({
+  clientId,
+  canWrite,
+  clientName,
+}: {
+  clientId: string;
+  canWrite: boolean;
+  clientName: string;
+}) {
+  const [mode, setMode] = useState<'cuenta' | 'consolidado'>('consolidado');
+  const [fiscalYearId, setFiscalYearId] = useState('');
+  const [accountId, setAccountId] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [origin, setOrigin] = useState('');
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [sheetPerAccount, setSheetPerAccount] = useState(false);
+
+  const { data: fiscalYears = [] } = useQuery({
+    queryKey: ['accounting', 'fiscal-years', clientId],
+    queryFn: () => getFiscalYears({ data: { clientId } }),
+  });
+  const effectiveFyId =
+    fiscalYearId !== ''
+      ? fiscalYearId
+      : (fiscalYears.find((y) => y.status === 'open')?.id ?? fiscalYears[0]?.id ?? '');
+
+  const { data: chart } = useQuery({
+    queryKey: ['accounting', 'chart', clientId],
+    queryFn: () => getChartOfAccounts({ data: { clientId } }),
+  });
+  const imputables = (chart?.accounts ?? []).filter((a) => a.type === 'imputable');
+
+  const originArg = (origin || undefined) as never;
+
+  const { data: ledger, isLoading: loadingLedger } = useQuery({
+    queryKey: ['accounting', 'ledger-account', clientId, accountId, effectiveFyId, from, to, origin],
+    queryFn: () =>
+      getLedgerAccount({
+        data: {
+          clientId,
+          accountId,
+          fiscalYearId: effectiveFyId || undefined,
+          from: from || undefined,
+          to: to || undefined,
+          origin: originArg,
+        },
+      }),
+    enabled: mode === 'cuenta' && !!accountId && !!effectiveFyId,
+  });
+
+  const { data: consol, isLoading: loadingConsol } = useQuery({
+    queryKey: ['accounting', 'ledger-consol', clientId, effectiveFyId, from, to, origin],
+    queryFn: () =>
+      getLedgerConsolidated({
+        data: {
+          clientId,
+          fiscalYearId: effectiveFyId || undefined,
+          from: from || undefined,
+          to: to || undefined,
+          origin: originArg,
+        },
+      }),
+    enabled: mode === 'consolidado' && !!effectiveFyId,
+  });
+
+  function buildExportData(): MayorExportData | null {
+    if (mode === 'cuenta') {
+      if (!ledger) return null;
+      const section: MayorSection = {
+        code: ledger.account.code,
+        name: ledger.account.name,
+        saldoInicial: ledger.saldoInicial,
+        rows: ledger.rows,
+        totalDebit: ledger.totalDebit,
+        totalCredit: ledger.totalCredit,
+        saldoFinal: ledger.saldoFinal,
+      };
+      return {
+        empresaName: clientName,
+        fiscalYearNumber: ledger.fiscalYear.number,
+        from: ledger.from,
+        to: ledger.to,
+        sections: [section],
+      };
+    }
+    if (!consol?.fiscalYear) return null;
+    return {
+      empresaName: clientName,
+      fiscalYearNumber: consol.fiscalYear.number,
+      from: consol.from,
+      to: consol.to,
+      sections: consol.accounts.map((a) => ({
+        code: a.code,
+        name: a.name,
+        saldoInicial: a.saldoInicial,
+        rows: a.movements,
+        totalDebit: a.totalDebit,
+        totalCredit: a.totalCredit,
+        saldoFinal: a.saldoFinal,
+      })),
+    };
+  }
+
+  const exportXlsx = () => {
+    const data = buildExportData();
+    if (!data || data.sections.length === 0) {
+      toast.error('No hay datos para exportar');
+      return;
+    }
+    exportMayorExcel(data, { sheetPerAccount }).catch((e: Error) => toast.error(e.message));
+  };
+  const exportPdf = () => {
+    const data = buildExportData();
+    if (!data || data.sections.length === 0) {
+      toast.error('No hay datos para exportar');
+      return;
+    }
+    exportMayorPdf(data).catch((e: Error) => toast.error(e.message));
+  };
+
+  const toggleAcc = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  if (fiscalYears.length === 0) {
+    return (
+      <ArcaCard>
+        <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+          Esta empresa no tiene ejercicios. Creá uno en la pestaña Ejercicios para ver el mayor.
+        </div>
+      </ArcaCard>
+    );
+  }
+
+  return (
+    <>
+      <ArcaCard>
+        {/* Toolbar */}
+        <div className="flex flex-wrap items-end gap-2 px-4 py-3 border-b border-[var(--arca-border)]">
+          <div className="flex rounded-[8px] border border-[var(--arca-border)] overflow-hidden h-8 self-end">
+            {(['cuenta', 'consolidado'] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className="px-3 text-[12px] font-medium transition-colors"
+                style={{
+                  background: mode === m ? 'var(--arca-navy-900)' : 'transparent',
+                  color: mode === m ? 'white' : 'var(--arca-ink-2)',
+                }}
+              >
+                {m === 'cuenta' ? 'Por cuenta' : 'Consolidado'}
+              </button>
+            ))}
+          </div>
+
+          {fiscalYears.length > 1 && (
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-[var(--arca-ink-3)]">Ejercicio</label>
+              <select
+                value={effectiveFyId}
+                onChange={(e) => setFiscalYearId(e.target.value)}
+                className={`${SELECT_CLASS} w-36`}
+              >
+                {fiscalYears.map((y) => (
+                  <option key={y.id} value={y.id}>
+                    N°{y.number}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {mode === 'cuenta' && (
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-[var(--arca-ink-3)]">Cuenta</label>
+              <select
+                value={accountId}
+                onChange={(e) => setAccountId(e.target.value)}
+                className={`${SELECT_CLASS} w-72`}
+              >
+                <option value="">— Elegí una cuenta —</option>
+                {imputables.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.code} · {a.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] text-[var(--arca-ink-3)]">Desde</label>
+            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={`${INPUT_CLASS} w-36`} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] text-[var(--arca-ink-3)]">Hasta</label>
+            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={`${INPUT_CLASS} w-36`} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] text-[var(--arca-ink-3)]">Origen</label>
+            <select value={origin} onChange={(e) => setOrigin(e.target.value)} className={`${SELECT_CLASS} w-36`}>
+              <option value="">Todos</option>
+              {Object.entries(JOURNAL_ORIGIN_LABELS).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="ml-auto flex items-center gap-2 self-end">
+            {mode === 'consolidado' && (
+              <label className="flex items-center gap-1.5 text-[11px] text-[var(--arca-ink-2)] cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={sheetPerAccount}
+                  onChange={(e) => setSheetPerAccount(e.target.checked)}
+                  className="accent-[var(--arca-navy-900)]"
+                />
+                Excel: hoja por cuenta
+              </label>
+            )}
+            <button
+              onClick={exportXlsx}
+              className="flex items-center gap-1.5 h-8 px-2.5 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" strokeWidth={1.8} /> Excel
+            </button>
+            <button
+              onClick={exportPdf}
+              className="flex items-center gap-1.5 h-8 px-2.5 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
+            >
+              <Download className="w-3.5 h-3.5" strokeWidth={1.8} /> PDF
+            </button>
+          </div>
+        </div>
+
+        {/* Body */}
+        {mode === 'cuenta' ? (
+          !accountId ? (
+            <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+              Elegí una cuenta para ver su mayor.
+            </div>
+          ) : loadingLedger ? (
+            <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">Cargando…</div>
+          ) : !ledger ? (
+            <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">Sin datos.</div>
+          ) : (
+            <LedgerTable
+              saldoInicial={ledger.saldoInicial}
+              rows={ledger.rows}
+              totalDebit={ledger.totalDebit}
+              totalCredit={ledger.totalCredit}
+              saldoFinal={ledger.saldoFinal}
+              onRowClick={(id) => setDetailId(id)}
+            />
+          )
+        ) : loadingConsol ? (
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">Cargando…</div>
+        ) : !consol || consol.accounts.length === 0 ? (
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            No hay movimientos en el rango seleccionado.
+          </div>
+        ) : (
+          <div>
+            {consol.accounts.map((a) => (
+              <ConsolidatedAccountRow
+                key={a.accountId}
+                acc={a}
+                expanded={expanded.has(a.accountId)}
+                onToggle={() => toggleAcc(a.accountId)}
+                onRowClick={(id) => setDetailId(id)}
+              />
+            ))}
+            <div className="flex items-center gap-3 px-4 py-3 border-t-2 border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[13px] font-semibold">
+              <span className="flex-1">Totales generales</span>
+              <span className="w-28 text-right">$ {fmtMoney(consol.grandTotalDebit)}</span>
+              <span className="w-28 text-right">$ {fmtMoney(consol.grandTotalCredit)}</span>
+              <span className="w-28" />
+            </div>
+          </div>
+        )}
+      </ArcaCard>
+
+      {detailId && (
+        <AsientoDetail
+          entryId={detailId}
+          canWrite={canWrite}
+          onClose={() => setDetailId(null)}
+          onAction={() => setDetailId(null)}
+          onChanged={() => {
+            /* el mayor se recalcula al cerrar por invalidación de queries */
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function LedgerTable({
+  saldoInicial,
+  rows,
+  totalDebit,
+  totalCredit,
+  saldoFinal,
+  onRowClick,
+}: {
+  saldoInicial: number;
+  rows: LedgerRow[];
+  totalDebit: number;
+  totalCredit: number;
+  saldoFinal: number;
+  onRowClick: (id: string) => void;
+}) {
+  return (
+    <div>
+      <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+        <div className="w-24 shrink-0">Fecha</div>
+        <div className="w-12 shrink-0">N°</div>
+        <div className="flex-1 min-w-0">Descripción</div>
+        <div className="w-24 shrink-0 text-right">Debe</div>
+        <div className="w-24 shrink-0 text-right">Haber</div>
+        <div className="w-28 shrink-0 text-right">Saldo</div>
+      </div>
+      <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] text-[12.5px] italic text-[var(--arca-ink-3)]">
+        <div className="flex-1">Saldo inicial</div>
+        <div className="w-28 shrink-0 text-right not-italic font-medium text-[var(--arca-ink)]">
+          {saldoLabel(saldoInicial)}
+        </div>
+      </div>
+      {rows.length === 0 ? (
+        <div className="px-5 py-8 text-center text-[12.5px] text-[var(--arca-ink-3)]">
+          Sin movimientos en el rango.
+        </div>
+      ) : (
+        rows.map((r, i) => (
+          <button
+            key={`${r.entryId}-${i}`}
+            onClick={() => onRowClick(r.entryId)}
+            className="w-full flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] hover:bg-[var(--arca-surface-2)] transition-colors text-left text-[12.5px]"
+          >
+            <div className="w-24 shrink-0 text-[var(--arca-ink-2)]">{fmtFecha(r.entryDate)}</div>
+            <div className="w-12 shrink-0 font-mono text-[var(--arca-ink-3)]">{r.number}</div>
+            <div className="flex-1 min-w-0 truncate text-[var(--arca-ink)]">
+              {r.description ?? r.lineDescription ?? ''}
+            </div>
+            <div className="w-24 shrink-0 text-right">{r.debit ? fmtMoney(r.debit) : ''}</div>
+            <div className="w-24 shrink-0 text-right">{r.credit ? fmtMoney(r.credit) : ''}</div>
+            <div className="w-28 shrink-0 text-right font-medium">{saldoLabel(r.balance)}</div>
+          </button>
+        ))
+      )}
+      <div className="flex items-center gap-3 px-4 py-2.5 border-t border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[12.5px] font-semibold">
+        <div className="flex-1">Totales del período</div>
+        <div className="w-24 shrink-0 text-right">$ {fmtMoney(totalDebit)}</div>
+        <div className="w-24 shrink-0 text-right">$ {fmtMoney(totalCredit)}</div>
+        <div className="w-28 shrink-0 text-right">{saldoLabel(saldoFinal)}</div>
+      </div>
+    </div>
+  );
+}
+
+function ConsolidatedAccountRow({
+  acc,
+  expanded,
+  onToggle,
+  onRowClick,
+}: {
+  acc: ConsolidatedAccount;
+  expanded: boolean;
+  onToggle: () => void;
+  onRowClick: (id: string) => void;
+}) {
+  return (
+    <div className="border-b border-[var(--arca-border)]">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--arca-surface-2)] transition-colors text-left"
+      >
+        {expanded ? (
+          <ChevronDown className="w-4 h-4 shrink-0 text-[var(--arca-ink-3)]" strokeWidth={1.8} />
+        ) : (
+          <ChevronRight className="w-4 h-4 shrink-0 text-[var(--arca-ink-3)]" strokeWidth={1.8} />
+        )}
+        <span className="w-24 shrink-0 text-[12px] font-mono text-[var(--arca-ink-3)]">{acc.code}</span>
+        <span className="flex-1 min-w-0 truncate text-[13px] font-medium text-[var(--arca-ink)]">
+          {acc.name}
+        </span>
+        <span className="w-24 shrink-0 text-right text-[12px]">$ {fmtMoney(acc.totalDebit)}</span>
+        <span className="w-24 shrink-0 text-right text-[12px]">$ {fmtMoney(acc.totalCredit)}</span>
+        <span className="w-28 shrink-0 text-right text-[12.5px] font-medium">{saldoLabel(acc.saldoFinal)}</span>
+      </button>
+      {expanded && (
+        <div className="bg-[var(--arca-surface-2)] pl-6">
+          <div className="flex items-center gap-3 px-4 py-1.5 text-[11.5px] italic text-[var(--arca-ink-3)]">
+            <div className="flex-1">Saldo inicial</div>
+            <div className="w-28 shrink-0 text-right not-italic">{saldoLabel(acc.saldoInicial)}</div>
+          </div>
+          {acc.movements.map((r, i) => (
+            <button
+              key={`${r.entryId}-${i}`}
+              onClick={() => onRowClick(r.entryId)}
+              className="w-full flex items-center gap-3 px-4 py-1.5 hover:bg-[var(--arca-surface)] transition-colors text-left text-[12px] border-t border-[var(--arca-border)]"
+            >
+              <div className="w-24 shrink-0 text-[var(--arca-ink-2)]">{fmtFecha(r.entryDate)}</div>
+              <div className="w-12 shrink-0 font-mono text-[var(--arca-ink-3)]">{r.number}</div>
+              <div className="flex-1 min-w-0 truncate text-[var(--arca-ink)]">
+                {r.description ?? r.lineDescription ?? ''}
+              </div>
+              <div className="w-24 shrink-0 text-right">{r.debit ? fmtMoney(r.debit) : ''}</div>
+              <div className="w-24 shrink-0 text-right">{r.credit ? fmtMoney(r.credit) : ''}</div>
+              <div className="w-28 shrink-0 text-right">{saldoLabel(r.balance)}</div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
