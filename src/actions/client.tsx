@@ -452,26 +452,6 @@ export const getRepresentativePassword = createServerFn({
     return { password: rep.afipPassword ? safeDecrypt(rep.afipPassword) : '' };
   });
 
-export const getClientPassword = createServerFn({
-  method: 'GET',
-})
-  .inputValidator(z.object({ clientId: z.string() }))
-  .handler(async (ctx) => {
-    await getSessionWithOrg();
-    const role = await getMemberRole();
-    assertCanWrite(role);
-
-    const [row] = await db
-      .select({ password: client.password })
-      .from(client)
-      .where(eq(client.id, ctx.data.clientId))
-      .limit(1);
-
-    if (!row) throw new Error('Cliente no encontrado');
-
-    return { password: safeDecrypt(row.password) };
-  });
-
 /**
  * Periodo fiscal del mes anterior en formato "MM/YYYY".
  * Ej: hoy 30/1/26 -> "12/2025"
@@ -607,6 +587,8 @@ export const updateRepresentative = createServerFn({
       phone: z.string().optional().or(z.literal('')),
       address: z.string().optional().or(z.literal('')),
       image: z.string().optional(),
+      // Contraseña de AFIP (usada por el scraper). Vacío/ausente = no se modifica.
+      password: z.string().optional(),
       convenioMultilateral: z.boolean().optional(),
       regimenLocal: z.boolean().optional(),
       fiscalCondition: z
@@ -621,11 +603,11 @@ export const updateRepresentative = createServerFn({
     })
   )
   .handler(async (ctx) => {
-    await getSessionWithOrg();
+    const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const { id, ...updateData } = ctx.data;
+    const { id, password, ...updateData } = ctx.data;
 
     const [updatedRepresentative] = await db
       .update(representative)
@@ -635,6 +617,8 @@ export const updateRepresentative = createServerFn({
         phone: updateData.phone || '',
         address: updateData.address || '',
         image: updateData.image || null,
+        // Solo se re-encripta y actualiza si el usuario ingresó una nueva contraseña.
+        afipPassword: password ? encrypt(password) : undefined,
         convenioMultilateral:
           typeof updateData.convenioMultilateral === 'boolean'
             ? updateData.convenioMultilateral
@@ -649,7 +633,12 @@ export const updateRepresentative = createServerFn({
             : (updateData.fiscalCondition ?? undefined),
         updatedAt: new Date(),
       })
-      .where(eq(representative.id, id))
+      .where(
+        and(
+          eq(representative.id, id),
+          eq(representative.organizationId, orgId)
+        )
+      )
       .returning();
 
     if (!updatedRepresentative) throw new Error('Error al actualizar el cliente');

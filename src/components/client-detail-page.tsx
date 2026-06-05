@@ -1839,7 +1839,7 @@ export function RepresentativeDetailPage({
                 <button
                   onClick={() => setEditRepresentativeDialogOpen(true)}
                   className="w-[24px] h-[24px] shrink-0 rounded-[var(--arca-r-sm)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-3)] inline-flex items-center justify-center hover:bg-[var(--arca-surface-2)] transition-colors"
-                  title="Editar cliente"
+                  title="Editar representante"
                 >
                   <Edit className="h-3 w-3" />
                 </button>
