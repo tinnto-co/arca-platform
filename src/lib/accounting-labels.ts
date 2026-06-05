@@ -1,0 +1,167 @@
+/**
+ * Labels en español para los enums del módulo de Balances.
+ * Los valores de enum son nombres internos (español normativo); acá viven
+ * las etiquetas legibles para la UI.
+ */
+
+export type AccountGroup =
+  | 'caja_bancos'
+  | 'inversiones_temporarias'
+  | 'creditos_ventas'
+  | 'otros_creditos_cte'
+  | 'bienes_cambio'
+  | 'otros_activos_cte'
+  | 'creditos_largo_plazo'
+  | 'bienes_uso'
+  | 'intangibles'
+  | 'inversiones_permanentes'
+  | 'otros_activos_no_cte'
+  | 'deudas_comerciales'
+  | 'deudas_financieras'
+  | 'deudas_sociales'
+  | 'deudas_fiscales'
+  | 'otras_deudas_cte'
+  | 'deudas_largo_plazo'
+  | 'previsiones'
+  | 'capital'
+  | 'aportes_irrevocables'
+  | 'primas_emision'
+  | 'reservas'
+  | 'resultados_no_asignados'
+  | 'resultado_ejercicio'
+  | 'ventas'
+  | 'costo_ventas'
+  | 'gastos_administracion'
+  | 'gastos_comercializacion'
+  | 'gastos_financieros'
+  | 'otros_resultados_pos'
+  | 'otros_resultados_neg'
+  | 'impuesto_ganancias';
+
+/** Macro-categoría de exposición (para agrupar el filtro de rubros). */
+export const ACCOUNT_GROUP_SECTIONS: {
+  section: string;
+  groups: AccountGroup[];
+}[] = [
+  {
+    section: 'Activo Corriente',
+    groups: [
+      'caja_bancos',
+      'inversiones_temporarias',
+      'creditos_ventas',
+      'otros_creditos_cte',
+      'bienes_cambio',
+      'otros_activos_cte',
+    ],
+  },
+  {
+    section: 'Activo No Corriente',
+    groups: [
+      'creditos_largo_plazo',
+      'bienes_uso',
+      'intangibles',
+      'inversiones_permanentes',
+      'otros_activos_no_cte',
+    ],
+  },
+  {
+    section: 'Pasivo Corriente',
+    groups: [
+      'deudas_comerciales',
+      'deudas_financieras',
+      'deudas_sociales',
+      'deudas_fiscales',
+      'otras_deudas_cte',
+    ],
+  },
+  {
+    section: 'Pasivo No Corriente',
+    groups: ['deudas_largo_plazo', 'previsiones'],
+  },
+  {
+    section: 'Patrimonio Neto',
+    groups: [
+      'capital',
+      'aportes_irrevocables',
+      'primas_emision',
+      'reservas',
+      'resultados_no_asignados',
+      'resultado_ejercicio',
+    ],
+  },
+  {
+    section: 'Resultados',
+    groups: [
+      'ventas',
+      'costo_ventas',
+      'gastos_administracion',
+      'gastos_comercializacion',
+      'gastos_financieros',
+      'otros_resultados_pos',
+      'otros_resultados_neg',
+      'impuesto_ganancias',
+    ],
+  },
+];
+
+export const ACCOUNT_GROUP_LABELS: Record<AccountGroup, string> = {
+  caja_bancos: 'Caja y Bancos',
+  inversiones_temporarias: 'Inversiones temporarias',
+  creditos_ventas: 'Créditos por ventas',
+  otros_creditos_cte: 'Otros créditos',
+  bienes_cambio: 'Bienes de cambio',
+  otros_activos_cte: 'Otros activos corrientes',
+  creditos_largo_plazo: 'Créditos a largo plazo',
+  bienes_uso: 'Bienes de uso',
+  intangibles: 'Activos intangibles',
+  inversiones_permanentes: 'Inversiones permanentes',
+  otros_activos_no_cte: 'Otros activos no corrientes',
+  deudas_comerciales: 'Deudas comerciales',
+  deudas_financieras: 'Deudas financieras',
+  deudas_sociales: 'Deudas sociales',
+  deudas_fiscales: 'Deudas fiscales',
+  otras_deudas_cte: 'Otras deudas',
+  deudas_largo_plazo: 'Deudas a largo plazo',
+  previsiones: 'Previsiones',
+  capital: 'Capital',
+  aportes_irrevocables: 'Aportes irrevocables',
+  primas_emision: 'Primas de emisión',
+  reservas: 'Reservas',
+  resultados_no_asignados: 'Resultados no asignados',
+  resultado_ejercicio: 'Resultado del ejercicio',
+  ventas: 'Ventas',
+  costo_ventas: 'Costo de ventas',
+  gastos_administracion: 'Gastos de administración',
+  gastos_comercializacion: 'Gastos de comercialización',
+  gastos_financieros: 'Gastos financieros',
+  otros_resultados_pos: 'Otros resultados positivos',
+  otros_resultados_neg: 'Otros resultados negativos',
+  impuesto_ganancias: 'Impuesto a las ganancias',
+};
+
+export const ACCOUNT_TYPE_LABELS: Record<'imputable' | 'group', string> = {
+  imputable: 'Imputable',
+  group: 'Agrupación',
+};
+
+export const EXPECTED_BALANCE_LABELS: Record<
+  'debit' | 'credit' | 'both',
+  string
+> = {
+  debit: 'Deudor',
+  credit: 'Acreedor',
+  both: 'Ambos',
+};
+
+export const EXPENSE_FUNCTION_LABELS: Record<
+  'administration' | 'sales' | 'financial' | 'other',
+  string
+> = {
+  administration: 'Administración',
+  sales: 'Comercialización',
+  financial: 'Financiero',
+  other: 'Otros',
+};
+
+/** Prefijo reservado para cuentas custom de cada empresa. */
+export const CUSTOM_CODE_PREFIX = '9.';

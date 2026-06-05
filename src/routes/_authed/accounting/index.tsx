@@ -1,6 +1,6 @@
 import { createFileRoute, redirect } from '@tanstack/react-router';
 import { listOrgModules } from '@/actions/admin';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   BookOpen,
@@ -10,20 +10,57 @@ import {
   FileText,
   Scale,
   List,
+  Pencil,
+  Trash2,
+  RotateCcw,
+  Search,
+  Building2,
+  Layers,
+  Lock,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { ArcaCard } from '@/components/dashboard/shared';
-import { getRepresentatives } from '@/actions/client';
 import {
-  listAccounts,
-  createAccount,
-  updateAccount,
-  createJournalEntry,
-  listJournalEntries,
-  getJournalEntry,
-  getLedger,
-  getTrialBalance,
+  listAccountingClients,
+  getCurrentRole,
+  getChartOfAccounts,
+  getAccountMovementCounts,
+  setAccountActive,
+  createCustomAccount,
+  renameBaseAccount,
+  revertBaseAccountRename,
+  createBaseAccount,
+  updateBaseAccount,
+  deleteBaseAccount,
+  type ChartAccount,
 } from '@/actions/accounting';
+import {
+  ACCOUNT_GROUP_LABELS,
+  ACCOUNT_GROUP_SECTIONS,
+  ACCOUNT_TYPE_LABELS,
+  EXPECTED_BALANCE_LABELS,
+  EXPENSE_FUNCTION_LABELS,
+  CUSTOM_CODE_PREFIX,
+  type AccountGroup,
+} from '@/lib/accounting-labels';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 
 export const Route = createFileRoute('/_authed/accounting/')({
@@ -37,86 +74,41 @@ export const Route = createFileRoute('/_authed/accounting/')({
   component: AccountingPage,
 });
 
-/* ─── Types ─── */
-type AccountType = 'asset' | 'liability' | 'equity' | 'income' | 'expense';
-
-interface AccountRow {
-  id: string;
-  clientId: string;
-  code: string;
-  name: string;
-  type: AccountType;
-  parentId: string | null;
-  active: boolean;
-  createdAt: string | Date;
-}
-
-interface JournalEntryRow {
-  id: string;
-  clientId: string;
-  entryDate: string | Date;
-  description: string | null;
-  status: string;
-  createdAt: string | Date;
-}
-
-interface JournalLine {
-  accountId: string;
-  debit: number;
-  credit: number;
-  description?: string;
-}
-
-/* ─── Helpers ─── */
+/* ─── Shared styles ─── */
 const SELECT_CLASS =
   'h-8 px-2.5 text-[12.5px] border border-[var(--arca-border)] rounded-[8px] bg-[var(--arca-surface)] text-[var(--arca-ink)] focus:outline-none';
-
 const INPUT_CLASS =
   'h-8 px-2.5 text-[12.5px] border border-[var(--arca-border)] rounded-[8px] bg-[var(--arca-surface)] text-[var(--arca-ink)] focus:outline-none';
 
-const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
-  asset: 'Activo',
-  liability: 'Pasivo',
-  equity: 'Patrimonio',
-  income: 'Ingresos',
-  expense: 'Egresos',
-};
-
-const ACCOUNT_TYPE_COLORS: Record<AccountType, string> = {
-  asset: 'oklch(0.45 0.10 220)',
-  liability: 'oklch(0.55 0.15 25)',
-  equity: 'oklch(0.45 0.12 280)',
-  income: 'oklch(0.45 0.14 145)',
-  expense: 'oklch(0.50 0.13 50)',
-};
-
-function fmtDate(d: string | Date) {
-  return new Date(d).toLocaleDateString('es-AR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
-}
-
-function fmtAmount(n: number | string) {
-  const num = typeof n === 'string' ? parseFloat(n) : n;
-  return num.toLocaleString('es-AR', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
-
-/* ─── Account type badge ─── */
-function TypeBadge({ type }: { type: AccountType }) {
+/* ─── Badges ─── */
+function TypeBadge({ type }: { type: 'imputable' | 'group' }) {
+  const color =
+    type === 'imputable' ? 'oklch(0.45 0.10 220)' : 'oklch(0.50 0.02 260)';
   return (
     <span
-      className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10.5px] font-medium"
+      className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium shrink-0"
       style={{
-        background: `color-mix(in oklch, ${ACCOUNT_TYPE_COLORS[type]}, transparent 85%)`,
-        color: ACCOUNT_TYPE_COLORS[type],
+        background: `color-mix(in oklch, ${color}, transparent 88%)`,
+        color,
       }}
     >
       {ACCOUNT_TYPE_LABELS[type]}
+    </span>
+  );
+}
+
+function OriginBadge({ scope }: { scope: 'base' | 'custom' }) {
+  const color =
+    scope === 'custom' ? 'oklch(0.50 0.13 50)' : 'oklch(0.45 0.04 250)';
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium shrink-0"
+      style={{
+        background: `color-mix(in oklch, ${color}, transparent 88%)`,
+        color,
+      }}
+    >
+      {scope === 'custom' ? 'Propia' : 'Base'}
     </span>
   );
 }
@@ -131,13 +123,17 @@ function TabBar({
   active: Tab;
   onChange: (t: Tab) => void;
 }) {
-  const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
-    { id: 'plan', label: 'Plan de cuentas', icon: List },
-    { id: 'asientos', label: 'Asientos', icon: FileText },
-    { id: 'mayor', label: 'Mayor', icon: BookOpen },
-    { id: 'balance', label: 'Balance', icon: Scale },
+  const tabs: {
+    id: Tab;
+    label: string;
+    icon: React.ElementType;
+    ready: boolean;
+  }[] = [
+    { id: 'plan', label: 'Plan de cuentas', icon: List, ready: true },
+    { id: 'asientos', label: 'Asientos', icon: FileText, ready: false },
+    { id: 'mayor', label: 'Mayor', icon: BookOpen, ready: false },
+    { id: 'balance', label: 'Balance', icon: Scale, ready: false },
   ];
-
   return (
     <div className="flex gap-1 mb-5 border-b border-[var(--arca-border)]">
       {tabs.map((tab) => (
@@ -153,90 +149,216 @@ function TabBar({
         >
           <tab.icon className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
           {tab.label}
+          {!tab.ready && (
+            <span className="text-[9px] px-1 py-px rounded-full bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
+              pronto
+            </span>
+          )}
         </button>
       ))}
     </div>
   );
 }
 
-/* ─── Plan de cuentas tab ─── */
+/* ─── Page ─── */
+function AccountingPage() {
+  const [tab, setTab] = useState<Tab>('plan');
+  const [clientId, setClientId] = useState<string>('');
+
+  const { data: clients = [] } = useQuery({
+    queryKey: ['accounting', 'clients'],
+    queryFn: () => listAccountingClients(),
+  });
+  const { data: roleData } = useQuery({
+    queryKey: ['accounting', 'role'],
+    queryFn: () => getCurrentRole(),
+  });
+  const isOwner = roleData?.role === 'owner';
+
+  const effectiveClientId = clientId || clients[0]?.id || '';
+
+  return (
+    <div className="p-6 max-w-[1200px] mx-auto">
+      <PageHeader
+        icon={Scale}
+        title="Balances y Estados Contables"
+        subtitle="Plan de cuentas, libro diario, mayor y Estados Contables"
+        actions={
+          <div className="flex items-center gap-2">
+            <Building2
+              className="w-4 h-4 text-[var(--arca-ink-3)]"
+              strokeWidth={1.8}
+            />
+            <select
+              value={effectiveClientId}
+              onChange={(e) => setClientId(e.target.value)}
+              className={`${SELECT_CLASS} max-w-[260px]`}
+            >
+              {clients.length === 0 && <option value="">Sin empresas</option>}
+              {clients.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} · {c.identityNumber}
+                </option>
+              ))}
+            </select>
+          </div>
+        }
+      />
+
+      <TabBar active={tab} onChange={setTab} />
+
+      {!effectiveClientId ? (
+        <ArcaCard>
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            No hay empresas fiscales cargadas en el estudio.
+          </div>
+        </ArcaCard>
+      ) : tab === 'plan' ? (
+        <PlanDeCuentas clientId={effectiveClientId} isOwner={isOwner} />
+      ) : (
+        <ArcaCard>
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            Esta sección se construye en una fase próxima del módulo.
+          </div>
+        </ArcaCard>
+      )}
+    </div>
+  );
+}
+
+/* ─── Plan de cuentas ─── */
+type FormMode =
+  | { kind: 'custom' }
+  | { kind: 'base-create' }
+  | { kind: 'base-edit'; account: ChartAccount };
+
 function PlanDeCuentas({
   clientId,
-  accounts,
-  onRefresh,
+  isOwner,
 }: {
   clientId: string;
-  accounts: AccountRow[];
-  onRefresh: () => void;
+  isOwner: boolean;
 }) {
-  const [showForm, setShowForm] = useState(false);
-  const [code, setCode] = useState('');
-  const [name, setName] = useState('');
-  const [type, setType] = useState<AccountType>('asset');
-  const [parentId, setParentId] = useState('');
+  const queryClient = useQueryClient();
+  const [search, setSearch] = useState('');
+  const [rubro, setRubro] = useState<string>('');
+  const [onlyActive, setOnlyActive] = useState(false);
+  const [origin, setOrigin] = useState<'all' | 'base' | 'custom'>('all');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-  const createMut = useMutation({
-    mutationFn: () =>
-      createAccount({
-        data: {
-          clientId,
-          code,
-          name,
-          type,
-          parentId: parentId || undefined,
-        },
-      }),
+  const [formMode, setFormMode] = useState<FormMode | null>(null);
+  const [renameTarget, setRenameTarget] = useState<ChartAccount | null>(null);
+  const [deactivateTarget, setDeactivateTarget] = useState<ChartAccount | null>(
+    null
+  );
+  const [deleteTarget, setDeleteTarget] = useState<ChartAccount | null>(null);
+
+  const queryKey = ['accounting', 'chart', clientId];
+  const { data, isLoading } = useQuery({
+    queryKey,
+    queryFn: () => getChartOfAccounts({ data: { clientId } }),
+  });
+  const invalidate = () => {
+    void queryClient.invalidateQueries({ queryKey });
+  };
+
+  const accounts = data?.accounts ?? [];
+
+  const setActiveMut = useMutation({
+    mutationFn: (args: { accountId: string; isActive: boolean }) =>
+      setAccountActive({ data: { clientId, ...args } }),
     onSuccess: () => {
-      toast.success('Cuenta creada');
-      setCode('');
-      setName('');
-      setType('asset');
-      setParentId('');
-      setShowForm(false);
-      onRefresh();
+      invalidate();
+      setDeactivateTarget(null);
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const updateMut = useMutation({
-    mutationFn: (args: { id: string; active: boolean }) =>
-      updateAccount({ data: { id: args.id, active: args.active } }),
-    onSuccess: () => {
-      onRefresh();
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
+  /* Build hierarchy maps */
+  const childrenByParent = useMemo(() => {
+    const m = new Map<string | null, ChartAccount[]>();
+    for (const a of accounts) {
+      const key = a.parentId;
+      const list = m.get(key) ?? [];
+      list.push(a);
+      m.set(key, list);
+    }
+    return m;
+  }, [accounts]);
 
-  const rootAccounts = accounts.filter((a) => !a.parentId);
+  const byId = useMemo(
+    () => new Map(accounts.map((a) => [a.id, a])),
+    [accounts]
+  );
 
-  function AccountRow({
-    account,
-    depth,
-  }: {
-    account: AccountRow;
-    depth: number;
-  }) {
-    const children = accounts.filter((a) => a.parentId === account.id);
+  const filterActive =
+    !!search.trim() || !!rubro || onlyActive || origin !== 'all';
+
+  /* Compute which accounts are visible under the active filters (matches + ancestors) */
+  const visibleIds = useMemo(() => {
+    if (!filterActive) return null; // null = show all
+    const q = search.trim().toLowerCase();
+    const matches = accounts.filter((a) => {
+      if (
+        q &&
+        !a.code.toLowerCase().includes(q) &&
+        !a.name.toLowerCase().includes(q)
+      )
+        return false;
+      if (rubro && a.accountGroup !== rubro) return false;
+      if (onlyActive && !a.isActive) return false;
+      if (origin !== 'all' && a.scope !== origin) return false;
+      return true;
+    });
+    const ids = new Set<string>();
+    for (const m of matches) {
+      ids.add(m.id);
+      let p = m.parentId;
+      while (p && !ids.has(p)) {
+        ids.add(p);
+        p = byId.get(p)?.parentId ?? null;
+      }
+    }
+    return ids;
+  }, [accounts, search, rubro, onlyActive, origin, filterActive, byId]);
+
+  const toggleExpand = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const expandAll = () => setExpanded(new Set(accounts.map((a) => a.id)));
+  const collapseAll = () => setExpanded(new Set());
+
+  function onToggleActive(account: ChartAccount) {
+    if (account.isActive) {
+      // Desactivar → confirmación con conteo de movimientos.
+      setDeactivateTarget(account);
+    } else {
+      setActiveMut.mutate({ accountId: account.id, isActive: true });
+    }
+  }
+
+  /* Recursive row renderer */
+  function renderNode(account: ChartAccount, depth: number): React.ReactNode {
+    if (visibleIds && !visibleIds.has(account.id)) return null;
+    const children = childrenByParent.get(account.id) ?? [];
     const hasChildren = children.length > 0;
-    const isExpanded = expanded.has(account.id);
+    const isExpanded =
+      expanded.has(account.id) || (filterActive && visibleIds?.has(account.id));
 
     return (
-      <>
+      <div key={account.id}>
         <div
-          className="flex items-center gap-3 px-4 py-2.5 border-b border-[var(--arca-border)] hover:bg-[var(--arca-surface-2)] transition-colors duration-[100ms]"
-          style={{ paddingLeft: `${16 + depth * 20}px` }}
+          className="group flex items-center gap-2.5 px-4 py-2 border-b border-[var(--arca-border)] hover:bg-[var(--arca-surface-2)] transition-colors duration-[100ms]"
+          style={{ paddingLeft: `${16 + depth * 18}px` }}
         >
           {hasChildren ? (
             <button
-              onClick={() =>
-                setExpanded((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(account.id)) next.delete(account.id);
-                  else next.add(account.id);
-                  return next;
-                })
-              }
+              onClick={() => toggleExpand(account.id)}
               className="w-4 h-4 shrink-0 text-[var(--arca-ink-3)]"
             >
               {isExpanded ? (
@@ -249,1092 +371,749 @@ function PlanDeCuentas({
             <div className="w-4 shrink-0" />
           )}
 
-          <span className="w-20 shrink-0 text-[12px] font-mono text-[var(--arca-ink-3)]">
+          <span className="w-24 shrink-0 text-[11.5px] font-mono text-[var(--arca-ink-3)]">
             {account.code}
           </span>
 
           <span
-            className={`flex-1 text-[13px] font-medium ${account.active ? 'text-[var(--arca-ink)]' : 'text-[var(--arca-ink-3)] line-through'}`}
+            className={`flex-1 min-w-0 truncate text-[13px] ${account.type === 'group' ? 'font-semibold' : 'font-medium'} ${
+              account.isActive
+                ? 'text-[var(--arca-ink)]'
+                : 'text-[var(--arca-ink-3)] line-through'
+            }`}
+            title={
+              account.isRenamed ? `Nombre base: ${account.baseName}` : undefined
+            }
           >
             {account.name}
+            {account.isRenamed && (
+              <span className="ml-1.5 text-[10px] text-[var(--arca-ink-3)] font-normal">
+                (renombrada)
+              </span>
+            )}
+            {account.isSystemAccount && (
+              <Lock
+                className="inline-block ml-1.5 w-3 h-3 text-[var(--arca-ink-3)] align-[-1px]"
+                strokeWidth={1.8}
+              />
+            )}
           </span>
 
-          <TypeBadge type={account.type} />
+          {/* Rubro — columna fija */}
+          <span className="hidden md:block w-[156px] shrink-0 truncate text-right text-[10.5px] text-[var(--arca-ink-3)]">
+            {account.accountGroup
+              ? ACCOUNT_GROUP_LABELS[account.accountGroup as AccountGroup]
+              : ''}
+          </span>
 
-          <button
-            onClick={() =>
-              updateMut.mutate({ id: account.id, active: !account.active })
-            }
-            className="text-[11px] px-2 py-0.5 rounded-full border border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors ml-2"
-          >
-            {account.active ? 'Desactivar' : 'Activar'}
-          </button>
+          {/* Movimientos — columna fija */}
+          <span className="w-[60px] shrink-0 flex justify-center">
+            {account.hasMovements && (
+              <span
+                className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium"
+                style={{
+                  background:
+                    'color-mix(in oklch, oklch(0.45 0.14 145), transparent 88%)',
+                  color: 'oklch(0.40 0.14 145)',
+                }}
+                title="Tiene movimientos en el ejercicio actual"
+              >
+                con mov.
+              </span>
+            )}
+          </span>
+
+          {/* Tipo — columna fija */}
+          <span className="w-[88px] shrink-0 flex justify-start">
+            <TypeBadge type={account.type} />
+          </span>
+
+          {/* Origen — columna fija */}
+          <span className="w-[52px] shrink-0 flex justify-start">
+            <OriginBadge scope={account.scope} />
+          </span>
+
+          {isOwner && (
+            <div className="w-[176px] shrink-0 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              {/* Renombrar (solo cuentas base no-sistema) */}
+              {account.scope === 'base' && !account.isSystemAccount && (
+                <>
+                  <IconBtn
+                    title="Renombrar para esta empresa"
+                    onClick={() => setRenameTarget(account)}
+                  >
+                    <Pencil className="w-3.5 h-3.5" strokeWidth={1.8} />
+                  </IconBtn>
+                  {account.isRenamed && (
+                    <IconBtn
+                      title="Revertir al nombre base"
+                      onClick={() =>
+                        revertBaseAccountRename({
+                          data: { clientId, accountId: account.id },
+                        })
+                          .then(invalidate)
+                          .catch((e: Error) => toast.error(e.message))
+                      }
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" strokeWidth={1.8} />
+                    </IconBtn>
+                  )}
+                </>
+              )}
+              {/* Editar / borrar cuenta base (plan del estudio) */}
+              {account.scope === 'base' && !account.isSystemAccount && (
+                <IconBtn
+                  title="Editar en el plan base del estudio"
+                  onClick={() => setFormMode({ kind: 'base-edit', account })}
+                >
+                  <Layers className="w-3.5 h-3.5" strokeWidth={1.8} />
+                </IconBtn>
+              )}
+              {account.scope === 'custom' && (
+                <IconBtn
+                  title="Borrar cuenta propia"
+                  onClick={() => setDeleteTarget(account)}
+                >
+                  <Trash2 className="w-3.5 h-3.5" strokeWidth={1.8} />
+                </IconBtn>
+              )}
+              {/* Activar / desactivar */}
+              {!account.isSystemAccount && (
+                <button
+                  onClick={() => onToggleActive(account)}
+                  className="text-[11px] px-2 py-0.5 rounded-full border border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors"
+                >
+                  {account.isActive ? 'Desactivar' : 'Activar'}
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
-        {isExpanded &&
-          children.map((child) => (
-            <AccountRow key={child.id} account={child} depth={depth + 1} />
-          ))}
-      </>
+        {isExpanded && children.map((c) => renderNode(c, depth + 1))}
+      </div>
     );
   }
 
-  return (
-    <ArcaCard>
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--arca-border)]">
-        <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
-          Plan de cuentas
-        </span>
-        <button
-          onClick={() => setShowForm((v) => !v)}
-          className="flex items-center gap-1.5 h-7 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90 transition-opacity"
-        >
-          <Plus className="w-3 h-3" strokeWidth={2.5} />
-          Nueva cuenta
-        </button>
-      </div>
+  const roots = childrenByParent.get(null) ?? [];
 
-      {/* Create form */}
-      {showForm && (
-        <div className="px-5 py-4 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)]">
-          <div className="flex flex-wrap gap-2 items-end">
-            <div className="flex flex-col gap-1">
-              <label className="text-[11px] text-[var(--arca-ink-3)]">
-                Código *
-              </label>
-              <input
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                placeholder="Ej: 1.1.01"
-                className={`${INPUT_CLASS} w-24`}
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-[11px] text-[var(--arca-ink-3)]">
-                Nombre *
-              </label>
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Nombre de la cuenta"
-                className={`${INPUT_CLASS} w-56`}
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-[11px] text-[var(--arca-ink-3)]">
-                Tipo *
-              </label>
-              <select
-                value={type}
-                onChange={(e) => setType(e.target.value as AccountType)}
-                className={`${SELECT_CLASS} w-36`}
-              >
-                {Object.entries(ACCOUNT_TYPE_LABELS).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
+  return (
+    <>
+      <ArcaCard>
+        {/* Toolbar */}
+        <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-[var(--arca-border)]">
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--arca-ink-3)]" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar código o nombre…"
+              className={`${INPUT_CLASS} pl-7 w-56`}
+            />
+          </div>
+
+          <select
+            value={rubro}
+            onChange={(e) => setRubro(e.target.value)}
+            className={`${SELECT_CLASS} w-52`}
+          >
+            <option value="">Todos los rubros</option>
+            {ACCOUNT_GROUP_SECTIONS.map((sec) => (
+              <optgroup key={sec.section} label={sec.section}>
+                {sec.groups.map((g) => (
+                  <option key={g} value={g}>
+                    {ACCOUNT_GROUP_LABELS[g]}
                   </option>
                 ))}
-              </select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-[11px] text-[var(--arca-ink-3)]">
-                Cuenta padre
-              </label>
-              <select
-                value={parentId}
-                onChange={(e) => setParentId(e.target.value)}
-                className={`${SELECT_CLASS} w-48`}
-              >
-                <option value="">— Ninguna —</option>
-                {accounts
-                  .filter((a) => a.active)
-                  .map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.code} · {a.name}
-                    </option>
-                  ))}
-              </select>
-            </div>
+              </optgroup>
+            ))}
+          </select>
+
+          <select
+            value={origin}
+            onChange={(e) =>
+              setOrigin(e.target.value as 'all' | 'base' | 'custom')
+            }
+            className={`${SELECT_CLASS} w-32`}
+          >
+            <option value="all">Base y propias</option>
+            <option value="base">Solo base</option>
+            <option value="custom">Solo propias</option>
+          </select>
+
+          <label className="flex items-center gap-1.5 text-[12px] text-[var(--arca-ink-2)] cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={onlyActive}
+              onChange={(e) => setOnlyActive(e.target.checked)}
+              className="accent-[var(--arca-navy-900)]"
+            />
+            Solo activas
+          </label>
+
+          <div className="ml-auto flex items-center gap-1.5">
             <button
-              onClick={() => createMut.mutate()}
-              disabled={!code || !name || createMut.isPending}
-              className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
+              onClick={expandAll}
+              className="h-7 px-2.5 text-[11.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors"
             >
-              {createMut.isPending ? 'Guardando...' : 'Guardar'}
+              Expandir
             </button>
             <button
-              onClick={() => setShowForm(false)}
-              className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors"
+              onClick={collapseAll}
+              className="h-7 px-2.5 text-[11.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors"
             >
-              Cancelar
+              Colapsar
             </button>
+            {isOwner && (
+              <>
+                <button
+                  onClick={() => setFormMode({ kind: 'base-create' })}
+                  className="flex items-center gap-1.5 h-7 px-2.5 text-[11.5px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] transition-colors"
+                >
+                  <Layers className="w-3 h-3" strokeWidth={2} />
+                  Plan base
+                </button>
+                <button
+                  onClick={() => setFormMode({ kind: 'custom' })}
+                  className="flex items-center gap-1.5 h-7 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90 transition-opacity"
+                >
+                  <Plus className="w-3 h-3" strokeWidth={2.5} />
+                  Nueva cuenta propia
+                </button>
+              </>
+            )}
           </div>
         </div>
+
+        {/* Body */}
+        {isLoading ? (
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            Cargando plan de cuentas…
+          </div>
+        ) : roots.length === 0 ? (
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            El plan de cuentas base aún no está sembrado para este estudio.
+          </div>
+        ) : (
+          <div>{roots.map((r) => renderNode(r, 0))}</div>
+        )}
+      </ArcaCard>
+
+      {/* Crear/editar cuenta */}
+      {formMode && (
+        <AccountFormDialog
+          mode={formMode}
+          clientId={clientId}
+          accounts={accounts}
+          onClose={() => setFormMode(null)}
+          onSaved={() => {
+            setFormMode(null);
+            invalidate();
+          }}
+        />
       )}
 
-      {/* Column headers */}
-      <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)]">
-        <div className="w-4 shrink-0" />
-        <div className="w-20 shrink-0 text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
-          Código
-        </div>
-        <div className="flex-1 text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
-          Nombre
-        </div>
-        <div className="text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
-          Tipo
-        </div>
-        <div className="w-20 shrink-0" />
-      </div>
-
-      {accounts.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-14 text-[var(--arca-ink-3)]">
-          <BookOpen className="w-8 h-8 mb-2 opacity-40" strokeWidth={1.5} />
-          <p className="text-[13px]">No hay cuentas contables</p>
-          <p className="text-[12px] mt-1">
-            Creá una cuenta para comenzar el plan de cuentas
-          </p>
-        </div>
-      ) : (
-        <div>
-          {rootAccounts.map((acct) => (
-            <AccountRow key={acct.id} account={acct} depth={0} />
-          ))}
-        </div>
+      {/* Renombrar */}
+      {renameTarget && (
+        <RenameDialog
+          clientId={clientId}
+          account={renameTarget}
+          onClose={() => setRenameTarget(null)}
+          onSaved={() => {
+            setRenameTarget(null);
+            invalidate();
+          }}
+        />
       )}
-    </ArcaCard>
+
+      {/* Confirmar desactivación */}
+      {deactivateTarget && (
+        <DeactivateDialog
+          clientId={clientId}
+          account={deactivateTarget}
+          pending={setActiveMut.isPending}
+          onCancel={() => setDeactivateTarget(null)}
+          onConfirm={() =>
+            setActiveMut.mutate({
+              accountId: deactivateTarget.id,
+              isActive: false,
+            })
+          }
+        />
+      )}
+
+      {/* Confirmar borrado de cuenta propia */}
+      {deleteTarget && (
+        <AlertDialog open onOpenChange={(o) => !o && setDeleteTarget(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Borrar cuenta propia</AlertDialogTitle>
+              <AlertDialogDescription>
+                ¿Borrar la cuenta{' '}
+                <strong>
+                  {deleteTarget.code} · {deleteTarget.name}
+                </strong>
+                ? No se puede borrar si tiene movimientos o subcuentas.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() =>
+                  deleteBaseAccount({ data: { id: deleteTarget.id } })
+                    .then(() => {
+                      toast.success('Cuenta borrada');
+                      setDeleteTarget(null);
+                      invalidate();
+                    })
+                    .catch((e: Error) => toast.error(e.message))
+                }
+              >
+                Borrar
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+    </>
   );
 }
 
-/* ─── Journal entry form ─── */
-function JournalEntryForm({
+function IconBtn({
+  children,
+  title,
+  onClick,
+}: {
+  children: React.ReactNode;
+  title: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      title={title}
+      onClick={onClick}
+      className="w-6 h-6 flex items-center justify-center rounded-[6px] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] hover:bg-[var(--arca-surface)] transition-colors"
+    >
+      {children}
+    </button>
+  );
+}
+
+/* ─── Rename dialog (US 1.1.4) ─── */
+function RenameDialog({
   clientId,
-  accounts,
-  onCreated,
-  onCancel,
+  account,
+  onClose,
+  onSaved,
 }: {
   clientId: string;
-  accounts: AccountRow[];
-  onCreated: () => void;
-  onCancel: () => void;
+  account: ChartAccount;
+  onClose: () => void;
+  onSaved: () => void;
 }) {
-  const [entryDate, setEntryDate] = useState(
-    new Date().toISOString().slice(0, 10)
-  );
-  const [description, setDescription] = useState('');
-  const [lines, setLines] = useState<JournalLine[]>([
-    { accountId: '', debit: 0, credit: 0, description: '' },
-    { accountId: '', debit: 0, credit: 0, description: '' },
-  ]);
-
-  const totalDebit = lines.reduce((s, l) => s + l.debit, 0);
-  const totalCredit = lines.reduce((s, l) => s + l.credit, 0);
-  const isBalanced = Math.abs(totalDebit - totalCredit) < 0.001;
-
-  const createMut = useMutation({
+  const [name, setName] = useState(account.name);
+  const mut = useMutation({
     mutationFn: () =>
-      createJournalEntry({
-        data: {
-          clientId,
-          entryDate,
-          description: description || undefined,
-          lines: lines
-            .filter((l) => l.accountId)
-            .map((l) => ({
-              accountId: l.accountId,
-              debit: l.debit,
-              credit: l.credit,
-              description: l.description,
-            })),
-        },
+      renameBaseAccount({
+        data: { clientId, accountId: account.id, customName: name.trim() },
       }),
     onSuccess: () => {
-      toast.success('Asiento creado');
-      onCreated();
+      toast.success('Cuenta renombrada para esta empresa');
+      onSaved();
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const updateLine = (
-    index: number,
-    field: keyof JournalLine,
-    value: string | number
-  ) => {
-    setLines((prev) =>
-      prev.map((l, i) => (i === index ? { ...l, [field]: value } : l))
-    );
-  };
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-[420px]">
+        <DialogHeader>
+          <DialogTitle>Renombrar cuenta</DialogTitle>
+          <DialogDescription>
+            El nuevo nombre aplica solo a esta empresa. El plan base del estudio
+            y las demás empresas no se modifican.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2 py-1">
+          <p className="text-[12px] text-[var(--arca-ink-3)]">
+            Nombre base: <span className="font-medium">{account.baseName}</span>
+          </p>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className={`${INPUT_CLASS} w-full h-9`}
+            placeholder="Nombre para esta empresa"
+          />
+        </div>
+        <DialogFooter>
+          <button
+            onClick={onClose}
+            className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)]"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => mut.mutate()}
+            disabled={!name.trim() || mut.isPending}
+            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+          >
+            Guardar
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
-  const addLine = () =>
-    setLines((prev) => [
-      ...prev,
-      { accountId: '', debit: 0, credit: 0, description: '' },
-    ]);
-
-  const removeLine = (index: number) =>
-    setLines((prev) => prev.filter((_, i) => i !== index));
-
-  const activeAccounts = accounts.filter((a) => a.active);
+/* ─── Deactivate confirmation (US 1.1.2) ─── */
+function DeactivateDialog({
+  clientId,
+  account,
+  pending,
+  onCancel,
+  onConfirm,
+}: {
+  clientId: string;
+  account: ChartAccount;
+  pending: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['accounting', 'movement-counts', clientId, account.id],
+    queryFn: () =>
+      getAccountMovementCounts({ data: { clientId, accountId: account.id } }),
+  });
+  const blocked = (data?.currentYear ?? 0) > 0;
 
   return (
-    <div className="px-5 py-4 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)]">
-      <div className="text-[13px] font-semibold text-[var(--arca-ink)] mb-4">
-        Nuevo asiento contable
-      </div>
-
-      <div className="flex flex-wrap gap-3 mb-4">
-        <div className="flex flex-col gap-1">
-          <label className="text-[11px] text-[var(--arca-ink-3)]">
-            Fecha *
-          </label>
-          <input
-            type="date"
-            value={entryDate}
-            onChange={(e) => setEntryDate(e.target.value)}
-            className={`${INPUT_CLASS} w-36`}
-          />
-        </div>
-        <div className="flex flex-col gap-1 flex-1 min-w-[240px]">
-          <label className="text-[11px] text-[var(--arca-ink-3)]">
-            Descripción
-          </label>
-          <input
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Descripción del asiento"
-            className={`${INPUT_CLASS} w-full`}
-          />
-        </div>
-      </div>
-
-      {/* Lines */}
-      <div className="mb-3 rounded-[8px] border border-[var(--arca-border)] overflow-hidden">
-        {/* Column headers */}
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-surface-2)] border-b border-[var(--arca-border)]">
-          <div className="flex-1 text-[10.5px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
-            Cuenta
-          </div>
-          <div className="w-28 text-[10.5px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
-            Debe
-          </div>
-          <div className="w-28 text-[10.5px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
-            Haber
-          </div>
-          <div className="w-36 text-[10.5px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
-            Descripción
-          </div>
-          <div className="w-6 shrink-0" />
-        </div>
-
-        {lines.map((line, index) => (
-          <div
-            key={index}
-            className="flex items-center gap-2 px-3 py-1.5 border-b border-[var(--arca-border)] last:border-b-0 bg-[var(--arca-surface)]"
+    <AlertDialog open onOpenChange={(o) => !o && onCancel()}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Desactivar cuenta</AlertDialogTitle>
+          <AlertDialogDescription asChild>
+            <div className="space-y-2">
+              <p>
+                Cuenta{' '}
+                <strong>
+                  {account.code} · {account.name}
+                </strong>
+                .
+              </p>
+              {isLoading ? (
+                <p>Calculando movimientos…</p>
+              ) : blocked ? (
+                <p className="text-[var(--arca-danger,oklch(0.55_0.18_25))]">
+                  No se puede desactivar: tiene {data?.currentYear}{' '}
+                  movimiento(s) en el ejercicio actual.
+                </p>
+              ) : (
+                <p>
+                  Movimientos pasados (ejercicios anteriores):{' '}
+                  <strong>{data?.past ?? 0}</strong>. La cuenta dejará de estar
+                  disponible para esta empresa, sin afectar a las demás.
+                </p>
+              )}
+            </div>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={blocked || pending || isLoading}
+            onClick={onConfirm}
           >
+            Desactivar
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+/* ─── Create / edit account dialog (US 1.1.3 custom, US 1.1.5 base) ─── */
+function AccountFormDialog({
+  mode,
+  clientId,
+  accounts,
+  onClose,
+  onSaved,
+}: {
+  mode: FormMode;
+  clientId: string;
+  accounts: ChartAccount[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const editing = mode.kind === 'base-edit' ? mode.account : null;
+  const isCustom = mode.kind === 'custom';
+
+  const [code, setCode] = useState(
+    editing?.code ?? (isCustom ? CUSTOM_CODE_PREFIX : '')
+  );
+  const [name, setName] = useState(editing?.name ?? '');
+  const [description, setDescription] = useState(editing?.description ?? '');
+  const [type, setType] = useState<'imputable' | 'group'>(
+    editing?.type ?? 'imputable'
+  );
+  const [accountGroup, setAccountGroup] = useState<string>(
+    editing?.accountGroup ?? ''
+  );
+  const [expectedBalance, setExpectedBalance] = useState<string>(
+    editing?.expectedBalance ?? ''
+  );
+  const [expenseFunction, setExpenseFunction] = useState<string>(
+    editing?.expenseFunction ?? ''
+  );
+  const [parentId, setParentId] = useState<string>(editing?.parentId ?? '');
+
+  const title =
+    mode.kind === 'custom'
+      ? 'Nueva cuenta propia'
+      : mode.kind === 'base-create'
+        ? 'Nueva cuenta del plan base'
+        : 'Editar cuenta del plan base';
+
+  const isExpenseGroup =
+    accountGroup === 'gastos_administracion' ||
+    accountGroup === 'gastos_comercializacion' ||
+    accountGroup === 'gastos_financieros' ||
+    accountGroup === 'costo_ventas' ||
+    accountGroup === 'otros_resultados_neg';
+
+  const mut = useMutation({
+    mutationFn: () => {
+      const groupVal = accountGroup || undefined;
+      const balVal = (expectedBalance || undefined) as
+        | 'debit'
+        | 'credit'
+        | 'both'
+        | undefined;
+      const expVal = (expenseFunction || undefined) as
+        | 'administration'
+        | 'sales'
+        | 'financial'
+        | 'other'
+        | undefined;
+      if (mode.kind === 'custom') {
+        return createCustomAccount({
+          data: {
+            clientId,
+            code,
+            name,
+            type,
+            accountGroup: groupVal,
+            expectedBalance: balVal,
+            expenseFunction: expVal,
+            description: description || undefined,
+            parentId: parentId || undefined,
+          },
+        });
+      }
+      if (mode.kind === 'base-create') {
+        return createBaseAccount({
+          data: {
+            code,
+            name,
+            type,
+            accountGroup: groupVal,
+            expectedBalance: balVal,
+            expenseFunction: expVal,
+            description: description || undefined,
+            parentId: parentId || undefined,
+          },
+        });
+      }
+      return updateBaseAccount({
+        data: {
+          id: editing!.id,
+          name,
+          description: description || null,
+          type,
+          accountGroup: groupVal,
+          expectedBalance: balVal,
+          expenseFunction: expVal ?? null,
+        },
+      });
+    },
+    onSuccess: () => {
+      toast.success('Guardado');
+      onSaved();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const parentOptions = accounts.filter(
+    (a) => a.type === 'group' && a.id !== editing?.id
+  );
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-[520px]">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          {mode.kind === 'base-create' && (
+            <DialogDescription>
+              Se agrega al plan del estudio y aparece{' '}
+              <strong>inactiva por default</strong> en todas las empresas.
+            </DialogDescription>
+          )}
+          {mode.kind === 'custom' && (
+            <DialogDescription>
+              Cuenta propia de esta empresa. El código debe estar en el rango
+              reservado (empieza con &quot;{CUSTOM_CODE_PREFIX}&quot;).
+            </DialogDescription>
+          )}
+        </DialogHeader>
+
+        <div className="grid grid-cols-2 gap-3 py-1">
+          <Field label="Código *">
+            <input
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              disabled={mode.kind === 'base-edit'}
+              placeholder={isCustom ? '9.1.01' : '1.1.07'}
+              className={`${INPUT_CLASS} w-full h-9 disabled:opacity-60`}
+            />
+          </Field>
+          <Field label="Tipo *">
             <select
-              value={line.accountId}
-              onChange={(e) => updateLine(index, 'accountId', e.target.value)}
-              className={`${SELECT_CLASS} flex-1`}
+              value={type}
+              onChange={(e) => setType(e.target.value as 'imputable' | 'group')}
+              className={`${SELECT_CLASS} w-full h-9`}
             >
-              <option value="">Seleccionar cuenta...</option>
-              {activeAccounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.code} · {a.name}
+              <option value="imputable">Imputable (admite movimientos)</option>
+              <option value="group">Agrupación (solo suma)</option>
+            </select>
+          </Field>
+
+          <Field label="Nombre *" full>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Nombre de la cuenta"
+              className={`${INPUT_CLASS} w-full h-9`}
+            />
+          </Field>
+
+          <Field label="Rubro de exposición" full>
+            <select
+              value={accountGroup}
+              onChange={(e) => setAccountGroup(e.target.value)}
+              className={`${SELECT_CLASS} w-full h-9`}
+            >
+              <option value="">— Sin rubro (solo agrupaciones) —</option>
+              {ACCOUNT_GROUP_SECTIONS.map((sec) => (
+                <optgroup key={sec.section} label={sec.section}>
+                  {sec.groups.map((g) => (
+                    <option key={g} value={g}>
+                      {ACCOUNT_GROUP_LABELS[g]}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Saldo esperado">
+            <select
+              value={expectedBalance}
+              onChange={(e) => setExpectedBalance(e.target.value)}
+              className={`${SELECT_CLASS} w-full h-9`}
+            >
+              <option value="">—</option>
+              {(['debit', 'credit', 'both'] as const).map((b) => (
+                <option key={b} value={b}>
+                  {EXPECTED_BALANCE_LABELS[b]}
                 </option>
               ))}
             </select>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={line.debit || ''}
-              onChange={(e) =>
-                updateLine(index, 'debit', parseFloat(e.target.value) || 0)
-              }
-              placeholder="0,00"
-              className={`${INPUT_CLASS} w-28 text-right`}
-            />
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={line.credit || ''}
-              onChange={(e) =>
-                updateLine(index, 'credit', parseFloat(e.target.value) || 0)
-              }
-              placeholder="0,00"
-              className={`${INPUT_CLASS} w-28 text-right`}
-            />
-            <input
-              value={line.description ?? ''}
-              onChange={(e) => updateLine(index, 'description', e.target.value)}
-              placeholder="Glosa"
-              className={`${INPUT_CLASS} w-36`}
-            />
-            <button
-              onClick={() => removeLine(index)}
-              disabled={lines.length <= 2}
-              className="w-6 h-6 flex items-center justify-center text-[var(--arca-ink-3)] hover:text-[var(--arca-accent-neg)] disabled:opacity-30 transition-colors"
-            >
-              ×
-            </button>
-          </div>
-        ))}
+          </Field>
 
-        {/* Totals row */}
-        <div className="flex items-center gap-2 px-3 py-2 bg-[var(--arca-surface-2)] border-t border-[var(--arca-border)]">
-          <div className="flex-1 text-[11.5px] font-semibold text-[var(--arca-ink-3)]">
-            Totales
-          </div>
-          <div
-            className="w-28 text-right text-[12px] font-semibold tabular-nums"
-            style={{ color: 'var(--arca-ink)' }}
-          >
-            {fmtAmount(totalDebit)}
-          </div>
-          <div
-            className="w-28 text-right text-[12px] font-semibold tabular-nums"
-            style={{ color: 'var(--arca-ink)' }}
-          >
-            {fmtAmount(totalCredit)}
-          </div>
-          <div className="w-36" />
-          <div className="w-6 shrink-0">
-            {isBalanced && totalDebit > 0 ? (
-              <span className="text-[10px] text-[oklch(0.45_0.14_145)]">✓</span>
-            ) : !isBalanced && (totalDebit > 0 || totalCredit > 0) ? (
-              <span className="text-[10px] text-[var(--arca-accent-neg)]">
-                ✗
-              </span>
-            ) : null}
-          </div>
-        </div>
-      </div>
-
-      {/* Balance warning */}
-      {!isBalanced && (totalDebit > 0 || totalCredit > 0) && (
-        <p
-          className="text-[11.5px] mb-3"
-          style={{ color: 'var(--arca-accent-neg)' }}
-        >
-          El asiento no está balanceado: debe {fmtAmount(totalDebit)} ≠ haber{' '}
-          {fmtAmount(totalCredit)}
-        </p>
-      )}
-
-      <div className="flex items-center gap-2">
-        <button
-          onClick={addLine}
-          className="flex items-center gap-1.5 h-7 px-2.5 text-[11.5px] rounded-[7px] border border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors"
-        >
-          <Plus className="w-3 h-3" strokeWidth={2} />
-          Agregar línea
-        </button>
-        <div className="flex-1" />
-        <button
-          onClick={onCancel}
-          className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors"
-        >
-          Cancelar
-        </button>
-        <button
-          onClick={() => createMut.mutate()}
-          disabled={
-            !isBalanced ||
-            totalDebit === 0 ||
-            lines.filter((l) => l.accountId).length < 2 ||
-            createMut.isPending
-          }
-          className="h-8 px-4 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
-        >
-          {createMut.isPending ? 'Guardando...' : 'Guardar asiento'}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* ─── Asientos tab ─── */
-function AsientosTab({
-  clientId,
-  accounts,
-}: {
-  clientId: string;
-  accounts: AccountRow[];
-}) {
-  const queryClient = useQueryClient();
-  const [showForm, setShowForm] = useState(false);
-  const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null);
-
-  const { data: entriesRaw = [], isFetching } = useQuery({
-    queryKey: ['journalEntries', clientId],
-    queryFn: () => listJournalEntries({ data: { clientId, limit: 100 } }),
-    enabled: !!clientId,
-  });
-  const entries = entriesRaw as JournalEntryRow[];
-
-  const { data: entryDetailRaw } = useQuery({
-    queryKey: ['journalEntry', expandedEntryId],
-    queryFn: () => getJournalEntry({ data: { id: expandedEntryId! } }),
-    enabled: !!expandedEntryId,
-  });
-  const entryDetail = entryDetailRaw as
-    | (JournalEntryRow & {
-        lines: {
-          id: string;
-          accountCode: string;
-          accountName: string;
-          accountType: string;
-          debit: string;
-          credit: string;
-          description: string | null;
-        }[];
-      })
-    | undefined;
-
-  const handleCreated = () => {
-    void queryClient.invalidateQueries({
-      queryKey: ['journalEntries', clientId],
-    });
-    setShowForm(false);
-  };
-
-  return (
-    <ArcaCard>
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--arca-border)]">
-        <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
-          Asientos contables
-          {isFetching && (
-            <span className="ml-2 text-[11px] text-[var(--arca-ink-3)] font-normal">
-              Cargando...
-            </span>
-          )}
-        </span>
-        {!showForm && (
-          <button
-            onClick={() => setShowForm(true)}
-            className="flex items-center gap-1.5 h-7 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90 transition-opacity"
-          >
-            <Plus className="w-3 h-3" strokeWidth={2.5} />
-            Nuevo asiento
-          </button>
-        )}
-      </div>
-
-      {/* Create form */}
-      {showForm && (
-        <JournalEntryForm
-          clientId={clientId}
-          accounts={accounts}
-          onCreated={handleCreated}
-          onCancel={() => setShowForm(false)}
-        />
-      )}
-
-      {/* Column headers */}
-      <div className="flex items-center gap-4 px-5 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)]">
-        <div className="w-4 shrink-0" />
-        <div className="w-[90px] shrink-0 text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
-          Fecha
-        </div>
-        <div className="flex-1 text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
-          Descripción
-        </div>
-        <div className="w-[80px] text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
-          Estado
-        </div>
-      </div>
-
-      {entries.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-14 text-[var(--arca-ink-3)]">
-          <FileText className="w-8 h-8 mb-2 opacity-40" strokeWidth={1.5} />
-          <p className="text-[13px]">No hay asientos contables</p>
-          <p className="text-[12px] mt-1">
-            Creá un asiento para registrar movimientos
-          </p>
-        </div>
-      ) : (
-        <div className="divide-y divide-[var(--arca-border)]">
-          {entries.map((entry) => {
-            const isOpen = expandedEntryId === entry.id;
-            return (
-              <div key={entry.id}>
-                <div
-                  className="flex items-center gap-4 px-5 py-3 hover:bg-[var(--arca-surface-2)] cursor-pointer transition-colors duration-[100ms]"
-                  onClick={() => setExpandedEntryId(isOpen ? null : entry.id)}
-                >
-                  <div className="w-4 shrink-0 text-[var(--arca-ink-3)]">
-                    {isOpen ? (
-                      <ChevronDown className="w-4 h-4" strokeWidth={1.8} />
-                    ) : (
-                      <ChevronRight className="w-4 h-4" strokeWidth={1.8} />
-                    )}
-                  </div>
-                  <div className="w-[90px] shrink-0 text-[12px] font-mono text-[var(--arca-ink-3)]">
-                    {fmtDate(entry.entryDate)}
-                  </div>
-                  <div className="flex-1 text-[13px] font-medium text-[var(--arca-ink)]">
-                    {entry.description ?? '—'}
-                  </div>
-                  <div className="w-[80px]">
-                    <span
-                      className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10.5px] font-medium"
-                      style={{
-                        background:
-                          entry.status === 'posted'
-                            ? 'color-mix(in oklch, oklch(0.45 0.14 145), transparent 85%)'
-                            : 'var(--arca-surface-2)',
-                        color:
-                          entry.status === 'posted'
-                            ? 'oklch(0.45 0.14 145)'
-                            : 'var(--arca-ink-3)',
-                      }}
-                    >
-                      {entry.status === 'posted' ? 'Confirmado' : 'Borrador'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Expanded detail */}
-                {isOpen && (
-                  <div className="px-5 pb-4 bg-[var(--arca-surface-2)] border-b border-[var(--arca-border)]">
-                    {!entryDetail || entryDetail.id !== entry.id ? (
-                      <p className="text-[12px] text-[var(--arca-ink-3)] py-2">
-                        Cargando líneas...
-                      </p>
-                    ) : (
-                      <table className="w-full text-[12px] mt-2">
-                        <thead>
-                          <tr className="text-[10.5px] text-[var(--arca-ink-3)] uppercase tracking-wide">
-                            <th className="text-left pb-2 font-semibold">
-                              Cuenta
-                            </th>
-                            <th className="text-left pb-2 font-semibold w-40">
-                              Descripción
-                            </th>
-                            <th className="text-right pb-2 font-semibold w-28">
-                              Debe
-                            </th>
-                            <th className="text-right pb-2 font-semibold w-28">
-                              Haber
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {entryDetail.lines.map((line) => (
-                            <tr
-                              key={line.id}
-                              className="border-t border-[var(--arca-border)]"
-                            >
-                              <td className="py-1.5 text-[var(--arca-ink)]">
-                                <span className="font-mono text-[11px] text-[var(--arca-ink-3)] mr-2">
-                                  {line.accountCode}
-                                </span>
-                                {line.accountName}
-                              </td>
-                              <td className="py-1.5 text-[var(--arca-ink-3)]">
-                                {line.description ?? '—'}
-                              </td>
-                              <td className="py-1.5 text-right tabular-nums font-medium text-[var(--arca-ink)]">
-                                {parseFloat(line.debit) > 0
-                                  ? fmtAmount(line.debit)
-                                  : '—'}
-                              </td>
-                              <td className="py-1.5 text-right tabular-nums font-medium text-[var(--arca-ink)]">
-                                {parseFloat(line.credit) > 0
-                                  ? fmtAmount(line.credit)
-                                  : '—'}
-                              </td>
-                            </tr>
-                          ))}
-                          <tr className="border-t-2 border-[var(--arca-border)]">
-                            <td
-                              colSpan={2}
-                              className="py-1.5 text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase"
-                            >
-                              Total
-                            </td>
-                            <td className="py-1.5 text-right tabular-nums font-semibold text-[var(--arca-ink)]">
-                              {fmtAmount(
-                                entryDetail.lines.reduce(
-                                  (s, l) => s + parseFloat(l.debit),
-                                  0
-                                )
-                              )}
-                            </td>
-                            <td className="py-1.5 text-right tabular-nums font-semibold text-[var(--arca-ink)]">
-                              {fmtAmount(
-                                entryDetail.lines.reduce(
-                                  (s, l) => s + parseFloat(l.credit),
-                                  0
-                                )
-                              )}
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </ArcaCard>
-  );
-}
-
-/* ─── Mayor (Ledger) tab ─── */
-function MayorTab({
-  clientId,
-  accounts,
-}: {
-  clientId: string;
-  accounts: AccountRow[];
-}) {
-  const [accountId, setAccountId] = useState('');
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
-
-  const { data: ledgerRaw, isFetching } = useQuery({
-    queryKey: ['ledger', clientId, accountId, from, to],
-    queryFn: () =>
-      getLedger({
-        data: {
-          clientId,
-          accountId,
-          from: from || undefined,
-          to: to || undefined,
-        },
-      }),
-    enabled: !!clientId && !!accountId,
-  });
-
-  const ledger = ledgerRaw as
-    | {
-        accountId: string;
-        totalDebit: number;
-        totalCredit: number;
-        rows: {
-          entryId: string;
-          entryDate: string | Date;
-          entryDescription: string | null;
-          lineId: string;
-          debit: string;
-          credit: string;
-          lineDescription: string | null;
-        }[];
-      }
-    | undefined;
-
-  const activeAccounts = accounts.filter((a) => a.active);
-
-  return (
-    <ArcaCard>
-      {/* Filter bar */}
-      <div className="flex flex-wrap gap-2 items-center px-5 py-3 border-b border-[var(--arca-border)]">
-        <span className="text-[13px] font-semibold text-[var(--arca-ink)] mr-2">
-          Mayor
-        </span>
-        <select
-          value={accountId}
-          onChange={(e) => setAccountId(e.target.value)}
-          className={`${SELECT_CLASS} w-56`}
-        >
-          <option value="">Seleccionar cuenta...</option>
-          {activeAccounts.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.code} · {a.name}
-            </option>
-          ))}
-        </select>
-        <input
-          type="date"
-          value={from}
-          onChange={(e) => setFrom(e.target.value)}
-          className={`${INPUT_CLASS} w-32`}
-        />
-        <span className="text-[11.5px] text-[var(--arca-ink-3)]">→</span>
-        <input
-          type="date"
-          value={to}
-          onChange={(e) => setTo(e.target.value)}
-          className={`${INPUT_CLASS} w-32`}
-        />
-        {isFetching && (
-          <span className="text-[11px] text-[var(--arca-ink-3)]">
-            Cargando...
-          </span>
-        )}
-      </div>
-
-      {!accountId ? (
-        <div className="flex flex-col items-center justify-center py-14 text-[var(--arca-ink-3)]">
-          <BookOpen className="w-8 h-8 mb-2 opacity-40" strokeWidth={1.5} />
-          <p className="text-[13px]">Seleccioná una cuenta para ver el mayor</p>
-        </div>
-      ) : !ledger || ledger.rows.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-14 text-[var(--arca-ink-3)]">
-          <FileText className="w-8 h-8 mb-2 opacity-40" strokeWidth={1.5} />
-          <p className="text-[13px]">Sin movimientos para esta cuenta</p>
-        </div>
-      ) : (
-        <>
-          {/* Column headers */}
-          <div className="flex items-center gap-4 px-5 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)]">
-            <div className="w-[90px] shrink-0 text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
-              Fecha
-            </div>
-            <div className="flex-1 text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
-              Descripción
-            </div>
-            <div className="w-28 text-right text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
-              Debe
-            </div>
-            <div className="w-28 text-right text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
-              Haber
-            </div>
-          </div>
-
-          <div className="divide-y divide-[var(--arca-border)]">
-            {ledger.rows.map((row) => (
-              <div
-                key={row.lineId}
-                className="flex items-center gap-4 px-5 py-3 hover:bg-[var(--arca-surface-2)] transition-colors duration-[100ms]"
+          {isExpenseGroup && (
+            <Field label="Clasificación de gasto">
+              <select
+                value={expenseFunction}
+                onChange={(e) => setExpenseFunction(e.target.value)}
+                className={`${SELECT_CLASS} w-full h-9`}
               >
-                <div className="w-[90px] shrink-0 text-[12px] font-mono text-[var(--arca-ink-3)]">
-                  {fmtDate(row.entryDate)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[13px] font-medium text-[var(--arca-ink)] truncate">
-                    {row.entryDescription ?? '—'}
-                  </div>
-                  {row.lineDescription && (
-                    <div className="text-[11.5px] text-[var(--arca-ink-3)] truncate">
-                      {row.lineDescription}
-                    </div>
-                  )}
-                </div>
-                <div className="w-28 text-right tabular-nums text-[13px] font-medium text-[var(--arca-ink)]">
-                  {parseFloat(row.debit) > 0 ? fmtAmount(row.debit) : '—'}
-                </div>
-                <div className="w-28 text-right tabular-nums text-[13px] font-medium text-[var(--arca-ink)]">
-                  {parseFloat(row.credit) > 0 ? fmtAmount(row.credit) : '—'}
-                </div>
-              </div>
-            ))}
-          </div>
+                <option value="">—</option>
+                {(
+                  ['administration', 'sales', 'financial', 'other'] as const
+                ).map((f) => (
+                  <option key={f} value={f}>
+                    {EXPENSE_FUNCTION_LABELS[f]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
 
-          {/* Totals */}
-          <div className="flex items-center gap-4 px-5 py-3 border-t-2 border-[var(--arca-border)] bg-[var(--arca-surface-2)]">
-            <div className="w-[90px] shrink-0" />
-            <div className="flex-1 text-[11.5px] font-semibold text-[var(--arca-ink-3)] uppercase">
-              Total
-            </div>
-            <div className="w-28 text-right tabular-nums text-[13px] font-semibold text-[var(--arca-ink)]">
-              {fmtAmount(ledger.totalDebit)}
-            </div>
-            <div className="w-28 text-right tabular-nums text-[13px] font-semibold text-[var(--arca-ink)]">
-              {fmtAmount(ledger.totalCredit)}
-            </div>
-          </div>
-        </>
-      )}
-    </ArcaCard>
-  );
-}
+          {mode.kind !== 'base-edit' && (
+            <Field label="Cuenta padre" full>
+              <select
+                value={parentId}
+                onChange={(e) => setParentId(e.target.value)}
+                className={`${SELECT_CLASS} w-full h-9`}
+              >
+                <option value="">— Ninguna —</option>
+                {parentOptions.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.code} · {a.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
 
-/* ─── Balance (Trial Balance) tab ─── */
-function BalanceTab({ clientId }: { clientId: string }) {
-  const today = new Date().toISOString().slice(0, 10);
-  const firstOfYear = `${new Date().getFullYear()}-01-01`;
-  const [from, setFrom] = useState(firstOfYear);
-  const [to, setTo] = useState(today);
-
-  const {
-    data: balanceRaw,
-    isFetching,
-    refetch,
-  } = useQuery({
-    queryKey: ['trialBalance', clientId, from, to],
-    queryFn: () => getTrialBalance({ data: { clientId, from, to } }),
-    enabled: false,
-  });
-
-  const balance = balanceRaw as
-    | {
-        grandTotalDebit: number;
-        grandTotalCredit: number;
-        rows: {
-          accountId: string;
-          accountCode: string;
-          accountName: string;
-          accountType: AccountType;
-          totalDebit: string;
-          totalCredit: string;
-        }[];
-      }
-    | undefined;
-
-  const ACCOUNT_TYPE_ORDER: AccountType[] = [
-    'asset',
-    'liability',
-    'equity',
-    'income',
-    'expense',
-  ];
-
-  const groupedRows = balance
-    ? ACCOUNT_TYPE_ORDER.map((type) => ({
-        type,
-        rows: balance.rows.filter((r) => r.accountType === type),
-      })).filter((g) => g.rows.length > 0)
-    : [];
-
-  return (
-    <ArcaCard>
-      {/* Filter bar */}
-      <div className="flex flex-wrap gap-2 items-center px-5 py-3 border-b border-[var(--arca-border)]">
-        <span className="text-[13px] font-semibold text-[var(--arca-ink)] mr-2">
-          Balance de sumas y saldos
-        </span>
-        <input
-          type="date"
-          value={from}
-          onChange={(e) => setFrom(e.target.value)}
-          className={`${INPUT_CLASS} w-32`}
-        />
-        <span className="text-[11.5px] text-[var(--arca-ink-3)]">→</span>
-        <input
-          type="date"
-          value={to}
-          onChange={(e) => setTo(e.target.value)}
-          className={`${INPUT_CLASS} w-32`}
-        />
-        <button
-          onClick={() => void refetch()}
-          disabled={isFetching}
-          className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
-        >
-          {isFetching ? 'Calculando...' : 'Calcular'}
-        </button>
-      </div>
-
-      {!balance ? (
-        <div className="flex flex-col items-center justify-center py-14 text-[var(--arca-ink-3)]">
-          <Scale className="w-8 h-8 mb-2 opacity-40" strokeWidth={1.5} />
-          <p className="text-[13px]">
-            Seleccioná un período y presioná Calcular
-          </p>
-        </div>
-      ) : balance.rows.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-14 text-[var(--arca-ink-3)]">
-          <Scale className="w-8 h-8 mb-2 opacity-40" strokeWidth={1.5} />
-          <p className="text-[13px]">
-            Sin movimientos en el período seleccionado
-          </p>
-        </div>
-      ) : (
-        <>
-          {/* Column headers */}
-          <div className="flex items-center gap-3 px-5 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)]">
-            <div className="w-20 shrink-0 text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
-              Código
-            </div>
-            <div className="flex-1 text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
-              Cuenta
-            </div>
-            <div className="w-28 text-right text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
-              Sumas Debe
-            </div>
-            <div className="w-28 text-right text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
-              Sumas Haber
-            </div>
-            <div className="w-28 text-right text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
-              Saldo Deudor
-            </div>
-            <div className="w-28 text-right text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
-              Saldo Acreedor
-            </div>
-          </div>
-
-          {groupedRows.map((group) => {
-            const groupDebit = group.rows.reduce(
-              (s, r) => s + parseFloat(r.totalDebit),
-              0
-            );
-            const groupCredit = group.rows.reduce(
-              (s, r) => s + parseFloat(r.totalCredit),
-              0
-            );
-
-            return (
-              <div key={group.type}>
-                {/* Group header */}
-                <div className="flex items-center gap-3 px-5 py-1.5 bg-[var(--arca-surface-2)] border-b border-[var(--arca-border)]">
-                  <TypeBadge type={group.type} />
-                  <span className="text-[11.5px] font-semibold text-[var(--arca-ink-3)]">
-                    {ACCOUNT_TYPE_LABELS[group.type]}
-                  </span>
-                </div>
-
-                {group.rows.map((row) => {
-                  const debit = parseFloat(row.totalDebit);
-                  const credit = parseFloat(row.totalCredit);
-                  const saldoDeudor = debit > credit ? debit - credit : 0;
-                  const saldoAcreedor = credit > debit ? credit - debit : 0;
-
-                  return (
-                    <div
-                      key={row.accountId}
-                      className="flex items-center gap-3 px-5 py-2.5 border-b border-[var(--arca-border)] hover:bg-[var(--arca-surface-2)] transition-colors duration-[100ms]"
-                    >
-                      <div className="w-20 shrink-0 text-[12px] font-mono text-[var(--arca-ink-3)]">
-                        {row.accountCode}
-                      </div>
-                      <div className="flex-1 text-[13px] font-medium text-[var(--arca-ink)]">
-                        {row.accountName}
-                      </div>
-                      <div className="w-28 text-right tabular-nums text-[12.5px] text-[var(--arca-ink)]">
-                        {debit > 0 ? fmtAmount(debit) : '—'}
-                      </div>
-                      <div className="w-28 text-right tabular-nums text-[12.5px] text-[var(--arca-ink)]">
-                        {credit > 0 ? fmtAmount(credit) : '—'}
-                      </div>
-                      <div className="w-28 text-right tabular-nums text-[12.5px] font-medium text-[var(--arca-ink)]">
-                        {saldoDeudor > 0 ? fmtAmount(saldoDeudor) : '—'}
-                      </div>
-                      <div className="w-28 text-right tabular-nums text-[12.5px] font-medium text-[var(--arca-ink)]">
-                        {saldoAcreedor > 0 ? fmtAmount(saldoAcreedor) : '—'}
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {/* Group subtotal */}
-                <div className="flex items-center gap-3 px-5 py-2 bg-[var(--arca-surface-2)] border-b border-[var(--arca-border)]">
-                  <div className="w-20 shrink-0" />
-                  <div className="flex-1 text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase">
-                    Subtotal
-                  </div>
-                  <div className="w-28 text-right tabular-nums text-[12px] font-semibold text-[var(--arca-ink)]">
-                    {fmtAmount(groupDebit)}
-                  </div>
-                  <div className="w-28 text-right tabular-nums text-[12px] font-semibold text-[var(--arca-ink)]">
-                    {fmtAmount(groupCredit)}
-                  </div>
-                  <div className="w-28" />
-                  <div className="w-28" />
-                </div>
-              </div>
-            );
-          })}
-
-          {/* Grand totals */}
-          <div className="flex items-center gap-3 px-5 py-3 border-t-2 border-[var(--arca-border)] bg-[var(--arca-surface-2)]">
-            <div className="w-20 shrink-0" />
-            <div className="flex-1 text-[12px] font-bold text-[var(--arca-ink)] uppercase tracking-wide">
-              Total general
-            </div>
-            <div className="w-28 text-right tabular-nums text-[13px] font-bold text-[var(--arca-ink)]">
-              {fmtAmount(balance.grandTotalDebit)}
-            </div>
-            <div className="w-28 text-right tabular-nums text-[13px] font-bold text-[var(--arca-ink)]">
-              {fmtAmount(balance.grandTotalCredit)}
-            </div>
-            <div className="w-28" />
-            <div className="w-28" />
-          </div>
-        </>
-      )}
-    </ArcaCard>
-  );
-}
-
-/* ─── Page ─── */
-function AccountingPage() {
-  const [clientId, setClientId] = useState('');
-  const [tab, setTab] = useState<Tab>('plan');
-  const queryClient = useQueryClient();
-
-  /* Clients */
-  const { data: clientsRaw = [] } = useQuery({
-    queryKey: ['clients'],
-    queryFn: () => getRepresentatives(),
-    staleTime: 60_000,
-  });
-  const clients = clientsRaw as { id: string; name: string }[];
-
-  /* Accounts (shared across tabs) */
-  const { data: accountsRaw = [], refetch: refetchAccounts } = useQuery({
-    queryKey: ['accountingAccounts', clientId],
-    queryFn: () => listAccounts({ data: { clientId } }),
-    enabled: !!clientId,
-  });
-  const accounts = accountsRaw as AccountRow[];
-
-  const handleClientChange = (id: string) => {
-    setClientId(id);
-    void queryClient.removeQueries({
-      queryKey: ['accountingAccounts', clientId],
-    });
-    void queryClient.removeQueries({ queryKey: ['journalEntries', clientId] });
-  };
-
-  return (
-    <div className="p-[28px_36px_60px] max-w-[1440px]">
-      <PageHeader
-        icon={BookOpen}
-        title="Contabilidad"
-        subtitle="Plan de cuentas, asientos y reportes"
-      />
-
-      {/* Client selector */}
-      <div className="flex items-center gap-2 mb-5">
-        <select
-          value={clientId}
-          onChange={(e) => handleClientChange(e.target.value)}
-          className={SELECT_CLASS}
-        >
-          <option value="">Seleccionar cliente...</option>
-          {clients.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {!clientId ? (
-        <ArcaCard>
-          <div className="flex flex-col items-center justify-center py-14 text-[var(--arca-ink-3)]">
-            <BookOpen className="w-8 h-8 mb-2 opacity-40" strokeWidth={1.5} />
-            <p className="text-[13px]">Seleccioná un cliente para comenzar</p>
-          </div>
-        </ArcaCard>
-      ) : (
-        <>
-          <TabBar active={tab} onChange={setTab} />
-
-          {tab === 'plan' && (
-            <PlanDeCuentas
-              clientId={clientId}
-              accounts={accounts}
-              onRefresh={() => void refetchAccounts()}
+          <Field label="Descripción" full>
+            <input
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Opcional"
+              className={`${INPUT_CLASS} w-full h-9`}
             />
-          )}
-          {tab === 'asientos' && (
-            <AsientosTab clientId={clientId} accounts={accounts} />
-          )}
-          {tab === 'mayor' && (
-            <MayorTab clientId={clientId} accounts={accounts} />
-          )}
-          {tab === 'balance' && <BalanceTab clientId={clientId} />}
-        </>
-      )}
+          </Field>
+        </div>
+
+        <DialogFooter>
+          <button
+            onClick={onClose}
+            className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)]"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => mut.mutate()}
+            disabled={
+              !name.trim() ||
+              (mode.kind !== 'base-edit' && !code.trim()) ||
+              (type === 'imputable' && (!accountGroup || !expectedBalance)) ||
+              mut.isPending
+            }
+            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+          >
+            {mut.isPending ? 'Guardando…' : 'Guardar'}
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function Field({
+  label,
+  children,
+  full,
+}: {
+  label: string;
+  children: React.ReactNode;
+  full?: boolean;
+}) {
+  return (
+    <div className={`flex flex-col gap-1 ${full ? 'col-span-2' : ''}`}>
+      <label className="text-[11px] text-[var(--arca-ink-3)]">{label}</label>
+      {children}
     </div>
   );
 }
