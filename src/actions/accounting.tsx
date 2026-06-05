@@ -1964,3 +1964,98 @@ export const getLedgerConsolidated = createServerFn({ method: 'GET' })
       grandTotalCredit,
     };
   });
+
+/* ═══════════════ BALANCE DE SUMAS Y SALDOS (US 2.2.x) ═══════════════ */
+
+export interface TrialBalanceRow {
+  accountId: string;
+  code: string;
+  name: string;
+  sumaDebe: number;
+  sumaHaber: number;
+  saldoDeudor: number;
+  saldoAcreedor: number;
+}
+
+/** Balance de sumas y saldos a una fecha de corte. (US 2.2.1) */
+export const getTrialBalance = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid().optional(),
+      asOf: z.string().optional(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const d = ctx.data;
+    await ensureClientBelongsToOrg(d.clientId, orgId);
+    const fy = await resolveFiscalYear(d.clientId, orgId, d.fiscalYearId);
+    if (!fy) return null;
+
+    const corte = d.asOf ? new Date(`${d.asOf}T00:00:00Z`) : fy.endDate;
+
+    const raw = await db
+      .select({
+        accountId: journalEntryLine.accountId,
+        code: account.code,
+        name: account.name,
+        d: sql<string>`coalesce(sum(${journalEntryLine.debit}),0)`,
+        h: sql<string>`coalesce(sum(${journalEntryLine.credit}),0)`,
+      })
+      .from(journalEntryLine)
+      .innerJoin(journalEntry, eq(journalEntry.id, journalEntryLine.journalEntryId))
+      .innerJoin(account, eq(account.id, journalEntryLine.accountId))
+      .where(
+        and(
+          eq(journalEntryLine.clientId, d.clientId),
+          eq(journalEntry.fiscalYearId, fy.id),
+          eq(journalEntry.isVoided, false),
+          lte(journalEntry.entryDate, corte)
+        )
+      )
+      .groupBy(journalEntryLine.accountId, account.code, account.name)
+      .orderBy(asc(account.code));
+
+    let tDebe = 0;
+    let tHaber = 0;
+    let tDeudor = 0;
+    let tAcreedor = 0;
+    const rows: TrialBalanceRow[] = raw.map((r) => {
+      const sumaDebe = parseFloat(r.d);
+      const sumaHaber = parseFloat(r.h);
+      const saldo = sumaDebe - sumaHaber;
+      const saldoDeudor = saldo > 0 ? saldo : 0;
+      const saldoAcreedor = saldo < 0 ? -saldo : 0;
+      tDebe += sumaDebe;
+      tHaber += sumaHaber;
+      tDeudor += saldoDeudor;
+      tAcreedor += saldoAcreedor;
+      return {
+        accountId: r.accountId,
+        code: r.code,
+        name: r.name,
+        sumaDebe,
+        sumaHaber,
+        saldoDeudor,
+        saldoAcreedor,
+      };
+    });
+
+    const balanced =
+      Math.abs(tDebe - tHaber) < 0.005 && Math.abs(tDeudor - tAcreedor) < 0.005;
+
+    return {
+      fiscalYear: { id: fy.id, number: fy.number },
+      fiscalYearStart: fy.startDate,
+      asOf: corte,
+      rows,
+      totals: {
+        sumaDebe: tDebe,
+        sumaHaber: tHaber,
+        saldoDeudor: tDeudor,
+        saldoAcreedor: tAcreedor,
+      },
+      balanced,
+    };
+  });

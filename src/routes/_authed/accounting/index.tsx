@@ -56,6 +56,7 @@ import {
   getPostableAccounts,
   getLedgerAccount,
   getLedgerConsolidated,
+  getTrialBalance,
   type ChartAccount,
   type PeriodView,
   type LedgerRow,
@@ -64,6 +65,8 @@ import {
 import {
   exportMayorExcel,
   exportMayorPdf,
+  exportBalanceExcel,
+  exportBalancePdf,
   type MayorExportData,
   type MayorSection,
 } from '@/lib/mayor-export';
@@ -169,7 +172,7 @@ function TabBar({
     { id: 'ejercicios', label: 'Ejercicios', icon: CalendarDays, ready: true },
     { id: 'asientos', label: 'Asientos', icon: FileText, ready: true },
     { id: 'mayor', label: 'Mayor', icon: BookOpen, ready: true },
-    { id: 'balance', label: 'Balance', icon: Scale, ready: false },
+    { id: 'balance', label: 'Balance', icon: Scale, ready: true },
   ];
   return (
     <div className="flex gap-1 mb-5 border-b border-[var(--arca-border)]">
@@ -258,6 +261,12 @@ function AccountingPage() {
         <Asientos clientId={effectiveClientId} canWrite={roleData?.role !== 'viewer'} />
       ) : tab === 'mayor' ? (
         <Mayor
+          clientId={effectiveClientId}
+          canWrite={roleData?.role !== 'viewer'}
+          clientName={clients.find((c) => c.id === effectiveClientId)?.name ?? ''}
+        />
+      ) : tab === 'balance' ? (
+        <Balance
           clientId={effectiveClientId}
           canWrite={roleData?.role !== 'viewer'}
           clientName={clients.find((c) => c.id === effectiveClientId)?.name ?? ''}
@@ -2833,5 +2842,282 @@ function ConsolidatedAccountRow({
         </div>
       )}
     </div>
+  );
+}
+
+/* ════════════════════ Balance de sumas y saldos (US 2.2.x) ════════════════════ */
+
+function toISODate(d: string | Date): string {
+  return new Date(d).toISOString().slice(0, 10);
+}
+
+interface LedgerDrill {
+  accountId: string;
+  code: string;
+  name: string;
+  from: string;
+  to: string;
+}
+
+function Balance({
+  clientId,
+  canWrite,
+  clientName,
+}: {
+  clientId: string;
+  canWrite: boolean;
+  clientName: string;
+}) {
+  const [fiscalYearId, setFiscalYearId] = useState('');
+  const [asOf, setAsOf] = useState('');
+  const [drill, setDrill] = useState<LedgerDrill | null>(null);
+
+  const { data: fiscalYears = [] } = useQuery({
+    queryKey: ['accounting', 'fiscal-years', clientId],
+    queryFn: () => getFiscalYears({ data: { clientId } }),
+  });
+  const effectiveFyId =
+    fiscalYearId !== ''
+      ? fiscalYearId
+      : (fiscalYears.find((y) => y.status === 'open')?.id ?? fiscalYears[0]?.id ?? '');
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['accounting', 'trial-balance', clientId, effectiveFyId, asOf],
+    queryFn: () =>
+      getTrialBalance({
+        data: { clientId, fiscalYearId: effectiveFyId || undefined, asOf: asOf || undefined },
+      }),
+    enabled: !!effectiveFyId,
+  });
+
+  function doExport(kind: 'xlsx' | 'pdf') {
+    if (!data || data.rows.length === 0) {
+      toast.error('No hay datos para exportar');
+      return;
+    }
+    const payload = {
+      empresaName: clientName,
+      fiscalYearNumber: data.fiscalYear.number,
+      asOf: data.asOf,
+      rows: data.rows,
+      totals: data.totals,
+      balanced: data.balanced,
+    };
+    const p = kind === 'xlsx' ? exportBalanceExcel(payload) : exportBalancePdf(payload);
+    p.catch((e: Error) => toast.error(e.message));
+  }
+
+  if (fiscalYears.length === 0) {
+    return (
+      <ArcaCard>
+        <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+          Esta empresa no tiene ejercicios. Creá uno para generar el balance.
+        </div>
+      </ArcaCard>
+    );
+  }
+
+  return (
+    <>
+      <ArcaCard>
+        {/* Toolbar */}
+        <div className="flex flex-wrap items-end gap-2 px-4 py-3 border-b border-[var(--arca-border)]">
+          {fiscalYears.length > 1 && (
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-[var(--arca-ink-3)]">Ejercicio</label>
+              <select
+                value={effectiveFyId}
+                onChange={(e) => setFiscalYearId(e.target.value)}
+                className={`${SELECT_CLASS} w-36`}
+              >
+                {fiscalYears.map((y) => (
+                  <option key={y.id} value={y.id}>
+                    N°{y.number}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] text-[var(--arca-ink-3)]">Fecha de corte</label>
+            <input
+              type="date"
+              value={asOf}
+              onChange={(e) => setAsOf(e.target.value)}
+              className={`${INPUT_CLASS} w-40`}
+            />
+          </div>
+          {data && (
+            <span className="text-[12px] text-[var(--arca-ink-3)] self-end pb-1.5">
+              al {fmtFecha(data.asOf)}
+            </span>
+          )}
+
+          <div className="ml-auto flex items-center gap-2 self-end">
+            <button
+              onClick={() => doExport('xlsx')}
+              className="flex items-center gap-1.5 h-8 px-2.5 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" strokeWidth={1.8} /> Excel
+            </button>
+            <button
+              onClick={() => doExport('pdf')}
+              className="flex items-center gap-1.5 h-8 px-2.5 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
+            >
+              <Download className="w-3.5 h-3.5" strokeWidth={1.8} /> PDF
+            </button>
+          </div>
+        </div>
+
+        {/* Alerta de descuadre */}
+        {data && !data.balanced && (
+          <div
+            className="px-4 py-2.5 text-[12.5px] font-medium border-b border-[var(--arca-border)]"
+            style={{
+              background: 'color-mix(in oklch, oklch(0.55 0.18 25), transparent 92%)',
+              color: 'oklch(0.45 0.18 25)',
+            }}
+          >
+            ⚠ El balance NO cuadra. Débitos $ {fmtMoney(data.totals.sumaDebe)} vs Créditos ${' '}
+            {fmtMoney(data.totals.sumaHaber)} (dif. ${' '}
+            {fmtMoney(Math.abs(data.totals.sumaDebe - data.totals.sumaHaber))}) · Saldos deudores $
+            {' '}
+            {fmtMoney(data.totals.saldoDeudor)} vs acreedores $ {fmtMoney(data.totals.saldoAcreedor)}.
+          </div>
+        )}
+
+        {/* Column headers */}
+        <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+          <div className="w-24 shrink-0">Código</div>
+          <div className="flex-1 min-w-0">Cuenta</div>
+          <div className="w-28 shrink-0 text-right">Suma Debe</div>
+          <div className="w-28 shrink-0 text-right">Suma Haber</div>
+          <div className="w-28 shrink-0 text-right">Saldo Deudor</div>
+          <div className="w-28 shrink-0 text-right">Saldo Acreedor</div>
+        </div>
+
+        {isLoading ? (
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">Cargando…</div>
+        ) : !data || data.rows.length === 0 ? (
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            No hay movimientos hasta la fecha de corte.
+          </div>
+        ) : (
+          <>
+            {data.rows.map((r) => (
+              <button
+                key={r.accountId}
+                onClick={() =>
+                  setDrill({
+                    accountId: r.accountId,
+                    code: r.code,
+                    name: r.name,
+                    from: toISODate(data.fiscalYearStart),
+                    to: toISODate(data.asOf),
+                  })
+                }
+                className="w-full flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] hover:bg-[var(--arca-surface-2)] transition-colors text-left text-[12.5px]"
+              >
+                <div className="w-24 shrink-0 font-mono text-[12px] text-[var(--arca-ink-3)]">{r.code}</div>
+                <div className="flex-1 min-w-0 truncate text-[var(--arca-ink)]">{r.name}</div>
+                <div className="w-28 shrink-0 text-right">{fmtMoney(r.sumaDebe)}</div>
+                <div className="w-28 shrink-0 text-right">{fmtMoney(r.sumaHaber)}</div>
+                <div className="w-28 shrink-0 text-right">{r.saldoDeudor ? fmtMoney(r.saldoDeudor) : ''}</div>
+                <div className="w-28 shrink-0 text-right">{r.saldoAcreedor ? fmtMoney(r.saldoAcreedor) : ''}</div>
+              </button>
+            ))}
+            <div
+              className="flex items-center gap-3 px-4 py-2.5 border-t-2 text-[12.5px] font-semibold"
+              style={{ borderColor: 'var(--arca-border)' }}
+            >
+              <div className="w-24 shrink-0" />
+              <div className="flex-1 min-w-0">Totales</div>
+              <div className="w-28 shrink-0 text-right">$ {fmtMoney(data.totals.sumaDebe)}</div>
+              <div className="w-28 shrink-0 text-right">$ {fmtMoney(data.totals.sumaHaber)}</div>
+              <div className="w-28 shrink-0 text-right">$ {fmtMoney(data.totals.saldoDeudor)}</div>
+              <div className="w-28 shrink-0 text-right">$ {fmtMoney(data.totals.saldoAcreedor)}</div>
+            </div>
+            {data.balanced && (
+              <div className="px-4 py-2 text-[11.5px] text-[oklch(0.40_0.14_145)] flex items-center gap-1.5">
+                ✓ El balance cuadra (débitos = créditos y saldos deudores = acreedores).
+              </div>
+            )}
+          </>
+        )}
+      </ArcaCard>
+
+      {drill && (
+        <LedgerDialog
+          clientId={clientId}
+          drill={drill}
+          canWrite={canWrite}
+          onClose={() => setDrill(null)}
+        />
+      )}
+    </>
+  );
+}
+
+function LedgerDialog({
+  clientId,
+  drill,
+  canWrite,
+  onClose,
+}: {
+  clientId: string;
+  drill: LedgerDrill;
+  canWrite: boolean;
+  onClose: () => void;
+}) {
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const { data, isLoading } = useQuery({
+    queryKey: ['accounting', 'ledger-account', clientId, drill.accountId, '', drill.from, drill.to, ''],
+    queryFn: () =>
+      getLedgerAccount({
+        data: { clientId, accountId: drill.accountId, from: drill.from, to: drill.to },
+      }),
+  });
+
+  return (
+    <>
+      <Dialog open onOpenChange={(o) => !o && onClose()}>
+        <DialogContent className="sm:max-w-[820px]">
+          <DialogHeader>
+            <DialogTitle>
+              Mayor · {drill.code} · {drill.name}
+            </DialogTitle>
+            <DialogDescription>
+              Movimientos del {fmtFecha(drill.from)} al {fmtFecha(drill.to)}. Click en un movimiento
+              abre el asiento.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-y-auto border border-[var(--arca-border)] rounded-[10px]">
+            {isLoading || !data ? (
+              <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">Cargando…</div>
+            ) : (
+              <LedgerTable
+                saldoInicial={data.saldoInicial}
+                rows={data.rows}
+                totalDebit={data.totalDebit}
+                totalCredit={data.totalCredit}
+                saldoFinal={data.saldoFinal}
+                onRowClick={(id) => setDetailId(id)}
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+      {detailId && (
+        <AsientoDetail
+          entryId={detailId}
+          canWrite={canWrite}
+          onClose={() => setDetailId(null)}
+          onAction={() => setDetailId(null)}
+          onChanged={() => {
+            /* no-op */
+          }}
+        />
+      )}
+    </>
   );
 }

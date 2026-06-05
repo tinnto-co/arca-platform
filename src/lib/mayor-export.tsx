@@ -327,3 +327,163 @@ export async function exportMayorPdf(data: MayorExportData): Promise<void> {
 
 /* MONTH_NAMES re-export para evitar tree-shaking accidental si se usa en el futuro. */
 export { MONTH_NAMES };
+
+/* ═══════════════ Balance de sumas y saldos — exports (US 2.2.3) ═══════════════ */
+
+export interface BalanceExportRow {
+  code: string;
+  name: string;
+  sumaDebe: number;
+  sumaHaber: number;
+  saldoDeudor: number;
+  saldoAcreedor: number;
+}
+export interface BalanceExportData {
+  empresaName: string;
+  fiscalYearNumber: number | null;
+  asOf: string | Date;
+  rows: BalanceExportRow[];
+  totals: { sumaDebe: number; sumaHaber: number; saldoDeudor: number; saldoAcreedor: number };
+  balanced: boolean;
+}
+
+const BAL_HEADERS = ['Código', 'Cuenta', 'Suma Debe', 'Suma Haber', 'Saldo Deudor', 'Saldo Acreedor'];
+
+export async function exportBalanceExcel(data: BalanceExportData): Promise<void> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Balance', { views: [{ showGridLines: false }] });
+
+  const t1 = ws.addRow([data.empresaName]);
+  t1.getCell(1).font = { bold: true, size: 14 };
+  const t2 = ws.addRow([
+    `Balance de sumas y saldos · Ejercicio N°${data.fiscalYearNumber ?? ''} · al ${fmtDate(data.asOf)}`,
+  ]);
+  t2.getCell(1).font = { color: { argb: 'FF555555' } };
+  const t3 = ws.addRow([DISCLAIMER]);
+  t3.getCell(1).font = { italic: true, size: 8, color: { argb: 'FF999999' } };
+  ws.addRow([]);
+
+  const head = ws.addRow(BAL_HEADERS);
+  for (let c = 1; c <= 6; c++) {
+    head.getCell(c).font = { bold: true };
+    head.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GREY } };
+    head.getCell(c).border = { bottom: { style: 'thin', color: { argb: BORDER_GREY } } };
+    if (c >= 3) head.getCell(c).alignment = { horizontal: 'right' };
+  }
+
+  for (const r of data.rows) {
+    const row = ws.addRow([
+      r.code,
+      r.name,
+      r.sumaDebe,
+      r.sumaHaber,
+      r.saldoDeudor || null,
+      r.saldoAcreedor || null,
+    ]);
+    for (let c = 3; c <= 6; c++) {
+      row.getCell(c).numFmt = MONEY_FMT;
+      row.getCell(c).alignment = { horizontal: 'right' };
+    }
+  }
+
+  const tot = ws.addRow([
+    '',
+    'Totales',
+    data.totals.sumaDebe,
+    data.totals.sumaHaber,
+    data.totals.saldoDeudor,
+    data.totals.saldoAcreedor,
+  ]);
+  for (let c = 1; c <= 6; c++) {
+    tot.getCell(c).font = { bold: true };
+    tot.getCell(c).border = { top: { style: 'thin', color: { argb: BORDER_GREY } } };
+    if (c >= 3) {
+      tot.getCell(c).numFmt = MONEY_FMT;
+      tot.getCell(c).alignment = { horizontal: 'right' };
+    }
+  }
+
+  if (!data.balanced) {
+    ws.addRow([]);
+    const warn = ws.addRow(['⚠ El balance NO cuadra: revisar antes de cerrar.']);
+    warn.getCell(1).font = { bold: true, color: { argb: 'FFB00020' } };
+  }
+
+  [12, 40, 16, 16, 16, 16].forEach((w, i) => {
+    if (ws.columns[i]) ws.columns[i].width = w;
+  });
+
+  const buffer = await wb.xlsx.writeBuffer();
+  triggerDownload(
+    new Blob([buffer as ArrayBuffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    }),
+    `balance_sumas_saldos_${Date.now()}.xlsx`
+  );
+}
+
+const bs = StyleSheet.create({
+  th: {
+    flexDirection: 'row',
+    borderBottom: '1pt solid #999',
+    paddingVertical: 3,
+    fontFamily: 'Helvetica-Bold',
+    marginTop: 8,
+  },
+  row: { flexDirection: 'row', borderBottom: '0.5pt solid #e5e5e5', paddingVertical: 2.5 },
+  totalRow: { flexDirection: 'row', borderTop: '1pt solid #999', paddingVertical: 3, fontFamily: 'Helvetica-Bold' },
+  cCode: { width: '13%' },
+  cName: { width: '37%' },
+  cNum: { width: '12.5%', textAlign: 'right' },
+  warn: { marginTop: 10, color: '#b00020', fontFamily: 'Helvetica-Bold' },
+});
+
+function BalancePdfDoc({ data }: { data: BalanceExportData }) {
+  return (
+    <Document>
+      <Page size="A4" style={s.page} wrap>
+        <Text style={s.empresa}>{data.empresaName}</Text>
+        <Text style={s.sub}>
+          Balance de sumas y saldos · Ejercicio N°{data.fiscalYearNumber ?? ''} · al{' '}
+          {fmtDate(data.asOf)}
+        </Text>
+        <Text style={s.disclaimer}>{DISCLAIMER}</Text>
+
+        <View style={bs.th}>
+          <Text style={bs.cCode}>Código</Text>
+          <Text style={bs.cName}>Cuenta</Text>
+          <Text style={bs.cNum}>Suma Debe</Text>
+          <Text style={bs.cNum}>Suma Haber</Text>
+          <Text style={bs.cNum}>S. Deudor</Text>
+          <Text style={bs.cNum}>S. Acreedor</Text>
+        </View>
+        {data.rows.map((r) => (
+          <View key={r.code} style={bs.row}>
+            <Text style={bs.cCode}>{r.code}</Text>
+            <Text style={bs.cName}>{r.name}</Text>
+            <Text style={bs.cNum}>{fmtMoney(r.sumaDebe)}</Text>
+            <Text style={bs.cNum}>{fmtMoney(r.sumaHaber)}</Text>
+            <Text style={bs.cNum}>{r.saldoDeudor ? fmtMoney(r.saldoDeudor) : ''}</Text>
+            <Text style={bs.cNum}>{r.saldoAcreedor ? fmtMoney(r.saldoAcreedor) : ''}</Text>
+          </View>
+        ))}
+        <View style={bs.totalRow}>
+          <Text style={bs.cCode} />
+          <Text style={bs.cName}>Totales</Text>
+          <Text style={bs.cNum}>{fmtMoney(data.totals.sumaDebe)}</Text>
+          <Text style={bs.cNum}>{fmtMoney(data.totals.sumaHaber)}</Text>
+          <Text style={bs.cNum}>{fmtMoney(data.totals.saldoDeudor)}</Text>
+          <Text style={bs.cNum}>{fmtMoney(data.totals.saldoAcreedor)}</Text>
+        </View>
+        {!data.balanced && (
+          <Text style={bs.warn}>El balance NO cuadra: revisar antes de cerrar el período.</Text>
+        )}
+      </Page>
+    </Document>
+  );
+}
+
+export async function exportBalancePdf(data: BalanceExportData): Promise<void> {
+  const blob = await pdf(<BalancePdfDoc data={data} />).toBlob();
+  triggerDownload(blob, `balance_sumas_saldos_${Date.now()}.pdf`);
+}
