@@ -12,15 +12,17 @@ import {
   account,
   accountOverride,
   accountingLog,
+  accountingPeriod,
   client,
   fiscalYear,
   journalEntry,
   journalEntryLine,
   representative,
+  user,
 } from '@/drizzle/schema';
 import { getSessionWithOrg, getMemberRole } from '@/actions/helpers';
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
-import { CUSTOM_CODE_PREFIX } from '@/lib/accounting-labels';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { CUSTOM_CODE_PREFIX, PENDING_REVIEW_CODE } from '@/lib/accounting-labels';
 
 /* ───────────────────────────── Helpers ───────────────────────────── */
 
@@ -703,4 +705,358 @@ export const deleteBaseAccount = createServerFn({ method: 'POST' })
 
     await db.delete(account).where(eq(account.id, acc.id));
     return { ok: true };
+  });
+
+/* ═══════════════ EJERCICIOS Y PERÍODOS (US 1.2.x) ═══════════════ */
+
+type FiscalYearRow = typeof fiscalYear.$inferSelect;
+type PeriodRow = typeof accountingPeriod.$inferSelect;
+
+/** Valida que un ejercicio pertenezca al estudio del usuario y lo devuelve. */
+async function loadFiscalYearForOrg(
+  fiscalYearId: string,
+  orgId: string
+): Promise<FiscalYearRow> {
+  const [row] = await db
+    .select({ fy: fiscalYear })
+    .from(fiscalYear)
+    .innerJoin(client, eq(client.id, fiscalYear.clientId))
+    .innerJoin(representative, eq(representative.id, client.representativeId))
+    .where(
+      and(eq(fiscalYear.id, fiscalYearId), eq(representative.organizationId, orgId))
+    )
+    .limit(1);
+  if (!row) throw new Error('Ejercicio no encontrado o no autorizado');
+  return row.fy;
+}
+
+/** Valida que un período pertenezca al estudio y devuelve {period, fy}. */
+async function loadPeriodForOrg(
+  periodId: string,
+  orgId: string
+): Promise<{ period: PeriodRow; fy: FiscalYearRow }> {
+  const [row] = await db
+    .select({ period: accountingPeriod, fy: fiscalYear })
+    .from(accountingPeriod)
+    .innerJoin(fiscalYear, eq(fiscalYear.id, accountingPeriod.fiscalYearId))
+    .innerJoin(client, eq(client.id, accountingPeriod.clientId))
+    .innerJoin(representative, eq(representative.id, client.representativeId))
+    .where(
+      and(eq(accountingPeriod.id, periodId), eq(representative.organizationId, orgId))
+    )
+    .limit(1);
+  if (!row) throw new Error('Período no encontrado o no autorizado');
+  return row;
+}
+
+/** Cantidad de asientos no anulados de un período con líneas en la cuenta pendiente de revisión. */
+async function countPendingReviewEntries(
+  periodId: string,
+  orgId: string
+): Promise<number> {
+  const [r] = await db
+    .select({ count: sql<number>`count(distinct ${journalEntry.id})::int` })
+    .from(journalEntry)
+    .innerJoin(journalEntryLine, eq(journalEntryLine.journalEntryId, journalEntry.id))
+    .innerJoin(account, eq(account.id, journalEntryLine.accountId))
+    .where(
+      and(
+        eq(journalEntry.periodId, periodId),
+        eq(journalEntry.isVoided, false),
+        eq(account.organizationId, orgId),
+        eq(account.code, PENDING_REVIEW_CODE)
+      )
+    );
+  return r?.count ?? 0;
+}
+
+/**
+ * Crea un ejercicio fiscal de exactamente 12 meses calendario y sus 12 períodos
+ * mensuales (todos abiertos). Solo puede haber un ejercicio abierto por empresa. (US 1.2.1)
+ */
+export const createFiscalYear = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      startDate: z.string(), // YYYY-MM-DD
+      endDate: z.string(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertOwner(role);
+    const { clientId } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+
+    const start = new Date(`${ctx.data.startDate}T00:00:00Z`);
+    const end = new Date(`${ctx.data.endDate}T00:00:00Z`);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      throw new Error('Fechas inválidas');
+    }
+    const sY = start.getUTCFullYear();
+    const sM = start.getUTCMonth();
+    if (start.getUTCDate() !== 1) {
+      throw new Error('El ejercicio debe empezar el día 1 de un mes');
+    }
+    // Fin esperado: último día del mes 12 del ejercicio.
+    const expectedEnd = new Date(Date.UTC(sY, sM + 12, 0));
+    if (end.getTime() !== expectedEnd.getTime()) {
+      const eStr = expectedEnd.toISOString().slice(0, 10);
+      throw new Error(
+        `El ejercicio debe durar exactamente 12 meses calendario. Para ese inicio, el fin debe ser ${eStr}`
+      );
+    }
+
+    // Un solo ejercicio abierto por empresa.
+    const [openFy] = await db
+      .select({ id: fiscalYear.id })
+      .from(fiscalYear)
+      .where(
+        and(
+          eq(fiscalYear.clientId, clientId),
+          inArray(fiscalYear.status, ['open', 'closing'])
+        )
+      )
+      .limit(1);
+    if (openFy) {
+      throw new Error(
+        'Ya hay un ejercicio abierto para esta empresa. Cerralo antes de crear uno nuevo'
+      );
+    }
+
+    const [{ maxNum }] = await db
+      .select({ maxNum: sql<number>`coalesce(max(${fiscalYear.number}),0)::int` })
+      .from(fiscalYear)
+      .where(eq(fiscalYear.clientId, clientId));
+    const number = (maxNum ?? 0) + 1;
+
+    const [fy] = await db
+      .insert(fiscalYear)
+      .values({ clientId, startDate: start, endDate: end, status: 'open', number })
+      .returning();
+
+    const periods = Array.from({ length: 12 }, (_, i) => {
+      const d = new Date(Date.UTC(sY, sM + i, 1));
+      return {
+        fiscalYearId: fy.id,
+        clientId,
+        year: d.getUTCFullYear(),
+        month: d.getUTCMonth() + 1,
+        status: 'open' as const,
+      };
+    });
+    await db.insert(accountingPeriod).values(periods);
+
+    return fy;
+  });
+
+/** Lista los ejercicios de una empresa con su resumen de períodos cerrados. */
+export const getFiscalYears = createServerFn({ method: 'GET' })
+  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+
+    const years = await db
+      .select()
+      .from(fiscalYear)
+      .where(eq(fiscalYear.clientId, ctx.data.clientId))
+      .orderBy(desc(fiscalYear.number));
+
+    const counts = await db
+      .select({
+        fiscalYearId: accountingPeriod.fiscalYearId,
+        total: sql<number>`count(*)::int`,
+        closed: sql<number>`(count(*) filter (where ${accountingPeriod.status} = 'closed'))::int`,
+      })
+      .from(accountingPeriod)
+      .where(eq(accountingPeriod.clientId, ctx.data.clientId))
+      .groupBy(accountingPeriod.fiscalYearId);
+    const byFy = new Map(counts.map((c) => [c.fiscalYearId, c]));
+
+    return years.map((y) => ({
+      ...y,
+      periodsTotal: byFy.get(y.id)?.total ?? 0,
+      periodsClosed: byFy.get(y.id)?.closed ?? 0,
+    }));
+  });
+
+export interface PeriodView {
+  id: string;
+  year: number;
+  month: number;
+  status: 'open' | 'closed';
+  closedAt: string | Date | null;
+  entryCount: number;
+  totalAmount: number;
+  isCurrent: boolean;
+}
+
+/**
+ * Detalle de un ejercicio: sus 12 períodos con estado, cantidad de asientos,
+ * monto movido, y cuál es el período abierto actual. (US 1.2.2)
+ */
+export const getFiscalYearDetail = createServerFn({ method: 'GET' })
+  .inputValidator(z.object({ fiscalYearId: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
+
+    const periods = await db
+      .select()
+      .from(accountingPeriod)
+      .where(eq(accountingPeriod.fiscalYearId, fy.id))
+      .orderBy(asc(accountingPeriod.year), asc(accountingPeriod.month));
+
+    const stats = await db
+      .select({
+        periodId: journalEntry.periodId,
+        entryCount: sql<number>`count(distinct ${journalEntry.id})::int`,
+        totalDebit: sql<string>`coalesce(sum(${journalEntryLine.debit}),0)`,
+      })
+      .from(journalEntry)
+      .leftJoin(journalEntryLine, eq(journalEntryLine.journalEntryId, journalEntry.id))
+      .where(and(eq(journalEntry.fiscalYearId, fy.id), eq(journalEntry.isVoided, false)))
+      .groupBy(journalEntry.periodId);
+    const byPeriod = new Map(stats.map((s) => [s.periodId, s]));
+
+    // Período actual = el abierto más antiguo.
+    const currentPeriod = periods.find((p) => p.status === 'open');
+
+    const periodsOut: PeriodView[] = periods.map((p) => ({
+      id: p.id,
+      year: p.year,
+      month: p.month,
+      status: p.status,
+      closedAt: p.closedAt,
+      entryCount: byPeriod.get(p.id)?.entryCount ?? 0,
+      totalAmount: parseFloat(byPeriod.get(p.id)?.totalDebit ?? '0'),
+      isCurrent: currentPeriod?.id === p.id,
+    }));
+
+    return {
+      fiscalYear: fy,
+      periods: periodsOut,
+      currentPeriodId: currentPeriod?.id ?? null,
+    };
+  });
+
+/**
+ * Cierra el período abierto más antiguo del ejercicio (cierre secuencial).
+ * Bloquea si hay asientos pendientes de revisión. Registra en el log. (US 1.2.3)
+ */
+export const closePeriod = createServerFn({ method: 'POST' })
+  .inputValidator(z.object({ periodId: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertOwner(role);
+
+    const { period, fy } = await loadPeriodForOrg(ctx.data.periodId, orgId);
+    if (fy.status === 'closed') throw new Error('El ejercicio está cerrado');
+    if (period.status === 'closed') throw new Error('El período ya está cerrado');
+
+    const [earliest] = await db
+      .select({ id: accountingPeriod.id })
+      .from(accountingPeriod)
+      .where(
+        and(eq(accountingPeriod.fiscalYearId, fy.id), eq(accountingPeriod.status, 'open'))
+      )
+      .orderBy(asc(accountingPeriod.year), asc(accountingPeriod.month))
+      .limit(1);
+    if (earliest?.id !== period.id) {
+      throw new Error(
+        'Solo se puede cerrar el período abierto más antiguo (no se cierran períodos salteados)'
+      );
+    }
+
+    const pending = await countPendingReviewEntries(period.id, orgId);
+    if (pending > 0) {
+      throw new Error(
+        `No se puede cerrar: hay ${pending} asiento(s) pendiente(s) de revisión`
+      );
+    }
+
+    await db
+      .update(accountingPeriod)
+      .set({ status: 'closed', closedAt: new Date(), closedBy: userId })
+      .where(eq(accountingPeriod.id, period.id));
+
+    await db.insert(accountingLog).values({
+      clientId: period.clientId,
+      fiscalYearId: fy.id,
+      eventType: 'period_closed',
+      eventData: { periodId: period.id, year: period.year, month: period.month },
+      userId,
+    });
+
+    return { ok: true };
+  });
+
+/**
+ * Reabre un período cerrado con motivo obligatorio. Los asientos se conservan.
+ * Registra en el log con usuario, fecha y motivo. (US 1.2.4)
+ */
+export const reopenPeriod = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({ periodId: z.string().uuid(), reason: z.string().trim().min(1) })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertOwner(role);
+
+    const { period, fy } = await loadPeriodForOrg(ctx.data.periodId, orgId);
+    if (fy.status === 'closed') {
+      throw new Error('El ejercicio está cerrado. Reabrí el ejercicio primero');
+    }
+    if (period.status !== 'closed') throw new Error('El período no está cerrado');
+
+    await db
+      .update(accountingPeriod)
+      .set({ status: 'open', closedAt: null, closedBy: null })
+      .where(eq(accountingPeriod.id, period.id));
+
+    await db.insert(accountingLog).values({
+      clientId: period.clientId,
+      fiscalYearId: fy.id,
+      eventType: 'period_reopened',
+      eventData: {
+        periodId: period.id,
+        year: period.year,
+        month: period.month,
+        reason: ctx.data.reason.trim(),
+      },
+      userId,
+    });
+
+    return { ok: true };
+  });
+
+/** Log auditable de cierres/reaperturas de un ejercicio. */
+export const getAccountingLog = createServerFn({ method: 'GET' })
+  .inputValidator(z.object({ fiscalYearId: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
+
+    return db
+      .select({
+        id: accountingLog.id,
+        eventType: accountingLog.eventType,
+        eventData: sql<{
+          periodId?: string;
+          year?: number;
+          month?: number;
+          reason?: string;
+        } | null>`${accountingLog.eventData}`,
+        createdAt: accountingLog.createdAt,
+        userName: user.name,
+        userEmail: user.email,
+      })
+      .from(accountingLog)
+      .leftJoin(user, eq(user.id, accountingLog.userId))
+      .where(eq(accountingLog.fiscalYearId, fy.id))
+      .orderBy(desc(accountingLog.createdAt));
   });

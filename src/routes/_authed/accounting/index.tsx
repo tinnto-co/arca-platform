@@ -17,6 +17,10 @@ import {
   Building2,
   Layers,
   Lock,
+  CalendarDays,
+  CalendarPlus,
+  LockOpen,
+  History,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { ArcaCard } from '@/components/dashboard/shared';
@@ -32,7 +36,14 @@ import {
   createBaseAccount,
   updateBaseAccount,
   deleteBaseAccount,
+  getFiscalYears,
+  createFiscalYear,
+  getFiscalYearDetail,
+  closePeriod,
+  reopenPeriod,
+  getAccountingLog,
   type ChartAccount,
+  type PeriodView,
 } from '@/actions/accounting';
 import {
   ACCOUNT_GROUP_LABELS,
@@ -41,6 +52,8 @@ import {
   EXPECTED_BALANCE_LABELS,
   EXPENSE_FUNCTION_LABELS,
   CUSTOM_CODE_PREFIX,
+  MONTH_NAMES,
+  FISCAL_YEAR_STATUS_LABELS,
   type AccountGroup,
 } from '@/lib/accounting-labels';
 import {
@@ -114,7 +127,7 @@ function OriginBadge({ scope }: { scope: 'base' | 'custom' }) {
 }
 
 /* ─── Tab bar ─── */
-type Tab = 'plan' | 'asientos' | 'mayor' | 'balance';
+type Tab = 'plan' | 'ejercicios' | 'asientos' | 'mayor' | 'balance';
 
 function TabBar({
   active,
@@ -130,6 +143,7 @@ function TabBar({
     ready: boolean;
   }[] = [
     { id: 'plan', label: 'Plan de cuentas', icon: List, ready: true },
+    { id: 'ejercicios', label: 'Ejercicios', icon: CalendarDays, ready: true },
     { id: 'asientos', label: 'Asientos', icon: FileText, ready: false },
     { id: 'mayor', label: 'Mayor', icon: BookOpen, ready: false },
     { id: 'balance', label: 'Balance', icon: Scale, ready: false },
@@ -215,6 +229,8 @@ function AccountingPage() {
         </ArcaCard>
       ) : tab === 'plan' ? (
         <PlanDeCuentas clientId={effectiveClientId} isOwner={isOwner} />
+      ) : tab === 'ejercicios' ? (
+        <Ejercicios clientId={effectiveClientId} isOwner={isOwner} />
       ) : (
         <ArcaCard>
           <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
@@ -1115,5 +1131,533 @@ function Field({
       <label className="text-[11px] text-[var(--arca-ink-3)]">{label}</label>
       {children}
     </div>
+  );
+}
+
+/* ════════════════════ Ejercicios y períodos (US 1.2.x) ════════════════════ */
+
+function fmtFecha(d: string | Date) {
+  return new Date(d).toLocaleDateString('es-AR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+function fmtMoney(n: number) {
+  return n.toLocaleString('es-AR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+/** Primer día del mes (YYYY-MM-01) de una fecha YYYY-MM-DD. */
+function firstOfMonth(dateStr: string): string {
+  if (!dateStr) return '';
+  return `${dateStr.slice(0, 7)}-01`;
+}
+
+/** Último día del mes 12 del ejercicio que empieza en startStr (día 1). */
+function computeEnd(startStr: string): string {
+  const first = firstOfMonth(startStr);
+  if (!first) return '';
+  const d = new Date(`${first}T00:00:00Z`);
+  if (isNaN(d.getTime())) return '';
+  const end = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 12, 0));
+  return end.toISOString().slice(0, 10);
+}
+
+function Ejercicios({ clientId, isOwner }: { clientId: string; isOwner: boolean }) {
+  const qc = useQueryClient();
+  const [selectedFyId, setSelectedFyId] = useState<string>('');
+  const [showCreate, setShowCreate] = useState(false);
+  const [reopenTarget, setReopenTarget] = useState<PeriodView | null>(null);
+  const [closeTarget, setCloseTarget] = useState<PeriodView | null>(null);
+
+  const { data: fiscalYears = [] } = useQuery({
+    queryKey: ['accounting', 'fiscal-years', clientId],
+    queryFn: () => getFiscalYears({ data: { clientId } }),
+  });
+
+  const effectiveFyId =
+    selectedFyId !== ''
+      ? selectedFyId
+      : (fiscalYears.find((y) => y.status === 'open')?.id ??
+        fiscalYears[0]?.id ??
+        '');
+
+  const { data: detail } = useQuery({
+    queryKey: ['accounting', 'fy-detail', effectiveFyId],
+    queryFn: () => getFiscalYearDetail({ data: { fiscalYearId: effectiveFyId } }),
+    enabled: !!effectiveFyId,
+  });
+
+  const { data: log = [] } = useQuery({
+    queryKey: ['accounting', 'fy-log', effectiveFyId],
+    queryFn: () => getAccountingLog({ data: { fiscalYearId: effectiveFyId } }),
+    enabled: !!effectiveFyId,
+  });
+
+  const invalidate = () => {
+    void qc.invalidateQueries({ queryKey: ['accounting'] });
+  };
+
+  const closeMut = useMutation({
+    mutationFn: (periodId: string) => closePeriod({ data: { periodId } }),
+    onSuccess: () => {
+      toast.success('Período cerrado');
+      setCloseTarget(null);
+      invalidate();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  if (fiscalYears.length === 0) {
+    return (
+      <>
+        <ArcaCard>
+          <div className="px-5 py-12 text-center">
+            <CalendarDays
+              className="w-8 h-8 mx-auto mb-3 text-[var(--arca-ink-3)]"
+              strokeWidth={1.5}
+            />
+            <p className="text-[13px] text-[var(--arca-ink-2)] mb-1">
+              Esta empresa todavía no tiene ningún ejercicio contable.
+            </p>
+            <p className="text-[12px] text-[var(--arca-ink-3)] mb-4">
+              Creá el primer ejercicio para empezar a cargar asientos.
+            </p>
+            {isOwner && (
+              <button
+                onClick={() => setShowCreate(true)}
+                className="inline-flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90"
+              >
+                <CalendarPlus className="w-3.5 h-3.5" strokeWidth={2} />
+                Crear ejercicio
+              </button>
+            )}
+          </div>
+        </ArcaCard>
+        {showCreate && (
+          <CreateFiscalYearDialog
+            clientId={clientId}
+            onClose={() => setShowCreate(false)}
+            onSaved={() => {
+              setShowCreate(false);
+              invalidate();
+            }}
+          />
+        )}
+      </>
+    );
+  }
+
+  return (
+    <>
+      {/* Selector de ejercicios */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        {fiscalYears.map((y) => {
+          const active = y.id === effectiveFyId;
+          return (
+            <button
+              key={y.id}
+              onClick={() => setSelectedFyId(y.id)}
+              className="flex items-center gap-2 h-9 px-3 rounded-[10px] border transition-colors text-[12.5px]"
+              style={{
+                borderColor: active ? 'var(--arca-ink)' : 'var(--arca-border)',
+                background: active ? 'var(--arca-surface-2)' : 'var(--arca-surface)',
+                color: active ? 'var(--arca-ink)' : 'var(--arca-ink-2)',
+              }}
+            >
+              <span className="font-semibold">Ejercicio N°{y.number}</span>
+              <span className="text-[var(--arca-ink-3)]">
+                {fmtFecha(y.startDate)} – {fmtFecha(y.endDate)}
+              </span>
+              <FyStatusBadge status={y.status} />
+              <span className="text-[11px] text-[var(--arca-ink-3)]">
+                {y.periodsClosed}/{y.periodsTotal} cerrados
+              </span>
+            </button>
+          );
+        })}
+        {isOwner && (
+          <button
+            onClick={() => setShowCreate(true)}
+            className="flex items-center gap-1.5 h-9 px-3 text-[12.5px] font-medium rounded-[10px] border border-dashed border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
+          >
+            <CalendarPlus className="w-3.5 h-3.5" strokeWidth={2} />
+            Nuevo ejercicio
+          </button>
+        )}
+      </div>
+
+      {/* Períodos del ejercicio seleccionado */}
+      {detail && (
+        <ArcaCard>
+          <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--arca-border)]">
+            <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+              Períodos · Ejercicio N°{detail.fiscalYear.number}
+            </span>
+            <FyStatusBadge status={detail.fiscalYear.status} />
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 p-4">
+            {detail.periods.map((p) => (
+              <PeriodCard
+                key={p.id}
+                period={p}
+                isOwner={isOwner}
+                onClose={() => setCloseTarget(p)}
+                onReopen={() => setReopenTarget(p)}
+              />
+            ))}
+          </div>
+        </ArcaCard>
+      )}
+
+      {/* Log auditable */}
+      {log.length > 0 && (
+        <ArcaCard className="mt-4">
+          <div className="flex items-center gap-2 px-5 py-3 border-b border-[var(--arca-border)]">
+            <History className="w-4 h-4 text-[var(--arca-ink-3)]" strokeWidth={1.8} />
+            <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+              Historial de cierres y reaperturas
+            </span>
+          </div>
+          <div className="divide-y divide-[var(--arca-border)]">
+            {log.map((e) => (
+              <div key={e.id} className="flex items-start gap-3 px-5 py-2.5 text-[12px]">
+                <span
+                  className="mt-0.5 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium shrink-0"
+                  style={{
+                    background:
+                      e.eventType === 'period_reopened'
+                        ? 'color-mix(in oklch, oklch(0.55 0.15 50), transparent 88%)'
+                        : 'color-mix(in oklch, oklch(0.45 0.04 250), transparent 88%)',
+                    color:
+                      e.eventType === 'period_reopened'
+                        ? 'oklch(0.45 0.15 50)'
+                        : 'oklch(0.40 0.04 250)',
+                  }}
+                >
+                  {e.eventType === 'period_reopened' ? 'Reapertura' : 'Cierre'}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <span className="text-[var(--arca-ink)]">
+                    {e.eventData?.month
+                      ? `${MONTH_NAMES[e.eventData.month]} ${e.eventData.year}`
+                      : 'Período'}
+                  </span>
+                  {e.eventData?.reason && (
+                    <span className="text-[var(--arca-ink-3)]">
+                      {' '}
+                      · Motivo: {e.eventData.reason}
+                    </span>
+                  )}
+                  <span className="text-[var(--arca-ink-3)]">
+                    {' '}
+                    — {e.userName ?? e.userEmail ?? 'usuario'} ·{' '}
+                    {new Date(e.createdAt).toLocaleString('es-AR')}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </ArcaCard>
+      )}
+
+      {showCreate && (
+        <CreateFiscalYearDialog
+          clientId={clientId}
+          onClose={() => setShowCreate(false)}
+          onSaved={() => {
+            setShowCreate(false);
+            invalidate();
+          }}
+        />
+      )}
+
+      {/* Confirmar cierre */}
+      {closeTarget && (
+        <AlertDialog open onOpenChange={(o) => !o && setCloseTarget(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Cerrar período</AlertDialogTitle>
+              <AlertDialogDescription>
+                Vas a cerrar{' '}
+                <strong>
+                  {MONTH_NAMES[closeTarget.month]} {closeTarget.year}
+                </strong>
+                . Sus {closeTarget.entryCount} asiento(s) quedarán inmutables y se
+                habilitará el período siguiente. Esta acción queda registrada en el log.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                disabled={closeMut.isPending}
+                onClick={() => closeMut.mutate(closeTarget.id)}
+              >
+                Cerrar período
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
+      {/* Reabrir período */}
+      {reopenTarget && (
+        <ReopenPeriodDialog
+          period={reopenTarget}
+          onClose={() => setReopenTarget(null)}
+          onSaved={() => {
+            setReopenTarget(null);
+            invalidate();
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function FyStatusBadge({ status }: { status: 'open' | 'closing' | 'closed' }) {
+  const color =
+    status === 'open'
+      ? 'oklch(0.45 0.14 145)'
+      : status === 'closing'
+        ? 'oklch(0.55 0.15 50)'
+        : 'oklch(0.50 0.02 260)';
+  return (
+    <span
+      className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium shrink-0"
+      style={{
+        background: `color-mix(in oklch, ${color}, transparent 86%)`,
+        color,
+      }}
+    >
+      {FISCAL_YEAR_STATUS_LABELS[status]}
+    </span>
+  );
+}
+
+function PeriodCard({
+  period,
+  isOwner,
+  onClose,
+  onReopen,
+}: {
+  period: PeriodView;
+  isOwner: boolean;
+  onClose: () => void;
+  onReopen: () => void;
+}) {
+  const closed = period.status === 'closed';
+  const estado = closed
+    ? { label: 'Cerrado', color: 'oklch(0.50 0.02 260)' }
+    : period.isCurrent
+      ? { label: 'Abierto · actual', color: 'oklch(0.45 0.14 145)' }
+      : { label: 'Por abrir', color: 'oklch(0.55 0.02 260)' };
+
+  return (
+    <div
+      className="rounded-[10px] border p-3 flex flex-col gap-2"
+      style={{
+        borderColor: period.isCurrent ? 'oklch(0.45 0.14 145)' : 'var(--arca-border)',
+        background: period.isCurrent
+          ? 'color-mix(in oklch, oklch(0.45 0.14 145), transparent 95%)'
+          : 'var(--arca-surface)',
+        boxShadow: period.isCurrent
+          ? '0 0 0 1px color-mix(in oklch, oklch(0.45 0.14 145), transparent 70%)'
+          : 'none',
+      }}
+    >
+      <div className="flex items-center justify-between">
+        <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+          {MONTH_NAMES[period.month]} {period.year}
+        </span>
+        <span
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium"
+          style={{
+            background: `color-mix(in oklch, ${estado.color}, transparent 86%)`,
+            color: estado.color,
+          }}
+        >
+          {closed ? (
+            <Lock className="w-2.5 h-2.5" strokeWidth={2} />
+          ) : (
+            <LockOpen className="w-2.5 h-2.5" strokeWidth={2} />
+          )}
+          {estado.label}
+        </span>
+      </div>
+
+      <div className="text-[11.5px] text-[var(--arca-ink-3)]">
+        {period.entryCount} asiento{period.entryCount === 1 ? '' : 's'} · ${' '}
+        {fmtMoney(period.totalAmount)}
+      </div>
+
+      {isOwner && (
+        <div className="mt-1">
+          {period.isCurrent && (
+            <button
+              onClick={onClose}
+              className="w-full h-7 text-[11.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90"
+            >
+              Cerrar período
+            </button>
+          )}
+          {closed && (
+            <button
+              onClick={onReopen}
+              className="w-full h-7 text-[11.5px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
+            >
+              Reabrir
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CreateFiscalYearDialog({
+  clientId,
+  onClose,
+  onSaved,
+}: {
+  clientId: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [start, setStart] = useState('');
+  const startFirst = firstOfMonth(start);
+  const end = computeEnd(start);
+
+  const mut = useMutation({
+    mutationFn: () =>
+      createFiscalYear({ data: { clientId, startDate: startFirst, endDate: end } }),
+    onSuccess: () => {
+      toast.success('Ejercicio creado con sus 12 períodos');
+      onSaved();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-[440px]">
+        <DialogHeader>
+          <DialogTitle>Nuevo ejercicio</DialogTitle>
+          <DialogDescription>
+            Elegí el mes de inicio. El ejercicio dura exactamente 12 meses calendario y se
+            crean automáticamente los 12 períodos mensuales.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 py-1">
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] text-[var(--arca-ink-3)]">
+              Mes de inicio *
+            </label>
+            <input
+              type="date"
+              value={start}
+              onChange={(e) => setStart(e.target.value)}
+              className={`${INPUT_CLASS} w-full h-9`}
+            />
+          </div>
+
+          {startFirst && end && (
+            <div className="rounded-[8px] bg-[var(--arca-surface-2)] border border-[var(--arca-border)] px-3 py-2.5 text-[12.5px]">
+              <span className="text-[var(--arca-ink-3)]">Ejercicio: </span>
+              <span className="font-medium text-[var(--arca-ink)]">
+                {fmtFecha(`${startFirst}T00:00:00Z`)} → {fmtFecha(`${end}T00:00:00Z`)}
+              </span>
+              <span className="text-[var(--arca-ink-3)]"> (12 meses)</span>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <button
+            onClick={onClose}
+            className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)]"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => mut.mutate()}
+            disabled={!startFirst || !end || mut.isPending}
+            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+          >
+            {mut.isPending ? 'Creando…' : 'Crear ejercicio'}
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ReopenPeriodDialog({
+  period,
+  onClose,
+  onSaved,
+}: {
+  period: PeriodView;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [reason, setReason] = useState('');
+  const mut = useMutation({
+    mutationFn: () => reopenPeriod({ data: { periodId: period.id, reason: reason.trim() } }),
+    onSuccess: () => {
+      toast.success('Período reabierto');
+      onSaved();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-[440px]">
+        <DialogHeader>
+          <DialogTitle>
+            Reabrir {MONTH_NAMES[period.month]} {period.year}
+          </DialogTitle>
+          <DialogDescription>
+            El período vuelve a estado abierto y sus asientos se conservan. El motivo queda
+            registrado en el log auditable.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-1 py-1">
+          <label className="text-[11px] text-[var(--arca-ink-3)]">Motivo *</label>
+          <textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            rows={3}
+            placeholder="Ej: corrección de un asiento mal imputado…"
+            className="w-full px-2.5 py-2 text-[12.5px] border border-[var(--arca-border)] rounded-[8px] bg-[var(--arca-surface)] text-[var(--arca-ink)] focus:outline-none resize-none"
+          />
+        </div>
+
+        <DialogFooter>
+          <button
+            onClick={onClose}
+            className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)]"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => mut.mutate()}
+            disabled={!reason.trim() || mut.isPending}
+            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+          >
+            {mut.isPending ? 'Reabriendo…' : 'Reabrir período'}
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

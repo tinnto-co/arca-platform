@@ -165,3 +165,29 @@ export const EXPENSE_FUNCTION_LABELS: Record<
 
 /** Prefijo reservado para cuentas custom de cada empresa. */
 export const CUSTOM_CODE_PREFIX = '9.';
+
+/** Código de la cuenta de sistema "pendiente de revisión" (asientos auto sin regla). */
+export const PENDING_REVIEW_CODE = '0.001';
+
+/** Nombres de meses en español (índice 1 = Enero). */
+export const MONTH_NAMES = [
+  '',
+  'Enero',
+  'Febrero',
+  'Marzo',
+  'Abril',
+  'Mayo',
+  'Junio',
+  'Julio',
+  'Agosto',
+  'Septiembre',
+  'Octubre',
+  'Noviembre',
+  'Diciembre',
+] as const;
+
+export const FISCAL_YEAR_STATUS_LABELS: Record<'open' | 'closing' | 'closed', string> = {
+  open: 'Abierto',
+  closing: 'En cierre',
+  closed: 'Cerrado',
+};
