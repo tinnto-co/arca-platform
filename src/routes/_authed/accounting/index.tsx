@@ -57,6 +57,7 @@ import {
   getLedgerAccount,
   getLedgerConsolidated,
   getTrialBalance,
+  getJournalBook,
   type ChartAccount,
   type PeriodView,
   type LedgerRow,
@@ -67,6 +68,7 @@ import {
   exportMayorPdf,
   exportBalanceExcel,
   exportBalancePdf,
+  exportLibroDiarioPdf,
   type MayorExportData,
   type MayorSection,
 } from '@/lib/mayor-export';
@@ -258,7 +260,11 @@ function AccountingPage() {
       ) : tab === 'ejercicios' ? (
         <Ejercicios clientId={effectiveClientId} isOwner={isOwner} />
       ) : tab === 'asientos' ? (
-        <Asientos clientId={effectiveClientId} canWrite={roleData?.role !== 'viewer'} />
+        <Asientos
+          clientId={effectiveClientId}
+          canWrite={roleData?.role !== 'viewer'}
+          isOwner={isOwner}
+        />
       ) : tab === 'mayor' ? (
         <Mayor
           clientId={effectiveClientId}
@@ -1734,7 +1740,15 @@ type EditorState =
   | { mode: 'edit'; initial: EditorInitial }
   | { mode: 'duplicate'; initial: EditorInitial };
 
-function Asientos({ clientId, canWrite }: { clientId: string; canWrite: boolean }) {
+function Asientos({
+  clientId,
+  canWrite,
+  isOwner,
+}: {
+  clientId: string;
+  canWrite: boolean;
+  isOwner: boolean;
+}) {
   const qc = useQueryClient();
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -1778,6 +1792,25 @@ function Asientos({ clientId, canWrite }: { clientId: string; canWrite: boolean 
   const rows = data?.rows ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  const exportLibroDiario = () => {
+    getJournalBook({ data: { clientId, fiscalYearId: data?.fiscalYearId ?? undefined } })
+      .then((book) => {
+        if (!book || book.entries.length === 0) {
+          toast.error('No hay asientos para exportar');
+          return;
+        }
+        return exportLibroDiarioPdf({
+          empresaName: book.empresaName,
+          cuit: book.cuit,
+          fiscalYearNumber: book.fiscalYear.number,
+          from: book.fiscalYear.startDate,
+          to: book.fiscalYear.endDate,
+          entries: book.entries,
+        });
+      })
+      .catch((e: Error) => toast.error(e.message));
+  };
 
   function openEditorFromDetail(action: 'edit' | 'duplicate', d: EditorInitial) {
     setDetailId(null);
@@ -1877,6 +1910,16 @@ function Asientos({ clientId, canWrite }: { clientId: string; canWrite: boolean 
               <option value="date:desc">Fecha (desc)</option>
               <option value="date:asc">Fecha (asc)</option>
             </select>
+            {isOwner && (
+              <button
+                onClick={exportLibroDiario}
+                title="PDF del Libro Diario para rubricar"
+                className="flex items-center gap-1.5 h-8 px-2.5 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
+              >
+                <Download className="w-3.5 h-3.5" strokeWidth={1.8} />
+                Libro Diario PDF
+              </button>
+            )}
             {canWrite && (
               <button
                 onClick={() => setEditor({ mode: 'create' })}

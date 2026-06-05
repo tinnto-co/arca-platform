@@ -487,3 +487,125 @@ export async function exportBalancePdf(data: BalanceExportData): Promise<void> {
   const blob = await pdf(<BalancePdfDoc data={data} />).toBlob();
   triggerDownload(blob, `balance_sumas_saldos_${Date.now()}.pdf`);
 }
+
+/* ═══════════════ Libro Diario — export PDF (US 2.3.1) ═══════════════ */
+
+export interface LibroDiarioLine {
+  accountCode: string;
+  accountName: string;
+  debit: number;
+  credit: number;
+  description: string | null;
+}
+export interface LibroDiarioEntry {
+  number: number;
+  entryDate: string | Date;
+  description: string | null;
+  origin: string;
+  isVoided: boolean;
+  voidReason: string | null;
+  lines: LibroDiarioLine[];
+}
+export interface LibroDiarioData {
+  empresaName: string;
+  cuit: string;
+  fiscalYearNumber: number;
+  from: string | Date;
+  to: string | Date;
+  entries: LibroDiarioEntry[];
+}
+
+const ds = StyleSheet.create({
+  asiento: { marginTop: 8, paddingBottom: 4, borderBottom: '0.5pt solid #e5e5e5' },
+  head: { flexDirection: 'row', alignItems: 'center', marginBottom: 2 },
+  num: { fontFamily: 'Helvetica-Bold', width: '8%' },
+  fecha: { width: '13%', color: '#444' },
+  desc: { flex: 1, fontFamily: 'Helvetica-Bold' },
+  descVoid: { flex: 1, fontFamily: 'Helvetica-Bold', textDecoration: 'line-through', color: '#999' },
+  origin: { fontSize: 7, color: '#888' },
+  voidTag: { fontSize: 7, color: '#b00020', fontFamily: 'Helvetica-Bold', marginLeft: 6 },
+  lineRow: { flexDirection: 'row', paddingVertical: 1, paddingLeft: '8%' },
+  lAcct: { flex: 1 },
+  lAcctVoid: { flex: 1, color: '#999', textDecoration: 'line-through' },
+  lDebe: { width: '15%', textAlign: 'right' },
+  lHaber: { width: '15%', textAlign: 'right' },
+  colhead: {
+    flexDirection: 'row',
+    paddingLeft: '8%',
+    borderBottom: '0.5pt solid #ccc',
+    fontFamily: 'Helvetica-Bold',
+    fontSize: 7,
+    color: '#666',
+    marginBottom: 2,
+  },
+  footer: {
+    position: 'absolute',
+    bottom: 14,
+    left: 28,
+    right: 28,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    fontSize: 7,
+    color: '#999',
+  },
+});
+
+function LibroDiarioDoc({ data }: { data: LibroDiarioData }) {
+  return (
+    <Document>
+      <Page size="A4" style={s.page} wrap>
+        <Text style={s.empresa}>{data.empresaName}</Text>
+        <Text style={s.sub}>
+          CUIT {data.cuit} · Libro Diario · Ejercicio N°{data.fiscalYearNumber} ·{' '}
+          {fmtDate(data.from)} a {fmtDate(data.to)}
+        </Text>
+        <Text style={s.disclaimer}>{DISCLAIMER}</Text>
+
+        <View style={ds.colhead}>
+          <Text style={ds.lAcct}>Cuenta</Text>
+          <Text style={ds.lDebe}>Debe</Text>
+          <Text style={ds.lHaber}>Haber</Text>
+        </View>
+
+        {data.entries.map((e) => (
+          <View key={e.number} style={ds.asiento} wrap={false}>
+            <View style={ds.head}>
+              <Text style={ds.num}>N°{e.number}</Text>
+              <Text style={ds.fecha}>{fmtDate(e.entryDate)}</Text>
+              <Text style={e.isVoided ? ds.descVoid : ds.desc}>
+                {e.description ?? '(sin descripción)'}
+              </Text>
+              <Text style={ds.origin}>{JOURNAL_ORIGIN_LABELS[e.origin] ?? e.origin}</Text>
+              {e.isVoided && <Text style={ds.voidTag}>ANULADO</Text>}
+            </View>
+            {e.lines.map((l, i) => (
+              <View key={i} style={ds.lineRow}>
+                <Text style={e.isVoided ? ds.lAcctVoid : ds.lAcct}>
+                  {l.accountCode} {l.accountName}
+                  {l.description ? ` · ${l.description}` : ''}
+                </Text>
+                <Text style={ds.lDebe}>{l.debit ? fmtMoney(l.debit) : ''}</Text>
+                <Text style={ds.lHaber}>{l.credit ? fmtMoney(l.credit) : ''}</Text>
+              </View>
+            ))}
+            {e.isVoided && e.voidReason && (
+              <Text style={[ds.lineRow, ds.origin] as never}>
+                Motivo de anulación: {e.voidReason}
+              </Text>
+            )}
+          </View>
+        ))}
+
+        <View style={ds.footer} fixed>
+          <Text>{data.empresaName} · Libro Diario · Ejercicio N°{data.fiscalYearNumber}</Text>
+          <Text render={({ pageNumber, totalPages }) => `Página ${pageNumber} de ${totalPages}`} />
+        </View>
+      </Page>
+    </Document>
+  );
+}
+
+export async function exportLibroDiarioPdf(data: LibroDiarioData): Promise<void> {
+  const blob = await pdf(<LibroDiarioDoc data={data} />).toBlob();
+  triggerDownload(blob, `libro_diario_${Date.now()}.pdf`);
+}

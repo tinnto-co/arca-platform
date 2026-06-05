@@ -2059,3 +2059,101 @@ export const getTrialBalance = createServerFn({ method: 'GET' })
       balanced,
     };
   });
+
+/* ═══════════════ LIBRO DIARIO — export (US 2.3.1) ═══════════════ */
+
+export interface JournalBookLine {
+  accountCode: string;
+  accountName: string;
+  debit: number;
+  credit: number;
+  description: string | null;
+}
+export interface JournalBookEntry {
+  number: number;
+  entryDate: string | Date;
+  description: string | null;
+  origin: string;
+  isVoided: boolean;
+  voidReason: string | null;
+  lines: JournalBookLine[];
+}
+
+/** Todos los asientos del ejercicio (incl. anulados) con sus líneas, para el Libro Diario. (US 2.3.1) */
+export const getJournalBook = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({ clientId: z.string().uuid(), fiscalYearId: z.string().uuid().optional() })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const { clientId } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    const fy = await resolveFiscalYear(clientId, orgId, ctx.data.fiscalYearId);
+    if (!fy) return null;
+
+    const [empresa] = await db
+      .select({ name: client.name, cuit: client.identityNumber })
+      .from(client)
+      .where(eq(client.id, clientId))
+      .limit(1);
+
+    const entries = await db
+      .select({
+        id: journalEntry.id,
+        number: journalEntry.number,
+        entryDate: journalEntry.entryDate,
+        description: journalEntry.description,
+        origin: journalEntry.origin,
+        isVoided: journalEntry.isVoided,
+        voidReason: journalEntry.voidReason,
+      })
+      .from(journalEntry)
+      .where(and(eq(journalEntry.clientId, clientId), eq(journalEntry.fiscalYearId, fy.id)))
+      .orderBy(asc(journalEntry.number));
+
+    const lineRows = await db
+      .select({
+        entryId: journalEntryLine.journalEntryId,
+        accountCode: account.code,
+        accountName: account.name,
+        debit: journalEntryLine.debit,
+        credit: journalEntryLine.credit,
+        description: journalEntryLine.description,
+        lineOrder: journalEntryLine.lineOrder,
+      })
+      .from(journalEntryLine)
+      .innerJoin(journalEntry, eq(journalEntry.id, journalEntryLine.journalEntryId))
+      .innerJoin(account, eq(account.id, journalEntryLine.accountId))
+      .where(and(eq(journalEntry.clientId, clientId), eq(journalEntry.fiscalYearId, fy.id)))
+      .orderBy(asc(journalEntry.number), asc(journalEntryLine.lineOrder));
+
+    const linesByEntry = new Map<string, JournalBookLine[]>();
+    for (const l of lineRows) {
+      const list = linesByEntry.get(l.entryId) ?? [];
+      list.push({
+        accountCode: l.accountCode,
+        accountName: l.accountName,
+        debit: parseFloat(l.debit),
+        credit: parseFloat(l.credit),
+        description: l.description,
+      });
+      linesByEntry.set(l.entryId, list);
+    }
+
+    const result: JournalBookEntry[] = entries.map((e) => ({
+      number: e.number,
+      entryDate: e.entryDate,
+      description: e.description,
+      origin: e.origin,
+      isVoided: e.isVoided,
+      voidReason: e.voidReason,
+      lines: linesByEntry.get(e.id) ?? [],
+    }));
+
+    return {
+      empresaName: empresa?.name ?? '',
+      cuit: empresa?.cuit ?? '',
+      fiscalYear: { number: fy.number, startDate: fy.startDate, endDate: fy.endDate },
+      entries: result,
+    };
+  });
