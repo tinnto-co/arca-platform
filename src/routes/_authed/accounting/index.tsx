@@ -21,6 +21,10 @@ import {
   CalendarPlus,
   LockOpen,
   History,
+  Copy,
+  Ban,
+  ChevronLeft,
+  X,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { ArcaCard } from '@/components/dashboard/shared';
@@ -42,6 +46,12 @@ import {
   closePeriod,
   reopenPeriod,
   getAccountingLog,
+  listJournalEntries,
+  createJournalEntry,
+  updateJournalEntry,
+  voidJournalEntry,
+  getJournalEntry,
+  getPostableAccounts,
   type ChartAccount,
   type PeriodView,
 } from '@/actions/accounting';
@@ -54,6 +64,7 @@ import {
   CUSTOM_CODE_PREFIX,
   MONTH_NAMES,
   FISCAL_YEAR_STATUS_LABELS,
+  JOURNAL_ORIGIN_LABELS,
   type AccountGroup,
 } from '@/lib/accounting-labels';
 import {
@@ -144,7 +155,7 @@ function TabBar({
   }[] = [
     { id: 'plan', label: 'Plan de cuentas', icon: List, ready: true },
     { id: 'ejercicios', label: 'Ejercicios', icon: CalendarDays, ready: true },
-    { id: 'asientos', label: 'Asientos', icon: FileText, ready: false },
+    { id: 'asientos', label: 'Asientos', icon: FileText, ready: true },
     { id: 'mayor', label: 'Mayor', icon: BookOpen, ready: false },
     { id: 'balance', label: 'Balance', icon: Scale, ready: false },
   ];
@@ -231,6 +242,8 @@ function AccountingPage() {
         <PlanDeCuentas clientId={effectiveClientId} isOwner={isOwner} />
       ) : tab === 'ejercicios' ? (
         <Ejercicios clientId={effectiveClientId} isOwner={isOwner} />
+      ) : tab === 'asientos' ? (
+        <Asientos clientId={effectiveClientId} canWrite={roleData?.role !== 'viewer'} />
       ) : (
         <ArcaCard>
           <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
@@ -1657,6 +1670,716 @@ function ReopenPeriodDialog({
             {mut.isPending ? 'Reabriendo…' : 'Reabrir período'}
           </button>
         </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ════════════════════ Asientos / Libro diario (US 1.3.x) ════════════════════ */
+
+interface PostableAccount {
+  id: string;
+  code: string;
+  name: string;
+  accountGroup: string | null;
+}
+interface LineDraft {
+  accountId: string;
+  debit: string;
+  credit: string;
+  description: string;
+}
+
+/** parseFloat seguro: NaN/'' → 0. */
+function num(v: string): number {
+  const n = parseFloat(v);
+  return Number.isNaN(n) ? 0 : n;
+}
+
+interface EditorInitial {
+  id?: string;
+  entryDate?: string;
+  description?: string;
+  lines: LineDraft[];
+}
+type EditorState =
+  | { mode: 'create'; initial?: EditorInitial }
+  | { mode: 'edit'; initial: EditorInitial }
+  | { mode: 'duplicate'; initial: EditorInitial };
+
+function Asientos({ clientId, canWrite }: { clientId: string; canWrite: boolean }) {
+  const qc = useQueryClient();
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [accountId, setAccountId] = useState('');
+  const [origin, setOrigin] = useState('');
+  const [includeVoided, setIncludeVoided] = useState(false);
+  const [sortBy, setSortBy] = useState<'number' | 'date'>('number');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [page, setPage] = useState(1);
+  const pageSize = 25;
+
+  const [editor, setEditor] = useState<EditorState | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
+
+  const { data: postable = [] } = useQuery({
+    queryKey: ['accounting', 'postable', clientId],
+    queryFn: () => getPostableAccounts({ data: { clientId } }),
+  });
+
+  const filters = {
+    clientId,
+    from: from || undefined,
+    to: to || undefined,
+    accountId: accountId || undefined,
+    origin: (origin || undefined) as never,
+    includeVoided,
+    sortBy,
+    sortDir,
+    page,
+    pageSize,
+  };
+  const { data, isLoading } = useQuery({
+    queryKey: ['accounting', 'entries', filters],
+    queryFn: () => listJournalEntries({ data: filters }),
+  });
+
+  const invalidate = () => {
+    void qc.invalidateQueries({ queryKey: ['accounting'] });
+  };
+
+  const rows = data?.rows ?? [];
+  const total = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  function openEditorFromDetail(action: 'edit' | 'duplicate', d: EditorInitial) {
+    setDetailId(null);
+    setEditor({ mode: action, initial: d });
+  }
+
+  return (
+    <>
+      <ArcaCard>
+        {/* Toolbar */}
+        <div className="flex flex-wrap items-end gap-2 px-4 py-3 border-b border-[var(--arca-border)]">
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] text-[var(--arca-ink-3)]">Desde</label>
+            <input
+              type="date"
+              value={from}
+              onChange={(e) => {
+                setFrom(e.target.value);
+                setPage(1);
+              }}
+              className={`${INPUT_CLASS} w-36`}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] text-[var(--arca-ink-3)]">Hasta</label>
+            <input
+              type="date"
+              value={to}
+              onChange={(e) => {
+                setTo(e.target.value);
+                setPage(1);
+              }}
+              className={`${INPUT_CLASS} w-36`}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] text-[var(--arca-ink-3)]">Cuenta</label>
+            <select
+              value={accountId}
+              onChange={(e) => {
+                setAccountId(e.target.value);
+                setPage(1);
+              }}
+              className={`${SELECT_CLASS} w-52`}
+            >
+              <option value="">Todas las cuentas</option>
+              {postable.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.code} · {a.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] text-[var(--arca-ink-3)]">Origen</label>
+            <select
+              value={origin}
+              onChange={(e) => {
+                setOrigin(e.target.value);
+                setPage(1);
+              }}
+              className={`${SELECT_CLASS} w-36`}
+            >
+              <option value="">Todos</option>
+              {Object.entries(JOURNAL_ORIGIN_LABELS).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ))}
+            </select>
+          </div>
+          <label className="flex items-center gap-1.5 text-[12px] text-[var(--arca-ink-2)] cursor-pointer select-none h-8">
+            <input
+              type="checkbox"
+              checked={includeVoided}
+              onChange={(e) => {
+                setIncludeVoided(e.target.checked);
+                setPage(1);
+              }}
+              className="accent-[var(--arca-navy-900)]"
+            />
+            Incluir anulados
+          </label>
+
+          <div className="ml-auto flex items-center gap-2">
+            <select
+              value={`${sortBy}:${sortDir}`}
+              onChange={(e) => {
+                const [b, d2] = e.target.value.split(':');
+                setSortBy(b as 'number' | 'date');
+                setSortDir(d2 as 'asc' | 'desc');
+              }}
+              className={`${SELECT_CLASS} w-44`}
+            >
+              <option value="number:desc">N° (desc)</option>
+              <option value="number:asc">N° (asc)</option>
+              <option value="date:desc">Fecha (desc)</option>
+              <option value="date:asc">Fecha (asc)</option>
+            </select>
+            {canWrite && (
+              <button
+                onClick={() => setEditor({ mode: 'create' })}
+                className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90"
+              >
+                <Plus className="w-3 h-3" strokeWidth={2.5} />
+                Nuevo asiento
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Column headers */}
+        <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+          <div className="w-12 shrink-0">N°</div>
+          <div className="w-24 shrink-0">Fecha</div>
+          <div className="flex-1 min-w-0">Descripción</div>
+          <div className="w-28 shrink-0 text-right">Total</div>
+          <div className="w-28 shrink-0">Origen</div>
+        </div>
+
+        {/* Rows */}
+        {isLoading ? (
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            Cargando asientos…
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            No hay asientos para los filtros seleccionados.
+          </div>
+        ) : (
+          rows.map((r) => (
+            <button
+              key={r.id}
+              onClick={() => setDetailId(r.id)}
+              className="w-full flex items-center gap-3 px-4 py-2.5 border-b border-[var(--arca-border)] hover:bg-[var(--arca-surface-2)] transition-colors text-left"
+            >
+              <div className="w-12 shrink-0 text-[12px] font-mono text-[var(--arca-ink-3)]">
+                {r.number}
+              </div>
+              <div className="w-24 shrink-0 text-[12px] text-[var(--arca-ink-2)]">
+                {fmtFecha(r.entryDate)}
+              </div>
+              <div
+                className={`flex-1 min-w-0 truncate text-[13px] ${
+                  r.isVoided
+                    ? 'line-through text-[var(--arca-ink-3)]'
+                    : 'text-[var(--arca-ink)]'
+                }`}
+              >
+                {r.description?.trim() ? (
+                  r.description
+                ) : (
+                  <span className="text-[var(--arca-ink-3)] italic">(sin descripción)</span>
+                )}
+                {r.isVoided && (
+                  <span className="ml-2 text-[10px] not-italic no-underline text-[oklch(0.55_0.18_25)]">
+                    ANULADO
+                  </span>
+                )}
+              </div>
+              <div className="w-28 shrink-0 text-right text-[12.5px] font-medium text-[var(--arca-ink)]">
+                $ {fmtMoney(r.total)}
+              </div>
+              <div className="w-28 shrink-0">
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
+                  {JOURNAL_ORIGIN_LABELS[r.origin] ?? r.origin}
+                </span>
+              </div>
+            </button>
+          ))
+        )}
+
+        {/* Pagination */}
+        {total > 0 && (
+          <div className="flex items-center justify-between px-4 py-2.5 text-[12px] text-[var(--arca-ink-3)]">
+            <span>{total} asiento{total === 1 ? '' : 's'}</span>
+            <div className="flex items-center gap-2">
+              <button
+                disabled={page <= 1}
+                onClick={() => setPage((p) => p - 1)}
+                className="h-7 w-7 flex items-center justify-center rounded-[8px] border border-[var(--arca-border)] disabled:opacity-40"
+              >
+                <ChevronLeft className="w-4 h-4" strokeWidth={1.8} />
+              </button>
+              <span>
+                Página {page} de {totalPages}
+              </span>
+              <button
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => p + 1)}
+                className="h-7 w-7 flex items-center justify-center rounded-[8px] border border-[var(--arca-border)] disabled:opacity-40"
+              >
+                <ChevronRight className="w-4 h-4" strokeWidth={1.8} />
+              </button>
+            </div>
+          </div>
+        )}
+      </ArcaCard>
+
+      {editor && (
+        <AsientoEditor
+          clientId={clientId}
+          state={editor}
+          postable={postable}
+          onClose={() => setEditor(null)}
+          onSaved={() => {
+            setEditor(null);
+            invalidate();
+          }}
+        />
+      )}
+
+      {detailId && (
+        <AsientoDetail
+          entryId={detailId}
+          canWrite={canWrite}
+          onClose={() => setDetailId(null)}
+          onAction={openEditorFromDetail}
+          onChanged={invalidate}
+        />
+      )}
+    </>
+  );
+}
+
+function emptyLine(): LineDraft {
+  return { accountId: '', debit: '', credit: '', description: '' };
+}
+
+function AsientoEditor({
+  clientId,
+  state,
+  postable,
+  onClose,
+  onSaved,
+}: {
+  clientId: string;
+  state: EditorState;
+  postable: PostableAccount[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const init = state.initial;
+  const [entryDate, setEntryDate] = useState(init?.entryDate ?? '');
+  const [description, setDescription] = useState(init?.description ?? '');
+  const [lines, setLines] = useState<LineDraft[]>(
+    init?.lines && init.lines.length >= 2 ? init.lines : [emptyLine(), emptyLine()]
+  );
+
+  const title =
+    state.mode === 'edit'
+      ? `Editar asiento`
+      : state.mode === 'duplicate'
+        ? 'Duplicar asiento'
+        : 'Nuevo asiento';
+
+  const totalDebit = lines.reduce((s, l) => s + num(l.debit), 0);
+  const totalCredit = lines.reduce((s, l) => s + num(l.credit), 0);
+  const balanced = Math.abs(totalDebit - totalCredit) < 0.005 && totalDebit > 0;
+  const allLinesValid = lines.every(
+    (l) => l.accountId && (num(l.debit) > 0) !== (num(l.credit) > 0)
+  );
+  const canSave = !!entryDate && lines.length >= 2 && balanced && allLinesValid;
+
+  const updateLine = (i: number, patch: Partial<LineDraft>) =>
+    setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
+
+  const mut = useMutation({
+    mutationFn: async () => {
+      const payloadLines = lines.map((l) => ({
+        accountId: l.accountId,
+        debit: num(l.debit),
+        credit: num(l.credit),
+        description: l.description || undefined,
+      }));
+      if (state.mode === 'edit' && init?.id) {
+        await updateJournalEntry({
+          data: { id: init.id, entryDate, description: description || undefined, lines: payloadLines },
+        });
+      } else {
+        await createJournalEntry({
+          data: { clientId, entryDate, description: description || undefined, lines: payloadLines },
+        });
+      }
+    },
+    onSuccess: () => {
+      toast.success(state.mode === 'edit' ? 'Asiento actualizado' : 'Asiento guardado');
+      onSaved();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-[760px]">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>
+            Debe = Haber para poder guardar. Solo cuentas imputables y activas. La fecha define
+            el período (no puede estar en un período cerrado).
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 py-1">
+          <div className="flex gap-3">
+            <div className="flex flex-col gap-1 w-44">
+              <label className="text-[11px] text-[var(--arca-ink-3)]">Fecha *</label>
+              <input
+                type="date"
+                value={entryDate}
+                onChange={(e) => setEntryDate(e.target.value)}
+                className={`${INPUT_CLASS} w-full h-9`}
+              />
+            </div>
+            <div className="flex flex-col gap-1 flex-1">
+              <label className="text-[11px] text-[var(--arca-ink-3)]">Descripción</label>
+              <input
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Ej: Cobro factura A-0001 cliente X"
+                className={`${INPUT_CLASS} w-full h-9`}
+              />
+            </div>
+          </div>
+
+          {/* Líneas */}
+          <div className="border border-[var(--arca-border)] rounded-[10px] overflow-hidden">
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-surface-2)] text-[10px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+              <div className="flex-1">Cuenta</div>
+              <div className="w-40">Detalle</div>
+              <div className="w-24 text-right">Debe</div>
+              <div className="w-24 text-right">Haber</div>
+              <div className="w-6" />
+            </div>
+            {lines.map((l, i) => (
+              <div
+                key={i}
+                className="flex items-center gap-2 px-3 py-1.5 border-t border-[var(--arca-border)]"
+              >
+                <select
+                  value={l.accountId}
+                  onChange={(e) => updateLine(i, { accountId: e.target.value })}
+                  className={`${SELECT_CLASS} flex-1 min-w-0 w-0 h-8`}
+                >
+                  <option value="">— Elegí cuenta —</option>
+                  {postable.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.code} · {a.name}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  value={l.description}
+                  onChange={(e) => updateLine(i, { description: e.target.value })}
+                  placeholder="opcional"
+                  className={`${INPUT_CLASS} w-40 h-8`}
+                />
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={l.debit}
+                  onChange={(e) => updateLine(i, { debit: e.target.value, credit: '' })}
+                  className={`${INPUT_CLASS} w-24 h-8 text-right`}
+                />
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={l.credit}
+                  onChange={(e) => updateLine(i, { credit: e.target.value, debit: '' })}
+                  className={`${INPUT_CLASS} w-24 h-8 text-right`}
+                />
+                <button
+                  onClick={() => setLines((prev) => prev.filter((_, idx) => idx !== i))}
+                  disabled={lines.length <= 2}
+                  className="w-6 h-6 flex items-center justify-center rounded-[6px] text-[var(--arca-ink-3)] hover:text-[oklch(0.55_0.18_25)] disabled:opacity-30"
+                  title="Eliminar línea"
+                >
+                  <Trash2 className="w-3.5 h-3.5" strokeWidth={1.8} />
+                </button>
+              </div>
+            ))}
+            {/* Totales */}
+            <div className="flex items-center gap-2 px-3 py-2 border-t border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[12px] font-semibold">
+              <button
+                onClick={() => setLines((prev) => [...prev, emptyLine()])}
+                className="flex items-center gap-1 text-[11.5px] font-medium text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
+              >
+                <Plus className="w-3 h-3" strokeWidth={2.5} /> Agregar línea
+              </button>
+              <div className="flex-1" />
+              <div className="w-40" />
+              <div className="w-24 text-right text-[var(--arca-ink)]">$ {fmtMoney(totalDebit)}</div>
+              <div className="w-24 text-right text-[var(--arca-ink)]">$ {fmtMoney(totalCredit)}</div>
+              <div className="w-6" />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end text-[12px]">
+            {balanced ? (
+              <span className="text-[oklch(0.40_0.14_145)]">✓ Asiento balanceado</span>
+            ) : (
+              <span className="text-[oklch(0.55_0.18_25)]">
+                Diferencia: $ {fmtMoney(Math.abs(totalDebit - totalCredit))} — Debe debe ser igual a Haber
+              </span>
+            )}
+          </div>
+        </div>
+
+        <DialogFooter>
+          <button
+            onClick={onClose}
+            className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)]"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => mut.mutate()}
+            disabled={!canSave || mut.isPending}
+            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+          >
+            {mut.isPending ? 'Guardando…' : 'Guardar asiento'}
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AsientoDetail({
+  entryId,
+  canWrite,
+  onClose,
+  onAction,
+  onChanged,
+}: {
+  entryId: string;
+  canWrite: boolean;
+  onClose: () => void;
+  onAction: (action: 'edit' | 'duplicate', initial: EditorInitial) => void;
+  onChanged: () => void;
+}) {
+  const [voidOpen, setVoidOpen] = useState(false);
+  const [reason, setReason] = useState('');
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['accounting', 'entry', entryId],
+    queryFn: () => getJournalEntry({ data: { id: entryId } }),
+  });
+
+  const voidMut = useMutation({
+    mutationFn: () => voidJournalEntry({ data: { id: entryId, reason: reason.trim() } }),
+    onSuccess: () => {
+      toast.success('Asiento anulado');
+      setVoidOpen(false);
+      onChanged();
+      onClose();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const toInitial = (): EditorInitial => ({
+    id: data!.entry.id,
+    entryDate: new Date(data!.entry.entryDate).toISOString().slice(0, 10),
+    description: data!.entry.description ?? '',
+    lines: data!.lines.map((l) => ({
+      accountId: l.accountId,
+      debit: l.debit > 0 ? String(l.debit) : '',
+      credit: l.credit > 0 ? String(l.credit) : '',
+      description: l.description ?? '',
+    })),
+  });
+
+  const editable = !!data && !data.entry.isVoided && data.entry.periodStatus === 'open';
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-[680px]">
+        {isLoading || !data ? (
+          <div className="py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            Cargando…
+          </div>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                Asiento N°{data.entry.number}
+                {data.entry.isVoided && (
+                  <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-[color-mix(in_oklch,oklch(0.55_0.18_25),transparent_88%)] text-[oklch(0.50_0.18_25)]">
+                    Anulado
+                  </span>
+                )}
+              </DialogTitle>
+              <DialogDescription>
+                {fmtFecha(data.entry.entryDate)} ·{' '}
+                {JOURNAL_ORIGIN_LABELS[data.entry.origin] ?? data.entry.origin} · Ejercicio N°
+                {data.entry.fyNumber}
+                {data.entry.createdByName ? ` · cargado por ${data.entry.createdByName}` : ''}
+              </DialogDescription>
+            </DialogHeader>
+
+            {data.entry.description && (
+              <p className="text-[13px] text-[var(--arca-ink)] -mt-1">
+                {data.entry.description}
+              </p>
+            )}
+
+            {data.entry.isVoided && data.entry.voidReason && (
+              <div className="text-[12px] rounded-[8px] bg-[color-mix(in_oklch,oklch(0.55_0.18_25),transparent_92%)] text-[oklch(0.45_0.16_25)] px-3 py-2">
+                Motivo de anulación: {data.entry.voidReason}
+              </div>
+            )}
+
+            {/* Líneas */}
+            <div className="border border-[var(--arca-border)] rounded-[10px] overflow-hidden">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-surface-2)] text-[10px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+                <div className="flex-1">Cuenta</div>
+                <div className="w-28 text-right">Debe</div>
+                <div className="w-28 text-right">Haber</div>
+              </div>
+              {data.lines.map((l) => (
+                <div
+                  key={l.id}
+                  className="flex items-center gap-2 px-3 py-1.5 border-t border-[var(--arca-border)] text-[12.5px]"
+                >
+                  <div className="flex-1 min-w-0">
+                    <span className="font-mono text-[11px] text-[var(--arca-ink-3)]">
+                      {l.accountCode}
+                    </span>{' '}
+                    <span className="text-[var(--arca-ink)]">{l.accountName}</span>
+                    {l.description && (
+                      <span className="text-[var(--arca-ink-3)]"> · {l.description}</span>
+                    )}
+                  </div>
+                  <div className="w-28 text-right text-[var(--arca-ink)]">
+                    {l.debit > 0 ? `$ ${fmtMoney(l.debit)}` : ''}
+                  </div>
+                  <div className="w-28 text-right text-[var(--arca-ink)]">
+                    {l.credit > 0 ? `$ ${fmtMoney(l.credit)}` : ''}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Log adjunto */}
+            {data.log.length > 0 && (
+              <div className="text-[11.5px] text-[var(--arca-ink-3)] space-y-1">
+                {data.log.map((e) => (
+                  <div key={e.id}>
+                    {e.eventType === 'journal_entry_voided' ? 'Anulado' : 'Editado'} por{' '}
+                    {e.userName ?? e.userEmail ?? 'usuario'} ·{' '}
+                    {new Date(e.createdAt).toLocaleString('es-AR')}
+                    {e.eventData?.reason ? ` · Motivo: ${e.eventData.reason}` : ''}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <DialogFooter className="flex-wrap">
+              {canWrite && (
+                <button
+                  onClick={() => onAction('duplicate', { ...toInitial(), id: undefined, entryDate: '' })}
+                  className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
+                >
+                  <Copy className="w-3.5 h-3.5" strokeWidth={1.8} /> Duplicar
+                </button>
+              )}
+              {canWrite && editable && (
+                <>
+                  <button
+                    onClick={() => setVoidOpen(true)}
+                    className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[oklch(0.50_0.16_25)] hover:bg-[color-mix(in_oklch,oklch(0.55_0.18_25),transparent_92%)]"
+                  >
+                    <Ban className="w-3.5 h-3.5" strokeWidth={1.8} /> Anular
+                  </button>
+                  <button
+                    onClick={() => onAction('edit', toInitial())}
+                    className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90"
+                  >
+                    <Pencil className="w-3.5 h-3.5" strokeWidth={1.8} /> Editar
+                  </button>
+                </>
+              )}
+            </DialogFooter>
+
+            {/* Sub-diálogo de anulación */}
+            {voidOpen && (
+              <div className="absolute inset-0 bg-[var(--arca-surface)]/95 rounded-[14px] flex items-center justify-center p-6">
+                <div className="w-full max-w-[420px] space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-[14px] font-semibold text-[var(--arca-ink)]">
+                      Anular asiento N°{data.entry.number}
+                    </h3>
+                    <button onClick={() => setVoidOpen(false)}>
+                      <X className="w-4 h-4 text-[var(--arca-ink-3)]" />
+                    </button>
+                  </div>
+                  <p className="text-[12px] text-[var(--arca-ink-3)]">
+                    El asiento no se borra: queda marcado como anulado y conserva su número. El
+                    motivo queda en el log.
+                  </p>
+                  <textarea
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    rows={3}
+                    placeholder="Motivo de la anulación…"
+                    className="w-full px-2.5 py-2 text-[12.5px] border border-[var(--arca-border)] rounded-[8px] bg-[var(--arca-surface)] text-[var(--arca-ink)] focus:outline-none resize-none"
+                  />
+                  <div className="flex justify-end gap-2">
+                    <button
+                      onClick={() => setVoidOpen(false)}
+                      className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)]"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={() => voidMut.mutate()}
+                      disabled={!reason.trim() || voidMut.isPending}
+                      className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[oklch(0.50_0.16_25)] text-white disabled:opacity-50"
+                    >
+                      Anular asiento
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );

@@ -191,3 +191,12 @@ export const FISCAL_YEAR_STATUS_LABELS: Record<'open' | 'closing' | 'closed', st
   closing: 'En cierre',
   closed: 'Cerrado',
 };
+
+export const JOURNAL_ORIGIN_LABELS: Record<string, string> = {
+  manual: 'Manual',
+  auto_invoice: 'Auto · Factura',
+  auto_payroll: 'Auto · Sueldos',
+  auto_closing: 'Auto · Cierre',
+  auto_opening: 'Auto · Apertura',
+  import_excel: 'Import Excel',
+};

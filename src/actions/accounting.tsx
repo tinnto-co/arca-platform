@@ -20,8 +20,8 @@ import {
   representative,
   user,
 } from '@/drizzle/schema';
-import { getSessionWithOrg, getMemberRole } from '@/actions/helpers';
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { getSessionWithOrg, getMemberRole, assertCanWrite } from '@/actions/helpers';
+import { and, asc, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import { CUSTOM_CODE_PREFIX, PENDING_REVIEW_CODE } from '@/lib/accounting-labels';
 
 /* ───────────────────────────── Helpers ───────────────────────────── */
@@ -1059,4 +1059,571 @@ export const getAccountingLog = createServerFn({ method: 'GET' })
       .leftJoin(user, eq(user.id, accountingLog.userId))
       .where(eq(accountingLog.fiscalYearId, fy.id))
       .orderBy(desc(accountingLog.createdAt));
+  });
+
+/* ═══════════════════ ASIENTOS / LIBRO DIARIO (US 1.3.x) ═══════════════════ */
+
+type JournalEntryRow = typeof journalEntry.$inferSelect;
+
+/** Valida que un asiento pertenezca al estudio y lo devuelve. */
+async function loadJournalEntryForOrg(
+  entryId: string,
+  orgId: string
+): Promise<JournalEntryRow> {
+  const [row] = await db
+    .select({ je: journalEntry })
+    .from(journalEntry)
+    .innerJoin(client, eq(client.id, journalEntry.clientId))
+    .innerJoin(representative, eq(representative.id, client.representativeId))
+    .where(and(eq(journalEntry.id, entryId), eq(representative.organizationId, orgId)))
+    .limit(1);
+  if (!row) throw new Error('Asiento no encontrado o no autorizado');
+  return row.je;
+}
+
+/** Resuelve el ejercicio y período mensual al que cae una fecha (YYYY-MM-DD). */
+async function resolvePeriodForDate(clientId: string, dateStr: string) {
+  const date = new Date(`${dateStr}T00:00:00Z`);
+  if (isNaN(date.getTime())) throw new Error('Fecha inválida');
+  const [fy] = await db
+    .select()
+    .from(fiscalYear)
+    .where(
+      and(
+        eq(fiscalYear.clientId, clientId),
+        lte(fiscalYear.startDate, date),
+        gte(fiscalYear.endDate, date)
+      )
+    )
+    .limit(1);
+  if (!fy) {
+    throw new Error('No hay un ejercicio que cubra esa fecha. Creá el ejercicio primero');
+  }
+  const [period] = await db
+    .select()
+    .from(accountingPeriod)
+    .where(
+      and(
+        eq(accountingPeriod.fiscalYearId, fy.id),
+        eq(accountingPeriod.year, date.getUTCFullYear()),
+        eq(accountingPeriod.month, date.getUTCMonth() + 1)
+      )
+    )
+    .limit(1);
+  if (!period) throw new Error('No existe el período para esa fecha');
+  return { fy, period, date };
+}
+
+/** Valida importes de líneas: cada línea Debe XOR Haber, y total Debe = total Haber. */
+function validateLineAmounts(lines: { debit: number; credit: number }[]) {
+  let td = 0;
+  let tc = 0;
+  for (const l of lines) {
+    const hasD = l.debit > 0;
+    const hasC = l.credit > 0;
+    if (hasD && hasC) {
+      throw new Error('Cada línea debe tener importe en Debe o en Haber, no en ambos');
+    }
+    if (!hasD && !hasC) {
+      throw new Error('Cada línea debe tener un importe en Debe o en Haber');
+    }
+    td += l.debit;
+    tc += l.credit;
+  }
+  if (Math.abs(td - tc) > 0.005) {
+    throw new Error(
+      `El asiento no balancea: Debe ${td.toFixed(2)} ≠ Haber ${tc.toFixed(2)}`
+    );
+  }
+  return { totalDebit: td, totalCredit: tc };
+}
+
+/** Valida que las cuentas de las líneas sean imputables y activas para la empresa. */
+async function assertPostableAccounts(
+  clientId: string,
+  orgId: string,
+  accountIds: string[]
+) {
+  const ids = [...new Set(accountIds)];
+  const accs = await db
+    .select()
+    .from(account)
+    .where(and(eq(account.organizationId, orgId), inArray(account.id, ids)));
+  const overrides = await db
+    .select()
+    .from(accountOverride)
+    .where(
+      and(eq(accountOverride.clientId, clientId), inArray(accountOverride.accountId, ids))
+    );
+  const ovMap = new Map(overrides.map((o) => [o.accountId, o]));
+  const byId = new Map(accs.map((a) => [a.id, a]));
+  for (const id of ids) {
+    const a = byId.get(id);
+    if (!a) throw new Error('Una de las cuentas no existe o no pertenece al estudio');
+    if (a.scope === 'custom' && a.clientId !== clientId) {
+      throw new Error('Una de las cuentas es custom de otra empresa');
+    }
+    if (a.type !== 'imputable') {
+      throw new Error(`La cuenta ${a.code} es de agrupación; solo se imputan cuentas imputables`);
+    }
+    const active = ovMap.get(id)?.isActive ?? a.isActive;
+    if (!active) throw new Error(`La cuenta ${a.code} está inactiva para esta empresa`);
+  }
+}
+
+/** Cuentas imputables y activas de la empresa, para el selector de líneas del asiento. */
+export const getPostableAccounts = createServerFn({ method: 'GET' })
+  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+
+    const accounts = await db
+      .select()
+      .from(account)
+      .where(
+        and(
+          eq(account.organizationId, orgId),
+          eq(account.type, 'imputable'),
+          sql`(${account.scope} = 'base' OR (${account.scope} = 'custom' AND ${account.clientId} = ${ctx.data.clientId}))`
+        )
+      )
+      .orderBy(asc(account.code));
+
+    const overrides = await db
+      .select()
+      .from(accountOverride)
+      .where(eq(accountOverride.clientId, ctx.data.clientId));
+    const ovMap = new Map(overrides.map((o) => [o.accountId, o]));
+
+    return accounts
+      .filter((a) => (ovMap.get(a.id)?.isActive ?? a.isActive))
+      .map((a) => ({
+        id: a.id,
+        code: a.code,
+        name: ovMap.get(a.id)?.customName ?? a.name,
+        accountGroup: a.accountGroup,
+      }));
+  });
+
+const journalLineSchema = z.object({
+  accountId: z.string().uuid(),
+  debit: z.number().min(0),
+  credit: z.number().min(0),
+  description: z.string().optional(),
+});
+
+/** Crea un asiento manual con numeración consecutiva por ejercicio. (US 1.3.1) */
+export const createJournalEntry = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      entryDate: z.string(),
+      description: z.string().optional(),
+      lines: z.array(journalLineSchema).min(2),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const { clientId } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    const { fy, period, date } = await resolvePeriodForDate(clientId, ctx.data.entryDate);
+    if (period.status === 'closed') {
+      throw new Error('No se puede cargar el asiento: el período está cerrado');
+    }
+    validateLineAmounts(ctx.data.lines);
+    await assertPostableAccounts(clientId, orgId, ctx.data.lines.map((l) => l.accountId));
+
+    const entry = await db.transaction(async (tx) => {
+      const [{ maxNum }] = await tx
+        .select({
+          maxNum: sql<number>`coalesce(max(${journalEntry.number}),0)::int`,
+        })
+        .from(journalEntry)
+        .where(
+          and(
+            eq(journalEntry.clientId, clientId),
+            eq(journalEntry.fiscalYearId, fy.id)
+          )
+        );
+      const number = (maxNum ?? 0) + 1;
+
+      const [je] = await tx
+        .insert(journalEntry)
+        .values({
+          clientId,
+          fiscalYearId: fy.id,
+          periodId: period.id,
+          number,
+          entryDate: date,
+          description: ctx.data.description?.trim() ? ctx.data.description.trim() : null,
+          origin: 'manual',
+          createdBy: userId,
+        })
+        .returning();
+
+      await tx.insert(journalEntryLine).values(
+        ctx.data.lines.map((l, i) => ({
+          journalEntryId: je.id,
+          accountId: l.accountId,
+          clientId,
+          periodId: period.id,
+          debit: String(l.debit),
+          credit: String(l.credit),
+          description: l.description?.trim() ? l.description.trim() : null,
+          lineOrder: i,
+        }))
+      );
+      return je;
+    });
+
+    return entry;
+  });
+
+/** Edita un asiento (solo si su período está abierto). (US 1.3.2) */
+export const updateJournalEntry = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      id: z.string().uuid(),
+      entryDate: z.string(),
+      description: z.string().optional(),
+      lines: z.array(journalLineSchema).min(2),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const entry = await loadJournalEntryForOrg(ctx.data.id, orgId);
+    if (entry.isVoided) throw new Error('No se puede editar un asiento anulado');
+
+    // El período actual del asiento debe estar abierto.
+    const { period: currentPeriod } = await loadPeriodForOrg(entry.periodId, orgId);
+    if (currentPeriod.status === 'closed') {
+      throw new Error('No se puede editar: el período del asiento está cerrado');
+    }
+
+    // Resolver el período de la (posible nueva) fecha; debe ser del mismo ejercicio y abierto.
+    const { fy, period, date } = await resolvePeriodForDate(
+      entry.clientId,
+      ctx.data.entryDate
+    );
+    if (fy.id !== entry.fiscalYearId) {
+      throw new Error('La fecha debe estar dentro del mismo ejercicio del asiento');
+    }
+    if (period.status === 'closed') {
+      throw new Error('No se puede mover el asiento a un período cerrado');
+    }
+
+    validateLineAmounts(ctx.data.lines);
+    await assertPostableAccounts(
+      entry.clientId,
+      orgId,
+      ctx.data.lines.map((l) => l.accountId)
+    );
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(journalEntry)
+        .set({
+          entryDate: date,
+          periodId: period.id,
+          description: ctx.data.description?.trim() ? ctx.data.description.trim() : null,
+        })
+        .where(eq(journalEntry.id, entry.id));
+      await tx
+        .delete(journalEntryLine)
+        .where(eq(journalEntryLine.journalEntryId, entry.id));
+      await tx.insert(journalEntryLine).values(
+        ctx.data.lines.map((l, i) => ({
+          journalEntryId: entry.id,
+          accountId: l.accountId,
+          clientId: entry.clientId,
+          periodId: period.id,
+          debit: String(l.debit),
+          credit: String(l.credit),
+          description: l.description?.trim() ? l.description.trim() : null,
+          lineOrder: i,
+        }))
+      );
+      await tx.insert(accountingLog).values({
+        clientId: entry.clientId,
+        fiscalYearId: entry.fiscalYearId,
+        eventType: 'journal_entry_edited',
+        eventData: { entryId: entry.id, number: entry.number },
+        userId,
+      });
+    });
+
+    return { ok: true };
+  });
+
+/** Anula un asiento sin borrarlo, conservando su número. (US 1.3.3) */
+export const voidJournalEntry = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({ id: z.string().uuid(), reason: z.string().trim().min(1) })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const entry = await loadJournalEntryForOrg(ctx.data.id, orgId);
+    if (entry.isVoided) throw new Error('El asiento ya está anulado');
+    const { period } = await loadPeriodForOrg(entry.periodId, orgId);
+    if (period.status === 'closed') {
+      throw new Error('No se puede anular: el período del asiento está cerrado');
+    }
+
+    await db
+      .update(journalEntry)
+      .set({
+        isVoided: true,
+        voidedAt: new Date(),
+        voidedBy: userId,
+        voidReason: ctx.data.reason.trim(),
+      })
+      .where(eq(journalEntry.id, entry.id));
+
+    await db.insert(accountingLog).values({
+      clientId: entry.clientId,
+      fiscalYearId: entry.fiscalYearId,
+      eventType: 'journal_entry_voided',
+      eventData: {
+        entryId: entry.id,
+        number: entry.number,
+        reason: ctx.data.reason.trim(),
+      },
+      userId,
+    });
+
+    return { ok: true };
+  });
+
+export interface JournalEntryListRow {
+  id: string;
+  number: number;
+  entryDate: string | Date;
+  description: string | null;
+  origin: string;
+  isVoided: boolean;
+  total: number;
+  lineCount: number;
+}
+
+/** Lista paginada de asientos del ejercicio con filtros. (US 1.3.4) */
+export const listJournalEntries = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid().optional(),
+      from: z.string().optional(),
+      to: z.string().optional(),
+      accountId: z.string().uuid().optional(),
+      origin: z
+        .enum([
+          'manual',
+          'auto_invoice',
+          'auto_payroll',
+          'auto_closing',
+          'auto_opening',
+          'import_excel',
+        ])
+        .optional(),
+      includeVoided: z.boolean().default(false),
+      sortBy: z.enum(['number', 'date']).default('number'),
+      sortDir: z.enum(['asc', 'desc']).default('desc'),
+      page: z.number().int().min(1).default(1),
+      pageSize: z.number().int().min(1).max(200).default(50),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const d = ctx.data;
+    await ensureClientBelongsToOrg(d.clientId, orgId);
+
+    // Ejercicio: el indicado, o el abierto, o el más reciente.
+    let fyId = d.fiscalYearId;
+    if (!fyId) {
+      const [fy] = await db
+        .select({ id: fiscalYear.id })
+        .from(fiscalYear)
+        .where(eq(fiscalYear.clientId, d.clientId))
+        .orderBy(
+          sql`case when ${fiscalYear.status} = 'open' then 0 else 1 end`,
+          desc(fiscalYear.number)
+        )
+        .limit(1);
+      fyId = fy?.id;
+    }
+    if (!fyId) {
+      return { rows: [] as JournalEntryListRow[], total: 0, fiscalYearId: null };
+    }
+
+    const conditions = [
+      eq(journalEntry.clientId, d.clientId),
+      eq(journalEntry.fiscalYearId, fyId),
+    ];
+    if (!d.includeVoided) conditions.push(eq(journalEntry.isVoided, false));
+    if (d.origin) conditions.push(eq(journalEntry.origin, d.origin));
+    if (d.from) conditions.push(gte(journalEntry.entryDate, new Date(`${d.from}T00:00:00Z`)));
+    if (d.to) conditions.push(lte(journalEntry.entryDate, new Date(`${d.to}T00:00:00Z`)));
+
+    if (d.accountId) {
+      const lineEntries = await db
+        .selectDistinct({ id: journalEntryLine.journalEntryId })
+        .from(journalEntryLine)
+        .where(
+          and(
+            eq(journalEntryLine.clientId, d.clientId),
+            eq(journalEntryLine.accountId, d.accountId)
+          )
+        );
+      const ids = lineEntries.map((r) => r.id);
+      if (ids.length === 0) {
+        return { rows: [] as JournalEntryListRow[], total: 0, fiscalYearId: fyId };
+      }
+      conditions.push(inArray(journalEntry.id, ids));
+    }
+
+    const [{ count }] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(journalEntry)
+      .where(and(...conditions));
+
+    const orderCol = d.sortBy === 'date' ? journalEntry.entryDate : journalEntry.number;
+    const rows = await db
+      .select({
+        id: journalEntry.id,
+        number: journalEntry.number,
+        entryDate: journalEntry.entryDate,
+        description: journalEntry.description,
+        origin: journalEntry.origin,
+        isVoided: journalEntry.isVoided,
+      })
+      .from(journalEntry)
+      .where(and(...conditions))
+      .orderBy(d.sortDir === 'asc' ? asc(orderCol) : desc(orderCol))
+      .limit(d.pageSize)
+      .offset((d.page - 1) * d.pageSize);
+
+    // Totales y cantidad de líneas por asiento (query agregado aparte).
+    const pageIds = rows.map((r) => r.id);
+    const totalsByEntry = new Map<string, { total: number; lineCount: number }>();
+    if (pageIds.length > 0) {
+      const stats = await db
+        .select({
+          journalEntryId: journalEntryLine.journalEntryId,
+          total: sql<string>`coalesce(sum(${journalEntryLine.debit}),0)`,
+          lineCount: sql<number>`count(*)::int`,
+        })
+        .from(journalEntryLine)
+        .where(inArray(journalEntryLine.journalEntryId, pageIds))
+        .groupBy(journalEntryLine.journalEntryId);
+      for (const s of stats) {
+        totalsByEntry.set(s.journalEntryId, {
+          total: parseFloat(s.total),
+          lineCount: s.lineCount,
+        });
+      }
+    }
+
+    return {
+      rows: rows.map((r) => ({
+        id: r.id,
+        number: r.number,
+        entryDate: r.entryDate,
+        description: r.description,
+        origin: r.origin,
+        isVoided: r.isVoided,
+        total: totalsByEntry.get(r.id)?.total ?? 0,
+        lineCount: totalsByEntry.get(r.id)?.lineCount ?? 0,
+      })),
+      total: count,
+      fiscalYearId: fyId,
+    };
+  });
+
+/** Detalle completo de un asiento: cabecera, líneas, origen y log adjunto. (US 1.3.5) */
+export const getJournalEntry = createServerFn({ method: 'GET' })
+  .inputValidator(z.object({ id: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const entry = await loadJournalEntryForOrg(ctx.data.id, orgId);
+
+    const [meta] = await db
+      .select({
+        fyNumber: fiscalYear.number,
+        periodYear: accountingPeriod.year,
+        periodMonth: accountingPeriod.month,
+        periodStatus: accountingPeriod.status,
+        createdByName: user.name,
+        createdByEmail: user.email,
+      })
+      .from(journalEntry)
+      .leftJoin(fiscalYear, eq(fiscalYear.id, journalEntry.fiscalYearId))
+      .leftJoin(accountingPeriod, eq(accountingPeriod.id, journalEntry.periodId))
+      .leftJoin(user, eq(user.id, journalEntry.createdBy))
+      .where(eq(journalEntry.id, entry.id))
+      .limit(1);
+
+    const lines = await db
+      .select({
+        id: journalEntryLine.id,
+        accountId: journalEntryLine.accountId,
+        accountCode: account.code,
+        accountName: account.name,
+        debit: journalEntryLine.debit,
+        credit: journalEntryLine.credit,
+        description: journalEntryLine.description,
+        lineOrder: journalEntryLine.lineOrder,
+      })
+      .from(journalEntryLine)
+      .innerJoin(account, eq(account.id, journalEntryLine.accountId))
+      .where(eq(journalEntryLine.journalEntryId, entry.id))
+      .orderBy(asc(journalEntryLine.lineOrder));
+
+    const logRows = await db
+      .select({
+        id: accountingLog.id,
+        eventType: accountingLog.eventType,
+        eventData: sql<{ reason?: string } | null>`${accountingLog.eventData}`,
+        createdAt: accountingLog.createdAt,
+        userName: user.name,
+        userEmail: user.email,
+      })
+      .from(accountingLog)
+      .leftJoin(user, eq(user.id, accountingLog.userId))
+      .where(
+        and(
+          eq(accountingLog.clientId, entry.clientId),
+          inArray(accountingLog.eventType, [
+            'journal_entry_edited',
+            'journal_entry_voided',
+          ]),
+          sql`${accountingLog.eventData}->>'entryId' = ${entry.id}`
+        )
+      )
+      .orderBy(desc(accountingLog.createdAt));
+
+    return {
+      entry: {
+        ...entry,
+        fyNumber: meta?.fyNumber ?? null,
+        periodYear: meta?.periodYear ?? null,
+        periodMonth: meta?.periodMonth ?? null,
+        periodStatus: meta?.periodStatus ?? null,
+        createdByName: meta?.createdByName ?? meta?.createdByEmail ?? null,
+      },
+      lines: lines.map((l) => ({
+        ...l,
+        debit: parseFloat(l.debit),
+        credit: parseFloat(l.credit),
+      })),
+      log: logRows,
+    };
   });
