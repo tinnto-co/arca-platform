@@ -1092,7 +1092,7 @@ export const getInvoicesByProfileInRange = createServerFn({
       console.error('[getInvoicesByProfileInRange] error:', error);
       throw new Error(
         error?.message ||
-          'No se pudieron obtener las facturas para el perfil y rango seleccionados'
+        'No se pudieron obtener las facturas para el perfil y rango seleccionados'
       );
     }
   });

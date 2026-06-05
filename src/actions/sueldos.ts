@@ -4094,3 +4094,97 @@ export const listRecibosDetalleParaPDF = createServerFn({ method: 'GET' })
 
     return JSON.parse(JSON.stringify(result)) as typeof result;
   });
+
+/**
+ * Resumen agregado de la liquidación de un cliente para un período.
+ * Devuelve totales (haberes, no remunerativo, descuentos, retenciones, neto)
+ * + cantidad de recibos por tipo + cantidad de empleados liquidados.
+ * Diseñado para mostrar un overview en el agente IA sin abrir el dashboard.
+ */
+export const getResumenLiquidacionMes = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      periodo: z.string(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+
+    const rows = await db
+      .select({
+        liquidacion: liquidacionImportRecibo,
+        empleadoId: liquidacionImportEmpleado.id,
+      })
+      .from(liquidacionImportRecibo)
+      .innerJoin(
+        liquidacionImportEmpleado,
+        eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
+      )
+      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .where(
+        and(
+          condicionPeriodoRecibo(ctx.data.periodo),
+          eq(profile.client, ctx.data.clientId)
+        )
+      );
+
+    const num = (v: unknown) => Number(v ?? 0);
+    const empleadosUnicos = new Set<string>();
+    const porTipo: Record<
+      string,
+      { count: number; haberes: number; neto: number }
+    > = {};
+    let totalHaberes = 0;
+    let totalNoRemunerativo = 0;
+    let totalDescuentos = 0;
+    let totalRetenciones = 0;
+    let totalNeto = 0;
+    let confirmados = 0;
+    let importados = 0;
+    let generados = 0;
+
+    for (const r of rows) {
+      const l = r.liquidacion;
+      empleadosUnicos.add(r.empleadoId);
+      const haberes = num(l.haberes);
+      const neto = num(l.neto);
+      totalHaberes += haberes;
+      totalNoRemunerativo += num(l.noRemunerativo);
+      totalDescuentos += num(l.descuentos);
+      totalRetenciones += num(l.retenciones);
+      totalNeto += neto;
+      if (l.reciboConfirmado) confirmados++;
+      if (l.origen === 'import') importados++;
+      else if (l.origen === 'generado') generados++;
+      const tipoKey = l.tipo || 'sueldo';
+      if (!porTipo[tipoKey])
+        porTipo[tipoKey] = { count: 0, haberes: 0, neto: 0 };
+      porTipo[tipoKey].count++;
+      porTipo[tipoKey].haberes += haberes;
+      porTipo[tipoKey].neto += neto;
+    }
+
+    return {
+      clientId: ctx.data.clientId,
+      periodo: ctx.data.periodo,
+      totales: {
+        recibos: rows.length,
+        empleados: empleadosUnicos.size,
+        confirmados,
+        importados,
+        generados,
+        haberes: totalHaberes,
+        noRemunerativo: totalNoRemunerativo,
+        descuentos: totalDescuentos,
+        retenciones: totalRetenciones,
+        neto: totalNeto,
+      },
+      porTipo,
+    };
+  });
+
+export type GetResumenLiquidacionMesResult = Awaited<
+  ReturnType<typeof getResumenLiquidacionMes>
+>;

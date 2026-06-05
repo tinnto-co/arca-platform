@@ -16,7 +16,7 @@ import {
   getMemberRole,
   assertCanWrite,
 } from '@/actions/helpers';
-import { eq, and, isNull, gte, asc, desc } from 'drizzle-orm';
+import { eq, and, or, isNull, gte, asc, desc } from 'drizzle-orm';
 
 export const getPortalSession = createServerFn({ method: 'GET' }).handler(
   async () => {
@@ -344,6 +344,7 @@ export const listClientRequests = createServerFn({ method: 'GET' })
     z.object({
       clientId: z.string().uuid(),
       status: z.string().optional(),
+      profileId: z.string().optional(),
     })
   )
   .handler(async ({ data }) => {
@@ -363,13 +364,21 @@ export const listClientRequests = createServerFn({ method: 'GET' })
     if (data.status) {
       conditions.push(eq(representativeRequest.status, data.status));
     }
+    // Empresa seleccionada: incluir sus solicitudes + las del representante (sin empresa).
+    if (data.profileId) {
+      const profileCond = or(
+        eq(representativeRequest.clientId, data.profileId),
+        isNull(representativeRequest.clientId)
+      );
+      if (profileCond) conditions.push(profileCond);
+    }
 
     const rows = await db
       .select({
         id: representativeRequest.id,
         organizationId: representativeRequest.organizationId,
         clientId: representativeRequest.representativeId,
-        profileId: representativeRequest.profileId,
+        profileId: representativeRequest.clientId,
         requestedByUserId: representativeRequest.requestedByUserId,
         title: representativeRequest.title,
         description: representativeRequest.description,

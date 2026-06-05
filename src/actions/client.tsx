@@ -387,6 +387,32 @@ export const getRepresentativesWithClients = createServerFn({
   }
 });
 
+export const getClients = createServerFn({
+  method: 'GET',
+}).handler(async () => {
+  try {
+    const { orgId } = await getSessionWithOrg();
+
+    return await db
+      .select({
+        id: client.id,
+        name: client.name,
+        identityNumber: client.identityNumber,
+        status: client.status,
+        createdAt: client.createdAt,
+        representativeId: client.representativeId,
+        representativeName: representative.name,
+        representativeCuit: representative.cuit,
+      })
+      .from(client)
+      .innerJoin(representative, eq(client.representativeId, representative.id))
+      .where(eq(representative.organizationId, orgId))
+      .orderBy(asc(client.name));
+  } catch (error) {
+    throw new Error(`Error loading clients: ${getErrorMessage(error)}`);
+  }
+});
+
 export const getRepresentative = createServerFn({
   method: 'GET',
 })
@@ -424,26 +450,6 @@ export const getRepresentativePassword = createServerFn({
     if (!rep) throw new Error('Representante no encontrado');
 
     return { password: rep.afipPassword ? safeDecrypt(rep.afipPassword) : '' };
-  });
-
-export const getClientPassword = createServerFn({
-  method: 'GET',
-})
-  .inputValidator(z.object({ clientId: z.string() }))
-  .handler(async (ctx) => {
-    await getSessionWithOrg();
-    const role = await getMemberRole();
-    assertCanWrite(role);
-
-    const [row] = await db
-      .select({ password: client.password })
-      .from(client)
-      .where(eq(client.id, ctx.data.clientId))
-      .limit(1);
-
-    if (!row) throw new Error('Cliente no encontrado');
-
-    return { password: safeDecrypt(row.password) };
   });
 
 /**
@@ -581,6 +587,8 @@ export const updateRepresentative = createServerFn({
       phone: z.string().optional().or(z.literal('')),
       address: z.string().optional().or(z.literal('')),
       image: z.string().optional(),
+      // Contraseña de AFIP (usada por el scraper). Vacío/ausente = no se modifica.
+      password: z.string().optional(),
       convenioMultilateral: z.boolean().optional(),
       regimenLocal: z.boolean().optional(),
       fiscalCondition: z
@@ -595,11 +603,11 @@ export const updateRepresentative = createServerFn({
     })
   )
   .handler(async (ctx) => {
-    await getSessionWithOrg();
+    const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const { id, ...updateData } = ctx.data;
+    const { id, password, ...updateData } = ctx.data;
 
     const [updatedRepresentative] = await db
       .update(representative)
@@ -609,6 +617,8 @@ export const updateRepresentative = createServerFn({
         phone: updateData.phone || '',
         address: updateData.address || '',
         image: updateData.image || null,
+        // Solo se re-encripta y actualiza si el usuario ingresó una nueva contraseña.
+        afipPassword: password ? encrypt(password) : undefined,
         convenioMultilateral:
           typeof updateData.convenioMultilateral === 'boolean'
             ? updateData.convenioMultilateral
@@ -623,7 +633,12 @@ export const updateRepresentative = createServerFn({
             : (updateData.fiscalCondition ?? undefined),
         updatedAt: new Date(),
       })
-      .where(eq(representative.id, id))
+      .where(
+        and(
+          eq(representative.id, id),
+          eq(representative.organizationId, orgId)
+        )
+      )
       .returning();
 
     if (!updatedRepresentative) throw new Error('Error al actualizar el cliente');
@@ -746,15 +761,25 @@ export const updateDebtStatus = createServerFn({
 export const getRepresentativeDueDates = createServerFn({
   method: 'GET',
 })
-  .inputValidator(z.object({ representativeId: z.string() }))
+  .inputValidator(
+    z.object({
+      representativeId: z.string(),
+      clientId: z.string().optional(),
+    })
+  )
   .handler(async (ctx) => {
     const session = await auth.api.getSession({ headers: getRequestHeaders() });
     if (!session?.user?.id) throw new Error('Unauthorized');
 
+    const conditions = [eq(dueDate.representativeId, ctx.data.representativeId)];
+    if (ctx.data.clientId) {
+      conditions.push(eq(dueDate.clientId, ctx.data.clientId));
+    }
+
     const dueDates = await db
       .select()
       .from(dueDate)
-      .where(eq(dueDate.representativeId, ctx.data.representativeId))
+      .where(and(...conditions))
       .orderBy(dueDate.dueDate);
 
     return dueDates;
