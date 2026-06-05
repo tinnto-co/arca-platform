@@ -16,6 +16,7 @@ const CLIENT_DETAIL_TABS = [
 export const Route = createFileRoute('/_authed/clients/$clientId/')({
   validateSearch: z.object({
     tab: z.enum(CLIENT_DETAIL_TABS).optional(),
+    empresa: z.string().optional(),
   }),
   component: RouteComponent,
 });
@@ -30,7 +31,22 @@ function RouteComponent() {
     void navigate({
       to: '/clients/$clientId',
       params: { clientId },
-      search: { tab: next === 'resumen' ? undefined : (next as never) },
+      search: {
+        tab: next === 'resumen' ? undefined : (next as never),
+        empresa: search.empresa,
+      },
+      replace: true,
+    });
+  };
+
+  const onClientChange = (empresaId: string) => {
+    void navigate({
+      to: '/clients/$clientId',
+      params: { clientId },
+      search: {
+        tab: activeTab === 'resumen' ? undefined : (activeTab as never),
+        empresa: empresaId,
+      },
       replace: true,
     });
   };
@@ -41,6 +57,8 @@ function RouteComponent() {
         representativeId={clientId}
         activeTab={activeTab}
         onTabChange={onTabChange}
+        selectedClientId={search.empresa}
+        onClientChange={onClientChange}
       />
       <Outlet />
     </>

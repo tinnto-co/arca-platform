@@ -172,11 +172,11 @@ export function ClientDetailView({
         <CopilotReadableEntity
           description="Profile fiscal actualmente visible en pantalla"
           value={{
-            id: profile.id,
-            name: profile.name,
-            identityNumber: profile.identityNumber,
-            clientId: profile.clientId,
-            status: profile.status,
+            id: client.id,
+            name: client.name,
+            identityNumber: client.identityNumber,
+            representativeId: client.representativeId,
+            status: client.status,
           }}
         />
       )}

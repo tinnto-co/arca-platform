@@ -163,7 +163,11 @@ export function RepresentativesTable() {
           <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
             <DropdownMenuItem
               onSelect={() =>
-                navigate({ to: `/clients/${row.original.representativeId}` })
+                navigate({
+                  to: '/clients/$clientId',
+                  params: { clientId: row.original.representativeId },
+                  search: { empresa: row.original.id },
+                })
               }
             >
               <Eye className="mr-2 h-3.5 w-3.5" />
@@ -249,7 +253,11 @@ export function RepresentativesTable() {
         searchPlaceholder="Buscar por CUIT, cliente o representante..."
         filters={[]}
         onRowClick={(row) =>
-          navigate({ to: `/clients/${(row as ClientRow).representativeId}` })
+          navigate({
+            to: '/clients/$clientId',
+            params: { clientId: (row as ClientRow).representativeId },
+            search: { empresa: (row as ClientRow).id },
+          })
         }
         onSelectionChange={(rows) => setSelectedClients(rows as ClientRow[])}
         toolbar={

@@ -71,7 +71,7 @@ function RouteComponent() {
     <OrgSwitchProvider>
       <SidebarProvider defaultOpen={true} className="h-svh">
         <AppSidebar />
-        <SidebarInset className="relative flex min-h-0 flex-col">
+        <SidebarInset className="relative flex min-h-0 min-w-0 flex-col">
           <div
             data-arca-content
             className={cn(

@@ -772,15 +772,25 @@ export const updateDebtStatus = createServerFn({
 export const getRepresentativeDueDates = createServerFn({
   method: 'GET',
 })
-  .inputValidator(z.object({ representativeId: z.string() }))
+  .inputValidator(
+    z.object({
+      representativeId: z.string(),
+      clientId: z.string().optional(),
+    })
+  )
   .handler(async (ctx) => {
     const session = await auth.api.getSession({ headers: getRequestHeaders() });
     if (!session?.user?.id) throw new Error('Unauthorized');
 
+    const conditions = [eq(dueDate.representativeId, ctx.data.representativeId)];
+    if (ctx.data.clientId) {
+      conditions.push(eq(dueDate.clientId, ctx.data.clientId));
+    }
+
     const dueDates = await db
       .select()
       .from(dueDate)
-      .where(eq(dueDate.representativeId, ctx.data.representativeId))
+      .where(and(...conditions))
       .orderBy(dueDate.dueDate);
 
     return dueDates;

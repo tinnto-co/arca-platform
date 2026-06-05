@@ -105,6 +105,8 @@ interface NotificationData {
 interface NotificationsViewProps {
   /** When set, only show notifications for this client and hide client filter */
   clientId?: string;
+  /** When set (junto con clientId), fuerza el filtro de empresa/perfil y oculta su selector. */
+  profileId?: string;
   /** When set, opens this notification on mount (used via ?notificationId= query param) */
   initialNotificationId?: string;
   /** Optional toolbar (e.g. "Actualizar" button + last update) rendered above the list/detail */
@@ -115,6 +117,7 @@ interface NotificationsViewProps {
 
 export function NotificationsView({
   clientId: clientIdProp,
+  profileId: profileIdProp,
   initialNotificationId,
   toolbar,
   className,
@@ -162,8 +165,11 @@ export function NotificationsView({
   });
 
   const effectiveClientFilter = clientIdProp ?? clientFilter;
-  const effectiveProfileFilter =
-    clientIdProp && profileFilter !== 'all' ? profileFilter : undefined;
+  const effectiveProfileFilter = profileIdProp
+    ? profileIdProp
+    : clientIdProp && profileFilter !== 'all'
+      ? profileFilter
+      : undefined;
 
   // Reset filtros cuando cambia el cliente (por si se reusa el componente)
   useEffect(() => {
@@ -200,9 +206,9 @@ export function NotificationsView({
         data: {
           page: 1,
           limit: 100,
-          clientFilter:
+          representativeFilter:
             effectiveClientFilter === 'all' ? undefined : effectiveClientFilter,
-          profileId: effectiveProfileFilter,
+          clientId: effectiveProfileFilter,
           search: searchTerm || undefined,
           category: categoryFilter === 'all' ? undefined : categoryFilter,
           onlyUnresolved: onlyUnresolved || undefined,
@@ -509,7 +515,7 @@ export function NotificationsView({
                 searchPlaceholder="Buscar cliente..."
                 width="100%"
               />
-            ) : (
+            ) : profileIdProp ? null : (
               <SearchableSelect
                 options={[
                   { value: 'all', label: 'Todos los perfiles' },
