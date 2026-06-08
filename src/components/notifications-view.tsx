@@ -42,6 +42,8 @@ import {
   classifyUnclassifiedNotifications,
 } from '@/actions/notification';
 import { getRepresentatives, getRepresentativeClients } from '@/actions/client';
+import { listOrgModules } from '@/actions/admin';
+import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
 import { cn } from '@/lib/utils';
 import { userQuery } from '../lib/user-query';
 
@@ -103,6 +105,8 @@ interface NotificationData {
 interface NotificationsViewProps {
   /** When set, only show notifications for this client and hide client filter */
   clientId?: string;
+  /** When set (junto con clientId), fuerza el filtro de empresa/perfil y oculta su selector. */
+  profileId?: string;
   /** When set, opens this notification on mount (used via ?notificationId= query param) */
   initialNotificationId?: string;
   /** Optional toolbar (e.g. "Actualizar" button + last update) rendered above the list/detail */
@@ -113,6 +117,7 @@ interface NotificationsViewProps {
 
 export function NotificationsView({
   clientId: clientIdProp,
+  profileId: profileIdProp,
   initialNotificationId,
   toolbar,
   className,
@@ -120,6 +125,12 @@ export function NotificationsView({
   const queryClient = useQueryClient();
   const { data: user } = useQuery(userQuery);
   const orgKey = user?.activeOrganizationId ?? '__pending__';
+  const { data: orgModules = [] } = useQuery({
+    queryKey: ['orgModules'],
+    queryFn: () => listOrgModules(),
+  });
+  const aiAgentEnabled =
+    orgModules.find((m) => m.module === 'ai_agent')?.enabled ?? false;
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [notificationToDelete, setNotificationToDelete] = useState<
     string | null
@@ -154,8 +165,11 @@ export function NotificationsView({
   });
 
   const effectiveClientFilter = clientIdProp ?? clientFilter;
-  const effectiveProfileFilter =
-    clientIdProp && profileFilter !== 'all' ? profileFilter : undefined;
+  const effectiveProfileFilter = profileIdProp
+    ? profileIdProp
+    : clientIdProp && profileFilter !== 'all'
+      ? profileFilter
+      : undefined;
 
   // Reset filtros cuando cambia el cliente (por si se reusa el componente)
   useEffect(() => {
@@ -192,9 +206,9 @@ export function NotificationsView({
         data: {
           page: 1,
           limit: 100,
-          clientFilter:
+          representativeFilter:
             effectiveClientFilter === 'all' ? undefined : effectiveClientFilter,
-          profileId: effectiveProfileFilter,
+          clientId: effectiveProfileFilter,
           search: searchTerm || undefined,
           category: categoryFilter === 'all' ? undefined : categoryFilter,
           onlyUnresolved: onlyUnresolved || undefined,
@@ -422,6 +436,18 @@ export function NotificationsView({
     );
   });
 
+  const unreadForCopilot = aiAgentEnabled
+    ? notifications
+        .filter((n: any) => n.opened === false)
+        .slice(0, 20)
+        .map((n: any) => ({
+          id: n.id,
+          message: n.message,
+          publicationDate: n.publicationDate,
+          clientName: n.clientName ?? null,
+        }))
+    : [];
+
   return (
     <div
       className={cn(
@@ -431,6 +457,12 @@ export function NotificationsView({
         className
       )}
     >
+      {aiAgentEnabled && (
+        <CopilotReadableEntity
+          description="Notificaciones AFIP no leídas visibles en pantalla (máx. 20). Usá el id para invocar la acción marcarNotificacionLeida."
+          value={unreadForCopilot}
+        />
+      )}
       {toolbar ? (
         <div className="w-full border-b bg-muted/30 px-4 py-2 flex items-center justify-between gap-2 flex-wrap shrink-0">
           {toolbar}
@@ -483,7 +515,7 @@ export function NotificationsView({
                 searchPlaceholder="Buscar cliente..."
                 width="100%"
               />
-            ) : (
+            ) : profileIdProp ? null : (
               <SearchableSelect
                 options={[
                   { value: 'all', label: 'Todos los perfiles' },

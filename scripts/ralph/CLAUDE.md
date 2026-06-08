@@ -121,3 +121,4 @@ If there are still stories with `passes: false`, end your response normally (ano
 - Commit frequently
 - Keep CI green
 - Read the Codebase Patterns section in progress.txt before starting
+- **NEVER modify `src/routes/api/agent.ts`, `src/routes/_authed/chat/$id.tsx`, or `src/routes/_authed/chat/index.tsx`** unless a story explicitly says so. The existing `/chat` page and its agent endpoint must keep working unchanged. CopilotKit runs in parallel, not as a replacement.
