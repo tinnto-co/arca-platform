@@ -120,6 +120,8 @@ interface SueldosSimuladorProps {
     periodo: string;
     tipoRecibo: string;
   };
+  /** Llamado cuando el usuario descarta el modo edición con "Nuevo recibo". */
+  onReset?: () => void;
 }
 
 export function SueldosSimulador({
@@ -127,6 +129,7 @@ export function SueldosSimulador({
   profileId,
   onConfirmRecibo,
   initialData,
+  onReset,
 }: SueldosSimuladorProps) {
   const moneyFmt = useCallback(
     (value: number) =>
@@ -503,7 +506,8 @@ export function SueldosSimulador({
     setTablaEdits({});
     setActiveCodigos(new Set());
     setRecalcularConEscalaVigente(false);
-  }, []);
+    onReset?.();
+  }, [onReset]);
 
   const puedeGuardar =
     !!flowHeader &&
@@ -596,10 +600,15 @@ export function SueldosSimulador({
           <CardContent className="space-y-4">
             <div className="rounded-lg border bg-background p-3">
             <TablaReciboSos
+              key={`${plantillaKey}|${[...activeCodigos].sort().join(',')}`}
               variant="importado"
               recibo={ultimoRecibo.recibo}
-              conceptos={ultimoRecibo.conceptos}
+              conceptos={conceptosFilas}
               basico={basicoEscala}
+              activeCodigos={activeCodigos}
+              catalogoCompleto={conceptosFilas}
+              onAddConcepto={handleAddConcepto}
+              onRemoveConcepto={handleRemoveConcepto}
               recalculateWithBasico={recalcularConEscalaVigente}
               onChange={handleTablaChange}
               firmaEmpleadorUrl={firmaEmpleadorUrl}

@@ -77,6 +77,7 @@ export function SueldosConvenios({ clientId, profileId }: SueldosConveniosProps)
       createConvenio({
         data: {
           clientId,
+          profileId,
           nombre: newConvenioNombre,
           cctCodigo: newConvenioCct.trim() || undefined,
         },

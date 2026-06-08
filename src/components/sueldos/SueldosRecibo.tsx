@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -34,6 +34,7 @@ const MESES = Array.from({ length: 12 }, (_, i) => ({
 interface SueldosReciboProps {
   clientId: string;
   profileId: string;
+  initialEmpleadoId?: string;
   onEditRecibo?: (data: {
     importEmpleadoId: string;
     empleadoNombre: string;
@@ -336,12 +337,21 @@ function DocCell({
   );
 }
 
-export function SueldosRecibo({ clientId, profileId, onEditRecibo }: SueldosReciboProps) {
-  const [ano, setAno] = useState(String(now.getFullYear()));
-  const [mes, setMes] = useState(String(now.getMonth() + 1).padStart(2, '0'));
-  const [empleadoId, setEmpleadoId] = useState('');
+export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, onEditRecibo }: SueldosReciboProps) {
+  const [ano, setAno] = useState('');
+  const [mes, setMes] = useState('');
+  const [empleadoId, setEmpleadoId] = useState(initialEmpleadoId ?? '');
   const [reciboId, setReciboId] = useState('');
   const [showImprimir, setShowImprimir] = useState(false);
+
+  useEffect(() => {
+    if (initialEmpleadoId) {
+      setEmpleadoId(initialEmpleadoId);
+      setAno('');
+      setMes('');
+      setReciboId('');
+    }
+  }, [initialEmpleadoId]);
 
   const periodo = useMemo(
     () => (ano && mes ? `${ano}-${mes}` : ''),

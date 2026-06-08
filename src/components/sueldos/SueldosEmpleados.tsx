@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
-import { Plus, Trash2, RefreshCw, Pencil, Save, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, RefreshCw, Pencil, Save, Search, ChevronLeft, ChevronRight, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Table,
@@ -23,7 +23,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import {
   listImportEmpleados,
@@ -61,6 +60,7 @@ import {
 interface SueldosEmpleadosProps {
   clientId: string;
   profileId: string;
+  onVerRecibos?: (empleadoId: string) => void;
 }
 
 const FORMAS_PAGO = [
@@ -153,7 +153,7 @@ function formaPagoLabel(v: string | null | undefined): string {
   return v;
 }
 
-// ─── Dialog de detalle del empleado ────────────────────────────────────────
+// ─── Seccion y Campo ───────────────────────────────────────────────────────
 
 function Campo({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -166,18 +166,22 @@ function Campo({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function Seccion({ title, children }: { title: string; children: React.ReactNode }) {
+function Seccion({ title, children, cols = 3 }: { title: string; children: React.ReactNode; cols?: 2 | 3 }) {
   return (
     <div className="space-y-3">
       <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground border-b pb-1">
         {title}
       </h4>
-      <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3">
+      <div className={cols === 2
+        ? 'grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3'
+        : 'grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3'}>
         {children}
       </div>
     </div>
   );
 }
+
+// ─── Dialog de detalle/edición del empleado ────────────────────────────────
 
 function EmpleadoDetalleDialog({
   row,
@@ -383,7 +387,7 @@ function EmpleadoDetalleDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="w-[95vw] sm:max-w-2xl max-h-[90vh] flex flex-col">
+      <DialogContent className="w-[95vw] sm:max-w-2xl h-[85vh] flex flex-col">
         <DialogHeader className="shrink-0">
           <div className="flex items-center justify-between gap-2">
             <DialogTitle className="text-base leading-snug">
@@ -659,7 +663,7 @@ function EmpleadoDetalleDialog({
 
             {/* ── CÓDIGOS ── */}
             <TabsContent value="codigos" className="space-y-5 mt-0">
-              <Seccion title="Códigos auxiliares">
+              <Seccion title="Códigos auxiliares" cols={2}>
                 {isEditing ? (
                   <>
                     <div className="space-y-1">
@@ -770,11 +774,462 @@ function EmpleadoDetalleDialog({
   );
 }
 
+// ─── Dialog de alta de empleado (con solapas) ──────────────────────────────
+
+function NuevoEmpleadoDialog({
+  open,
+  onClose,
+  clientId,
+  profileId,
+  convenios,
+}: {
+  open: boolean;
+  onClose: () => void;
+  clientId: string;
+  profileId: string;
+  convenios: { id: string; nombre: string }[];
+}) {
+  const queryClient = useQueryClient();
+
+  const [nombre, setNombre] = useState('');
+  const [cuil, setCuil] = useState('');
+  const [fechaAlta, setFechaAlta] = useState('');
+  const [fechaBaja, setFechaBaja] = useState('');
+  const [tipoJornada, setTipoJornada] = useState<'full_time' | 'part_time' | 'reducida'>('full_time');
+  const [convenioId, setConvenioId] = useState('');
+  const [categoriaId, setCategoriaId] = useState('');
+  const [legajo, setLegajo] = useState('');
+  const [modoContrato, setModoContrato] = useState('');
+  const [lugarPago, setLugarPago] = useState('');
+  const [formaPago, setFormaPago] = useState<(typeof FORMAS_PAGO)[number]['value']>('efectivo');
+  const [banco, setBanco] = useState('_otro banco');
+  const [cbu, setCbu] = useState('');
+  const [domicilio, setDomicilio] = useState('');
+  const [localidad, setLocalidad] = useState('');
+  const [codigoPostal, setCodigoPostal] = useState('');
+  const [conyuge, setConyuge] = useState('');
+  const [hijos, setHijos] = useState('');
+  const [adherentes, setAdherentes] = useState('');
+  const [obraSocialId, setObraSocialId] = useState('');
+  const [provinciaId, setProvinciaId] = useState('');
+  const [modalidadContratacionId, setModalidadContratacionId] = useState('');
+  const [situacionId, setSituacionId] = useState('');
+  const [zonaId, setZonaId] = useState('');
+  const [condicionId, setCondicionId] = useState('');
+  const [actividadId, setActividadId] = useState('');
+  const [siniestradoId, setSiniestradoId] = useState('');
+  const [observaciones, setObservaciones] = useState('');
+
+  const resetForm = () => {
+    setNombre(''); setCuil(''); setFechaAlta(''); setFechaBaja('');
+    setTipoJornada('full_time'); setConvenioId(''); setCategoriaId('');
+    setLegajo(''); setModoContrato(''); setLugarPago('');
+    setFormaPago('efectivo'); setBanco('_otro banco'); setCbu('');
+    setDomicilio(''); setLocalidad(''); setCodigoPostal('');
+    setConyuge(''); setHijos(''); setAdherentes('');
+    setObraSocialId(''); setProvinciaId('');
+    setModalidadContratacionId(''); setSituacionId('');
+    setZonaId(''); setCondicionId(''); setActividadId('');
+    setSiniestradoId(''); setObservaciones('');
+  };
+
+  useEffect(() => {
+    if (!open) resetForm();
+  }, [open]);
+
+  const { data: categoriasCreate = [] } = useQuery({
+    queryKey: ['categorias', convenioId, clientId],
+    queryFn: () => listCategoriasByConvenio({ data: { convenioId, clientId } }),
+    enabled: open && !!convenioId,
+  });
+  const { data: obrasSocialesCreate = [] } = useQuery({
+    queryKey: ['obras-sociales'],
+    queryFn: () => listObrasSociales(),
+    enabled: open,
+    staleTime: 10 * 60 * 1000,
+  });
+  const { data: catalogModalidadesCreate = [] } = useQuery({
+    queryKey: ['catalog-modalidades'],
+    queryFn: () => listModalidadesContratacion(),
+    enabled: open,
+    staleTime: 30 * 60 * 1000,
+  });
+  const { data: catalogSituacionesCreate = [] } = useQuery({
+    queryKey: ['catalog-situaciones'],
+    queryFn: () => listSituaciones(),
+    enabled: open,
+    staleTime: 30 * 60 * 1000,
+  });
+  const { data: catalogZonasCreate = [] } = useQuery({
+    queryKey: ['catalog-zonas'],
+    queryFn: () => listZonas(),
+    enabled: open,
+    staleTime: 30 * 60 * 1000,
+  });
+  const { data: catalogCondicionesCreate = [] } = useQuery({
+    queryKey: ['catalog-condiciones'],
+    queryFn: () => listCondiciones(),
+    enabled: open,
+    staleTime: 30 * 60 * 1000,
+  });
+  const { data: catalogActividadesCreate = [] } = useQuery({
+    queryKey: ['catalog-actividades'],
+    queryFn: () => listActividades(),
+    enabled: open,
+    staleTime: 30 * 60 * 1000,
+  });
+  const { data: catalogSiniestradosCreate = [] } = useQuery({
+    queryKey: ['catalog-siniestrados'],
+    queryFn: () => listSiniestrados(),
+    enabled: open,
+    staleTime: 30 * 60 * 1000,
+  });
+  const { data: catalogProvinciasCreate = [] } = useQuery({
+    queryKey: ['catalog-provincias'],
+    queryFn: () => listProvincias(),
+    enabled: open,
+    staleTime: 30 * 60 * 1000,
+  });
+
+  const crear = useMutation({
+    mutationFn: () =>
+      createManualEmpleado({
+        data: {
+          clientId,
+          profileId,
+          cuil: cuil.trim(),
+          legajo: legajo.trim(),
+          nombre: nombre.trim(),
+          fechaAlta: fechaAlta || undefined,
+          fechaBaja: fechaBaja || undefined,
+          modoContrato: modoContrato || undefined,
+          tipoJornada,
+          convenioId: convenioId || undefined,
+          categoriaId: categoriaId || undefined,
+          formaPago,
+          banco: banco !== '_otro banco' ? banco : undefined,
+          cbu: cbu || undefined,
+          lugarPago: lugarPago || undefined,
+          domicilio: domicilio || undefined,
+          localidad: localidad || undefined,
+          codigoPostal: codigoPostal || undefined,
+          conyuge: conyuge !== '' ? parseInt(conyuge, 10) : undefined,
+          hijos: hijos !== '' ? parseInt(hijos, 10) : undefined,
+          adherentes: adherentes !== '' ? parseInt(adherentes, 10) : undefined,
+          obraSocialId: obraSocialId || undefined,
+          provinciaId: provinciaId || undefined,
+          modalidadContratacionId: modalidadContratacionId || undefined,
+          situacionId: situacionId || undefined,
+          zonaId: zonaId || undefined,
+          condicionId: condicionId || undefined,
+          actividadId: actividadId || undefined,
+          siniestradoId: siniestradoId || undefined,
+          observaciones: observaciones || undefined,
+        },
+      }),
+    onSuccess: () => {
+      toast.success('Empleado creado');
+      queryClient.invalidateQueries({ queryKey: ['import-empleados', clientId, profileId] });
+      queryClient.invalidateQueries({ queryKey: ['empleados', clientId] });
+      onClose();
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : 'Error al crear'),
+  });
+
+  const handleSubmit = () => {
+    if (!cuil.trim() || !legajo.trim() || !nombre.trim()) {
+      toast.error('CUIL, legajo y nombre son requeridos');
+      return;
+    }
+    crear.mutate();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="w-[95vw] sm:max-w-2xl h-[85vh] flex flex-col">
+        <DialogHeader className="shrink-0">
+          <DialogTitle>Nuevo empleado</DialogTitle>
+        </DialogHeader>
+
+        <Tabs defaultValue="persona" className="flex flex-col min-h-0 flex-1">
+          <TabsList className="shrink-0 grid w-full grid-cols-4">
+            <TabsTrigger value="persona">Persona</TabsTrigger>
+            <TabsTrigger value="laboral">Laboral</TabsTrigger>
+            <TabsTrigger value="pago">Pago</TabsTrigger>
+            <TabsTrigger value="codigos">Códigos</TabsTrigger>
+          </TabsList>
+
+          <div className="overflow-y-auto flex-1 pt-4">
+            {/* ── PERSONA ── */}
+            <TabsContent value="persona" className="space-y-5 mt-0">
+              <Seccion title="Identificación">
+                <div className="space-y-1">
+                  <Label>CUIL *</Label>
+                  <Input value={cuil} onChange={(ev) => setCuil(ev.target.value)} placeholder="20-12345678-9" />
+                </div>
+                <div className="space-y-1 sm:col-span-2">
+                  <Label>Nombre completo *</Label>
+                  <Input value={nombre} onChange={(ev) => setNombre(ev.target.value)} placeholder="Apellido, Nombre" />
+                </div>
+              </Seccion>
+              <Seccion title="Domicilio y familia">
+                <div className="space-y-1">
+                  <Label>Domicilio</Label>
+                  <Input value={domicilio} onChange={(ev) => setDomicilio(ev.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Localidad</Label>
+                  <Input value={localidad} onChange={(ev) => setLocalidad(ev.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Provincia</Label>
+                  <Select value={provinciaId || '_ninguna'} onValueChange={(v) => setProvinciaId(v === '_ninguna' ? '' : v)}>
+                    <SelectTrigger><SelectValue placeholder="Sin provincia" /></SelectTrigger>
+                    <SelectContent className="max-h-[240px]">
+                      <SelectItem value="_ninguna">Sin provincia</SelectItem>
+                      {catalogProvinciasCreate.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>{p.nombre}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Código postal</Label>
+                  <Input value={codigoPostal} onChange={(ev) => setCodigoPostal(ev.target.value)} maxLength={10} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Cónyuge</Label>
+                  <Input type="number" min={0} value={conyuge} onChange={(ev) => setConyuge(ev.target.value)} placeholder="0" />
+                </div>
+                <div className="space-y-1">
+                  <Label>Hijos</Label>
+                  <Input type="number" min={0} value={hijos} onChange={(ev) => setHijos(ev.target.value)} placeholder="0" />
+                </div>
+                <div className="space-y-1">
+                  <Label>Adherentes</Label>
+                  <Input type="number" min={0} value={adherentes} onChange={(ev) => setAdherentes(ev.target.value)} placeholder="0" />
+                </div>
+              </Seccion>
+            </TabsContent>
+
+            {/* ── LABORAL ── */}
+            <TabsContent value="laboral" className="space-y-5 mt-0">
+              <Seccion title="Situación laboral">
+                <div className="space-y-1">
+                  <Label>Legajo *</Label>
+                  <Input value={legajo} onChange={(ev) => setLegajo(ev.target.value)} placeholder="001" />
+                </div>
+                <div className="space-y-1">
+                  <Label>Fecha de alta</Label>
+                  <Input type="date" value={fechaAlta} onChange={(ev) => setFechaAlta(ev.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Fecha de baja</Label>
+                  <Input type="date" value={fechaBaja} onChange={(ev) => setFechaBaja(ev.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Tipo jornada</Label>
+                  <Select value={tipoJornada} onValueChange={(v) => setTipoJornada(v as typeof tipoJornada)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="full_time">Tiempo completo</SelectItem>
+                      <SelectItem value="part_time">Part time</SelectItem>
+                      <SelectItem value="reducida">Reducida</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Modo contrato</Label>
+                  <Input value={modoContrato} onChange={(ev) => setModoContrato(ev.target.value)} placeholder="Tiempo indeterminado" />
+                </div>
+              </Seccion>
+              <Seccion title="Convenio y categoría">
+                <div className="space-y-1">
+                  <Label>Convenio</Label>
+                  <Select value={convenioId || '_ninguno'} onValueChange={(v) => { setConvenioId(v === '_ninguno' ? '' : v); setCategoriaId(''); }}>
+                    <SelectTrigger><SelectValue placeholder="Sin convenio" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_ninguno">Sin convenio</SelectItem>
+                      {convenios.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Categoría</Label>
+                  <Select value={categoriaId || '_ninguna'} onValueChange={(v) => setCategoriaId(v === '_ninguna' ? '' : v)} disabled={!convenioId}>
+                    <SelectTrigger><SelectValue placeholder="Sin categoría" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_ninguna">Sin categoría</SelectItem>
+                      {categoriasCreate.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>{c.codigo} - {c.nombre}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </Seccion>
+            </TabsContent>
+
+            {/* ── PAGO ── */}
+            <TabsContent value="pago" className="space-y-4 mt-0">
+              <Seccion title="Obra social">
+                <div className="col-span-full space-y-1">
+                  <Label>Obra social</Label>
+                  <Select value={obraSocialId || '_ninguna'} onValueChange={(v) => setObraSocialId(v === '_ninguna' ? '' : v)}>
+                    <SelectTrigger><SelectValue placeholder="Sin obra social" /></SelectTrigger>
+                    <SelectContent className="max-h-[240px]">
+                      <SelectItem value="_ninguna">Sin obra social</SelectItem>
+                      {obrasSocialesCreate.map((os) => (
+                        <SelectItem key={os.id} value={os.id}>{os.codigo} — {os.nombre}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </Seccion>
+              <Seccion title="Datos de pago">
+                <div className="space-y-1">
+                  <Label>Lugar de pago</Label>
+                  <Input value={lugarPago} onChange={(ev) => setLugarPago(ev.target.value)} maxLength={80} placeholder="Ej. CABA" />
+                </div>
+                <div className="space-y-1">
+                  <Label>Forma de pago</Label>
+                  <Select value={formaPago} onValueChange={(v) => setFormaPago(v as typeof formaPago)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {FORMAS_PAGO.map((f) => (
+                        <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Banco</Label>
+                  <Select value={banco || '_otro banco'} onValueChange={setBanco}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent className="max-h-[240px]">
+                      {BANCOS.map((b) => (
+                        <SelectItem key={b} value={b}>{b}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {formaPago === 'acreditacion' && (
+                  <div className="space-y-1">
+                    <Label>CBU / cuenta</Label>
+                    <Input value={cbu} onChange={(ev) => setCbu(ev.target.value)} maxLength={22} className="font-mono" placeholder="22 dígitos" />
+                  </div>
+                )}
+              </Seccion>
+            </TabsContent>
+
+            {/* ── CÓDIGOS ── */}
+            <TabsContent value="codigos" className="space-y-5 mt-0">
+              <Seccion title="Códigos auxiliares" cols={2}>
+                <div className="space-y-1">
+                  <Label>Modalidad contratación</Label>
+                  <Select value={modalidadContratacionId || '_ninguna'} onValueChange={(v) => setModalidadContratacionId(v === '_ninguna' ? '' : v)}>
+                    <SelectTrigger><SelectValue placeholder="Sin modalidad" /></SelectTrigger>
+                    <SelectContent className="max-h-[240px]">
+                      <SelectItem value="_ninguna">Sin modalidad</SelectItem>
+                      {catalogModalidadesCreate.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>{m.codigo} — {m.nombre}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Situación</Label>
+                  <Select value={situacionId || '_ninguna'} onValueChange={(v) => setSituacionId(v === '_ninguna' ? '' : v)}>
+                    <SelectTrigger><SelectValue placeholder="Sin situación" /></SelectTrigger>
+                    <SelectContent className="max-h-[240px]">
+                      <SelectItem value="_ninguna">Sin situación</SelectItem>
+                      {catalogSituacionesCreate.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>{s.codigo} — {s.nombre}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Zona</Label>
+                  <Select value={zonaId || '_ninguna'} onValueChange={(v) => setZonaId(v === '_ninguna' ? '' : v)}>
+                    <SelectTrigger><SelectValue placeholder="Sin zona" /></SelectTrigger>
+                    <SelectContent className="max-h-[240px]">
+                      <SelectItem value="_ninguna">Sin zona</SelectItem>
+                      {catalogZonasCreate.map((z) => (
+                        <SelectItem key={z.id} value={z.id}>{z.codigo} — {z.nombre}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Condición</Label>
+                  <Select value={condicionId || '_ninguna'} onValueChange={(v) => setCondicionId(v === '_ninguna' ? '' : v)}>
+                    <SelectTrigger><SelectValue placeholder="Sin condición" /></SelectTrigger>
+                    <SelectContent className="max-h-[240px]">
+                      <SelectItem value="_ninguna">Sin condición</SelectItem>
+                      {catalogCondicionesCreate.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>{c.codigo} — {c.nombre}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Actividad</Label>
+                  <Select value={actividadId || '_ninguna'} onValueChange={(v) => setActividadId(v === '_ninguna' ? '' : v)}>
+                    <SelectTrigger><SelectValue placeholder="Sin actividad" /></SelectTrigger>
+                    <SelectContent className="max-h-[240px]">
+                      <SelectItem value="_ninguna">Sin actividad</SelectItem>
+                      {catalogActividadesCreate.map((a) => (
+                        <SelectItem key={a.id} value={a.id}>{a.codigo} — {a.nombre}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Siniestrado</Label>
+                  <Select value={siniestradoId || '_ninguna'} onValueChange={(v) => setSiniestradoId(v === '_ninguna' ? '' : v)}>
+                    <SelectTrigger><SelectValue placeholder="Sin siniestrado" /></SelectTrigger>
+                    <SelectContent className="max-h-[240px]">
+                      <SelectItem value="_ninguna">Sin siniestrado</SelectItem>
+                      {catalogSiniestradosCreate.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>{s.codigo} — {s.nombre}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </Seccion>
+              <Seccion title="Observaciones">
+                <div className="col-span-full space-y-1">
+                  <Label>Observaciones</Label>
+                  <textarea
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-h-[80px] resize-none"
+                    value={observaciones}
+                    onChange={(ev) => setObservaciones(ev.target.value)}
+                  />
+                </div>
+              </Seccion>
+            </TabsContent>
+          </div>
+        </Tabs>
+
+        <div className="flex justify-end gap-2 pt-4 border-t shrink-0">
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button disabled={crear.isPending} onClick={handleSubmit}>
+            {crear.isPending ? 'Guardando…' : 'Guardar'}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Componente principal ──────────────────────────────────────────────────
 
 export function SueldosEmpleados({
   clientId,
   profileId,
+  onVerRecibos,
 }: SueldosEmpleadosProps) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -782,17 +1237,6 @@ export function SueldosEmpleados({
   const [pagina, setPagina] = useState(1);
   const [ocultarBajas, setOcultarBajas] = useState(true);
   const [detalleRow, setDetalleRow] = useState<EmpleadoRow | null>(null);
-  const [form, setForm] = useState({
-    cuil: '',
-    legajo: '',
-    nombre: '',
-    fechaAlta: '',
-    fechaBaja: '',
-    modoContrato: '',
-    categoria: '',
-    convenioId: '',
-    categoriaId: '',
-  });
 
   const importEmpleadosQuery = useQuery({
     queryKey: ['import-empleados', clientId, profileId],
@@ -826,54 +1270,11 @@ export function SueldosEmpleados({
     setBusqueda(v);
     setPagina(1);
   };
+
   const { data: convenios = [] } = useQuery({
     queryKey: ['convenios', clientId, profileId],
     queryFn: () => listConvenios({ data: { clientId, profileId } }),
     enabled: !!clientId && !!profileId,
-  });
-  const { data: categorias = [] } = useQuery({
-    queryKey: ['categorias', form.convenioId, clientId],
-    queryFn: () =>
-      listCategoriasByConvenio({
-        data: { convenioId: form.convenioId, clientId },
-      }),
-    enabled: !!clientId && !!form.convenioId,
-  });
-
-  const crear = useMutation({
-    mutationFn: () =>
-      createManualEmpleado({
-        data: {
-          clientId,
-          profileId,
-          cuil: form.cuil,
-          legajo: form.legajo,
-          nombre: form.nombre,
-          fechaAlta: form.fechaAlta || undefined,
-          fechaBaja: form.fechaBaja || undefined,
-          modoContrato: form.modoContrato || undefined,
-          categoria: form.categoria || undefined,
-        },
-      }),
-    onSuccess: () => {
-      toast.success('Empleado creado');
-      queryClient.invalidateQueries({
-        queryKey: ['import-empleados', clientId, profileId],
-      });
-      setOpen(false);
-      setForm({
-        cuil: '',
-        legajo: '',
-        nombre: '',
-        fechaAlta: '',
-        fechaBaja: '',
-        modoContrato: '',
-        categoria: '',
-        convenioId: '',
-        categoriaId: '',
-      });
-    },
-    onError: (e) => toast.error(e.message),
   });
 
   const sincronizar = useMutation({
@@ -884,6 +1285,16 @@ export function SueldosEmpleados({
       queryClient.invalidateQueries({ queryKey: ['import-empleados', clientId, profileId] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Error al sincronizar'),
+  });
+
+  const toggleActivo = useMutation({
+    mutationFn: ({ id, activo }: { id: string; activo: boolean }) =>
+      updateEmpleado({ data: { id, clientId, activo } }),
+    onSuccess: (_, vars) => {
+      toast.success(vars.activo ? 'Empleado activado' : 'Empleado inhabilitado');
+      queryClient.invalidateQueries({ queryKey: ['import-empleados', clientId, profileId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Error'),
   });
 
   const eliminar = useMutation({
@@ -897,15 +1308,6 @@ export function SueldosEmpleados({
     },
     onError: (e) => toast.error(e.message),
   });
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.cuil || !form.legajo || !form.nombre) {
-      toast.error('CUIL, legajo y nombre son requeridos');
-      return;
-    }
-    crear.mutate();
-  };
 
   return (
     <div className="w-full min-w-0 max-w-full space-y-4">
@@ -948,161 +1350,10 @@ export function SueldosEmpleados({
             <RefreshCw className={`h-4 w-4 ${sincronizar.isPending ? 'animate-spin' : ''}`} />
             Sincronizar convenios
           </Button>
-          <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm" className="gap-2">
-              <Plus className="h-4 w-4" />
-              Nuevo empleado
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[480px]">
-            <DialogHeader>
-              <DialogTitle>Nuevo empleado manual</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4 pt-2">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <Label htmlFor="cuil">CUIL *</Label>
-                  <Input
-                    id="cuil"
-                    value={form.cuil}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, cuil: e.target.value }))
-                    }
-                    placeholder="20-12345678-9"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="legajo">Legajo *</Label>
-                  <Input
-                    id="legajo"
-                    value={form.legajo}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, legajo: e.target.value }))
-                    }
-                    placeholder="001"
-                  />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="nombre">Nombre completo *</Label>
-                <Input
-                  id="nombre"
-                  value={form.nombre}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, nombre: e.target.value }))
-                  }
-                  placeholder="Apellido, Nombre"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <Label htmlFor="fechaAlta">Fecha de alta</Label>
-                  <Input
-                    id="fechaAlta"
-                    type="date"
-                    value={form.fechaAlta}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, fechaAlta: e.target.value }))
-                    }
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="fechaBaja">Fecha de baja</Label>
-                  <Input
-                    id="fechaBaja"
-                    type="date"
-                    value={form.fechaBaja}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, fechaBaja: e.target.value }))
-                    }
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <Label htmlFor="modoContrato">Modo contrato</Label>
-                  <Input
-                    id="modoContrato"
-                    value={form.modoContrato}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, modoContrato: e.target.value }))
-                    }
-                    placeholder="Tiempo indeterminado"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="convenio">Convenio</Label>
-                  <Select
-                    value={form.convenioId}
-                    onValueChange={(value) =>
-                      setForm((f) => ({
-                        ...f,
-                        convenioId: value,
-                        categoriaId: '',
-                      }))
-                    }
-                  >
-                    <SelectTrigger id="convenio">
-                      <SelectValue placeholder="Seleccionar convenio" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {convenios.map((convenio) => (
-                        <SelectItem key={convenio.id} value={convenio.id}>
-                          {convenio.nombre}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <Label htmlFor="categoria">Categoría</Label>
-                  <Select
-                    value={form.categoriaId}
-                    onValueChange={(value) => {
-                      const categoriaSeleccionada = categorias.find(
-                        (categoria) => categoria.id === value
-                      );
-                      setForm((f) => ({
-                        ...f,
-                        categoriaId: value,
-                        categoria: categoriaSeleccionada
-                          ? `${categoriaSeleccionada.codigo} - ${categoriaSeleccionada.nombre}`
-                          : '',
-                      }));
-                    }}
-                    disabled={!form.convenioId}
-                  >
-                    <SelectTrigger id="categoria">
-                      <SelectValue placeholder="Seleccionar categoría" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {categorias.map((categoria) => (
-                        <SelectItem key={categoria.id} value={categoria.id}>
-                          {categoria.codigo} - {categoria.nombre}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setOpen(false)}
-                >
-                  Cancelar
-                </Button>
-                <Button type="submit" disabled={crear.isPending}>
-                  {crear.isPending ? 'Guardando…' : 'Guardar'}
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
-          </Dialog>
+          <Button size="sm" className="gap-2" onClick={() => setOpen(true)}>
+            <Plus className="h-4 w-4" />
+            Nuevo empleado
+          </Button>
         </div>
       </div>
 
@@ -1130,13 +1381,14 @@ export function SueldosEmpleados({
       <div className="w-full min-w-0 max-w-full overflow-x-auto rounded-md border">
         <Table className="w-full min-w-0 table-fixed text-sm">
           <colgroup>
-            <col className="w-[23%]" />
-            <col className="w-[15%]" />
+            <col className="w-[21%]" />
+            <col className="w-[14%]" />
             <col className="w-[8%]" />
+            <col className="w-[9%]" />
+            <col className="w-[22%]" />
             <col className="w-[10%]" />
-            <col className="w-[28%]" />
-            <col className="w-[10%]" />
-            <col className="w-[6%]" />
+            <col className="w-[9%]" />
+            <col className="w-[7%]" />
           </colgroup>
           <TableHeader>
             <TableRow>
@@ -1146,19 +1398,20 @@ export function SueldosEmpleados({
               <TableHead className="whitespace-normal">Fecha alta</TableHead>
               <TableHead className="whitespace-normal">Categoría</TableHead>
               <TableHead>Estado</TableHead>
+              <TableHead>Recibos</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground">
+                <TableCell colSpan={8} className="text-center text-muted-foreground">
                   Cargando…
                 </TableCell>
               </TableRow>
             ) : filtrados.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground">
+                <TableCell colSpan={8} className="text-center text-muted-foreground">
                   {busqueda
                     ? 'Sin resultados para la búsqueda.'
                     : ocultarBajas
@@ -1194,11 +1447,36 @@ export function SueldosEmpleados({
                         ? formatTitleCaseDisplay(r.categoriaNombre)
                         : <span className="text-muted-foreground text-xs">{formatTitleCaseDisplay(e.categoria)}</span>}
                     </TableCell>
-                    <TableCell className="align-top py-2">
+                    <TableCell className="align-top py-2" onClick={(ev) => ev.stopPropagation()}>
                       {baja ? (
                         <Badge variant="secondary" className="whitespace-nowrap">Baja</Badge>
                       ) : (
-                        <Badge variant="default" className="whitespace-nowrap">Activo</Badge>
+                        <button
+                          type="button"
+                          className="focus:outline-none"
+                          disabled={toggleActivo.isPending}
+                          onClick={() => toggleActivo.mutate({ id: e.id, activo: !(e.activo !== false) })}
+                        >
+                          <Badge
+                            variant={e.activo !== false ? 'default' : 'outline'}
+                            className="whitespace-nowrap cursor-pointer hover:opacity-75 transition-opacity"
+                          >
+                            {e.activo !== false ? 'Activo' : 'Inactivo'}
+                          </Badge>
+                        </button>
+                      )}
+                    </TableCell>
+                    <TableCell className="align-top py-2" onClick={(ev) => ev.stopPropagation()}>
+                      {onVerRecibos && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                          title="Ver recibos del empleado"
+                          onClick={() => onVerRecibos(e.id)}
+                        >
+                          <FileText className="h-4 w-4" />
+                        </Button>
                       )}
                     </TableCell>
                     <TableCell className="align-top py-2" onClick={(ev) => ev.stopPropagation()}>
@@ -1252,6 +1530,14 @@ export function SueldosEmpleados({
           </div>
         </div>
       )}
+
+      <NuevoEmpleadoDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        clientId={clientId}
+        profileId={profileId}
+        convenios={convenios}
+      />
 
       <EmpleadoDetalleDialog
         row={detalleRow}

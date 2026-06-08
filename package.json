@@ -26,7 +26,9 @@
     "sueldos:seed-comercio-mar2026": "bun run src/scripts/seed-comercio-mar2026.ts",
     "sueldos:rebuild-feb2026-from-import": "bun run src/scripts/rebuild-sueldo-from-import-feb2026.ts",
     "db:seed-obras": "bun run src/scripts/seed-obras-sociales.ts",
-    "db:seed-caravelle": "bun run src/scripts/run-caravelle-seed.ts"
+    "db:seed-caravelle": "bun run src/scripts/run-caravelle-seed.ts",
+    "sueldos:seed-gastronomico-categorias": "bun run src/scripts/seed-gastronomico-categorias.ts",
+    "sueldos:seed-gastronomico-escalas": "bun run src/scripts/seed-gastronomico-escalas.ts"
   },
   "keywords": [],
   "author": "",

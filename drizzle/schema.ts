@@ -607,12 +607,15 @@ export const payrollConvenioTipoJornadaEnum = pgEnum("payroll_tipo_jornada", [
   "reducida",
 ]);
 
-/** Convenios colectivos de trabajo (por representative) */
+/** Convenios colectivos de trabajo (por empresa/client bajo representative) */
 export const payrollConvenio = pgTable("payroll_convenio", {
   id: uuid("id").primaryKey().defaultRandom(),
   representativeId: uuid("representative_id")
     .notNull()
     .references(() => representative.id, { onDelete: "cascade" }),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => client.id, { onDelete: "cascade" }),
   nombre: text("nombre").notNull(),
   cctCodigo: text("cct_codigo"),
   descripcion: text("descripcion"),
@@ -884,6 +887,14 @@ export const liquidacionImportEmpleado = pgTable(
     codigoActividad: text("codigo_actividad"),
     siniestradoId: uuid("siniestrado_id").references(() => payrollSiniestrado.id, { onDelete: "set null" }),
     codigoSiniestrado: text("codigo_siniestrado"),
+    // --- Columnas legacy (texto libre, backward compat — no eliminar) ---
+    nacionalidad: text("nacionalidad"),
+    provincia: text("provincia"),
+    situacion: text("situacion"),
+    zona: text("zona"),
+    condicion: text("condicion"),
+    actividad: text("actividad"),
+    siniestrado: text("siniestrado"),
     observaciones: text("observaciones"),
     obraSocialId: uuid("obra_social_id").references(() => obraSocial.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),

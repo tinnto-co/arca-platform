@@ -30,7 +30,7 @@ export const Route = createFileRoute('/_authed/sueldos/')({
 
 const tabTriggerCls = () =>
   cn(
-    'relative h-auto flex-none px-[14px] py-[10px] text-[13px] font-medium rounded-[8px_8px_0_0] border whitespace-nowrap gap-[7px] cursor-pointer',
+    'relative h-auto flex-none px-[18px] py-[10px] text-[13px] font-medium rounded-[8px_8px_0_0] border whitespace-nowrap gap-[7px] cursor-pointer',
     'border-transparent text-[var(--arca-ink-3)] hover:bg-transparent hover:text-[var(--arca-ink)]',
     'data-[state=active]:bg-[var(--arca-surface)] data-[state=active]:border-[var(--arca-border)] data-[state=active]:[border-bottom-color:var(--arca-bg)] data-[state=active]:text-[var(--arca-ink)] data-[state=active]:font-semibold data-[state=active]:shadow-none data-[state=active]:top-px'
   );
@@ -44,6 +44,7 @@ function RouteComponent() {
     periodo: string;
     tipoRecibo: string;
   } | undefined>(undefined);
+  const [reciboFiltroEmpleadoId, setReciboFiltroEmpleadoId] = useState('');
 
   const { data: clients = [] } = useQuery({
     queryKey: ['clients', 'sueldos'],
@@ -123,13 +124,17 @@ function RouteComponent() {
       ) : (
         <Tabs
           value={activeTab}
-          onValueChange={setActiveTab}
+          onValueChange={(tab) => {
+            if (tab !== 'simulador') setEditReciboData(undefined);
+            if (tab !== 'recibo') setReciboFiltroEmpleadoId('');
+            setActiveTab(tab);
+          }}
           className="flex flex-col"
         >
           {/* Tab bar — sticky under the header */}
-          <div className="sticky top-0 z-10 bg-[var(--arca-bg)] border-b border-[var(--arca-border)]">
+          <div className="sticky top-0 z-10 bg-[var(--arca-bg)] border-b border-[var(--arca-border)] overflow-hidden">
             <div className="px-4 md:px-[3rem]">
-              <TabsList className="flex h-auto w-full bg-transparent p-0 rounded-none gap-0 overflow-x-auto justify-start">
+              <TabsList className="flex h-auto w-full bg-transparent p-0 rounded-none gap-0 overflow-x-auto overflow-y-hidden justify-start [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                 <TabsTrigger value="dashboard" className={tabTriggerCls()}>
                   <LayoutDashboard className="h-[14px] w-[14px]" />
                   Dashboard
@@ -168,7 +173,14 @@ function RouteComponent() {
               <SueldosDashboard clientId={clientId} profileId={profileId} />
             </TabsContent>
             <TabsContent value="empleados" className="mt-0">
-              <SueldosEmpleados clientId={clientId} profileId={profileId} />
+              <SueldosEmpleados
+                clientId={clientId}
+                profileId={profileId}
+                onVerRecibos={(empleadoId) => {
+                  setReciboFiltroEmpleadoId(empleadoId);
+                  setActiveTab('recibo');
+                }}
+              />
             </TabsContent>
             <TabsContent value="convenios" className="mt-0">
               <SueldosConvenios clientId={clientId} profileId={profileId} />
@@ -182,12 +194,15 @@ function RouteComponent() {
                 profileId={profileId}
                 onConfirmRecibo={() => setActiveTab('recibo')}
                 initialData={editReciboData}
+                onReset={() => setEditReciboData(undefined)}
               />
             </TabsContent>
             <TabsContent value="recibo" className="mt-0">
               <SueldosRecibo
+                key={reciboFiltroEmpleadoId}
                 clientId={clientId}
                 profileId={profileId}
+                initialEmpleadoId={reciboFiltroEmpleadoId || undefined}
                 onEditRecibo={(data) => {
                   setEditReciboData(data);
                   setActiveTab('simulador');
