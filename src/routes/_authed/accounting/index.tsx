@@ -32,6 +32,10 @@ import {
   Upload,
   HelpCircle,
   Lightbulb,
+  Zap,
+  RefreshCw,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { ArcaCard } from '@/components/dashboard/shared';
@@ -69,6 +73,9 @@ import {
   updateMappingRule,
   setMappingRuleActive,
   importMappingRules,
+  getInvoicePostingPreview,
+  generateInvoiceEntries,
+  regenerateInvoiceEntry,
   type ChartAccount,
   type PeriodView,
   type LedgerRow,
@@ -175,7 +182,14 @@ function OriginBadge({ scope }: { scope: 'base' | 'custom' }) {
 }
 
 /* ─── Tab bar ─── */
-type Tab = 'plan' | 'ejercicios' | 'asientos' | 'mayor' | 'balance' | 'reglas';
+type Tab =
+  | 'plan'
+  | 'ejercicios'
+  | 'asientos'
+  | 'mayor'
+  | 'balance'
+  | 'reglas'
+  | 'contabilizar';
 
 function TabBar({
   active,
@@ -196,6 +210,7 @@ function TabBar({
     { id: 'mayor', label: 'Mayor', icon: BookOpen, ready: true },
     { id: 'balance', label: 'Balance', icon: Scale, ready: true },
     { id: 'reglas', label: 'Reglas', icon: Workflow, ready: true },
+    { id: 'contabilizar', label: 'Contabilizar', icon: Zap, ready: true },
   ];
   return (
     <div className="flex gap-1 mb-5 border-b border-[var(--arca-border)]">
@@ -290,16 +305,29 @@ function AccountingPage() {
         <Mayor
           clientId={effectiveClientId}
           canWrite={roleData?.role !== 'viewer'}
-          clientName={clients.find((c) => c.id === effectiveClientId)?.name ?? ''}
+          clientName={
+            clients.find((c) => c.id === effectiveClientId)?.name ?? ''
+          }
         />
       ) : tab === 'balance' ? (
         <Balance
           clientId={effectiveClientId}
           canWrite={roleData?.role !== 'viewer'}
-          clientName={clients.find((c) => c.id === effectiveClientId)?.name ?? ''}
+          clientName={
+            clients.find((c) => c.id === effectiveClientId)?.name ?? ''
+          }
         />
       ) : tab === 'reglas' ? (
-        <Reglas clientId={effectiveClientId} isOwner={isOwner} clients={clients} />
+        <Reglas
+          clientId={effectiveClientId}
+          isOwner={isOwner}
+          clients={clients}
+        />
+      ) : tab === 'contabilizar' ? (
+        <Contabilizar
+          clientId={effectiveClientId}
+          canWrite={roleData?.role !== 'viewer'}
+        />
       ) : (
         <ArcaCard>
           <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
@@ -1219,10 +1247,7 @@ function HelpTip({ text }: { text: string }) {
           <HelpCircle className="w-3.5 h-3.5" strokeWidth={1.8} />
         </button>
       </TooltipTrigger>
-      <TooltipContent
-        side="top"
-        className="max-w-[260px] text-xs leading-snug"
-      >
+      <TooltipContent side="top" className="max-w-[260px] text-xs leading-snug">
         {text}
       </TooltipContent>
     </Tooltip>
@@ -1263,7 +1288,13 @@ function computeEnd(startStr: string): string {
   return end.toISOString().slice(0, 10);
 }
 
-function Ejercicios({ clientId, isOwner }: { clientId: string; isOwner: boolean }) {
+function Ejercicios({
+  clientId,
+  isOwner,
+}: {
+  clientId: string;
+  isOwner: boolean;
+}) {
   const qc = useQueryClient();
   const [selectedFyId, setSelectedFyId] = useState<string>('');
   const [showCreate, setShowCreate] = useState(false);
@@ -1284,7 +1315,8 @@ function Ejercicios({ clientId, isOwner }: { clientId: string; isOwner: boolean 
 
   const { data: detail } = useQuery({
     queryKey: ['accounting', 'fy-detail', effectiveFyId],
-    queryFn: () => getFiscalYearDetail({ data: { fiscalYearId: effectiveFyId } }),
+    queryFn: () =>
+      getFiscalYearDetail({ data: { fiscalYearId: effectiveFyId } }),
     enabled: !!effectiveFyId,
   });
 
@@ -1361,7 +1393,9 @@ function Ejercicios({ clientId, isOwner }: { clientId: string; isOwner: boolean 
               className="flex items-center gap-2 h-9 px-3 rounded-[10px] border transition-colors text-[12.5px]"
               style={{
                 borderColor: active ? 'var(--arca-ink)' : 'var(--arca-border)',
-                background: active ? 'var(--arca-surface-2)' : 'var(--arca-surface)',
+                background: active
+                  ? 'var(--arca-surface-2)'
+                  : 'var(--arca-surface)',
                 color: active ? 'var(--arca-ink)' : 'var(--arca-ink-2)',
               }}
             >
@@ -1415,14 +1449,20 @@ function Ejercicios({ clientId, isOwner }: { clientId: string; isOwner: boolean 
       {log.length > 0 && (
         <ArcaCard className="mt-4">
           <div className="flex items-center gap-2 px-5 py-3 border-b border-[var(--arca-border)]">
-            <History className="w-4 h-4 text-[var(--arca-ink-3)]" strokeWidth={1.8} />
+            <History
+              className="w-4 h-4 text-[var(--arca-ink-3)]"
+              strokeWidth={1.8}
+            />
             <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
               Historial de cierres y reaperturas
             </span>
           </div>
           <div className="divide-y divide-[var(--arca-border)]">
             {log.map((e) => (
-              <div key={e.id} className="flex items-start gap-3 px-5 py-2.5 text-[12px]">
+              <div
+                key={e.id}
+                className="flex items-start gap-3 px-5 py-2.5 text-[12px]"
+              >
                 <span
                   className="mt-0.5 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium shrink-0"
                   style={{
@@ -1484,8 +1524,9 @@ function Ejercicios({ clientId, isOwner }: { clientId: string; isOwner: boolean 
                 <strong>
                   {MONTH_NAMES[closeTarget.month]} {closeTarget.year}
                 </strong>
-                . Sus {closeTarget.entryCount} asiento(s) quedarán inmutables y se
-                habilitará el período siguiente. Esta acción queda registrada en el log.
+                . Sus {closeTarget.entryCount} asiento(s) quedarán inmutables y
+                se habilitará el período siguiente. Esta acción queda registrada
+                en el log.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -1558,7 +1599,9 @@ function PeriodCard({
     <div
       className="rounded-[10px] border p-3 flex flex-col gap-2"
       style={{
-        borderColor: period.isCurrent ? 'oklch(0.45 0.14 145)' : 'var(--arca-border)',
+        borderColor: period.isCurrent
+          ? 'oklch(0.45 0.14 145)'
+          : 'var(--arca-border)',
         background: period.isCurrent
           ? 'color-mix(in oklch, oklch(0.45 0.14 145), transparent 95%)'
           : 'var(--arca-surface)',
@@ -1631,7 +1674,9 @@ function CreateFiscalYearDialog({
 
   const mut = useMutation({
     mutationFn: () =>
-      createFiscalYear({ data: { clientId, startDate: startFirst, endDate: end } }),
+      createFiscalYear({
+        data: { clientId, startDate: startFirst, endDate: end },
+      }),
     onSuccess: () => {
       toast.success('Ejercicio creado con sus 12 períodos');
       onSaved();
@@ -1645,8 +1690,8 @@ function CreateFiscalYearDialog({
         <DialogHeader>
           <DialogTitle>Nuevo ejercicio</DialogTitle>
           <DialogDescription>
-            Elegí el mes de inicio. El ejercicio dura exactamente 12 meses calendario y se
-            crean automáticamente los 12 períodos mensuales.
+            Elegí el mes de inicio. El ejercicio dura exactamente 12 meses
+            calendario y se crean automáticamente los 12 períodos mensuales.
           </DialogDescription>
         </DialogHeader>
 
@@ -1667,7 +1712,8 @@ function CreateFiscalYearDialog({
             <div className="rounded-[8px] bg-[var(--arca-surface-2)] border border-[var(--arca-border)] px-3 py-2.5 text-[12.5px]">
               <span className="text-[var(--arca-ink-3)]">Ejercicio: </span>
               <span className="font-medium text-[var(--arca-ink)]">
-                {fmtFecha(`${startFirst}T00:00:00Z`)} → {fmtFecha(`${end}T00:00:00Z`)}
+                {fmtFecha(`${startFirst}T00:00:00Z`)} →{' '}
+                {fmtFecha(`${end}T00:00:00Z`)}
               </span>
               <span className="text-[var(--arca-ink-3)]"> (12 meses)</span>
             </div>
@@ -1705,7 +1751,8 @@ function ReopenPeriodDialog({
 }) {
   const [reason, setReason] = useState('');
   const mut = useMutation({
-    mutationFn: () => reopenPeriod({ data: { periodId: period.id, reason: reason.trim() } }),
+    mutationFn: () =>
+      reopenPeriod({ data: { periodId: period.id, reason: reason.trim() } }),
     onSuccess: () => {
       toast.success('Período reabierto');
       onSaved();
@@ -1721,13 +1768,15 @@ function ReopenPeriodDialog({
             Reabrir {MONTH_NAMES[period.month]} {period.year}
           </DialogTitle>
           <DialogDescription>
-            El período vuelve a estado abierto y sus asientos se conservan. El motivo queda
-            registrado en el log auditable.
+            El período vuelve a estado abierto y sus asientos se conservan. El
+            motivo queda registrado en el log auditable.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-1 py-1">
-          <label className="text-[11px] text-[var(--arca-ink-3)]">Motivo *</label>
+          <label className="text-[11px] text-[var(--arca-ink-3)]">
+            Motivo *
+          </label>
           <textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}
@@ -1843,7 +1892,9 @@ function Asientos({
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const exportLibroDiario = () => {
-    getJournalBook({ data: { clientId, fiscalYearId: data?.fiscalYearId ?? undefined } })
+    getJournalBook({
+      data: { clientId, fiscalYearId: data?.fiscalYearId ?? undefined },
+    })
       .then((book) => {
         if (!book || book.entries.length === 0) {
           toast.error('No hay asientos para exportar');
@@ -1861,7 +1912,10 @@ function Asientos({
       .catch((e: Error) => toast.error(e.message));
   };
 
-  function openEditorFromDetail(action: 'edit' | 'duplicate', d: EditorInitial) {
+  function openEditorFromDetail(
+    action: 'edit' | 'duplicate',
+    d: EditorInitial
+  ) {
     setDetailId(null);
     setEditor({ mode: action, initial: d });
   }
@@ -1872,7 +1926,9 @@ function Asientos({
         {/* Toolbar */}
         <div className="flex flex-wrap items-end gap-2 px-4 py-3 border-b border-[var(--arca-border)]">
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">Desde</label>
+            <label className="text-[10px] text-[var(--arca-ink-3)]">
+              Desde
+            </label>
             <input
               type="date"
               value={from}
@@ -1884,7 +1940,9 @@ function Asientos({
             />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">Hasta</label>
+            <label className="text-[10px] text-[var(--arca-ink-3)]">
+              Hasta
+            </label>
             <input
               type="date"
               value={to}
@@ -1896,7 +1954,9 @@ function Asientos({
             />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">Cuenta</label>
+            <label className="text-[10px] text-[var(--arca-ink-3)]">
+              Cuenta
+            </label>
             <select
               value={accountId}
               onChange={(e) => {
@@ -1914,7 +1974,9 @@ function Asientos({
             </select>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">Origen</label>
+            <label className="text-[10px] text-[var(--arca-ink-3)]">
+              Origen
+            </label>
             <select
               value={origin}
               onChange={(e) => {
@@ -2022,7 +2084,9 @@ function Asientos({
                 {r.description?.trim() ? (
                   r.description
                 ) : (
-                  <span className="text-[var(--arca-ink-3)] italic">(sin descripción)</span>
+                  <span className="text-[var(--arca-ink-3)] italic">
+                    (sin descripción)
+                  </span>
                 )}
                 {r.isVoided && (
                   <span className="ml-2 text-[10px] not-italic no-underline text-[oklch(0.55_0.18_25)]">
@@ -2045,7 +2109,9 @@ function Asientos({
         {/* Pagination */}
         {total > 0 && (
           <div className="flex items-center justify-between px-4 py-2.5 text-[12px] text-[var(--arca-ink-3)]">
-            <span>{total} asiento{total === 1 ? '' : 's'}</span>
+            <span>
+              {total} asiento{total === 1 ? '' : 's'}
+            </span>
             <div className="flex items-center gap-2">
               <button
                 disabled={page <= 1}
@@ -2116,7 +2182,9 @@ function AsientoEditor({
   const [entryDate, setEntryDate] = useState(init?.entryDate ?? '');
   const [description, setDescription] = useState(init?.description ?? '');
   const [lines, setLines] = useState<LineDraft[]>(
-    init?.lines && init.lines.length >= 2 ? init.lines : [emptyLine(), emptyLine()]
+    init?.lines && init.lines.length >= 2
+      ? init.lines
+      : [emptyLine(), emptyLine()]
   );
 
   const title =
@@ -2130,12 +2198,14 @@ function AsientoEditor({
   const totalCredit = lines.reduce((s, l) => s + num(l.credit), 0);
   const balanced = Math.abs(totalDebit - totalCredit) < 0.005 && totalDebit > 0;
   const allLinesValid = lines.every(
-    (l) => l.accountId && (num(l.debit) > 0) !== (num(l.credit) > 0)
+    (l) => l.accountId && num(l.debit) > 0 !== num(l.credit) > 0
   );
   const canSave = !!entryDate && lines.length >= 2 && balanced && allLinesValid;
 
   const updateLine = (i: number, patch: Partial<LineDraft>) =>
-    setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
+    setLines((prev) =>
+      prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l))
+    );
 
   const mut = useMutation({
     mutationFn: async () => {
@@ -2147,16 +2217,28 @@ function AsientoEditor({
       }));
       if (state.mode === 'edit' && init?.id) {
         await updateJournalEntry({
-          data: { id: init.id, entryDate, description: description || undefined, lines: payloadLines },
+          data: {
+            id: init.id,
+            entryDate,
+            description: description || undefined,
+            lines: payloadLines,
+          },
         });
       } else {
         await createJournalEntry({
-          data: { clientId, entryDate, description: description || undefined, lines: payloadLines },
+          data: {
+            clientId,
+            entryDate,
+            description: description || undefined,
+            lines: payloadLines,
+          },
         });
       }
     },
     onSuccess: () => {
-      toast.success(state.mode === 'edit' ? 'Asiento actualizado' : 'Asiento guardado');
+      toast.success(
+        state.mode === 'edit' ? 'Asiento actualizado' : 'Asiento guardado'
+      );
       onSaved();
     },
     onError: (e: Error) => toast.error(e.message),
@@ -2168,15 +2250,17 @@ function AsientoEditor({
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            Debe = Haber para poder guardar. Solo cuentas imputables y activas. La fecha define
-            el período (no puede estar en un período cerrado).
+            Debe = Haber para poder guardar. Solo cuentas imputables y activas.
+            La fecha define el período (no puede estar en un período cerrado).
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3 py-1">
           <div className="flex gap-3">
             <div className="flex flex-col gap-1 w-44">
-              <label className="text-[11px] text-[var(--arca-ink-3)]">Fecha *</label>
+              <label className="text-[11px] text-[var(--arca-ink-3)]">
+                Fecha *
+              </label>
               <input
                 type="date"
                 value={entryDate}
@@ -2185,7 +2269,9 @@ function AsientoEditor({
               />
             </div>
             <div className="flex flex-col gap-1 flex-1">
-              <label className="text-[11px] text-[var(--arca-ink-3)]">Descripción</label>
+              <label className="text-[11px] text-[var(--arca-ink-3)]">
+                Descripción
+              </label>
               <input
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
@@ -2223,7 +2309,9 @@ function AsientoEditor({
                 </select>
                 <input
                   value={l.description}
-                  onChange={(e) => updateLine(i, { description: e.target.value })}
+                  onChange={(e) =>
+                    updateLine(i, { description: e.target.value })
+                  }
                   placeholder="opcional"
                   className={`${INPUT_CLASS} w-40 h-8`}
                 />
@@ -2232,7 +2320,9 @@ function AsientoEditor({
                   step="0.01"
                   min="0"
                   value={l.debit}
-                  onChange={(e) => updateLine(i, { debit: e.target.value, credit: '' })}
+                  onChange={(e) =>
+                    updateLine(i, { debit: e.target.value, credit: '' })
+                  }
                   className={`${INPUT_CLASS} w-24 h-8 text-right`}
                 />
                 <input
@@ -2240,11 +2330,15 @@ function AsientoEditor({
                   step="0.01"
                   min="0"
                   value={l.credit}
-                  onChange={(e) => updateLine(i, { credit: e.target.value, debit: '' })}
+                  onChange={(e) =>
+                    updateLine(i, { credit: e.target.value, debit: '' })
+                  }
                   className={`${INPUT_CLASS} w-24 h-8 text-right`}
                 />
                 <button
-                  onClick={() => setLines((prev) => prev.filter((_, idx) => idx !== i))}
+                  onClick={() =>
+                    setLines((prev) => prev.filter((_, idx) => idx !== i))
+                  }
                   disabled={lines.length <= 2}
                   className="w-6 h-6 flex items-center justify-center rounded-[6px] text-[var(--arca-ink-3)] hover:text-[oklch(0.55_0.18_25)] disabled:opacity-30"
                   title="Eliminar línea"
@@ -2263,18 +2357,25 @@ function AsientoEditor({
               </button>
               <div className="flex-1" />
               <div className="w-40" />
-              <div className="w-24 text-right text-[var(--arca-ink)]">$ {fmtMoney(totalDebit)}</div>
-              <div className="w-24 text-right text-[var(--arca-ink)]">$ {fmtMoney(totalCredit)}</div>
+              <div className="w-24 text-right text-[var(--arca-ink)]">
+                $ {fmtMoney(totalDebit)}
+              </div>
+              <div className="w-24 text-right text-[var(--arca-ink)]">
+                $ {fmtMoney(totalCredit)}
+              </div>
               <div className="w-6" />
             </div>
           </div>
 
           <div className="flex items-center justify-end text-[12px]">
             {balanced ? (
-              <span className="text-[oklch(0.40_0.14_145)]">✓ Asiento balanceado</span>
+              <span className="text-[oklch(0.40_0.14_145)]">
+                ✓ Asiento balanceado
+              </span>
             ) : (
               <span className="text-[oklch(0.55_0.18_25)]">
-                Diferencia: $ {fmtMoney(Math.abs(totalDebit - totalCredit))} — Debe debe ser igual a Haber
+                Diferencia: $ {fmtMoney(Math.abs(totalDebit - totalCredit))} —
+                Debe debe ser igual a Haber
               </span>
             )}
           </div>
@@ -2322,7 +2423,8 @@ function AsientoDetail({
   });
 
   const voidMut = useMutation({
-    mutationFn: () => voidJournalEntry({ data: { id: entryId, reason: reason.trim() } }),
+    mutationFn: () =>
+      voidJournalEntry({ data: { id: entryId, reason: reason.trim() } }),
     onSuccess: () => {
       toast.success('Asiento anulado');
       setVoidOpen(false);
@@ -2344,7 +2446,8 @@ function AsientoDetail({
     })),
   });
 
-  const editable = !!data && !data.entry.isVoided && data.entry.periodStatus === 'open';
+  const editable =
+    !!data && !data.entry.isVoided && data.entry.periodStatus === 'open';
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -2366,9 +2469,12 @@ function AsientoDetail({
               </DialogTitle>
               <DialogDescription>
                 {fmtFecha(data.entry.entryDate)} ·{' '}
-                {JOURNAL_ORIGIN_LABELS[data.entry.origin] ?? data.entry.origin} · Ejercicio N°
+                {JOURNAL_ORIGIN_LABELS[data.entry.origin] ?? data.entry.origin}{' '}
+                · Ejercicio N°
                 {data.entry.fyNumber}
-                {data.entry.createdByName ? ` · cargado por ${data.entry.createdByName}` : ''}
+                {data.entry.createdByName
+                  ? ` · cargado por ${data.entry.createdByName}`
+                  : ''}
               </DialogDescription>
             </DialogHeader>
 
@@ -2400,9 +2506,14 @@ function AsientoDetail({
                     <span className="font-mono text-[11px] text-[var(--arca-ink-3)]">
                       {l.accountCode}
                     </span>{' '}
-                    <span className="text-[var(--arca-ink)]">{l.accountName}</span>
+                    <span className="text-[var(--arca-ink)]">
+                      {l.accountName}
+                    </span>
                     {l.description && (
-                      <span className="text-[var(--arca-ink-3)]"> · {l.description}</span>
+                      <span className="text-[var(--arca-ink-3)]">
+                        {' '}
+                        · {l.description}
+                      </span>
                     )}
                   </div>
                   <div className="w-28 text-right text-[var(--arca-ink)]">
@@ -2420,10 +2531,14 @@ function AsientoDetail({
               <div className="text-[11.5px] text-[var(--arca-ink-3)] space-y-1">
                 {data.log.map((e) => (
                   <div key={e.id}>
-                    {e.eventType === 'journal_entry_voided' ? 'Anulado' : 'Editado'} por{' '}
-                    {e.userName ?? e.userEmail ?? 'usuario'} ·{' '}
+                    {e.eventType === 'journal_entry_voided'
+                      ? 'Anulado'
+                      : 'Editado'}{' '}
+                    por {e.userName ?? e.userEmail ?? 'usuario'} ·{' '}
                     {new Date(e.createdAt).toLocaleString('es-AR')}
-                    {e.eventData?.reason ? ` · Motivo: ${e.eventData.reason}` : ''}
+                    {e.eventData?.reason
+                      ? ` · Motivo: ${e.eventData.reason}`
+                      : ''}
                   </div>
                 ))}
               </div>
@@ -2432,7 +2547,13 @@ function AsientoDetail({
             <DialogFooter className="flex-wrap">
               {canWrite && (
                 <button
-                  onClick={() => onAction('duplicate', { ...toInitial(), id: undefined, entryDate: '' })}
+                  onClick={() =>
+                    onAction('duplicate', {
+                      ...toInitial(),
+                      id: undefined,
+                      entryDate: '',
+                    })
+                  }
                   className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
                 >
                   <Copy className="w-3.5 h-3.5" strokeWidth={1.8} /> Duplicar
@@ -2469,8 +2590,8 @@ function AsientoDetail({
                     </button>
                   </div>
                   <p className="text-[12px] text-[var(--arca-ink-3)]">
-                    El asiento no se borra: queda marcado como anulado y conserva su número. El
-                    motivo queda en el log.
+                    El asiento no se borra: queda marcado como anulado y
+                    conserva su número. El motivo queda en el log.
                   </p>
                   <textarea
                     value={reason}
@@ -2537,18 +2658,31 @@ function Mayor({
   const effectiveFyId =
     fiscalYearId !== ''
       ? fiscalYearId
-      : (fiscalYears.find((y) => y.status === 'open')?.id ?? fiscalYears[0]?.id ?? '');
+      : (fiscalYears.find((y) => y.status === 'open')?.id ??
+        fiscalYears[0]?.id ??
+        '');
 
   const { data: chart } = useQuery({
     queryKey: ['accounting', 'chart', clientId],
     queryFn: () => getChartOfAccounts({ data: { clientId } }),
   });
-  const imputables = (chart?.accounts ?? []).filter((a) => a.type === 'imputable');
+  const imputables = (chart?.accounts ?? []).filter(
+    (a) => a.type === 'imputable'
+  );
 
   const originArg = (origin || undefined) as never;
 
   const { data: ledger, isLoading: loadingLedger } = useQuery({
-    queryKey: ['accounting', 'ledger-account', clientId, accountId, effectiveFyId, from, to, origin],
+    queryKey: [
+      'accounting',
+      'ledger-account',
+      clientId,
+      accountId,
+      effectiveFyId,
+      from,
+      to,
+      origin,
+    ],
     queryFn: () =>
       getLedgerAccount({
         data: {
@@ -2564,7 +2698,15 @@ function Mayor({
   });
 
   const { data: consol, isLoading: loadingConsol } = useQuery({
-    queryKey: ['accounting', 'ledger-consol', clientId, effectiveFyId, from, to, origin],
+    queryKey: [
+      'accounting',
+      'ledger-consol',
+      clientId,
+      effectiveFyId,
+      from,
+      to,
+      origin,
+    ],
     queryFn: () =>
       getLedgerConsolidated({
         data: {
@@ -2622,7 +2764,9 @@ function Mayor({
       toast.error('No hay datos para exportar');
       return;
     }
-    exportMayorExcel(data, { sheetPerAccount }).catch((e: Error) => toast.error(e.message));
+    exportMayorExcel(data, { sheetPerAccount }).catch((e: Error) =>
+      toast.error(e.message)
+    );
   };
   const exportPdf = () => {
     const data = buildExportData();
@@ -2645,7 +2789,8 @@ function Mayor({
     return (
       <ArcaCard>
         <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
-          Esta empresa no tiene ejercicios. Creá uno en la pestaña Ejercicios para ver el mayor.
+          Esta empresa no tiene ejercicios. Creá uno en la pestaña Ejercicios
+          para ver el mayor.
         </div>
       </ArcaCard>
     );
@@ -2663,7 +2808,8 @@ function Mayor({
                 onClick={() => setMode(m)}
                 className="px-3 text-[12px] font-medium transition-colors"
                 style={{
-                  background: mode === m ? 'var(--arca-navy-900)' : 'transparent',
+                  background:
+                    mode === m ? 'var(--arca-navy-900)' : 'transparent',
                   color: mode === m ? 'white' : 'var(--arca-ink-2)',
                 }}
               >
@@ -2674,7 +2820,9 @@ function Mayor({
 
           {fiscalYears.length > 1 && (
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-[var(--arca-ink-3)]">Ejercicio</label>
+              <label className="text-[10px] text-[var(--arca-ink-3)]">
+                Ejercicio
+              </label>
               <select
                 value={effectiveFyId}
                 onChange={(e) => setFiscalYearId(e.target.value)}
@@ -2691,7 +2839,9 @@ function Mayor({
 
           {mode === 'cuenta' && (
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-[var(--arca-ink-3)]">Cuenta</label>
+              <label className="text-[10px] text-[var(--arca-ink-3)]">
+                Cuenta
+              </label>
               <select
                 value={accountId}
                 onChange={(e) => setAccountId(e.target.value)}
@@ -2708,16 +2858,36 @@ function Mayor({
           )}
 
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">Desde</label>
-            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={`${INPUT_CLASS} w-36`} />
+            <label className="text-[10px] text-[var(--arca-ink-3)]">
+              Desde
+            </label>
+            <input
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              className={`${INPUT_CLASS} w-36`}
+            />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">Hasta</label>
-            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={`${INPUT_CLASS} w-36`} />
+            <label className="text-[10px] text-[var(--arca-ink-3)]">
+              Hasta
+            </label>
+            <input
+              type="date"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              className={`${INPUT_CLASS} w-36`}
+            />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">Origen</label>
-            <select value={origin} onChange={(e) => setOrigin(e.target.value)} className={`${SELECT_CLASS} w-36`}>
+            <label className="text-[10px] text-[var(--arca-ink-3)]">
+              Origen
+            </label>
+            <select
+              value={origin}
+              onChange={(e) => setOrigin(e.target.value)}
+              className={`${SELECT_CLASS} w-36`}
+            >
               <option value="">Todos</option>
               {Object.entries(JOURNAL_ORIGIN_LABELS).map(([k, v]) => (
                 <option key={k} value={k}>
@@ -2743,7 +2913,8 @@ function Mayor({
               onClick={exportXlsx}
               className="flex items-center gap-1.5 h-8 px-2.5 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
             >
-              <FileSpreadsheet className="w-3.5 h-3.5" strokeWidth={1.8} /> Excel
+              <FileSpreadsheet className="w-3.5 h-3.5" strokeWidth={1.8} />{' '}
+              Excel
             </button>
             <button
               onClick={exportPdf}
@@ -2761,9 +2932,13 @@ function Mayor({
               Elegí una cuenta para ver su mayor.
             </div>
           ) : loadingLedger ? (
-            <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">Cargando…</div>
+            <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+              Cargando…
+            </div>
           ) : !ledger ? (
-            <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">Sin datos.</div>
+            <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+              Sin datos.
+            </div>
           ) : (
             <LedgerTable
               saldoInicial={ledger.saldoInicial}
@@ -2775,7 +2950,9 @@ function Mayor({
             />
           )
         ) : loadingConsol ? (
-          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">Cargando…</div>
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            Cargando…
+          </div>
         ) : !consol || consol.accounts.length === 0 ? (
           <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
             No hay movimientos en el rango seleccionado.
@@ -2793,8 +2970,12 @@ function Mayor({
             ))}
             <div className="flex items-center gap-3 px-4 py-3 border-t-2 border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[13px] font-semibold">
               <span className="flex-1">Totales generales</span>
-              <span className="w-28 text-right">$ {fmtMoney(consol.grandTotalDebit)}</span>
-              <span className="w-28 text-right">$ {fmtMoney(consol.grandTotalCredit)}</span>
+              <span className="w-28 text-right">
+                $ {fmtMoney(consol.grandTotalDebit)}
+              </span>
+              <span className="w-28 text-right">
+                $ {fmtMoney(consol.grandTotalCredit)}
+              </span>
               <span className="w-28" />
             </div>
           </div>
@@ -2858,21 +3039,33 @@ function LedgerTable({
             onClick={() => onRowClick(r.entryId)}
             className="w-full flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] hover:bg-[var(--arca-surface-2)] transition-colors text-left text-[12.5px]"
           >
-            <div className="w-24 shrink-0 text-[var(--arca-ink-2)]">{fmtFecha(r.entryDate)}</div>
-            <div className="w-12 shrink-0 font-mono text-[var(--arca-ink-3)]">{r.number}</div>
+            <div className="w-24 shrink-0 text-[var(--arca-ink-2)]">
+              {fmtFecha(r.entryDate)}
+            </div>
+            <div className="w-12 shrink-0 font-mono text-[var(--arca-ink-3)]">
+              {r.number}
+            </div>
             <div className="flex-1 min-w-0 truncate text-[var(--arca-ink)]">
               {r.description ?? r.lineDescription ?? ''}
             </div>
-            <div className="w-24 shrink-0 text-right">{r.debit ? fmtMoney(r.debit) : ''}</div>
-            <div className="w-24 shrink-0 text-right">{r.credit ? fmtMoney(r.credit) : ''}</div>
-            <div className="w-28 shrink-0 text-right font-medium">{saldoLabel(r.balance)}</div>
+            <div className="w-24 shrink-0 text-right">
+              {r.debit ? fmtMoney(r.debit) : ''}
+            </div>
+            <div className="w-24 shrink-0 text-right">
+              {r.credit ? fmtMoney(r.credit) : ''}
+            </div>
+            <div className="w-28 shrink-0 text-right font-medium">
+              {saldoLabel(r.balance)}
+            </div>
           </button>
         ))
       )}
       <div className="flex items-center gap-3 px-4 py-2.5 border-t border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[12.5px] font-semibold">
         <div className="flex-1">Totales del período</div>
         <div className="w-24 shrink-0 text-right">$ {fmtMoney(totalDebit)}</div>
-        <div className="w-24 shrink-0 text-right">$ {fmtMoney(totalCredit)}</div>
+        <div className="w-24 shrink-0 text-right">
+          $ {fmtMoney(totalCredit)}
+        </div>
         <div className="w-28 shrink-0 text-right">{saldoLabel(saldoFinal)}</div>
       </div>
     </div>
@@ -2897,23 +3090,39 @@ function ConsolidatedAccountRow({
         className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--arca-surface-2)] transition-colors text-left"
       >
         {expanded ? (
-          <ChevronDown className="w-4 h-4 shrink-0 text-[var(--arca-ink-3)]" strokeWidth={1.8} />
+          <ChevronDown
+            className="w-4 h-4 shrink-0 text-[var(--arca-ink-3)]"
+            strokeWidth={1.8}
+          />
         ) : (
-          <ChevronRight className="w-4 h-4 shrink-0 text-[var(--arca-ink-3)]" strokeWidth={1.8} />
+          <ChevronRight
+            className="w-4 h-4 shrink-0 text-[var(--arca-ink-3)]"
+            strokeWidth={1.8}
+          />
         )}
-        <span className="w-24 shrink-0 text-[12px] font-mono text-[var(--arca-ink-3)]">{acc.code}</span>
+        <span className="w-24 shrink-0 text-[12px] font-mono text-[var(--arca-ink-3)]">
+          {acc.code}
+        </span>
         <span className="flex-1 min-w-0 truncate text-[13px] font-medium text-[var(--arca-ink)]">
           {acc.name}
         </span>
-        <span className="w-24 shrink-0 text-right text-[12px]">$ {fmtMoney(acc.totalDebit)}</span>
-        <span className="w-24 shrink-0 text-right text-[12px]">$ {fmtMoney(acc.totalCredit)}</span>
-        <span className="w-28 shrink-0 text-right text-[12.5px] font-medium">{saldoLabel(acc.saldoFinal)}</span>
+        <span className="w-24 shrink-0 text-right text-[12px]">
+          $ {fmtMoney(acc.totalDebit)}
+        </span>
+        <span className="w-24 shrink-0 text-right text-[12px]">
+          $ {fmtMoney(acc.totalCredit)}
+        </span>
+        <span className="w-28 shrink-0 text-right text-[12.5px] font-medium">
+          {saldoLabel(acc.saldoFinal)}
+        </span>
       </button>
       {expanded && (
         <div className="bg-[var(--arca-surface-2)] pl-6">
           <div className="flex items-center gap-3 px-4 py-1.5 text-[11.5px] italic text-[var(--arca-ink-3)]">
             <div className="flex-1">Saldo inicial</div>
-            <div className="w-28 shrink-0 text-right not-italic">{saldoLabel(acc.saldoInicial)}</div>
+            <div className="w-28 shrink-0 text-right not-italic">
+              {saldoLabel(acc.saldoInicial)}
+            </div>
           </div>
           {acc.movements.map((r, i) => (
             <button
@@ -2921,14 +3130,24 @@ function ConsolidatedAccountRow({
               onClick={() => onRowClick(r.entryId)}
               className="w-full flex items-center gap-3 px-4 py-1.5 hover:bg-[var(--arca-surface)] transition-colors text-left text-[12px] border-t border-[var(--arca-border)]"
             >
-              <div className="w-24 shrink-0 text-[var(--arca-ink-2)]">{fmtFecha(r.entryDate)}</div>
-              <div className="w-12 shrink-0 font-mono text-[var(--arca-ink-3)]">{r.number}</div>
+              <div className="w-24 shrink-0 text-[var(--arca-ink-2)]">
+                {fmtFecha(r.entryDate)}
+              </div>
+              <div className="w-12 shrink-0 font-mono text-[var(--arca-ink-3)]">
+                {r.number}
+              </div>
               <div className="flex-1 min-w-0 truncate text-[var(--arca-ink)]">
                 {r.description ?? r.lineDescription ?? ''}
               </div>
-              <div className="w-24 shrink-0 text-right">{r.debit ? fmtMoney(r.debit) : ''}</div>
-              <div className="w-24 shrink-0 text-right">{r.credit ? fmtMoney(r.credit) : ''}</div>
-              <div className="w-28 shrink-0 text-right">{saldoLabel(r.balance)}</div>
+              <div className="w-24 shrink-0 text-right">
+                {r.debit ? fmtMoney(r.debit) : ''}
+              </div>
+              <div className="w-24 shrink-0 text-right">
+                {r.credit ? fmtMoney(r.credit) : ''}
+              </div>
+              <div className="w-28 shrink-0 text-right">
+                {saldoLabel(r.balance)}
+              </div>
             </button>
           ))}
         </div>
@@ -2971,13 +3190,19 @@ function Balance({
   const effectiveFyId =
     fiscalYearId !== ''
       ? fiscalYearId
-      : (fiscalYears.find((y) => y.status === 'open')?.id ?? fiscalYears[0]?.id ?? '');
+      : (fiscalYears.find((y) => y.status === 'open')?.id ??
+        fiscalYears[0]?.id ??
+        '');
 
   const { data, isLoading } = useQuery({
     queryKey: ['accounting', 'trial-balance', clientId, effectiveFyId, asOf],
     queryFn: () =>
       getTrialBalance({
-        data: { clientId, fiscalYearId: effectiveFyId || undefined, asOf: asOf || undefined },
+        data: {
+          clientId,
+          fiscalYearId: effectiveFyId || undefined,
+          asOf: asOf || undefined,
+        },
       }),
     enabled: !!effectiveFyId,
   });
@@ -2995,7 +3220,8 @@ function Balance({
       totals: data.totals,
       balanced: data.balanced,
     };
-    const p = kind === 'xlsx' ? exportBalanceExcel(payload) : exportBalancePdf(payload);
+    const p =
+      kind === 'xlsx' ? exportBalanceExcel(payload) : exportBalancePdf(payload);
     p.catch((e: Error) => toast.error(e.message));
   }
 
@@ -3016,7 +3242,9 @@ function Balance({
         <div className="flex flex-wrap items-end gap-2 px-4 py-3 border-b border-[var(--arca-border)]">
           {fiscalYears.length > 1 && (
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-[var(--arca-ink-3)]">Ejercicio</label>
+              <label className="text-[10px] text-[var(--arca-ink-3)]">
+                Ejercicio
+              </label>
               <select
                 value={effectiveFyId}
                 onChange={(e) => setFiscalYearId(e.target.value)}
@@ -3031,7 +3259,9 @@ function Balance({
             </div>
           )}
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">Fecha de corte</label>
+            <label className="text-[10px] text-[var(--arca-ink-3)]">
+              Fecha de corte
+            </label>
             <input
               type="date"
               value={asOf}
@@ -3050,7 +3280,8 @@ function Balance({
               onClick={() => doExport('xlsx')}
               className="flex items-center gap-1.5 h-8 px-2.5 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
             >
-              <FileSpreadsheet className="w-3.5 h-3.5" strokeWidth={1.8} /> Excel
+              <FileSpreadsheet className="w-3.5 h-3.5" strokeWidth={1.8} />{' '}
+              Excel
             </button>
             <button
               onClick={() => doExport('pdf')}
@@ -3066,15 +3297,16 @@ function Balance({
           <div
             className="px-4 py-2.5 text-[12.5px] font-medium border-b border-[var(--arca-border)]"
             style={{
-              background: 'color-mix(in oklch, oklch(0.55 0.18 25), transparent 92%)',
+              background:
+                'color-mix(in oklch, oklch(0.55 0.18 25), transparent 92%)',
               color: 'oklch(0.45 0.18 25)',
             }}
           >
-            ⚠ El balance NO cuadra. Débitos $ {fmtMoney(data.totals.sumaDebe)} vs Créditos ${' '}
-            {fmtMoney(data.totals.sumaHaber)} (dif. ${' '}
-            {fmtMoney(Math.abs(data.totals.sumaDebe - data.totals.sumaHaber))}) · Saldos deudores $
-            {' '}
-            {fmtMoney(data.totals.saldoDeudor)} vs acreedores $ {fmtMoney(data.totals.saldoAcreedor)}.
+            ⚠ El balance NO cuadra. Débitos $ {fmtMoney(data.totals.sumaDebe)}{' '}
+            vs Créditos $ {fmtMoney(data.totals.sumaHaber)} (dif. ${' '}
+            {fmtMoney(Math.abs(data.totals.sumaDebe - data.totals.sumaHaber))})
+            · Saldos deudores $ {fmtMoney(data.totals.saldoDeudor)} vs
+            acreedores $ {fmtMoney(data.totals.saldoAcreedor)}.
           </div>
         )}
 
@@ -3089,7 +3321,9 @@ function Balance({
         </div>
 
         {isLoading ? (
-          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">Cargando…</div>
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            Cargando…
+          </div>
         ) : !data || data.rows.length === 0 ? (
           <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
             No hay movimientos hasta la fecha de corte.
@@ -3110,12 +3344,24 @@ function Balance({
                 }
                 className="w-full flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] hover:bg-[var(--arca-surface-2)] transition-colors text-left text-[12.5px]"
               >
-                <div className="w-24 shrink-0 font-mono text-[12px] text-[var(--arca-ink-3)]">{r.code}</div>
-                <div className="flex-1 min-w-0 truncate text-[var(--arca-ink)]">{r.name}</div>
-                <div className="w-28 shrink-0 text-right">{fmtMoney(r.sumaDebe)}</div>
-                <div className="w-28 shrink-0 text-right">{fmtMoney(r.sumaHaber)}</div>
-                <div className="w-28 shrink-0 text-right">{r.saldoDeudor ? fmtMoney(r.saldoDeudor) : ''}</div>
-                <div className="w-28 shrink-0 text-right">{r.saldoAcreedor ? fmtMoney(r.saldoAcreedor) : ''}</div>
+                <div className="w-24 shrink-0 font-mono text-[12px] text-[var(--arca-ink-3)]">
+                  {r.code}
+                </div>
+                <div className="flex-1 min-w-0 truncate text-[var(--arca-ink)]">
+                  {r.name}
+                </div>
+                <div className="w-28 shrink-0 text-right">
+                  {fmtMoney(r.sumaDebe)}
+                </div>
+                <div className="w-28 shrink-0 text-right">
+                  {fmtMoney(r.sumaHaber)}
+                </div>
+                <div className="w-28 shrink-0 text-right">
+                  {r.saldoDeudor ? fmtMoney(r.saldoDeudor) : ''}
+                </div>
+                <div className="w-28 shrink-0 text-right">
+                  {r.saldoAcreedor ? fmtMoney(r.saldoAcreedor) : ''}
+                </div>
               </button>
             ))}
             <div
@@ -3124,14 +3370,23 @@ function Balance({
             >
               <div className="w-24 shrink-0" />
               <div className="flex-1 min-w-0">Totales</div>
-              <div className="w-28 shrink-0 text-right">$ {fmtMoney(data.totals.sumaDebe)}</div>
-              <div className="w-28 shrink-0 text-right">$ {fmtMoney(data.totals.sumaHaber)}</div>
-              <div className="w-28 shrink-0 text-right">$ {fmtMoney(data.totals.saldoDeudor)}</div>
-              <div className="w-28 shrink-0 text-right">$ {fmtMoney(data.totals.saldoAcreedor)}</div>
+              <div className="w-28 shrink-0 text-right">
+                $ {fmtMoney(data.totals.sumaDebe)}
+              </div>
+              <div className="w-28 shrink-0 text-right">
+                $ {fmtMoney(data.totals.sumaHaber)}
+              </div>
+              <div className="w-28 shrink-0 text-right">
+                $ {fmtMoney(data.totals.saldoDeudor)}
+              </div>
+              <div className="w-28 shrink-0 text-right">
+                $ {fmtMoney(data.totals.saldoAcreedor)}
+              </div>
             </div>
             {data.balanced && (
               <div className="px-4 py-2 text-[11.5px] text-[oklch(0.40_0.14_145)] flex items-center gap-1.5">
-                ✓ El balance cuadra (débitos = créditos y saldos deudores = acreedores).
+                ✓ El balance cuadra (débitos = créditos y saldos deudores =
+                acreedores).
               </div>
             )}
           </>
@@ -3163,10 +3418,24 @@ function LedgerDialog({
 }) {
   const [detailId, setDetailId] = useState<string | null>(null);
   const { data, isLoading } = useQuery({
-    queryKey: ['accounting', 'ledger-account', clientId, drill.accountId, '', drill.from, drill.to, ''],
+    queryKey: [
+      'accounting',
+      'ledger-account',
+      clientId,
+      drill.accountId,
+      '',
+      drill.from,
+      drill.to,
+      '',
+    ],
     queryFn: () =>
       getLedgerAccount({
-        data: { clientId, accountId: drill.accountId, from: drill.from, to: drill.to },
+        data: {
+          clientId,
+          accountId: drill.accountId,
+          from: drill.from,
+          to: drill.to,
+        },
       }),
   });
 
@@ -3179,13 +3448,15 @@ function LedgerDialog({
               Mayor · {drill.code} · {drill.name}
             </DialogTitle>
             <DialogDescription>
-              Movimientos del {fmtFecha(drill.from)} al {fmtFecha(drill.to)}. Click en un movimiento
-              abre el asiento.
+              Movimientos del {fmtFecha(drill.from)} al {fmtFecha(drill.to)}.
+              Click en un movimiento abre el asiento.
             </DialogDescription>
           </DialogHeader>
           <div className="max-h-[60vh] overflow-y-auto border border-[var(--arca-border)] rounded-[10px]">
             {isLoading || !data ? (
-              <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">Cargando…</div>
+              <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+                Cargando…
+              </div>
             ) : (
               <LedgerTable
                 saldoInicial={data.saldoInicial}
@@ -3228,14 +3499,25 @@ interface RuleLineDraft {
   fixedAmount: string;
   description: string;
 }
-type RuleEditorState =
-  | { mode: 'create' }
-  | { mode: 'edit'; ruleId: string };
+type RuleEditorState = { mode: 'create' } | { mode: 'edit'; ruleId: string };
 
-const AMOUNT_BASES = ['total', 'net', 'vat', 'other_taxes', 'concept_value', 'fixed'];
+const AMOUNT_BASES = [
+  'total',
+  'net',
+  'vat',
+  'other_taxes',
+  'concept_value',
+  'fixed',
+];
 
 function emptyRuleLine(side: 'debit' | 'credit'): RuleLineDraft {
-  return { accountId: '', side, amountBasis: 'total', fixedAmount: '', description: '' };
+  return {
+    accountId: '',
+    side,
+    amountBasis: 'total',
+    fixedAmount: '',
+    description: '',
+  };
 }
 
 function Reglas({
@@ -3277,7 +3559,9 @@ function Reglas({
       <ArcaCard>
         <div className="flex flex-wrap items-end gap-2 px-4 py-3 border-b border-[var(--arca-border)]">
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">Módulo origen</label>
+            <label className="text-[10px] text-[var(--arca-ink-3)]">
+              Módulo origen
+            </label>
             <select
               value={moduleFilter}
               onChange={(e) => setModuleFilter(e.target.value)}
@@ -3294,7 +3578,8 @@ function Reglas({
                 onClick={() => setImportOpen(true)}
                 className="flex items-center gap-1.5 h-8 px-2.5 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
               >
-                <Upload className="w-3.5 h-3.5" strokeWidth={1.8} /> Importar de otra empresa
+                <Upload className="w-3.5 h-3.5" strokeWidth={1.8} /> Importar de
+                otra empresa
               </button>
               <button
                 onClick={() => setEditor({ mode: 'create' })}
@@ -3316,16 +3601,21 @@ function Reglas({
         </div>
 
         {isLoading ? (
-          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">Cargando…</div>
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            Cargando…
+          </div>
         ) : rules.length === 0 ? (
           <div className="px-5 py-12 text-center">
-            <Workflow className="w-8 h-8 mx-auto mb-3 text-[var(--arca-ink-3)]" strokeWidth={1.5} />
+            <Workflow
+              className="w-8 h-8 mx-auto mb-3 text-[var(--arca-ink-3)]"
+              strokeWidth={1.5}
+            />
             <p className="text-[13px] text-[var(--arca-ink-2)] mb-1">
               No hay reglas de mapeo configuradas.
             </p>
             <p className="text-[12px] text-[var(--arca-ink-3)]">
-              Las reglas le enseñan al sistema cómo armar los asientos automáticos desde facturas y
-              sueldos.
+              Las reglas le enseñan al sistema cómo armar los asientos
+              automáticos desde facturas y sueldos.
             </p>
           </div>
         ) : (
@@ -3345,13 +3635,23 @@ function Reglas({
               </div>
               <div className="w-24 shrink-0">
                 <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
-                  {MAPPING_SOURCE_LABELS[r.sourceModule as 'invoice' | 'payroll']}
+                  {
+                    MAPPING_SOURCE_LABELS[
+                      r.sourceModule as 'invoice' | 'payroll'
+                    ]
+                  }
                 </span>
               </div>
               <div className="w-28 shrink-0 text-[11.5px] text-[var(--arca-ink-3)]">
-                {MAPPING_RULE_TYPE_LABELS[r.ruleType as 'default' | 'conditional']}
+                {
+                  MAPPING_RULE_TYPE_LABELS[
+                    r.ruleType as 'default' | 'conditional'
+                  ]
+                }
               </div>
-              <div className="w-16 shrink-0 text-center text-[var(--arca-ink-2)]">{r.lineCount}</div>
+              <div className="w-16 shrink-0 text-center text-[var(--arca-ink-2)]">
+                {r.lineCount}
+              </div>
               <div className="w-24 shrink-0 flex justify-center">
                 {isOwner ? (
                   <button
@@ -3359,13 +3659,17 @@ function Reglas({
                       e.stopPropagation();
                       toggleMut.mutate({ id: r.id, isActive: !r.isActive });
                     }}
-                    title={r.isActive ? 'Clic para desactivar' : 'Clic para activar'}
+                    title={
+                      r.isActive ? 'Clic para desactivar' : 'Clic para activar'
+                    }
                     className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-medium hover:opacity-80"
                     style={{
                       background: r.isActive
                         ? 'color-mix(in oklch, oklch(0.45 0.14 145), transparent 88%)'
                         : 'var(--arca-surface-2)',
-                      color: r.isActive ? 'oklch(0.40 0.14 145)' : 'var(--arca-ink-3)',
+                      color: r.isActive
+                        ? 'oklch(0.40 0.14 145)'
+                        : 'var(--arca-ink-3)',
                     }}
                   >
                     <Power className="w-2.5 h-2.5" strokeWidth={2} />
@@ -3438,13 +3742,18 @@ function RuleEditorDialog({
   });
   const { data: existing } = useQuery({
     queryKey: ['accounting', 'rule', isEdit ? state.ruleId : 'new'],
-    queryFn: () => getMappingRule({ data: { id: (state as { ruleId: string }).ruleId } }),
+    queryFn: () =>
+      getMappingRule({ data: { id: (state as { ruleId: string }).ruleId } }),
     enabled: isEdit,
   });
 
   const [name, setName] = useState('');
-  const [sourceModule, setSourceModule] = useState<'invoice' | 'payroll'>('invoice');
-  const [ruleType, setRuleType] = useState<'default' | 'conditional'>('default');
+  const [sourceModule, setSourceModule] = useState<'invoice' | 'payroll'>(
+    'invoice'
+  );
+  const [ruleType, setRuleType] = useState<'default' | 'conditional'>(
+    'default'
+  );
   const [conditionText, setConditionText] = useState('');
   const [priority, setPriority] = useState('100');
   const [lines, setLines] = useState<RuleLineDraft[]>([
@@ -3457,7 +3766,11 @@ function RuleEditorDialog({
     setName(existing.rule.name);
     setSourceModule(existing.rule.sourceModule);
     setRuleType(existing.rule.ruleType);
-    setConditionText(existing.rule.condition ? JSON.stringify(existing.rule.condition, null, 2) : '');
+    setConditionText(
+      existing.rule.condition
+        ? JSON.stringify(existing.rule.condition, null, 2)
+        : ''
+    );
     setPriority(String(existing.rule.priority));
     setLines(
       existing.lines.map((l) => ({
@@ -3472,7 +3785,9 @@ function RuleEditorDialog({
   }
 
   const updateLine = (i: number, patch: Partial<RuleLineDraft>) =>
-    setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
+    setLines((prev) =>
+      prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l))
+    );
 
   const hasDebit = lines.some((l) => l.side === 'debit');
   const hasCredit = lines.some((l) => l.side === 'credit');
@@ -3481,7 +3796,8 @@ function RuleEditorDialog({
     hasDebit &&
     hasCredit &&
     lines.every(
-      (l) => l.accountId && (l.amountBasis !== 'fixed' || num(l.fixedAmount) > 0)
+      (l) =>
+        l.accountId && (l.amountBasis !== 'fixed' || num(l.fixedAmount) > 0)
     );
   const canSave = !!name.trim() && linesOk;
 
@@ -3527,7 +3843,9 @@ function RuleEditorDialog({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-[780px]">
         <DialogHeader>
-          <DialogTitle>{isEdit ? 'Editar regla de mapeo' : 'Nueva regla de mapeo'}</DialogTitle>
+          <DialogTitle>
+            {isEdit ? 'Editar regla de mapeo' : 'Nueva regla de mapeo'}
+          </DialogTitle>
           <DialogDescription>
             Una regla le enseña al sistema cómo armar un asiento automático.
           </DialogDescription>
@@ -3537,20 +3855,27 @@ function RuleEditorDialog({
         <div
           className="flex gap-2 text-[12px] rounded-[10px] px-3 py-2.5 leading-relaxed"
           style={{
-            background: 'color-mix(in oklch, var(--arca-navy-900), transparent 94%)',
+            background:
+              'color-mix(in oklch, var(--arca-navy-900), transparent 94%)',
             color: 'var(--arca-ink-2)',
           }}
         >
-          <Lightbulb className="w-4 h-4 shrink-0 mt-0.5 text-[var(--arca-navy-900)]" strokeWidth={1.8} />
+          <Lightbulb
+            className="w-4 h-4 shrink-0 mt-0.5 text-[var(--arca-navy-900)]"
+            strokeWidth={1.8}
+          />
           <div>
-            <strong>¿Cómo funciona?</strong> Cuando entra un comprobante del módulo elegido (una
-            factura o una liquidación de sueldos), el sistema arma un asiento usando estas líneas.
-            Cada línea define <strong>qué cuenta</strong> tocar, si va al <strong>Debe o Haber</strong>,
-            y de <strong>qué monto del comprobante</strong> sale (el total, el neto, el IVA…).
+            <strong>¿Cómo funciona?</strong> Cuando entra un comprobante del
+            módulo elegido (una factura o una liquidación de sueldos), el
+            sistema arma un asiento usando estas líneas. Cada línea define{' '}
+            <strong>qué cuenta</strong> tocar, si va al{' '}
+            <strong>Debe o Haber</strong>, y de{' '}
+            <strong>qué monto del comprobante</strong> sale (el total, el neto,
+            el IVA…).
             <br />
             <span className="text-[var(--arca-ink-3)]">
-              Ejemplo (factura de venta): Deudores por ventas → Debe → Total · Ventas → Haber → Neto
-              · IVA débito → Haber → IVA.
+              Ejemplo (factura de venta): Deudores por ventas → Debe → Total ·
+              Ventas → Haber → Neto · IVA débito → Haber → IVA.
             </span>
           </div>
         </div>
@@ -3559,12 +3884,14 @@ function RuleEditorDialog({
           <div
             className="text-[12px] rounded-[8px] px-3 py-2"
             style={{
-              background: 'color-mix(in oklch, oklch(0.55 0.15 50), transparent 90%)',
+              background:
+                'color-mix(in oklch, oklch(0.55 0.15 50), transparent 90%)',
               color: 'oklch(0.45 0.15 50)',
             }}
           >
-            ⚠ {existing.generatedOpenCount} asiento(s) del período abierto se generaron con la
-            versión anterior. No se regenerarán automáticamente.
+            ⚠ {existing.generatedOpenCount} asiento(s) del período abierto se
+            generaron con la versión anterior. No se regenerarán
+            automáticamente.
           </div>
         )}
 
@@ -3587,7 +3914,9 @@ function RuleEditorDialog({
           >
             <select
               value={sourceModule}
-              onChange={(e) => setSourceModule(e.target.value as 'invoice' | 'payroll')}
+              onChange={(e) =>
+                setSourceModule(e.target.value as 'invoice' | 'payroll')
+              }
               className={`${SELECT_CLASS} w-full h-9`}
             >
               <option value="invoice">Facturas</option>
@@ -3619,7 +3948,9 @@ function RuleEditorDialog({
           >
             <select
               value={ruleType}
-              onChange={(e) => setRuleType(e.target.value as 'default' | 'conditional')}
+              onChange={(e) =>
+                setRuleType(e.target.value as 'default' | 'conditional')
+              }
               className={`${SELECT_CLASS} w-full h-9`}
             >
               <option value="default">Default (fallback)</option>
@@ -3627,14 +3958,26 @@ function RuleEditorDialog({
             </select>
           </Field>
           {ruleType === 'conditional' && (
-            <Field label="Condición (JSON)" full>
+            <Field
+              label={
+                <>
+                  Condición (JSON)
+                  <HelpTip text='Claves soportadas para facturas: "direction" ("sale" venta / "purchase" compra) y "type" (letra del comprobante, ej. "A" o ["A","M"]). La regla aplica solo si el comprobante cumple TODAS las claves.' />
+                </>
+              }
+              full
+            >
               <textarea
                 value={conditionText}
                 onChange={(e) => setConditionText(e.target.value)}
                 rows={3}
-                placeholder='Ej: {"direction":"sale","invoiceType":"A"}'
+                placeholder='Ej: {"direction":"sale","type":"A"}'
                 className="w-full px-2.5 py-2 text-[12px] font-mono border border-[var(--arca-border)] rounded-[8px] bg-[var(--arca-surface)] text-[var(--arca-ink)] focus:outline-none resize-none"
               />
+              <p className="mt-1 text-[11px] text-[var(--arca-ink-3)]">
+                Venta = <code>{'{"direction":"sale"}'}</code> · Compra ={' '}
+                <code>{'{"direction":"purchase"}'}</code>
+              </p>
             </Field>
           )}
         </div>
@@ -3658,7 +4001,10 @@ function RuleEditorDialog({
             <div className="w-6" />
           </div>
           {lines.map((l, i) => (
-            <div key={i} className="flex items-center gap-2 px-3 py-1.5 border-t border-[var(--arca-border)]">
+            <div
+              key={i}
+              className="flex items-center gap-2 px-3 py-1.5 border-t border-[var(--arca-border)]"
+            >
               <select
                 value={l.accountId}
                 onChange={(e) => updateLine(i, { accountId: e.target.value })}
@@ -3673,7 +4019,9 @@ function RuleEditorDialog({
               </select>
               <select
                 value={l.side}
-                onChange={(e) => updateLine(i, { side: e.target.value as 'debit' | 'credit' })}
+                onChange={(e) =>
+                  updateLine(i, { side: e.target.value as 'debit' | 'credit' })
+                }
                 className={`${SELECT_CLASS} w-20 h-8`}
               >
                 <option value="debit">Debe</option>
@@ -3699,7 +4047,9 @@ function RuleEditorDialog({
                 className={`${INPUT_CLASS} w-24 h-8 text-right disabled:opacity-40`}
               />
               <button
-                onClick={() => setLines((prev) => prev.filter((_, idx) => idx !== i))}
+                onClick={() =>
+                  setLines((prev) => prev.filter((_, idx) => idx !== i))
+                }
                 disabled={lines.length <= 2}
                 className="w-6 h-6 flex items-center justify-center rounded-[6px] text-[var(--arca-ink-3)] hover:text-[oklch(0.55_0.18_25)] disabled:opacity-30"
               >
@@ -3709,14 +4059,18 @@ function RuleEditorDialog({
           ))}
           <div className="flex items-center gap-3 px-3 py-2 border-t border-[var(--arca-border)] bg-[var(--arca-surface-2)]">
             <button
-              onClick={() => setLines((prev) => [...prev, emptyRuleLine('debit')])}
+              onClick={() =>
+                setLines((prev) => [...prev, emptyRuleLine('debit')])
+              }
               className="flex items-center gap-1 text-[11.5px] font-medium text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
             >
               <Plus className="w-3 h-3" strokeWidth={2.5} /> Agregar línea
             </button>
             <span className="ml-auto text-[11.5px]">
               {linesOk ? (
-                <span className="text-[oklch(0.40_0.14_145)]">✓ Líneas válidas</span>
+                <span className="text-[oklch(0.40_0.14_145)]">
+                  ✓ Líneas válidas
+                </span>
               ) : (
                 <span className="text-[var(--arca-ink-3)]">
                   Requiere ≥2 líneas, al menos una al Debe y una al Haber
@@ -3727,7 +4081,10 @@ function RuleEditorDialog({
         </div>
 
         <DialogFooter>
-          <button onClick={onClose} className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)]">
+          <button
+            onClick={onClose}
+            className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)]"
+          >
             Cancelar
           </button>
           <button
@@ -3761,7 +4118,8 @@ function RuleDetailDialog({
     queryFn: () => getMappingRule({ data: { id: ruleId } }),
   });
   const toggleMut = useMutation({
-    mutationFn: (isActive: boolean) => setMappingRuleActive({ data: { id: ruleId, isActive } }),
+    mutationFn: (isActive: boolean) =>
+      setMappingRuleActive({ data: { id: ruleId, isActive } }),
     onSuccess: () => {
       toast.success('Estado actualizado');
       onChanged();
@@ -3774,7 +4132,9 @@ function RuleDetailDialog({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-[680px]">
         {isLoading || !data ? (
-          <div className="py-10 text-center text-[13px] text-[var(--arca-ink-3)]">Cargando…</div>
+          <div className="py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            Cargando…
+          </div>
         ) : (
           <>
             <DialogHeader>
@@ -3788,8 +4148,8 @@ function RuleDetailDialog({
               </DialogTitle>
               <DialogDescription>
                 Módulo: {MAPPING_SOURCE_LABELS[data.rule.sourceModule]} ·{' '}
-                {MAPPING_RULE_TYPE_LABELS[data.rule.ruleType]} ·
-                Prioridad {data.rule.priority}
+                {MAPPING_RULE_TYPE_LABELS[data.rule.ruleType]} · Prioridad{' '}
+                {data.rule.priority}
               </DialogDescription>
             </DialogHeader>
 
@@ -3806,15 +4166,24 @@ function RuleDetailDialog({
                 <div className="w-48">Base del monto</div>
               </div>
               {data.lines.map((l) => (
-                <div key={l.id} className="flex items-center gap-2 px-3 py-1.5 border-t border-[var(--arca-border)] text-[12.5px]">
+                <div
+                  key={l.id}
+                  className="flex items-center gap-2 px-3 py-1.5 border-t border-[var(--arca-border)] text-[12.5px]"
+                >
                   <div className="flex-1 min-w-0 truncate">
-                    <span className="font-mono text-[11px] text-[var(--arca-ink-3)]">{l.accountCode}</span>{' '}
+                    <span className="font-mono text-[11px] text-[var(--arca-ink-3)]">
+                      {l.accountCode}
+                    </span>{' '}
                     {l.accountName}
                   </div>
-                  <div className="w-16 font-medium">{MAPPING_SIDE_LABELS[l.side]}</div>
+                  <div className="w-16 font-medium">
+                    {MAPPING_SIDE_LABELS[l.side]}
+                  </div>
                   <div className="w-48 text-[var(--arca-ink-2)]">
                     {MAPPING_AMOUNT_BASIS_LABELS[l.amountBasis]}
-                    {l.amountBasis === 'fixed' && l.fixedAmount ? ` ($ ${fmtMoney(l.fixedAmount)})` : ''}
+                    {l.amountBasis === 'fixed' && l.fixedAmount
+                      ? ` ($ ${fmtMoney(l.fixedAmount)})`
+                      : ''}
                   </div>
                 </div>
               ))}
@@ -3865,7 +4234,10 @@ function ImportRulesDialog({
   });
 
   const mut = useMutation({
-    mutationFn: () => importMappingRules({ data: { fromClientId: fromId, toClientId: clientId } }),
+    mutationFn: () =>
+      importMappingRules({
+        data: { fromClientId: fromId, toClientId: clientId },
+      }),
     onSuccess: (res) => {
       toast.success(
         `${res.created} regla(s) importada(s) (inactivas)${res.skipped.length ? ` · ${res.skipped.length} omitida(s) por cuentas faltantes` : ''}`
@@ -3881,14 +4253,17 @@ function ImportRulesDialog({
         <DialogHeader>
           <DialogTitle>Importar reglas de otra empresa</DialogTitle>
           <DialogDescription>
-            Se copian las reglas a esta empresa como <strong>inactivas</strong>. Las cuentas se
-            resuelven por código; las reglas con cuentas que no existan acá se omiten.
+            Se copian las reglas a esta empresa como <strong>inactivas</strong>.
+            Las cuentas se resuelven por código; las reglas con cuentas que no
+            existan acá se omiten.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3 py-1">
           <div className="flex flex-col gap-1">
-            <label className="text-[11px] text-[var(--arca-ink-3)]">Empresa origen</label>
+            <label className="text-[11px] text-[var(--arca-ink-3)]">
+              Empresa origen
+            </label>
             <select
               value={fromId}
               onChange={(e) => setFromId(e.target.value)}
@@ -3914,10 +4289,18 @@ function ImportRulesDialog({
                 </div>
               ) : (
                 preview.map((r) => (
-                  <div key={r.id} className="flex items-center gap-2 px-3 py-1.5 border-t border-[var(--arca-border)] text-[12px]">
+                  <div
+                    key={r.id}
+                    className="flex items-center gap-2 px-3 py-1.5 border-t border-[var(--arca-border)] text-[12px]"
+                  >
                     <span className="flex-1 min-w-0 truncate">{r.name}</span>
                     <span className="text-[var(--arca-ink-3)]">
-                      {MAPPING_SOURCE_LABELS[r.sourceModule as 'invoice' | 'payroll']} · {r.lineCount} líneas
+                      {
+                        MAPPING_SOURCE_LABELS[
+                          r.sourceModule as 'invoice' | 'payroll'
+                        ]
+                      }{' '}
+                      · {r.lineCount} líneas
                     </span>
                   </div>
                 ))
@@ -3927,7 +4310,10 @@ function ImportRulesDialog({
         </div>
 
         <DialogFooter>
-          <button onClick={onClose} className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)]">
+          <button
+            onClick={onClose}
+            className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)]"
+          >
             Cancelar
           </button>
           <button
@@ -3940,5 +4326,385 @@ function ImportRulesDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/* ════════════════════ Contabilizar facturas (US 3.2.x) ════════════════════ */
+
+type PostingInvoice = Awaited<
+  ReturnType<typeof getInvoicePostingPreview>
+>['invoices'][number];
+
+function Contabilizar({
+  clientId,
+  canWrite,
+}: {
+  clientId: string;
+  canWrite: boolean;
+}) {
+  const qc = useQueryClient();
+  const [direction, setDirection] = useState<'all' | 'sale' | 'purchase'>(
+    'all'
+  );
+  const [includePosted, setIncludePosted] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [confirmReg, setConfirmReg] = useState<{
+    invoiceId: string;
+    number: number;
+  } | null>(null);
+
+  const { data, isLoading } = useQuery({
+    queryKey: [
+      'accounting',
+      'posting-preview',
+      clientId,
+      direction,
+      includePosted,
+    ],
+    queryFn: () =>
+      getInvoicePostingPreview({
+        data: { clientId, direction, includePosted },
+      }),
+  });
+
+  const invoices = data?.invoices ?? [];
+  const hasFy = data?.hasFiscalYear ?? true;
+
+  // Solo se pueden contabilizar las pendientes con período abierto.
+  const selectable = useMemo(
+    () => invoices.filter((i) => !i.posted && i.periodStatus !== 'closed'),
+    [invoices]
+  );
+
+  const refresh = () => qc.invalidateQueries({ queryKey: ['accounting'] });
+
+  const genMut = useMutation({
+    mutationFn: (ids: string[]) =>
+      generateInvoiceEntries({ data: { clientId, invoiceIds: ids } }),
+    onSuccess: (r) => {
+      const parts = [`${r.created} asiento(s) generado(s)`];
+      if (r.pendingReview > 0)
+        parts.push(`${r.pendingReview} con pendiente de revisión`);
+      const skipped =
+        r.skippedExists +
+        r.skippedNoFy +
+        r.skippedClosed +
+        r.skippedNonPositive;
+      if (skipped > 0) parts.push(`${skipped} omitida(s)`);
+      if (r.created > 0) toast.success(parts.join(' · '));
+      else toast.message(parts.join(' · '));
+      if (r.errors.length > 0)
+        toast.error(`${r.errors.length} con error (revisá las reglas)`);
+      setSelected(new Set());
+      refresh();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const regMut = useMutation({
+    mutationFn: (v: { invoiceId: string; number: number; force: boolean }) =>
+      regenerateInvoiceEntry({
+        data: { clientId, invoiceId: v.invoiceId, force: v.force },
+      }),
+    onSuccess: (r, v) => {
+      if ('needsConfirmation' in r && r.needsConfirmation) {
+        setConfirmReg({
+          invoiceId: v.invoiceId,
+          number: r.entryNumber ?? v.number,
+        });
+        return;
+      }
+      toast.success('Asiento regenerado');
+      setConfirmReg(null);
+      refresh();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const toggle = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const allSelected =
+    selectable.length > 0 && selected.size === selectable.length;
+  const toggleAll = () =>
+    setSelected(allSelected ? new Set() : new Set(selectable.map((i) => i.id)));
+
+  if (!hasFy) {
+    return (
+      <ArcaCard>
+        <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+          Esta empresa todavía no tiene un ejercicio contable. Creá uno en la
+          pestaña <strong>Ejercicios</strong> para poder contabilizar
+          comprobantes.
+        </div>
+      </ArcaCard>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Explicación */}
+      <div className="flex gap-2 rounded-[10px] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-4 py-3 text-[12px] leading-relaxed text-[var(--arca-ink-2)]">
+        <Lightbulb
+          className="w-4 h-4 shrink-0 mt-0.5 text-[var(--arca-navy-900)]"
+          strokeWidth={1.8}
+        />
+        <div>
+          <strong>Contabilizar comprobantes.</strong> Acá generás los asientos
+          automáticos de las facturas aplicando las{' '}
+          <strong>reglas de mapeo</strong>. Revisá la regla que matchea cada
+          comprobante y generá los que estén correctos. Si una factura no tiene
+          regla (o tiene percepciones/otros impuestos sin mapear), el asiento se
+          crea con la cuenta <strong>Pendiente de revisión</strong>, que bloquea
+          el cierre hasta que la corrijas a mano.
+        </div>
+      </div>
+
+      {/* Controles */}
+      <ArcaCard>
+        <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-[var(--arca-border)]">
+          <select
+            value={direction}
+            onChange={(e) => {
+              setDirection(e.target.value as 'all' | 'sale' | 'purchase');
+              setSelected(new Set());
+            }}
+            className="h-8 px-2 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] bg-white"
+          >
+            <option value="all">Ventas y compras</option>
+            <option value="sale">Solo ventas</option>
+            <option value="purchase">Solo compras</option>
+          </select>
+          <label className="flex items-center gap-1.5 text-[12.5px] text-[var(--arca-ink-2)] cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={includePosted}
+              onChange={(e) => setIncludePosted(e.target.checked)}
+            />
+            Mostrar ya contabilizadas
+          </label>
+          <div className="flex-1" />
+          {canWrite && (
+            <button
+              onClick={() => genMut.mutate([...selected])}
+              disabled={selected.size === 0 || genMut.isPending}
+              className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50 inline-flex items-center gap-1.5"
+            >
+              <Zap className="w-3.5 h-3.5" strokeWidth={2} />
+              {genMut.isPending
+                ? 'Generando…'
+                : `Generar ${selected.size > 0 ? `(${selected.size})` : 'seleccionadas'}`}
+            </button>
+          )}
+        </div>
+
+        {isLoading ? (
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            Cargando comprobantes…
+          </div>
+        ) : invoices.length === 0 ? (
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            {includePosted
+              ? 'No hay comprobantes en el rango de los ejercicios.'
+              : 'No hay comprobantes pendientes de contabilizar. 🎉'}
+          </div>
+        ) : (
+          <table className="w-full text-[12.5px]">
+            <thead>
+              <tr className="text-left text-[11px] uppercase tracking-wide text-[var(--arca-ink-3)] border-b border-[var(--arca-border)]">
+                <th className="w-9 py-2 pl-4">
+                  {canWrite && selectable.length > 0 && (
+                    <button
+                      onClick={toggleAll}
+                      className="inline-flex"
+                      title="Seleccionar todo"
+                    >
+                      {allSelected ? (
+                        <CheckSquare
+                          className="w-4 h-4 text-[var(--arca-navy-900)]"
+                          strokeWidth={2}
+                        />
+                      ) : (
+                        <Square
+                          className="w-4 h-4 text-[var(--arca-ink-3)]"
+                          strokeWidth={2}
+                        />
+                      )}
+                    </button>
+                  )}
+                </th>
+                <th className="py-2">Fecha</th>
+                <th className="py-2">Tipo</th>
+                <th className="py-2">Contraparte</th>
+                <th className="py-2 text-right">Total</th>
+                <th className="py-2 pl-4">Regla / Estado</th>
+                <th className="py-2 pr-4 text-right">Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              {invoices.map((inv) => (
+                <PostingRow
+                  key={inv.id}
+                  inv={inv}
+                  canWrite={canWrite}
+                  checked={selected.has(inv.id)}
+                  onToggle={() => toggle(inv.id)}
+                  onRegenerate={() =>
+                    regMut.mutate({
+                      invoiceId: inv.id,
+                      number: inv.entryNumber ?? 0,
+                      force: false,
+                    })
+                  }
+                  regenerating={regMut.isPending}
+                />
+              ))}
+            </tbody>
+          </table>
+        )}
+      </ArcaCard>
+
+      {/* Confirmación de sobreescritura de asiento editado a mano */}
+      <AlertDialog
+        open={!!confirmReg}
+        onOpenChange={(o) => !o && setConfirmReg(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Este asiento fue editado a mano</AlertDialogTitle>
+            <AlertDialogDescription>
+              El asiento N°{confirmReg?.number} se editó manualmente después de
+              generarse. Si lo regenerás, se anulará y se reemplazará por uno
+              nuevo según las reglas actuales, perdiendo los cambios manuales.
+              ¿Querés sobreescribirlo?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmReg(null)}>
+              Mantener manual
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (confirmReg)
+                  regMut.mutate({
+                    invoiceId: confirmReg.invoiceId,
+                    number: confirmReg.number,
+                    force: true,
+                  });
+              }}
+            >
+              Sobreescribir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+function PostingRow({
+  inv,
+  canWrite,
+  checked,
+  onToggle,
+  onRegenerate,
+  regenerating,
+}: {
+  inv: PostingInvoice;
+  canWrite: boolean;
+  checked: boolean;
+  onToggle: () => void;
+  onRegenerate: () => void;
+  regenerating: boolean;
+}) {
+  const closed = inv.periodStatus === 'closed';
+  const selectable = !inv.posted && !closed;
+  const dirLabel =
+    inv.direction === 'sale'
+      ? 'Venta'
+      : inv.direction === 'purchase'
+        ? 'Compra'
+        : '—';
+
+  return (
+    <tr className="border-b border-[var(--arca-border)] last:border-0 hover:bg-[var(--arca-surface-2)]">
+      <td className="py-2 pl-4">
+        {canWrite && selectable && (
+          <button onClick={onToggle} className="inline-flex">
+            {checked ? (
+              <CheckSquare
+                className="w-4 h-4 text-[var(--arca-navy-900)]"
+                strokeWidth={2}
+              />
+            ) : (
+              <Square
+                className="w-4 h-4 text-[var(--arca-ink-3)]"
+                strokeWidth={2}
+              />
+            )}
+          </button>
+        )}
+      </td>
+      <td className="py-2 whitespace-nowrap">{fmtFecha(inv.emitionDate)}</td>
+      <td className="py-2">
+        <span className="text-[var(--arca-ink-3)]">{dirLabel}</span> {inv.type}
+      </td>
+      <td className="py-2 max-w-[220px] truncate" title={inv.counterparty}>
+        {inv.counterparty}
+      </td>
+      <td className="py-2 text-right tabular-nums whitespace-nowrap">
+        $ {fmtMoney(inv.total)}
+      </td>
+      <td className="py-2 pl-4">
+        {inv.posted ? (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="px-1.5 py-px rounded-full text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200">
+              Asiento N°{inv.entryNumber}
+            </span>
+            {inv.entryEdited && (
+              <span className="px-1.5 py-px rounded-full text-[11px] bg-blue-50 text-blue-700 border border-blue-200">
+                editado
+              </span>
+            )}
+          </span>
+        ) : closed ? (
+          <span className="text-[var(--arca-ink-3)]">Período cerrado</span>
+        ) : inv.ruleName ? (
+          <span className="inline-flex items-center gap-1.5">
+            <span>{inv.ruleName}</span>
+            {inv.willUsePendingReview && (
+              <span
+                className="px-1.5 py-px rounded-full text-[11px] bg-amber-50 text-amber-700 border border-amber-200"
+                title="Tiene otros impuestos/percepciones sin mapear: la diferencia irá a Pendiente de revisión"
+              >
+                + pendiente
+              </span>
+            )}
+          </span>
+        ) : (
+          <span className="px-1.5 py-px rounded-full text-[11px] bg-amber-50 text-amber-700 border border-amber-200">
+            Sin regla → Pendiente de revisión
+          </span>
+        )}
+      </td>
+      <td className="py-2 pr-4 text-right">
+        {inv.posted && canWrite && !closed && (
+          <button
+            onClick={onRegenerate}
+            disabled={regenerating}
+            className="inline-flex items-center gap-1 text-[12px] text-[var(--arca-ink-2)] hover:text-[var(--arca-navy-900)] disabled:opacity-50"
+            title="Anular el asiento actual y regenerarlo con las reglas vigentes"
+          >
+            <RefreshCw className="w-3.5 h-3.5" strokeWidth={2} />
+            Regenerar
+          </button>
+        )}
+      </td>
+    </tr>
   );
 }

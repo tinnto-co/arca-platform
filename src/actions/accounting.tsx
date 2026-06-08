@@ -15,6 +15,7 @@ import {
   accountingPeriod,
   client,
   fiscalYear,
+  invoice,
   journalEntry,
   journalEntryLine,
   ledgerMappingRule,
@@ -22,9 +23,23 @@ import {
   representative,
   user,
 } from '@/drizzle/schema';
-import { getSessionWithOrg, getMemberRole, assertCanWrite } from '@/actions/helpers';
+import {
+  getSessionWithOrg,
+  getMemberRole,
+  assertCanWrite,
+} from '@/actions/helpers';
 import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from 'drizzle-orm';
-import { CUSTOM_CODE_PREFIX, PENDING_REVIEW_CODE } from '@/lib/accounting-labels';
+import {
+  CUSTOM_CODE_PREFIX,
+  PENDING_REVIEW_CODE,
+} from '@/lib/accounting-labels';
+import {
+  buildEntryLines,
+  computeInvoiceAmounts,
+  normalizeDirection,
+  selectRuleForInvoice,
+  type RuleLike,
+} from '@/lib/accounting-invoice-posting';
 
 /* ───────────────────────────── Helpers ───────────────────────────── */
 
@@ -725,7 +740,10 @@ async function loadFiscalYearForOrg(
     .innerJoin(client, eq(client.id, fiscalYear.clientId))
     .innerJoin(representative, eq(representative.id, client.representativeId))
     .where(
-      and(eq(fiscalYear.id, fiscalYearId), eq(representative.organizationId, orgId))
+      and(
+        eq(fiscalYear.id, fiscalYearId),
+        eq(representative.organizationId, orgId)
+      )
     )
     .limit(1);
   if (!row) throw new Error('Ejercicio no encontrado o no autorizado');
@@ -744,7 +762,10 @@ async function loadPeriodForOrg(
     .innerJoin(client, eq(client.id, accountingPeriod.clientId))
     .innerJoin(representative, eq(representative.id, client.representativeId))
     .where(
-      and(eq(accountingPeriod.id, periodId), eq(representative.organizationId, orgId))
+      and(
+        eq(accountingPeriod.id, periodId),
+        eq(representative.organizationId, orgId)
+      )
     )
     .limit(1);
   if (!row) throw new Error('Período no encontrado o no autorizado');
@@ -759,7 +780,10 @@ async function countPendingReviewEntries(
   const [r] = await db
     .select({ count: sql<number>`count(distinct ${journalEntry.id})::int` })
     .from(journalEntry)
-    .innerJoin(journalEntryLine, eq(journalEntryLine.journalEntryId, journalEntry.id))
+    .innerJoin(
+      journalEntryLine,
+      eq(journalEntryLine.journalEntryId, journalEntry.id)
+    )
     .innerJoin(account, eq(account.id, journalEntryLine.accountId))
     .where(
       and(
@@ -828,14 +852,22 @@ export const createFiscalYear = createServerFn({ method: 'POST' })
     }
 
     const [{ maxNum }] = await db
-      .select({ maxNum: sql<number>`coalesce(max(${fiscalYear.number}),0)::int` })
+      .select({
+        maxNum: sql<number>`coalesce(max(${fiscalYear.number}),0)::int`,
+      })
       .from(fiscalYear)
       .where(eq(fiscalYear.clientId, clientId));
     const number = (maxNum ?? 0) + 1;
 
     const [fy] = await db
       .insert(fiscalYear)
-      .values({ clientId, startDate: start, endDate: end, status: 'open', number })
+      .values({
+        clientId,
+        startDate: start,
+        endDate: end,
+        status: 'open',
+        number,
+      })
       .returning();
 
     const periods = Array.from({ length: 12 }, (_, i) => {
@@ -918,8 +950,16 @@ export const getFiscalYearDetail = createServerFn({ method: 'GET' })
         totalDebit: sql<string>`coalesce(sum(${journalEntryLine.debit}),0)`,
       })
       .from(journalEntry)
-      .leftJoin(journalEntryLine, eq(journalEntryLine.journalEntryId, journalEntry.id))
-      .where(and(eq(journalEntry.fiscalYearId, fy.id), eq(journalEntry.isVoided, false)))
+      .leftJoin(
+        journalEntryLine,
+        eq(journalEntryLine.journalEntryId, journalEntry.id)
+      )
+      .where(
+        and(
+          eq(journalEntry.fiscalYearId, fy.id),
+          eq(journalEntry.isVoided, false)
+        )
+      )
       .groupBy(journalEntry.periodId);
     const byPeriod = new Map(stats.map((s) => [s.periodId, s]));
 
@@ -957,13 +997,17 @@ export const closePeriod = createServerFn({ method: 'POST' })
 
     const { period, fy } = await loadPeriodForOrg(ctx.data.periodId, orgId);
     if (fy.status === 'closed') throw new Error('El ejercicio está cerrado');
-    if (period.status === 'closed') throw new Error('El período ya está cerrado');
+    if (period.status === 'closed')
+      throw new Error('El período ya está cerrado');
 
     const [earliest] = await db
       .select({ id: accountingPeriod.id })
       .from(accountingPeriod)
       .where(
-        and(eq(accountingPeriod.fiscalYearId, fy.id), eq(accountingPeriod.status, 'open'))
+        and(
+          eq(accountingPeriod.fiscalYearId, fy.id),
+          eq(accountingPeriod.status, 'open')
+        )
       )
       .orderBy(asc(accountingPeriod.year), asc(accountingPeriod.month))
       .limit(1);
@@ -989,7 +1033,11 @@ export const closePeriod = createServerFn({ method: 'POST' })
       clientId: period.clientId,
       fiscalYearId: fy.id,
       eventType: 'period_closed',
-      eventData: { periodId: period.id, year: period.year, month: period.month },
+      eventData: {
+        periodId: period.id,
+        year: period.year,
+        month: period.month,
+      },
       userId,
     });
 
@@ -1013,7 +1061,8 @@ export const reopenPeriod = createServerFn({ method: 'POST' })
     if (fy.status === 'closed') {
       throw new Error('El ejercicio está cerrado. Reabrí el ejercicio primero');
     }
-    if (period.status !== 'closed') throw new Error('El período no está cerrado');
+    if (period.status !== 'closed')
+      throw new Error('El período no está cerrado');
 
     await db
       .update(accountingPeriod)
@@ -1059,7 +1108,18 @@ export const getAccountingLog = createServerFn({ method: 'GET' })
       })
       .from(accountingLog)
       .leftJoin(user, eq(user.id, accountingLog.userId))
-      .where(eq(accountingLog.fiscalYearId, fy.id))
+      .where(
+        and(
+          eq(accountingLog.fiscalYearId, fy.id),
+          // Esta vista es solo el historial de cierres/reaperturas; no eventos de asientos.
+          inArray(accountingLog.eventType, [
+            'period_closed',
+            'period_reopened',
+            'fiscal_year_closed',
+            'fiscal_year_reopened',
+          ])
+        )
+      )
       .orderBy(desc(accountingLog.createdAt));
   });
 
@@ -1077,7 +1137,12 @@ async function loadJournalEntryForOrg(
     .from(journalEntry)
     .innerJoin(client, eq(client.id, journalEntry.clientId))
     .innerJoin(representative, eq(representative.id, client.representativeId))
-    .where(and(eq(journalEntry.id, entryId), eq(representative.organizationId, orgId)))
+    .where(
+      and(
+        eq(journalEntry.id, entryId),
+        eq(representative.organizationId, orgId)
+      )
+    )
     .limit(1);
   if (!row) throw new Error('Asiento no encontrado o no autorizado');
   return row.je;
@@ -1099,7 +1164,9 @@ async function resolvePeriodForDate(clientId: string, dateStr: string) {
     )
     .limit(1);
   if (!fy) {
-    throw new Error('No hay un ejercicio que cubra esa fecha. Creá el ejercicio primero');
+    throw new Error(
+      'No hay un ejercicio que cubra esa fecha. Creá el ejercicio primero'
+    );
   }
   const [period] = await db
     .select()
@@ -1124,7 +1191,9 @@ function validateLineAmounts(lines: { debit: number; credit: number }[]) {
     const hasD = l.debit > 0;
     const hasC = l.credit > 0;
     if (hasD && hasC) {
-      throw new Error('Cada línea debe tener importe en Debe o en Haber, no en ambos');
+      throw new Error(
+        'Cada línea debe tener importe en Debe o en Haber, no en ambos'
+      );
     }
     if (!hasD && !hasC) {
       throw new Error('Cada línea debe tener un importe en Debe o en Haber');
@@ -1155,21 +1224,28 @@ async function assertPostableAccounts(
     .select()
     .from(accountOverride)
     .where(
-      and(eq(accountOverride.clientId, clientId), inArray(accountOverride.accountId, ids))
+      and(
+        eq(accountOverride.clientId, clientId),
+        inArray(accountOverride.accountId, ids)
+      )
     );
   const ovMap = new Map(overrides.map((o) => [o.accountId, o]));
   const byId = new Map(accs.map((a) => [a.id, a]));
   for (const id of ids) {
     const a = byId.get(id);
-    if (!a) throw new Error('Una de las cuentas no existe o no pertenece al estudio');
+    if (!a)
+      throw new Error('Una de las cuentas no existe o no pertenece al estudio');
     if (a.scope === 'custom' && a.clientId !== clientId) {
       throw new Error('Una de las cuentas es custom de otra empresa');
     }
     if (a.type !== 'imputable') {
-      throw new Error(`La cuenta ${a.code} es de agrupación; solo se imputan cuentas imputables`);
+      throw new Error(
+        `La cuenta ${a.code} es de agrupación; solo se imputan cuentas imputables`
+      );
     }
     const active = ovMap.get(id)?.isActive ?? a.isActive;
-    if (!active) throw new Error(`La cuenta ${a.code} está inactiva para esta empresa`);
+    if (!active)
+      throw new Error(`La cuenta ${a.code} está inactiva para esta empresa`);
   }
 }
 
@@ -1199,7 +1275,7 @@ export const getPostableAccounts = createServerFn({ method: 'GET' })
     const ovMap = new Map(overrides.map((o) => [o.accountId, o]));
 
     return accounts
-      .filter((a) => (ovMap.get(a.id)?.isActive ?? a.isActive))
+      .filter((a) => ovMap.get(a.id)?.isActive ?? a.isActive)
       .map((a) => ({
         id: a.id,
         code: a.code,
@@ -1232,12 +1308,19 @@ export const createJournalEntry = createServerFn({ method: 'POST' })
 
     const { clientId } = ctx.data;
     await ensureClientBelongsToOrg(clientId, orgId);
-    const { fy, period, date } = await resolvePeriodForDate(clientId, ctx.data.entryDate);
+    const { fy, period, date } = await resolvePeriodForDate(
+      clientId,
+      ctx.data.entryDate
+    );
     if (period.status === 'closed') {
       throw new Error('No se puede cargar el asiento: el período está cerrado');
     }
     validateLineAmounts(ctx.data.lines);
-    await assertPostableAccounts(clientId, orgId, ctx.data.lines.map((l) => l.accountId));
+    await assertPostableAccounts(
+      clientId,
+      orgId,
+      ctx.data.lines.map((l) => l.accountId)
+    );
 
     const entry = await db.transaction(async (tx) => {
       const [{ maxNum }] = await tx
@@ -1261,7 +1344,9 @@ export const createJournalEntry = createServerFn({ method: 'POST' })
           periodId: period.id,
           number,
           entryDate: date,
-          description: ctx.data.description?.trim() ? ctx.data.description.trim() : null,
+          description: ctx.data.description?.trim()
+            ? ctx.data.description.trim()
+            : null,
           origin: 'manual',
           createdBy: userId,
         })
@@ -1301,12 +1386,18 @@ export const updateJournalEntry = createServerFn({ method: 'POST' })
     assertCanWrite(role);
 
     const entry = await loadJournalEntryForOrg(ctx.data.id, orgId);
-    if (entry.isVoided) throw new Error('No se puede editar un asiento anulado');
+    if (entry.isVoided)
+      throw new Error('No se puede editar un asiento anulado');
 
     // El período actual del asiento debe estar abierto.
-    const { period: currentPeriod } = await loadPeriodForOrg(entry.periodId, orgId);
+    const { period: currentPeriod } = await loadPeriodForOrg(
+      entry.periodId,
+      orgId
+    );
     if (currentPeriod.status === 'closed') {
-      throw new Error('No se puede editar: el período del asiento está cerrado');
+      throw new Error(
+        'No se puede editar: el período del asiento está cerrado'
+      );
     }
 
     // Resolver el período de la (posible nueva) fecha; debe ser del mismo ejercicio y abierto.
@@ -1315,7 +1406,9 @@ export const updateJournalEntry = createServerFn({ method: 'POST' })
       ctx.data.entryDate
     );
     if (fy.id !== entry.fiscalYearId) {
-      throw new Error('La fecha debe estar dentro del mismo ejercicio del asiento');
+      throw new Error(
+        'La fecha debe estar dentro del mismo ejercicio del asiento'
+      );
     }
     if (period.status === 'closed') {
       throw new Error('No se puede mover el asiento a un período cerrado');
@@ -1334,7 +1427,13 @@ export const updateJournalEntry = createServerFn({ method: 'POST' })
         .set({
           entryDate: date,
           periodId: period.id,
-          description: ctx.data.description?.trim() ? ctx.data.description.trim() : null,
+          description: ctx.data.description?.trim()
+            ? ctx.data.description.trim()
+            : null,
+          // Si era un asiento auto (factura/sueldos), marcarlo como editado a mano:
+          // la regeneración posterior pedirá confirmación antes de sobreescribir.
+          isEditedPostGeneration:
+            entry.origin === 'manual' ? entry.isEditedPostGeneration : true,
         })
         .where(eq(journalEntry.id, entry.id));
       await tx
@@ -1378,7 +1477,9 @@ export const voidJournalEntry = createServerFn({ method: 'POST' })
     if (entry.isVoided) throw new Error('El asiento ya está anulado');
     const { period } = await loadPeriodForOrg(entry.periodId, orgId);
     if (period.status === 'closed') {
-      throw new Error('No se puede anular: el período del asiento está cerrado');
+      throw new Error(
+        'No se puede anular: el período del asiento está cerrado'
+      );
     }
 
     await db
@@ -1463,7 +1564,11 @@ export const listJournalEntries = createServerFn({ method: 'GET' })
       fyId = fy?.id;
     }
     if (!fyId) {
-      return { rows: [] as JournalEntryListRow[], total: 0, fiscalYearId: null };
+      return {
+        rows: [] as JournalEntryListRow[],
+        total: 0,
+        fiscalYearId: null,
+      };
     }
 
     const conditions = [
@@ -1472,8 +1577,14 @@ export const listJournalEntries = createServerFn({ method: 'GET' })
     ];
     if (!d.includeVoided) conditions.push(eq(journalEntry.isVoided, false));
     if (d.origin) conditions.push(eq(journalEntry.origin, d.origin));
-    if (d.from) conditions.push(gte(journalEntry.entryDate, new Date(`${d.from}T00:00:00Z`)));
-    if (d.to) conditions.push(lte(journalEntry.entryDate, new Date(`${d.to}T00:00:00Z`)));
+    if (d.from)
+      conditions.push(
+        gte(journalEntry.entryDate, new Date(`${d.from}T00:00:00Z`))
+      );
+    if (d.to)
+      conditions.push(
+        lte(journalEntry.entryDate, new Date(`${d.to}T00:00:00Z`))
+      );
 
     if (d.accountId) {
       const lineEntries = await db
@@ -1487,7 +1598,11 @@ export const listJournalEntries = createServerFn({ method: 'GET' })
         );
       const ids = lineEntries.map((r) => r.id);
       if (ids.length === 0) {
-        return { rows: [] as JournalEntryListRow[], total: 0, fiscalYearId: fyId };
+        return {
+          rows: [] as JournalEntryListRow[],
+          total: 0,
+          fiscalYearId: fyId,
+        };
       }
       conditions.push(inArray(journalEntry.id, ids));
     }
@@ -1497,7 +1612,8 @@ export const listJournalEntries = createServerFn({ method: 'GET' })
       .from(journalEntry)
       .where(and(...conditions));
 
-    const orderCol = d.sortBy === 'date' ? journalEntry.entryDate : journalEntry.number;
+    const orderCol =
+      d.sortBy === 'date' ? journalEntry.entryDate : journalEntry.number;
     const rows = await db
       .select({
         id: journalEntry.id,
@@ -1515,7 +1631,10 @@ export const listJournalEntries = createServerFn({ method: 'GET' })
 
     // Totales y cantidad de líneas por asiento (query agregado aparte).
     const pageIds = rows.map((r) => r.id);
-    const totalsByEntry = new Map<string, { total: number; lineCount: number }>();
+    const totalsByEntry = new Map<
+      string,
+      { total: number; lineCount: number }
+    >();
     if (pageIds.length > 0) {
       const stats = await db
         .select({
@@ -1568,7 +1687,10 @@ export const getJournalEntry = createServerFn({ method: 'GET' })
       })
       .from(journalEntry)
       .leftJoin(fiscalYear, eq(fiscalYear.id, journalEntry.fiscalYearId))
-      .leftJoin(accountingPeriod, eq(accountingPeriod.id, journalEntry.periodId))
+      .leftJoin(
+        accountingPeriod,
+        eq(accountingPeriod.id, journalEntry.periodId)
+      )
       .leftJoin(user, eq(user.id, journalEntry.createdBy))
       .where(eq(journalEntry.id, entry.id))
       .limit(1);
@@ -1704,7 +1826,10 @@ export const getLedgerAccount = createServerFn({ method: 'GET' })
         h: sql<string>`coalesce(sum(${journalEntryLine.credit}),0)`,
       })
       .from(journalEntryLine)
-      .innerJoin(journalEntry, eq(journalEntry.id, journalEntryLine.journalEntryId))
+      .innerJoin(
+        journalEntry,
+        eq(journalEntry.id, journalEntryLine.journalEntryId)
+      )
       .where(
         and(
           eq(journalEntryLine.clientId, d.clientId),
@@ -1739,7 +1864,10 @@ export const getLedgerAccount = createServerFn({ method: 'GET' })
         lineOrder: journalEntryLine.lineOrder,
       })
       .from(journalEntryLine)
-      .innerJoin(journalEntry, eq(journalEntry.id, journalEntryLine.journalEntryId))
+      .innerJoin(
+        journalEntry,
+        eq(journalEntry.id, journalEntryLine.journalEntryId)
+      )
       .where(and(...conds))
       .orderBy(
         asc(journalEntry.entryDate),
@@ -1819,7 +1947,12 @@ export const getLedgerConsolidated = createServerFn({ method: 'GET' })
     await ensureClientBelongsToOrg(d.clientId, orgId);
     const fy = await resolveFiscalYear(d.clientId, orgId, d.fiscalYearId);
     if (!fy) {
-      return { fiscalYear: null, accounts: [], grandTotalDebit: 0, grandTotalCredit: 0 };
+      return {
+        fiscalYear: null,
+        accounts: [],
+        grandTotalDebit: 0,
+        grandTotalCredit: 0,
+      };
     }
 
     const fromDate = d.from ? new Date(`${d.from}T00:00:00Z`) : fy.startDate;
@@ -1833,7 +1966,10 @@ export const getLedgerConsolidated = createServerFn({ method: 'GET' })
         h: sql<string>`coalesce(sum(${journalEntryLine.credit}),0)`,
       })
       .from(journalEntryLine)
-      .innerJoin(journalEntry, eq(journalEntry.id, journalEntryLine.journalEntryId))
+      .innerJoin(
+        journalEntry,
+        eq(journalEntry.id, journalEntryLine.journalEntryId)
+      )
       .where(
         and(
           eq(journalEntryLine.clientId, d.clientId),
@@ -1872,7 +2008,10 @@ export const getLedgerConsolidated = createServerFn({ method: 'GET' })
         lineOrder: journalEntryLine.lineOrder,
       })
       .from(journalEntryLine)
-      .innerJoin(journalEntry, eq(journalEntry.id, journalEntryLine.journalEntryId))
+      .innerJoin(
+        journalEntry,
+        eq(journalEntry.id, journalEntryLine.journalEntryId)
+      )
       .innerJoin(account, eq(account.id, journalEntryLine.accountId))
       .where(and(...conds))
       .orderBy(
@@ -1940,7 +2079,12 @@ export const getLedgerConsolidated = createServerFn({ method: 'GET' })
       const metas = await db
         .select({ id: account.id, code: account.code, name: account.name })
         .from(account)
-        .where(inArray(account.id, missing.map((m) => m.accountId)));
+        .where(
+          inArray(
+            account.id,
+            missing.map((m) => m.accountId)
+          )
+        );
       const metaById = new Map(metas.map((m) => [m.id, m]));
       for (const a of missing) {
         const m = metaById.get(a.accountId);
@@ -2006,7 +2150,10 @@ export const getTrialBalance = createServerFn({ method: 'GET' })
         h: sql<string>`coalesce(sum(${journalEntryLine.credit}),0)`,
       })
       .from(journalEntryLine)
-      .innerJoin(journalEntry, eq(journalEntry.id, journalEntryLine.journalEntryId))
+      .innerJoin(
+        journalEntry,
+        eq(journalEntry.id, journalEntryLine.journalEntryId)
+      )
       .innerJoin(account, eq(account.id, journalEntryLine.accountId))
       .where(
         and(
@@ -2084,7 +2231,10 @@ export interface JournalBookEntry {
 /** Todos los asientos del ejercicio (incl. anulados) con sus líneas, para el Libro Diario. (US 2.3.1) */
 export const getJournalBook = createServerFn({ method: 'GET' })
   .inputValidator(
-    z.object({ clientId: z.string().uuid(), fiscalYearId: z.string().uuid().optional() })
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid().optional(),
+    })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
@@ -2110,7 +2260,12 @@ export const getJournalBook = createServerFn({ method: 'GET' })
         voidReason: journalEntry.voidReason,
       })
       .from(journalEntry)
-      .where(and(eq(journalEntry.clientId, clientId), eq(journalEntry.fiscalYearId, fy.id)))
+      .where(
+        and(
+          eq(journalEntry.clientId, clientId),
+          eq(journalEntry.fiscalYearId, fy.id)
+        )
+      )
       .orderBy(asc(journalEntry.number));
 
     const lineRows = await db
@@ -2124,9 +2279,17 @@ export const getJournalBook = createServerFn({ method: 'GET' })
         lineOrder: journalEntryLine.lineOrder,
       })
       .from(journalEntryLine)
-      .innerJoin(journalEntry, eq(journalEntry.id, journalEntryLine.journalEntryId))
+      .innerJoin(
+        journalEntry,
+        eq(journalEntry.id, journalEntryLine.journalEntryId)
+      )
       .innerJoin(account, eq(account.id, journalEntryLine.accountId))
-      .where(and(eq(journalEntry.clientId, clientId), eq(journalEntry.fiscalYearId, fy.id)))
+      .where(
+        and(
+          eq(journalEntry.clientId, clientId),
+          eq(journalEntry.fiscalYearId, fy.id)
+        )
+      )
       .orderBy(asc(journalEntry.number), asc(journalEntryLine.lineOrder));
 
     const linesByEntry = new Map<string, JournalBookLine[]>();
@@ -2155,7 +2318,11 @@ export const getJournalBook = createServerFn({ method: 'GET' })
     return {
       empresaName: empresa?.name ?? '',
       cuit: empresa?.cuit ?? '',
-      fiscalYear: { number: fy.number, startDate: fy.startDate, endDate: fy.endDate },
+      fiscalYear: {
+        number: fy.number,
+        startDate: fy.startDate,
+        endDate: fy.endDate,
+      },
       entries: result,
     };
   });
@@ -2164,13 +2331,21 @@ export const getJournalBook = createServerFn({ method: 'GET' })
 
 type MappingRuleRow = typeof ledgerMappingRule.$inferSelect;
 
-async function loadMappingRuleForOrg(ruleId: string, orgId: string): Promise<MappingRuleRow> {
+async function loadMappingRuleForOrg(
+  ruleId: string,
+  orgId: string
+): Promise<MappingRuleRow> {
   const [row] = await db
     .select({ r: ledgerMappingRule })
     .from(ledgerMappingRule)
     .innerJoin(client, eq(client.id, ledgerMappingRule.clientId))
     .innerJoin(representative, eq(representative.id, client.representativeId))
-    .where(and(eq(ledgerMappingRule.id, ruleId), eq(representative.organizationId, orgId)))
+    .where(
+      and(
+        eq(ledgerMappingRule.id, ruleId),
+        eq(representative.organizationId, orgId)
+      )
+    )
     .limit(1);
   if (!row) throw new Error('Regla no encontrada o no autorizada');
   return row.r;
@@ -2182,7 +2357,8 @@ interface RuleLineInput {
   fixedAmount?: number | null;
 }
 function validateRuleLines(lines: RuleLineInput[]): void {
-  if (lines.length < 2) throw new Error('La regla debe tener al menos 2 líneas');
+  if (lines.length < 2)
+    throw new Error('La regla debe tener al menos 2 líneas');
   const hasDebit = lines.some((l) => l.side === 'debit');
   const hasCredit = lines.some((l) => l.side === 'credit');
   if (!hasDebit || !hasCredit) {
@@ -2191,8 +2367,13 @@ function validateRuleLines(lines: RuleLineInput[]): void {
     );
   }
   for (const l of lines) {
-    if (l.amountBasis === 'fixed' && (l.fixedAmount == null || l.fixedAmount <= 0)) {
-      throw new Error('Las líneas con base "monto fijo" requieren un importe mayor a 0');
+    if (
+      l.amountBasis === 'fixed' &&
+      (l.fixedAmount == null || l.fixedAmount <= 0)
+    ) {
+      throw new Error(
+        'Las líneas con base "monto fijo" requieren un importe mayor a 0'
+      );
     }
   }
 }
@@ -2200,12 +2381,25 @@ function validateRuleLines(lines: RuleLineInput[]): void {
 const mappingLineSchema = z.object({
   accountId: z.string().uuid(),
   side: z.enum(['debit', 'credit']),
-  amountBasis: z.enum(['total', 'net', 'vat', 'other_taxes', 'concept_value', 'fixed']),
+  amountBasis: z.enum([
+    'total',
+    'net',
+    'vat',
+    'other_taxes',
+    'concept_value',
+    'fixed',
+  ]),
   fixedAmount: z.number().nullable().optional(),
   description: z.string().optional(),
 });
 
-type JsonValue = string | number | boolean | null | JsonValue[] | { [k: string]: JsonValue };
+type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [k: string]: JsonValue };
 export type RuleCondition = Record<string, JsonValue> | null;
 
 export interface MappingRuleListRow {
@@ -2232,7 +2426,8 @@ export const listMappingRules = createServerFn({ method: 'GET' })
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
 
     const conds = [eq(ledgerMappingRule.clientId, ctx.data.clientId)];
-    if (ctx.data.sourceModule) conds.push(eq(ledgerMappingRule.sourceModule, ctx.data.sourceModule));
+    if (ctx.data.sourceModule)
+      conds.push(eq(ledgerMappingRule.sourceModule, ctx.data.sourceModule));
 
     const rules = await db
       .select()
@@ -2295,7 +2490,10 @@ export const getMappingRule = createServerFn({ method: 'GET' })
     const [gen] = await db
       .select({ n: sql<number>`count(*)::int` })
       .from(journalEntry)
-      .innerJoin(accountingPeriod, eq(accountingPeriod.id, journalEntry.periodId))
+      .innerJoin(
+        accountingPeriod,
+        eq(accountingPeriod.id, journalEntry.periodId)
+      )
       .where(
         and(
           eq(journalEntry.mappingRuleId, rule.id),
@@ -2334,7 +2532,11 @@ export const createMappingRule = createServerFn({ method: 'POST' })
     const d = ctx.data;
     await ensureClientBelongsToOrg(d.clientId, orgId);
     validateRuleLines(d.lines);
-    await assertPostableAccounts(d.clientId, orgId, d.lines.map((l) => l.accountId));
+    await assertPostableAccounts(
+      d.clientId,
+      orgId,
+      d.lines.map((l) => l.accountId)
+    );
 
     const rule = await db.transaction(async (tx) => {
       const [r] = await tx
@@ -2344,7 +2546,8 @@ export const createMappingRule = createServerFn({ method: 'POST' })
           name: d.name.trim(),
           sourceModule: d.sourceModule,
           ruleType: d.ruleType,
-          condition: d.ruleType === 'conditional' ? (d.condition ?? null) : null,
+          condition:
+            d.ruleType === 'conditional' ? (d.condition ?? null) : null,
           priority: d.priority,
           isActive: true,
         })
@@ -2355,7 +2558,10 @@ export const createMappingRule = createServerFn({ method: 'POST' })
           accountId: l.accountId,
           side: l.side,
           amountBasis: l.amountBasis,
-          fixedAmount: l.amountBasis === 'fixed' && l.fixedAmount != null ? String(l.fixedAmount) : null,
+          fixedAmount:
+            l.amountBasis === 'fixed' && l.fixedAmount != null
+              ? String(l.fixedAmount)
+              : null,
           description: l.description?.trim() ? l.description.trim() : null,
           lineOrder: i,
         }))
@@ -2386,7 +2592,11 @@ export const updateMappingRule = createServerFn({ method: 'POST' })
     const d = ctx.data;
     const rule = await loadMappingRuleForOrg(d.id, orgId);
     validateRuleLines(d.lines);
-    await assertPostableAccounts(rule.clientId, orgId, d.lines.map((l) => l.accountId));
+    await assertPostableAccounts(
+      rule.clientId,
+      orgId,
+      d.lines.map((l) => l.accountId)
+    );
 
     await db.transaction(async (tx) => {
       await tx
@@ -2395,18 +2605,24 @@ export const updateMappingRule = createServerFn({ method: 'POST' })
           name: d.name.trim(),
           sourceModule: d.sourceModule,
           ruleType: d.ruleType,
-          condition: d.ruleType === 'conditional' ? (d.condition ?? null) : null,
+          condition:
+            d.ruleType === 'conditional' ? (d.condition ?? null) : null,
           priority: d.priority,
         })
         .where(eq(ledgerMappingRule.id, rule.id));
-      await tx.delete(ledgerMappingRuleLine).where(eq(ledgerMappingRuleLine.ruleId, rule.id));
+      await tx
+        .delete(ledgerMappingRuleLine)
+        .where(eq(ledgerMappingRuleLine.ruleId, rule.id));
       await tx.insert(ledgerMappingRuleLine).values(
         d.lines.map((l, i) => ({
           ruleId: rule.id,
           accountId: l.accountId,
           side: l.side,
           amountBasis: l.amountBasis,
-          fixedAmount: l.amountBasis === 'fixed' && l.fixedAmount != null ? String(l.fixedAmount) : null,
+          fixedAmount:
+            l.amountBasis === 'fixed' && l.fixedAmount != null
+              ? String(l.fixedAmount)
+              : null,
           description: l.description?.trim() ? l.description.trim() : null,
           lineOrder: i,
         }))
@@ -2444,7 +2660,8 @@ export const importMappingRules = createServerFn({ method: 'POST' })
     const role = await getMemberRole();
     assertOwner(role);
     const { fromClientId, toClientId } = ctx.data;
-    if (fromClientId === toClientId) throw new Error('Elegí dos empresas distintas');
+    if (fromClientId === toClientId)
+      throw new Error('Elegí dos empresas distintas');
     await ensureClientBelongsToOrg(fromClientId, orgId);
     await ensureClientBelongsToOrg(toClientId, orgId);
 
@@ -2467,7 +2684,12 @@ export const importMappingRules = createServerFn({ method: 'POST' })
       })
       .from(ledgerMappingRuleLine)
       .innerJoin(account, eq(account.id, ledgerMappingRuleLine.accountId))
-      .where(inArray(ledgerMappingRuleLine.ruleId, srcRules.map((r) => r.id)))
+      .where(
+        inArray(
+          ledgerMappingRuleLine.ruleId,
+          srcRules.map((r) => r.id)
+        )
+      )
       .orderBy(asc(ledgerMappingRuleLine.lineOrder));
 
     // Mapa código→id de cuentas visibles para la empresa destino.
@@ -2493,7 +2715,10 @@ export const importMappingRules = createServerFn({ method: 'POST' })
     const skipped: string[] = [];
     for (const r of srcRules) {
       const lines = linesByRule.get(r.id) ?? [];
-      const resolved = lines.map((l) => ({ ...l, targetId: codeToId.get(l.code) }));
+      const resolved = lines.map((l) => ({
+        ...l,
+        targetId: codeToId.get(l.code),
+      }));
       if (lines.length < 2 || resolved.some((l) => !l.targetId)) {
         skipped.push(r.name);
         continue;
@@ -2527,4 +2752,626 @@ export const importMappingRules = createServerFn({ method: 'POST' })
     }
 
     return { created, skipped };
+  });
+
+/* ════════════ Asientos automáticos desde facturas (US 3.2.x) ════════════ */
+
+/** Cuenta de sistema pending_review (base, a nivel estudio). Lanza si falta. */
+async function loadPendingReviewAccountId(orgId: string): Promise<string> {
+  const [acc] = await db
+    .select({ id: account.id })
+    .from(account)
+    .where(
+      and(
+        eq(account.organizationId, orgId),
+        eq(account.scope, 'base'),
+        eq(account.code, PENDING_REVIEW_CODE)
+      )
+    )
+    .limit(1);
+  if (!acc) {
+    throw new Error(
+      'Falta la cuenta de sistema "Pendiente de revisión". Re-sembrá el plan base'
+    );
+  }
+  return acc.id;
+}
+
+/** Reglas de facturas activas de una empresa, con sus líneas, ordenadas por prioridad. */
+async function loadActiveInvoiceRules(clientId: string): Promise<RuleLike[]> {
+  const rules = await db
+    .select()
+    .from(ledgerMappingRule)
+    .where(
+      and(
+        eq(ledgerMappingRule.clientId, clientId),
+        eq(ledgerMappingRule.sourceModule, 'invoice'),
+        eq(ledgerMappingRule.isActive, true)
+      )
+    )
+    .orderBy(asc(ledgerMappingRule.priority), asc(ledgerMappingRule.name));
+  if (rules.length === 0) return [];
+
+  const lines = await db
+    .select()
+    .from(ledgerMappingRuleLine)
+    .where(
+      inArray(
+        ledgerMappingRuleLine.ruleId,
+        rules.map((r) => r.id)
+      )
+    )
+    .orderBy(asc(ledgerMappingRuleLine.lineOrder));
+  const byRule = new Map<string, typeof lines>();
+  for (const l of lines) {
+    const arr = byRule.get(l.ruleId) ?? [];
+    arr.push(l);
+    byRule.set(l.ruleId, arr);
+  }
+
+  return rules.map(
+    (r): RuleLike => ({
+      id: r.id,
+      name: r.name,
+      ruleType: r.ruleType as 'default' | 'conditional',
+      condition: (r.condition ?? null) as Record<string, unknown> | null,
+      priority: r.priority,
+      lines: (byRule.get(r.id) ?? []).map((l) => ({
+        accountId: l.accountId,
+        side: l.side as 'debit' | 'credit',
+        amountBasis: l.amountBasis as RuleLike['lines'][number]['amountBasis'],
+        fixedAmount: l.fixedAmount,
+        description: l.description,
+      })),
+    })
+  );
+}
+
+const pad2 = (n: number): string => String(n).padStart(2, '0');
+const invoiceDateStr = (d: Date): string =>
+  `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+
+/** Asiento auto vigente (no anulado) de una factura, si existe. */
+async function findAutoEntryForInvoice(clientId: string, invoiceId: string) {
+  const [row] = await db
+    .select({
+      id: journalEntry.id,
+      number: journalEntry.number,
+      periodId: journalEntry.periodId,
+      isEditedPostGeneration: journalEntry.isEditedPostGeneration,
+    })
+    .from(journalEntry)
+    .where(
+      and(
+        eq(journalEntry.clientId, clientId),
+        eq(journalEntry.sourceType, 'invoice'),
+        eq(journalEntry.sourceId, invoiceId),
+        eq(journalEntry.isVoided, false)
+      )
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+interface InvoiceRow {
+  id: string;
+  emitionDate: Date;
+  direction: string;
+  type: string;
+  recipientName: string;
+  emitterName: string;
+  amount: string;
+  totalIVA: string;
+  other_taxes: string;
+}
+
+/**
+ * Inserta el asiento automático de una factura ya validada, dentro de una tx.
+ * Calcula el número consecutivo del ejercicio. Devuelve el asiento creado.
+ */
+async function insertAutoInvoiceEntry(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  params: {
+    clientId: string;
+    fyId: string;
+    periodId: string;
+    date: Date;
+    inv: InvoiceRow;
+    ruleId: string | null;
+    lines: {
+      accountId: string;
+      debit: number;
+      credit: number;
+      description: string | null;
+    }[];
+    usedPendingReview: boolean;
+    reason: string | null;
+    userId: string | null;
+  }
+) {
+  const {
+    clientId,
+    fyId,
+    periodId,
+    date,
+    inv,
+    ruleId,
+    lines,
+    usedPendingReview,
+    reason,
+    userId,
+  } = params;
+
+  const [{ maxNum }] = await tx
+    .select({
+      maxNum: sql<number>`coalesce(max(${journalEntry.number}),0)::int`,
+    })
+    .from(journalEntry)
+    .where(
+      and(
+        eq(journalEntry.clientId, clientId),
+        eq(journalEntry.fiscalYearId, fyId)
+      )
+    );
+  const number = (maxNum ?? 0) + 1;
+
+  const dir = normalizeDirection(inv.direction);
+  const who = dir === 'purchase' ? inv.emitterName : inv.recipientName;
+  const label =
+    dir === 'purchase' ? 'Compra' : dir === 'sale' ? 'Venta' : 'Comprobante';
+  const description = `${label} ${inv.type} — ${who}`.trim();
+
+  const [je] = await tx
+    .insert(journalEntry)
+    .values({
+      clientId,
+      fiscalYearId: fyId,
+      periodId,
+      number,
+      entryDate: date,
+      description,
+      origin: 'auto_invoice',
+      sourceType: 'invoice',
+      sourceId: inv.id,
+      mappingRuleId: ruleId,
+      createdBy: userId,
+    })
+    .returning();
+
+  await tx.insert(journalEntryLine).values(
+    lines.map((l, i) => ({
+      journalEntryId: je.id,
+      accountId: l.accountId,
+      clientId,
+      periodId,
+      debit: String(l.debit),
+      credit: String(l.credit),
+      description: l.description,
+      lineOrder: i,
+    }))
+  );
+
+  await tx.insert(accountingLog).values({
+    clientId,
+    fiscalYearId: fyId,
+    eventType: 'journal_entry_created',
+    eventData: {
+      entryId: je.id,
+      number,
+      auto: true,
+      source: 'invoice',
+      invoiceId: inv.id,
+      ruleId,
+      pendingReview: usedPendingReview,
+      reason,
+    },
+    userId,
+  });
+
+  return je;
+}
+
+type PlanResult =
+  | {
+      ok: false;
+      reason: 'non_positive' | 'no_fy' | 'closed' | 'invalid_accounts';
+      detail?: string;
+    }
+  | {
+      ok: true;
+      fyId: string;
+      periodId: string;
+      date: Date;
+      ruleId: string | null;
+      lines: {
+        accountId: string;
+        debit: number;
+        credit: number;
+        description: string | null;
+      }[];
+      usedPendingReview: boolean;
+      reason: string | null;
+    };
+
+/** Decide (sin escribir) cómo se contabiliza una factura. Valida fecha, período y cuentas. */
+async function planInvoiceEntry(
+  inv: InvoiceRow,
+  clientId: string,
+  orgId: string,
+  rules: RuleLike[],
+  prId: string
+): Promise<PlanResult> {
+  const amounts = computeInvoiceAmounts(inv);
+  if (amounts.total <= 0) return { ok: false, reason: 'non_positive' };
+
+  let resolved;
+  try {
+    resolved = await resolvePeriodForDate(
+      clientId,
+      invoiceDateStr(inv.emitionDate)
+    );
+  } catch {
+    return { ok: false, reason: 'no_fy' };
+  }
+  if (resolved.period.status === 'closed')
+    return { ok: false, reason: 'closed' };
+
+  const rule = selectRuleForInvoice(rules, inv);
+  if (rule && rule.lines.length > 0) {
+    try {
+      await assertPostableAccounts(
+        clientId,
+        orgId,
+        rule.lines.map((l) => l.accountId)
+      );
+    } catch (e) {
+      return {
+        ok: false,
+        reason: 'invalid_accounts',
+        detail: e instanceof Error ? e.message : undefined,
+      };
+    }
+  }
+
+  const built = buildEntryLines(rule, amounts, prId);
+  return {
+    ok: true,
+    fyId: resolved.fy.id,
+    periodId: resolved.period.id,
+    date: resolved.date,
+    ruleId: rule?.id ?? null,
+    lines: built.lines,
+    usedPendingReview: built.usedPendingReview,
+    reason: built.reason,
+  };
+}
+
+const INVOICE_SELECT = {
+  id: invoice.id,
+  emitionDate: invoice.emitionDate,
+  direction: invoice.direction,
+  type: invoice.type,
+  recipientName: invoice.recipientName,
+  emitterName: invoice.emitterName,
+  amount: invoice.amount,
+  totalIVA: invoice.totalIVA,
+  other_taxes: invoice.other_taxes,
+} as const;
+
+/**
+ * Previsualiza las facturas contabilizables de una empresa: para cada una indica
+ * qué regla matchearía, si ya está contabilizada y el estado de su período. (US 3.2.1/3.2.2)
+ */
+export const getInvoicePostingPreview = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      direction: z.enum(['all', 'sale', 'purchase']).default('all'),
+      includePosted: z.boolean().default(false),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const { clientId } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+
+    const fys = await db
+      .select()
+      .from(fiscalYear)
+      .where(eq(fiscalYear.clientId, clientId));
+    if (fys.length === 0) return { hasFiscalYear: false, invoices: [] };
+
+    const minStart = new Date(
+      Math.min(...fys.map((f) => f.startDate.getTime()))
+    );
+    const maxEnd = new Date(Math.max(...fys.map((f) => f.endDate.getTime())));
+
+    // Estado de períodos indexado por año-mes (único por empresa, ejercicios no se solapan).
+    const periods = await db
+      .select({
+        year: accountingPeriod.year,
+        month: accountingPeriod.month,
+        status: accountingPeriod.status,
+      })
+      .from(accountingPeriod)
+      .where(eq(accountingPeriod.clientId, clientId));
+    const periodStatus = new Map(
+      periods.map((p) => [`${p.year}-${p.month}`, p.status])
+    );
+
+    const invs = await db
+      .select(INVOICE_SELECT)
+      .from(invoice)
+      .where(
+        and(
+          eq(invoice.clientId, clientId),
+          gte(invoice.emitionDate, minStart),
+          lte(invoice.emitionDate, maxEnd)
+        )
+      )
+      .orderBy(asc(invoice.emitionDate))
+      .limit(2000);
+
+    const rules = await loadActiveInvoiceRules(clientId);
+
+    // Asientos auto vigentes de estas facturas.
+    const invIds = invs.map((i) => i.id);
+    const posted = new Map<
+      string,
+      { id: string; number: number; edited: boolean }
+    >();
+    if (invIds.length > 0) {
+      const entries = await db
+        .select({
+          id: journalEntry.id,
+          number: journalEntry.number,
+          sourceId: journalEntry.sourceId,
+          edited: journalEntry.isEditedPostGeneration,
+        })
+        .from(journalEntry)
+        .where(
+          and(
+            eq(journalEntry.clientId, clientId),
+            eq(journalEntry.sourceType, 'invoice'),
+            eq(journalEntry.isVoided, false),
+            inArray(journalEntry.sourceId, invIds)
+          )
+        );
+      for (const e of entries) {
+        if (e.sourceId)
+          posted.set(e.sourceId, {
+            id: e.id,
+            number: e.number,
+            edited: e.edited,
+          });
+      }
+    }
+
+    const rows = invs.map((inv) => {
+      const amounts = computeInvoiceAmounts(inv);
+      const dir = normalizeDirection(inv.direction);
+      const rule = selectRuleForInvoice(rules, inv);
+      const post = posted.get(inv.id) ?? null;
+      const d = inv.emitionDate;
+      const pStatus =
+        periodStatus.get(`${d.getUTCFullYear()}-${d.getUTCMonth() + 1}`) ??
+        null;
+      return {
+        id: inv.id,
+        emitionDate: inv.emitionDate.toISOString(),
+        type: inv.type,
+        direction: dir,
+        counterparty: dir === 'purchase' ? inv.emitterName : inv.recipientName,
+        total: amounts.total,
+        net: amounts.net,
+        vat: amounts.vat,
+        otherTaxes: amounts.otherTaxes,
+        ruleId: rule?.id ?? null,
+        ruleName: rule?.name ?? null,
+        willUsePendingReview: !rule || amounts.otherTaxes > 0.005,
+        posted: !!post,
+        entryId: post?.id ?? null,
+        entryNumber: post?.number ?? null,
+        entryEdited: post?.edited ?? false,
+        periodStatus: pStatus,
+      };
+    });
+
+    const filtered = rows.filter((r) => {
+      if (ctx.data.direction !== 'all' && r.direction !== ctx.data.direction)
+        return false;
+      if (!ctx.data.includePosted && r.posted) return false;
+      return true;
+    });
+
+    return { hasFiscalYear: true, invoices: filtered };
+  });
+
+/** Genera los asientos automáticos de las facturas seleccionadas. (US 3.2.1/3.2.2) */
+export const generateInvoiceEntries = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      invoiceIds: z.array(z.string().uuid()).min(1),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const { clientId } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+
+    const prId = await loadPendingReviewAccountId(orgId);
+    const rules = await loadActiveInvoiceRules(clientId);
+
+    const invs = await db
+      .select(INVOICE_SELECT)
+      .from(invoice)
+      .where(
+        and(
+          eq(invoice.clientId, clientId),
+          inArray(invoice.id, ctx.data.invoiceIds)
+        )
+      );
+    const byId = new Map(invs.map((i) => [i.id, i]));
+
+    const summary = {
+      created: 0,
+      pendingReview: 0,
+      skippedExists: 0,
+      skippedNoFy: 0,
+      skippedClosed: 0,
+      skippedNonPositive: 0,
+      errors: [] as { invoiceId: string; reason: string }[],
+    };
+
+    for (const id of ctx.data.invoiceIds) {
+      const inv = byId.get(id);
+      if (!inv) {
+        summary.errors.push({
+          invoiceId: id,
+          reason: 'Factura no encontrada o de otra empresa',
+        });
+        continue;
+      }
+      if (await findAutoEntryForInvoice(clientId, id)) {
+        summary.skippedExists++;
+        continue;
+      }
+      const plan = await planInvoiceEntry(inv, clientId, orgId, rules, prId);
+      if (!plan.ok) {
+        if (plan.reason === 'non_positive') summary.skippedNonPositive++;
+        else if (plan.reason === 'no_fy') summary.skippedNoFy++;
+        else if (plan.reason === 'closed') summary.skippedClosed++;
+        else
+          summary.errors.push({
+            invoiceId: id,
+            reason: plan.detail ?? 'Cuentas inválidas en la regla',
+          });
+        continue;
+      }
+      await db.transaction(async (tx) => {
+        await insertAutoInvoiceEntry(tx, {
+          clientId,
+          fyId: plan.fyId,
+          periodId: plan.periodId,
+          date: plan.date,
+          inv,
+          ruleId: plan.ruleId,
+          lines: plan.lines,
+          usedPendingReview: plan.usedPendingReview,
+          reason: plan.reason,
+          userId,
+        });
+      });
+      summary.created++;
+      if (plan.usedPendingReview) summary.pendingReview++;
+    }
+
+    return summary;
+  });
+
+/**
+ * Regenera el asiento de una factura desde Contabilidad: anula el vigente y crea
+ * uno nuevo con las reglas actuales. Si el asiento fue editado a mano, exige `force`.
+ */
+export const regenerateInvoiceEntry = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      invoiceId: z.string().uuid(),
+      force: z.boolean().default(false),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const { clientId, invoiceId } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+
+    const [inv] = await db
+      .select(INVOICE_SELECT)
+      .from(invoice)
+      .where(and(eq(invoice.clientId, clientId), eq(invoice.id, invoiceId)))
+      .limit(1);
+    if (!inv) throw new Error('Factura no encontrada o de otra empresa');
+
+    const existing = await findAutoEntryForInvoice(clientId, invoiceId);
+    if (existing) {
+      if (existing.isEditedPostGeneration && !ctx.data.force) {
+        return {
+          needsConfirmation: true as const,
+          entryNumber: existing.number,
+        };
+      }
+      const { period } = await loadPeriodForOrg(existing.periodId, orgId);
+      if (period.status === 'closed') {
+        throw new Error(
+          'No se puede regenerar: el asiento actual está en un período cerrado. Reabrí el período o hacé un ajuste manual'
+        );
+      }
+    }
+
+    const prId = await loadPendingReviewAccountId(orgId);
+    const rules = await loadActiveInvoiceRules(clientId);
+    const plan = await planInvoiceEntry(inv, clientId, orgId, rules, prId);
+    if (!plan.ok) {
+      const msgs: Record<string, string> = {
+        non_positive:
+          'El comprobante no tiene un total positivo (ej. nota de crédito)',
+        no_fy: 'No hay un ejercicio que cubra la fecha del comprobante',
+        closed: 'El período del comprobante está cerrado',
+        invalid_accounts:
+          plan.detail ?? 'La regla referencia cuentas inválidas',
+      };
+      throw new Error(msgs[plan.reason]);
+    }
+
+    const je = await db.transaction(async (tx) => {
+      if (existing) {
+        await tx
+          .update(journalEntry)
+          .set({
+            isVoided: true,
+            voidedAt: sql`now()`,
+            voidedBy: userId,
+            voidReason: 'Regenerado desde el comprobante',
+          })
+          .where(eq(journalEntry.id, existing.id));
+        await tx.insert(accountingLog).values({
+          clientId,
+          fiscalYearId: plan.fyId,
+          eventType: 'journal_entry_voided',
+          eventData: {
+            entryId: existing.id,
+            number: existing.number,
+            auto: true,
+            reason: 'Regenerado desde el comprobante',
+          },
+          userId,
+        });
+      }
+      return insertAutoInvoiceEntry(tx, {
+        clientId,
+        fyId: plan.fyId,
+        periodId: plan.periodId,
+        date: plan.date,
+        inv,
+        ruleId: plan.ruleId,
+        lines: plan.lines,
+        usedPendingReview: plan.usedPendingReview,
+        reason: plan.reason,
+        userId,
+      });
+    });
+
+    return {
+      needsConfirmation: false as const,
+      entryId: je.id,
+      number: je.number,
+    };
   });
