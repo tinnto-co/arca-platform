@@ -1635,8 +1635,10 @@ export const journalEntry = pgTable(
     sourceType: journalEntrySourceTypeEnum("source_type"),
     /** FK a la entidad origen (invoice.id, liquidacionImportRecibo.id, etc.). */
     sourceId: uuid("source_id"),
-    /** FK opcional → ledgerMappingRule (Fase 3). Sin constraint todavía. */
-    mappingRuleId: uuid("mapping_rule_id"),
+    /** FK opcional → ledgerMappingRule. Solo en asientos generados por una regla. */
+    mappingRuleId: uuid("mapping_rule_id").references(() => ledgerMappingRule.id, {
+      onDelete: "set null",
+    }),
     isVoided: boolean("is_voided").notNull().default(false),
     voidedAt: timestamp("voided_at"),
     voidedBy: text("voided_by").references(() => user.id, { onDelete: "set null" }),
@@ -1718,6 +1720,90 @@ export const accountingLog = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [index("idx_accounting_log_client").on(table.clientId)],
+);
+
+/* ───────── Reglas de mapeo (asientos automáticos, Fase 3) ───────── */
+
+/** Módulo origen del comprobante que dispara la regla. */
+export const ledgerMappingSourceModuleEnum = pgEnum("ledger_mapping_source_module", [
+  "invoice",
+  "payroll",
+]);
+
+/** default = fallback; conditional = se aplica si matchea la condición jsonb. */
+export const ledgerMappingRuleTypeEnum = pgEnum("ledger_mapping_rule_type", [
+  "default",
+  "conditional",
+]);
+
+export const ledgerMappingLineSideEnum = pgEnum("ledger_mapping_line_side", [
+  "debit",
+  "credit",
+]);
+
+/** Base sobre la que se calcula el monto de cada línea generada. */
+export const ledgerMappingAmountBasisEnum = pgEnum("ledger_mapping_amount_basis", [
+  "total",
+  "net",
+  "vat",
+  "other_taxes",
+  "concept_value",
+  "fixed",
+]);
+
+/**
+ * Cabecera de la regla de mapeo comprobante→asiento. Define cuándo se aplica.
+ * Las cuentas y montos viven en ledgerMappingRuleLine. Vive a nivel `client` (empresa).
+ */
+export const ledgerMappingRule = pgTable(
+  "ledger_mapping_rule",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => client.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    sourceModule: ledgerMappingSourceModuleEnum("source_module").notNull(),
+    ruleType: ledgerMappingRuleTypeEnum("rule_type").notNull().default("default"),
+    /** Criterios de matching cuando ruleType='conditional' (ej. {"direction":"sale","invoiceType":"A"}). */
+    condition: jsonb("condition"),
+    /** Orden de evaluación: las más específicas (menor número) primero. */
+    priority: integer("priority").notNull().default(100),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("idx_ledger_mapping_rule_client").on(table.clientId, table.sourceModule),
+  ],
+);
+
+/**
+ * Línea-plantilla de una regla: qué cuenta, de qué lado y cómo se calcula el monto.
+ * Una regla generará un asiento con N líneas a partir de estas plantillas.
+ */
+export const ledgerMappingRuleLine = pgTable(
+  "ledger_mapping_rule_line",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ruleId: uuid("rule_id")
+      .notNull()
+      .references(() => ledgerMappingRule.id, { onDelete: "cascade" }),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => account.id, { onDelete: "restrict" }),
+    side: ledgerMappingLineSideEnum("side").notNull(),
+    amountBasis: ledgerMappingAmountBasisEnum("amount_basis").notNull(),
+    /** Monto fijo cuando amountBasis='fixed'; NULL en los demás casos. */
+    fixedAmount: numeric("fixed_amount", { precision: 18, scale: 2 }),
+    lineOrder: integer("line_order").notNull().default(0),
+    description: text("description"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("idx_ledger_mapping_rule_line_rule").on(table.ruleId)],
 );
 
 /**

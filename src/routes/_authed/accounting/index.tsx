@@ -27,6 +27,11 @@ import {
   X,
   Download,
   FileSpreadsheet,
+  Workflow,
+  Power,
+  Upload,
+  HelpCircle,
+  Lightbulb,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { ArcaCard } from '@/components/dashboard/shared';
@@ -58,6 +63,12 @@ import {
   getLedgerConsolidated,
   getTrialBalance,
   getJournalBook,
+  listMappingRules,
+  getMappingRule,
+  createMappingRule,
+  updateMappingRule,
+  setMappingRuleActive,
+  importMappingRules,
   type ChartAccount,
   type PeriodView,
   type LedgerRow,
@@ -82,6 +93,10 @@ import {
   MONTH_NAMES,
   FISCAL_YEAR_STATUS_LABELS,
   JOURNAL_ORIGIN_LABELS,
+  MAPPING_SOURCE_LABELS,
+  MAPPING_RULE_TYPE_LABELS,
+  MAPPING_SIDE_LABELS,
+  MAPPING_AMOUNT_BASIS_LABELS,
   type AccountGroup,
 } from '@/lib/accounting-labels';
 import {
@@ -102,6 +117,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { toast } from 'sonner';
 
 export const Route = createFileRoute('/_authed/accounting/')({
@@ -155,7 +175,7 @@ function OriginBadge({ scope }: { scope: 'base' | 'custom' }) {
 }
 
 /* ─── Tab bar ─── */
-type Tab = 'plan' | 'ejercicios' | 'asientos' | 'mayor' | 'balance';
+type Tab = 'plan' | 'ejercicios' | 'asientos' | 'mayor' | 'balance' | 'reglas';
 
 function TabBar({
   active,
@@ -175,6 +195,7 @@ function TabBar({
     { id: 'asientos', label: 'Asientos', icon: FileText, ready: true },
     { id: 'mayor', label: 'Mayor', icon: BookOpen, ready: true },
     { id: 'balance', label: 'Balance', icon: Scale, ready: true },
+    { id: 'reglas', label: 'Reglas', icon: Workflow, ready: true },
   ];
   return (
     <div className="flex gap-1 mb-5 border-b border-[var(--arca-border)]">
@@ -277,6 +298,8 @@ function AccountingPage() {
           canWrite={roleData?.role !== 'viewer'}
           clientName={clients.find((c) => c.id === effectiveClientId)?.name ?? ''}
         />
+      ) : tab === 'reglas' ? (
+        <Reglas clientId={effectiveClientId} isOwner={isOwner} clients={clients} />
       ) : (
         <ArcaCard>
           <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
@@ -1168,15 +1191,41 @@ function Field({
   children,
   full,
 }: {
-  label: string;
+  label: React.ReactNode;
   children: React.ReactNode;
   full?: boolean;
 }) {
   return (
     <div className={`flex flex-col gap-1 ${full ? 'col-span-2' : ''}`}>
-      <label className="text-[11px] text-[var(--arca-ink-3)]">{label}</label>
+      <label className="text-[11px] text-[var(--arca-ink-3)] flex items-center gap-1">
+        {label}
+      </label>
       {children}
     </div>
+  );
+}
+
+/** Ícono de ayuda con tooltip nativo (?). */
+function HelpTip({ text }: { text: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={(e) => e.preventDefault()}
+          className="cursor-help text-[var(--arca-ink-3)] hover:text-[var(--arca-navy-900)] inline-flex transition-colors"
+          aria-label="Ayuda"
+        >
+          <HelpCircle className="w-3.5 h-3.5" strokeWidth={1.8} />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent
+        side="top"
+        className="max-w-[260px] text-xs leading-snug"
+      >
+        {text}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -3162,5 +3211,734 @@ function LedgerDialog({
         />
       )}
     </>
+  );
+}
+
+/* ════════════════════ Reglas de mapeo (US 3.1.x) ════════════════════ */
+
+interface AccClient {
+  id: string;
+  name: string;
+  identityNumber: string;
+}
+interface RuleLineDraft {
+  accountId: string;
+  side: 'debit' | 'credit';
+  amountBasis: string;
+  fixedAmount: string;
+  description: string;
+}
+type RuleEditorState =
+  | { mode: 'create' }
+  | { mode: 'edit'; ruleId: string };
+
+const AMOUNT_BASES = ['total', 'net', 'vat', 'other_taxes', 'concept_value', 'fixed'];
+
+function emptyRuleLine(side: 'debit' | 'credit'): RuleLineDraft {
+  return { accountId: '', side, amountBasis: 'total', fixedAmount: '', description: '' };
+}
+
+function Reglas({
+  clientId,
+  isOwner,
+  clients,
+}: {
+  clientId: string;
+  isOwner: boolean;
+  clients: AccClient[];
+}) {
+  const qc = useQueryClient();
+  const [moduleFilter, setModuleFilter] = useState('');
+  const [editor, setEditor] = useState<RuleEditorState | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+
+  const queryKey = ['accounting', 'rules', clientId, moduleFilter];
+  const { data: rules = [], isLoading } = useQuery({
+    queryKey,
+    queryFn: () =>
+      listMappingRules({
+        data: { clientId, sourceModule: (moduleFilter || undefined) as never },
+      }),
+  });
+  const invalidate = () => {
+    void qc.invalidateQueries({ queryKey: ['accounting', 'rules'] });
+  };
+
+  const toggleMut = useMutation({
+    mutationFn: (args: { id: string; isActive: boolean }) =>
+      setMappingRuleActive({ data: args }),
+    onSuccess: invalidate,
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <>
+      <ArcaCard>
+        <div className="flex flex-wrap items-end gap-2 px-4 py-3 border-b border-[var(--arca-border)]">
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] text-[var(--arca-ink-3)]">Módulo origen</label>
+            <select
+              value={moduleFilter}
+              onChange={(e) => setModuleFilter(e.target.value)}
+              className={`${SELECT_CLASS} w-40`}
+            >
+              <option value="">Todos</option>
+              <option value="invoice">Facturas</option>
+              <option value="payroll">Sueldos</option>
+            </select>
+          </div>
+          {isOwner && (
+            <div className="ml-auto flex items-center gap-2 self-end">
+              <button
+                onClick={() => setImportOpen(true)}
+                className="flex items-center gap-1.5 h-8 px-2.5 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
+              >
+                <Upload className="w-3.5 h-3.5" strokeWidth={1.8} /> Importar de otra empresa
+              </button>
+              <button
+                onClick={() => setEditor({ mode: 'create' })}
+                className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90"
+              >
+                <Plus className="w-3 h-3" strokeWidth={2.5} /> Nueva regla
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+          <div className="w-14 shrink-0 text-center">Prior.</div>
+          <div className="flex-1 min-w-0">Nombre</div>
+          <div className="w-24 shrink-0">Módulo</div>
+          <div className="w-28 shrink-0">Tipo</div>
+          <div className="w-16 shrink-0 text-center">Líneas</div>
+          <div className="w-24 shrink-0 text-center">Estado</div>
+        </div>
+
+        {isLoading ? (
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">Cargando…</div>
+        ) : rules.length === 0 ? (
+          <div className="px-5 py-12 text-center">
+            <Workflow className="w-8 h-8 mx-auto mb-3 text-[var(--arca-ink-3)]" strokeWidth={1.5} />
+            <p className="text-[13px] text-[var(--arca-ink-2)] mb-1">
+              No hay reglas de mapeo configuradas.
+            </p>
+            <p className="text-[12px] text-[var(--arca-ink-3)]">
+              Las reglas le enseñan al sistema cómo armar los asientos automáticos desde facturas y
+              sueldos.
+            </p>
+          </div>
+        ) : (
+          rules.map((r) => (
+            <div
+              key={r.id}
+              onClick={() => setDetailId(r.id)}
+              role="button"
+              tabIndex={0}
+              className="flex items-center gap-3 px-4 py-2.5 border-b border-[var(--arca-border)] hover:bg-[var(--arca-surface-2)] transition-colors text-[12.5px] cursor-pointer"
+            >
+              <div className="w-14 shrink-0 text-center font-mono text-[var(--arca-ink-3)]">
+                {r.priority}
+              </div>
+              <div className="flex-1 min-w-0 truncate font-medium text-[var(--arca-ink)]">
+                {r.name}
+              </div>
+              <div className="w-24 shrink-0">
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
+                  {MAPPING_SOURCE_LABELS[r.sourceModule as 'invoice' | 'payroll']}
+                </span>
+              </div>
+              <div className="w-28 shrink-0 text-[11.5px] text-[var(--arca-ink-3)]">
+                {MAPPING_RULE_TYPE_LABELS[r.ruleType as 'default' | 'conditional']}
+              </div>
+              <div className="w-16 shrink-0 text-center text-[var(--arca-ink-2)]">{r.lineCount}</div>
+              <div className="w-24 shrink-0 flex justify-center">
+                {isOwner ? (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleMut.mutate({ id: r.id, isActive: !r.isActive });
+                    }}
+                    title={r.isActive ? 'Clic para desactivar' : 'Clic para activar'}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-medium hover:opacity-80"
+                    style={{
+                      background: r.isActive
+                        ? 'color-mix(in oklch, oklch(0.45 0.14 145), transparent 88%)'
+                        : 'var(--arca-surface-2)',
+                      color: r.isActive ? 'oklch(0.40 0.14 145)' : 'var(--arca-ink-3)',
+                    }}
+                  >
+                    <Power className="w-2.5 h-2.5" strokeWidth={2} />
+                    {r.isActive ? 'Activa' : 'Inactiva'}
+                  </button>
+                ) : (
+                  <span className="text-[10.5px] text-[var(--arca-ink-3)]">
+                    {r.isActive ? 'Activa' : 'Inactiva'}
+                  </span>
+                )}
+              </div>
+            </div>
+          ))
+        )}
+      </ArcaCard>
+
+      {editor && (
+        <RuleEditorDialog
+          clientId={clientId}
+          state={editor}
+          onClose={() => setEditor(null)}
+          onSaved={() => {
+            setEditor(null);
+            invalidate();
+          }}
+        />
+      )}
+      {detailId && (
+        <RuleDetailDialog
+          ruleId={detailId}
+          isOwner={isOwner}
+          onClose={() => setDetailId(null)}
+          onEdit={(id) => {
+            setDetailId(null);
+            setEditor({ mode: 'edit', ruleId: id });
+          }}
+          onChanged={invalidate}
+        />
+      )}
+      {importOpen && (
+        <ImportRulesDialog
+          clientId={clientId}
+          clients={clients}
+          onClose={() => setImportOpen(false)}
+          onDone={() => {
+            setImportOpen(false);
+            invalidate();
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function RuleEditorDialog({
+  clientId,
+  state,
+  onClose,
+  onSaved,
+}: {
+  clientId: string;
+  state: RuleEditorState;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const isEdit = state.mode === 'edit';
+  const { data: postable = [] } = useQuery({
+    queryKey: ['accounting', 'postable', clientId],
+    queryFn: () => getPostableAccounts({ data: { clientId } }),
+  });
+  const { data: existing } = useQuery({
+    queryKey: ['accounting', 'rule', isEdit ? state.ruleId : 'new'],
+    queryFn: () => getMappingRule({ data: { id: (state as { ruleId: string }).ruleId } }),
+    enabled: isEdit,
+  });
+
+  const [name, setName] = useState('');
+  const [sourceModule, setSourceModule] = useState<'invoice' | 'payroll'>('invoice');
+  const [ruleType, setRuleType] = useState<'default' | 'conditional'>('default');
+  const [conditionText, setConditionText] = useState('');
+  const [priority, setPriority] = useState('100');
+  const [lines, setLines] = useState<RuleLineDraft[]>([
+    emptyRuleLine('debit'),
+    emptyRuleLine('credit'),
+  ]);
+  const [loaded, setLoaded] = useState(!isEdit);
+
+  if (isEdit && existing && !loaded) {
+    setName(existing.rule.name);
+    setSourceModule(existing.rule.sourceModule);
+    setRuleType(existing.rule.ruleType);
+    setConditionText(existing.rule.condition ? JSON.stringify(existing.rule.condition, null, 2) : '');
+    setPriority(String(existing.rule.priority));
+    setLines(
+      existing.lines.map((l) => ({
+        accountId: l.accountId,
+        side: l.side,
+        amountBasis: l.amountBasis,
+        fixedAmount: l.fixedAmount != null ? String(l.fixedAmount) : '',
+        description: l.description ?? '',
+      }))
+    );
+    setLoaded(true);
+  }
+
+  const updateLine = (i: number, patch: Partial<RuleLineDraft>) =>
+    setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
+
+  const hasDebit = lines.some((l) => l.side === 'debit');
+  const hasCredit = lines.some((l) => l.side === 'credit');
+  const linesOk =
+    lines.length >= 2 &&
+    hasDebit &&
+    hasCredit &&
+    lines.every(
+      (l) => l.accountId && (l.amountBasis !== 'fixed' || num(l.fixedAmount) > 0)
+    );
+  const canSave = !!name.trim() && linesOk;
+
+  const mut = useMutation({
+    mutationFn: async () => {
+      let condition: unknown = undefined;
+      if (ruleType === 'conditional' && conditionText.trim()) {
+        try {
+          condition = JSON.parse(conditionText) as unknown;
+        } catch {
+          throw new Error('La condición no es un JSON válido');
+        }
+      }
+      const payloadLines = lines.map((l) => ({
+        accountId: l.accountId,
+        side: l.side,
+        amountBasis: l.amountBasis as never,
+        fixedAmount: l.amountBasis === 'fixed' ? num(l.fixedAmount) : null,
+        description: l.description || undefined,
+      }));
+      const base = {
+        name,
+        sourceModule,
+        ruleType,
+        condition,
+        priority: parseInt(priority, 10) || 100,
+        lines: payloadLines,
+      };
+      if (isEdit) {
+        await updateMappingRule({ data: { id: state.ruleId, ...base } });
+      } else {
+        await createMappingRule({ data: { clientId, ...base } });
+      }
+    },
+    onSuccess: () => {
+      toast.success(isEdit ? 'Regla actualizada' : 'Regla creada');
+      onSaved();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-[780px]">
+        <DialogHeader>
+          <DialogTitle>{isEdit ? 'Editar regla de mapeo' : 'Nueva regla de mapeo'}</DialogTitle>
+          <DialogDescription>
+            Una regla le enseña al sistema cómo armar un asiento automático.
+          </DialogDescription>
+        </DialogHeader>
+
+        {/* Recuadro de ayuda en criollo */}
+        <div
+          className="flex gap-2 text-[12px] rounded-[10px] px-3 py-2.5 leading-relaxed"
+          style={{
+            background: 'color-mix(in oklch, var(--arca-navy-900), transparent 94%)',
+            color: 'var(--arca-ink-2)',
+          }}
+        >
+          <Lightbulb className="w-4 h-4 shrink-0 mt-0.5 text-[var(--arca-navy-900)]" strokeWidth={1.8} />
+          <div>
+            <strong>¿Cómo funciona?</strong> Cuando entra un comprobante del módulo elegido (una
+            factura o una liquidación de sueldos), el sistema arma un asiento usando estas líneas.
+            Cada línea define <strong>qué cuenta</strong> tocar, si va al <strong>Debe o Haber</strong>,
+            y de <strong>qué monto del comprobante</strong> sale (el total, el neto, el IVA…).
+            <br />
+            <span className="text-[var(--arca-ink-3)]">
+              Ejemplo (factura de venta): Deudores por ventas → Debe → Total · Ventas → Haber → Neto
+              · IVA débito → Haber → IVA.
+            </span>
+          </div>
+        </div>
+
+        {isEdit && existing && existing.generatedOpenCount > 0 && (
+          <div
+            className="text-[12px] rounded-[8px] px-3 py-2"
+            style={{
+              background: 'color-mix(in oklch, oklch(0.55 0.15 50), transparent 90%)',
+              color: 'oklch(0.45 0.15 50)',
+            }}
+          >
+            ⚠ {existing.generatedOpenCount} asiento(s) del período abierto se generaron con la
+            versión anterior. No se regenerarán automáticamente.
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3 py-1">
+          <Field label="Nombre *" full>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Ej: Factura de venta tipo A"
+              className={`${INPUT_CLASS} w-full h-9`}
+            />
+          </Field>
+          <Field
+            label={
+              <>
+                Módulo origen *
+                <HelpTip text="De qué módulo viene el comprobante que dispara la regla: Facturas o Sueldos." />
+              </>
+            }
+          >
+            <select
+              value={sourceModule}
+              onChange={(e) => setSourceModule(e.target.value as 'invoice' | 'payroll')}
+              className={`${SELECT_CLASS} w-full h-9`}
+            >
+              <option value="invoice">Facturas</option>
+              <option value="payroll">Sueldos</option>
+            </select>
+          </Field>
+          <Field
+            label={
+              <>
+                Prioridad
+                <HelpTip text="Orden de evaluación cuando varias reglas podrían aplicar: gana la de menor número (la más específica primero)." />
+              </>
+            }
+          >
+            <input
+              type="number"
+              value={priority}
+              onChange={(e) => setPriority(e.target.value)}
+              className={`${INPUT_CLASS} w-full h-9`}
+            />
+          </Field>
+          <Field
+            label={
+              <>
+                Tipo
+                <HelpTip text="Default: se aplica como regla por defecto del módulo. Condicional: solo se aplica si el comprobante cumple la condición que definas abajo." />
+              </>
+            }
+          >
+            <select
+              value={ruleType}
+              onChange={(e) => setRuleType(e.target.value as 'default' | 'conditional')}
+              className={`${SELECT_CLASS} w-full h-9`}
+            >
+              <option value="default">Default (fallback)</option>
+              <option value="conditional">Condicional</option>
+            </select>
+          </Field>
+          {ruleType === 'conditional' && (
+            <Field label="Condición (JSON)" full>
+              <textarea
+                value={conditionText}
+                onChange={(e) => setConditionText(e.target.value)}
+                rows={3}
+                placeholder='Ej: {"direction":"sale","invoiceType":"A"}'
+                className="w-full px-2.5 py-2 text-[12px] font-mono border border-[var(--arca-border)] rounded-[8px] bg-[var(--arca-surface)] text-[var(--arca-ink)] focus:outline-none resize-none"
+              />
+            </Field>
+          )}
+        </div>
+
+        {/* Líneas-plantilla */}
+        <div className="border border-[var(--arca-border)] rounded-[10px] overflow-hidden">
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-surface-2)] text-[10px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+            <div className="flex-1">Cuenta</div>
+            <div className="w-20 flex items-center gap-1">
+              Lado
+              <HelpTip text="Si el importe va al Debe o al Haber del asiento." />
+            </div>
+            <div className="w-44 flex items-center gap-1">
+              Base del monto
+              <HelpTip text="De qué importe del comprobante sale esta línea: Total, Neto (sin IVA), IVA, otros impuestos, el valor de un concepto (sueldos) o un monto fijo." />
+            </div>
+            <div className="w-24 flex items-center gap-1">
+              Monto fijo
+              <HelpTip text="Solo si la base es 'Monto fijo': el importe exacto a usar. En los demás casos queda deshabilitado." />
+            </div>
+            <div className="w-6" />
+          </div>
+          {lines.map((l, i) => (
+            <div key={i} className="flex items-center gap-2 px-3 py-1.5 border-t border-[var(--arca-border)]">
+              <select
+                value={l.accountId}
+                onChange={(e) => updateLine(i, { accountId: e.target.value })}
+                className={`${SELECT_CLASS} flex-1 min-w-0 w-0 h-8`}
+              >
+                <option value="">— Cuenta —</option>
+                {postable.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.code} · {a.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={l.side}
+                onChange={(e) => updateLine(i, { side: e.target.value as 'debit' | 'credit' })}
+                className={`${SELECT_CLASS} w-20 h-8`}
+              >
+                <option value="debit">Debe</option>
+                <option value="credit">Haber</option>
+              </select>
+              <select
+                value={l.amountBasis}
+                onChange={(e) => updateLine(i, { amountBasis: e.target.value })}
+                className={`${SELECT_CLASS} w-44 h-8`}
+              >
+                {AMOUNT_BASES.map((b) => (
+                  <option key={b} value={b}>
+                    {MAPPING_AMOUNT_BASIS_LABELS[b]}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="number"
+                step="0.01"
+                value={l.fixedAmount}
+                disabled={l.amountBasis !== 'fixed'}
+                onChange={(e) => updateLine(i, { fixedAmount: e.target.value })}
+                className={`${INPUT_CLASS} w-24 h-8 text-right disabled:opacity-40`}
+              />
+              <button
+                onClick={() => setLines((prev) => prev.filter((_, idx) => idx !== i))}
+                disabled={lines.length <= 2}
+                className="w-6 h-6 flex items-center justify-center rounded-[6px] text-[var(--arca-ink-3)] hover:text-[oklch(0.55_0.18_25)] disabled:opacity-30"
+              >
+                <Trash2 className="w-3.5 h-3.5" strokeWidth={1.8} />
+              </button>
+            </div>
+          ))}
+          <div className="flex items-center gap-3 px-3 py-2 border-t border-[var(--arca-border)] bg-[var(--arca-surface-2)]">
+            <button
+              onClick={() => setLines((prev) => [...prev, emptyRuleLine('debit')])}
+              className="flex items-center gap-1 text-[11.5px] font-medium text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
+            >
+              <Plus className="w-3 h-3" strokeWidth={2.5} /> Agregar línea
+            </button>
+            <span className="ml-auto text-[11.5px]">
+              {linesOk ? (
+                <span className="text-[oklch(0.40_0.14_145)]">✓ Líneas válidas</span>
+              ) : (
+                <span className="text-[var(--arca-ink-3)]">
+                  Requiere ≥2 líneas, al menos una al Debe y una al Haber
+                </span>
+              )}
+            </span>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <button onClick={onClose} className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)]">
+            Cancelar
+          </button>
+          <button
+            onClick={() => mut.mutate()}
+            disabled={!canSave || mut.isPending}
+            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+          >
+            {mut.isPending ? 'Guardando…' : 'Guardar regla'}
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RuleDetailDialog({
+  ruleId,
+  isOwner,
+  onClose,
+  onEdit,
+  onChanged,
+}: {
+  ruleId: string;
+  isOwner: boolean;
+  onClose: () => void;
+  onEdit: (id: string) => void;
+  onChanged: () => void;
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['accounting', 'rule', ruleId],
+    queryFn: () => getMappingRule({ data: { id: ruleId } }),
+  });
+  const toggleMut = useMutation({
+    mutationFn: (isActive: boolean) => setMappingRuleActive({ data: { id: ruleId, isActive } }),
+    onSuccess: () => {
+      toast.success('Estado actualizado');
+      onChanged();
+      onClose();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-[680px]">
+        {isLoading || !data ? (
+          <div className="py-10 text-center text-[13px] text-[var(--arca-ink-3)]">Cargando…</div>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                {data.rule.name}
+                {!data.rule.isActive && (
+                  <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
+                    Inactiva
+                  </span>
+                )}
+              </DialogTitle>
+              <DialogDescription>
+                Módulo: {MAPPING_SOURCE_LABELS[data.rule.sourceModule]} ·{' '}
+                {MAPPING_RULE_TYPE_LABELS[data.rule.ruleType]} ·
+                Prioridad {data.rule.priority}
+              </DialogDescription>
+            </DialogHeader>
+
+            {data.rule.ruleType === 'conditional' && data.rule.condition && (
+              <div className="text-[11.5px] font-mono rounded-[8px] bg-[var(--arca-surface-2)] border border-[var(--arca-border)] px-3 py-2 text-[var(--arca-ink-2)]">
+                {JSON.stringify(data.rule.condition)}
+              </div>
+            )}
+
+            <div className="border border-[var(--arca-border)] rounded-[10px] overflow-hidden">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-surface-2)] text-[10px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+                <div className="flex-1">Cuenta</div>
+                <div className="w-16">Lado</div>
+                <div className="w-48">Base del monto</div>
+              </div>
+              {data.lines.map((l) => (
+                <div key={l.id} className="flex items-center gap-2 px-3 py-1.5 border-t border-[var(--arca-border)] text-[12.5px]">
+                  <div className="flex-1 min-w-0 truncate">
+                    <span className="font-mono text-[11px] text-[var(--arca-ink-3)]">{l.accountCode}</span>{' '}
+                    {l.accountName}
+                  </div>
+                  <div className="w-16 font-medium">{MAPPING_SIDE_LABELS[l.side]}</div>
+                  <div className="w-48 text-[var(--arca-ink-2)]">
+                    {MAPPING_AMOUNT_BASIS_LABELS[l.amountBasis]}
+                    {l.amountBasis === 'fixed' && l.fixedAmount ? ` ($ ${fmtMoney(l.fixedAmount)})` : ''}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {isOwner && (
+              <DialogFooter>
+                <button
+                  onClick={() => toggleMut.mutate(!data.rule.isActive)}
+                  className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
+                >
+                  <Power className="w-3.5 h-3.5" strokeWidth={1.8} />
+                  {data.rule.isActive ? 'Desactivar' : 'Activar'}
+                </button>
+                <button
+                  onClick={() => onEdit(ruleId)}
+                  className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90"
+                >
+                  <Pencil className="w-3.5 h-3.5" strokeWidth={1.8} /> Editar
+                </button>
+              </DialogFooter>
+            )}
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ImportRulesDialog({
+  clientId,
+  clients,
+  onClose,
+  onDone,
+}: {
+  clientId: string;
+  clients: AccClient[];
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [fromId, setFromId] = useState('');
+  const others = clients.filter((c) => c.id !== clientId);
+
+  const { data: preview = [] } = useQuery({
+    queryKey: ['accounting', 'rules', fromId, ''],
+    queryFn: () => listMappingRules({ data: { clientId: fromId } }),
+    enabled: !!fromId,
+  });
+
+  const mut = useMutation({
+    mutationFn: () => importMappingRules({ data: { fromClientId: fromId, toClientId: clientId } }),
+    onSuccess: (res) => {
+      toast.success(
+        `${res.created} regla(s) importada(s) (inactivas)${res.skipped.length ? ` · ${res.skipped.length} omitida(s) por cuentas faltantes` : ''}`
+      );
+      onDone();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-[520px]">
+        <DialogHeader>
+          <DialogTitle>Importar reglas de otra empresa</DialogTitle>
+          <DialogDescription>
+            Se copian las reglas a esta empresa como <strong>inactivas</strong>. Las cuentas se
+            resuelven por código; las reglas con cuentas que no existan acá se omiten.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 py-1">
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] text-[var(--arca-ink-3)]">Empresa origen</label>
+            <select
+              value={fromId}
+              onChange={(e) => setFromId(e.target.value)}
+              className={`${SELECT_CLASS} w-full h-9`}
+            >
+              <option value="">— Elegí la empresa origen —</option>
+              {others.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {fromId && (
+            <div className="border border-[var(--arca-border)] rounded-[8px] max-h-[240px] overflow-y-auto">
+              <div className="px-3 py-1.5 text-[11px] font-semibold text-[var(--arca-ink-3)] bg-[var(--arca-surface-2)]">
+                Reglas a copiar ({preview.length})
+              </div>
+              {preview.length === 0 ? (
+                <div className="px-3 py-4 text-[12px] text-[var(--arca-ink-3)] text-center">
+                  Esa empresa no tiene reglas.
+                </div>
+              ) : (
+                preview.map((r) => (
+                  <div key={r.id} className="flex items-center gap-2 px-3 py-1.5 border-t border-[var(--arca-border)] text-[12px]">
+                    <span className="flex-1 min-w-0 truncate">{r.name}</span>
+                    <span className="text-[var(--arca-ink-3)]">
+                      {MAPPING_SOURCE_LABELS[r.sourceModule as 'invoice' | 'payroll']} · {r.lineCount} líneas
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <button onClick={onClose} className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)]">
+            Cancelar
+          </button>
+          <button
+            onClick={() => mut.mutate()}
+            disabled={!fromId || preview.length === 0 || mut.isPending}
+            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+          >
+            {mut.isPending ? 'Importando…' : 'Importar'}
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

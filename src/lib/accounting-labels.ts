@@ -200,3 +200,30 @@ export const JOURNAL_ORIGIN_LABELS: Record<string, string> = {
   auto_opening: 'Auto · Apertura',
   import_excel: 'Import Excel',
 };
+
+/* ── Reglas de mapeo (asientos automáticos) ── */
+
+export const MAPPING_SOURCE_LABELS: Record<'invoice' | 'payroll', string> = {
+  invoice: 'Facturas',
+  payroll: 'Sueldos',
+};
+
+export const MAPPING_RULE_TYPE_LABELS: Record<'default' | 'conditional', string> = {
+  default: 'Default (fallback)',
+  conditional: 'Condicional',
+};
+
+export const MAPPING_SIDE_LABELS: Record<'debit' | 'credit', string> = {
+  debit: 'Debe',
+  credit: 'Haber',
+};
+
+/** Base sobre la que se calcula el monto de cada línea del asiento generado. */
+export const MAPPING_AMOUNT_BASIS_LABELS: Record<string, string> = {
+  total: 'Total del comprobante',
+  net: 'Neto (sin IVA)',
+  vat: 'IVA',
+  other_taxes: 'Otros impuestos / percepciones',
+  concept_value: 'Valor del concepto (sueldos)',
+  fixed: 'Monto fijo',
+};

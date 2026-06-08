@@ -17,6 +17,8 @@ import {
   fiscalYear,
   journalEntry,
   journalEntryLine,
+  ledgerMappingRule,
+  ledgerMappingRuleLine,
   representative,
   user,
 } from '@/drizzle/schema';
@@ -2156,4 +2158,373 @@ export const getJournalBook = createServerFn({ method: 'GET' })
       fiscalYear: { number: fy.number, startDate: fy.startDate, endDate: fy.endDate },
       entries: result,
     };
+  });
+
+/* ═══════════════ REGLAS DE MAPEO (US 3.1.x) ═══════════════ */
+
+type MappingRuleRow = typeof ledgerMappingRule.$inferSelect;
+
+async function loadMappingRuleForOrg(ruleId: string, orgId: string): Promise<MappingRuleRow> {
+  const [row] = await db
+    .select({ r: ledgerMappingRule })
+    .from(ledgerMappingRule)
+    .innerJoin(client, eq(client.id, ledgerMappingRule.clientId))
+    .innerJoin(representative, eq(representative.id, client.representativeId))
+    .where(and(eq(ledgerMappingRule.id, ruleId), eq(representative.organizationId, orgId)))
+    .limit(1);
+  if (!row) throw new Error('Regla no encontrada o no autorizada');
+  return row.r;
+}
+
+interface RuleLineInput {
+  side: 'debit' | 'credit';
+  amountBasis: string;
+  fixedAmount?: number | null;
+}
+function validateRuleLines(lines: RuleLineInput[]): void {
+  if (lines.length < 2) throw new Error('La regla debe tener al menos 2 líneas');
+  const hasDebit = lines.some((l) => l.side === 'debit');
+  const hasCredit = lines.some((l) => l.side === 'credit');
+  if (!hasDebit || !hasCredit) {
+    throw new Error(
+      'La regla debe tener al menos una línea al Debe y una al Haber para que el asiento pueda cuadrar'
+    );
+  }
+  for (const l of lines) {
+    if (l.amountBasis === 'fixed' && (l.fixedAmount == null || l.fixedAmount <= 0)) {
+      throw new Error('Las líneas con base "monto fijo" requieren un importe mayor a 0');
+    }
+  }
+}
+
+const mappingLineSchema = z.object({
+  accountId: z.string().uuid(),
+  side: z.enum(['debit', 'credit']),
+  amountBasis: z.enum(['total', 'net', 'vat', 'other_taxes', 'concept_value', 'fixed']),
+  fixedAmount: z.number().nullable().optional(),
+  description: z.string().optional(),
+});
+
+type JsonValue = string | number | boolean | null | JsonValue[] | { [k: string]: JsonValue };
+export type RuleCondition = Record<string, JsonValue> | null;
+
+export interface MappingRuleListRow {
+  id: string;
+  name: string;
+  sourceModule: string;
+  ruleType: string;
+  condition: RuleCondition;
+  priority: number;
+  isActive: boolean;
+  lineCount: number;
+}
+
+/** Lista reglas de una empresa, ordenadas por prioridad. (US 3.1.2) */
+export const listMappingRules = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      sourceModule: z.enum(['invoice', 'payroll']).optional(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+
+    const conds = [eq(ledgerMappingRule.clientId, ctx.data.clientId)];
+    if (ctx.data.sourceModule) conds.push(eq(ledgerMappingRule.sourceModule, ctx.data.sourceModule));
+
+    const rules = await db
+      .select()
+      .from(ledgerMappingRule)
+      .where(and(...conds))
+      .orderBy(asc(ledgerMappingRule.priority), asc(ledgerMappingRule.name));
+
+    const ids = rules.map((r) => r.id);
+    const counts = new Map<string, number>();
+    if (ids.length > 0) {
+      const cRows = await db
+        .select({
+          ruleId: ledgerMappingRuleLine.ruleId,
+          n: sql<number>`count(*)::int`,
+        })
+        .from(ledgerMappingRuleLine)
+        .where(inArray(ledgerMappingRuleLine.ruleId, ids))
+        .groupBy(ledgerMappingRuleLine.ruleId);
+      for (const c of cRows) counts.set(c.ruleId, c.n);
+    }
+
+    return rules.map(
+      (r): MappingRuleListRow => ({
+        id: r.id,
+        name: r.name,
+        sourceModule: r.sourceModule,
+        ruleType: r.ruleType,
+        condition: (r.condition ?? null) as RuleCondition,
+        priority: r.priority,
+        isActive: r.isActive,
+        lineCount: counts.get(r.id) ?? 0,
+      })
+    );
+  });
+
+/** Detalle de una regla con sus líneas + cuántos asientos del período abierto generó. */
+export const getMappingRule = createServerFn({ method: 'GET' })
+  .inputValidator(z.object({ id: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const rule = await loadMappingRuleForOrg(ctx.data.id, orgId);
+
+    const lines = await db
+      .select({
+        id: ledgerMappingRuleLine.id,
+        accountId: ledgerMappingRuleLine.accountId,
+        accountCode: account.code,
+        accountName: account.name,
+        side: ledgerMappingRuleLine.side,
+        amountBasis: ledgerMappingRuleLine.amountBasis,
+        fixedAmount: ledgerMappingRuleLine.fixedAmount,
+        description: ledgerMappingRuleLine.description,
+        lineOrder: ledgerMappingRuleLine.lineOrder,
+      })
+      .from(ledgerMappingRuleLine)
+      .innerJoin(account, eq(account.id, ledgerMappingRuleLine.accountId))
+      .where(eq(ledgerMappingRuleLine.ruleId, rule.id))
+      .orderBy(asc(ledgerMappingRuleLine.lineOrder));
+
+    const [gen] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(journalEntry)
+      .innerJoin(accountingPeriod, eq(accountingPeriod.id, journalEntry.periodId))
+      .where(
+        and(
+          eq(journalEntry.mappingRuleId, rule.id),
+          eq(journalEntry.isVoided, false),
+          eq(accountingPeriod.status, 'open')
+        )
+      );
+
+    return {
+      rule: { ...rule, condition: (rule.condition ?? null) as RuleCondition },
+      lines: lines.map((l) => ({
+        ...l,
+        fixedAmount: l.fixedAmount ? parseFloat(l.fixedAmount) : null,
+      })),
+      generatedOpenCount: gen?.n ?? 0,
+    };
+  });
+
+/** Crea una regla de mapeo con sus líneas-plantilla. (US 3.1.1) */
+export const createMappingRule = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      name: z.string().min(1),
+      sourceModule: z.enum(['invoice', 'payroll']),
+      ruleType: z.enum(['default', 'conditional']).default('default'),
+      condition: z.any().optional(),
+      priority: z.number().int().default(100),
+      lines: z.array(mappingLineSchema).min(2),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertOwner(role);
+    const d = ctx.data;
+    await ensureClientBelongsToOrg(d.clientId, orgId);
+    validateRuleLines(d.lines);
+    await assertPostableAccounts(d.clientId, orgId, d.lines.map((l) => l.accountId));
+
+    const rule = await db.transaction(async (tx) => {
+      const [r] = await tx
+        .insert(ledgerMappingRule)
+        .values({
+          clientId: d.clientId,
+          name: d.name.trim(),
+          sourceModule: d.sourceModule,
+          ruleType: d.ruleType,
+          condition: d.ruleType === 'conditional' ? (d.condition ?? null) : null,
+          priority: d.priority,
+          isActive: true,
+        })
+        .returning();
+      await tx.insert(ledgerMappingRuleLine).values(
+        d.lines.map((l, i) => ({
+          ruleId: r.id,
+          accountId: l.accountId,
+          side: l.side,
+          amountBasis: l.amountBasis,
+          fixedAmount: l.amountBasis === 'fixed' && l.fixedAmount != null ? String(l.fixedAmount) : null,
+          description: l.description?.trim() ? l.description.trim() : null,
+          lineOrder: i,
+        }))
+      );
+      return r;
+    });
+
+    return { ...rule, condition: (rule.condition ?? null) as RuleCondition };
+  });
+
+/** Edita una regla. No regenera asientos ya creados. (US 3.1.3) */
+export const updateMappingRule = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      id: z.string().uuid(),
+      name: z.string().min(1),
+      sourceModule: z.enum(['invoice', 'payroll']),
+      ruleType: z.enum(['default', 'conditional']).default('default'),
+      condition: z.any().optional(),
+      priority: z.number().int().default(100),
+      lines: z.array(mappingLineSchema).min(2),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertOwner(role);
+    const d = ctx.data;
+    const rule = await loadMappingRuleForOrg(d.id, orgId);
+    validateRuleLines(d.lines);
+    await assertPostableAccounts(rule.clientId, orgId, d.lines.map((l) => l.accountId));
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(ledgerMappingRule)
+        .set({
+          name: d.name.trim(),
+          sourceModule: d.sourceModule,
+          ruleType: d.ruleType,
+          condition: d.ruleType === 'conditional' ? (d.condition ?? null) : null,
+          priority: d.priority,
+        })
+        .where(eq(ledgerMappingRule.id, rule.id));
+      await tx.delete(ledgerMappingRuleLine).where(eq(ledgerMappingRuleLine.ruleId, rule.id));
+      await tx.insert(ledgerMappingRuleLine).values(
+        d.lines.map((l, i) => ({
+          ruleId: rule.id,
+          accountId: l.accountId,
+          side: l.side,
+          amountBasis: l.amountBasis,
+          fixedAmount: l.amountBasis === 'fixed' && l.fixedAmount != null ? String(l.fixedAmount) : null,
+          description: l.description?.trim() ? l.description.trim() : null,
+          lineOrder: i,
+        }))
+      );
+    });
+
+    return { ok: true };
+  });
+
+/** Activa/desactiva una regla sin borrarla. (US 3.1.4) */
+export const setMappingRuleActive = createServerFn({ method: 'POST' })
+  .inputValidator(z.object({ id: z.string().uuid(), isActive: z.boolean() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertOwner(role);
+    const rule = await loadMappingRuleForOrg(ctx.data.id, orgId);
+    await db
+      .update(ledgerMappingRule)
+      .set({ isActive: ctx.data.isActive })
+      .where(eq(ledgerMappingRule.id, rule.id));
+    return { ok: true };
+  });
+
+/**
+ * Copia las reglas de una empresa a otra (isActive=false). Resuelve las cuentas
+ * por código en la empresa destino; salta reglas con cuentas que no existen allí. (US 3.1.5)
+ */
+export const importMappingRules = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({ fromClientId: z.string().uuid(), toClientId: z.string().uuid() })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertOwner(role);
+    const { fromClientId, toClientId } = ctx.data;
+    if (fromClientId === toClientId) throw new Error('Elegí dos empresas distintas');
+    await ensureClientBelongsToOrg(fromClientId, orgId);
+    await ensureClientBelongsToOrg(toClientId, orgId);
+
+    const srcRules = await db
+      .select()
+      .from(ledgerMappingRule)
+      .where(eq(ledgerMappingRule.clientId, fromClientId))
+      .orderBy(asc(ledgerMappingRule.priority));
+    if (srcRules.length === 0) return { created: 0, skipped: [] as string[] };
+
+    const srcLines = await db
+      .select({
+        ruleId: ledgerMappingRuleLine.ruleId,
+        code: account.code,
+        side: ledgerMappingRuleLine.side,
+        amountBasis: ledgerMappingRuleLine.amountBasis,
+        fixedAmount: ledgerMappingRuleLine.fixedAmount,
+        description: ledgerMappingRuleLine.description,
+        lineOrder: ledgerMappingRuleLine.lineOrder,
+      })
+      .from(ledgerMappingRuleLine)
+      .innerJoin(account, eq(account.id, ledgerMappingRuleLine.accountId))
+      .where(inArray(ledgerMappingRuleLine.ruleId, srcRules.map((r) => r.id)))
+      .orderBy(asc(ledgerMappingRuleLine.lineOrder));
+
+    // Mapa código→id de cuentas visibles para la empresa destino.
+    const targetAccts = await db
+      .select({ id: account.id, code: account.code })
+      .from(account)
+      .where(
+        and(
+          eq(account.organizationId, orgId),
+          sql`(${account.scope} = 'base' OR (${account.scope} = 'custom' AND ${account.clientId} = ${toClientId}))`
+        )
+      );
+    const codeToId = new Map(targetAccts.map((a) => [a.code, a.id]));
+
+    const linesByRule = new Map<string, typeof srcLines>();
+    for (const l of srcLines) {
+      const list = linesByRule.get(l.ruleId) ?? [];
+      list.push(l);
+      linesByRule.set(l.ruleId, list);
+    }
+
+    let created = 0;
+    const skipped: string[] = [];
+    for (const r of srcRules) {
+      const lines = linesByRule.get(r.id) ?? [];
+      const resolved = lines.map((l) => ({ ...l, targetId: codeToId.get(l.code) }));
+      if (lines.length < 2 || resolved.some((l) => !l.targetId)) {
+        skipped.push(r.name);
+        continue;
+      }
+      await db.transaction(async (tx) => {
+        const [nr] = await tx
+          .insert(ledgerMappingRule)
+          .values({
+            clientId: toClientId,
+            name: r.name,
+            sourceModule: r.sourceModule,
+            ruleType: r.ruleType,
+            condition: r.condition,
+            priority: r.priority,
+            isActive: false,
+          })
+          .returning();
+        await tx.insert(ledgerMappingRuleLine).values(
+          resolved.map((l, i) => ({
+            ruleId: nr.id,
+            accountId: l.targetId!,
+            side: l.side,
+            amountBasis: l.amountBasis,
+            fixedAmount: l.fixedAmount,
+            description: l.description,
+            lineOrder: i,
+          }))
+        );
+      });
+      created++;
+    }
+
+    return { created, skipped };
   });
