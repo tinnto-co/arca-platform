@@ -36,6 +36,8 @@ import {
   RefreshCw,
   CheckSquare,
   Square,
+  Inbox,
+  AlertTriangle,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { ArcaCard } from '@/components/dashboard/shared';
@@ -76,10 +78,12 @@ import {
   getInvoicePostingPreview,
   generateInvoiceEntries,
   regenerateInvoiceEntry,
+  getPendingReviewEntries,
   type ChartAccount,
   type PeriodView,
   type LedgerRow,
   type ConsolidatedAccount,
+  type PendingReviewEntry,
 } from '@/actions/accounting';
 import {
   exportMayorExcel,
@@ -189,14 +193,17 @@ type Tab =
   | 'mayor'
   | 'balance'
   | 'reglas'
-  | 'contabilizar';
+  | 'contabilizar'
+  | 'pendientes';
 
 function TabBar({
   active,
   onChange,
+  pendingCount = 0,
 }: {
   active: Tab;
   onChange: (t: Tab) => void;
+  pendingCount?: number;
 }) {
   const tabs: {
     id: Tab;
@@ -211,6 +218,7 @@ function TabBar({
     { id: 'balance', label: 'Balance', icon: Scale, ready: true },
     { id: 'reglas', label: 'Reglas', icon: Workflow, ready: true },
     { id: 'contabilizar', label: 'Contabilizar', icon: Zap, ready: true },
+    { id: 'pendientes', label: 'Pendientes', icon: Inbox, ready: true },
   ];
   return (
     <div className="flex gap-1 mb-5 border-b border-[var(--arca-border)]">
@@ -227,6 +235,11 @@ function TabBar({
         >
           <tab.icon className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
           {tab.label}
+          {tab.id === 'pendientes' && pendingCount > 0 && (
+            <span className="text-[9px] font-semibold px-1.5 py-px rounded-full bg-amber-100 text-amber-700">
+              {pendingCount}
+            </span>
+          )}
           {!tab.ready && (
             <span className="text-[9px] px-1 py-px rounded-full bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
               pronto
@@ -254,6 +267,13 @@ function AccountingPage() {
   const isOwner = roleData?.role === 'owner';
 
   const effectiveClientId = clientId || clients[0]?.id || '';
+
+  const { data: pendingEntries = [] } = useQuery({
+    queryKey: ['accounting', 'pending-review', effectiveClientId],
+    queryFn: () =>
+      getPendingReviewEntries({ data: { clientId: effectiveClientId } }),
+    enabled: !!effectiveClientId,
+  });
 
   return (
     <div className="p-6 max-w-[1200px] mx-auto">
@@ -283,7 +303,11 @@ function AccountingPage() {
         }
       />
 
-      <TabBar active={tab} onChange={setTab} />
+      <TabBar
+        active={tab}
+        onChange={setTab}
+        pendingCount={pendingEntries.length}
+      />
 
       {!effectiveClientId ? (
         <ArcaCard>
@@ -294,7 +318,11 @@ function AccountingPage() {
       ) : tab === 'plan' ? (
         <PlanDeCuentas clientId={effectiveClientId} isOwner={isOwner} />
       ) : tab === 'ejercicios' ? (
-        <Ejercicios clientId={effectiveClientId} isOwner={isOwner} />
+        <Ejercicios
+          clientId={effectiveClientId}
+          isOwner={isOwner}
+          onGoToPending={() => setTab('pendientes')}
+        />
       ) : tab === 'asientos' ? (
         <Asientos
           clientId={effectiveClientId}
@@ -327,6 +355,12 @@ function AccountingPage() {
         <Contabilizar
           clientId={effectiveClientId}
           canWrite={roleData?.role !== 'viewer'}
+        />
+      ) : tab === 'pendientes' ? (
+        <Pendientes
+          clientId={effectiveClientId}
+          canWrite={roleData?.role !== 'viewer'}
+          onGoToReglas={() => setTab('reglas')}
         />
       ) : (
         <ArcaCard>
@@ -1291,9 +1325,11 @@ function computeEnd(startStr: string): string {
 function Ejercicios({
   clientId,
   isOwner,
+  onGoToPending,
 }: {
   clientId: string;
   isOwner: boolean;
+  onGoToPending: () => void;
 }) {
   const qc = useQueryClient();
   const [selectedFyId, setSelectedFyId] = useState<string>('');
@@ -1439,6 +1475,7 @@ function Ejercicios({
                 isOwner={isOwner}
                 onClose={() => setCloseTarget(p)}
                 onReopen={() => setReopenTarget(p)}
+                onGoToPending={onGoToPending}
               />
             ))}
           </div>
@@ -1582,13 +1619,16 @@ function PeriodCard({
   isOwner,
   onClose,
   onReopen,
+  onGoToPending,
 }: {
   period: PeriodView;
   isOwner: boolean;
   onClose: () => void;
   onReopen: () => void;
+  onGoToPending: () => void;
 }) {
   const closed = period.status === 'closed';
+  const hasPending = period.pendingCount > 0;
   const estado = closed
     ? { label: 'Cerrado', color: 'oklch(0.50 0.02 260)' }
     : period.isCurrent
@@ -1635,16 +1675,49 @@ function PeriodCard({
         {fmtMoney(period.totalAmount)}
       </div>
 
+      {!closed && hasPending && (
+        <button
+          onClick={onGoToPending}
+          className="flex items-center gap-1 text-[11px] text-amber-700 hover:underline text-left"
+        >
+          <AlertTriangle className="w-3 h-3 shrink-0" strokeWidth={2} />
+          {period.pendingCount} pendiente{period.pendingCount === 1 ? '' : 's'}{' '}
+          de revisión · resolver
+        </button>
+      )}
+
       {isOwner && (
         <div className="mt-1">
-          {period.isCurrent && (
-            <button
-              onClick={onClose}
-              className="w-full h-7 text-[11.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90"
-            >
-              Cerrar período
-            </button>
-          )}
+          {period.isCurrent &&
+            (hasPending ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  {/* span: los botones disabled no disparan hover; el span sí. */}
+                  <span className="block cursor-not-allowed">
+                    <button
+                      disabled
+                      className="w-full h-7 text-[11.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white opacity-40 cursor-not-allowed pointer-events-none"
+                    >
+                      Cerrar período (bloqueado)
+                    </button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent
+                  side="top"
+                  className="max-w-[240px] text-xs leading-snug"
+                >
+                  No se puede cerrar: hay {period.pendingCount} asiento(s) en
+                  pendiente de revisión. Resolvelos en la bandeja de Pendientes.
+                </TooltipContent>
+              </Tooltip>
+            ) : (
+              <button
+                onClick={onClose}
+                className="w-full h-7 text-[11.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90"
+              >
+                Cerrar período
+              </button>
+            ))}
           {closed && (
             <button
               onClick={onReopen}
@@ -4376,7 +4449,9 @@ function Contabilizar({
     [invoices]
   );
 
-  const refresh = () => qc.invalidateQueries({ queryKey: ['accounting'] });
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ['accounting'] });
+  };
 
   const genMut = useMutation({
     mutationFn: (ids: string[]) =>
@@ -4702,6 +4777,184 @@ function PostingRow({
           >
             <RefreshCw className="w-3.5 h-3.5" strokeWidth={2} />
             Regenerar
+          </button>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+/* ════════════════ Bandeja de pendientes de revisión (US 3.4.x) ════════════════ */
+
+function Pendientes({
+  clientId,
+  canWrite,
+  onGoToReglas,
+}: {
+  clientId: string;
+  canWrite: boolean;
+  onGoToReglas: () => void;
+}) {
+  const qc = useQueryClient();
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [editor, setEditor] = useState<EditorState | null>(null);
+
+  const { data: entries = [], isLoading } = useQuery({
+    queryKey: ['accounting', 'pending-review', clientId],
+    queryFn: () => getPendingReviewEntries({ data: { clientId } }),
+  });
+  const { data: postable = [] } = useQuery({
+    queryKey: ['accounting', 'postable', clientId],
+    queryFn: () => getPostableAccounts({ data: { clientId } }),
+  });
+
+  const invalidate = () => {
+    void qc.invalidateQueries({ queryKey: ['accounting'] });
+  };
+
+  const openEditorFromDetail = (
+    _action: 'edit' | 'duplicate',
+    initial: EditorInitial
+  ) => {
+    setDetailId(null);
+    setEditor({ mode: 'edit', initial });
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Explicación */}
+      <div className="flex gap-2 rounded-[10px] border border-amber-200 bg-amber-50/60 px-4 py-3 text-[12px] leading-relaxed text-[var(--arca-ink-2)]">
+        <AlertTriangle
+          className="w-4 h-4 shrink-0 mt-0.5 text-amber-600"
+          strokeWidth={1.8}
+        />
+        <div>
+          <strong>Pendientes de revisión.</strong> Asientos automáticos que el
+          sistema no pudo imputar del todo a una cuenta concreta (falta una
+          regla, o hay impuestos/conceptos sin mapear). Quedan en la cuenta{' '}
+          <strong>Pendiente de revisión</strong> y{' '}
+          <strong>bloquean el cierre</strong> del período hasta resolverlos.
+          Abrí cada uno para corregir las cuentas, o configurá una regla para
+          que se mapee bien la próxima vez.
+        </div>
+      </div>
+
+      <ArcaCard>
+        {isLoading ? (
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            Cargando…
+          </div>
+        ) : entries.length === 0 ? (
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            No hay asientos pendientes de revisión. 🎉
+          </div>
+        ) : (
+          <table className="w-full text-[12.5px]">
+            <thead>
+              <tr className="text-left text-[11px] uppercase tracking-wide text-[var(--arca-ink-3)] border-b border-[var(--arca-border)]">
+                <th className="py-2 pl-4">N°</th>
+                <th className="py-2">Fecha</th>
+                <th className="py-2">Período</th>
+                <th className="py-2">Origen</th>
+                <th className="py-2 text-right">Total</th>
+                <th className="py-2 text-right">A revisar</th>
+                <th className="py-2 pl-4">Qué falta</th>
+                <th className="py-2 pr-4 text-right">Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((e) => (
+                <PendingRow
+                  key={e.id}
+                  entry={e}
+                  canWrite={canWrite}
+                  onOpen={() => setDetailId(e.id)}
+                  onCreateRule={onGoToReglas}
+                />
+              ))}
+            </tbody>
+          </table>
+        )}
+      </ArcaCard>
+
+      {detailId && (
+        <AsientoDetail
+          entryId={detailId}
+          canWrite={canWrite}
+          onClose={() => setDetailId(null)}
+          onAction={openEditorFromDetail}
+          onChanged={invalidate}
+        />
+      )}
+
+      {editor && (
+        <AsientoEditor
+          clientId={clientId}
+          state={editor}
+          postable={postable}
+          onClose={() => setEditor(null)}
+          onSaved={() => {
+            setEditor(null);
+            invalidate();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function PendingRow({
+  entry,
+  canWrite,
+  onOpen,
+  onCreateRule,
+}: {
+  entry: PendingReviewEntry;
+  canWrite: boolean;
+  onOpen: () => void;
+  onCreateRule: () => void;
+}) {
+  const closed = entry.periodStatus === 'closed';
+  return (
+    <tr className="border-b border-[var(--arca-border)] last:border-0 hover:bg-[var(--arca-surface-2)]">
+      <td className="py-2 pl-4 tabular-nums">{entry.number}</td>
+      <td className="py-2 whitespace-nowrap">{fmtFecha(entry.entryDate)}</td>
+      <td className="py-2 whitespace-nowrap">
+        {MONTH_NAMES[entry.periodMonth]} {entry.periodYear}
+        {closed && (
+          <span className="ml-1 text-[10px] text-[var(--arca-ink-3)]">
+            (cerrado)
+          </span>
+        )}
+      </td>
+      <td className="py-2">
+        {JOURNAL_ORIGIN_LABELS[entry.origin] ?? entry.origin}
+      </td>
+      <td className="py-2 text-right tabular-nums whitespace-nowrap">
+        $ {fmtMoney(entry.total)}
+      </td>
+      <td className="py-2 text-right tabular-nums whitespace-nowrap text-amber-700 font-medium">
+        $ {fmtMoney(entry.pendingAmount)}
+      </td>
+      <td className="py-2 pl-4 max-w-[280px]">
+        <span className="text-[var(--arca-ink-2)]">
+          {entry.motivos.length > 0 ? entry.motivos.join(' · ') : 'Sin detalle'}
+        </span>
+      </td>
+      <td className="py-2 pr-4 text-right whitespace-nowrap">
+        <button
+          onClick={onOpen}
+          className="text-[12px] text-[var(--arca-navy-900)] hover:underline"
+        >
+          {canWrite ? 'Resolver' : 'Ver'}
+        </button>
+        {canWrite && (
+          <button
+            onClick={onCreateRule}
+            className="ml-3 text-[12px] text-[var(--arca-ink-2)] hover:text-[var(--arca-navy-900)]"
+            title="Ir a Reglas para configurar el mapeo y evitar que vuelva a pasar"
+          >
+            Crear regla
           </button>
         )}
       </td>

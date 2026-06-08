@@ -924,6 +924,8 @@ export interface PeriodView {
   closedAt: string | Date | null;
   entryCount: number;
   totalAmount: number;
+  /** Asientos no anulados con líneas en pendiente de revisión (bloquean el cierre). */
+  pendingCount: number;
   isCurrent: boolean;
 }
 
@@ -963,6 +965,31 @@ export const getFiscalYearDetail = createServerFn({ method: 'GET' })
       .groupBy(journalEntry.periodId);
     const byPeriod = new Map(stats.map((s) => [s.periodId, s]));
 
+    // Asientos pendientes de revisión por período (bloquean el cierre).
+    const pendingStats = await db
+      .select({
+        periodId: journalEntry.periodId,
+        pendingCount: sql<number>`count(distinct ${journalEntry.id})::int`,
+      })
+      .from(journalEntry)
+      .innerJoin(
+        journalEntryLine,
+        eq(journalEntryLine.journalEntryId, journalEntry.id)
+      )
+      .innerJoin(account, eq(account.id, journalEntryLine.accountId))
+      .where(
+        and(
+          eq(journalEntry.fiscalYearId, fy.id),
+          eq(journalEntry.isVoided, false),
+          eq(account.organizationId, orgId),
+          eq(account.code, PENDING_REVIEW_CODE)
+        )
+      )
+      .groupBy(journalEntry.periodId);
+    const pendingByPeriod = new Map(
+      pendingStats.map((s) => [s.periodId, s.pendingCount])
+    );
+
     // Período actual = el abierto más antiguo.
     const currentPeriod = periods.find((p) => p.status === 'open');
 
@@ -974,6 +1001,7 @@ export const getFiscalYearDetail = createServerFn({ method: 'GET' })
       closedAt: p.closedAt,
       entryCount: byPeriod.get(p.id)?.entryCount ?? 0,
       totalAmount: parseFloat(byPeriod.get(p.id)?.totalDebit ?? '0'),
+      pendingCount: pendingByPeriod.get(p.id) ?? 0,
       isCurrent: currentPeriod?.id === p.id,
     }));
 
@@ -982,6 +1010,113 @@ export const getFiscalYearDetail = createServerFn({ method: 'GET' })
       periods: periodsOut,
       currentPeriodId: currentPeriod?.id ?? null,
     };
+  });
+
+export interface PendingReviewEntry {
+  id: string;
+  number: number;
+  entryDate: string | Date;
+  origin: string;
+  sourceType: string | null;
+  /** Total del asiento (suma del Debe). */
+  total: number;
+  /** Importe imputado a la cuenta pendiente de revisión. */
+  pendingAmount: number;
+  /** Motivos: descripciones de las líneas en pendiente de revisión. */
+  motivos: string[];
+  periodId: string;
+  periodYear: number;
+  periodMonth: number;
+  periodStatus: 'open' | 'closed';
+}
+
+/**
+ * Bandeja de asientos en pendiente de revisión: asientos no anulados con al menos
+ * una línea en la cuenta de sistema pending_review, a resolver antes de cerrar. (US 3.4.1)
+ */
+export const getPendingReviewEntries = createServerFn({ method: 'GET' })
+  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .handler(async (ctx): Promise<PendingReviewEntry[]> => {
+    const { orgId } = await getSessionWithOrg();
+    const { clientId } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    const prId = await loadPendingReviewAccountId(orgId);
+
+    // Líneas en pendiente de revisión + datos de su asiento y período.
+    const prLines = await db
+      .select({
+        entryId: journalEntry.id,
+        number: journalEntry.number,
+        entryDate: journalEntry.entryDate,
+        origin: journalEntry.origin,
+        sourceType: journalEntry.sourceType,
+        periodId: journalEntry.periodId,
+        periodYear: accountingPeriod.year,
+        periodMonth: accountingPeriod.month,
+        periodStatus: accountingPeriod.status,
+        debit: journalEntryLine.debit,
+        credit: journalEntryLine.credit,
+        description: journalEntryLine.description,
+      })
+      .from(journalEntryLine)
+      .innerJoin(
+        journalEntry,
+        eq(journalEntry.id, journalEntryLine.journalEntryId)
+      )
+      .innerJoin(
+        accountingPeriod,
+        eq(accountingPeriod.id, journalEntry.periodId)
+      )
+      .where(
+        and(
+          eq(journalEntry.clientId, clientId),
+          eq(journalEntry.isVoided, false),
+          eq(journalEntryLine.accountId, prId)
+        )
+      )
+      .orderBy(desc(journalEntry.entryDate), desc(journalEntry.number));
+
+    if (prLines.length === 0) return [];
+
+    // Total del asiento (suma del Debe de TODAS sus líneas).
+    const entryIds = [...new Set(prLines.map((l) => l.entryId))];
+    const totals = await db
+      .select({
+        entryId: journalEntryLine.journalEntryId,
+        total: sql<string>`coalesce(sum(${journalEntryLine.debit}),0)`,
+      })
+      .from(journalEntryLine)
+      .where(inArray(journalEntryLine.journalEntryId, entryIds))
+      .groupBy(journalEntryLine.journalEntryId);
+    const totalByEntry = new Map(totals.map((t) => [t.entryId, t.total]));
+
+    // Agrupar las líneas PR por asiento.
+    const byEntry = new Map<string, PendingReviewEntry>();
+    for (const l of prLines) {
+      let e = byEntry.get(l.entryId);
+      if (!e) {
+        e = {
+          id: l.entryId,
+          number: l.number,
+          entryDate: l.entryDate,
+          origin: l.origin,
+          sourceType: l.sourceType,
+          total: parseFloat(totalByEntry.get(l.entryId) ?? '0'),
+          pendingAmount: 0,
+          motivos: [],
+          periodId: l.periodId,
+          periodYear: l.periodYear,
+          periodMonth: l.periodMonth,
+          periodStatus: l.periodStatus,
+        };
+        byEntry.set(l.entryId, e);
+      }
+      e.pendingAmount += parseFloat(l.debit) + parseFloat(l.credit);
+      const motivo = l.description?.trim();
+      if (motivo && !e.motivos.includes(motivo)) e.motivos.push(motivo);
+    }
+
+    return [...byEntry.values()];
   });
 
 /**
