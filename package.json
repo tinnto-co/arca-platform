@@ -28,7 +28,8 @@
     "db:seed-obras": "bun run src/scripts/seed-obras-sociales.ts",
     "db:seed-caravelle": "bun run src/scripts/run-caravelle-seed.ts",
     "sueldos:seed-gastronomico-categorias": "bun run src/scripts/seed-gastronomico-categorias.ts",
-    "sueldos:seed-gastronomico-escalas": "bun run src/scripts/seed-gastronomico-escalas.ts"
+    "sueldos:seed-gastronomico-escalas": "bun run src/scripts/seed-gastronomico-escalas.ts",
+    "db:seed-catalogos-afip": "bun run src/scripts/seed-catalogos-afip.ts"
   },
   "keywords": [],
   "author": "",

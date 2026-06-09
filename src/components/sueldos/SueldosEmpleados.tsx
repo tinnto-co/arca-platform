@@ -88,8 +88,10 @@ function formaDbToSelect(
 function formatDate(d: Date | string | null | undefined): string {
   if (d == null) return '—';
   try {
-    const dt = typeof d === 'string' ? parseISO(d) : d;
-    return format(dt, 'dd/MM/yyyy');
+    // Siempre leer la parte UTC para evitar el desfase de timezone (UTC-3 → día anterior)
+    const iso = typeof d === 'string' ? d : (d as Date).toISOString();
+    const [y, m, day] = iso.slice(0, 10).split('-');
+    return `${day}/${m}/${y}`;
   } catch {
     return '—';
   }
@@ -142,6 +144,13 @@ function tipoJornadaLabel(v: string | null | undefined): string {
   if (v === 'part_time') return 'Part time';
   if (v === 'reducida') return 'Reducida';
   return v ?? '—';
+}
+
+function codigoConNombre(codigo: string | null | undefined, nombre: string | null | undefined): string | null {
+  const c = codigo?.trim() || null;
+  const n = nombre?.trim() || null;
+  if (c && n) return `${c} - ${n}`;
+  return n ?? c ?? null;
 }
 
 function formaPagoLabel(v: string | null | undefined): string {
@@ -236,6 +245,7 @@ function EmpleadoDetalleDialog({
   const [actividadId, setActividadId] = useState('');
   const [siniestradoId, setSiniestradoId] = useState('');
   const [observaciones, setObservaciones] = useState('');
+  const [valorSueldoOverride, setValorSueldoOverride] = useState('');
 
   const { data: categoriasEdit = [] } = useQuery({
     queryKey: ['categorias', convenioId, clientId],
@@ -299,7 +309,7 @@ function EmpleadoDetalleDialog({
     setCuil(emp.cuil ?? '');
     setFechaAlta(
       emp.fechaAlta
-        ? format(typeof emp.fechaAlta === 'string' ? parseISO(emp.fechaAlta) : emp.fechaAlta, 'yyyy-MM-dd')
+        ? (typeof emp.fechaAlta === 'string' ? emp.fechaAlta : (emp.fechaAlta as Date).toISOString()).slice(0, 10)
         : ''
     );
     setActivo(emp.activo ?? true);
@@ -326,6 +336,7 @@ function EmpleadoDetalleDialog({
     setActividadId(emp.actividadId ?? '');
     setSiniestradoId(emp.siniestradoId ?? '');
     setObservaciones(emp.observaciones ?? '');
+    setValorSueldoOverride(emp.valorSueldo != null ? String(emp.valorSueldo) : '');
   };
 
   useEffect(() => {
@@ -368,6 +379,7 @@ function EmpleadoDetalleDialog({
           actividadId: actividadId || null,
           siniestradoId: siniestradoId || null,
           observaciones: observaciones.trim() || null,
+          valorSueldo: valorSueldoOverride.trim() !== '' ? valorSueldoOverride.trim() : null,
         },
       });
     },
@@ -504,7 +516,7 @@ function EmpleadoDetalleDialog({
                     <Campo label="Localidad" value={e.localidad} />
                     <Campo label="Provincia" value={row.provinciaNombre ?? null} />
                     <Campo label="Código postal" value={e.codigoPostal} />
-                    <Campo label="Cónyuge" value={e.conyuge != null ? String(e.conyuge) : null} />
+                    <Campo label="Cónyuge" value={e.conyuge != null ? (e.conyuge > 0 ? 'Sí' : 'No') : null} />
                     <Campo label="Hijos" value={e.hijos != null ? String(e.hijos) : null} />
                     <Campo label="Adherentes" value={e.adherentes != null ? String(e.adherentes) : null} />
                   </>
@@ -583,7 +595,22 @@ function EmpleadoDetalleDialog({
                 )}
               </Seccion>
               <Seccion title="Remuneración">
-                <Campo label="Sueldo básico override" value={e.valorSueldo ? `$${Number(e.valorSueldo).toLocaleString('es-AR', { minimumFractionDigits: 2 })}` : null} />
+                {isEditing ? (
+                  <div className="space-y-1">
+                    <Label>Sueldo básico override</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Dejar vacío para usar escala del convenio"
+                      value={valorSueldoOverride}
+                      onChange={(ev) => setValorSueldoOverride(ev.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">Si se ingresa un valor, tiene prioridad sobre la escala del convenio.</p>
+                  </div>
+                ) : (
+                  <Campo label="Sueldo básico override" value={e.valorSueldo ? `$${Number(e.valorSueldo).toLocaleString('es-AR', { minimumFractionDigits: 2 })}` : null} />
+                )}
                 <Campo label="Valor hora override" value={e.valorHora ? `$${Number(e.valorHora).toLocaleString('es-AR', { minimumFractionDigits: 2 })}` : null} />
                 <Campo label="Horas mensuales" value={e.horasMensualesNormales != null ? String(e.horasMensualesNormales) : null} />
                 <Campo label="Días mensuales" value={e.diasMensualesNormales != null ? String(e.diasMensualesNormales) : null} />
@@ -741,12 +768,12 @@ function EmpleadoDetalleDialog({
                   </>
                 ) : (
                   <>
-                    <Campo label="Modalidad contratación" value={row.modalidadNombre ?? e.codigoModalidadContratacion} />
-                    <Campo label="Situación" value={row.situacionNombre ?? e.codigoSituacion} />
-                    <Campo label="Zona" value={row.zonaNombre ?? e.codigoZona} />
-                    <Campo label="Condición" value={row.condicionNombre ?? e.codigoCondicion} />
-                    <Campo label="Actividad" value={row.actividadNombre ?? e.codigoActividad} />
-                    <Campo label="Siniestrado" value={row.siniestradoNombre ?? e.codigoSiniestrado} />
+                    <Campo label="Modalidad contratación" value={codigoConNombre(e.codigoModalidadContratacion, row.modalidadNombre)} />
+                    <Campo label="Situación" value={codigoConNombre(e.codigoSituacion, row.situacionNombre)} />
+                    <Campo label="Zona" value={codigoConNombre(e.codigoZona, row.zonaNombre)} />
+                    <Campo label="Condición" value={codigoConNombre(e.codigoCondicion, row.condicionNombre)} />
+                    <Campo label="Actividad" value={codigoConNombre(e.codigoActividad, row.actividadNombre)} />
+                    <Campo label="Siniestrado" value={codigoConNombre(e.codigoSiniestrado, row.siniestradoNombre)} />
                   </>
                 )}
               </Seccion>

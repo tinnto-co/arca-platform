@@ -52,6 +52,7 @@ import {
   puedeLiquidarPeriodo,
 } from '@/lib/payroll-period-rules';
 import { legajoParaMostrar } from '@/lib/legajo';
+import { toTitleCase } from '@/lib/format-name';
 
 const now = new Date();
 const [PERIODO_INICIAL_ANO, PERIODO_INICIAL_MES] =
@@ -523,7 +524,7 @@ export function SueldosDashboard({
                 >
                   <span className="flex items-center gap-2">
                     <span>
-                      {l.empleado.nombre}
+                      {toTitleCase(l.empleado.nombre)}
                       <span className="ml-2 text-xs text-muted-foreground">
                         Legajo: {legajoParaMostrar(l.empleado.legajo ?? null)}
                       </span>
@@ -589,7 +590,7 @@ export function SueldosDashboard({
                 >
                   <span className="flex items-center gap-2">
                     <span>
-                      {l.empleado.nombre}
+                      {toTitleCase(l.empleado.nombre)}
                       <span className="ml-2 text-xs text-muted-foreground">
                         Legajo: {legajoParaMostrar(l.empleado.legajo ?? null)}
                       </span>
@@ -645,7 +646,7 @@ export function SueldosDashboard({
                   className="grid grid-cols-1 items-center gap-2 rounded-md border p-2 md:grid-cols-[1fr_auto]"
                 >
                   <div className="text-sm">
-                    <div className="font-medium">{e.empleado.nombre}</div>
+                    <div className="font-medium">{toTitleCase(e.empleado.nombre)}</div>
                     <div className="text-muted-foreground">
                       Legajo: {legajoParaMostrar(e.empleado.legajo ?? null)}
                     </div>
@@ -721,7 +722,7 @@ export function SueldosDashboard({
           <div className="max-h-[380px] space-y-2 overflow-y-auto pr-1">
             {erroresMasiva.map((r) => (
               <div key={r.empleadoId} className="rounded-md border p-2 text-sm">
-                <div className="font-medium">{r.empleadoNombre}</div>
+                <div className="font-medium">{toTitleCase(r.empleadoNombre)}</div>
                 <div className="text-muted-foreground">
                   Legajo: {r.legajo || '—'} | Código: {r.errorCode ?? 'OTRO'}
                 </div>

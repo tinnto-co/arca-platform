@@ -3960,6 +3960,54 @@ async function enrichConceptosFaltantes(
   );
 }
 
+/**
+ * Para filas donde `conceptoSos` no resolvió (código no está en concepto_sos),
+ * busca el nombre en conceptos_completos_sos como fallback.
+ */
+async function enrichConceptosSosFaltantes(
+  rows: DetalleReciboRow[]
+): Promise<DetalleReciboRow[]> {
+  const codigosFaltantes = [
+    ...new Set(
+      rows
+        .filter((r) => !r.conceptoSos)
+        .map((r) => r.detalle.codigo)
+        .filter((c) => c && !isNaN(Number(c)))
+    ),
+  ];
+  if (codigosFaltantes.length === 0) return rows;
+
+  const numeros = codigosFaltantes.map(Number);
+  const extras = await db
+    .select({
+      numeroSos: conceptosCompletosSos.numeroSos,
+      nombre: conceptosCompletosSos.nombre,
+      codigoAfip: conceptosCompletosSos.codigoAfip,
+    })
+    .from(conceptosCompletosSos)
+    .where(inArray(conceptosCompletosSos.numeroSos, numeros));
+
+  const byNum = new Map(extras.map((e) => [String(e.numeroSos), e]));
+
+  return rows.map((r) => {
+    if (r.conceptoSos) return r;
+    const extra = byNum.get(r.detalle.codigo);
+    if (!extra) return r;
+    return {
+      ...r,
+      conceptoSos: {
+        id: r.detalle.codigo,
+        codigo: String(extra.numeroSos),
+        nombre: extra.nombre,
+        codigoAfip: extra.codigoAfip ?? '',
+        conceptoAfipId: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as typeof conceptoSos.$inferSelect,
+    };
+  });
+}
+
 export const getReciboDetalle = createServerFn({ method: 'GET' })
   .inputValidator(
     z.object({ liquidacionId: z.string().uuid(), clientId: z.string().uuid() })
@@ -4050,6 +4098,7 @@ export const getReciboDetalle = createServerFn({ method: 'GET' })
 
     let merged = mergeDetalleFilasDuplicadas(detallesRaw);
     merged = await enrichConceptosFaltantes(merged);
+    merged = await enrichConceptosSosFaltantes(merged);
 
     const detalles = merged.map((row) => ({
       ...row,
@@ -4189,9 +4238,10 @@ export const listRecibosDetalleParaPDF = createServerFn({ method: 'GET' })
       .where(inArray(liquidacionImportConceptoValor.reciboId, reciboIds))
       .orderBy(asc(liquidacionImportConceptoValor.codigo));
 
-    const allDetallesEnriched = await enrichConceptosFaltantes(
+    let allDetallesEnriched = await enrichConceptosFaltantes(
       allDetallesRaw as DetalleReciboRow[]
     );
+    allDetallesEnriched = await enrichConceptosSosFaltantes(allDetallesEnriched);
 
     const detallesByReciboId = new Map<string, DetalleReciboRow[]>();
     for (const d of allDetallesEnriched) {
@@ -4348,6 +4398,11 @@ export const previewLsd = createServerFn({ method: 'GET' })
         situacionNombre: payrollSituacion.nombre,
         modalidadCodigo: payrollModalidadContratacion.codigo,
         modalidadNombre: payrollModalidadContratacion.nombre,
+        rem4y8Override: liquidacionImportRecibo.rem4y8Override,
+        rem9Override: liquidacionImportRecibo.rem9Override,
+        contribucionAdicionalOS: liquidacionImportRecibo.contribucionAdicionalOS,
+        importeADetraerLey27430: liquidacionImportRecibo.importeADetraerLey27430,
+        importeMaternidadArt13: liquidacionImportRecibo.importeMaternidadArt13,
       })
       .from(liquidacionImportRecibo)
       .innerJoin(
@@ -4451,6 +4506,56 @@ export const upsertParametrosPeriodo = createServerFn({ method: 'POST' })
           updatedAt: new Date(),
         },
       });
+    return { ok: true };
+  });
+
+/** Actualiza los campos de override LSD de un recibo (bases imponibles, aportes adicionales, etc.). */
+export const updateReciboLsdOverrides = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      profileId: z.string().uuid(),
+      reciboId: z.string().uuid(),
+      rem4y8Override: z.number().nullable().optional(),
+      rem9Override: z.number().nullable().optional(),
+      contribucionAdicionalOS: z.number().nullable().optional(),
+      importeADetraerLey27430: z.number().nullable().optional(),
+      importeMaternidadArt13: z.number().nullable().optional(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
+
+    const [rec] = await db
+      .select({ id: liquidacionImportRecibo.id })
+      .from(liquidacionImportRecibo)
+      .innerJoin(liquidacionImportEmpleado, eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id))
+      .where(
+        and(
+          eq(liquidacionImportRecibo.id, ctx.data.reciboId),
+          eq(liquidacionImportEmpleado.clientId, ctx.data.profileId)
+        )
+      )
+      .limit(1);
+    if (!rec) throw new Error('Recibo no encontrado');
+
+    const toStr = (v: number | null | undefined) => (v != null ? String(v) : null);
+    const update: Record<string, unknown> = { updatedAt: new Date() };
+    if (ctx.data.rem4y8Override !== undefined) update.rem4y8Override = toStr(ctx.data.rem4y8Override);
+    if (ctx.data.rem9Override !== undefined) update.rem9Override = toStr(ctx.data.rem9Override);
+    if (ctx.data.contribucionAdicionalOS !== undefined) update.contribucionAdicionalOS = toStr(ctx.data.contribucionAdicionalOS);
+    if (ctx.data.importeADetraerLey27430 !== undefined) update.importeADetraerLey27430 = toStr(ctx.data.importeADetraerLey27430);
+    if (ctx.data.importeMaternidadArt13 !== undefined) update.importeMaternidadArt13 = toStr(ctx.data.importeMaternidadArt13);
+
+    await db
+      .update(liquidacionImportRecibo)
+      .set(update)
+      .where(eq(liquidacionImportRecibo.id, ctx.data.reciboId));
+
     return { ok: true };
   });
 
@@ -4806,12 +4911,19 @@ export const generarArchivoLsd = createServerFn({ method: 'GET' })
         : brutaCentavos;
 
       // 20 campos monetarios de 15 chars cada uno (= 300 chars de [70] a [370])
+      // base dif LRT = parte de bruta que supera el tope (o la suma no-rem cuando totalRem ≤ tope)
+      // = bruta - B1(jubApor) = brutaCentavos - applyTope(totalRemCentavos)
+      const baseDifLRT = Math.max(0, brutaCentavos - applyTope(totalRemCentavos));
+      // base dif OS = exceso de la base OS sobre bruta (cuando rem4y8 override > bruta)
+      const baseDifAporOS = Math.max(0, applyTope(rem4y8Base) - brutaCentavos);
+      const baseDifContOS = Math.max(0, rem4y8Base - brutaCentavos);
+
       const moneyFields = [
         lsdMoney(0),                                          // [70:85]  aporte adicional OS
         lsdMoney(montoCentavos(rec.contribucionAdicionalOS)), // [85:100] contrib adicional OS
-        lsdMoney(0),                                          // [100:115] base dif aporte OS
-        lsdMoney(0),                                          // [115:130] base dif contrib OS
-        lsdMoney(0),                                          // [130:145] base dif LRT
+        lsdMoney(baseDifAporOS),                              // [100:115] base dif aporte OS
+        lsdMoney(baseDifContOS),                              // [115:130] base dif contrib OS
+        lsdMoney(baseDifLRT),                                 // [130:145] base dif LRT
         lsdMoney(montoCentavos(rec.importeMaternidadArt13)), // [145:160] remun maternidad
         lsdMoney(brutaCentavos),                             // [160:175] remuneración bruta
         lsdMoney(applyTope(totalRemCentavos)),               // [175:190] base 1: jubilación aporte
@@ -4841,25 +4953,28 @@ export const generarArchivoLsd = createServerFn({ method: 'GET' })
       // marca_reduccion: MiPyME con reducción de contribuciones
       const marcaReduccion = employer.mipyme ? '1' : '0';
       const tipoOp = '0'; // 0 = alta/modificación normal
-      const sitGeneral = sit1.padStart(2, '0') || '01';
-      const condicion = (row.condicionCodigo ?? '01').padStart(2, '0');
-      const actividad = (row.actividadCodigo ?? '000').padStart(3, '0');
-      const modalidad = (row.modalidadCodigo ?? '001').padStart(3, '0');
-      const siniestrado = (row.siniestradoCodigo ?? '00').padStart(2, '0');
-      const localidad = (row.localidadCodigo ?? '00').padStart(2, '0');
+      // Campos alfanuméricos LSD: sin cero a la izquierda, right-padded con espacio
+      const lsdAlpha = (code: string | null | undefined, len: number) =>
+        (parseInt(code ?? '0') || 0).toString().padEnd(len, ' ');
+      const sitGeneral = lsdAlpha(sit1 || '1', 2);
+      const condicion = lsdAlpha(row.condicionCodigo ?? '1', 2);
+      const actividad = (row.actividadCodigo ?? '000').padStart(3, '0'); // numérico: zero-pad
+      const modalidad = lsdAlpha(row.modalidadCodigo ?? '1', 3);
+      const siniestrado = lsdAlpha(row.siniestradoCodigo ?? '0', 2);
+      const localidad = (row.localidadCodigo ?? '00').padStart(2, '0'); // numérico: zero-pad
       // Situaciones 1/2/3 y sus días de inicio
-      const sitRev1 = sit1 ? sit1.padStart(2, '0') : '  ';
+      const sitRev1 = sit1 ? lsdAlpha(sit1, 2) : '  ';
       const diaInicio1 = sit1
         ? String(rec.situacionRevista1DiaInicio ?? 1).padStart(2, '0')
         : '  ';
-      const sitRev2 = sit2 ? sit2.padStart(2, '0') : '  ';
+      const sitRev2 = sit2 ? lsdAlpha(sit2, 2) : '  ';
       const diaInicio2 = sit2
         ? String(rec.situacionRevista2DiaInicio ?? 1).padStart(2, '0')
-        : '  ';
-      const sitRev3 = sit3 ? sit3.padStart(2, '0') : '  ';
+        : '00';
+      const sitRev3 = sit3 ? lsdAlpha(sit3, 2) : '  ';
       const diaInicio3 = sit3
         ? String(rec.situacionRevista3DiaInicio ?? 1).padStart(2, '0')
-        : '  ';
+        : '00';
       const diasTrabajados = String(rec.diasTrabajados ?? 30).padStart(2, '0');
       const pctAporteAdSS = '000';   // porcentaje aporte adicional SS (3 chars)
       const pctContribTarea = '00000'; // porcentaje contrib tarea diferencial (5 chars)

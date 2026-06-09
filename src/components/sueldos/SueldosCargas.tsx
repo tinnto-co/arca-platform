@@ -32,6 +32,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import {
@@ -40,6 +48,7 @@ import {
   validarLsd,
   getParametrosPeriodo,
   upsertParametrosPeriodo,
+  updateReciboLsdOverrides,
 } from '@/actions/sueldos';
 import { legajoParaMostrar } from '@/lib/legajo';
 
@@ -355,12 +364,116 @@ function IssueRow({
   );
 }
 
+// ─── Dialog overrides LSD ────────────────────────────────────────────────────
+
+type OverrideRow = {
+  reciboId: string;
+  empleadoNombre: string;
+  rem4y8Override: string | null;
+  rem9Override: string | null;
+  contribucionAdicionalOS: string | null;
+  importeADetraerLey27430: string | null;
+  importeMaternidadArt13: string | null;
+};
+
+function LsdOverridesDialog({
+  clientId,
+  profileId,
+  row,
+  onClose,
+}: {
+  clientId: string;
+  profileId: string;
+  row: OverrideRow;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [rem4y8, setRem4y8] = useState(row.rem4y8Override ?? '');
+  const [rem9, setRem9] = useState(row.rem9Override ?? '');
+  const [aporteOS, setAporteOS] = useState(row.contribucionAdicionalOS ?? '');
+  const [detraer, setDetraer] = useState(row.importeADetraerLey27430 ?? '');
+  const [maternidad, setMaternidad] = useState(row.importeMaternidadArt13 ?? '');
+
+  const parseMonto = (s: string) => {
+    const v = parseFloat(s.replace(',', '.'));
+    return isNaN(v) ? null : v;
+  };
+
+  const { mutate, isPending } = useMutation({
+    mutationFn: () =>
+      updateReciboLsdOverrides({
+        data: {
+          clientId,
+          profileId,
+          reciboId: row.reciboId,
+          rem4y8Override: rem4y8 === '' ? null : parseMonto(rem4y8),
+          rem9Override: rem9 === '' ? null : parseMonto(rem9),
+          contribucionAdicionalOS: aporteOS === '' ? null : parseMonto(aporteOS),
+          importeADetraerLey27430: detraer === '' ? null : parseMonto(detraer),
+          importeMaternidadArt13: maternidad === '' ? null : parseMonto(maternidad),
+        },
+      }),
+    onSuccess: () => {
+      toast.success('Campos LSD actualizados');
+      queryClient.invalidateQueries({ queryKey: ['lsd-preview'] });
+      queryClient.invalidateQueries({ queryKey: ['lsd-validacion'] });
+      onClose();
+    },
+    onError: (err) => toast.error(`Error: ${(err as Error).message}`),
+  });
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-[15px]">Bases LSD — {row.empleadoNombre}</DialogTitle>
+        </DialogHeader>
+        <p className="text-[12px] text-[var(--arca-ink-3)] -mt-2">
+          Dejá en blanco para usar la remuneración bruta del recibo como base.
+        </p>
+        <div className="space-y-3 pt-1">
+          {[
+            { label: 'Base OS aportes y contrib (rem4y8)', value: rem4y8, set: setRem4y8, hint: 'B4 y B8 en el LSD' },
+            { label: 'Base ART (rem9)', value: rem9, set: setRem9, hint: 'B9 en el LSD' },
+            { label: 'Remuneración maternidad Art. 13 LRT', value: maternidad, set: setMaternidad, hint: 'Campo remunMaternidad' },
+            { label: 'Contribución adicional OS', value: aporteOS, set: setAporteOS, hint: 'Campo aporteAdicOS' },
+            { label: 'Importe a detraer Ley 27.430', value: detraer, set: setDetraer, hint: 'Campo detraer27430' },
+          ].map(({ label, value, set, hint }) => (
+            <div key={label} className="space-y-1">
+              <Label className="text-[12px]">{label}</Label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="Sin override (usa bruta)"
+                value={value}
+                onChange={(e) => set(e.target.value)}
+                className="h-8 text-[13px]"
+              />
+              <p className="text-[11px] text-[var(--arca-ink-3)]">{hint}</p>
+            </div>
+          ))}
+        </div>
+        <DialogFooter className="pt-2">
+          <Button variant="outline" size="sm" onClick={onClose} disabled={isPending}>
+            Cancelar
+          </Button>
+          <Button size="sm" onClick={() => mutate()} disabled={isPending}>
+            {isPending ? 'Guardando…' : 'Guardar'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Componente principal ────────────────────────────────────────────────────
 
 export function SueldosCargas({ clientId, profileId }: SueldosCargasProps) {
   const def = getPeriodoDefecto();
   const [year, setYear] = useState(def.year);
   const [month, setMonth] = useState(def.month);
+  const [editingOverride, setEditingOverride] = useState<OverrideRow | null>(null);
 
   const periodo = `${year}-${month}`;
 
@@ -574,6 +687,7 @@ export function SueldosCargas({ clientId, profileId }: SueldosCargasProps) {
                 <TableHead className="text-[12px] text-right">Días trab.</TableHead>
                 <TableHead className="text-[12px] text-right">Conceptos</TableHead>
                 <TableHead className="text-[12px]">Origen</TableHead>
+                <TableHead className="w-8" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -631,12 +745,42 @@ export function SueldosCargas({ clientId, profileId }: SueldosCargasProps) {
                         {emp.origen}
                       </Badge>
                     </TableCell>
+                    <TableCell className="w-8 pr-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        title="Editar bases LSD"
+                        onClick={() =>
+                          setEditingOverride({
+                            reciboId: emp.reciboId,
+                            empleadoNombre: emp.empleadoNombre,
+                            rem4y8Override: emp.rem4y8Override,
+                            rem9Override: emp.rem9Override,
+                            contribucionAdicionalOS: emp.contribucionAdicionalOS,
+                            importeADetraerLey27430: emp.importeADetraerLey27430,
+                            importeMaternidadArt13: emp.importeMaternidadArt13,
+                          })
+                        }
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 );
               })}
             </TableBody>
           </Table>
         </div>
+      )}
+
+      {editingOverride && (
+        <LsdOverridesDialog
+          clientId={clientId}
+          profileId={profileId}
+          row={editingOverride}
+          onClose={() => setEditingOverride(null)}
+        />
       )}
     </div>
   );

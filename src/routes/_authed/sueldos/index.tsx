@@ -10,6 +10,7 @@ import {
   FileText,
   UserCircle,
   PenLine,
+  Upload,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/shared/page-header';
@@ -21,8 +22,10 @@ import { SueldosConceptos } from '@/components/sueldos/SueldosConceptos';
 import { SueldosSimulador } from '@/components/sueldos/SueldosSimulador';
 import { SueldosRecibo } from '@/components/sueldos/SueldosRecibo';
 import { SueldosFirmaDigital } from '@/components/sueldos/SueldosFirmaDigital';
+import { SueldosCargas } from '@/components/sueldos/SueldosCargas';
 import { getRepresentativesForSueldos } from '@/actions/client';
 import { cn } from '@/lib/utils';
+import { toTitleCase } from '@/lib/format-name';
 
 export const Route = createFileRoute('/_authed/sueldos/')({
   component: RouteComponent,
@@ -43,6 +46,23 @@ function RouteComponent() {
     empleadoNombre: string;
     periodo: string;
     tipoRecibo: string;
+    quincena?: string | null;
+    fechaLiquidacion?: string | null;
+    fechaPago?: string | null;
+    obraSocialId?: string | null;
+    periodoCargas?: string | null;
+    fechaDepositoCargas?: string | null;
+    observacionInterna?: string | null;
+    observacionRecibo?: string | null;
+    situacionRevista1Id?: string | null;
+    situacionRevista1DiaInicio?: number | null;
+    situacionRevista2Id?: string | null;
+    situacionRevista2DiaInicio?: number | null;
+    situacionRevista3Id?: string | null;
+    situacionRevista3DiaInicio?: number | null;
+    diasTrabajados?: number | null;
+    horasTrabajadas?: number | null;
+    importeMaternidadArt13?: string | null;
   } | undefined>(undefined);
   const [reciboFiltroEmpleadoId, setReciboFiltroEmpleadoId] = useState('');
 
@@ -52,8 +72,9 @@ function RouteComponent() {
   });
 
   const selectedOption = clients.find((c) => c.id === selectedOptionId);
-  const clientId = selectedOption?.clientId ?? '';
-  const profileId = selectedOption?.profileId ?? '';
+  // En acciones de sueldos: clientId = representative, profileId = empresa (client).
+  const clientId = selectedOption?.representativeId ?? '';
+  const profileId = selectedOption?.clientId ?? '';
 
   useEffect(() => {
     if (
@@ -67,7 +88,7 @@ function RouteComponent() {
 
   const clientOptions = clients.map((c) => ({
     value: c.id,
-    label: c.label,
+    label: toTitleCase(c.label) || c.label,
   }));
 
   return (
@@ -163,6 +184,10 @@ function RouteComponent() {
                   <PenLine className="h-[14px] w-[14px]" />
                   Firma Digital
                 </TabsTrigger>
+                <TabsTrigger value="cargas" className={tabTriggerCls()}>
+                  <Upload className="h-[14px] w-[14px]" />
+                  Cargas Sociales
+                </TabsTrigger>
               </TabsList>
             </div>
           </div>
@@ -211,6 +236,9 @@ function RouteComponent() {
             </TabsContent>
             <TabsContent value="firma-digital" className="mt-0">
               <SueldosFirmaDigital clientId={clientId} profileId={profileId} />
+            </TabsContent>
+            <TabsContent value="cargas" className="mt-0">
+              <SueldosCargas clientId={clientId} profileId={profileId} />
             </TabsContent>
           </div>
         </Tabs>

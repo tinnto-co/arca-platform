@@ -156,34 +156,15 @@ bun run src/scripts/seed-topes-2026.ts
 
 ### Pendiente — Alta prioridad
 
-Estas dos cosas son bloqueantes en la práctica: sin ellas, el contador puede generar un archivo incorrecto sin darse cuenta.
+#### 1. Prueba end-to-end en browser
 
-#### 1. UI para cargar el tope imponible manualmente
+Verificar en el browser que la solapa "Cargas Sociales" para E-presis Mayo 2026:
+- No muestra errores de validación (tope cargado, situación de revista resuelta vía COALESCE, modalidad OK).
+- El LSD se descarga y el archivo generado coincide con el de referencia (`30-71755486-4_2026-5_0__LSD.txt`).
 
-**El problema**: el cron intenta bajar el tope de ANSES el día 5 de cada mes. Si falla (o si el contador quiere corregirlo), no hay forma de cargarlo desde la app. Cuando el tope está vacío, el Record 04 se genera **sin aplicar el tope**, lo que está mal.
+#### 2. Configurar CCT y escalas para las demás empresas
 
-**Qué se necesita**: una sección (probablemente dentro de la solapa "Cargas Sociales" o en Configuración) que muestre la tabla `payroll_parametros_periodo` y permita:
-- Ver qué meses tienen el tope cargado y cuál es el valor
-- Editar o cargar manualmente el tope de un mes
-- Ver si el cron lo actualizó automáticamente o fue cargado a mano
-
-**Impacto en la descarga**: el botón de descarga del LSD debería estar bloqueado si el período no tiene tope cargado, con un mensaje claro que indique que hay que cargarlo primero.
-
-#### 2. Validación pre-descarga
-
-**El problema**: hoy el contador puede descargar el LSD aunque falten datos obligatorios. AFIP rechaza el archivo y el contador no sabe por qué.
-
-**Qué se necesita**: antes de generar el archivo, verificar y mostrar un resumen de todo lo que falta:
-
-| Validación | Tipo |
-|-----------|------|
-| Tope imponible cargado para el período | Bloqueante |
-| Empresa con tipo de empleador configurado | Bloqueante |
-| Cada empleado tiene situación de revista en el recibo | Bloqueante |
-| Cada empleado tiene modalidad de contratación | Bloqueante |
-| Cada empleado tiene obra social asignada | Warning |
-
-Si hay errores bloqueantes, mostrar el detalle y no permitir la descarga. Los warnings se muestran pero no bloquean.
+Sin convenios y escalas configurados, el motor de cálculo no puede generar recibos correctos para ninguna empresa más allá de E-presis. Ver sección "Setup de convenios pendiente" más abajo.
 
 ### Pendiente — Prioridad media
 
@@ -282,9 +263,9 @@ Cada campo es un entero en centavos (`Math.round(monto * 100)`), zero-padded a 1
 |-----------------|-------|---------|
 | 70–84 | Aporte adicional OS | `0` |
 | 85–99 | Contrib adicional OS | `recibo.contribucionAdicionalOS` |
-| 100–114 | Base dif aporte OS | `0` |
-| 115–129 | Base dif contrib OS | `0` |
-| 130–144 | Base dif LRT | `0` |
+| 100–114 | Base dif aporte OS | `max(0, min(rem4y8, tope) - bruta)` — exceso de base OS sobre bruta cuando hay override |
+| 115–129 | Base dif contrib OS | `max(0, rem4y8 - bruta)` — exceso de base OS contrib sobre bruta |
+| 130–144 | Base dif LRT | `max(0, bruta - min(total_rem, tope))` — parte de bruta que supera el tope (o suma no-rem si total_rem ≤ tope) |
 | 145–159 | Remuneración maternidad | `recibo.importeMaternidadArt13` |
 | **160–174** | **Remuneración bruta** | `bruta` |
 | **175–189** | **Base 1** — jubilación aporte | `min(total_rem, tope)` |
@@ -330,3 +311,40 @@ Los issues por empleado incluyen `empleadoCuil` y `empleadoNombre` para que la U
 | `upsertParametrosPeriodo({ periodo, topeMaximoImponible, salarioMinimo?, fuente? })` | POST | Crea o reemplaza los parámetros del período. Marca `actualizadoPorCron = false` |
 
 El cron (`payroll-cron.ts`) también hace upsert pero con `actualizadoPorCron = true`. Así la UI puede distinguir si el valor fue cargado manualmente o por el cron automático.
+
+---
+
+## Setup de convenios pendiente (estado junio 2026)
+
+Para generar el LSD de empresas que no sean E-presis, primero hay que configurar su CCT completo en la DB. El flujo es:
+
+```
+payrollConvenio → payrollConvenioCategoria → payrollEscala (salarios básicos vigentes)
+                                                    ↓
+liquidacionImportEmpleado.categoriaId ──────────────┘
+                                                    ↓
+                              motor de cálculo usa escala + payrollConcepto (fórmulas)
+```
+
+### Estado por empresa (junio 2026)
+
+| Empresa | CCT | Estado en DB |
+|---------|-----|-------------|
+| **E-presis** | Comercio 130/75 | Completo — convenio, categorías, escalas y empleados asignados |
+| **Brique** | Construcción 76/75 | payrollConvenio existe pero sin escalas cargadas |
+| **Sabenumitubeja** | Pasteleros 167/91 + 272/96 | No configurado (CCT confirmado via scrapper DB) |
+| **Admip SRL** | Sanidad 459/06 (probable) | No configurado — CCT no confirmado (scrapper fallido) |
+| **Besorot Tovot** | Desconocido | CCT no confirmado — scrapper fallido (credenciales vencidas) |
+| **PNR Trade** | Desconocido | CCT no confirmado — scrapper fallido (credenciales vencidas) |
+
+### Credenciales vencidas en el scrapper
+
+Los siguientes representantes tienen contraseñas de AFIP inválidas en la DB del arca-scrapper. Hasta que no se actualicen, no se puede descubrir el CCT de forma automática:
+
+| Empresa | Representante | CUIT rep |
+|---------|--------------|----------|
+| Besorot Tovot | Alberto Uriel Jafif | 20-36171053-4 |
+| PNR Trade | Pawan Mirpuri | 20-96206929-1 |
+| Admip SRL | Admip Srl | 20-92401686-9 |
+
+**Alternativa manual**: AFIP > Clave Fiscal > Simplificación Registral - Empleadores > Convenios.
