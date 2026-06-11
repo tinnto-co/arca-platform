@@ -8,6 +8,13 @@
       "when": 1779371813316,
       "tag": "0000_melted_green_goblin",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1781201447244,
+      "tag": "0001_bitter_miss_america",
+      "breakpoints": true
     }
   ]
 }

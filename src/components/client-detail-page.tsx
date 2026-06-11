@@ -144,6 +144,7 @@ import {
   Tooltip,
 } from 'recharts';
 import { userQuery } from '@/lib/user-query';
+import { toTitleCase } from '@/lib/format-name';
 
 interface RepresentativeDetailPageProps {
   representativeId: string;
@@ -1680,7 +1681,7 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
   const tabTriggerCls = (hasError?: boolean) =>
     cn(
       // shape overrides
-      'relative h-auto flex-none px-[14px] py-[10px] text-[13px] font-medium rounded-[8px_8px_0_0] border whitespace-nowrap gap-[7px] cursor-pointer',
+      'relative h-auto flex-none px-[18px] py-[10px] text-[13px] font-medium rounded-[8px_8px_0_0] border whitespace-nowrap gap-[7px] cursor-pointer',
       // inactive
       'border-transparent text-[var(--arca-ink-3)] hover:bg-transparent hover:text-[var(--arca-ink)]',
       // active
@@ -1692,7 +1693,7 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
     <div>
       <Tabs defaultValue="resumen" className="flex flex-col">
         {/* ── Sticky client header ── */}
-        <div className="sticky top-0 z-10 bg-[var(--arca-bg)] border-b border-[var(--arca-border)]">
+        <div className="sticky top-0 z-10 bg-[var(--arca-bg)] border-b border-[var(--arca-border)] overflow-hidden">
           <div className="px-4 md:px-[28px] pt-[18px]">
             {/* Top row */}
             <div className="flex items-center gap-[14px] pb-[18px] pt-4">
@@ -1712,7 +1713,7 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
               <div className="flex flex-col min-w-0 flex-1">
                 <div className="flex items-center gap-[10px] flex-wrap">
                   <h1 className="font-display text-[24px] font-semibold tracking-tight text-[var(--arca-ink)] leading-none truncate">
-                    {client.name}
+                    {toTitleCase(client.name)}
                   </h1>
                 </div>
                 <div className="mt-[4px] flex flex-wrap items-center gap-x-[10px] gap-y-[2px] text-[11.5px] text-[var(--arca-ink-3)]">
@@ -1799,7 +1800,7 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
             </div>
 
             {/* Tab bar */}
-            <TabsList className="flex h-auto w-full bg-transparent p-0 rounded-none gap-0 overflow-x-auto justify-start">
+            <TabsList className="flex h-auto w-full bg-transparent p-0 rounded-none gap-0 overflow-x-auto overflow-y-hidden justify-start [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
               <TabsTrigger value="resumen" className={tabTriggerCls()}>
                 <FileText className="h-[14px] w-[14px]" />
                 Resumen
@@ -1950,7 +1951,7 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                               >
                                 {initials}
                               </span>
-                              {prof.name || prof.identityNumber}
+                              {toTitleCase(prof.name) || prof.identityNumber}
                               {isUnmanaged && (
                                 <span className="ml-1 text-[10px] font-semibold text-[var(--arca-ink-4)]">
                                   No administrado
@@ -2698,7 +2699,7 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                     <SelectItem value="all">Todas</SelectItem>
                     {profiles.map((p) => (
                       <SelectItem key={p.id} value={p.id}>
-                        {p.name}
+                        {toTitleCase(p.name)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -3857,7 +3858,7 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                       }[]
                     ).map((p) => (
                       <SelectItem key={p.id} value={p.id}>
-                        {p.name || p.identityNumber || p.id}
+                        {toTitleCase(p.name) || p.identityNumber || p.id}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -4177,7 +4178,7 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                             identityNumber?: string;
                           }) => (
                             <SelectItem key={profile.id} value={profile.id}>
-                              {profile.name ||
+                              {toTitleCase(profile.name) ||
                                 profile.identityNumber ||
                                 profile.id}
                             </SelectItem>
