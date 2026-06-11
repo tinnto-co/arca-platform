@@ -238,6 +238,7 @@ export function SueldosConvenios({ clientId, profileId }: SueldosConveniosProps)
           <ConvenioCard
             key={conv.id}
             clientId={clientId}
+            profileId={profileId}
             convenio={conv}
             onRefresh={() =>
               queryClient.invalidateQueries({
@@ -253,10 +254,12 @@ export function SueldosConvenios({ clientId, profileId }: SueldosConveniosProps)
 
 function ConvenioCard({
   clientId,
+  profileId,
   convenio,
   onRefresh,
 }: {
   clientId: string;
+  profileId: string;
   convenio: {
     id: string;
     nombre: string;
@@ -278,7 +281,7 @@ function ConvenioCard({
   const [nombreCat, setNombreCat] = useState('');
 
   const deleteConv = useMutation({
-    mutationFn: () => deleteConvenio({ data: { id: convenio.id, clientId } }),
+    mutationFn: () => deleteConvenio({ data: { id: convenio.id, clientId, profileId } }),
     onSuccess: () => {
       onRefresh();
       queryClient.invalidateQueries({ queryKey: ['convenios', clientId] });
@@ -294,6 +297,7 @@ function ConvenioCard({
         data: {
           id: convenio.id,
           clientId,
+          profileId,
           nombre: editNombre,
           cctCodigo: editCct.trim() || undefined,
         },

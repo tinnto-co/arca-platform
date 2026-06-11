@@ -8,4 +8,5 @@ export default {
   dbCredentials: {
     url: process.env.MIGRATION_URL!,
   },
+  tablesFilter: ["!empleados_categorias"],
 } satisfies Config;

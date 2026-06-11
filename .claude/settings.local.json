@@ -90,7 +90,20 @@
       "Bash(git push:*)",
       "Bash(git commit:*)",
       "Bash(git pull:*)",
-      "Bash(git fetch:*)"
+      "Bash(git fetch:*)",
+      "Bash(cd \"C:\\\\Users\\\\Brian\\\\OneDrive\\\\Escritorio\\\\Proyectos\\\\arca-platform\" && grep -n \"export function assertCanWrite\\\\|export const assertCanWrite\\\\|function assertCanWrite\" src/actions/sueldos.ts src/lib/*.ts 2>&1)",
+      "Bash(cd \"C:\\\\Users\\\\Brian\\\\OneDrive\\\\Escritorio\\\\Proyectos\\\\arca-platform\" && bun tsc --noEmit 2>&1 | head -50)",
+      "Bash(cd \"C:\\\\Users\\\\Brian\\\\OneDrive\\\\Escritorio\\\\Proyectos\\\\arca-platform\" && bun add @react-pdf/renderer jszip)",
+      "Bash(python3 -c \"import subprocess; result = subprocess.run\\(['pdftotext', '-layout', 'C:/Users/Brian/Downloads/recibos_Azuaje_Rojas_Edward_Alejandro_2026_05.pdf', '-'], capture_output=True, text=True\\); print\\(result.stdout[:3000]\\)\" 2>&1 || echo \"pdftotext not available\")",
+      "Bash(node -e \"\nconst fs = require\\('fs'\\);\nconst buf = fs.readFileSync\\('C:/Users/Brian/Downloads/recibos_Azuaje_Rojas_Edward_Alejandro_2026_05.pdf'\\);\n// Find text objects in PDF stream\nconst str = buf.toString\\('latin1'\\);\nconst lines = str.match\\(/BT[\\\\s\\\\S]*?ET/g\\) || [];\nlines.slice\\(0,40\\).forEach\\(l => { const t = l.match\\(/\\\\\\(\\([^\\)]+\\)\\\\\\)/g\\); if\\(t\\) console.log\\(t.join\\(' '\\)\\); }\\);\n\")",
+      "WebFetch(domain:ayuda.sos-contador.com.ar)",
+      "WebSearch",
+      "WebFetch(domain:www.afip.gob.ar)",
+      "WebFetch(domain:www.sos-contador.com)",
+      "WebFetch(domain:gestionparque.com.ar)",
+      "WebFetch(domain:e-sueldos.com)",
+      "Read(//c/Users/Brian/.claude/**)",
+      "Read(//c/Users/Brian/AppData/Roaming/Claude/**)"
     ]
   }
 }
