@@ -613,6 +613,14 @@ export const payrollConvenio = pgTable("payroll_convenio", {
   representativeId: uuid("representative_id")
     .notNull()
     .references(() => representative.id, { onDelete: "cascade" }),
+  /**
+   * Empresa (client) a la que pertenece el convenio. NOT NULL en la DB.
+   * El scoping de lectura es por `representativeId`; `clientId` asocia el
+   * convenio a la empresa concreta para la que se creó.
+   */
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => client.id, { onDelete: "cascade" }),
   nombre: text("nombre").notNull(),
   cctCodigo: text("cct_codigo"),
   descripcion: text("descripcion"),

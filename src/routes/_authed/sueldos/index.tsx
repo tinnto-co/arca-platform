@@ -51,8 +51,9 @@ function RouteComponent() {
   });
 
   const selectedOption = clients.find((c) => c.id === selectedOptionId);
-  const clientId = selectedOption?.clientId ?? '';
-  const profileId = selectedOption?.profileId ?? '';
+  // Contrato API legacy: prop `clientId` = representante; prop `profileId` = empresa (client).
+  const clientId = selectedOption?.representativeId ?? '';
+  const profileId = selectedOption?.clientId ?? '';
 
   useEffect(() => {
     if (

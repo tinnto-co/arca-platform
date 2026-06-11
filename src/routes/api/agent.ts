@@ -11,7 +11,7 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { db, dbReadonly } from '@/lib/db';
-import { agentConversation, agentMessage, ivaScrape, client, invoice } from '@/drizzle/schema';
+import { agentConversation, agentMessage, ivaScrape, client, representative, invoice } from '@/drizzle/schema';
 import { eq, and, sql, ilike, gte, lte } from 'drizzle-orm';
 import {
   INVOICE_TYPES_A,
@@ -32,51 +32,51 @@ SCHEMA DE BASE DE DATOS — organización '${orgId}'
 ═══════════════════════════════════════════════
 
 SEGURIDAD — OBLIGATORIO EN TODA QUERY
-  Toda tabla fiscal cuelga de client. Siempre filtrá:
-    JOIN client c ON c.id = <tabla>.client_id
-    WHERE c.organization_id = '${orgId}'
-  Join chains — la FK se llama client_id en TODAS las tablas:
-    profile             → JOIN client c ON c.id = profile.client_id
-    iva_scrape          → JOIN profile p ON p.id = iva_scrape.profile_id JOIN client c ON c.id = p.client_id
-    invoice             → JOIN client c ON c.id = invoice.client_id
-    notification        → JOIN client c ON c.id = notification.client_id
-    debt                → JOIN client c ON c.id = debt.client_id
-    due_date            → JOIN client c ON c.id = due_date.client_id
-    job                 → JOIN client c ON c.id = job.client_id
-    liquidacion_import_empleado → JOIN profile p ON p.id = liquidacion_import_empleado.profile_id JOIN client c ON c.id = p.client_id
-    liquidacion_import_recibo   → JOIN liquidacion_import_empleado e ON e.id = liquidacion_import_recibo.empleado_id JOIN profile p ON p.id = e.profile_id JOIN client c ON c.id = p.client_id
+  La raíz de seguridad es "representative" (la única tabla con organization_id).
+  Scopeá SIEMPRE a la org llegando a representative r y filtrando:
+    WHERE r.organization_id = '${orgId}'
+  Join chains — cómo llegar a representative r desde cada tabla:
+    client                      → JOIN representative r ON r.id = client.representative_id
+    invoice                     → JOIN representative r ON r.id = invoice.representative_id
+    notification                → JOIN representative r ON r.id = notification.representative_id
+    debt                        → JOIN representative r ON r.id = debt.representative_id
+    due_date                    → JOIN representative r ON r.id = due_date.representative_id
+    job                         → JOIN representative r ON r.id = job.representative_id
+    iva_scrape                  → JOIN client c ON c.id = iva_scrape.client_id JOIN representative r ON r.id = c.representative_id
+    liquidacion_import_empleado → JOIN client c ON c.id = liquidacion_import_empleado.client_id JOIN representative r ON r.id = c.representative_id
+    liquidacion_import_recibo   → JOIN liquidacion_import_empleado e ON e.id = liquidacion_import_recibo.empleado_id JOIN client c ON c.id = e.client_id JOIN representative r ON r.id = c.representative_id
   NUNCA ejecutes INSERT / UPDATE / DELETE / DROP.
 
 ───────────────────────────────────────────────
 TABLAS PRINCIPALES
 ───────────────────────────────────────────────
 
-## client  [SQL table: "client"]
-Razón social o persona física que el estudio gestiona. Raíz de toda la jerarquía.
+## representative  [SQL table: "representative"]
+Cuenta que el estudio gestiona (lo que el usuario suele llamar "cliente"). Raíz de toda la
+jerarquía y de la seguridad: es la única tabla con organization_id.
   id (uuid PK), organization_id (text) — filtro de seguridad
-  name (text) — razón social
-  identity_number (text) — CUIT/CUIL del cliente
+  name (text) — razón social / nombre
+  cuit (text) — CUIT de login AFIP
   fiscal_condition (text) — valores: 'responsable_inscripto' | 'monotributista' | 'exento' | 'consumidor_final'
   status (text) — 'active' | 'inactive'
   liquida_sueldos (boolean)
   convenio_multilateral (boolean), regimen_local (boolean)
-  has_errors (boolean), error_message (text)
   registered_at (timestamp) — fecha de alta fiscal en AFIP
-  ⚠ NUNCA selecciones ni muestres la columna "password" (es la clave fiscal AFIP, dato sensible).
+  ⚠ NUNCA selecciones ni muestres la columna "afip_password" (es la clave fiscal AFIP, dato sensible).
 
-## profile  [SQL table: "profile"]
-Identidad fiscal scrapeada de AFIP. Un client puede tener varios profiles.
-Todo dato de actividad (facturas, IVA, empleados) cuelga de profile, no de client.
+## client  [SQL table: "client"]
+Entidad fiscal con CUIT propio (empresa o persona), bajo un representative. Un representative
+puede tener varios clients. Todo dato de actividad (facturas, IVA, empleados) cuelga de client.
   id (uuid PK)
-  client_id (uuid → client.id)
-  name (text), identity_number (text) — CUIT/CUIL del perfil (puede diferir del client)
+  representative_id (uuid → representative.id)
+  name (text), identity_number (text) — CUIT/CUIL de la entidad (puede diferir del representative)
   status (text), liquida_sueldos (boolean)
   scraped_at (timestamp) — último scrape exitoso
 
 ## invoice  [SQL table: "invoice"]
 Facturas emitidas y recibidas, scrapeadas de AFIP ("Mis Comprobantes").
   id (uuid PK)
-  client_id (uuid → client.id), profile_id (uuid → profile.id)
+  representative_id (uuid → representative.id), client_id (uuid → client.id)
   direction (text) — 'Outbound' = venta emitida | 'Inbound' = compra recibida
     SEMÁNTICA OBLIGATORIA:
       "facturó/vendió/emitió/facturación" → WHERE direction = 'Outbound'
@@ -103,15 +103,16 @@ Facturas emitidas y recibidas, scrapeadas de AFIP ("Mis Comprobantes").
 ## notification  [SQL table: "notification"]
 Notificaciones del domicilio fiscal electrónico de AFIP.
   id (uuid PK)
-  client_id (uuid → client.id), profile_id (uuid → profile.id, nullable)
+  representative_id (uuid → representative.id), client_id (uuid → client.id, nullable)
   message (text), expiration_date (timestamp), publication_date (timestamp)
   opened (boolean) — true si el estudio la marcó como leída (no refleja estado en AFIP)
-  ► SIEMPRE filtrar WHERE profile_id IS NOT NULL (NULL = perfil de otro estudio, no es del cliente)
+  ► El scoping de seguridad por representative.organization_id ya excluye notificaciones ajenas.
 
 ## debt  [SQL table: "debt"]
 Deudas con AFIP del último scrape. Snapshot, no histórico.
   id (uuid PK)
-  client_id (uuid → client.id) — ⚠ NO tiene profile_id
+  representative_id (uuid → representative.id) — scopeá y agregá SIEMPRE por acá
+  client_id (uuid → client.id, nullable) — no confiable para agrupar; usá representative_id
   tax (text) — 'IVA' | 'Ganancias' | 'Monotributo' | 'IIBB' | 'Autónomos' | etc.
   concept (text) — 'Saldo DDJJ' | 'Anticipo' | 'Plan de pagos' | etc.
   sub_concept (text) — 'Capital' | 'Intereses Resarcitorios' | 'Intereses Punitorios' | 'Multas'
@@ -122,20 +123,20 @@ Deudas con AFIP del último scrape. Snapshot, no histórico.
   compensatory_interest (numeric) — intereses compensatorios
   punitive_interest (numeric) — intereses punitorios
   ► Deuda total = balance + compensatory_interest + punitive_interest
-  ► ⚠ Agregar SIEMPRE por client, NUNCA por profile (no hay profile_id). Si hacés JOIN a profile, agrupás por profile.id, vas a multiplicar la deuda × cantidad de perfiles.
+  ► ⚠ Agregar SIEMPRE por representative_id, NUNCA por client. Si hacés JOIN a client, agrupás por client.id y multiplicás la deuda × cantidad de entidades del representante.
 
 ## due_date  [SQL table: "due_date"]
 Vencimientos fiscales próximos. Snapshot scrapeado periódicamente. No tiene montos.
   id (uuid PK)
-  client_id (uuid → client.id) — ⚠ NO tiene profile_id (misma lógica que debt)
+  representative_id (uuid → representative.id) — scopeá y agregá SIEMPRE por acá (client_id viene NULL)
   tax (text), concept (text), sub_concept (text)
   period (text) — texto libre, sin formato garantizado
   quota_number (text), due_date (timestamp)
   detail (text) — descripción adicional del vencimiento
 
 ## iva_scrape
-Snapshot mensual de la DDJJ de IVA (F.2002) por perfil. Una fila por (profile, período).
-  id (uuid PK), profile_id (uuid → profile.id)
+Snapshot mensual de la DDJJ de IVA (F.2002) por entidad. Una fila por (client, período).
+  id (uuid PK), client_id (uuid → client.id)
   periodo_fiscal (text) — formato 'MM/YYYY', ej: '03/2026'
   fecha_presentacion (text) — 'DD/MM/YYYY', nullable
   ok (boolean) — false = scrape incompleto, valores pueden estar vacíos
@@ -151,7 +152,7 @@ Snapshot mensual de la DDJJ de IVA (F.2002) por perfil. Una fila por (profile, p
 
 ## job
 Tareas de scraping encoladas. Útil para saber cuándo fue la última actualización.
-  id (uuid PK), client_id (uuid → client.id)
+  id (uuid PK), representative_id (uuid → representative.id)
   type (text) — 'iva' | 'comprobantes' | 'comprobantes_full' | 'notificaciones' | 'deuda' | 'vencimientos'
   status (text) — 'pending' | 'running' | 'failed' | 'finished'
   started_at, finished_at, failed_at (timestamp)
@@ -159,8 +160,8 @@ Tareas de scraping encoladas. Útil para saber cuándo fue la última actualizac
   ► Para saber última actualización de un cliente: WHERE type='X' AND status='finished' ORDER BY finished_at DESC LIMIT 1
 
 ## liquidacion_import_empleado
-Empleados de nómina de cada perfil.
-  id (uuid PK), profile_id (uuid → profile.id)
+Empleados de nómina de cada entidad (client).
+  id (uuid PK), client_id (uuid → client.id)
   cuil (text), legajo (text), nombre (text)
   activo (boolean), fecha_alta (date), fecha_baja (date, null = vigente)
   tipo_jornada (text) — 'full_time' | 'part_time' | 'reducida'
@@ -198,9 +199,9 @@ TRAMPAS CONOCIDAS
 ───────────────────────────────────────────────
   • invoice.direction está en PascalCase en la DB ('Outbound'/'Inbound'). Filtrá con ILIKE o usá LOWER().
   • La columna de tipo de cambio se llama "currency_rate" (bien escrita). No uses "cureency_rate" — esa es solo la propiedad JS de Drizzle con typo heredado.
-  • debt y due_date NO tienen profile_id. Agregar SIEMPRE por client_id para no duplicar filas.
-  • NUNCA expongas client.password (clave fiscal AFIP).
-  • notification: siempre WHERE profile_id IS NOT NULL.
+  • debt y due_date: agregar SIEMPRE por representative_id (no por client) para no duplicar filas.
+  • NUNCA expongas representative.afip_password (clave fiscal AFIP).
+  • La seguridad por representative.organization_id ya excluye datos de otros estudios.
   • recibo_confirmado = false son borradores, excluirlos de totales.
   • Períodos en debt/due_date son texto libre, no comparables con LIKE fijo.
 ─────────────────────────────────────────────`;
@@ -320,18 +321,18 @@ FORMATO DE SALIDA
 
 SEGURIDAD — CRÍTICO
 - Nunca respondas preguntas sobre contraseñas, credenciales o datos sensibles que no sean contables.
-- Toda query DEBE filtrar por organization_id = '${orgId}' via JOIN con client. Si una query no incluye este filtro, es un error de seguridad — no la ejecutes.
+- Toda query DEBE filtrar por organization_id = '${orgId}' via JOIN con representative. Si una query no incluye este filtro, es un error de seguridad — no la ejecutes.
 - Solo queries SELECT. Nunca INSERT, UPDATE, DELETE, DROP, ni nada que modifique datos.
 
 ${buildSchema(orgId)}
 
 REGLAS AL ESCRIBIR QUERIES
 1. Solo SELECT. Siempre incluí LIMIT (máximo 200).
-2. SIEMPRE filtrá por organization_id = '${orgId}' via JOIN con client — en CADA query, incluso en follow-ups del mismo cliente.
+2. SIEMPRE filtrá por organization_id = '${orgId}' via JOIN con representative — en CADA query, incluso en follow-ups del mismo cliente.
 3. Montos en ARS: CASE WHEN UPPER(currency)='USD' THEN amount::numeric * currency_rate::numeric ELSE amount::numeric END
 4. Facturas — direction: "facturó/vendió" → WHERE LOWER(direction)='outbound' | "gastó/compró" → WHERE LOWER(direction)='inbound'
-5. Notificaciones: siempre WHERE profile_id IS NOT NULL
-6. Búsquedas por nombre de cliente: ILIKE '%texto%'
+5. Deuda/vencimientos: agregá por representative_id (nunca por client) para no duplicar filas.
+6. Búsquedas por nombre de cliente: ILIKE '%texto%' (sobre representative.name o client.name)
 7. Si la pregunta no puede responderse con los datos disponibles, respondé: "No tengo información suficiente en la base de datos para responder eso."
 
 HERRAMIENTAS DISPONIBLES
@@ -348,7 +349,7 @@ HERRAMIENTAS DISPONIBLES
                 query: z
                   .string()
                   .describe(
-                    'Query SQL SELECT. Debe incluir LIMIT y filtrar por organization_id via JOIN con client.'
+                    'Query SQL SELECT. Debe incluir LIMIT y filtrar por organization_id via JOIN con representative.'
                   ),
                 description: z
                   .string()
@@ -409,9 +410,9 @@ HERRAMIENTAS DISPONIBLES
               }),
               execute: async ({ clientName, displayMonth, profileName }) => {
                 const matchingClients = await dbReadonly
-                  .select({ id: client.id, name: client.name })
-                  .from(client)
-                  .where(and(eq(client.organizationId, orgId), ilike(client.name, `%${clientName}%`)));
+                  .select({ id: representative.id, name: representative.name })
+                  .from(representative)
+                  .where(and(eq(representative.organizationId, orgId), ilike(representative.name, `%${clientName}%`)));
 
                 if (matchingClients.length === 0)
                   return { error: `No encontré clientes con nombre "${clientName}"` };
@@ -421,12 +422,12 @@ HERRAMIENTAS DISPONIBLES
                 const foundClient = matchingClients[0];
 
                 const profileWhere = profileName
-                  ? and(eq(profile.client, foundClient.id), ilike(profile.name, `%${profileName}%`))
-                  : eq(profile.client, foundClient.id);
+                  ? and(eq(client.representativeId, foundClient.id), ilike(client.name, `%${profileName}%`))
+                  : eq(client.representativeId, foundClient.id);
 
                 const profiles = await dbReadonly
-                  .select({ id: profile.id, name: profile.name, identityNumber: profile.identityNumber })
-                  .from(profile)
+                  .select({ id: client.id, name: client.name, identityNumber: client.identityNumber })
+                  .from(client)
                   .where(profileWhere);
 
                 if (profiles.length === 0)
@@ -474,7 +475,7 @@ HERRAMIENTAS DISPONIBLES
                   // Sin período: buscar el último iva_scrape disponible y derivar el mes de facturas
                   const rows = await dbReadonly.execute(sql.raw(
                     `SELECT periodo_fiscal FROM iva_scrape
-                     WHERE profile_id = ANY(ARRAY[${profileIds.map((id) => `'${id}'`).join(',')}]::uuid[])
+                     WHERE client_id = ANY(ARRAY[${profileIds.map((id) => `'${id}'`).join(',')}]::uuid[])
                      ORDER BY TO_DATE(periodo_fiscal, 'MM/YYYY') DESC LIMIT 1`
                   ));
                   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -491,7 +492,7 @@ HERRAMIENTAS DISPONIBLES
                 for (const p of profiles) {
                   // 1. iva_scrape: período del mes ANTERIOR al que se muestra (convención AFIP)
                   const [ivaRow] = await dbReadonly.select().from(ivaScrape)
-                    .where(and(eq(ivaScrape.profileId, p.id), eq(ivaScrape.periodoFiscal, ivaScrapeperiod))).limit(1);
+                    .where(and(eq(ivaScrape.clientId, p.id), eq(ivaScrape.periodoFiscal, ivaScrapeperiod))).limit(1);
 
                   // 2. Facturas del mes que el usuario quiere ver (mismo para todos los perfiles)
 
@@ -510,7 +511,7 @@ HERRAMIENTAS DISPONIBLES
                     IVA27: invoice.IVA27,
                   }).from(invoice)
                     .where(and(
-                      eq(invoice.profile, p.id),
+                      eq(invoice.clientId, p.id),
                       gte(invoice.emitionDate, dateFrom),
                       lte(invoice.emitionDate, dateTo),
                     ));
