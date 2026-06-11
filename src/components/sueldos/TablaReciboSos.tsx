@@ -163,12 +163,18 @@ const MAX_PCT_WARN = 500;
 
 function applySubtotalCascade(
   edits: EditsMap,
-  allConcepts: ConceptoImportado[]
+  allConcepts: ConceptoImportado[],
+  activeCodigos?: Set<string>
 ): EditsMap {
   const subTotals: Record<string, number> = {
     sub1_9: 0, sub1_19: 0, sub1_26: 0,
-    sub1_39: 0, sub1_199: 0, sub411_469: 0,
+    sub1_39: 0, sub1_99: 0, sub1_199: 0, sub411_469: 0,
   };
+
+  // Mapa de montos computados por código, para referencias entre conceptos.
+  const conceptMontos: Record<string, number> = {};
+  // Monto del concepto 1 (sueldo básico), base para conceptos con baseColumna='sueldo'.
+  let sueldoBase = 0;
 
   const sorted = [...allConcepts].sort(
     (a, b) => (parseInt(a.codigo, 10) || 9999) - (parseInt(b.codigo, 10) || 9999)
@@ -179,6 +185,9 @@ function applySubtotalCascade(
   for (const c of sorted) {
     const n = parseInt(c.codigo, 10);
     if (isNaN(n)) continue;
+
+    // Conceptos inactivos no participan ni en recálculo ni en acumulación de subtotales.
+    if (activeCodigos && !activeCodigos.has(c.codigo)) continue;
 
     const row = next[c.codigo] ?? EMPTY_EDIT_ROW;
     let effectiveMonto = toNum(row.monto);
@@ -192,21 +201,24 @@ function applySubtotalCascade(
         : noUsaPct ? 100 : 0;
 
       if (hasPct || noUsaPct) {
+        // Para retenciones (200–299) con base 'sub1_199': la base correcta es
+        // haberes (1–99) minus descuentos (100–199), no la suma bruta de ambos.
         const subBase =
           bc === 'sub1_199_plus_411_469'
             ? (subTotals['sub1_199'] ?? 0) + (subTotals['sub411_469'] ?? 0)
-            : (subTotals[bc] ?? 0);
+            : bc === 'sub1_199' && n >= 200 && n <= 299
+              ? (subTotals['sub1_99'] ?? 0) - ((subTotals['sub1_199'] ?? 0) - (subTotals['sub1_99'] ?? 0))
+              : (subTotals[bc] ?? 0);
 
         if (subBase > 0) {
           const cantNum =
             !c.tieneCantidad && (row.cantidad ?? '') === ''
               ? 1
               : (parseDecimalSos(row.cantidad) ?? 1);
-          const hasExplicitImporte =
-            c.tieneImporte !== false && (row.importe ?? '').trim() !== '';
-          const effectiveBase = hasExplicitImporte
-            ? (parseDecimalSos(row.importe) ?? subBase)
-            : subBase;
+          // Para conceptos con base dinámica (subtotales), el campo `importe` almacenado
+          // en el recibo anterior NO debe sobreescribir la base calculada. El importe en
+          // estos conceptos es la base de cálculo que se determina automáticamente.
+          const effectiveBase = subBase;
 
           let raw = effectiveBase * (effectivePct / 100) * cantNum;
 
@@ -219,10 +231,43 @@ function applySubtotalCascade(
           next = { ...next, [c.codigo]: { ...row, monto: effectiveMonto.toFixed(2) } };
         }
       }
+    } else if (bc === 'sueldo' && n > 1) {
+      // Base = monto del concepto 1 (sueldo básico).
+      const hasPct = (row.porcentaje ?? '').trim() !== '';
+      if (hasPct && sueldoBase > 0) {
+        const pct = parseDecimalSos(row.porcentaje) ?? 0;
+        const cantNum = !c.tieneCantidad && (row.cantidad ?? '') === ''
+          ? 1
+          : (parseDecimalSos(row.cantidad) ?? 1);
+        effectiveMonto = Math.round(sueldoBase * (pct / 100) * cantNum * 100) / 100;
+        next = { ...next, [c.codigo]: { ...row, monto: effectiveMonto.toFixed(2) } };
+      }
+    } else if (bc === 'importe_fijo') {
+      // Base = importe propio del concepto, o el monto del concepto referenciado via importeConceptoNumero.
+      const hasPct = (row.porcentaje ?? '').trim() !== '';
+      if (hasPct) {
+        const pct = parseDecimalSos(row.porcentaje) ?? 0;
+        const cantNum = !c.tieneCantidad && (row.cantidad ?? '') === ''
+          ? 1
+          : (parseDecimalSos(row.cantidad) ?? 1);
+        const refCodigo = (row.importeConceptoNumero ?? '').trim();
+        const refBase = refCodigo !== '' ? (conceptMontos[refCodigo] ?? 0) : 0;
+        const ownImporte = parseDecimalSos(row.importe) ?? 0;
+        const base = refBase > 0 ? refBase : ownImporte;
+        if (base > 0) {
+          effectiveMonto = Math.round(base * (pct / 100) * cantNum * 100) / 100;
+          next = { ...next, [c.codigo]: { ...row, monto: effectiveMonto.toFixed(2) } };
+        }
+      }
     }
+
+    // Registrar monto computado para que conceptos posteriores puedan referenciarlo.
+    conceptMontos[c.codigo] = effectiveMonto;
+    if (n === 1) sueldoBase = effectiveMonto;
 
     if (n >= 1 && n <= 199) {
       subTotals['sub1_199'] += effectiveMonto;
+      if (n <= 99) subTotals['sub1_99'] += effectiveMonto;
       if (n <= 9) subTotals['sub1_9'] += effectiveMonto;
       if (n <= 19) subTotals['sub1_19'] += effectiveMonto;
       if (n <= 26) subTotals['sub1_26'] += effectiveMonto;
@@ -242,6 +287,12 @@ function isCodeInRange(code: number, min: number, max: number): boolean {
 // ---------------------------------------------------------------------------
 // Inline editable cell
 // ---------------------------------------------------------------------------
+
+const ALLOWED_KEYS = new Set([
+  'Backspace', 'Delete', 'Tab', 'Enter', 'Escape',
+  'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
+  'Home', 'End',
+]);
 
 function EditableCell({
   value,
@@ -269,6 +320,16 @@ function EditableCell({
         if (e.key === 'Enter') {
           e.preventDefault();
           commit();
+          return;
+        }
+        // Solo permitir números, punto/coma decimal, signo negativo y teclas de control
+        if (
+          !ALLOWED_KEYS.has(e.key) &&
+          !e.ctrlKey &&
+          !e.metaKey &&
+          !/^[0-9.,\-]$/.test(e.key)
+        ) {
+          e.preventDefault();
         }
       }}
       className="w-full bg-white border border-slate-200 rounded px-1 py-1 text-[10px] text-right focus:bg-yellow-50 focus:ring-1 focus:ring-yellow-300 focus:border-yellow-300 outline-none"
@@ -336,6 +397,7 @@ function AgregarConceptoButton({
       <PopoverTrigger asChild>
         <button
           type="button"
+          tabIndex={-1}
           className="flex items-center gap-1 rounded px-2 py-0.5 text-[10px] text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
         >
           <Plus className="h-3 w-3" />
@@ -461,6 +523,7 @@ function TableSection({
                   {onRemoveConcepto && (
                     <button
                       type="button"
+                      tabIndex={-1}
                       onClick={() => onRemoveConcepto(c.codigo)}
                       className="ml-1 shrink-0 opacity-0 group-hover/row:opacity-100 text-slate-300 hover:text-red-500 transition-opacity"
                       title="Eliminar concepto"
@@ -488,9 +551,23 @@ function TableSection({
                   : DASH}
               </td>
               <td className="px-1 py-1.5">
-                {c.tieneImporte !== false
-                  ? <EditableCell value={edit?.importe ?? ''} onChange={(v) => setField(c.codigo, 'importe', v)} />
-                  : DASH}
+                {(() => {
+                  const impNroStr = (edit?.importeConceptoNumero ?? '').trim();
+                  if (impNroStr) {
+                    const resolved = parseDecimalSos(edits[impNroStr]?.monto);
+                    return (
+                      <span
+                        className="block w-full px-1 py-0.5 text-right tabular-nums text-[10px] text-sky-600 italic select-none"
+                        title={`Total del concepto ${impNroStr}`}
+                      >
+                        {resolved !== null && resolved !== 0 ? fmtArs(resolved) : '—'}
+                      </span>
+                    );
+                  }
+                  return c.tieneImporte !== false
+                    ? <EditableCell value={edit?.importe ?? ''} onChange={(v) => setField(c.codigo, 'importe', v)} />
+                    : DASH;
+                })()}
               </td>
               <td className="px-1 py-1.5">
                 {c.tieneImpMin !== false
@@ -664,6 +741,15 @@ export function TablaReciboSos({
   const conceptosRef = useRef(conceptos);
   useEffect(() => { conceptosRef.current = conceptos; }, [conceptos]);
 
+  const codigosActivosSet = useMemo(() => {
+    if (activeCodigosProp) return activeCodigosProp;
+    return new Set(conceptos.map((c) => c.codigo));
+  }, [activeCodigosProp, conceptos]);
+
+  // Ref estable de activeCodigos para acceder dentro del updater de setEdits.
+  const activeCodigosRef = useRef<Set<string>>(new Set());
+  useEffect(() => { activeCodigosRef.current = codigosActivosSet; }, [codigosActivosSet]);
+
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
@@ -791,12 +877,22 @@ export function TablaReciboSos({
             newEdits = { ...newEdits, [editedCodigo]: { ...updated, monto: '' } };
           } else {
             const implicitBase = implicitBaseRef.current[editedCodigo];
-            const rowParaFormula =
+            // Resolver Imp. N → monto del concepto referenciado
+            const impNroStr = (updated.importeConceptoNumero ?? '').trim();
+            const resolvedImpN = impNroStr ? parseDecimalSos(prev[impNroStr]?.monto) : null;
+
+            let rowParaFormula: typeof rowParaCalculo;
+            if (resolvedImpN !== null) {
+              rowParaFormula = { ...rowParaCalculo, importe: String(resolvedImpN), importeConceptoNumero: '' };
+            } else if (
               implicitBase != null &&
               (rowParaCalculo.importe === '' || rowParaCalculo.importe == null) &&
               (rowParaCalculo.importeConceptoNumero === '' || rowParaCalculo.importeConceptoNumero == null)
-                ? { ...rowParaCalculo, importe: String(implicitBase) }
-                : rowParaCalculo;
+            ) {
+              rowParaFormula = { ...rowParaCalculo, importe: String(implicitBase) };
+            } else {
+              rowParaFormula = rowParaCalculo;
+            }
 
             if (canApplyFormula(rowParaFormula)) {
               newEdits = {
@@ -832,7 +928,38 @@ export function TablaReciboSos({
           }
         }
 
-        return applySubtotalCascade(newEdits, conceptosRef.current);
+        // Propagar cambio de monto a conceptos que referencian editedCodigo vía Imp. N
+        const nuevoMontoRef = parseDecimalSos(newEdits[editedCodigo]?.monto);
+        if (nuevoMontoRef !== null) {
+          for (const dep of conceptosRef.current) {
+            if (dep.codigo === editedCodigo) continue;
+            const depEdit = newEdits[dep.codigo] ?? EMPTY_EDIT_ROW;
+            if ((depEdit.importeConceptoNumero ?? '').trim() !== editedCodigo) continue;
+
+            const depNoUsaPct = dep.tienePct === false;
+            const depHasPct = (depEdit.porcentaje ?? '').trim() !== '';
+            if (!depHasPct && !depNoUsaPct) continue;
+
+            const depRow = {
+              ...depEdit,
+              importe: String(nuevoMontoRef),
+              importeConceptoNumero: '',
+              ...(depNoUsaPct && !depHasPct ? { porcentaje: '100' } : {}),
+            };
+
+            if (canApplyFormula(depRow)) {
+              newEdits = {
+                ...newEdits,
+                [dep.codigo]: {
+                  ...depEdit,
+                  monto: montoLiquidadoDesdeEditsSos(depRow, { forceFormula: true }).toFixed(2),
+                },
+              };
+            }
+          }
+        }
+
+        return applySubtotalCascade(newEdits, conceptosRef.current, activeCodigosRef.current);
       });
     },
     []
@@ -851,15 +978,11 @@ export function TablaReciboSos({
     return groups;
   }, [conceptosVisibles]);
 
-  const codigosActivosSet = useMemo(() => {
-    if (activeCodigosProp) return activeCodigosProp;
-    return new Set(conceptos.map((c) => c.codigo));
-  }, [activeCodigosProp, conceptos]);
-
   // Re-ejecutar cascada cuando cambian los conceptos activos (ej: usuario agrega 501/502/503)
   // para que conceptos subtotal-based con % pre-cargado calculen su monto automáticamente.
   useEffect(() => {
-    setEdits((prev) => applySubtotalCascade(prev, conceptosRef.current));
+    activeCodigosRef.current = codigosActivosSet;
+    setEdits((prev) => applySubtotalCascade(prev, conceptosRef.current, codigosActivosSet));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [codigosActivosSet]);
 

@@ -659,7 +659,7 @@ function ReciboPdfPage({
 
       {/* ── Fila: Categoría | Tipo de liquidación ───────────────────────────── */}
       <View style={S.infoRow}>
-        <InfoCell label="Categoría" value={categoria?.nombre ?? '—'} />
+        <InfoCell label="Categoría" value={empleado.categoria ? toTitleCase(empleado.categoria) : (categoria?.nombre ?? '—')} />
         <InfoCell
           label="Tipo de liquidación"
           value={`${tipoReciboLabel(liquidacion.tipo)} — ${quincenaLabel(liquidacion.quincena)}`}

@@ -1,11 +1,11 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import z from 'zod';
 import { useQuery } from '@tanstack/react-query';
-import { format, differenceInYears } from 'date-fns';
+import { format, differenceInYears, endOfMonth, addMonths } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { FilePlus2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { legajoParaMostrar } from '@/lib/legajo';
@@ -211,6 +211,29 @@ export function ReciboFormulario({
     if (!fechaAlta) return null;
     return differenceInYears(now, new Date(fechaAlta as unknown as string));
   }, [empleadoSel]);
+
+  // Actualizar fechaLiquidacion y fechaDepositoCargas al cambiar año/mes
+  const ano = form.watch('ano');
+  const mes = form.watch('mes');
+  useEffect(() => {
+    if (!ano || !mes) return;
+    const periodoDate = new Date(Number(ano), Number(mes) - 1, 1);
+    const mesSiguiente = addMonths(periodoDate, 1);
+    const ultimoDia = format(endOfMonth(periodoDate), 'yyyy-MM-dd');
+    form.setValue('fechaLiquidacion', ultimoDia);
+    form.setValue('fechaPago', ultimoDia);
+    form.setValue('fechaDepositoCargas', format(new Date(mesSiguiente.getFullYear(), mesSiguiente.getMonth(), 10), 'yyyy-MM-dd'));
+  }, [ano, mes, form]);
+
+  // Pre-llenar situación de revista 1 desde el empleado si el campo está vacío
+  useEffect(() => {
+    if (!empleadoSel) return;
+    const situacionId = empleadoSel.empleado.situacionId;
+    if (!situacionId) return;
+    if (!form.getValues('situacionRevista1Id')) {
+      form.setValue('situacionRevista1Id', situacionId);
+    }
+  }, [empleadoSel, form]);
 
   const onSubmit = (values: ReciboFormValues) => {
     const emp = empleados.find((e) => e.empleado.id === values.importEmpleadoId);

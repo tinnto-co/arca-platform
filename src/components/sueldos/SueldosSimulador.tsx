@@ -329,8 +329,8 @@ export function SueldosSimulador({
       if (num === 201) return { ...c, porcentaje: '11' };  // Jubilación
       if (num === 202) return { ...c, porcentaje: '3' };   // Ley 19032
       if (num === 203) return { ...c, porcentaje: '3' };   // Obra social
-      if (num === 206) return { ...c, porcentaje: '2' };   // Cuota sindical
-      if (num === 209) return { ...c, porcentaje: '0.5' }; // Solidaridad
+      if (num === 206) return { ...c, porcentaje: c.porcentaje ?? '2' };   // Cuota sindical (empresa-específico)
+      if (num === 209) return { ...c, porcentaje: c.porcentaje ?? '0.5' }; // Solidaridad (empresa-específico)
       if (num === 501) return { ...c, porcentaje: '2' };   // Ret. obra social
       if (num === 502) return { ...c, porcentaje: '3' };   // Ret. jubilación
       if (num === 503) return { ...c, porcentaje: '0.5' }; // Ret. ley 19032

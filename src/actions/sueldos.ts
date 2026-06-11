@@ -1952,12 +1952,12 @@ export const listConceptosPlantillaManualSos = createServerFn({ method: 'GET' })
         id: r.id,
         codigo,
         monto: null as string | null,
-        cantidad: null,
-        porcentaje: r.pctFijo != null ? String(r.pctFijo) : null as string | null,
-        importeConceptoNumero: null,
-        importe: null,
-        importeMinimo: null,
-        importeMaximo: null,
+        cantidad: ref?.cantidad ?? null,
+        porcentaje: ref?.porcentaje ?? (r.pctFijo != null ? String(r.pctFijo) : null) as string | null,
+        importeConceptoNumero: ref?.importeConceptoNumero ?? null,
+        importe: ref?.importe ?? null,
+        importeMinimo: ref?.importeMinimo ?? null,
+        importeMaximo: ref?.importeMaximo ?? null,
         nombre: r.nombre,
         codigoAfip: r.codigoAfip,
         baseColumna: r.baseColumna ?? null,
@@ -3772,14 +3772,47 @@ export const getPayrollEmployerConfig = createServerFn({ method: 'GET' })
     const { orgId } = await getSessionWithOrg();
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     const row = await db
-      .select({ firmaDigitalEmpleador: client.firmaDigitalEmpleador })
+      .select({
+        firmaDigitalEmpleador: client.firmaDigitalEmpleador,
+        plantillaEmpleadoId: client.payrollPlantillaEmpleadoId,
+      })
       .from(client)
       .where(eq(client.id, ctx.data.profileId))
       .then((r) => r[0] ?? null);
     return {
       imprimirTotalRedondeado: false,
       firmaEmpleadorUrl: row?.firmaDigitalEmpleador ?? null,
+      plantillaEmpleadoId: row?.plantillaEmpleadoId ?? null,
     };
+  });
+
+/** Establece el empleado de referencia para la plantilla base de nuevos recibos. */
+export const setPlantillaEmpleado = createServerFn({ method: 'POST' })
+  .inputValidator(z.object({
+    clientId: z.string().uuid(),
+    profileId: z.string().uuid(),
+    empleadoId: z.string().uuid().nullable(),
+  }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    // Verificar que el empleado pertenece al profile
+    if (ctx.data.empleadoId) {
+      const emp = await db
+        .select({ id: liquidacionImportEmpleado.id })
+        .from(liquidacionImportEmpleado)
+        .where(and(
+          eq(liquidacionImportEmpleado.id, ctx.data.empleadoId),
+          eq(liquidacionImportEmpleado.clientId, ctx.data.profileId),
+        ))
+        .then((r) => r[0] ?? null);
+      if (!emp) throw new Error('Empleado no encontrado');
+    }
+    await db
+      .update(client)
+      .set({ payrollPlantillaEmpleadoId: ctx.data.empleadoId })
+      .where(eq(client.id, ctx.data.profileId));
+    return { ok: true };
   });
 
 /** Guarda (o elimina) la firma digital del empleador en el perfil. */

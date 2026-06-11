@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
-import { Plus, Trash2, RefreshCw, Pencil, Save, Search, ChevronLeft, ChevronRight, FileText } from 'lucide-react';
+import { Plus, Trash2, RefreshCw, Pencil, Save, Search, ChevronLeft, ChevronRight, FileText, Bookmark, BookmarkCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Table,
@@ -40,6 +40,8 @@ import {
   listProvincias,
   sincronizarConveniosEmpleados,
   updateEmpleado,
+  getPayrollEmployerConfig,
+  setPlantillaEmpleado,
 } from '@/actions/sueldos';
 import { legajoParaMostrar } from '@/lib/legajo';
 import { BANCOS } from '@/lib/bancos';
@@ -590,7 +592,7 @@ function EmpleadoDetalleDialog({
                   <>
                     <Campo label="Convenio" value={row.convenioNombre ? formatTitleCaseDisplay(row.convenioNombre) : null} />
                     <Campo label="Categoría (sistema)" value={row.categoriaNombre ? formatTitleCaseDisplay(row.categoriaNombre) : null} />
-                    <Campo label="Categoría (importado)" value={e.categoria ? formatTitleCaseDisplay(e.categoria) : null} />
+                    <Campo label="Puesto" value={e.categoria ? formatTitleCaseDisplay(e.categoria) : null} />
                   </>
                 )}
               </Seccion>
@@ -1336,6 +1338,24 @@ export function SueldosEmpleados({
     onError: (e) => toast.error(e.message),
   });
 
+  const { data: employerConfig } = useQuery({
+    queryKey: ['payroll-employer-config', clientId, profileId],
+    queryFn: () => getPayrollEmployerConfig({ data: { clientId, profileId } }),
+    enabled: !!clientId && !!profileId,
+  });
+  const plantillaEmpleadoId = employerConfig?.plantillaEmpleadoId ?? null;
+
+  const setPlantilla = useMutation({
+    mutationFn: (empleadoId: string | null) =>
+      setPlantillaEmpleado({ data: { clientId, profileId, empleadoId } }),
+    onSuccess: (_, empleadoId) => {
+      toast.success(empleadoId ? 'Plantilla base actualizada' : 'Plantilla base eliminada');
+      queryClient.invalidateQueries({ queryKey: ['payroll-employer-config', clientId, profileId] });
+      queryClient.invalidateQueries({ queryKey: ['plantilla-manual-sos', clientId, profileId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Error'),
+  });
+
   return (
     <div className="w-full min-w-0 max-w-full space-y-4">
       {importEmpleadosQuery.isError ? (
@@ -1470,9 +1490,11 @@ export function SueldosEmpleados({
                       {formatDate(e.fechaAlta ?? undefined)}
                     </TableCell>
                     <TableCell className="min-w-0 break-words align-top py-2">
-                      {r.categoriaNombre
-                        ? formatTitleCaseDisplay(r.categoriaNombre)
-                        : <span className="text-muted-foreground text-xs">{formatTitleCaseDisplay(e.categoria)}</span>}
+                      {e.categoria
+                        ? formatTitleCaseDisplay(e.categoria)
+                        : r.categoriaNombre
+                          ? <span className="text-muted-foreground text-xs">{formatTitleCaseDisplay(r.categoriaNombre)}</span>
+                          : null}
                     </TableCell>
                     <TableCell className="align-top py-2" onClick={(ev) => ev.stopPropagation()}>
                       {baja ? (
@@ -1494,17 +1516,32 @@ export function SueldosEmpleados({
                       )}
                     </TableCell>
                     <TableCell className="align-top py-2" onClick={(ev) => ev.stopPropagation()}>
-                      {onVerRecibos && (
+                      <div className="flex items-center gap-0.5">
+                        {onVerRecibos && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                            title="Ver recibos del empleado"
+                            onClick={() => onVerRecibos(e.id)}
+                          >
+                            <FileText className="h-4 w-4" />
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                          title="Ver recibos del empleado"
-                          onClick={() => onVerRecibos(e.id)}
+                          className={`h-7 w-7 ${plantillaEmpleadoId === e.id ? 'text-amber-500 hover:text-amber-600' : 'text-muted-foreground hover:text-amber-500'}`}
+                          title={plantillaEmpleadoId === e.id ? 'Quitar como plantilla base' : 'Usar como plantilla base para nuevos recibos'}
+                          disabled={setPlantilla.isPending}
+                          onClick={() => setPlantilla.mutate(plantillaEmpleadoId === e.id ? null : e.id)}
                         >
-                          <FileText className="h-4 w-4" />
+                          {plantillaEmpleadoId === e.id
+                            ? <BookmarkCheck className="h-4 w-4" />
+                            : <Bookmark className="h-4 w-4" />
+                          }
                         </Button>
-                      )}
+                      </div>
                     </TableCell>
                     <TableCell className="align-top py-2" onClick={(ev) => ev.stopPropagation()}>
                       {esManual && (

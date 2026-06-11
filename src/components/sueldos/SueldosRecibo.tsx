@@ -839,7 +839,7 @@ function ReciboDocumento({
 
         {/* ── FILA 1 EMPLEADO: Categoría | Tipo de liquidación ───────────── */}
         <div className="grid grid-cols-2 divide-x divide-border border-b border-border">
-          <DocCell label="Categoría" value={categoria?.nombre ?? '—'} />
+          <DocCell label="Categoría" value={empleado.categoria ? toTitleCase(empleado.categoria) : (categoria?.nombre ?? '—')} />
           <DocCell
             label="Tipo de liquidación"
             value={`${tipoReciboLabel(liquidacion.tipo)} — ${quincenaLabel(liquidacion.quincena)}`}
