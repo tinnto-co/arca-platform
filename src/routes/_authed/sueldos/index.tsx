@@ -41,29 +41,32 @@ const tabTriggerCls = () =>
 function RouteComponent() {
   const [selectedOptionId, setSelectedOptionId] = useState<string>('');
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [editReciboData, setEditReciboData] = useState<{
-    importEmpleadoId: string;
-    empleadoNombre: string;
-    periodo: string;
-    tipoRecibo: string;
-    quincena?: string | null;
-    fechaLiquidacion?: string | null;
-    fechaPago?: string | null;
-    obraSocialId?: string | null;
-    periodoCargas?: string | null;
-    fechaDepositoCargas?: string | null;
-    observacionInterna?: string | null;
-    observacionRecibo?: string | null;
-    situacionRevista1Id?: string | null;
-    situacionRevista1DiaInicio?: number | null;
-    situacionRevista2Id?: string | null;
-    situacionRevista2DiaInicio?: number | null;
-    situacionRevista3Id?: string | null;
-    situacionRevista3DiaInicio?: number | null;
-    diasTrabajados?: number | null;
-    horasTrabajadas?: number | null;
-    importeMaternidadArt13?: string | null;
-  } | undefined>(undefined);
+  const [editReciboData, setEditReciboData] = useState<
+    | {
+      importEmpleadoId: string;
+      empleadoNombre: string;
+      periodo: string;
+      tipoRecibo: string;
+      quincena?: string | null;
+      fechaLiquidacion?: string | null;
+      fechaPago?: string | null;
+      obraSocialId?: string | null;
+      periodoCargas?: string | null;
+      fechaDepositoCargas?: string | null;
+      observacionInterna?: string | null;
+      observacionRecibo?: string | null;
+      situacionRevista1Id?: string | null;
+      situacionRevista1DiaInicio?: number | null;
+      situacionRevista2Id?: string | null;
+      situacionRevista2DiaInicio?: number | null;
+      situacionRevista3Id?: string | null;
+      situacionRevista3DiaInicio?: number | null;
+      diasTrabajados?: number | null;
+      horasTrabajadas?: number | null;
+      importeMaternidadArt13?: string | null;
+    }
+    | undefined
+  >(undefined);
   const [reciboFiltroEmpleadoId, setReciboFiltroEmpleadoId] = useState('');
 
   const { data: clients = [] } = useQuery({
@@ -72,7 +75,7 @@ function RouteComponent() {
   });
 
   const selectedOption = clients.find((c) => c.id === selectedOptionId);
-  // En acciones de sueldos: clientId = representative, profileId = empresa (client).
+  // Contrato API legacy: prop `clientId` = representante; prop `profileId` = empresa (client).
   const clientId = selectedOption?.representativeId ?? '';
   const profileId = selectedOption?.clientId ?? '';
 
