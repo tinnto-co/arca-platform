@@ -23,6 +23,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { listRecibosDetalleParaPDF } from '@/actions/sueldos';
 import { legajoParaMostrar } from '@/lib/legajo';
+import { toTitleCase } from '@/lib/format-name';
 import type { ClientDataPdf, ReciboDetallePdf } from './recibo-pdf';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -131,7 +132,7 @@ export function ImprimirRecibosDialog({
     return { data, agrupados: [...byEmployee.values()] };
   }
 
-  // ── Vista previa (solo primer empleado) ──────────────────────────────────
+  // ── Vista previa ─────────────────────────────────────────────────────────
 
   async function handlePreview() {
     if (!ano) {
@@ -147,8 +148,9 @@ export function ImprimirRecibosDialog({
       }
 
       const { generarPdfBlobEmpleado } = await import('./recibo-pdf');
+      const todosLosRecibos = agrupados.flatMap((a) => a.recibos);
       const blob = await generarPdfBlobEmpleado(
-        agrupados[0]!.recibos as ReciboDetallePdf[],
+        todosLosRecibos as ReciboDetallePdf[],
         clientData,
         firmaEmpleadorUrl,
       );
@@ -306,7 +308,7 @@ export function ImprimirRecibosDialog({
                               onCheckedChange={() => toggleEmpleado(e.id)}
                               disabled={generando}
                             />
-                            <span className="flex-1 truncate">{e.nombre}</span>
+                            <span className="flex-1 truncate">{toTitleCase(e.nombre)}</span>
                             {e.legajo && (
                               <span className="shrink-0 text-xs text-muted-foreground">
                                 Leg. {legajoParaMostrar(e.legajo)}
@@ -349,7 +351,7 @@ export function ImprimirRecibosDialog({
             <div className="flex min-h-0 flex-1 flex-col gap-2 py-2">
               <div className="flex shrink-0 items-center justify-between">
                 <span className="text-sm font-medium text-muted-foreground">
-                  Vista previa — primer empleado seleccionado
+                  Vista previa
                 </span>
                 <button
                   type="button"

@@ -37,6 +37,7 @@ import {
 } from '@/actions/client';
 import { EditRepresentativeDialog } from '@/components/edit-client-dialog';
 import { relativeTime } from '@/components/dashboard/shared';
+import { toTitleCase } from '@/lib/format-name';
 
 interface Representative {
   id: string;
@@ -84,11 +85,11 @@ export function RepresentativesTable() {
       cell: ({ row }) => (
         <div>
           <div className="font-medium text-[var(--arca-ink)]">
-            {row.original.name}
+            {toTitleCase(row.original.name)}
           </div>
           {row.original.clients?.[0] && (
             <div className="text-[11px] text-[var(--arca-ink-4)] mt-0.5">
-              {row.original.clients[0].name}
+              {toTitleCase(row.original.clients[0].name)}
             </div>
           )}
         </div>

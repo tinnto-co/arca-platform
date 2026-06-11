@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { getClient } from '@/actions/profile';
+import { toTitleCase } from '@/lib/format-name';
 import { getInvoiceStatsByProfile } from '@/actions/invoice';
 import { InvoicesTable } from '@/components/invoices-table';
 import {
@@ -170,7 +171,7 @@ export function ClientDetailView({
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <h1 className="text-2xl font-bold truncate">{client.name}</h1>
+          <h1 className="text-2xl font-bold truncate">{toTitleCase(client.name)}</h1>
         </div>
       </div>
 

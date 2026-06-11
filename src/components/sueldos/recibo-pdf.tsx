@@ -581,7 +581,9 @@ function ReciboPdfPage({
   const totalDescuentos = redondearPesos(sumaMontosDetalle(descuentos));
   const totalRetenciones = redondearPesos(sumaMontosDetalle(retenciones));
   const totalNoRem      = redondearPesos(sumaMontosDetalle(haberesSin));
-  const neto = redondearPesos(totalHaberes + totalNoRem - totalDescuentos - totalRetenciones);
+  const netoRaw = redondearPesos(totalHaberes + totalNoRem - totalDescuentos - totalRetenciones);
+  const redondeo = netoRaw > 0 && netoRaw % 1 > 0.001 ? Math.ceil(netoRaw) - netoRaw : 0;
+  const neto = redondeo > 0 ? Math.ceil(netoRaw) : netoRaw;
 
   // Filas de la tabla en orden (igual que el HTML)
   const filas = [
@@ -599,7 +601,7 @@ function ReciboPdfPage({
   const cbu       = cab.cbu       ?? valorCabeceraLegible(empleado.cbu);
 
   // Datos de empresa
-  const empresaNombre   = clientData?.razonSocial || clientData?.name || '—';
+  const empresaNombre   = toTitleCase(clientData?.razonSocial) || toTitleCase(clientData?.name) || '—';
   const empresaCUIT     = clientData?.cuitEmpresa || clientData?.identityNumber || '—';
   const empresaDirec    = clientData?.address || null;
 
@@ -657,7 +659,7 @@ function ReciboPdfPage({
 
       {/* ── Fila: Categoría | Tipo de liquidación ───────────────────────────── */}
       <View style={S.infoRow}>
-        <InfoCell label="Categoría" value={categoria?.nombre ?? '—'} />
+        <InfoCell label="Categoría" value={empleado.categoria ? toTitleCase(empleado.categoria) : (categoria?.nombre ?? '—')} />
         <InfoCell
           label="Tipo de liquidación"
           value={`${tipoReciboLabel(liquidacion.tipo)} — ${quincenaLabel(liquidacion.quincena)}`}
@@ -675,7 +677,7 @@ function ReciboPdfPage({
         {/* NOMBRE — flex proporcional */}
         <View style={{ ...FIXED_CELL, flexGrow: 2, flexShrink: 1, flexBasis: 0 }}>
           <Text style={S.cellLabel}>APELLIDO Y NOMBRES</Text>
-          <Text style={S.cellValue}>{empleado.nombre}</Text>
+          <Text style={S.cellValue}>{toTitleCase(empleado.nombre)}</Text>
         </View>
         {/* FECHA DE INGRESO — ancho fijo */}
         <View style={{ ...FIXED_CELL, flexBasis: 84 }}>
@@ -790,6 +792,41 @@ function ReciboPdfPage({
         <View style={S.colMoney}><Text style={S.tdMoneyBold}>{moneyFmt(totalNoRem)}</Text></View>
       </View>
 
+      {/* ── Neto sin redondeo / Redondeo / Total neto (solo cuando hay centavos) */}
+      {redondeo > 0 && (
+        <>
+          {/* Neto sin redondeo */}
+          <View style={[S.totalsRow, { borderTopWidth: 0.5 }]}>
+            <View style={{ flex: 1, paddingLeft: 5, paddingRight: 5 }}>
+              <Text style={{ fontSize: 6.5, color: MUTED, textAlign: 'right' }}>NETO SIN REDONDEO</Text>
+            </View>
+            <View style={S.colMoney}>
+              <Text style={S.tdMoneyBold}>{moneyFmt(netoRaw)}</Text>
+            </View>
+          </View>
+          {/* Redondeo */}
+          <View style={[S.totalsRow, { borderTopWidth: 0.5 }]}>
+            <View style={{ flex: 1, paddingLeft: 5, paddingRight: 5 }}>
+              <Text style={{ fontSize: 6.5, color: MUTED, textAlign: 'right' }}>REDONDEO</Text>
+            </View>
+            <View style={S.colMoney}>
+              <Text style={S.tdMoney}>+{moneyFmt(redondeo)}</Text>
+            </View>
+          </View>
+          {/* Total neto */}
+          <View style={[S.totalsRow, { borderTopWidth: 1.5 }]}>
+            <View style={{ flex: 1, paddingLeft: 5, paddingRight: 5 }}>
+              <Text style={{ fontSize: 6.5, fontFamily: 'Helvetica-Bold', color: DARK, textAlign: 'right', letterSpacing: 0.5 }}>
+                TOTAL NETO
+              </Text>
+            </View>
+            <View style={S.colMoney}>
+              <Text style={S.tdMoneyBold}>{moneyFmt(neto)}</Text>
+            </View>
+          </View>
+        </>
+      )}
+
       {/* ── Neto ─────────────────────────────────────────────────────────────── */}
       <View style={S.netoRow}>
         <Text style={{ fontSize: 7.5, color: MUTED, flex: 1, paddingRight: 8 }}>
@@ -838,6 +875,7 @@ function ReciboPdfPage({
 // Orden: por cada recibo → copia empleado, luego copia empleador.
 
 import React from 'react';
+import { toTitleCase } from '@/lib/format-name';
 
 function EmpleadoPdfDocument({
   recibos,

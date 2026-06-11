@@ -10,6 +10,7 @@ import {
   FileText,
   UserCircle,
   PenLine,
+  Upload,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/shared/page-header';
@@ -21,8 +22,10 @@ import { SueldosConceptos } from '@/components/sueldos/SueldosConceptos';
 import { SueldosSimulador } from '@/components/sueldos/SueldosSimulador';
 import { SueldosRecibo } from '@/components/sueldos/SueldosRecibo';
 import { SueldosFirmaDigital } from '@/components/sueldos/SueldosFirmaDigital';
+import { SueldosCargas } from '@/components/sueldos/SueldosCargas';
 import { getRepresentativesForSueldos } from '@/actions/client';
 import { cn } from '@/lib/utils';
+import { toTitleCase } from '@/lib/format-name';
 
 export const Route = createFileRoute('/_authed/sueldos/')({
   component: RouteComponent,
@@ -30,7 +33,7 @@ export const Route = createFileRoute('/_authed/sueldos/')({
 
 const tabTriggerCls = () =>
   cn(
-    'relative h-auto flex-none px-[14px] py-[10px] text-[13px] font-medium rounded-[8px_8px_0_0] border whitespace-nowrap gap-[7px] cursor-pointer',
+    'relative h-auto flex-none px-[18px] py-[10px] text-[13px] font-medium rounded-[8px_8px_0_0] border whitespace-nowrap gap-[7px] cursor-pointer',
     'border-transparent text-[var(--arca-ink-3)] hover:bg-transparent hover:text-[var(--arca-ink)]',
     'data-[state=active]:bg-[var(--arca-surface)] data-[state=active]:border-[var(--arca-border)] data-[state=active]:[border-bottom-color:var(--arca-bg)] data-[state=active]:text-[var(--arca-ink)] data-[state=active]:font-semibold data-[state=active]:shadow-none data-[state=active]:top-px'
   );
@@ -43,7 +46,25 @@ function RouteComponent() {
     empleadoNombre: string;
     periodo: string;
     tipoRecibo: string;
+    quincena?: string | null;
+    fechaLiquidacion?: string | null;
+    fechaPago?: string | null;
+    obraSocialId?: string | null;
+    periodoCargas?: string | null;
+    fechaDepositoCargas?: string | null;
+    observacionInterna?: string | null;
+    observacionRecibo?: string | null;
+    situacionRevista1Id?: string | null;
+    situacionRevista1DiaInicio?: number | null;
+    situacionRevista2Id?: string | null;
+    situacionRevista2DiaInicio?: number | null;
+    situacionRevista3Id?: string | null;
+    situacionRevista3DiaInicio?: number | null;
+    diasTrabajados?: number | null;
+    horasTrabajadas?: number | null;
+    importeMaternidadArt13?: string | null;
   } | undefined>(undefined);
+  const [reciboFiltroEmpleadoId, setReciboFiltroEmpleadoId] = useState('');
 
   const { data: clients = [] } = useQuery({
     queryKey: ['clients', 'sueldos'],
@@ -51,8 +72,9 @@ function RouteComponent() {
   });
 
   const selectedOption = clients.find((c) => c.id === selectedOptionId);
-  const clientId = selectedOption?.clientId ?? '';
-  const profileId = selectedOption?.profileId ?? '';
+  // En acciones de sueldos: clientId = representative, profileId = empresa (client).
+  const clientId = selectedOption?.representativeId ?? '';
+  const profileId = selectedOption?.clientId ?? '';
 
   useEffect(() => {
     if (
@@ -66,7 +88,7 @@ function RouteComponent() {
 
   const clientOptions = clients.map((c) => ({
     value: c.id,
-    label: c.label,
+    label: toTitleCase(c.label) || c.label,
   }));
 
   return (
@@ -123,13 +145,17 @@ function RouteComponent() {
       ) : (
         <Tabs
           value={activeTab}
-          onValueChange={setActiveTab}
+          onValueChange={(tab) => {
+            if (tab !== 'simulador') setEditReciboData(undefined);
+            if (tab !== 'recibo') setReciboFiltroEmpleadoId('');
+            setActiveTab(tab);
+          }}
           className="flex flex-col"
         >
           {/* Tab bar — sticky under the header */}
-          <div className="sticky top-0 z-10 bg-[var(--arca-bg)] border-b border-[var(--arca-border)]">
+          <div className="sticky top-0 z-10 bg-[var(--arca-bg)] border-b border-[var(--arca-border)] overflow-hidden">
             <div className="px-4 md:px-[3rem]">
-              <TabsList className="flex h-auto w-full bg-transparent p-0 rounded-none gap-0 overflow-x-auto justify-start">
+              <TabsList className="flex h-auto w-full bg-transparent p-0 rounded-none gap-0 overflow-x-auto overflow-y-hidden justify-start [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                 <TabsTrigger value="dashboard" className={tabTriggerCls()}>
                   <LayoutDashboard className="h-[14px] w-[14px]" />
                   Dashboard
@@ -158,6 +184,10 @@ function RouteComponent() {
                   <PenLine className="h-[14px] w-[14px]" />
                   Firma Digital
                 </TabsTrigger>
+                <TabsTrigger value="cargas" className={tabTriggerCls()}>
+                  <Upload className="h-[14px] w-[14px]" />
+                  Cargas Sociales
+                </TabsTrigger>
               </TabsList>
             </div>
           </div>
@@ -168,7 +198,14 @@ function RouteComponent() {
               <SueldosDashboard clientId={clientId} profileId={profileId} />
             </TabsContent>
             <TabsContent value="empleados" className="mt-0">
-              <SueldosEmpleados clientId={clientId} profileId={profileId} />
+              <SueldosEmpleados
+                clientId={clientId}
+                profileId={profileId}
+                onVerRecibos={(empleadoId) => {
+                  setReciboFiltroEmpleadoId(empleadoId);
+                  setActiveTab('recibo');
+                }}
+              />
             </TabsContent>
             <TabsContent value="convenios" className="mt-0">
               <SueldosConvenios clientId={clientId} profileId={profileId} />
@@ -182,12 +219,15 @@ function RouteComponent() {
                 profileId={profileId}
                 onConfirmRecibo={() => setActiveTab('recibo')}
                 initialData={editReciboData}
+                onReset={() => setEditReciboData(undefined)}
               />
             </TabsContent>
             <TabsContent value="recibo" className="mt-0">
               <SueldosRecibo
+                key={reciboFiltroEmpleadoId}
                 clientId={clientId}
                 profileId={profileId}
+                initialEmpleadoId={reciboFiltroEmpleadoId || undefined}
                 onEditRecibo={(data) => {
                   setEditReciboData(data);
                   setActiveTab('simulador');
@@ -196,6 +236,9 @@ function RouteComponent() {
             </TabsContent>
             <TabsContent value="firma-digital" className="mt-0">
               <SueldosFirmaDigital clientId={clientId} profileId={profileId} />
+            </TabsContent>
+            <TabsContent value="cargas" className="mt-0">
+              <SueldosCargas clientId={clientId} profileId={profileId} />
             </TabsContent>
           </div>
         </Tabs>
