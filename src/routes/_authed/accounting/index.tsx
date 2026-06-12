@@ -39,6 +39,8 @@ import {
   Inbox,
   AlertTriangle,
   Boxes,
+  CheckCircle2,
+  XCircle,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { ArcaCard } from '@/components/dashboard/shared';
@@ -85,12 +87,14 @@ import {
   listFixedAssets,
   disposeFixedAsset,
   getAnexoI,
+  getYearEndChecklist,
   type ChartAccount,
   type PeriodView,
   type LedgerRow,
   type ConsolidatedAccount,
   type PendingReviewEntry,
   type FixedAssetRow,
+  type YearEndCheck,
 } from '@/actions/accounting';
 import {
   exportMayorExcel,
@@ -1506,6 +1510,15 @@ function Ejercicios({
         </ArcaCard>
       )}
 
+      {/* Checklist de cierre de ejercicio (US 5.1.1) */}
+      {detail && effectiveFyId && (
+        <CierreChecklist
+          clientId={clientId}
+          fiscalYearId={effectiveFyId}
+          isOwner={isOwner}
+        />
+      )}
+
       {/* Log auditable */}
       {log.length > 0 && (
         <ArcaCard className="mt-4">
@@ -1753,6 +1766,108 @@ function PeriodCard({
         </div>
       )}
     </div>
+  );
+}
+
+/* ─── Checklist de cierre de ejercicio (US 5.1.1) ─── */
+function CierreChecklist({
+  clientId,
+  fiscalYearId,
+  isOwner,
+}: {
+  clientId: string;
+  fiscalYearId: string;
+  isOwner: boolean;
+}) {
+  const { data } = useQuery({
+    queryKey: ['accounting', 'year-end-checklist', clientId, fiscalYearId],
+    queryFn: () => getYearEndChecklist({ data: { clientId, fiscalYearId } }),
+  });
+  if (!data) return null;
+
+  if (data.fiscalYearStatus === 'closed') {
+    return (
+      <ArcaCard className="mt-4">
+        <div className="flex items-center gap-2 px-5 py-4 text-[13px] text-[var(--arca-ink-2)]">
+          <Lock
+            className="w-4 h-4 text-[var(--arca-ink-3)]"
+            strokeWidth={1.8}
+          />
+          El Ejercicio N°{data.fiscalYearNumber} está <strong>cerrado</strong>.
+        </div>
+      </ArcaCard>
+    );
+  }
+
+  return (
+    <ArcaCard className="mt-4">
+      <div className="flex items-center gap-2 px-5 py-3 border-b border-[var(--arca-border)]">
+        <Lock className="w-4 h-4 text-[var(--arca-ink-3)]" strokeWidth={1.8} />
+        <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+          Cierre del ejercicio · Chequeo previo
+        </span>
+      </div>
+
+      <div className="divide-y divide-[var(--arca-border)]">
+        {data.checks.map((c: YearEndCheck) => (
+          <div key={c.key} className="flex items-start gap-3 px-5 py-2.5">
+            {c.status === 'pass' ? (
+              <CheckCircle2
+                className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600"
+                strokeWidth={2}
+              />
+            ) : (
+              <XCircle
+                className="w-4 h-4 shrink-0 mt-0.5 text-red-600"
+                strokeWidth={2}
+              />
+            )}
+            <div className="flex-1 min-w-0">
+              <div className="text-[12.5px] text-[var(--arca-ink)]">
+                {c.label}
+              </div>
+              <div
+                className="text-[11.5px]"
+                style={{
+                  color:
+                    c.status === 'pass'
+                      ? 'var(--arca-ink-3)'
+                      : 'oklch(0.55 0.18 25)',
+                }}
+              >
+                {c.detail}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center justify-between gap-3 px-5 py-3 border-t border-[var(--arca-border)]">
+        <span className="text-[12px] text-[var(--arca-ink-3)]">
+          {data.canClose
+            ? 'Todas las validaciones pasan. Podés iniciar el cierre.'
+            : 'Resolvé los puntos en rojo para habilitar el cierre.'}
+        </span>
+        {isOwner ? (
+          <button
+            disabled={!data.canClose}
+            onClick={() =>
+              toast.message(
+                'Validaciones OK. La ejecución del cierre (asientos de refundición y apertura) se implementa en la próxima épica.'
+              )
+            }
+            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            title={data.canClose ? undefined : 'Hay validaciones sin cumplir'}
+          >
+            Iniciar cierre
+          </button>
+        ) : (
+          <span className="text-[11.5px] text-[var(--arca-ink-3)]">
+            Solo el Owner puede cerrar
+          </span>
+        )}
+      </div>
+    </ArcaCard>
   );
 }
 

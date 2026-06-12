@@ -47,6 +47,7 @@ import {
   CUSTOM_CODE_PREFIX,
   PENDING_REVIEW_CODE,
   EXPENSE_ACCOUNT_GROUPS,
+  MONTH_NAMES,
 } from '@/lib/accounting-labels';
 import {
   buildEntryLines,
@@ -4085,5 +4086,158 @@ export const getAnexoI = createServerFn({ method: 'GET' })
         total: r2(grandTotals.amortYear),
       },
       prior,
+    };
+  });
+
+/* ════════════════════ Cierre de ejercicio — checklist (US 5.1.1) ════════════════════ */
+
+export interface YearEndCheck {
+  key: 'periods' | 'pending_review' | 'balance' | 'rules';
+  label: string;
+  status: 'pass' | 'fail';
+  detail: string;
+}
+export interface YearEndChecklist {
+  fiscalYearNumber: number;
+  fiscalYearStatus: 'open' | 'closing' | 'closed';
+  canClose: boolean;
+  checks: YearEndCheck[];
+}
+
+/**
+ * Valida las precondiciones para cerrar el ejercicio: 12 períodos cerrados, sin
+ * asientos en pending_review, balance cuadrado, y reglas de mapeo consistentes. (US 5.1.1)
+ */
+export const getYearEndChecklist = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid(),
+    })
+  )
+  .handler(async (ctx): Promise<YearEndChecklist> => {
+    const { orgId } = await getSessionWithOrg();
+    const { clientId } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
+
+    const checks: YearEndCheck[] = [];
+
+    // 1) Todos los períodos cerrados.
+    const periods = await db
+      .select({
+        month: accountingPeriod.month,
+        status: accountingPeriod.status,
+      })
+      .from(accountingPeriod)
+      .where(eq(accountingPeriod.fiscalYearId, fy.id))
+      .orderBy(asc(accountingPeriod.month));
+    const open = periods.filter((p) => p.status !== 'closed');
+    checks.push({
+      key: 'periods',
+      label: 'Los 12 períodos del ejercicio están cerrados',
+      status: open.length === 0 ? 'pass' : 'fail',
+      detail:
+        open.length === 0
+          ? `${periods.length} de ${periods.length} períodos cerrados`
+          : `Faltan cerrar: ${open.map((p) => MONTH_NAMES[p.month]).join(', ')}`,
+    });
+
+    // 2) Sin asientos en pendiente de revisión.
+    const [{ pend }] = await db
+      .select({ pend: sql<number>`count(distinct ${journalEntry.id})::int` })
+      .from(journalEntry)
+      .innerJoin(
+        journalEntryLine,
+        eq(journalEntryLine.journalEntryId, journalEntry.id)
+      )
+      .innerJoin(account, eq(account.id, journalEntryLine.accountId))
+      .where(
+        and(
+          eq(journalEntry.fiscalYearId, fy.id),
+          eq(journalEntry.isVoided, false),
+          eq(account.organizationId, orgId),
+          eq(account.code, PENDING_REVIEW_CODE)
+        )
+      );
+    checks.push({
+      key: 'pending_review',
+      label: 'No hay asientos en pendiente de revisión',
+      status: (pend ?? 0) === 0 ? 'pass' : 'fail',
+      detail:
+        (pend ?? 0) === 0
+          ? 'Sin pendientes'
+          : `Hay ${pend} asiento(s) en pendiente de revisión — resolvelos en la bandeja Pendientes`,
+    });
+
+    // 3) Balance cuadrado (suma Debe = suma Haber del ejercicio).
+    const [bal] = await db
+      .select({
+        debit: sql<string>`coalesce(sum(${journalEntryLine.debit}),0)`,
+        credit: sql<string>`coalesce(sum(${journalEntryLine.credit}),0)`,
+      })
+      .from(journalEntryLine)
+      .innerJoin(
+        journalEntry,
+        eq(journalEntry.id, journalEntryLine.journalEntryId)
+      )
+      .where(
+        and(
+          eq(journalEntry.fiscalYearId, fy.id),
+          eq(journalEntry.isVoided, false)
+        )
+      );
+    const totalDebit = parseFloat(bal?.debit ?? '0');
+    const totalCredit = parseFloat(bal?.credit ?? '0');
+    const diff = r2(totalDebit - totalCredit);
+    checks.push({
+      key: 'balance',
+      label: 'El ejercicio balancea (Debe = Haber)',
+      status: Math.abs(diff) < 0.005 ? 'pass' : 'fail',
+      detail:
+        Math.abs(diff) < 0.005
+          ? `Debe = Haber = $ ${totalDebit.toFixed(2)}`
+          : `Diferencia de $ ${diff.toFixed(2)} entre Debe y Haber`,
+    });
+
+    // 4) Reglas de mapeo activas con condiciones consistentes.
+    const rules = await db
+      .select({
+        name: ledgerMappingRule.name,
+        ruleType: ledgerMappingRule.ruleType,
+        condition: ledgerMappingRule.condition,
+      })
+      .from(ledgerMappingRule)
+      .where(
+        and(
+          eq(ledgerMappingRule.clientId, clientId),
+          eq(ledgerMappingRule.isActive, true)
+        )
+      );
+    const SUPPORTED_KEYS = ['direction', 'type', 'invoicetype'];
+    const badRules = rules.filter((r) => {
+      if (r.ruleType !== 'conditional') return false;
+      const cond = r.condition as Record<string, unknown> | null;
+      if (!cond || typeof cond !== 'object' || Object.keys(cond).length === 0)
+        return true;
+      const keys = Object.keys(cond).map((k) => k.toLowerCase());
+      return !keys.some((k) => SUPPORTED_KEYS.includes(k));
+    });
+    checks.push({
+      key: 'rules',
+      label: 'Reglas de mapeo con condiciones consistentes',
+      status: badRules.length === 0 ? 'pass' : 'fail',
+      detail:
+        badRules.length === 0
+          ? 'Sin reglas inconsistentes'
+          : `Reglas con condición inválida: ${badRules.map((r) => r.name).join(', ')}`,
+    });
+
+    return {
+      fiscalYearNumber: fy.number,
+      fiscalYearStatus: fy.status,
+      canClose:
+        fy.status === 'open' && checks.every((c) => c.status === 'pass'),
+      checks,
     };
   });
