@@ -29,7 +29,19 @@ import {
   getMemberRole,
   assertCanWrite,
 } from '@/actions/helpers';
-import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  lt,
+  lte,
+  or,
+  sql,
+} from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
   CUSTOM_CODE_PREFIX,
@@ -43,7 +55,10 @@ import {
   selectRuleForInvoice,
   type RuleLike,
 } from '@/lib/accounting-invoice-posting';
-import { depreciationSnapshot } from '@/lib/accounting-depreciation';
+import {
+  depreciationSnapshot,
+  accumulatedDepreciation,
+} from '@/lib/accounting-depreciation';
 
 /* ───────────────────────────── Helpers ───────────────────────────── */
 
@@ -3831,4 +3846,244 @@ export const disposeFixedAsset = createServerFn({ method: 'POST' })
       })
       .where(eq(fixedAsset.id, ctx.data.id));
     return { ok: true };
+  });
+
+/* ════════════════════════ Anexo I (US 4.2.x) ════════════════════════ */
+
+export interface AnexoIAssetRow {
+  id: string;
+  name: string;
+  originalValue: number;
+  accumStart: number;
+  amortYear: number;
+  accumEnd: number;
+  residualEnd: number;
+  disposed: boolean;
+}
+export interface AnexoICategory {
+  category: string;
+  assets: AnexoIAssetRow[];
+  totals: {
+    originalValue: number;
+    accumStart: number;
+    amortYear: number;
+    accumEnd: number;
+    residualEnd: number;
+  };
+}
+export interface AnexoISuggestionLine {
+  accountId: string;
+  code: string;
+  name: string;
+  side: 'debit' | 'credit';
+  amount: number;
+}
+
+const r2 = (x: number): number => Math.round((x + Number.EPSILON) * 100) / 100;
+const endOfMonthBefore = (d: Date): Date => {
+  // Último instante antes del inicio del ejercicio.
+  return new Date(d.getTime() - 24 * 60 * 60 * 1000);
+};
+
+interface AnexoIAssetFull extends AnexoIAssetRow {
+  category: string;
+  assetAccountId: string;
+  assetAccountLabel: string;
+  accumAccountId: string;
+  accumAccountLabel: string;
+  expenseAccountId: string;
+  expenseAccountLabel: string;
+}
+
+/** Computa las filas del Anexo I de una empresa para un ejercicio dado. */
+async function computeAnexoIRows(
+  clientId: string,
+  fy: FiscalYearRow
+): Promise<AnexoIAssetFull[]> {
+  const assetAcc = alias(account, 'anexo_asset');
+  const accumAcc = alias(account, 'anexo_accum');
+  const expAcc = alias(account, 'anexo_exp');
+
+  const rows = await db
+    .select({
+      fa: fixedAsset,
+      assetCode: assetAcc.code,
+      assetName: assetAcc.name,
+      accumCode: accumAcc.code,
+      accumName: accumAcc.name,
+      expCode: expAcc.code,
+      expName: expAcc.name,
+    })
+    .from(fixedAsset)
+    .innerJoin(assetAcc, eq(assetAcc.id, fixedAsset.assetAccountId))
+    .innerJoin(accumAcc, eq(accumAcc.id, fixedAsset.accumDeprAccountId))
+    .innerJoin(expAcc, eq(expAcc.id, fixedAsset.deprExpenseAccountId))
+    .where(
+      and(
+        eq(fixedAsset.clientId, clientId),
+        lte(fixedAsset.acquisitionDate, fy.endDate),
+        or(
+          isNull(fixedAsset.disposalDate),
+          gte(fixedAsset.disposalDate, fy.startDate)
+        )
+      )
+    )
+    .orderBy(asc(fixedAsset.category), asc(fixedAsset.name));
+
+  const startRef = endOfMonthBefore(fy.startDate);
+
+  return rows.map((r): AnexoIAssetFull => {
+    const a = {
+      acquisitionDate: r.fa.acquisitionDate,
+      originalValue: r.fa.originalValue,
+      usefulLifeYears: r.fa.usefulLifeYears,
+      residualValue: r.fa.residualValue,
+      status: r.fa.status,
+      disposalDate: r.fa.disposalDate,
+    };
+    const accumStart = accumulatedDepreciation(a, startRef);
+    const accumEnd = accumulatedDepreciation(a, fy.endDate);
+    const originalValue = parseFloat(r.fa.originalValue);
+    return {
+      id: r.fa.id,
+      name: r.fa.name,
+      category: r.fa.category,
+      originalValue,
+      accumStart,
+      amortYear: r2(accumEnd - accumStart),
+      accumEnd,
+      residualEnd: r2(originalValue - accumEnd),
+      disposed: r.fa.status !== 'active',
+      assetAccountId: r.fa.assetAccountId,
+      assetAccountLabel: `${r.assetCode} · ${r.assetName}`,
+      accumAccountId: r.fa.accumDeprAccountId,
+      accumAccountLabel: `${r.accumCode} · ${r.accumName}`,
+      expenseAccountId: r.fa.deprExpenseAccountId,
+      expenseAccountLabel: `${r.expCode} · ${r.expName}`,
+    };
+  });
+}
+
+const emptyTotals = () => ({
+  originalValue: 0,
+  accumStart: 0,
+  amortYear: 0,
+  accumEnd: 0,
+  residualEnd: 0,
+});
+
+/** Agrupa filas por categoría con totales. */
+function groupAnexoI(rows: AnexoIAssetFull[]): {
+  categories: AnexoICategory[];
+  grandTotals: ReturnType<typeof emptyTotals>;
+} {
+  const byCat = new Map<string, AnexoICategory>();
+  const grand = emptyTotals();
+  for (const row of rows) {
+    let cat = byCat.get(row.category);
+    if (!cat) {
+      cat = { category: row.category, assets: [], totals: emptyTotals() };
+      byCat.set(row.category, cat);
+    }
+    cat.assets.push({
+      id: row.id,
+      name: row.name,
+      originalValue: row.originalValue,
+      accumStart: row.accumStart,
+      amortYear: row.amortYear,
+      accumEnd: row.accumEnd,
+      residualEnd: row.residualEnd,
+      disposed: row.disposed,
+    });
+    for (const k of Object.keys(grand) as (keyof typeof grand)[]) {
+      cat.totals[k] = r2(cat.totals[k] + row[k]);
+      grand[k] = r2(grand[k] + row[k]);
+    }
+  }
+  return { categories: [...byCat.values()], grandTotals: grand };
+}
+
+/** Anexo I del ejercicio + sugerencia de asiento de amortización. (US 4.2.x) */
+export const getAnexoI = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const { clientId } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
+
+    const rows = await computeAnexoIRows(clientId, fy);
+    const { categories, grandTotals } = groupAnexoI(rows);
+
+    // Sugerencia de asiento de amortización: Debe por cuenta de gasto, Haber por
+    // cuenta de amortización acumulada, sumando la amortización del ejercicio.
+    const debitMap = new Map<string, AnexoISuggestionLine>();
+    const creditMap = new Map<string, AnexoISuggestionLine>();
+    for (const row of rows) {
+      if (row.amortYear <= 0) continue;
+      const d = debitMap.get(row.expenseAccountId) ?? {
+        accountId: row.expenseAccountId,
+        code: row.expenseAccountLabel.split(' · ')[0],
+        name: row.expenseAccountLabel.split(' · ').slice(1).join(' · '),
+        side: 'debit' as const,
+        amount: 0,
+      };
+      d.amount = r2(d.amount + row.amortYear);
+      debitMap.set(row.expenseAccountId, d);
+
+      const c = creditMap.get(row.accumAccountId) ?? {
+        accountId: row.accumAccountId,
+        code: row.accumAccountLabel.split(' · ')[0],
+        name: row.accumAccountLabel.split(' · ').slice(1).join(' · '),
+        side: 'credit' as const,
+        amount: 0,
+      };
+      c.amount = r2(c.amount + row.amortYear);
+      creditMap.set(row.accumAccountId, c);
+    }
+    const suggestionLines = [...debitMap.values(), ...creditMap.values()];
+
+    // Comparativo con el ejercicio anterior (número - 1), si existe.
+    let prior: {
+      number: number;
+      grandTotals: ReturnType<typeof emptyTotals>;
+    } | null = null;
+    const [priorFy] = await db
+      .select()
+      .from(fiscalYear)
+      .where(
+        and(
+          eq(fiscalYear.clientId, clientId),
+          eq(fiscalYear.number, fy.number - 1)
+        )
+      )
+      .limit(1);
+    if (priorFy) {
+      const priorRows = await computeAnexoIRows(clientId, priorFy);
+      prior = {
+        number: priorFy.number,
+        grandTotals: groupAnexoI(priorRows).grandTotals,
+      };
+    }
+
+    return {
+      fiscalYear: {
+        number: fy.number,
+        startDate: fy.startDate,
+        endDate: fy.endDate,
+        status: fy.status,
+      },
+      categories,
+      grandTotals,
+      suggestion: {
+        lines: suggestionLines,
+        total: r2(grandTotals.amortYear),
+      },
+      prior,
+    };
   });

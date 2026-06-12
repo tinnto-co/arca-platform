@@ -84,6 +84,7 @@ import {
   createFixedAsset,
   listFixedAssets,
   disposeFixedAsset,
+  getAnexoI,
   type ChartAccount,
   type PeriodView,
   type LedgerRow,
@@ -97,8 +98,11 @@ import {
   exportBalanceExcel,
   exportBalancePdf,
   exportLibroDiarioPdf,
+  exportAnexoIPdf,
+  exportAnexoIExcel,
   type MayorExportData,
   type MayorSection,
+  type AnexoIExportData,
 } from '@/lib/mayor-export';
 import {
   ACCOUNT_GROUP_LABELS,
@@ -222,16 +226,16 @@ function TabBar({
     icon: React.ElementType;
     ready: boolean;
   }[] = [
-      { id: 'plan', label: 'Plan de cuentas', icon: List, ready: true },
-      { id: 'ejercicios', label: 'Ejercicios', icon: CalendarDays, ready: true },
-      { id: 'asientos', label: 'Asientos', icon: FileText, ready: true },
-      { id: 'mayor', label: 'Mayor', icon: BookOpen, ready: true },
-      { id: 'balance', label: 'Balance', icon: Scale, ready: true },
-      { id: 'reglas', label: 'Reglas', icon: Workflow, ready: true },
-      { id: 'contabilizar', label: 'Contabilizar', icon: Zap, ready: true },
-      { id: 'pendientes', label: 'Pendientes', icon: Inbox, ready: true },
-      { id: 'bienes', label: 'Bienes de uso', icon: Boxes, ready: true },
-    ];
+    { id: 'plan', label: 'Plan de cuentas', icon: List, ready: true },
+    { id: 'ejercicios', label: 'Ejercicios', icon: CalendarDays, ready: true },
+    { id: 'asientos', label: 'Asientos', icon: FileText, ready: true },
+    { id: 'mayor', label: 'Mayor', icon: BookOpen, ready: true },
+    { id: 'balance', label: 'Balance', icon: Scale, ready: true },
+    { id: 'reglas', label: 'Reglas', icon: Workflow, ready: true },
+    { id: 'contabilizar', label: 'Contabilizar', icon: Zap, ready: true },
+    { id: 'pendientes', label: 'Pendientes', icon: Inbox, ready: true },
+    { id: 'bienes', label: 'Bienes de uso', icon: Boxes, ready: true },
+  ];
   return (
     <div className="flex gap-1 mb-5 border-b border-[var(--arca-border)]">
       {tabs.map((tab) => (
@@ -378,6 +382,9 @@ function AccountingPage() {
         <BienesDeUso
           clientId={effectiveClientId}
           canWrite={roleData?.role !== 'viewer'}
+          clientName={
+            clients.find((c) => c.id === effectiveClientId)?.name ?? ''
+          }
         />
       ) : (
         <ArcaCard>
@@ -540,10 +547,11 @@ function PlanDeCuentas({
           </span>
 
           <span
-            className={`flex-1 min-w-0 truncate text-[13px] ${account.type === 'group' ? 'font-semibold' : 'font-medium'} ${account.isActive
+            className={`flex-1 min-w-0 truncate text-[13px] ${account.type === 'group' ? 'font-semibold' : 'font-medium'} ${
+              account.isActive
                 ? 'text-[var(--arca-ink)]'
                 : 'text-[var(--arca-ink-3)] line-through'
-              }`}
+            }`}
             title={
               account.isRenamed ? `Nombre base: ${account.baseName}` : undefined
             }
@@ -2164,10 +2172,11 @@ function Asientos({
                 {fmtFecha(r.entryDate)}
               </div>
               <div
-                className={`flex-1 min-w-0 truncate text-[13px] ${r.isVoided
+                className={`flex-1 min-w-0 truncate text-[13px] ${
+                  r.isVoided
                     ? 'line-through text-[var(--arca-ink-3)]'
                     : 'text-[var(--arca-ink)]'
-                  }`}
+                }`}
               >
                 {r.description?.trim() ? (
                   r.description
@@ -3725,7 +3734,7 @@ function Reglas({
                 <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
                   {
                     MAPPING_SOURCE_LABELS[
-                    r.sourceModule as 'invoice' | 'payroll'
+                      r.sourceModule as 'invoice' | 'payroll'
                     ]
                   }
                 </span>
@@ -3733,7 +3742,7 @@ function Reglas({
               <div className="w-28 shrink-0 text-[11.5px] text-[var(--arca-ink-3)]">
                 {
                   MAPPING_RULE_TYPE_LABELS[
-                  r.ruleType as 'default' | 'conditional'
+                    r.ruleType as 'default' | 'conditional'
                   ]
                 }
               </div>
@@ -4385,7 +4394,7 @@ function ImportRulesDialog({
                     <span className="text-[var(--arca-ink-3)]">
                       {
                         MAPPING_SOURCE_LABELS[
-                        r.sourceModule as 'invoice' | 'payroll'
+                          r.sourceModule as 'invoice' | 'payroll'
                         ]
                       }{' '}
                       · {r.lineCount} líneas
@@ -4982,11 +4991,14 @@ function PendingRow({
 function BienesDeUso({
   clientId,
   canWrite,
+  clientName,
 }: {
   clientId: string;
   canWrite: boolean;
+  clientName: string;
 }) {
   const qc = useQueryClient();
+  const [view, setView] = useState<'inventario' | 'anexo'>('inventario');
   const [category, setCategory] = useState('');
   const [status, setStatus] = useState('active');
   const [showEditor, setShowEditor] = useState(false);
@@ -5012,110 +5024,136 @@ function BienesDeUso({
 
   return (
     <div className="space-y-4">
-      <ArcaCard>
-        <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-[var(--arca-border)]">
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            className={SELECT_CLASS}
+      {/* Sub-toggle Inventario | Anexo I */}
+      <div className="inline-flex rounded-[8px] border border-[var(--arca-border)] p-0.5 bg-[var(--arca-surface-2)]">
+        {(['inventario', 'anexo'] as const).map((v) => (
+          <button
+            key={v}
+            onClick={() => setView(v)}
+            className="px-3 h-7 text-[12.5px] font-medium rounded-[6px] transition-colors"
+            style={{
+              background: view === v ? 'var(--arca-surface)' : 'transparent',
+              color: view === v ? 'var(--arca-ink)' : 'var(--arca-ink-3)',
+              boxShadow: view === v ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+            }}
           >
-            <option value="">Todas las categorías</option>
-            {Object.entries(FIXED_ASSET_CATEGORY_LABELS).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-          </select>
-          <select
-            value={status}
-            onChange={(e) => setStatus(e.target.value)}
-            className={SELECT_CLASS}
-          >
-            <option value="">Todos los estados</option>
-            <option value="active">Activos</option>
-            <option value="sold">Vendidos</option>
-            <option value="discarded">Dados de baja</option>
-          </select>
-          <div className="flex-1" />
-          {canWrite && (
-            <button
-              onClick={() => setShowEditor(true)}
-              className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white inline-flex items-center gap-1.5"
-            >
-              <Boxes className="w-3.5 h-3.5" strokeWidth={2} />
-              Nuevo bien
-            </button>
-          )}
-        </div>
+            {v === 'inventario' ? 'Inventario' : 'Anexo I'}
+          </button>
+        ))}
+      </div>
 
-        {isLoading ? (
-          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
-            Cargando…
-          </div>
-        ) : assets.length === 0 ? (
-          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
-            No hay bienes de uso para este filtro.
-          </div>
-        ) : (
-          <table className="w-full text-[12.5px]">
-            <thead>
-              <tr className="text-left text-[11px] uppercase tracking-wide text-[var(--arca-ink-3)] border-b border-[var(--arca-border)]">
-                <th className="py-2 pl-4">Nombre</th>
-                <th className="py-2">Categoría</th>
-                <th className="py-2">Fecha adq.</th>
-                <th className="py-2 text-right">Valor origen</th>
-                <th className="py-2 text-right">Amort. acum.</th>
-                <th className="py-2 text-right">Valor residual</th>
-                <th className="py-2 pl-3">Estado</th>
-                <th className="py-2 pr-4 text-right">Acción</th>
-              </tr>
-            </thead>
-            <tbody>
-              {assets.map((a) => (
-                <tr
-                  key={a.id}
-                  className="border-b border-[var(--arca-border)] last:border-0 hover:bg-[var(--arca-surface-2)]"
-                >
-                  <td className="py-2 pl-4 font-medium text-[var(--arca-ink)]">
-                    {a.name}
-                  </td>
-                  <td className="py-2">
-                    {FIXED_ASSET_CATEGORY_LABELS[a.category] ?? a.category}
-                  </td>
-                  <td className="py-2 whitespace-nowrap">
-                    {fmtFecha(a.acquisitionDate)}
-                  </td>
-                  <td className="py-2 text-right tabular-nums whitespace-nowrap">
-                    $ {fmtMoney(a.originalValue)}
-                  </td>
-                  <td className="py-2 text-right tabular-nums whitespace-nowrap text-[var(--arca-ink-3)]">
-                    $ {fmtMoney(a.accumulatedDepreciation)}
-                  </td>
-                  <td className="py-2 text-right tabular-nums whitespace-nowrap font-medium">
-                    $ {fmtMoney(a.bookValue)}
-                  </td>
-                  <td className="py-2 pl-3">
-                    <FixedAssetStatusBadge
-                      status={a.status}
-                      reason={a.disposalReason}
-                    />
-                  </td>
-                  <td className="py-2 pr-4 text-right">
-                    {canWrite && a.status === 'active' && (
-                      <button
-                        onClick={() => setDisposeTarget(a)}
-                        className="text-[12px] text-[var(--arca-ink-2)] hover:text-red-600"
-                      >
-                        Dar de baja
-                      </button>
-                    )}
-                  </td>
-                </tr>
+      {view === 'anexo' ? (
+        <AnexoIView
+          clientId={clientId}
+          canWrite={canWrite}
+          clientName={clientName}
+        />
+      ) : (
+        <ArcaCard>
+          <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-[var(--arca-border)]">
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className={SELECT_CLASS}
+            >
+              <option value="">Todas las categorías</option>
+              {Object.entries(FIXED_ASSET_CATEGORY_LABELS).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
               ))}
-            </tbody>
-          </table>
-        )}
-      </ArcaCard>
+            </select>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              className={SELECT_CLASS}
+            >
+              <option value="">Todos los estados</option>
+              <option value="active">Activos</option>
+              <option value="sold">Vendidos</option>
+              <option value="discarded">Dados de baja</option>
+            </select>
+            <div className="flex-1" />
+            {canWrite && (
+              <button
+                onClick={() => setShowEditor(true)}
+                className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white inline-flex items-center gap-1.5"
+              >
+                <Boxes className="w-3.5 h-3.5" strokeWidth={2} />
+                Nuevo bien
+              </button>
+            )}
+          </div>
+
+          {isLoading ? (
+            <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+              Cargando…
+            </div>
+          ) : assets.length === 0 ? (
+            <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+              No hay bienes de uso para este filtro.
+            </div>
+          ) : (
+            <table className="w-full text-[12.5px]">
+              <thead>
+                <tr className="text-left text-[11px] uppercase tracking-wide text-[var(--arca-ink-3)] border-b border-[var(--arca-border)]">
+                  <th className="py-2 pl-4">Nombre</th>
+                  <th className="py-2">Categoría</th>
+                  <th className="py-2">Fecha adq.</th>
+                  <th className="py-2 text-right">Valor origen</th>
+                  <th className="py-2 text-right">Amort. acum.</th>
+                  <th className="py-2 text-right">Valor residual</th>
+                  <th className="py-2 pl-3">Estado</th>
+                  <th className="py-2 pr-4 text-right">Acción</th>
+                </tr>
+              </thead>
+              <tbody>
+                {assets.map((a) => (
+                  <tr
+                    key={a.id}
+                    className="border-b border-[var(--arca-border)] last:border-0 hover:bg-[var(--arca-surface-2)]"
+                  >
+                    <td className="py-2 pl-4 font-medium text-[var(--arca-ink)]">
+                      {a.name}
+                    </td>
+                    <td className="py-2">
+                      {FIXED_ASSET_CATEGORY_LABELS[a.category] ?? a.category}
+                    </td>
+                    <td className="py-2 whitespace-nowrap">
+                      {fmtFecha(a.acquisitionDate)}
+                    </td>
+                    <td className="py-2 text-right tabular-nums whitespace-nowrap">
+                      $ {fmtMoney(a.originalValue)}
+                    </td>
+                    <td className="py-2 text-right tabular-nums whitespace-nowrap text-[var(--arca-ink-3)]">
+                      $ {fmtMoney(a.accumulatedDepreciation)}
+                    </td>
+                    <td className="py-2 text-right tabular-nums whitespace-nowrap font-medium">
+                      $ {fmtMoney(a.bookValue)}
+                    </td>
+                    <td className="py-2 pl-3">
+                      <FixedAssetStatusBadge
+                        status={a.status}
+                        reason={a.disposalReason}
+                      />
+                    </td>
+                    <td className="py-2 pr-4 text-right">
+                      {canWrite && a.status === 'active' && (
+                        <button
+                          onClick={() => setDisposeTarget(a)}
+                          className="text-[12px] text-[var(--arca-ink-2)] hover:text-red-600"
+                        >
+                          Dar de baja
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </ArcaCard>
+      )}
 
       {showEditor && (
         <FixedAssetEditor
@@ -5197,12 +5235,12 @@ function FixedAssetEditor({
   const monthly =
     ov > 0 && life > 0 && rv < ov
       ? monthlyDepreciation({
-        acquisitionDate: acquisitionDate || '2000-01-01',
-        originalValue: ov,
-        usefulLifeYears: life,
-        residualValue: rv,
-        status: 'active',
-      })
+          acquisitionDate: acquisitionDate || '2000-01-01',
+          originalValue: ov,
+          usefulLifeYears: life,
+          residualValue: rv,
+          status: 'active',
+        })
       : 0;
 
   const mut = useMutation({
@@ -5517,5 +5555,339 @@ function DisposeAssetDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/* ════════════════════════ Anexo I (US 4.2.x) ════════════════════════ */
+
+function AnexoIView({
+  clientId,
+  canWrite,
+  clientName,
+}: {
+  clientId: string;
+  canWrite: boolean;
+  clientName: string;
+}) {
+  const [selectedFyId, setSelectedFyId] = useState('');
+  const [editor, setEditor] = useState<EditorState | null>(null);
+
+  const { data: fiscalYears = [] } = useQuery({
+    queryKey: ['accounting', 'fiscal-years', clientId],
+    queryFn: () => getFiscalYears({ data: { clientId } }),
+  });
+  const effectiveFyId =
+    selectedFyId ||
+    fiscalYears.find((y) => y.status === 'open')?.id ||
+    fiscalYears[0]?.id ||
+    '';
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['accounting', 'anexo-i', clientId, effectiveFyId],
+    queryFn: () =>
+      getAnexoI({ data: { clientId, fiscalYearId: effectiveFyId } }),
+    enabled: !!effectiveFyId,
+  });
+
+  const { data: postable = [] } = useQuery({
+    queryKey: ['accounting', 'postable', clientId],
+    queryFn: () => getPostableAccounts({ data: { clientId } }),
+  });
+
+  if (fiscalYears.length === 0) {
+    return (
+      <ArcaCard>
+        <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+          Creá un ejercicio en la pestaña <strong>Ejercicios</strong> para
+          generar el Anexo I.
+        </div>
+      </ArcaCard>
+    );
+  }
+
+  const periodLabel = data
+    ? `${fmtFecha(data.fiscalYear.startDate)} – ${fmtFecha(data.fiscalYear.endDate)}`
+    : '';
+
+  const buildExportData = (): AnexoIExportData => ({
+    empresaName: clientName,
+    fiscalYearNumber: data!.fiscalYear.number,
+    periodLabel,
+    categories: data!.categories.map((c) => ({
+      category: FIXED_ASSET_CATEGORY_LABELS[c.category] ?? c.category,
+      assets: c.assets.map((a) => ({
+        name: a.name,
+        originalValue: a.originalValue,
+        accumStart: a.accumStart,
+        amortYear: a.amortYear,
+        accumEnd: a.accumEnd,
+        residualEnd: a.residualEnd,
+      })),
+      totals: c.totals,
+    })),
+    grandTotals: data!.grandTotals,
+    priorResidualEnd: data!.prior?.grandTotals.residualEnd ?? null,
+    priorNumber: data!.prior?.number ?? null,
+  });
+
+  const copyToEditor = () => {
+    if (!data) return;
+    const lines: LineDraft[] = data.suggestion.lines.map((l) => ({
+      accountId: l.accountId,
+      debit: l.side === 'debit' ? String(l.amount) : '',
+      credit: l.side === 'credit' ? String(l.amount) : '',
+      description: 'Amortización del ejercicio',
+    }));
+    setEditor({
+      mode: 'create',
+      initial: {
+        entryDate: new Date(data.fiscalYear.endDate).toISOString().slice(0, 10),
+        description: `Amortización del ejercicio N°${data.fiscalYear.number}`,
+        lines,
+      },
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <ArcaCard>
+        <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-[var(--arca-border)]">
+          <span className="text-[12px] text-[var(--arca-ink-3)]">
+            Ejercicio
+          </span>
+          <select
+            value={effectiveFyId}
+            onChange={(e) => setSelectedFyId(e.target.value)}
+            className={SELECT_CLASS}
+          >
+            {fiscalYears.map((y) => (
+              <option key={y.id} value={y.id}>
+                N°{y.number} ({y.status === 'open' ? 'abierto' : 'cerrado'})
+              </option>
+            ))}
+          </select>
+          <div className="flex-1" />
+          {data && data.categories.length > 0 && (
+            <>
+              <button
+                onClick={() => void exportAnexoIExcel(buildExportData())}
+                className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] inline-flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5" strokeWidth={2} /> Excel
+              </button>
+              <button
+                onClick={() => void exportAnexoIPdf(buildExportData())}
+                className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] inline-flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5" strokeWidth={2} /> PDF
+              </button>
+            </>
+          )}
+        </div>
+
+        {isLoading ? (
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            Calculando…
+          </div>
+        ) : !data || data.categories.length === 0 ? (
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            No hay bienes de uso en este ejercicio.
+          </div>
+        ) : (
+          <table className="w-full text-[12px]">
+            <thead>
+              <tr className="text-left text-[10.5px] uppercase tracking-wide text-[var(--arca-ink-3)] border-b border-[var(--arca-border)]">
+                <th className="py-2 pl-4">Bien</th>
+                <th className="py-2 text-right">Valor origen</th>
+                <th className="py-2 text-right">Am. acum. inicio</th>
+                <th className="py-2 text-right">Am. ejercicio</th>
+                <th className="py-2 text-right">Am. acum. cierre</th>
+                <th className="py-2 pr-4 text-right">Valor resid. cierre</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.categories.map((cat) => (
+                <AnexoICategoryRows key={cat.category} cat={cat} />
+              ))}
+              <tr className="border-t-2 border-[var(--arca-ink-2)] font-semibold">
+                <td className="py-2 pl-4">TOTAL GENERAL</td>
+                <td className="py-2 text-right tabular-nums">
+                  $ {fmtMoney(data.grandTotals.originalValue)}
+                </td>
+                <td className="py-2 text-right tabular-nums">
+                  $ {fmtMoney(data.grandTotals.accumStart)}
+                </td>
+                <td className="py-2 text-right tabular-nums">
+                  $ {fmtMoney(data.grandTotals.amortYear)}
+                </td>
+                <td className="py-2 text-right tabular-nums">
+                  $ {fmtMoney(data.grandTotals.accumEnd)}
+                </td>
+                <td className="py-2 pr-4 text-right tabular-nums">
+                  $ {fmtMoney(data.grandTotals.residualEnd)}
+                </td>
+              </tr>
+              {data.prior && (
+                <tr className="text-[var(--arca-ink-3)] text-[11.5px]">
+                  <td className="py-1.5 pl-4 italic" colSpan={5}>
+                    Valor residual al cierre · Ejercicio anterior (N°
+                    {data.prior.number})
+                  </td>
+                  <td className="py-1.5 pr-4 text-right tabular-nums italic">
+                    $ {fmtMoney(data.prior.grandTotals.residualEnd)}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        )}
+      </ArcaCard>
+
+      {/* Sugerencia de asiento de amortización (US 4.2.2) */}
+      {data && data.suggestion.lines.length > 0 && (
+        <ArcaCard>
+          <div className="px-4 py-3 border-b border-[var(--arca-border)] flex items-center gap-2">
+            <Lightbulb
+              className="w-4 h-4 text-[var(--arca-navy-900)]"
+              strokeWidth={1.8}
+            />
+            <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+              Sugerencia de asiento de amortización del ejercicio
+            </span>
+          </div>
+          <div className="px-4 py-3">
+            <p className="text-[12px] text-[var(--arca-ink-3)] mb-3">
+              Cálculo sugerido para que lo cargues como asiento manual al
+              cierre. El asiento no se genera automáticamente en esta versión.
+            </p>
+            <table className="w-full text-[12.5px] mb-3">
+              <thead>
+                <tr className="text-left text-[10.5px] uppercase tracking-wide text-[var(--arca-ink-3)] border-b border-[var(--arca-border)]">
+                  <th className="py-1.5">Cuenta</th>
+                  <th className="py-1.5 text-right">Debe</th>
+                  <th className="py-1.5 text-right">Haber</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.suggestion.lines.map((l, i) => (
+                  <tr
+                    key={i}
+                    className="border-b border-[var(--arca-border)] last:border-0"
+                  >
+                    <td className="py-1.5">
+                      <span className="text-[var(--arca-ink-3)]">{l.code}</span>{' '}
+                      {l.name}
+                    </td>
+                    <td className="py-1.5 text-right tabular-nums">
+                      {l.side === 'debit' ? `$ ${fmtMoney(l.amount)}` : ''}
+                    </td>
+                    <td className="py-1.5 text-right tabular-nums">
+                      {l.side === 'credit' ? `$ ${fmtMoney(l.amount)}` : ''}
+                    </td>
+                  </tr>
+                ))}
+                <tr className="font-semibold border-t border-[var(--arca-ink-3)]">
+                  <td className="py-1.5 text-right">Total</td>
+                  <td className="py-1.5 text-right tabular-nums">
+                    $ {fmtMoney(data.suggestion.total)}
+                  </td>
+                  <td className="py-1.5 text-right tabular-nums">
+                    $ {fmtMoney(data.suggestion.total)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            {canWrite && (
+              <button
+                onClick={copyToEditor}
+                className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white inline-flex items-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5" strokeWidth={2} />
+                Copiar al editor de asientos
+              </button>
+            )}
+          </div>
+        </ArcaCard>
+      )}
+
+      {editor && (
+        <AsientoEditor
+          clientId={clientId}
+          state={editor}
+          postable={postable}
+          onClose={() => setEditor(null)}
+          onSaved={() => setEditor(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function AnexoICategoryRows({
+  cat,
+}: {
+  cat: Awaited<ReturnType<typeof getAnexoI>>['categories'][number];
+}) {
+  return (
+    <>
+      <tr className="bg-[var(--arca-surface-2)]">
+        <td
+          className="py-1.5 pl-4 text-[11px] font-semibold uppercase tracking-wide text-[var(--arca-ink-2)]"
+          colSpan={6}
+        >
+          {FIXED_ASSET_CATEGORY_LABELS[cat.category] ?? cat.category}
+        </td>
+      </tr>
+      {cat.assets.map((a) => (
+        <tr
+          key={a.id}
+          className="border-b border-[var(--arca-border)] last:border-0"
+        >
+          <td className="py-2 pl-4">
+            {a.name}
+            {a.disposed && (
+              <span className="ml-1 text-[10px] text-[var(--arca-ink-3)]">
+                (baja)
+              </span>
+            )}
+          </td>
+          <td className="py-2 text-right tabular-nums">
+            $ {fmtMoney(a.originalValue)}
+          </td>
+          <td className="py-2 text-right tabular-nums text-[var(--arca-ink-3)]">
+            $ {fmtMoney(a.accumStart)}
+          </td>
+          <td className="py-2 text-right tabular-nums">
+            $ {fmtMoney(a.amortYear)}
+          </td>
+          <td className="py-2 text-right tabular-nums text-[var(--arca-ink-3)]">
+            $ {fmtMoney(a.accumEnd)}
+          </td>
+          <td className="py-2 pr-4 text-right tabular-nums font-medium">
+            $ {fmtMoney(a.residualEnd)}
+          </td>
+        </tr>
+      ))}
+      <tr className="border-b border-[var(--arca-border)] text-[12px] font-medium">
+        <td className="py-1.5 pl-4 text-[var(--arca-ink-2)]">
+          Subtotal {FIXED_ASSET_CATEGORY_LABELS[cat.category] ?? cat.category}
+        </td>
+        <td className="py-1.5 text-right tabular-nums">
+          $ {fmtMoney(cat.totals.originalValue)}
+        </td>
+        <td className="py-1.5 text-right tabular-nums">
+          $ {fmtMoney(cat.totals.accumStart)}
+        </td>
+        <td className="py-1.5 text-right tabular-nums">
+          $ {fmtMoney(cat.totals.amortYear)}
+        </td>
+        <td className="py-1.5 text-right tabular-nums">
+          $ {fmtMoney(cat.totals.accumEnd)}
+        </td>
+        <td className="py-1.5 pr-4 text-right tabular-nums">
+          $ {fmtMoney(cat.totals.residualEnd)}
+        </td>
+      </tr>
+    </>
   );
 }
