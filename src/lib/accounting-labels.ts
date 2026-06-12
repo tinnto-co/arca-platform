@@ -267,3 +267,20 @@ export const EXPENSE_ACCOUNT_GROUPS = [
   'otros_resultados_neg',
   'impuesto_ganancias',
 ] as const;
+
+/* ── Cierre de ejercicio (Fase 5) ── */
+
+/** Rubros de resultado (Estado de Resultados) que se refunden contra Resultado del ejercicio. */
+export const RESULT_ACCOUNT_GROUPS = [
+  'ventas',
+  'costo_ventas',
+  'gastos_administracion',
+  'gastos_comercializacion',
+  'gastos_financieros',
+  'otros_resultados_pos',
+  'otros_resultados_neg',
+  'impuesto_ganancias',
+] as const;
+
+/** Grupo de la cuenta sistema "Resultado del ejercicio" (destino de la refundición). */
+export const RESULT_TARGET_GROUP = 'resultado_ejercicio';

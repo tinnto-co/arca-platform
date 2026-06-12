@@ -88,6 +88,8 @@ import {
   disposeFixedAsset,
   getAnexoI,
   getYearEndChecklist,
+  getClosingPreview,
+  executeClosing,
   type ChartAccount,
   type PeriodView,
   type LedgerRow,
@@ -95,6 +97,7 @@ import {
   type PendingReviewEntry,
   type FixedAssetRow,
   type YearEndCheck,
+  type ClosingEntryPreview,
 } from '@/actions/accounting';
 import {
   exportMayorExcel,
@@ -1779,6 +1782,7 @@ function CierreChecklist({
   fiscalYearId: string;
   isOwner: boolean;
 }) {
+  const [wizardOpen, setWizardOpen] = useState(false);
   const { data } = useQuery({
     queryKey: ['accounting', 'year-end-checklist', clientId, fiscalYearId],
     queryFn: () => getYearEndChecklist({ data: { clientId, fiscalYearId } }),
@@ -1851,11 +1855,7 @@ function CierreChecklist({
         {isOwner ? (
           <button
             disabled={!data.canClose}
-            onClick={() =>
-              toast.message(
-                'Validaciones OK. La ejecución del cierre (asientos de refundición y apertura) se implementa en la próxima épica.'
-              )
-            }
+            onClick={() => setWizardOpen(true)}
             className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-40 disabled:cursor-not-allowed"
             title={data.canClose ? undefined : 'Hay validaciones sin cumplir'}
           >
@@ -1867,7 +1867,213 @@ function CierreChecklist({
           </span>
         )}
       </div>
+
+      {wizardOpen && (
+        <ClosingWizard
+          clientId={clientId}
+          fiscalYearId={fiscalYearId}
+          onClose={() => setWizardOpen(false)}
+        />
+      )}
     </ArcaCard>
+  );
+}
+
+/* ─── Wizard de cierre de ejercicio (US 5.2.x) ─── */
+function ClosingEntryTable({ entry }: { entry: ClosingEntryPreview }) {
+  return (
+    <table className="w-full text-[12px]">
+      <thead>
+        <tr className="text-left text-[10.5px] uppercase tracking-wide text-[var(--arca-ink-3)] border-b border-[var(--arca-border)]">
+          <th className="py-1.5">Cuenta</th>
+          <th className="py-1.5 text-right">Debe</th>
+          <th className="py-1.5 text-right">Haber</th>
+        </tr>
+      </thead>
+      <tbody>
+        {entry.lines.map((l, i) => (
+          <tr
+            key={i}
+            className="border-b border-[var(--arca-border)] last:border-0"
+          >
+            <td className="py-1.5">
+              <span className="text-[var(--arca-ink-3)]">{l.code}</span>{' '}
+              {l.name}
+            </td>
+            <td className="py-1.5 text-right tabular-nums">
+              {l.debit > 0 ? `$ ${fmtMoney(l.debit)}` : ''}
+            </td>
+            <td className="py-1.5 text-right tabular-nums">
+              {l.credit > 0 ? `$ ${fmtMoney(l.credit)}` : ''}
+            </td>
+          </tr>
+        ))}
+        <tr className="font-semibold border-t border-[var(--arca-ink-3)]">
+          <td className="py-1.5 text-right">Total</td>
+          <td className="py-1.5 text-right tabular-nums">
+            $ {fmtMoney(entry.totalDebit)}
+          </td>
+          <td className="py-1.5 text-right tabular-nums">
+            $ {fmtMoney(entry.totalCredit)}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
+function ClosingWizard({
+  clientId,
+  fiscalYearId,
+  onClose,
+}: {
+  clientId: string;
+  fiscalYearId: string;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [createOpening, setCreateOpening] = useState(true);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['accounting', 'closing-preview', clientId, fiscalYearId],
+    queryFn: () => getClosingPreview({ data: { clientId, fiscalYearId } }),
+  });
+
+  const mut = useMutation({
+    mutationFn: () =>
+      executeClosing({ data: { clientId, fiscalYearId, createOpening } }),
+    onSuccess: (r) => {
+      toast.success(
+        r.nextFiscalYearNumber
+          ? `Ejercicio cerrado. Se creó el Ejercicio N°${r.nextFiscalYearNumber} con su apertura.`
+          : 'Ejercicio cerrado.'
+      );
+      void qc.invalidateQueries({ queryKey: ['accounting'] });
+      onClose();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>
+            Cierre del Ejercicio N°{data?.fiscalYearNumber ?? ''}
+          </DialogTitle>
+          <DialogDescription>
+            Revisá los asientos antes de confirmar. El cierre marca el ejercicio
+            como cerrado y es definitivo (se puede reabrir un período si hiciera
+            falta).
+          </DialogDescription>
+        </DialogHeader>
+
+        {isLoading || !data ? (
+          <div className="py-8 text-center text-[13px] text-[var(--arca-ink-3)]">
+            Calculando asientos de cierre…
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Resultado del ejercicio */}
+            <div
+              className="rounded-[10px] px-4 py-3 text-[13px]"
+              style={{
+                background:
+                  data.resultado.tipo === 'ganancia'
+                    ? 'color-mix(in oklch, oklch(0.45 0.14 145), transparent 92%)'
+                    : data.resultado.tipo === 'perdida'
+                      ? 'color-mix(in oklch, oklch(0.55 0.18 25), transparent 92%)'
+                      : 'var(--arca-surface-2)',
+              }}
+            >
+              Resultado del ejercicio:{' '}
+              <strong>
+                {data.resultado.tipo === 'ganancia'
+                  ? 'Ganancia'
+                  : data.resultado.tipo === 'perdida'
+                    ? 'Pérdida'
+                    : 'Neutro'}{' '}
+                $ {fmtMoney(Math.abs(data.resultado.net))}
+              </strong>{' '}
+              <span className="text-[var(--arca-ink-3)]">
+                → {data.resultado.account}
+              </span>
+            </div>
+
+            {/* Refundición */}
+            <div>
+              <div className="text-[12.5px] font-semibold text-[var(--arca-ink)] mb-1">
+                1 · Refundición de resultados
+              </div>
+              {data.refundicion.lines.length === 0 ? (
+                <div className="text-[12px] text-[var(--arca-ink-3)]">
+                  No hay cuentas de resultado con saldo.
+                </div>
+              ) : (
+                <ClosingEntryTable entry={data.refundicion} />
+              )}
+            </div>
+
+            {/* Cierre patrimonial */}
+            <div>
+              <div className="text-[12.5px] font-semibold text-[var(--arca-ink)] mb-1">
+                2 · Asiento de cierre patrimonial
+              </div>
+              {data.cierre.lines.length === 0 ? (
+                <div className="text-[12px] text-[var(--arca-ink-3)]">
+                  No hay cuentas patrimoniales con saldo.
+                </div>
+              ) : (
+                <ClosingEntryTable entry={data.cierre} />
+              )}
+            </div>
+
+            {/* Apertura opcional */}
+            <label className="flex items-start gap-2 rounded-[10px] border border-[var(--arca-border)] px-4 py-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={createOpening}
+                onChange={(e) => setCreateOpening(e.target.checked)}
+                className="mt-0.5"
+              />
+              <div className="text-[12.5px] text-[var(--arca-ink-2)]">
+                <strong>
+                  Crear el ejercicio siguiente y su asiento de apertura
+                </strong>
+                {data.nextFiscalYear && (
+                  <span className="text-[var(--arca-ink-3)]">
+                    {' '}
+                    (Ejercicio N°{data.nextFiscalYear.number}:{' '}
+                    {fmtFecha(data.nextFiscalYear.startDate)} –{' '}
+                    {fmtFecha(data.nextFiscalYear.endDate)})
+                  </span>
+                )}
+                <div className="text-[11.5px] text-[var(--arca-ink-3)] mt-0.5">
+                  Crea el próximo ejercicio con sus 12 períodos y un asiento de
+                  apertura con los saldos invertidos.
+                </div>
+              </div>
+            </label>
+          </div>
+        )}
+
+        <DialogFooter>
+          <button
+            onClick={onClose}
+            className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)]"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => mut.mutate()}
+            disabled={isLoading || !data || mut.isPending}
+            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+          >
+            {mut.isPending ? 'Cerrando…' : 'Confirmar cierre'}
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

@@ -47,6 +47,8 @@ import {
   CUSTOM_CODE_PREFIX,
   PENDING_REVIEW_CODE,
   EXPENSE_ACCOUNT_GROUPS,
+  RESULT_ACCOUNT_GROUPS,
+  RESULT_TARGET_GROUP,
   MONTH_NAMES,
 } from '@/lib/accounting-labels';
 import {
@@ -4239,5 +4241,487 @@ export const getYearEndChecklist = createServerFn({ method: 'GET' })
       canClose:
         fy.status === 'open' && checks.every((c) => c.status === 'pass'),
       checks,
+    };
+  });
+
+/* ════════════════ Cierre de ejercicio — ejecución (US 5.2.x) ════════════════ */
+
+interface FyAccountBalance {
+  accountId: string;
+  code: string;
+  name: string;
+  group: string | null;
+  saldo: number; // debe − haber (>0 deudor, <0 acreedor)
+}
+
+/** Saldos por cuenta de un ejercicio (suma de todos sus asientos no anulados). */
+async function computeFyBalances(
+  orgId: string,
+  fyId: string
+): Promise<FyAccountBalance[]> {
+  const rows = await db
+    .select({
+      accountId: account.id,
+      code: account.code,
+      name: account.name,
+      group: account.accountGroup,
+      debit: sql<string>`coalesce(sum(${journalEntryLine.debit}),0)`,
+      credit: sql<string>`coalesce(sum(${journalEntryLine.credit}),0)`,
+    })
+    .from(journalEntryLine)
+    .innerJoin(
+      journalEntry,
+      eq(journalEntry.id, journalEntryLine.journalEntryId)
+    )
+    .innerJoin(account, eq(account.id, journalEntryLine.accountId))
+    .where(
+      and(
+        eq(journalEntry.fiscalYearId, fyId),
+        eq(journalEntry.isVoided, false),
+        eq(account.organizationId, orgId)
+      )
+    )
+    .groupBy(account.id, account.code, account.name, account.accountGroup);
+
+  return rows
+    .map((r) => ({
+      accountId: r.accountId,
+      code: r.code,
+      name: r.name,
+      group: r.group,
+      saldo: r2(parseFloat(r.debit) - parseFloat(r.credit)),
+    }))
+    .filter((r) => Math.abs(r.saldo) > 0.005);
+}
+
+export interface ClosingLine {
+  accountId: string;
+  code: string;
+  name: string;
+  debit: number;
+  credit: number;
+}
+export interface ClosingEntryPreview {
+  lines: ClosingLine[];
+  totalDebit: number;
+  totalCredit: number;
+  balanced: boolean;
+}
+
+interface ResultadoAccount {
+  id: string;
+  code: string;
+  name: string;
+}
+
+/** Construye los asientos de refundición y cierre patrimonial a partir de los saldos. */
+function buildClosingEntries(
+  balances: FyAccountBalance[],
+  resultado: ResultadoAccount
+): {
+  refundicion: ClosingEntryPreview;
+  cierre: ClosingEntryPreview;
+  apertura: ClosingEntryPreview;
+  net: number; // >0 ganancia, <0 pérdida
+} {
+  const RESULT = new Set<string>(RESULT_ACCOUNT_GROUPS);
+  const resultAccts = balances.filter((b) => b.group && RESULT.has(b.group));
+  const patrimonial = balances.filter((b) => !b.group || !RESULT.has(b.group));
+
+  // ── Refundición: lleva cada cuenta de resultado a cero contra Resultado del ejercicio.
+  const refLines: ClosingLine[] = [];
+  let net = 0; // ingresos − gastos
+  for (const a of resultAccts) {
+    if (a.saldo > 0) {
+      // saldo deudor (gasto/costo) → al Haber para cancelar
+      refLines.push({
+        accountId: a.accountId,
+        code: a.code,
+        name: a.name,
+        debit: 0,
+        credit: a.saldo,
+      });
+      net -= a.saldo;
+    } else {
+      // saldo acreedor (ingreso) → al Debe para cancelar
+      refLines.push({
+        accountId: a.accountId,
+        code: a.code,
+        name: a.name,
+        debit: -a.saldo,
+        credit: 0,
+      });
+      net += -a.saldo;
+    }
+  }
+  const netR = r2(net);
+  if (Math.abs(netR) > 0.005) {
+    // Resultado del ejercicio: ganancia → Haber (PN aumenta); pérdida → Debe.
+    refLines.push({
+      accountId: resultado.id,
+      code: resultado.code,
+      name: resultado.name,
+      debit: netR < 0 ? -netR : 0,
+      credit: netR > 0 ? netR : 0,
+    });
+  }
+
+  // ── Cierre patrimonial: saldos patrimoniales + el Resultado del ejercicio ya refundido.
+  const cierreBalances = patrimonial.map((b) => ({ ...b }));
+  const idx = cierreBalances.findIndex((b) => b.accountId === resultado.id);
+  if (idx >= 0) {
+    cierreBalances[idx].saldo = r2(cierreBalances[idx].saldo - netR);
+  } else if (Math.abs(netR) > 0.005) {
+    cierreBalances.push({
+      accountId: resultado.id,
+      code: resultado.code,
+      name: resultado.name,
+      group: RESULT_TARGET_GROUP,
+      saldo: r2(-netR), // ganancia → acreedor
+    });
+  }
+
+  const cierreLines: ClosingLine[] = [];
+  const aperturaLines: ClosingLine[] = [];
+  for (const b of cierreBalances) {
+    if (Math.abs(b.saldo) < 0.005) continue;
+    if (b.saldo > 0) {
+      // deudor (activo) → cierre lo lleva al Haber; apertura lo reabre al Debe
+      cierreLines.push({
+        accountId: b.accountId,
+        code: b.code,
+        name: b.name,
+        debit: 0,
+        credit: b.saldo,
+      });
+      aperturaLines.push({
+        accountId: b.accountId,
+        code: b.code,
+        name: b.name,
+        debit: b.saldo,
+        credit: 0,
+      });
+    } else {
+      cierreLines.push({
+        accountId: b.accountId,
+        code: b.code,
+        name: b.name,
+        debit: -b.saldo,
+        credit: 0,
+      });
+      aperturaLines.push({
+        accountId: b.accountId,
+        code: b.code,
+        name: b.name,
+        debit: 0,
+        credit: -b.saldo,
+      });
+    }
+  }
+
+  const summarize = (lines: ClosingLine[]): ClosingEntryPreview => {
+    const totalDebit = r2(lines.reduce((s, l) => s + l.debit, 0));
+    const totalCredit = r2(lines.reduce((s, l) => s + l.credit, 0));
+    return {
+      lines,
+      totalDebit,
+      totalCredit,
+      balanced: Math.abs(totalDebit - totalCredit) < 0.005,
+    };
+  };
+
+  return {
+    refundicion: summarize(refLines),
+    cierre: summarize(cierreLines),
+    apertura: summarize(aperturaLines),
+    net: netR,
+  };
+}
+
+/** Cuenta de sistema "Resultado del ejercicio". */
+async function loadResultadoAccount(orgId: string): Promise<ResultadoAccount> {
+  const [acc] = await db
+    .select({ id: account.id, code: account.code, name: account.name })
+    .from(account)
+    .where(
+      and(
+        eq(account.organizationId, orgId),
+        eq(account.scope, 'base'),
+        eq(account.accountGroup, RESULT_TARGET_GROUP),
+        eq(account.isSystemAccount, true)
+      )
+    )
+    .limit(1);
+  if (!acc) {
+    throw new Error(
+      'Falta la cuenta de sistema "Resultado del ejercicio". Re-sembrá el plan base'
+    );
+  }
+  return acc;
+}
+
+export interface ClosingPreview {
+  fiscalYearNumber: number;
+  fiscalYearStatus: 'open' | 'closing' | 'closed';
+  resultado: {
+    account: string;
+    net: number;
+    tipo: 'ganancia' | 'perdida' | 'neutro';
+  };
+  refundicion: ClosingEntryPreview;
+  cierre: ClosingEntryPreview;
+  nextFiscalYear: { number: number; startDate: string; endDate: string } | null;
+  alreadyClosed: boolean;
+}
+
+const nextFyDates = (end: Date): { start: Date; end: Date } => {
+  const start = new Date(end.getTime() + 24 * 60 * 60 * 1000);
+  const sY = start.getUTCFullYear();
+  const sM = start.getUTCMonth();
+  const nextEnd = new Date(Date.UTC(sY, sM + 12, 0));
+  return { start, end: nextEnd };
+};
+
+/** Preview de los asientos de cierre (refundición + cierre patrimonial). (US 5.2.1/5.2.2) */
+export const getClosingPreview = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({ clientId: z.string().uuid(), fiscalYearId: z.string().uuid() })
+  )
+  .handler(async (ctx): Promise<ClosingPreview> => {
+    const { orgId } = await getSessionWithOrg();
+    const { clientId } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
+    const resultado = await loadResultadoAccount(orgId);
+
+    const balances = await computeFyBalances(orgId, fy.id);
+    const built = buildClosingEntries(balances, resultado);
+    const nd = nextFyDates(fy.endDate);
+
+    return {
+      fiscalYearNumber: fy.number,
+      fiscalYearStatus: fy.status,
+      resultado: {
+        account: `${resultado.code} · ${resultado.name}`,
+        net: built.net,
+        tipo:
+          built.net > 0.005
+            ? 'ganancia'
+            : built.net < -0.005
+              ? 'perdida'
+              : 'neutro',
+      },
+      refundicion: built.refundicion,
+      cierre: built.cierre,
+      nextFiscalYear: {
+        number: fy.number + 1,
+        startDate: nd.start.toISOString(),
+        endDate: nd.end.toISOString(),
+      },
+      alreadyClosed: fy.status === 'closed',
+    };
+  });
+
+/** Ejecuta el cierre: refundición + cierre patrimonial + (opcional) apertura. (US 5.2.x) */
+export const executeClosing = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid(),
+      createOpening: z.boolean().default(false),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertOwner(role);
+    const { clientId } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
+    if (fy.status !== 'open') throw new Error('El ejercicio no está abierto');
+
+    // Defensa: no cerrar con pendientes de revisión.
+    const [{ pend }] = await db
+      .select({ pend: sql<number>`count(distinct ${journalEntry.id})::int` })
+      .from(journalEntry)
+      .innerJoin(
+        journalEntryLine,
+        eq(journalEntryLine.journalEntryId, journalEntry.id)
+      )
+      .innerJoin(account, eq(account.id, journalEntryLine.accountId))
+      .where(
+        and(
+          eq(journalEntry.fiscalYearId, fy.id),
+          eq(journalEntry.isVoided, false),
+          eq(account.organizationId, orgId),
+          eq(account.code, PENDING_REVIEW_CODE)
+        )
+      );
+    if ((pend ?? 0) > 0) {
+      throw new Error(
+        'Hay asientos en pendiente de revisión. Resolvelos antes de cerrar'
+      );
+    }
+
+    const resultado = await loadResultadoAccount(orgId);
+    const balances = await computeFyBalances(orgId, fy.id);
+    const built = buildClosingEntries(balances, resultado);
+
+    // Período donde caen los asientos de cierre = el que contiene el fin del ejercicio.
+    const [lastPeriod] = await db
+      .select()
+      .from(accountingPeriod)
+      .where(
+        and(
+          eq(accountingPeriod.fiscalYearId, fy.id),
+          eq(accountingPeriod.year, fy.endDate.getUTCFullYear()),
+          eq(accountingPeriod.month, fy.endDate.getUTCMonth() + 1)
+        )
+      )
+      .limit(1);
+    if (!lastPeriod) throw new Error('No se encontró el período de cierre');
+
+    const result = await db.transaction(async (tx) => {
+      const [{ maxNum }] = await tx
+        .select({
+          maxNum: sql<number>`coalesce(max(${journalEntry.number}),0)::int`,
+        })
+        .from(journalEntry)
+        .where(
+          and(
+            eq(journalEntry.clientId, clientId),
+            eq(journalEntry.fiscalYearId, fy.id)
+          )
+        );
+      let n = maxNum ?? 0;
+
+      const insertEntry = async (
+        fyId: string,
+        periodId: string,
+        date: Date,
+        number: number,
+        origin: 'auto_closing' | 'auto_opening',
+        description: string,
+        lines: ClosingLine[]
+      ) => {
+        const [je] = await tx
+          .insert(journalEntry)
+          .values({
+            clientId,
+            fiscalYearId: fyId,
+            periodId,
+            number,
+            entryDate: date,
+            description,
+            origin,
+            sourceType: 'closing',
+            createdBy: userId,
+          })
+          .returning();
+        await tx.insert(journalEntryLine).values(
+          lines.map((l, i) => ({
+            journalEntryId: je.id,
+            accountId: l.accountId,
+            clientId,
+            periodId,
+            debit: String(l.debit),
+            credit: String(l.credit),
+            description,
+            lineOrder: i,
+          }))
+        );
+        return je;
+      };
+
+      // 1) Refundición (si hay resultados).
+      if (built.refundicion.lines.length > 0) {
+        n += 1;
+        await insertEntry(
+          fy.id,
+          lastPeriod.id,
+          fy.endDate,
+          n,
+          'auto_closing',
+          'Refundición de cuentas de resultado',
+          built.refundicion.lines
+        );
+      }
+      // 2) Cierre patrimonial.
+      if (built.cierre.lines.length > 0) {
+        n += 1;
+        await insertEntry(
+          fy.id,
+          lastPeriod.id,
+          fy.endDate,
+          n,
+          'auto_closing',
+          'Asiento de cierre patrimonial',
+          built.cierre.lines
+        );
+      }
+
+      // 3) Marcar el ejercicio cerrado.
+      await tx
+        .update(fiscalYear)
+        .set({ status: 'closed', closedAt: sql`now()`, closedBy: userId })
+        .where(eq(fiscalYear.id, fy.id));
+      await tx.insert(accountingLog).values({
+        clientId,
+        fiscalYearId: fy.id,
+        eventType: 'fiscal_year_closed',
+        eventData: { number: fy.number, net: built.net },
+        userId,
+      });
+
+      // 4) Apertura del próximo ejercicio (opcional).
+      let nextFyNumber: number | null = null;
+      if (ctx.data.createOpening && built.apertura.lines.length > 0) {
+        const nd = nextFyDates(fy.endDate);
+        const sY = nd.start.getUTCFullYear();
+        const sM = nd.start.getUTCMonth();
+        const [nfy] = await tx
+          .insert(fiscalYear)
+          .values({
+            clientId,
+            startDate: nd.start,
+            endDate: nd.end,
+            status: 'open',
+            number: fy.number + 1,
+          })
+          .returning();
+        nextFyNumber = nfy.number;
+        const periods = Array.from({ length: 12 }, (_, i) => {
+          const d = new Date(Date.UTC(sY, sM + i, 1));
+          return {
+            fiscalYearId: nfy.id,
+            clientId,
+            year: d.getUTCFullYear(),
+            month: d.getUTCMonth() + 1,
+            status: 'open' as const,
+          };
+        });
+        const insertedPeriods = await tx
+          .insert(accountingPeriod)
+          .values(periods)
+          .returning();
+        const firstPeriod = insertedPeriods.find((p) => p.month === sM + 1)!;
+        await insertEntry(
+          nfy.id,
+          firstPeriod.id,
+          nd.start,
+          1,
+          'auto_opening',
+          `Asiento de apertura · Ejercicio N°${nfy.number}`,
+          built.apertura.lines
+        );
+      }
+
+      return { nextFyNumber };
+    });
+
+    return {
+      ok: true as const,
+      net: built.net,
+      nextFiscalYearNumber: result.nextFyNumber,
     };
   });
