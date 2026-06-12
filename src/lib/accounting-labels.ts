@@ -186,7 +186,10 @@ export const MONTH_NAMES = [
   'Diciembre',
 ] as const;
 
-export const FISCAL_YEAR_STATUS_LABELS: Record<'open' | 'closing' | 'closed', string> = {
+export const FISCAL_YEAR_STATUS_LABELS: Record<
+  'open' | 'closing' | 'closed',
+  string
+> = {
   open: 'Abierto',
   closing: 'En cierre',
   closed: 'Cerrado',
@@ -208,7 +211,10 @@ export const MAPPING_SOURCE_LABELS: Record<'invoice' | 'payroll', string> = {
   payroll: 'Sueldos',
 };
 
-export const MAPPING_RULE_TYPE_LABELS: Record<'default' | 'conditional', string> = {
+export const MAPPING_RULE_TYPE_LABELS: Record<
+  'default' | 'conditional',
+  string
+> = {
   default: 'Default (fallback)',
   conditional: 'Condicional',
 };
@@ -227,3 +233,37 @@ export const MAPPING_AMOUNT_BASIS_LABELS: Record<string, string> = {
   concept_value: 'Valor del concepto (sueldos)',
   fixed: 'Monto fijo',
 };
+
+/* ── Bienes de uso (Fase 4) ── */
+
+export const FIXED_ASSET_CATEGORY_LABELS: Record<string, string> = {
+  rodados: 'Rodados',
+  muebles_utiles: 'Muebles y útiles',
+  equipos_computacion: 'Equipos de computación',
+  instalaciones: 'Instalaciones',
+  inmuebles: 'Inmuebles',
+  maquinarias: 'Maquinarias',
+  otros: 'Otros',
+};
+
+export const FIXED_ASSET_STATUS_LABELS: Record<string, string> = {
+  active: 'Activo',
+  sold: 'Vendido',
+  discarded: 'Dado de baja',
+};
+
+export const FIXED_ASSET_DISPOSAL_REASON_LABELS: Record<string, string> = {
+  sale: 'Venta',
+  disuse: 'Desuso',
+  destruction: 'Destrucción',
+};
+
+/** Rubros considerados de gasto/resultado negativo (para validar la cuenta de amortización). */
+export const EXPENSE_ACCOUNT_GROUPS = [
+  'costo_ventas',
+  'gastos_administracion',
+  'gastos_comercializacion',
+  'gastos_financieros',
+  'otros_resultados_neg',
+  'impuesto_ganancias',
+] as const;

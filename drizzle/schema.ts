@@ -1806,6 +1806,83 @@ export const ledgerMappingRuleLine = pgTable(
   (table) => [index("idx_ledger_mapping_rule_line_rule").on(table.ruleId)],
 );
 
+/* ───────── Bienes de uso (Fase 4) ───────── */
+
+/** Categoría del bien de uso (alineada con los rubros de exposición del Anexo I). */
+export const fixedAssetCategoryEnum = pgEnum("fixed_asset_category", [
+  "rodados",
+  "muebles_utiles",
+  "equipos_computacion",
+  "instalaciones",
+  "inmuebles",
+  "maquinarias",
+  "otros",
+]);
+
+/** Método de amortización. Por ahora solo lineal. */
+export const fixedAssetMethodEnum = pgEnum("fixed_asset_method", ["linear"]);
+
+export const fixedAssetStatusEnum = pgEnum("fixed_asset_status", [
+  "active",
+  "sold",
+  "discarded",
+]);
+
+/** Motivo de baja del bien. */
+export const fixedAssetDisposalReasonEnum = pgEnum("fixed_asset_disposal_reason", [
+  "sale",
+  "disuse",
+  "destruction",
+]);
+
+/**
+ * Bien de uso de una empresa. Insumo del Anexo I y de los asientos de amortización
+ * al cierre. La amortización (lineal) se calcula on-the-fly, no se persiste por mes.
+ * Vive a nivel `client` (empresa).
+ */
+export const fixedAsset = pgTable(
+  "fixed_asset",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => client.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    category: fixedAssetCategoryEnum("category").notNull(),
+    /** Cuenta del activo (bienes_uso, saldo deudor). */
+    assetAccountId: uuid("asset_account_id")
+      .notNull()
+      .references(() => account.id, { onDelete: "restrict" }),
+    /** Cuenta regularizadora "(-) Amortización acumulada" (bienes_uso, saldo acreedor). */
+    accumDeprAccountId: uuid("accum_depr_account_id")
+      .notNull()
+      .references(() => account.id, { onDelete: "restrict" }),
+    /** Cuenta de gasto "Amortización del ejercicio" (resultado negativo). */
+    deprExpenseAccountId: uuid("depr_expense_account_id")
+      .notNull()
+      .references(() => account.id, { onDelete: "restrict" }),
+    acquisitionDate: timestamp("acquisition_date", { mode: "date" }).notNull(),
+    originalValue: numeric("original_value", { precision: 18, scale: 2 }).notNull(),
+    usefulLifeYears: integer("useful_life_years").notNull(),
+    residualValue: numeric("residual_value", { precision: 18, scale: 2 })
+      .notNull()
+      .default("0"),
+    method: fixedAssetMethodEnum("method").notNull().default("linear"),
+    status: fixedAssetStatusEnum("status").notNull().default("active"),
+    disposalDate: timestamp("disposal_date", { mode: "date" }),
+    disposalReason: fixedAssetDisposalReasonEnum("disposal_reason"),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("idx_fixed_asset_client_status").on(table.clientId, table.status),
+  ],
+);
+
 /**
  * Tax projections per client and period for estimated vs actual tracking.
  * Unique on (client_id, period, tax).

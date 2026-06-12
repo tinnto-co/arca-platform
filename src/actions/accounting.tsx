@@ -15,6 +15,7 @@ import {
   accountingPeriod,
   client,
   fiscalYear,
+  fixedAsset,
   invoice,
   journalEntry,
   journalEntryLine,
@@ -29,9 +30,11 @@ import {
   assertCanWrite,
 } from '@/actions/helpers';
 import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import {
   CUSTOM_CODE_PREFIX,
   PENDING_REVIEW_CODE,
+  EXPENSE_ACCOUNT_GROUPS,
 } from '@/lib/accounting-labels';
 import {
   buildEntryLines,
@@ -40,6 +43,7 @@ import {
   selectRuleForInvoice,
   type RuleLike,
 } from '@/lib/accounting-invoice-posting';
+import { depreciationSnapshot } from '@/lib/accounting-depreciation';
 
 /* ───────────────────────────── Helpers ───────────────────────────── */
 
@@ -3509,4 +3513,322 @@ export const regenerateInvoiceEntry = createServerFn({ method: 'POST' })
       entryId: je.id,
       number: je.number,
     };
+  });
+
+/* ════════════════════════ Bienes de uso (US 4.1.x) ════════════════════════ */
+
+interface AccountOpt {
+  id: string;
+  code: string;
+  name: string;
+}
+
+/** Cuentas compatibles para cada rol de un bien de uso (activo / amort. acum. / gasto). */
+export const getFixedAssetAccounts = createServerFn({ method: 'GET' })
+  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const { clientId } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+
+    const accounts = await db
+      .select()
+      .from(account)
+      .where(
+        and(
+          eq(account.organizationId, orgId),
+          eq(account.type, 'imputable'),
+          sql`(${account.scope} = 'base' OR (${account.scope} = 'custom' AND ${account.clientId} = ${clientId}))`
+        )
+      )
+      .orderBy(asc(account.code));
+
+    const overrides = await db
+      .select()
+      .from(accountOverride)
+      .where(eq(accountOverride.clientId, clientId));
+    const ovMap = new Map(overrides.map((o) => [o.accountId, o]));
+
+    const active = accounts.filter(
+      (a) => ovMap.get(a.id)?.isActive ?? a.isActive
+    );
+    const opt = (a: (typeof active)[number]): AccountOpt => ({
+      id: a.id,
+      code: a.code,
+      name: ovMap.get(a.id)?.customName ?? a.name,
+    });
+
+    return {
+      assetAccounts: active
+        .filter(
+          (a) =>
+            a.accountGroup === 'bienes_uso' && a.expectedBalance === 'debit'
+        )
+        .map(opt),
+      accumAccounts: active
+        .filter(
+          (a) =>
+            a.accountGroup === 'bienes_uso' && a.expectedBalance === 'credit'
+        )
+        .map(opt),
+      expenseAccounts: active
+        .filter(
+          (a) =>
+            a.accountGroup !== null &&
+            (EXPENSE_ACCOUNT_GROUPS as readonly string[]).includes(
+              a.accountGroup
+            )
+        )
+        .map(opt),
+    };
+  });
+
+/** Valida que las 3 cuentas del bien sean imputables, activas y del tipo correcto. */
+async function assertFixedAssetAccounts(
+  clientId: string,
+  orgId: string,
+  ids: {
+    assetAccountId: string;
+    accumDeprAccountId: string;
+    deprExpenseAccountId: string;
+  }
+): Promise<void> {
+  const all = [
+    ids.assetAccountId,
+    ids.accumDeprAccountId,
+    ids.deprExpenseAccountId,
+  ];
+  await assertPostableAccounts(clientId, orgId, all);
+
+  const rows = await db
+    .select({
+      id: account.id,
+      code: account.code,
+      group: account.accountGroup,
+      expected: account.expectedBalance,
+    })
+    .from(account)
+    .where(and(eq(account.organizationId, orgId), inArray(account.id, all)));
+  const byId = new Map(rows.map((r) => [r.id, r]));
+
+  const asset = byId.get(ids.assetAccountId);
+  if (asset?.group !== 'bienes_uso' || asset.expected !== 'debit') {
+    throw new Error(
+      'La cuenta del activo debe ser un Bien de uso (saldo deudor), ej. "Rodados"'
+    );
+  }
+  const accum = byId.get(ids.accumDeprAccountId);
+  if (accum?.group !== 'bienes_uso' || accum.expected !== 'credit') {
+    throw new Error(
+      'La cuenta de amortización acumulada debe ser una regularizadora de Bienes de uso (saldo acreedor), ej. "(-) Amortización acumulada rodados"'
+    );
+  }
+  const exp = byId.get(ids.deprExpenseAccountId);
+  if (
+    !exp?.group ||
+    !(EXPENSE_ACCOUNT_GROUPS as readonly string[]).includes(exp.group)
+  ) {
+    throw new Error(
+      'La cuenta de gasto de amortización debe ser un resultado negativo (gasto), ej. "Amortización bienes de uso"'
+    );
+  }
+}
+
+const fixedAssetInput = z.object({
+  clientId: z.string().uuid(),
+  name: z.string().trim().min(1),
+  category: z.enum([
+    'rodados',
+    'muebles_utiles',
+    'equipos_computacion',
+    'instalaciones',
+    'inmuebles',
+    'maquinarias',
+    'otros',
+  ]),
+  assetAccountId: z.string().uuid(),
+  accumDeprAccountId: z.string().uuid(),
+  deprExpenseAccountId: z.string().uuid(),
+  acquisitionDate: z.string(),
+  originalValue: z.number().positive(),
+  usefulLifeYears: z.number().int().positive(),
+  residualValue: z.number().min(0).default(0),
+});
+
+/** Registra un bien de uso. (US 4.1.1) */
+export const createFixedAsset = createServerFn({ method: 'POST' })
+  .inputValidator(fixedAssetInput)
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    const d = ctx.data;
+    await ensureClientBelongsToOrg(d.clientId, orgId);
+
+    if (d.residualValue >= d.originalValue) {
+      throw new Error('El valor residual debe ser menor al valor de origen');
+    }
+    await assertFixedAssetAccounts(d.clientId, orgId, d);
+
+    const [row] = await db
+      .insert(fixedAsset)
+      .values({
+        clientId: d.clientId,
+        name: d.name,
+        category: d.category,
+        assetAccountId: d.assetAccountId,
+        accumDeprAccountId: d.accumDeprAccountId,
+        deprExpenseAccountId: d.deprExpenseAccountId,
+        acquisitionDate: new Date(`${d.acquisitionDate}T00:00:00Z`),
+        originalValue: String(d.originalValue),
+        usefulLifeYears: d.usefulLifeYears,
+        residualValue: String(d.residualValue),
+        method: 'linear',
+        status: 'active',
+        createdBy: userId,
+      })
+      .returning();
+    return row;
+  });
+
+export interface FixedAssetRow {
+  id: string;
+  name: string;
+  category: string;
+  status: 'active' | 'sold' | 'discarded';
+  acquisitionDate: string | Date;
+  originalValue: number;
+  usefulLifeYears: number;
+  residualValue: number;
+  monthlyDepreciation: number;
+  accumulatedDepreciation: number;
+  bookValue: number;
+  assetAccount: string;
+  accumDeprAccount: string;
+  deprExpenseAccount: string;
+  disposalDate: string | Date | null;
+  disposalReason: string | null;
+}
+
+/** Lista bienes de uso con su amortización calculada a hoy. (US 4.1.2) */
+export const listFixedAssets = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      category: z.string().optional(),
+      status: z.enum(['active', 'sold', 'discarded']).optional(),
+    })
+  )
+  .handler(async (ctx): Promise<FixedAssetRow[]> => {
+    const { orgId } = await getSessionWithOrg();
+    const { clientId } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+
+    const assetAcc = alias(account, 'asset_acc');
+    const accumAcc = alias(account, 'accum_acc');
+    const expAcc = alias(account, 'exp_acc');
+
+    const conds = [eq(fixedAsset.clientId, clientId)];
+    if (ctx.data.status) conds.push(eq(fixedAsset.status, ctx.data.status));
+    if (ctx.data.category)
+      conds.push(eq(fixedAsset.category, ctx.data.category as 'otros'));
+
+    const rows = await db
+      .select({
+        fa: fixedAsset,
+        assetName: assetAcc.name,
+        assetCode: assetAcc.code,
+        accumName: accumAcc.name,
+        accumCode: accumAcc.code,
+        expName: expAcc.name,
+        expCode: expAcc.code,
+      })
+      .from(fixedAsset)
+      .innerJoin(assetAcc, eq(assetAcc.id, fixedAsset.assetAccountId))
+      .innerJoin(accumAcc, eq(accumAcc.id, fixedAsset.accumDeprAccountId))
+      .innerJoin(expAcc, eq(expAcc.id, fixedAsset.deprExpenseAccountId))
+      .where(and(...conds))
+      .orderBy(asc(fixedAsset.category), asc(fixedAsset.name));
+
+    const now = new Date();
+    return rows.map((r): FixedAssetRow => {
+      const snap = depreciationSnapshot(
+        {
+          acquisitionDate: r.fa.acquisitionDate,
+          originalValue: r.fa.originalValue,
+          usefulLifeYears: r.fa.usefulLifeYears,
+          residualValue: r.fa.residualValue,
+          status: r.fa.status,
+          disposalDate: r.fa.disposalDate,
+        },
+        now
+      );
+      return {
+        id: r.fa.id,
+        name: r.fa.name,
+        category: r.fa.category,
+        status: r.fa.status,
+        acquisitionDate: r.fa.acquisitionDate,
+        originalValue: parseFloat(r.fa.originalValue),
+        usefulLifeYears: r.fa.usefulLifeYears,
+        residualValue: parseFloat(r.fa.residualValue),
+        monthlyDepreciation: snap.monthly,
+        accumulatedDepreciation: snap.accumulated,
+        bookValue: snap.bookValue,
+        assetAccount: `${r.assetCode} · ${r.assetName}`,
+        accumDeprAccount: `${r.accumCode} · ${r.accumName}`,
+        deprExpenseAccount: `${r.expCode} · ${r.expName}`,
+        disposalDate: r.fa.disposalDate,
+        disposalReason: r.fa.disposalReason,
+      };
+    });
+  });
+
+/** Da de baja un bien (venta / desuso / destrucción). (US 4.1.3) */
+export const disposeFixedAsset = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      id: z.string().uuid(),
+      disposalDate: z.string(),
+      reason: z.enum(['sale', 'disuse', 'destruction']),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    // Verificar pertenencia al estudio.
+    const [row] = await db
+      .select({ fa: fixedAsset })
+      .from(fixedAsset)
+      .innerJoin(client, eq(client.id, fixedAsset.clientId))
+      .innerJoin(representative, eq(representative.id, client.representativeId))
+      .where(
+        and(
+          eq(fixedAsset.id, ctx.data.id),
+          eq(representative.organizationId, orgId)
+        )
+      )
+      .limit(1);
+    if (!row) throw new Error('Bien no encontrado o no autorizado');
+    if (row.fa.status !== 'active')
+      throw new Error('El bien ya está dado de baja');
+
+    const disposalDate = new Date(`${ctx.data.disposalDate}T00:00:00Z`);
+    if (disposalDate < row.fa.acquisitionDate) {
+      throw new Error(
+        'La fecha de baja no puede ser anterior a la de adquisición'
+      );
+    }
+
+    await db
+      .update(fixedAsset)
+      .set({
+        status: ctx.data.reason === 'sale' ? 'sold' : 'discarded',
+        disposalDate,
+        disposalReason: ctx.data.reason,
+      })
+      .where(eq(fixedAsset.id, ctx.data.id));
+    return { ok: true };
   });

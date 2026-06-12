@@ -38,6 +38,7 @@ import {
   Square,
   Inbox,
   AlertTriangle,
+  Boxes,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { ArcaCard } from '@/components/dashboard/shared';
@@ -79,11 +80,16 @@ import {
   generateInvoiceEntries,
   regenerateInvoiceEntry,
   getPendingReviewEntries,
+  getFixedAssetAccounts,
+  createFixedAsset,
+  listFixedAssets,
+  disposeFixedAsset,
   type ChartAccount,
   type PeriodView,
   type LedgerRow,
   type ConsolidatedAccount,
   type PendingReviewEntry,
+  type FixedAssetRow,
 } from '@/actions/accounting';
 import {
   exportMayorExcel,
@@ -108,8 +114,12 @@ import {
   MAPPING_RULE_TYPE_LABELS,
   MAPPING_SIDE_LABELS,
   MAPPING_AMOUNT_BASIS_LABELS,
+  FIXED_ASSET_CATEGORY_LABELS,
+  FIXED_ASSET_STATUS_LABELS,
+  FIXED_ASSET_DISPOSAL_REASON_LABELS,
   type AccountGroup,
 } from '@/lib/accounting-labels';
+import { monthlyDepreciation } from '@/lib/accounting-depreciation';
 import {
   Dialog,
   DialogContent,
@@ -194,7 +204,8 @@ type Tab =
   | 'balance'
   | 'reglas'
   | 'contabilizar'
-  | 'pendientes';
+  | 'pendientes'
+  | 'bienes';
 
 function TabBar({
   active,
@@ -211,15 +222,16 @@ function TabBar({
     icon: React.ElementType;
     ready: boolean;
   }[] = [
-    { id: 'plan', label: 'Plan de cuentas', icon: List, ready: true },
-    { id: 'ejercicios', label: 'Ejercicios', icon: CalendarDays, ready: true },
-    { id: 'asientos', label: 'Asientos', icon: FileText, ready: true },
-    { id: 'mayor', label: 'Mayor', icon: BookOpen, ready: true },
-    { id: 'balance', label: 'Balance', icon: Scale, ready: true },
-    { id: 'reglas', label: 'Reglas', icon: Workflow, ready: true },
-    { id: 'contabilizar', label: 'Contabilizar', icon: Zap, ready: true },
-    { id: 'pendientes', label: 'Pendientes', icon: Inbox, ready: true },
-  ];
+      { id: 'plan', label: 'Plan de cuentas', icon: List, ready: true },
+      { id: 'ejercicios', label: 'Ejercicios', icon: CalendarDays, ready: true },
+      { id: 'asientos', label: 'Asientos', icon: FileText, ready: true },
+      { id: 'mayor', label: 'Mayor', icon: BookOpen, ready: true },
+      { id: 'balance', label: 'Balance', icon: Scale, ready: true },
+      { id: 'reglas', label: 'Reglas', icon: Workflow, ready: true },
+      { id: 'contabilizar', label: 'Contabilizar', icon: Zap, ready: true },
+      { id: 'pendientes', label: 'Pendientes', icon: Inbox, ready: true },
+      { id: 'bienes', label: 'Bienes de uso', icon: Boxes, ready: true },
+    ];
   return (
     <div className="flex gap-1 mb-5 border-b border-[var(--arca-border)]">
       {tabs.map((tab) => (
@@ -361,6 +373,11 @@ function AccountingPage() {
           clientId={effectiveClientId}
           canWrite={roleData?.role !== 'viewer'}
           onGoToReglas={() => setTab('reglas')}
+        />
+      ) : tab === 'bienes' ? (
+        <BienesDeUso
+          clientId={effectiveClientId}
+          canWrite={roleData?.role !== 'viewer'}
         />
       ) : (
         <ArcaCard>
@@ -523,11 +540,10 @@ function PlanDeCuentas({
           </span>
 
           <span
-            className={`flex-1 min-w-0 truncate text-[13px] ${account.type === 'group' ? 'font-semibold' : 'font-medium'} ${
-              account.isActive
+            className={`flex-1 min-w-0 truncate text-[13px] ${account.type === 'group' ? 'font-semibold' : 'font-medium'} ${account.isActive
                 ? 'text-[var(--arca-ink)]'
                 : 'text-[var(--arca-ink-3)] line-through'
-            }`}
+              }`}
             title={
               account.isRenamed ? `Nombre base: ${account.baseName}` : undefined
             }
@@ -2148,11 +2164,10 @@ function Asientos({
                 {fmtFecha(r.entryDate)}
               </div>
               <div
-                className={`flex-1 min-w-0 truncate text-[13px] ${
-                  r.isVoided
+                className={`flex-1 min-w-0 truncate text-[13px] ${r.isVoided
                     ? 'line-through text-[var(--arca-ink-3)]'
                     : 'text-[var(--arca-ink)]'
-                }`}
+                  }`}
               >
                 {r.description?.trim() ? (
                   r.description
@@ -3710,7 +3725,7 @@ function Reglas({
                 <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
                   {
                     MAPPING_SOURCE_LABELS[
-                      r.sourceModule as 'invoice' | 'payroll'
+                    r.sourceModule as 'invoice' | 'payroll'
                     ]
                   }
                 </span>
@@ -3718,7 +3733,7 @@ function Reglas({
               <div className="w-28 shrink-0 text-[11.5px] text-[var(--arca-ink-3)]">
                 {
                   MAPPING_RULE_TYPE_LABELS[
-                    r.ruleType as 'default' | 'conditional'
+                  r.ruleType as 'default' | 'conditional'
                   ]
                 }
               </div>
@@ -4370,7 +4385,7 @@ function ImportRulesDialog({
                     <span className="text-[var(--arca-ink-3)]">
                       {
                         MAPPING_SOURCE_LABELS[
-                          r.sourceModule as 'invoice' | 'payroll'
+                        r.sourceModule as 'invoice' | 'payroll'
                         ]
                       }{' '}
                       · {r.lineCount} líneas
@@ -4586,7 +4601,7 @@ function Contabilizar({
           <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
             {includePosted
               ? 'No hay comprobantes en el rango de los ejercicios.'
-              : 'No hay comprobantes pendientes de contabilizar. 🎉'}
+              : 'No hay comprobantes pendientes de contabilizar.'}
           </div>
         ) : (
           <table className="w-full text-[12.5px]">
@@ -4846,7 +4861,7 @@ function Pendientes({
           </div>
         ) : entries.length === 0 ? (
           <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
-            No hay asientos pendientes de revisión. 🎉
+            No hay asientos pendientes de revisión.
           </div>
         ) : (
           <table className="w-full text-[12.5px]">
@@ -4959,5 +4974,548 @@ function PendingRow({
         )}
       </td>
     </tr>
+  );
+}
+
+/* ════════════════════════ Bienes de uso (US 4.1.x) ════════════════════════ */
+
+function BienesDeUso({
+  clientId,
+  canWrite,
+}: {
+  clientId: string;
+  canWrite: boolean;
+}) {
+  const qc = useQueryClient();
+  const [category, setCategory] = useState('');
+  const [status, setStatus] = useState('active');
+  const [showEditor, setShowEditor] = useState(false);
+  const [disposeTarget, setDisposeTarget] = useState<FixedAssetRow | null>(
+    null
+  );
+
+  const { data: assets = [], isLoading } = useQuery({
+    queryKey: ['accounting', 'fixed-assets', clientId, category, status],
+    queryFn: () =>
+      listFixedAssets({
+        data: {
+          clientId,
+          category: category || undefined,
+          status: (status || undefined) as never,
+        },
+      }),
+  });
+
+  const invalidate = () => {
+    void qc.invalidateQueries({ queryKey: ['accounting', 'fixed-assets'] });
+  };
+
+  return (
+    <div className="space-y-4">
+      <ArcaCard>
+        <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-[var(--arca-border)]">
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            className={SELECT_CLASS}
+          >
+            <option value="">Todas las categorías</option>
+            {Object.entries(FIXED_ASSET_CATEGORY_LABELS).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          </select>
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            className={SELECT_CLASS}
+          >
+            <option value="">Todos los estados</option>
+            <option value="active">Activos</option>
+            <option value="sold">Vendidos</option>
+            <option value="discarded">Dados de baja</option>
+          </select>
+          <div className="flex-1" />
+          {canWrite && (
+            <button
+              onClick={() => setShowEditor(true)}
+              className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white inline-flex items-center gap-1.5"
+            >
+              <Boxes className="w-3.5 h-3.5" strokeWidth={2} />
+              Nuevo bien
+            </button>
+          )}
+        </div>
+
+        {isLoading ? (
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            Cargando…
+          </div>
+        ) : assets.length === 0 ? (
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            No hay bienes de uso para este filtro.
+          </div>
+        ) : (
+          <table className="w-full text-[12.5px]">
+            <thead>
+              <tr className="text-left text-[11px] uppercase tracking-wide text-[var(--arca-ink-3)] border-b border-[var(--arca-border)]">
+                <th className="py-2 pl-4">Nombre</th>
+                <th className="py-2">Categoría</th>
+                <th className="py-2">Fecha adq.</th>
+                <th className="py-2 text-right">Valor origen</th>
+                <th className="py-2 text-right">Amort. acum.</th>
+                <th className="py-2 text-right">Valor residual</th>
+                <th className="py-2 pl-3">Estado</th>
+                <th className="py-2 pr-4 text-right">Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              {assets.map((a) => (
+                <tr
+                  key={a.id}
+                  className="border-b border-[var(--arca-border)] last:border-0 hover:bg-[var(--arca-surface-2)]"
+                >
+                  <td className="py-2 pl-4 font-medium text-[var(--arca-ink)]">
+                    {a.name}
+                  </td>
+                  <td className="py-2">
+                    {FIXED_ASSET_CATEGORY_LABELS[a.category] ?? a.category}
+                  </td>
+                  <td className="py-2 whitespace-nowrap">
+                    {fmtFecha(a.acquisitionDate)}
+                  </td>
+                  <td className="py-2 text-right tabular-nums whitespace-nowrap">
+                    $ {fmtMoney(a.originalValue)}
+                  </td>
+                  <td className="py-2 text-right tabular-nums whitespace-nowrap text-[var(--arca-ink-3)]">
+                    $ {fmtMoney(a.accumulatedDepreciation)}
+                  </td>
+                  <td className="py-2 text-right tabular-nums whitespace-nowrap font-medium">
+                    $ {fmtMoney(a.bookValue)}
+                  </td>
+                  <td className="py-2 pl-3">
+                    <FixedAssetStatusBadge
+                      status={a.status}
+                      reason={a.disposalReason}
+                    />
+                  </td>
+                  <td className="py-2 pr-4 text-right">
+                    {canWrite && a.status === 'active' && (
+                      <button
+                        onClick={() => setDisposeTarget(a)}
+                        className="text-[12px] text-[var(--arca-ink-2)] hover:text-red-600"
+                      >
+                        Dar de baja
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </ArcaCard>
+
+      {showEditor && (
+        <FixedAssetEditor
+          clientId={clientId}
+          onClose={() => setShowEditor(false)}
+          onSaved={() => {
+            setShowEditor(false);
+            invalidate();
+          }}
+        />
+      )}
+
+      {disposeTarget && (
+        <DisposeAssetDialog
+          asset={disposeTarget}
+          onClose={() => setDisposeTarget(null)}
+          onSaved={() => {
+            setDisposeTarget(null);
+            invalidate();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function FixedAssetStatusBadge({
+  status,
+  reason,
+}: {
+  status: string;
+  reason: string | null;
+}) {
+  const color =
+    status === 'active' ? 'oklch(0.45 0.14 145)' : 'oklch(0.50 0.02 260)';
+  const label = FIXED_ASSET_STATUS_LABELS[status] ?? status;
+  return (
+    <span
+      className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium"
+      style={{
+        background: `color-mix(in oklch, ${color}, transparent 86%)`,
+        color,
+      }}
+      title={reason ? FIXED_ASSET_DISPOSAL_REASON_LABELS[reason] : undefined}
+    >
+      {label}
+      {reason ? ` · ${FIXED_ASSET_DISPOSAL_REASON_LABELS[reason]}` : ''}
+    </span>
+  );
+}
+
+function FixedAssetEditor({
+  clientId,
+  onClose,
+  onSaved,
+}: {
+  clientId: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState('');
+  const [category, setCategory] = useState('rodados');
+  const [assetAccountId, setAssetAccountId] = useState('');
+  const [accumDeprAccountId, setAccumDeprAccountId] = useState('');
+  const [deprExpenseAccountId, setDeprExpenseAccountId] = useState('');
+  const [acquisitionDate, setAcquisitionDate] = useState('');
+  const [originalValue, setOriginalValue] = useState('');
+  const [usefulLifeYears, setUsefulLifeYears] = useState('');
+  const [residualValue, setResidualValue] = useState('0');
+
+  const { data: accounts } = useQuery({
+    queryKey: ['accounting', 'fixed-asset-accounts', clientId],
+    queryFn: () => getFixedAssetAccounts({ data: { clientId } }),
+  });
+
+  const ov = num(originalValue);
+  const rv = num(residualValue);
+  const life = parseInt(usefulLifeYears, 10);
+  const monthly =
+    ov > 0 && life > 0 && rv < ov
+      ? monthlyDepreciation({
+        acquisitionDate: acquisitionDate || '2000-01-01',
+        originalValue: ov,
+        usefulLifeYears: life,
+        residualValue: rv,
+        status: 'active',
+      })
+      : 0;
+
+  const mut = useMutation({
+    mutationFn: async () => {
+      await createFixedAsset({
+        data: {
+          clientId,
+          name: name.trim(),
+          category: category as 'rodados',
+          assetAccountId,
+          accumDeprAccountId,
+          deprExpenseAccountId,
+          acquisitionDate,
+          originalValue: ov,
+          usefulLifeYears: life,
+          residualValue: rv,
+        },
+      });
+    },
+    onSuccess: () => {
+      toast.success('Bien de uso registrado');
+      onSaved();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const valid =
+    name.trim() &&
+    assetAccountId &&
+    accumDeprAccountId &&
+    deprExpenseAccountId &&
+    acquisitionDate &&
+    ov > 0 &&
+    life > 0 &&
+    rv < ov;
+
+  const accSelect = (
+    value: string,
+    onChange: (v: string) => void,
+    opts: { id: string; code: string; name: string }[] | undefined,
+    placeholder: string
+  ) => (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={`${SELECT_CLASS} w-0 min-w-0 flex-1`}
+    >
+      <option value="">{placeholder}</option>
+      {(opts ?? []).map((a) => (
+        <option key={a.id} value={a.id}>
+          {a.code} · {a.name}
+        </option>
+      ))}
+    </select>
+  );
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Nuevo bien de uso</DialogTitle>
+          <DialogDescription>
+            El sistema calculará la amortización lineal automáticamente.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Nombre *" full>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Ej: Toyota Hilux 2024"
+              className={INPUT_CLASS}
+            />
+          </Field>
+
+          <Field label="Categoría *">
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className={SELECT_CLASS}
+            >
+              {Object.entries(FIXED_ASSET_CATEGORY_LABELS).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Fecha de adquisición *">
+            <input
+              type="date"
+              value={acquisitionDate}
+              onChange={(e) => setAcquisitionDate(e.target.value)}
+              className={INPUT_CLASS}
+            />
+          </Field>
+
+          <Field
+            label={
+              <>
+                Cuenta del activo *
+                <HelpTip text="Dónde se registra el bien en el activo. Solo cuentas de Bienes de uso (saldo deudor)." />
+              </>
+            }
+            full
+          >
+            <div className="flex">
+              {accSelect(
+                assetAccountId,
+                setAssetAccountId,
+                accounts?.assetAccounts,
+                'Elegí la cuenta del activo…'
+              )}
+            </div>
+          </Field>
+
+          <Field
+            label={
+              <>
+                Cuenta de amortización acumulada *
+                <HelpTip text="Regularizadora del activo. Solo cuentas '(-) Amortización acumulada…' (saldo acreedor)." />
+              </>
+            }
+            full
+          >
+            <div className="flex">
+              {accSelect(
+                accumDeprAccountId,
+                setAccumDeprAccountId,
+                accounts?.accumAccounts,
+                'Elegí la cuenta de amort. acumulada…'
+              )}
+            </div>
+          </Field>
+
+          <Field
+            label={
+              <>
+                Cuenta de gasto de amortización *
+                <HelpTip text="A qué gasto impacta la amortización del período. Solo cuentas de resultado negativo (gastos)." />
+              </>
+            }
+            full
+          >
+            <div className="flex">
+              {accSelect(
+                deprExpenseAccountId,
+                setDeprExpenseAccountId,
+                accounts?.expenseAccounts,
+                'Elegí la cuenta de gasto…'
+              )}
+            </div>
+          </Field>
+
+          <Field label="Valor de origen *">
+            <input
+              type="number"
+              value={originalValue}
+              onChange={(e) => setOriginalValue(e.target.value)}
+              placeholder="0.00"
+              className={INPUT_CLASS}
+            />
+          </Field>
+
+          <Field label="Valor residual">
+            <input
+              type="number"
+              value={residualValue}
+              onChange={(e) => setResidualValue(e.target.value)}
+              placeholder="0.00"
+              className={INPUT_CLASS}
+            />
+          </Field>
+
+          <Field label="Vida útil (años) *">
+            <input
+              type="number"
+              value={usefulLifeYears}
+              onChange={(e) => setUsefulLifeYears(e.target.value)}
+              placeholder="Ej: 5"
+              className={INPUT_CLASS}
+            />
+          </Field>
+
+          <Field label="Método">
+            <input
+              value="Lineal"
+              disabled
+              className={`${INPUT_CLASS} opacity-60`}
+            />
+          </Field>
+        </div>
+
+        {/* Preview de amortización mensual */}
+        <div className="mt-1 flex items-center justify-between rounded-[8px] bg-[var(--arca-surface-2)] px-4 py-2.5 text-[12.5px]">
+          <span className="text-[var(--arca-ink-2)]">
+            Amortización mensual (lineal)
+          </span>
+          <span className="font-semibold tabular-nums text-[var(--arca-ink)]">
+            $ {fmtMoney(monthly)}
+            <span className="ml-2 text-[11px] font-normal text-[var(--arca-ink-3)]">
+              {life > 0 ? `· $ ${fmtMoney(monthly * 12)} / año` : ''}
+            </span>
+          </span>
+        </div>
+        {rv >= ov && ov > 0 && (
+          <p className="text-[11px] text-red-600">
+            El valor residual debe ser menor al valor de origen.
+          </p>
+        )}
+
+        <DialogFooter>
+          <button
+            onClick={onClose}
+            className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)]"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => mut.mutate()}
+            disabled={!valid || mut.isPending}
+            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+          >
+            {mut.isPending ? 'Guardando…' : 'Registrar bien'}
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DisposeAssetDialog({
+  asset,
+  onClose,
+  onSaved,
+}: {
+  asset: FixedAssetRow;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [disposalDate, setDisposalDate] = useState('');
+  const [reason, setReason] = useState<'sale' | 'disuse' | 'destruction'>(
+    'sale'
+  );
+
+  const mut = useMutation({
+    mutationFn: async () => {
+      await disposeFixedAsset({ data: { id: asset.id, disposalDate, reason } });
+    },
+    onSuccess: () => {
+      toast.success('Bien dado de baja');
+      onSaved();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Dar de baja: {asset.name}</DialogTitle>
+          <DialogDescription>
+            A partir de la fecha de baja deja de amortizarse. No se borra el
+            historial.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Fecha de baja *">
+            <input
+              type="date"
+              value={disposalDate}
+              onChange={(e) => setDisposalDate(e.target.value)}
+              className={INPUT_CLASS}
+            />
+          </Field>
+          <Field label="Motivo *">
+            <select
+              value={reason}
+              onChange={(e) =>
+                setReason(e.target.value as 'sale' | 'disuse' | 'destruction')
+              }
+              className={SELECT_CLASS}
+            >
+              {Object.entries(FIXED_ASSET_DISPOSAL_REASON_LABELS).map(
+                ([k, v]) => (
+                  <option key={k} value={k}>
+                    {v}
+                  </option>
+                )
+              )}
+            </select>
+          </Field>
+        </div>
+
+        <DialogFooter>
+          <button
+            onClick={onClose}
+            className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)]"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => mut.mutate()}
+            disabled={!disposalDate || mut.isPending}
+            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-red-600 text-white disabled:opacity-50"
+          >
+            {mut.isPending ? 'Procesando…' : 'Confirmar baja'}
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
