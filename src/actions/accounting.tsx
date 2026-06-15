@@ -5532,6 +5532,10 @@ export interface FinancialStatementResult {
   notes: FsNote[];
   approvedAt: string | null;
   approvedByName: string | null;
+  /** Metadata del PDF guardado (no incluye el binario; usar getFinancialStatementPdf). */
+  pdfGeneratedAt: string | null;
+  pdfGeneratedByName: string | null;
+  pdfSizeBytes: number | null;
 }
 
 const fsNoteSchema = z.object({
@@ -5551,6 +5555,7 @@ export const getFinancialStatement = createServerFn({ method: 'GET' })
     await ensureClientBelongsToOrg(clientId, orgId);
     await loadFiscalYearForOrg(fiscalYearId, orgId);
 
+    const pdfUser = alias(user, 'fs_pdf_user');
     const [row] = await db
       .select({
         id: financialStatement.id,
@@ -5558,9 +5563,13 @@ export const getFinancialStatement = createServerFn({ method: 'GET' })
         notes: financialStatement.notes,
         approvedAt: financialStatement.approvedAt,
         approvedByName: user.name,
+        pdfGeneratedAt: financialStatement.pdfGeneratedAt,
+        pdfSizeBytes: financialStatement.pdfSizeBytes,
+        pdfGeneratedByName: pdfUser.name,
       })
       .from(financialStatement)
       .leftJoin(user, eq(user.id, financialStatement.approvedBy))
+      .leftJoin(pdfUser, eq(pdfUser.id, financialStatement.pdfGeneratedBy))
       .where(
         and(
           eq(financialStatement.fiscalYearId, fiscalYearId),
@@ -5576,6 +5585,9 @@ export const getFinancialStatement = createServerFn({ method: 'GET' })
         notes: [],
         approvedAt: null,
         approvedByName: null,
+        pdfGeneratedAt: null,
+        pdfGeneratedByName: null,
+        pdfSizeBytes: null,
       };
     }
     return {
@@ -5584,6 +5596,11 @@ export const getFinancialStatement = createServerFn({ method: 'GET' })
       notes: (row.notes as FsNote[]) ?? [],
       approvedAt: row.approvedAt ? row.approvedAt.toISOString() : null,
       approvedByName: row.approvedByName ?? null,
+      pdfGeneratedAt: row.pdfGeneratedAt
+        ? row.pdfGeneratedAt.toISOString()
+        : null,
+      pdfGeneratedByName: row.pdfGeneratedByName ?? null,
+      pdfSizeBytes: row.pdfSizeBytes ?? null,
     };
   });
 
@@ -5726,3 +5743,104 @@ export const reopenFinancialStatement = createServerFn({ method: 'POST' })
       );
     return { ok: true };
   });
+
+/* ── Persistencia del PDF del paquete EECC (US 7.1.1) ── */
+
+/** Guarda el PDF generado del paquete asociado al financialStatement del ejercicio. */
+export const saveFinancialStatementPdf = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid(),
+      // data URL base64 del PDF (data:application/pdf;base64,...). Tope ~12MB.
+      dataUrl: z
+        .string()
+        .min(1)
+        .max(16_000_000)
+        .refine((s) => s.startsWith('data:application/pdf;base64,'), {
+          message: 'PDF inválido',
+        }),
+      sizeBytes: z.number().int().nonnegative(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertOwner(role);
+    const { clientId, fiscalYearId, dataUrl, sizeBytes } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    await loadFiscalYearForOrg(fiscalYearId, orgId);
+
+    const [existing] = await db
+      .select({ id: financialStatement.id })
+      .from(financialStatement)
+      .where(
+        and(
+          eq(financialStatement.fiscalYearId, fiscalYearId),
+          eq(financialStatement.clientId, clientId)
+        )
+      )
+      .limit(1);
+
+    const now = new Date();
+    if (existing) {
+      await db
+        .update(financialStatement)
+        .set({
+          pdfUrl: dataUrl,
+          pdfSizeBytes: sizeBytes,
+          pdfGeneratedAt: now,
+          pdfGeneratedBy: userId,
+        })
+        .where(eq(financialStatement.id, existing.id));
+    } else {
+      await db.insert(financialStatement).values({
+        organizationId: orgId,
+        clientId,
+        fiscalYearId,
+        pdfUrl: dataUrl,
+        pdfSizeBytes: sizeBytes,
+        pdfGeneratedAt: now,
+        pdfGeneratedBy: userId,
+      });
+    }
+    return { ok: true };
+  });
+
+/** Devuelve el PDF guardado del paquete (data URL) para re-descargar, o null. */
+export const getFinancialStatementPdf = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({ clientId: z.string().uuid(), fiscalYearId: z.string().uuid() })
+  )
+  .handler(
+    async (
+      ctx
+    ): Promise<{ dataUrl: string; generatedAt: string | null } | null> => {
+      const { orgId } = await getSessionWithOrg();
+      const { clientId, fiscalYearId } = ctx.data;
+      await ensureClientBelongsToOrg(clientId, orgId);
+      await loadFiscalYearForOrg(fiscalYearId, orgId);
+
+      const [row] = await db
+        .select({
+          pdfUrl: financialStatement.pdfUrl,
+          pdfGeneratedAt: financialStatement.pdfGeneratedAt,
+        })
+        .from(financialStatement)
+        .where(
+          and(
+            eq(financialStatement.fiscalYearId, fiscalYearId),
+            eq(financialStatement.clientId, clientId)
+          )
+        )
+        .limit(1);
+
+      if (!row?.pdfUrl) return null;
+      return {
+        dataUrl: row.pdfUrl,
+        generatedAt: row.pdfGeneratedAt
+          ? row.pdfGeneratedAt.toISOString()
+          : null,
+      };
+    }
+  );

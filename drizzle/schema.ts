@@ -1755,6 +1755,13 @@ export const financialStatement = pgTable(
     approvedBy: text("approved_by").references(() => user.id, {
       onDelete: "set null",
     }),
+    /** PDF del paquete EECC generado, como data URL base64 (US 7.1.1). */
+    pdfUrl: text("pdf_url"),
+    pdfSizeBytes: integer("pdf_size_bytes"),
+    pdfGeneratedAt: timestamp("pdf_generated_at"),
+    pdfGeneratedBy: text("pdf_generated_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()

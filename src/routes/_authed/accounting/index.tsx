@@ -101,6 +101,7 @@ import {
   saveFinancialStatementNotes,
   approveFinancialStatement,
   reopenFinancialStatement,
+  saveFinancialStatementPdf,
   type ChartAccount,
   type PeriodView,
   type LedgerRow,
@@ -123,6 +124,9 @@ import {
   exportLibroDiarioPdf,
   exportAnexoIPdf,
   exportAnexoIExcel,
+  exportEeccPackagePdf,
+  exportLibroMayorPdf,
+  exportLibroInventariosPdf,
   type MayorExportData,
   type MayorSection,
   type AnexoIExportData,
@@ -422,6 +426,9 @@ function AccountingPage() {
           isOwner={roleData?.role === 'owner'}
           clientName={
             clients.find((c) => c.id === effectiveClientId)?.name ?? ''
+          }
+          clientCuit={
+            clients.find((c) => c.id === effectiveClientId)?.identityNumber ?? ''
           }
         />
       ) : (
@@ -6651,14 +6658,18 @@ type FyOption = Awaited<ReturnType<typeof getFiscalYears>>[number];
 function EstadosContables({
   clientId,
   clientName,
+  clientCuit,
   isOwner,
 }: {
   clientId: string;
   clientName: string;
+  clientCuit: string;
   isOwner: boolean;
 }) {
   const qc = useQueryClient();
-  const [view, setView] = useState<'esp' | 'er' | 'anexo' | 'notas'>('esp');
+  const [view, setView] = useState<
+    'esp' | 'er' | 'anexo' | 'notas' | 'export'
+  >('esp');
   const [selectedFyId, setSelectedFyId] = useState('');
 
   const { data: fiscalYears = [] } = useQuery({
@@ -6728,6 +6739,7 @@ function EstadosContables({
     { k: 'er', label: 'Estado de Resultados' },
     { k: 'anexo', label: 'Anexo II' },
     { k: 'notas', label: 'Notas' },
+    { k: 'export', label: 'Exportar' },
   ];
 
   return (
@@ -6846,6 +6858,20 @@ function EstadosContables({
             </div>
           </ArcaCard>
         ))}
+
+      {view === 'export' && (
+        <ExportView
+          clientId={clientId}
+          clientName={clientName}
+          clientCuit={clientCuit}
+          selectedFy={selectedFy}
+          notes={fs?.notes ?? []}
+          isOwner={isOwner}
+          pdfGeneratedAt={fs?.pdfGeneratedAt ?? null}
+          pdfGeneratedByName={fs?.pdfGeneratedByName ?? null}
+          onPdfSaved={invalidateFs}
+        />
+      )}
     </div>
   );
 }
@@ -7618,6 +7644,243 @@ function NotesEditor({
             </div>
           );
         })}
+      </div>
+    </ArcaCard>
+  );
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result as string);
+    fr.onerror = () => reject(new Error('No se pudo leer el PDF'));
+    fr.readAsDataURL(blob);
+  });
+}
+
+function ExportView({
+  clientId,
+  clientName,
+  clientCuit,
+  selectedFy,
+  notes,
+  isOwner,
+  pdfGeneratedAt,
+  pdfGeneratedByName,
+  onPdfSaved,
+}: {
+  clientId: string;
+  clientName: string;
+  clientCuit: string;
+  selectedFy: FyOption | undefined;
+  notes: FsNote[];
+  isOwner: boolean;
+  pdfGeneratedAt: string | null;
+  pdfGeneratedByName: string | null;
+  onPdfSaved: () => void;
+}) {
+  const fyId = selectedFy?.id ?? '';
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const { data: esp } = useQuery({
+    queryKey: ['accounting', 'esp', clientId, fyId],
+    queryFn: () => getESP({ data: { clientId, fiscalYearId: fyId } }),
+    enabled: !!fyId,
+  });
+  const { data: er } = useQuery({
+    queryKey: ['accounting', 'er', clientId, fyId],
+    queryFn: () => getER({ data: { clientId, fiscalYearId: fyId } }),
+    enabled: !!fyId,
+  });
+  const { data: anexoI } = useQuery({
+    queryKey: ['accounting', 'anexo-i', clientId, fyId],
+    queryFn: () => getAnexoI({ data: { clientId, fiscalYearId: fyId } }),
+    enabled: !!fyId,
+  });
+  const { data: anexoII } = useQuery({
+    queryKey: ['accounting', 'anexo-ii', clientId, fyId],
+    queryFn: () => getAnexoII({ data: { clientId, fiscalYearId: fyId } }),
+    enabled: !!fyId,
+  });
+  const { data: consol } = useQuery({
+    queryKey: ['accounting', 'consolidated-export', clientId, fyId],
+    queryFn: () =>
+      getLedgerConsolidated({ data: { clientId, fiscalYearId: fyId } }),
+    enabled: !!fyId,
+  });
+
+  const ready = !!esp && !!er && !!anexoII;
+
+  const onPackage = async () => {
+    if (!esp || !er || !anexoII || !selectedFy) {
+      toast.error('Los datos del paquete aún se están cargando');
+      return;
+    }
+    setBusy('package');
+    try {
+      const blob = await exportEeccPackagePdf({
+        empresaName: clientName,
+        cuit: clientCuit,
+        fiscalYearNumber: esp.fiscalYearNumber,
+        periodLabel: esp.periodLabel,
+        generatedLabel: new Date().toLocaleDateString('es-AR'),
+        esp,
+        er,
+        anexoII,
+        anexoI: anexoI
+          ? { categories: anexoI.categories, grandTotals: anexoI.grandTotals }
+          : null,
+        notes,
+      });
+      if (isOwner) {
+        const dataUrl = await blobToDataUrl(blob);
+        await saveFinancialStatementPdf({
+          data: {
+            clientId,
+            fiscalYearId: selectedFy.id,
+            dataUrl,
+            sizeBytes: blob.size,
+          },
+        });
+        onPdfSaved();
+        toast.success('PDF del paquete generado y guardado');
+      } else {
+        toast.success('PDF del paquete generado');
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Error al generar el PDF');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onMayor = async () => {
+    if (!consol?.fiscalYear || consol.accounts.length === 0) {
+      toast.error('No hay cuentas con movimientos en el ejercicio');
+      return;
+    }
+    setBusy('mayor');
+    try {
+      const data: MayorExportData = {
+        empresaName: clientName,
+        fiscalYearNumber: consol.fiscalYear.number,
+        from: consol.from,
+        to: consol.to,
+        sections: consol.accounts.map((a) => ({
+          code: a.code,
+          name: a.name,
+          saldoInicial: a.saldoInicial,
+          rows: a.movements,
+          totalDebit: a.totalDebit,
+          totalCredit: a.totalCredit,
+          saldoFinal: a.saldoFinal,
+        })),
+      };
+      await exportLibroMayorPdf(data);
+      toast.success('Libro Mayor generado');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Error al generar el PDF');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onInventarios = async () => {
+    if (!esp || !er) {
+      toast.error('Los datos aún se están cargando');
+      return;
+    }
+    setBusy('inv');
+    try {
+      await exportLibroInventariosPdf({
+        empresaName: clientName,
+        cuit: clientCuit,
+        fiscalYearNumber: esp.fiscalYearNumber,
+        periodLabel: esp.periodLabel,
+        esp,
+        er,
+      });
+      toast.success('Libro Inventarios y Balances generado');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Error al generar el PDF');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const items: {
+    key: string;
+    title: string;
+    desc: string;
+    onClick: () => void;
+    extra?: string;
+  }[] = [
+    {
+      key: 'package',
+      title: 'Paquete contable completo (EECC)',
+      desc: 'Carátula, ESP, ER, notas, Anexo I, Anexo II y espacios de firma. Listo para imprimir.',
+      onClick: onPackage,
+      extra: isOwner
+        ? 'Se guarda asociado al ejercicio.'
+        : 'Solo el Owner puede guardarlo.',
+    },
+    {
+      key: 'mayor',
+      title: 'Libro Mayor',
+      desc: 'Todas las cuentas con sus movimientos del ejercicio. Una página por cuenta — formato rubricable.',
+      onClick: onMayor,
+    },
+    {
+      key: 'inv',
+      title: 'Libro Inventarios y Balances',
+      desc: 'Inventario al cierre, ESP, ER y EEPN simplificado. Formato rubricable.',
+      onClick: onInventarios,
+    },
+  ];
+
+  return (
+    <ArcaCard>
+      <div className="px-5 py-3 border-b border-[var(--arca-border)]">
+        <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+          Exportes en PDF
+        </span>
+        {pdfGeneratedAt && (
+          <div className="text-[11px] text-[var(--arca-ink-3)] mt-0.5">
+            Último paquete guardado:{' '}
+            {new Date(pdfGeneratedAt).toLocaleString('es-AR')}
+            {pdfGeneratedByName ? ` · ${pdfGeneratedByName}` : ''}
+          </div>
+        )}
+      </div>
+      <div className="divide-y divide-[var(--arca-border)]">
+        {items.map((it) => (
+          <div
+            key={it.key}
+            className="flex items-center gap-4 px-5 py-4"
+          >
+            <div className="flex-1 min-w-0">
+              <div className="text-[13px] font-medium text-[var(--arca-ink)]">
+                {it.title}
+              </div>
+              <div className="text-[12px] text-[var(--arca-ink-3)] mt-0.5">
+                {it.desc}
+              </div>
+              {it.extra && (
+                <div className="text-[10.5px] text-[var(--arca-ink-3)] mt-0.5 italic">
+                  {it.extra}
+                </div>
+              )}
+            </div>
+            <button
+              onClick={it.onClick}
+              disabled={!ready || busy !== null}
+              className="shrink-0 text-[12px] px-3 h-8 rounded-[6px] bg-[var(--arca-ink)] text-white hover:opacity-90 disabled:opacity-40 flex items-center gap-1.5"
+            >
+              <Download className="w-3.5 h-3.5" />
+              {busy === it.key ? 'Generando…' : 'Descargar PDF'}
+            </button>
+          </div>
+        ))}
       </div>
     </ArcaCard>
   );

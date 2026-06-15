@@ -12,6 +12,14 @@ import {
   pdf,
 } from '@react-pdf/renderer';
 import { MONTH_NAMES, JOURNAL_ORIGIN_LABELS } from '@/lib/accounting-labels';
+import type {
+  EspResult,
+  ErResult,
+  ErLine,
+  AnexoIIResult,
+  AnexoICategory,
+  FsNote,
+} from '@/actions/accounting';
 
 interface XLBorderLine {
   style: string;
@@ -992,4 +1000,787 @@ function AnexoIDoc({ data }: { data: AnexoIExportData }) {
 export async function exportAnexoIPdf(data: AnexoIExportData): Promise<void> {
   const blob = await pdf(<AnexoIDoc data={data} />).toBlob();
   triggerDownload(blob, `anexo_i_bienes_uso_${Date.now()}.pdf`);
+}
+
+/* ═══════════════ Paquete EECC + Libros legales — PDF (Fase 7) ═══════════════ */
+
+const EECC_DISCLAIMER =
+  'Estados Contables expresados en valores históricos, sin ajuste por inflación (RT 6).';
+
+export interface EeccPackageData {
+  empresaName: string;
+  cuit: string;
+  fiscalYearNumber: number;
+  periodLabel: string;
+  generatedLabel: string;
+  esp: EspResult;
+  er: ErResult;
+  anexoI: {
+    categories: AnexoICategory[];
+    grandTotals: AnexoICategory['totals'];
+  } | null;
+  anexoII: AnexoIIResult;
+  notes: FsNote[];
+}
+
+const pk = StyleSheet.create({
+  page: {
+    padding: 34,
+    paddingBottom: 50,
+    fontSize: 8.5,
+    fontFamily: 'Helvetica',
+    color: '#1a1a1a',
+  },
+  cover: { flexGrow: 1, justifyContent: 'center', alignItems: 'center' },
+  coverKicker: { fontSize: 9, color: '#888', letterSpacing: 2, marginBottom: 8 },
+  coverEmpresa: { fontSize: 24, fontFamily: 'Helvetica-Bold', textAlign: 'center' },
+  coverCuit: { fontSize: 11, color: '#555', marginTop: 4 },
+  coverTitle: {
+    fontSize: 15,
+    fontFamily: 'Helvetica-Bold',
+    marginTop: 26,
+    color: '#222',
+  },
+  coverMeta: { fontSize: 11, marginTop: 4, color: '#444' },
+  coverDisc: {
+    fontSize: 8,
+    marginTop: 30,
+    color: '#888',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    maxWidth: 340,
+  },
+  coverGen: { fontSize: 7.5, marginTop: 8, color: '#aaa' },
+  sectionTitle: {
+    fontSize: 13,
+    fontFamily: 'Helvetica-Bold',
+    marginTop: 14,
+    marginBottom: 4,
+    borderBottom: '1pt solid #333',
+    paddingBottom: 3,
+  },
+  colHead: {
+    flexDirection: 'row',
+    borderBottom: '1pt solid #999',
+    paddingVertical: 2,
+    fontFamily: 'Helvetica-Bold',
+    fontSize: 7.5,
+    color: '#555',
+  },
+  macroRow: {
+    flexDirection: 'row',
+    backgroundColor: '#f0f0f0',
+    paddingVertical: 2,
+    paddingHorizontal: 2,
+    marginTop: 5,
+    fontFamily: 'Helvetica-Bold',
+  },
+  subTitle: {
+    fontSize: 8,
+    fontFamily: 'Helvetica-Bold',
+    color: '#666',
+    marginTop: 3,
+    paddingLeft: 4,
+  },
+  row: {
+    flexDirection: 'row',
+    paddingVertical: 1.5,
+    borderBottom: '0.5pt solid #eee',
+  },
+  totalRow: {
+    flexDirection: 'row',
+    paddingVertical: 2,
+    borderTop: '1pt solid #999',
+    fontFamily: 'Helvetica-Bold',
+  },
+  grandRow: {
+    flexDirection: 'row',
+    paddingVertical: 2.5,
+    borderTop: '2pt solid #333',
+    fontFamily: 'Helvetica-Bold',
+  },
+  cLabel: { width: '56%' },
+  cLabelIndent: { width: '56%', paddingLeft: 10 },
+  cNum: { width: '22%', textAlign: 'right' },
+  ok: { fontSize: 8, color: '#0a7d33', marginTop: 6 },
+  bad: { fontSize: 8, color: '#b00020', marginTop: 6, fontFamily: 'Helvetica-Bold' },
+  noteTitle: { fontSize: 10.5, fontFamily: 'Helvetica-Bold', marginTop: 10 },
+  noteP: { fontSize: 9, marginTop: 2.5, lineHeight: 1.35, color: '#222' },
+  noteLi: { fontSize: 9, marginTop: 1.5, marginLeft: 10, lineHeight: 1.3, color: '#222' },
+  noteH: { fontSize: 9.5, fontFamily: 'Helvetica-Bold', marginTop: 5 },
+  empty: { fontSize: 8.5, color: '#999', fontStyle: 'italic', marginTop: 4 },
+  signWrap: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 50,
+  },
+  signBox: {
+    width: '30%',
+    borderTop: '0.7pt solid #333',
+    paddingTop: 4,
+    textAlign: 'center',
+    fontSize: 8,
+    color: '#444',
+  },
+  footer: {
+    position: 'absolute',
+    bottom: 18,
+    left: 34,
+    right: 34,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    fontSize: 7,
+    color: '#999',
+    borderTop: '0.5pt solid #e5e5e5',
+    paddingTop: 4,
+  },
+});
+
+const ax6 = StyleSheet.create({
+  th: {
+    flexDirection: 'row',
+    borderBottom: '1pt solid #999',
+    paddingVertical: 2,
+    fontFamily: 'Helvetica-Bold',
+    fontSize: 7,
+    color: '#555',
+    marginTop: 2,
+  },
+  row: {
+    flexDirection: 'row',
+    paddingVertical: 1.5,
+    borderBottom: '0.5pt solid #eee',
+    fontSize: 7.5,
+  },
+  sub: {
+    flexDirection: 'row',
+    paddingVertical: 1.5,
+    borderTop: '0.5pt solid #999',
+    fontFamily: 'Helvetica-Bold',
+    fontSize: 7.5,
+  },
+  total: {
+    flexDirection: 'row',
+    paddingVertical: 2,
+    borderTop: '1.5pt solid #333',
+    fontFamily: 'Helvetica-Bold',
+    fontSize: 7.5,
+    marginTop: 2,
+  },
+  cName: { width: '34%' },
+  cNum: { width: '13.2%', textAlign: 'right' },
+  cat: { fontSize: 8, fontFamily: 'Helvetica-Bold', marginTop: 5 },
+});
+
+function PageFooter({ data }: { data: { empresaName: string; fiscalYearNumber: number } }) {
+  return (
+    <View style={pk.footer} fixed>
+      <Text>
+        {data.empresaName} · Estados Contables · Ejercicio N°
+        {data.fiscalYearNumber}
+      </Text>
+      <Text
+        render={({ pageNumber, totalPages }) =>
+          `Página ${pageNumber} de ${totalPages}`
+        }
+      />
+    </View>
+  );
+}
+
+function mdLines(md: string): { type: 'h' | 'li' | 'p'; text: string }[] {
+  return md
+    .split('\n')
+    .map((raw) => {
+      let line = raw.trim();
+      let type: 'h' | 'li' | 'p' = 'p';
+      if (/^#{1,6}\s/.test(line)) {
+        type = 'h';
+        line = line.replace(/^#{1,6}\s+/, '');
+      } else if (/^[-*+]\s/.test(line)) {
+        type = 'li';
+        line = line.replace(/^[-*+]\s+/, '');
+      } else if (/^\d+\.\s/.test(line)) {
+        type = 'li';
+      }
+      line = line
+        .replace(/\*\*(.+?)\*\*/g, '$1')
+        .replace(/__(.+?)__/g, '$1')
+        .replace(/\*(.+?)\*/g, '$1')
+        .replace(/_(.+?)_/g, '$1')
+        .replace(/`(.+?)`/g, '$1');
+      return { type, text: line };
+    })
+    .filter((l) => l.text.length > 0);
+}
+
+function EspBlock({ esp }: { esp: EspResult }) {
+  const macros: { macro: 'activo' | 'pasivo' | 'pn'; title: string }[] = [
+    { macro: 'activo', title: 'ACTIVO' },
+    { macro: 'pasivo', title: 'PASIVO' },
+    { macro: 'pn', title: 'PATRIMONIO NETO' },
+  ];
+  const priorLabel = esp.hasPrior
+    ? `Ej. N°${esp.priorFiscalYearNumber}`
+    : 'Anterior';
+  return (
+    <View>
+      <Text style={pk.sectionTitle}>Estado de Situación Patrimonial</Text>
+      <View style={pk.colHead}>
+        <Text style={pk.cLabel}>Rubro</Text>
+        <Text style={pk.cNum}>Ej. N°{esp.fiscalYearNumber}</Text>
+        <Text style={pk.cNum}>{priorLabel}</Text>
+      </View>
+      {macros.map(({ macro, title }) => {
+        const secs = esp.sections.filter((s) => s.macro === macro);
+        const totCur = secs.reduce((a, s) => a + s.current, 0);
+        const totPri = secs.reduce((a, s) => a + s.prior, 0);
+        return (
+          <View key={macro} wrap={false}>
+            <View style={pk.macroRow}>
+              <Text style={pk.cLabel}>{title}</Text>
+              <Text style={pk.cNum} />
+              <Text style={pk.cNum} />
+            </View>
+            {secs.map((sec) => (
+              <View key={sec.key}>
+                {sec.macro !== 'pn' && (
+                  <Text style={pk.subTitle}>
+                    {sec.label.replace('Activo ', '').replace('Pasivo ', '')}
+                  </Text>
+                )}
+                {sec.rubros.map((r) => (
+                  <View key={r.group} style={pk.row}>
+                    <Text style={pk.cLabelIndent}>{r.label}</Text>
+                    <Text style={pk.cNum}>{fmtMoney(r.current)}</Text>
+                    <Text style={pk.cNum}>
+                      {esp.hasPrior ? fmtMoney(r.prior) : '—'}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ))}
+            <View style={pk.totalRow}>
+              <Text style={pk.cLabel}>Total {title.toLowerCase()}</Text>
+              <Text style={pk.cNum}>{fmtMoney(totCur)}</Text>
+              <Text style={pk.cNum}>
+                {esp.hasPrior ? fmtMoney(totPri) : '—'}
+              </Text>
+            </View>
+          </View>
+        );
+      })}
+      <View style={pk.grandRow}>
+        <Text style={pk.cLabel}>TOTAL PASIVO + PATRIMONIO NETO</Text>
+        <Text style={pk.cNum}>{fmtMoney(esp.totals.pasivoMasPn.current)}</Text>
+        <Text style={pk.cNum}>
+          {esp.hasPrior ? fmtMoney(esp.totals.pasivoMasPn.prior) : '—'}
+        </Text>
+      </View>
+      {esp.balancedCurrent ? (
+        <Text style={pk.ok}>
+          Activo = Pasivo + Patrimonio Neto ({fmtMoney(esp.totals.activo.current)})
+        </Text>
+      ) : (
+        <Text style={pk.bad}>
+          El Estado no cuadra: Activo {fmtMoney(esp.totals.activo.current)} ≠
+          Pasivo + PN {fmtMoney(esp.totals.pasivoMasPn.current)}.
+        </Text>
+      )}
+    </View>
+  );
+}
+
+function ErBlock({ er }: { er: ErResult }) {
+  const priorLabel = er.hasPrior
+    ? `Ej. N°${er.priorFiscalYearNumber}`
+    : 'Anterior';
+  return (
+    <View>
+      <Text style={pk.sectionTitle}>Estado de Resultados</Text>
+      <View style={pk.colHead}>
+        <Text style={pk.cLabel}>Concepto</Text>
+        <Text style={pk.cNum}>Ej. N°{er.fiscalYearNumber}</Text>
+        <Text style={pk.cNum}>{priorLabel}</Text>
+      </View>
+      {er.lines.map((line: ErLine) => {
+        const isSub = line.kind === 'subtotal';
+        const isFinal = line.key === 'resultado_ejercicio';
+        const style = isFinal ? pk.grandRow : isSub ? pk.totalRow : pk.row;
+        return (
+          <View key={line.key} style={style}>
+            <Text style={isSub ? pk.cLabel : pk.cLabelIndent}>
+              {line.label}
+            </Text>
+            <Text style={pk.cNum}>{fmtMoney(line.current)}</Text>
+            <Text style={pk.cNum}>
+              {er.hasPrior ? fmtMoney(line.prior) : '—'}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+function AnexoIIBlock({ a2 }: { a2: AnexoIIResult }) {
+  const priorLabel = a2.hasPrior
+    ? `Ej. N°${a2.priorFiscalYearNumber}`
+    : 'Anterior';
+  return (
+    <View>
+      <Text style={pk.sectionTitle}>Anexo II · Gastos por función</Text>
+      {a2.functions.length === 0 ? (
+        <Text style={pk.empty}>Sin gastos registrados en el ejercicio.</Text>
+      ) : (
+        <>
+          <View style={pk.colHead}>
+            <Text style={pk.cLabel}>Función / cuenta</Text>
+            <Text style={pk.cNum}>Ej. N°{a2.fiscalYearNumber}</Text>
+            <Text style={pk.cNum}>{priorLabel}</Text>
+          </View>
+          {a2.functions.map((fn) => (
+            <View key={fn.key} wrap={false}>
+              <View style={pk.macroRow}>
+                <Text style={pk.cLabel}>{fn.label}</Text>
+                <Text style={pk.cNum}>{fmtMoney(fn.current)}</Text>
+                <Text style={pk.cNum}>
+                  {a2.hasPrior ? fmtMoney(fn.prior) : '—'}
+                </Text>
+              </View>
+              {fn.accounts.map((a) => (
+                <View key={a.accountId} style={pk.row}>
+                  <Text style={pk.cLabelIndent}>
+                    {a.code} {a.name}
+                  </Text>
+                  <Text style={pk.cNum}>{fmtMoney(a.current)}</Text>
+                  <Text style={pk.cNum}>
+                    {a2.hasPrior ? fmtMoney(a.prior) : '—'}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ))}
+          <View style={pk.grandRow}>
+            <Text style={pk.cLabel}>TOTAL GASTOS</Text>
+            <Text style={pk.cNum}>{fmtMoney(a2.totalCurrent)}</Text>
+            <Text style={pk.cNum}>
+              {a2.hasPrior ? fmtMoney(a2.totalPrior) : '—'}
+            </Text>
+          </View>
+        </>
+      )}
+    </View>
+  );
+}
+
+function AnexoIBlock({
+  anexoI,
+}: {
+  anexoI: EeccPackageData['anexoI'];
+}) {
+  return (
+    <View>
+      <Text style={pk.sectionTitle}>Anexo I · Bienes de uso</Text>
+      {!anexoI || anexoI.categories.length === 0 ? (
+        <Text style={pk.empty}>Sin bienes de uso registrados.</Text>
+      ) : (
+        <>
+          <View style={ax6.th}>
+            <Text style={ax6.cName}>Bien</Text>
+            <Text style={ax6.cNum}>Valor origen</Text>
+            <Text style={ax6.cNum}>Am.ac.inicio</Text>
+            <Text style={ax6.cNum}>Am.ejercicio</Text>
+            <Text style={ax6.cNum}>Am.ac.cierre</Text>
+            <Text style={ax6.cNum}>V.resid.cierre</Text>
+          </View>
+          {anexoI.categories.map((cat) => (
+            <View key={cat.category} wrap={false}>
+              <Text style={ax6.cat}>{cat.category}</Text>
+              {cat.assets.map((a) => (
+                <View key={a.id} style={ax6.row}>
+                  <Text style={ax6.cName}>{a.name}</Text>
+                  <Text style={ax6.cNum}>{fmtMoney(a.originalValue)}</Text>
+                  <Text style={ax6.cNum}>{fmtMoney(a.accumStart)}</Text>
+                  <Text style={ax6.cNum}>{fmtMoney(a.amortYear)}</Text>
+                  <Text style={ax6.cNum}>{fmtMoney(a.accumEnd)}</Text>
+                  <Text style={ax6.cNum}>{fmtMoney(a.residualEnd)}</Text>
+                </View>
+              ))}
+              <View style={ax6.sub}>
+                <Text style={ax6.cName}>Subtotal {cat.category}</Text>
+                <Text style={ax6.cNum}>{fmtMoney(cat.totals.originalValue)}</Text>
+                <Text style={ax6.cNum}>{fmtMoney(cat.totals.accumStart)}</Text>
+                <Text style={ax6.cNum}>{fmtMoney(cat.totals.amortYear)}</Text>
+                <Text style={ax6.cNum}>{fmtMoney(cat.totals.accumEnd)}</Text>
+                <Text style={ax6.cNum}>{fmtMoney(cat.totals.residualEnd)}</Text>
+              </View>
+            </View>
+          ))}
+          <View style={ax6.total}>
+            <Text style={ax6.cName}>TOTAL GENERAL</Text>
+            <Text style={ax6.cNum}>
+              {fmtMoney(anexoI.grandTotals.originalValue)}
+            </Text>
+            <Text style={ax6.cNum}>{fmtMoney(anexoI.grandTotals.accumStart)}</Text>
+            <Text style={ax6.cNum}>{fmtMoney(anexoI.grandTotals.amortYear)}</Text>
+            <Text style={ax6.cNum}>{fmtMoney(anexoI.grandTotals.accumEnd)}</Text>
+            <Text style={ax6.cNum}>
+              {fmtMoney(anexoI.grandTotals.residualEnd)}
+            </Text>
+          </View>
+        </>
+      )}
+    </View>
+  );
+}
+
+function NotesBlock({ notes }: { notes: FsNote[] }) {
+  return (
+    <View>
+      <Text style={pk.sectionTitle}>Notas a los Estados Contables</Text>
+      {notes.length === 0 ? (
+        <Text style={pk.empty}>Sin notas cargadas.</Text>
+      ) : (
+        notes.map((note, idx) => (
+          <View key={note.id} wrap={false}>
+            <Text style={pk.noteTitle}>
+              {idx + 1}. {note.title || `Nota ${idx + 1}`}
+            </Text>
+            {mdLines(note.content).map((l, i) =>
+              l.type === 'h' ? (
+                <Text key={i} style={pk.noteH}>
+                  {l.text}
+                </Text>
+              ) : l.type === 'li' ? (
+                <Text key={i} style={pk.noteLi}>
+                  • {l.text}
+                </Text>
+              ) : (
+                <Text key={i} style={pk.noteP}>
+                  {l.text}
+                </Text>
+              )
+            )}
+          </View>
+        ))
+      )}
+    </View>
+  );
+}
+
+function Signatures() {
+  return (
+    <View style={pk.signWrap} wrap={false}>
+      <Text style={pk.signBox}>Firma del representante legal</Text>
+      <Text style={pk.signBox}>Firma del contador{'\n'}Sello profesional</Text>
+      <Text style={pk.signBox}>Legalización C.P.C.E.</Text>
+    </View>
+  );
+}
+
+function EeccPackageDoc({ data }: { data: EeccPackageData }) {
+  return (
+    <Document>
+      {/* Carátula */}
+      <Page size="A4" style={pk.page}>
+        <View style={pk.cover}>
+          <Text style={pk.coverKicker}>ESTADOS CONTABLES</Text>
+          <Text style={pk.coverEmpresa}>{data.empresaName}</Text>
+          <Text style={pk.coverCuit}>CUIT {data.cuit}</Text>
+          <Text style={pk.coverTitle}>
+            Ejercicio Económico N°{data.fiscalYearNumber}
+          </Text>
+          <Text style={pk.coverMeta}>{data.periodLabel}</Text>
+          <Text style={pk.coverDisc}>{EECC_DISCLAIMER}</Text>
+          <Text style={pk.coverGen}>Generado el {data.generatedLabel}</Text>
+        </View>
+        <PageFooter data={data} />
+      </Page>
+
+      {/* Cuerpo */}
+      <Page size="A4" style={pk.page} wrap>
+        <EspBlock esp={data.esp} />
+        <ErBlock er={data.er} />
+        <AnexoIIBlock a2={data.anexoII} />
+        <AnexoIBlock anexoI={data.anexoI} />
+        <NotesBlock notes={data.notes} />
+        <Signatures />
+        <PageFooter data={data} />
+      </Page>
+    </Document>
+  );
+}
+
+/** Genera el PDF del paquete EECC, lo descarga y devuelve el Blob (para persistir). */
+export async function exportEeccPackagePdf(
+  data: EeccPackageData
+): Promise<Blob> {
+  const blob = await pdf(<EeccPackageDoc data={data} />).toBlob();
+  triggerDownload(
+    blob,
+    `eecc_${data.empresaName.replace(/\s+/g, '_')}_ej${data.fiscalYearNumber}.pdf`
+  );
+  return blob;
+}
+
+/* ── Libro Mayor (rubricable, una página por cuenta) — US 7.1.2 ── */
+
+const lm = StyleSheet.create({
+  page: {
+    padding: 28,
+    paddingBottom: 44,
+    fontSize: 8,
+    fontFamily: 'Helvetica',
+    color: '#1a1a1a',
+  },
+  empresa: { fontSize: 11, fontFamily: 'Helvetica-Bold' },
+  meta: { fontSize: 8, color: '#555', marginTop: 1 },
+  acct: {
+    fontSize: 11,
+    fontFamily: 'Helvetica-Bold',
+    marginTop: 10,
+    backgroundColor: '#f0f0f0',
+    padding: 4,
+  },
+  th: {
+    flexDirection: 'row',
+    borderBottom: '1pt solid #999',
+    paddingVertical: 3,
+    fontFamily: 'Helvetica-Bold',
+    marginTop: 6,
+  },
+  row: {
+    flexDirection: 'row',
+    borderBottom: '0.5pt solid #e5e5e5',
+    paddingVertical: 2.5,
+  },
+  totalRow: {
+    flexDirection: 'row',
+    borderTop: '1pt solid #999',
+    paddingVertical: 3,
+    fontFamily: 'Helvetica-Bold',
+  },
+  cFecha: { width: '12%' },
+  cNum: { width: '8%' },
+  cDesc: { width: '42%' },
+  cMoney: { width: '12.66%', textAlign: 'right' },
+  footer: {
+    position: 'absolute',
+    bottom: 16,
+    left: 28,
+    right: 28,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    fontSize: 7,
+    color: '#999',
+    borderTop: '0.5pt solid #e5e5e5',
+    paddingTop: 4,
+  },
+});
+
+function LibroMayorDoc({ data }: { data: MayorExportData }) {
+  return (
+    <Document>
+      {data.sections.map((section) => (
+        <Page key={section.code} size="A4" style={lm.page} wrap>
+          <Text style={lm.empresa}>{data.empresaName}</Text>
+          <Text style={lm.meta}>
+            Libro Mayor · Ejercicio N°{data.fiscalYearNumber ?? ''} ·{' '}
+            {fmtDate(data.from)} a {fmtDate(data.to)}
+          </Text>
+          <Text style={lm.acct}>
+            {section.code} · {section.name}
+          </Text>
+          <View style={lm.th}>
+            <Text style={lm.cFecha}>Fecha</Text>
+            <Text style={lm.cNum}>Asiento</Text>
+            <Text style={lm.cDesc}>Detalle</Text>
+            <Text style={lm.cMoney}>Debe</Text>
+            <Text style={lm.cMoney}>Haber</Text>
+            <Text style={lm.cMoney}>Saldo</Text>
+          </View>
+          <View style={lm.row}>
+            <Text style={lm.cFecha} />
+            <Text style={lm.cNum} />
+            <Text style={lm.cDesc}>Saldo inicial</Text>
+            <Text style={lm.cMoney} />
+            <Text style={lm.cMoney} />
+            <Text style={lm.cMoney}>{saldoLabel(section.saldoInicial)}</Text>
+          </View>
+          {section.rows.map((r, i) => (
+            <View key={i} style={lm.row}>
+              <Text style={lm.cFecha}>{fmtDate(r.entryDate)}</Text>
+              <Text style={lm.cNum}>{r.number}</Text>
+              <Text style={lm.cDesc}>
+                {r.description ?? r.lineDescription ?? ''}
+              </Text>
+              <Text style={lm.cMoney}>{r.debit ? fmtMoney(r.debit) : ''}</Text>
+              <Text style={lm.cMoney}>{r.credit ? fmtMoney(r.credit) : ''}</Text>
+              <Text style={lm.cMoney}>{saldoLabel(r.balance)}</Text>
+            </View>
+          ))}
+          <View style={lm.totalRow}>
+            <Text style={lm.cFecha} />
+            <Text style={lm.cNum} />
+            <Text style={lm.cDesc}>Totales del ejercicio</Text>
+            <Text style={lm.cMoney}>{fmtMoney(section.totalDebit)}</Text>
+            <Text style={lm.cMoney}>{fmtMoney(section.totalCredit)}</Text>
+            <Text style={lm.cMoney}>{saldoLabel(section.saldoFinal)}</Text>
+          </View>
+          <View style={lm.footer} fixed>
+            <Text>
+              {data.empresaName} · Libro Mayor · Cuenta {section.code}
+            </Text>
+            <Text
+              render={({ pageNumber, totalPages }) =>
+                `Página ${pageNumber} de ${totalPages}`
+              }
+            />
+          </View>
+        </Page>
+      ))}
+    </Document>
+  );
+}
+
+export async function exportLibroMayorPdf(
+  data: MayorExportData
+): Promise<void> {
+  const blob = await pdf(<LibroMayorDoc data={data} />).toBlob();
+  triggerDownload(blob, `libro_mayor_ej${data.fiscalYearNumber ?? ''}.pdf`);
+}
+
+/* ── Libro Inventarios y Balances — US 7.1.3 ── */
+
+export interface LibroInventariosData {
+  empresaName: string;
+  cuit: string;
+  fiscalYearNumber: number;
+  periodLabel: string;
+  esp: EspResult;
+  er: ErResult;
+}
+
+function InventarioBlock({ esp }: { esp: EspResult }) {
+  return (
+    <View>
+      <Text style={pk.sectionTitle}>Inventario al cierre del ejercicio</Text>
+      <View style={pk.colHead}>
+        <Text style={pk.cLabel}>Cuenta</Text>
+        <Text style={pk.cNum}>Saldo al cierre</Text>
+        <Text style={pk.cNum} />
+      </View>
+      {(['activo', 'pasivo', 'pn'] as const).map((macro) => {
+        const secs = esp.sections.filter((s) => s.macro === macro);
+        const title =
+          macro === 'activo'
+            ? 'ACTIVO'
+            : macro === 'pasivo'
+              ? 'PASIVO'
+              : 'PATRIMONIO NETO';
+        if (secs.every((s) => s.rubros.length === 0)) return null;
+        return (
+          <View key={macro}>
+            <View style={pk.macroRow}>
+              <Text style={pk.cLabel}>{title}</Text>
+              <Text style={pk.cNum} />
+              <Text style={pk.cNum} />
+            </View>
+            {secs.map((sec) =>
+              sec.rubros.map((r) => (
+                <View key={r.group} wrap={false}>
+                  <Text style={pk.subTitle}>{r.label}</Text>
+                  {r.accounts.map((a) => (
+                    <View key={a.accountId} style={pk.row}>
+                      <Text style={pk.cLabelIndent}>
+                        {a.code} {a.name}
+                      </Text>
+                      <Text style={pk.cNum}>{fmtMoney(a.current)}</Text>
+                      <Text style={pk.cNum} />
+                    </View>
+                  ))}
+                </View>
+              ))
+            )}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+function EepnBlock({ esp }: { esp: EspResult }) {
+  const pn = esp.sections.find((s) => s.macro === 'pn');
+  const rubros = pn?.rubros ?? [];
+  return (
+    <View wrap={false}>
+      <Text style={pk.sectionTitle}>
+        Estado de Evolución del Patrimonio Neto (simplificado)
+      </Text>
+      <View style={pk.colHead}>
+        <Text style={pk.cLabel}>Componente</Text>
+        <Text style={pk.cNum}>Ej. N°{esp.fiscalYearNumber}</Text>
+        <Text style={pk.cNum} />
+      </View>
+      {rubros.map((r) => (
+        <View key={r.group} style={pk.row}>
+          <Text style={pk.cLabelIndent}>{r.label}</Text>
+          <Text style={pk.cNum}>{fmtMoney(r.current)}</Text>
+          <Text style={pk.cNum} />
+        </View>
+      ))}
+      <View style={pk.grandRow}>
+        <Text style={pk.cLabel}>TOTAL PATRIMONIO NETO</Text>
+        <Text style={pk.cNum}>{fmtMoney(esp.totals.pn.current)}</Text>
+        <Text style={pk.cNum} />
+      </View>
+    </View>
+  );
+}
+
+function LibroInventariosDoc({ data }: { data: LibroInventariosData }) {
+  const footerData = {
+    empresaName: data.empresaName,
+    fiscalYearNumber: data.fiscalYearNumber,
+  };
+  return (
+    <Document>
+      <Page size="A4" style={pk.page} wrap>
+        <Text style={lm.empresa}>{data.empresaName}</Text>
+        <Text style={lm.meta}>
+          CUIT {data.cuit} · Libro Inventarios y Balances · Ejercicio N°
+          {data.fiscalYearNumber} · {data.periodLabel}
+        </Text>
+        <Text style={[lm.meta, { fontStyle: 'italic', color: '#999' }] as never}>
+          {EECC_DISCLAIMER}
+        </Text>
+        <InventarioBlock esp={data.esp} />
+        <EspBlock esp={data.esp} />
+        <ErBlock er={data.er} />
+        <EepnBlock esp={data.esp} />
+        <View style={pk.footer} fixed>
+          <Text>
+            {footerData.empresaName} · Libro Inventarios y Balances · Ejercicio
+            N°{footerData.fiscalYearNumber}
+          </Text>
+          <Text
+            render={({ pageNumber, totalPages }) =>
+              `Página ${pageNumber} de ${totalPages}`
+            }
+          />
+        </View>
+      </Page>
+    </Document>
+  );
+}
+
+export async function exportLibroInventariosPdf(
+  data: LibroInventariosData
+): Promise<void> {
+  const blob = await pdf(<LibroInventariosDoc data={data} />).toBlob();
+  triggerDownload(
+    blob,
+    `libro_inventarios_balances_ej${data.fiscalYearNumber}.pdf`
+  );
 }
