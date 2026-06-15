@@ -14,6 +14,7 @@ import {
   accountingLog,
   accountingPeriod,
   client,
+  financialStatement,
   fiscalYear,
   fixedAsset,
   invoice,
@@ -52,6 +53,7 @@ import {
   MONTH_NAMES,
   ACCOUNT_GROUP_SECTIONS,
   ACCOUNT_GROUP_LABELS,
+  EXPENSE_FUNCTION_LABELS,
   type AccountGroup,
 } from '@/lib/accounting-labels';
 import {
@@ -5341,4 +5343,386 @@ export const getER = createServerFn({ method: 'GET' })
         : true,
       hasPrior: !!priorFy,
     };
+  });
+
+/* ── Anexo II — Gastos por función (US 6.3.2) ── */
+
+type ExpenseFunction = 'administration' | 'sales' | 'financial' | 'other';
+
+/** Mapeo de rubro de gasto → función, cuando la cuenta no tiene expenseFunction explícito. */
+const EXPENSE_GROUP_TO_FUNCTION: Record<string, ExpenseFunction> = {
+  gastos_administracion: 'administration',
+  gastos_comercializacion: 'sales',
+  gastos_financieros: 'financial',
+  costo_ventas: 'other',
+  otros_resultados_neg: 'other',
+  impuesto_ganancias: 'other',
+};
+
+const EXPENSE_FUNCTION_ORDER: ExpenseFunction[] = [
+  'administration',
+  'sales',
+  'financial',
+  'other',
+];
+
+export interface AnexoIIAccount {
+  accountId: string;
+  code: string;
+  name: string;
+  current: number;
+  prior: number;
+}
+export interface AnexoIIFunction {
+  key: ExpenseFunction;
+  label: string;
+  current: number;
+  prior: number;
+  accounts: AnexoIIAccount[];
+}
+export interface AnexoIIResult {
+  fiscalYearNumber: number;
+  priorFiscalYearNumber: number | null;
+  periodLabel: string;
+  functions: AnexoIIFunction[];
+  totalCurrent: number;
+  totalPrior: number;
+  hasPrior: boolean;
+}
+
+/** Saldos de las cuentas de gasto (con su función) de un ejercicio, excluyendo cierres. */
+async function computeExpenseBalances(orgId: string, fyId: string) {
+  const rows = await db
+    .select({
+      accountId: account.id,
+      code: account.code,
+      name: account.name,
+      group: account.accountGroup,
+      expenseFunction: account.expenseFunction,
+      debit: sql<string>`coalesce(sum(${journalEntryLine.debit}),0)`,
+      credit: sql<string>`coalesce(sum(${journalEntryLine.credit}),0)`,
+    })
+    .from(journalEntryLine)
+    .innerJoin(
+      journalEntry,
+      eq(journalEntry.id, journalEntryLine.journalEntryId)
+    )
+    .innerJoin(account, eq(account.id, journalEntryLine.accountId))
+    .where(
+      and(
+        eq(journalEntry.fiscalYearId, fyId),
+        eq(journalEntry.isVoided, false),
+        eq(account.organizationId, orgId),
+        inArray(
+          account.accountGroup,
+          EXPENSE_ACCOUNT_GROUPS as unknown as AccountGroup[]
+        ),
+        sql`${journalEntry.origin} NOT IN ('auto_closing','auto_opening')`
+      )
+    )
+    .groupBy(
+      account.id,
+      account.code,
+      account.name,
+      account.accountGroup,
+      account.expenseFunction
+    );
+  return rows.map((r) => ({
+    accountId: r.accountId,
+    code: r.code,
+    name: r.name,
+    fn: (r.expenseFunction ??
+      EXPENSE_GROUP_TO_FUNCTION[r.group ?? ''] ??
+      'other') as ExpenseFunction,
+    saldo: r2(parseFloat(r.debit) - parseFloat(r.credit)),
+  }));
+}
+
+/** Anexo II — clasifica los gastos del ER por función, con comparativo. (US 6.3.2) */
+export const getAnexoII = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({ clientId: z.string().uuid(), fiscalYearId: z.string().uuid() })
+  )
+  .handler(async (ctx): Promise<AnexoIIResult> => {
+    const { orgId } = await getSessionWithOrg();
+    const { clientId } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
+
+    const [priorFy] = await db
+      .select()
+      .from(fiscalYear)
+      .where(
+        and(
+          eq(fiscalYear.clientId, clientId),
+          eq(fiscalYear.number, fy.number - 1)
+        )
+      )
+      .limit(1);
+
+    const curBal = await computeExpenseBalances(orgId, fy.id);
+    const priBal = priorFy
+      ? await computeExpenseBalances(orgId, priorFy.id)
+      : [];
+    const curMap = new Map(curBal.map((b) => [b.accountId, b]));
+    const priMap = new Map(priBal.map((b) => [b.accountId, b]));
+
+    const functions: AnexoIIFunction[] = [];
+    for (const fn of EXPENSE_FUNCTION_ORDER) {
+      const accIds = new Set<string>();
+      for (const b of curBal) if (b.fn === fn) accIds.add(b.accountId);
+      for (const b of priBal) if (b.fn === fn) accIds.add(b.accountId);
+
+      const accounts: AnexoIIAccount[] = [];
+      let cur = 0;
+      let pri = 0;
+      for (const id of accIds) {
+        const cb = curMap.get(id);
+        const pb = priMap.get(id);
+        const ref = cb ?? pb!;
+        // Gasto = saldo deudor (positivo).
+        const c = r2(cb?.saldo ?? 0);
+        const p = r2(pb?.saldo ?? 0);
+        if (Math.abs(c) < 0.005 && Math.abs(p) < 0.005) continue;
+        accounts.push({
+          accountId: id,
+          code: ref.code,
+          name: ref.name,
+          current: c,
+          prior: p,
+        });
+        cur = r2(cur + c);
+        pri = r2(pri + p);
+      }
+      if (accounts.length === 0) continue;
+      accounts.sort((a, b) => a.code.localeCompare(b.code));
+      functions.push({
+        key: fn,
+        label: EXPENSE_FUNCTION_LABELS[fn],
+        current: cur,
+        prior: pri,
+        accounts,
+      });
+    }
+
+    const fmtD = (d: Date) =>
+      `${d.getUTCDate().toString().padStart(2, '0')}/${(d.getUTCMonth() + 1).toString().padStart(2, '0')}/${d.getUTCFullYear()}`;
+
+    return {
+      fiscalYearNumber: fy.number,
+      priorFiscalYearNumber: priorFy?.number ?? null,
+      periodLabel: `${fmtD(fy.startDate)} – ${fmtD(fy.endDate)}`,
+      functions,
+      totalCurrent: r2(functions.reduce((s, f) => s + f.current, 0)),
+      totalPrior: r2(functions.reduce((s, f) => s + f.prior, 0)),
+      hasPrior: !!priorFy,
+    };
+  });
+
+/* ── Notas y aprobación del paquete EECC (US 6.3.1 / 6.3.3) ── */
+
+export interface FsNote {
+  id: string;
+  title: string;
+  content: string;
+}
+export interface FinancialStatementResult {
+  id: string | null;
+  status: 'draft' | 'approved';
+  notes: FsNote[];
+  approvedAt: string | null;
+  approvedByName: string | null;
+}
+
+const fsNoteSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().max(200),
+  content: z.string().max(20000),
+});
+
+/** Devuelve el financialStatement del ejercicio (o un borrador vacío si no existe). */
+export const getFinancialStatement = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({ clientId: z.string().uuid(), fiscalYearId: z.string().uuid() })
+  )
+  .handler(async (ctx): Promise<FinancialStatementResult> => {
+    const { orgId } = await getSessionWithOrg();
+    const { clientId, fiscalYearId } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    await loadFiscalYearForOrg(fiscalYearId, orgId);
+
+    const [row] = await db
+      .select({
+        id: financialStatement.id,
+        status: financialStatement.status,
+        notes: financialStatement.notes,
+        approvedAt: financialStatement.approvedAt,
+        approvedByName: user.name,
+      })
+      .from(financialStatement)
+      .leftJoin(user, eq(user.id, financialStatement.approvedBy))
+      .where(
+        and(
+          eq(financialStatement.fiscalYearId, fiscalYearId),
+          eq(financialStatement.clientId, clientId)
+        )
+      )
+      .limit(1);
+
+    if (!row) {
+      return {
+        id: null,
+        status: 'draft',
+        notes: [],
+        approvedAt: null,
+        approvedByName: null,
+      };
+    }
+    return {
+      id: row.id,
+      status: row.status,
+      notes: (row.notes as FsNote[]) ?? [],
+      approvedAt: row.approvedAt ? row.approvedAt.toISOString() : null,
+      approvedByName: row.approvedByName ?? null,
+    };
+  });
+
+/** Guarda (upsert) las notas markdown del paquete. Bloqueado si ya está aprobado. (US 6.3.1) */
+export const saveFinancialStatementNotes = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid(),
+      notes: z.array(fsNoteSchema).max(100),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertOwner(role);
+    const { clientId, fiscalYearId, notes } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    await loadFiscalYearForOrg(fiscalYearId, orgId);
+
+    const [existing] = await db
+      .select({ id: financialStatement.id, status: financialStatement.status })
+      .from(financialStatement)
+      .where(
+        and(
+          eq(financialStatement.fiscalYearId, fiscalYearId),
+          eq(financialStatement.clientId, clientId)
+        )
+      )
+      .limit(1);
+
+    if (existing?.status === 'approved') {
+      throw new Error(
+        'Los EECC están aprobados. Reabrilos a borrador para editar las notas.'
+      );
+    }
+
+    if (existing) {
+      await db
+        .update(financialStatement)
+        .set({ notes })
+        .where(eq(financialStatement.id, existing.id));
+    } else {
+      await db.insert(financialStatement).values({
+        organizationId: orgId,
+        clientId,
+        fiscalYearId,
+        notes,
+      });
+    }
+    return { ok: true };
+  });
+
+/** Aprueba el paquete EECC: status draft→approved, queda inmutable y se registra en el log. (US 6.3.3) */
+export const approveFinancialStatement = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({ clientId: z.string().uuid(), fiscalYearId: z.string().uuid() })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertOwner(role);
+    const { clientId, fiscalYearId } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    const fy = await loadFiscalYearForOrg(fiscalYearId, orgId);
+
+    // Integridad: el ESP debe cuadrar (suma de saldos = 0) antes de aprobar.
+    const bal = await computeEspBalances(orgId, fy.id);
+    const sumSaldos = bal.reduce((s, b) => s + b.saldo, 0);
+    if (Math.abs(sumSaldos) >= 0.005) {
+      throw new Error(
+        'No se puede aprobar: los Estados Contables no cuadran (Activo ≠ Pasivo + PN).'
+      );
+    }
+
+    const [existing] = await db
+      .select({ id: financialStatement.id, status: financialStatement.status })
+      .from(financialStatement)
+      .where(
+        and(
+          eq(financialStatement.fiscalYearId, fiscalYearId),
+          eq(financialStatement.clientId, clientId)
+        )
+      )
+      .limit(1);
+
+    if (existing?.status === 'approved') {
+      throw new Error('Los EECC ya están aprobados.');
+    }
+
+    const now = new Date();
+    if (existing) {
+      await db
+        .update(financialStatement)
+        .set({ status: 'approved', approvedAt: now, approvedBy: userId })
+        .where(eq(financialStatement.id, existing.id));
+    } else {
+      await db.insert(financialStatement).values({
+        organizationId: orgId,
+        clientId,
+        fiscalYearId,
+        status: 'approved',
+        approvedAt: now,
+        approvedBy: userId,
+      });
+    }
+
+    await db.insert(accountingLog).values({
+      clientId,
+      fiscalYearId,
+      eventType: 'financial_statement_approved',
+      eventData: { fiscalYearNumber: fy.number },
+      userId,
+    });
+
+    return { ok: true };
+  });
+
+/** Reabre un paquete aprobado a borrador para poder regenerarlo/editarlo. (US 6.3.3) */
+export const reopenFinancialStatement = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({ clientId: z.string().uuid(), fiscalYearId: z.string().uuid() })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertOwner(role);
+    const { clientId, fiscalYearId } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    await loadFiscalYearForOrg(fiscalYearId, orgId);
+
+    await db
+      .update(financialStatement)
+      .set({ status: 'draft', approvedAt: null, approvedBy: null })
+      .where(
+        and(
+          eq(financialStatement.fiscalYearId, fiscalYearId),
+          eq(financialStatement.clientId, clientId)
+        )
+      );
+    return { ok: true };
   });

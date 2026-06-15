@@ -2,6 +2,8 @@ import { createFileRoute, redirect } from '@tanstack/react-router';
 import { listOrgModules } from '@/actions/admin';
 import { useMemo, useState, Fragment } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   BookOpen,
   Plus,
@@ -94,6 +96,11 @@ import {
   sealClosing,
   getESP,
   getER,
+  getAnexoII,
+  getFinancialStatement,
+  saveFinancialStatementNotes,
+  approveFinancialStatement,
+  reopenFinancialStatement,
   type ChartAccount,
   type PeriodView,
   type LedgerRow,
@@ -105,6 +112,8 @@ import {
   type EspSection,
   type EspRubro,
   type ErLine,
+  type AnexoIIFunction,
+  type FsNote,
 } from '@/actions/accounting';
 import {
   exportMayorExcel,
@@ -410,6 +419,7 @@ function AccountingPage() {
       ) : tab === 'estados' ? (
         <EstadosContables
           clientId={effectiveClientId}
+          isOwner={roleData?.role === 'owner'}
           clientName={
             clients.find((c) => c.id === effectiveClientId)?.name ?? ''
           }
@@ -6636,54 +6646,20 @@ function AnexoICategoryRows({
 
 /* ════════════════════ Estados Contables — ESP (US 6.1.x) ════════════════════ */
 
+type FyOption = Awaited<ReturnType<typeof getFiscalYears>>[number];
+
 function EstadosContables({
   clientId,
   clientName,
+  isOwner,
 }: {
   clientId: string;
   clientName: string;
+  isOwner: boolean;
 }) {
-  const [view, setView] = useState<'esp' | 'er'>('esp');
-  return (
-    <div className="space-y-4">
-      <div className="inline-flex rounded-[8px] border border-[var(--arca-border)] p-0.5 bg-[var(--arca-surface-2)]">
-        {(['esp', 'er'] as const).map((v) => (
-          <button
-            key={v}
-            onClick={() => setView(v)}
-            className="px-3 h-7 text-[12.5px] font-medium rounded-[6px] transition-colors"
-            style={{
-              background: view === v ? 'var(--arca-surface)' : 'transparent',
-              color: view === v ? 'var(--arca-ink)' : 'var(--arca-ink-3)',
-              boxShadow: view === v ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
-            }}
-          >
-            {v === 'esp'
-              ? 'Estado de Situación Patrimonial'
-              : 'Estado de Resultados'}
-          </button>
-        ))}
-      </div>
-
-      {view === 'esp' ? (
-        <EspView clientId={clientId} clientName={clientName} />
-      ) : (
-        <ErView clientId={clientId} clientName={clientName} />
-      )}
-    </div>
-  );
-}
-
-function EspView({
-  clientId,
-  clientName,
-}: {
-  clientId: string;
-  clientName: string;
-}) {
+  const qc = useQueryClient();
+  const [view, setView] = useState<'esp' | 'er' | 'anexo' | 'notas'>('esp');
   const [selectedFyId, setSelectedFyId] = useState('');
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [drill, setDrill] = useState<LedgerDrill | null>(null);
 
   const { data: fiscalYears = [] } = useQuery({
     queryKey: ['accounting', 'fiscal-years', clientId],
@@ -6696,10 +6672,44 @@ function EspView({
     '';
   const selectedFy = fiscalYears.find((y) => y.id === effectiveFyId);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['accounting', 'esp', clientId, effectiveFyId],
-    queryFn: () => getESP({ data: { clientId, fiscalYearId: effectiveFyId } }),
+  const { data: fs } = useQuery({
+    queryKey: ['accounting', 'financial-statement', clientId, effectiveFyId],
+    queryFn: () =>
+      getFinancialStatement({
+        data: { clientId, fiscalYearId: effectiveFyId },
+      }),
     enabled: !!effectiveFyId,
+  });
+  const approved = fs?.status === 'approved';
+
+  const invalidateFs = () =>
+    qc.invalidateQueries({
+      queryKey: ['accounting', 'financial-statement', clientId, effectiveFyId],
+    });
+
+  const approveMut = useMutation({
+    mutationFn: () =>
+      approveFinancialStatement({
+        data: { clientId, fiscalYearId: effectiveFyId },
+      }),
+    onSuccess: () => {
+      toast.success('Estados Contables aprobados');
+      invalidateFs();
+    },
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : 'Error al aprobar'),
+  });
+  const reopenMut = useMutation({
+    mutationFn: () =>
+      reopenFinancialStatement({
+        data: { clientId, fiscalYearId: effectiveFyId },
+      }),
+    onSuccess: () => {
+      toast.success('Reabierto a borrador');
+      invalidateFs();
+    },
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : 'Error al reabrir'),
   });
 
   if (fiscalYears.length === 0) {
@@ -6707,11 +6717,158 @@ function EspView({
       <ArcaCard>
         <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
           Creá un ejercicio en la pestaña <strong>Ejercicios</strong> para
-          generar el ESP.
+          generar los Estados Contables.
         </div>
       </ArcaCard>
     );
   }
+
+  const tabs: { k: typeof view; label: string }[] = [
+    { k: 'esp', label: 'Estado de Situación Patrimonial' },
+    { k: 'er', label: 'Estado de Resultados' },
+    { k: 'anexo', label: 'Anexo II' },
+    { k: 'notas', label: 'Notas' },
+  ];
+
+  return (
+    <div className="space-y-4">
+      {/* Barra: ejercicio + estado de aprobación del paquete */}
+      <ArcaCard>
+        <div className="flex flex-wrap items-center gap-3 px-4 py-3">
+          <span className="text-[12px] text-[var(--arca-ink-3)]">Ejercicio</span>
+          <select
+            value={effectiveFyId}
+            onChange={(e) => setSelectedFyId(e.target.value)}
+            className={SELECT_CLASS}
+          >
+            {fiscalYears.map((y) => (
+              <option key={y.id} value={y.id}>
+                N°{y.number} ({y.status === 'open' ? 'abierto' : 'cerrado'})
+              </option>
+            ))}
+          </select>
+          <span className="text-[10.5px] px-2 py-1 rounded-full bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
+            Valores históricos
+          </span>
+          <div className="flex-1" />
+          {approved ? (
+            <>
+              <span className="text-[11px] px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 font-medium">
+                ✓ Aprobado
+                {fs?.approvedByName ? ` · ${fs.approvedByName}` : ''}
+                {fs?.approvedAt
+                  ? ` · ${new Date(fs.approvedAt).toLocaleDateString('es-AR')}`
+                  : ''}
+              </span>
+              {isOwner && (
+                <button
+                  onClick={() => reopenMut.mutate()}
+                  disabled={reopenMut.isPending}
+                  className="text-[12px] px-3 h-7 rounded-[6px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] disabled:opacity-50"
+                >
+                  Reabrir
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              <span className="text-[11px] px-2 py-1 rounded-full bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)] font-medium">
+                Borrador
+              </span>
+              {isOwner && (
+                <button
+                  onClick={() => approveMut.mutate()}
+                  disabled={approveMut.isPending}
+                  className="text-[12px] px-3 h-7 rounded-[6px] bg-[var(--arca-ink)] text-white hover:opacity-90 disabled:opacity-50"
+                >
+                  Aprobar EECC
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </ArcaCard>
+
+      {/* Toggle de vistas */}
+      <div className="inline-flex rounded-[8px] border border-[var(--arca-border)] p-0.5 bg-[var(--arca-surface-2)]">
+        {tabs.map(({ k, label }) => (
+          <button
+            key={k}
+            onClick={() => setView(k)}
+            className="px-3 h-7 text-[12.5px] font-medium rounded-[6px] transition-colors"
+            style={{
+              background: view === k ? 'var(--arca-surface)' : 'transparent',
+              color: view === k ? 'var(--arca-ink)' : 'var(--arca-ink-3)',
+              boxShadow: view === k ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {view === 'esp' && (
+        <EspView
+          clientId={clientId}
+          clientName={clientName}
+          selectedFy={selectedFy}
+        />
+      )}
+      {view === 'er' && (
+        <ErView
+          clientId={clientId}
+          clientName={clientName}
+          selectedFy={selectedFy}
+        />
+      )}
+      {view === 'anexo' && (
+        <AnexoIIView
+          clientId={clientId}
+          clientName={clientName}
+          selectedFy={selectedFy}
+        />
+      )}
+      {view === 'notas' &&
+        (fs ? (
+          <NotesEditor
+            key={effectiveFyId}
+            clientId={clientId}
+            fiscalYearId={effectiveFyId}
+            notes={fs.notes}
+            approved={approved}
+            canEdit={isOwner}
+            onSaved={invalidateFs}
+          />
+        ) : (
+          <ArcaCard>
+            <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+              Cargando…
+            </div>
+          </ArcaCard>
+        ))}
+    </div>
+  );
+}
+
+function EspView({
+  clientId,
+  clientName,
+  selectedFy,
+}: {
+  clientId: string;
+  clientName: string;
+  selectedFy: FyOption | undefined;
+}) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [drill, setDrill] = useState<LedgerDrill | null>(null);
+
+  const effectiveFyId = selectedFy?.id ?? '';
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['accounting', 'esp', clientId, effectiveFyId],
+    queryFn: () => getESP({ data: { clientId, fiscalYearId: effectiveFyId } }),
+    enabled: !!effectiveFyId,
+  });
 
   const toggle = (g: string) =>
     setExpanded((prev) => {
@@ -6741,27 +6898,6 @@ function EspView({
   return (
     <div className="space-y-4">
       <ArcaCard>
-        <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-[var(--arca-border)]">
-          <span className="text-[12px] text-[var(--arca-ink-3)]">
-            Ejercicio
-          </span>
-          <select
-            value={effectiveFyId}
-            onChange={(e) => setSelectedFyId(e.target.value)}
-            className={SELECT_CLASS}
-          >
-            {fiscalYears.map((y) => (
-              <option key={y.id} value={y.id}>
-                N°{y.number} ({y.status === 'open' ? 'abierto' : 'cerrado'})
-              </option>
-            ))}
-          </select>
-          <div className="flex-1" />
-          <span className="text-[10.5px] px-2 py-1 rounded-full bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
-            Valores históricos
-          </span>
-        </div>
-
         {/* Carátula */}
         <div className="px-5 pt-4">
           <div className="text-[15px] font-semibold text-[var(--arca-ink)]">
@@ -6962,41 +7098,22 @@ function EspSectionRows({
 function ErView({
   clientId,
   clientName,
+  selectedFy,
 }: {
   clientId: string;
   clientName: string;
+  selectedFy: FyOption | undefined;
 }) {
-  const [selectedFyId, setSelectedFyId] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [drill, setDrill] = useState<LedgerDrill | null>(null);
 
-  const { data: fiscalYears = [] } = useQuery({
-    queryKey: ['accounting', 'fiscal-years', clientId],
-    queryFn: () => getFiscalYears({ data: { clientId } }),
-  });
-  const effectiveFyId =
-    selectedFyId ||
-    fiscalYears.find((y) => y.status === 'open')?.id ||
-    fiscalYears[0]?.id ||
-    '';
-  const selectedFy = fiscalYears.find((y) => y.id === effectiveFyId);
+  const effectiveFyId = selectedFy?.id ?? '';
 
   const { data, isLoading } = useQuery({
     queryKey: ['accounting', 'er', clientId, effectiveFyId],
     queryFn: () => getER({ data: { clientId, fiscalYearId: effectiveFyId } }),
     enabled: !!effectiveFyId,
   });
-
-  if (fiscalYears.length === 0) {
-    return (
-      <ArcaCard>
-        <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
-          Creá un ejercicio en la pestaña <strong>Ejercicios</strong> para
-          generar el Estado de Resultados.
-        </div>
-      </ArcaCard>
-    );
-  }
 
   const toggle = (g: string) =>
     setExpanded((prev) => {
@@ -7020,27 +7137,6 @@ function ErView({
   return (
     <div className="space-y-4">
       <ArcaCard>
-        <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-[var(--arca-border)]">
-          <span className="text-[12px] text-[var(--arca-ink-3)]">
-            Ejercicio
-          </span>
-          <select
-            value={effectiveFyId}
-            onChange={(e) => setSelectedFyId(e.target.value)}
-            className={SELECT_CLASS}
-          >
-            {fiscalYears.map((y) => (
-              <option key={y.id} value={y.id}>
-                N°{y.number} ({y.status === 'open' ? 'abierto' : 'cerrado'})
-              </option>
-            ))}
-          </select>
-          <div className="flex-1" />
-          <span className="text-[10.5px] px-2 py-1 rounded-full bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
-            Valores históricos
-          </span>
-        </div>
-
         {/* Carátula */}
         <div className="px-5 pt-4">
           <div className="text-[15px] font-semibold text-[var(--arca-ink)]">
@@ -7194,5 +7290,335 @@ function ErView({
         />
       )}
     </div>
+  );
+}
+
+function AnexoIIView({
+  clientId,
+  clientName,
+  selectedFy,
+}: {
+  clientId: string;
+  clientName: string;
+  selectedFy: FyOption | undefined;
+}) {
+  const [drill, setDrill] = useState<LedgerDrill | null>(null);
+  const effectiveFyId = selectedFy?.id ?? '';
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['accounting', 'anexo-ii', clientId, effectiveFyId],
+    queryFn: () =>
+      getAnexoII({ data: { clientId, fiscalYearId: effectiveFyId } }),
+    enabled: !!effectiveFyId,
+  });
+
+  const openLedger = (a: { accountId: string; code: string; name: string }) => {
+    if (!selectedFy) return;
+    setDrill({
+      accountId: a.accountId,
+      code: a.code,
+      name: a.name,
+      from: new Date(selectedFy.startDate).toISOString().slice(0, 10),
+      to: new Date(selectedFy.endDate).toISOString().slice(0, 10),
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <ArcaCard>
+        {/* Carátula */}
+        <div className="px-5 pt-4">
+          <div className="text-[15px] font-semibold text-[var(--arca-ink)]">
+            {clientName}
+          </div>
+          <div className="text-[12.5px] text-[var(--arca-ink-2)]">
+            Anexo II · Gastos por función
+            {data
+              ? ` · Ejercicio N°${data.fiscalYearNumber} · ${data.periodLabel}`
+              : ''}
+          </div>
+          <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
+            Composición de los gastos del Estado de Resultados por su función.
+          </div>
+        </div>
+
+        {isLoading || !data ? (
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            Calculando…
+          </div>
+        ) : data.functions.length === 0 ? (
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            No hay gastos registrados en este ejercicio.
+          </div>
+        ) : (
+          <div className="px-2 py-3">
+            <table className="w-full text-[12.5px]">
+              <thead>
+                <tr className="text-[11px] uppercase tracking-wide text-[var(--arca-ink-3)] border-b border-[var(--arca-border)]">
+                  <th className="py-2 pl-3 text-left">Función / cuenta</th>
+                  <th className="py-2 pr-3 text-right w-40">
+                    Ej. N°{data.fiscalYearNumber}
+                  </th>
+                  <th className="py-2 pr-3 text-right w-40">
+                    {data.hasPrior
+                      ? `Ej. N°${data.priorFiscalYearNumber}`
+                      : 'Anterior'}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.functions.map((fn: AnexoIIFunction) => (
+                  <Fragment key={fn.key}>
+                    <tr className="bg-[var(--arca-surface-2)]">
+                      <td className="py-1.5 pl-3 font-semibold text-[var(--arca-ink)]">
+                        {fn.label}
+                      </td>
+                      <td className="py-1.5 pr-3 text-right tabular-nums font-semibold">
+                        $ {fmtMoney(fn.current)}
+                      </td>
+                      <td className="py-1.5 pr-3 text-right tabular-nums font-semibold">
+                        {data.hasPrior ? `$ ${fmtMoney(fn.prior)}` : '—'}
+                      </td>
+                    </tr>
+                    {fn.accounts.map((a) => (
+                      <tr
+                        key={a.accountId}
+                        className="text-[11.5px] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] cursor-pointer"
+                        onClick={() => openLedger(a)}
+                        title="Ver mayor de la cuenta"
+                      >
+                        <td className="py-1 pl-7">
+                          <span className="text-[var(--arca-ink-3)]">
+                            {a.code}
+                          </span>{' '}
+                          {a.name}
+                        </td>
+                        <td className="py-1 pr-3 text-right tabular-nums">
+                          $ {fmtMoney(a.current)}
+                        </td>
+                        <td className="py-1 pr-3 text-right tabular-nums">
+                          {data.hasPrior ? `$ ${fmtMoney(a.prior)}` : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </Fragment>
+                ))}
+                <tr className="border-t-2 border-[var(--arca-ink)] font-bold">
+                  <td className="py-2 pl-3">TOTAL GASTOS</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">
+                    $ {fmtMoney(data.totalCurrent)}
+                  </td>
+                  <td className="py-2 pr-3 text-right tabular-nums">
+                    {data.hasPrior ? `$ ${fmtMoney(data.totalPrior)}` : '—'}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+      </ArcaCard>
+
+      {drill && (
+        <LedgerDialog
+          clientId={clientId}
+          drill={drill}
+          canWrite={false}
+          onClose={() => setDrill(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function NotesEditor({
+  clientId,
+  fiscalYearId,
+  notes: initialNotes,
+  approved,
+  canEdit,
+  onSaved,
+}: {
+  clientId: string;
+  fiscalYearId: string;
+  notes: FsNote[];
+  approved: boolean;
+  canEdit: boolean;
+  onSaved: () => void;
+}) {
+  const [notes, setNotes] = useState<FsNote[]>(initialNotes);
+  const [preview, setPreview] = useState<Set<string>>(new Set());
+
+  const dirty = JSON.stringify(notes) !== JSON.stringify(initialNotes);
+  const editable = canEdit && !approved;
+
+  const saveMut = useMutation({
+    mutationFn: () =>
+      saveFinancialStatementNotes({
+        data: { clientId, fiscalYearId, notes },
+      }),
+    onSuccess: () => {
+      toast.success('Notas guardadas');
+      onSaved();
+    },
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : 'Error al guardar'),
+  });
+
+  const newId = () =>
+    `n-${notes.reduce((m, n) => Math.max(m, Number(n.id.split('-')[1]) || 0), 0) + 1}`;
+
+  const addNote = () =>
+    setNotes((prev) => [
+      ...prev,
+      { id: newId(), title: 'Nueva nota', content: '' },
+    ]);
+  const update = (id: string, patch: Partial<FsNote>) =>
+    setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, ...patch } : n)));
+  const remove = (id: string) =>
+    setNotes((prev) => prev.filter((n) => n.id !== id));
+  const move = (idx: number, dir: -1 | 1) =>
+    setNotes((prev) => {
+      const next = [...prev];
+      const j = idx + dir;
+      if (j < 0 || j >= next.length) return prev;
+      [next[idx], next[j]] = [next[j], next[idx]];
+      return next;
+    });
+  const togglePreview = (id: string) =>
+    setPreview((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+
+  return (
+    <ArcaCard>
+      <div className="flex flex-wrap items-center gap-3 px-5 py-3 border-b border-[var(--arca-border)]">
+        <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+          Notas a los Estados Contables
+        </span>
+        <span className="text-[11px] text-[var(--arca-ink-3)]">
+          Formato Markdown
+        </span>
+        <div className="flex-1" />
+        {editable && (
+          <>
+            <button
+              onClick={addNote}
+              className="text-[12px] px-3 h-7 rounded-[6px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]"
+            >
+              + Agregar nota
+            </button>
+            <button
+              onClick={() => saveMut.mutate()}
+              disabled={!dirty || saveMut.isPending}
+              className="text-[12px] px-3 h-7 rounded-[6px] bg-[var(--arca-ink)] text-white hover:opacity-90 disabled:opacity-40"
+            >
+              Guardar
+            </button>
+          </>
+        )}
+      </div>
+
+      {approved && (
+        <div className="px-5 py-2 text-[11.5px] text-emerald-700 bg-emerald-50 border-b border-[var(--arca-border)]">
+          Los EECC están aprobados — las notas son de solo lectura. Reabrí a
+          borrador para editarlas.
+        </div>
+      )}
+
+      <div className="px-5 py-4 space-y-4">
+        {notes.length === 0 && (
+          <div className="text-center text-[13px] text-[var(--arca-ink-3)] py-6">
+            {editable
+              ? 'Aún no hay notas. Agregá la primera con “+ Agregar nota”.'
+              : 'No hay notas cargadas para este ejercicio.'}
+          </div>
+        )}
+
+        {notes.map((note, idx) => {
+          const isPreview = preview.has(note.id) || !editable;
+          return (
+            <div
+              key={note.id}
+              className="rounded-[8px] border border-[var(--arca-border)]"
+            >
+              <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)]">
+                <span className="text-[11px] text-[var(--arca-ink-3)] w-6 shrink-0">
+                  {idx + 1}.
+                </span>
+                {editable ? (
+                  <input
+                    value={note.title}
+                    onChange={(e) => update(note.id, { title: e.target.value })}
+                    placeholder="Título de la nota"
+                    className="flex-1 bg-transparent text-[13px] font-medium text-[var(--arca-ink)] outline-none"
+                  />
+                ) : (
+                  <span className="flex-1 text-[13px] font-medium text-[var(--arca-ink)]">
+                    {note.title || `Nota ${idx + 1}`}
+                  </span>
+                )}
+                {editable && (
+                  <>
+                    <button
+                      onClick={() => togglePreview(note.id)}
+                      className="text-[11px] px-2 h-6 rounded-[5px] text-[var(--arca-ink-3)] hover:bg-[var(--arca-surface)]"
+                    >
+                      {preview.has(note.id) ? 'Editar' : 'Vista'}
+                    </button>
+                    <button
+                      onClick={() => move(idx, -1)}
+                      disabled={idx === 0}
+                      className="text-[12px] px-1.5 h-6 rounded-[5px] text-[var(--arca-ink-3)] hover:bg-[var(--arca-surface)] disabled:opacity-30"
+                      title="Subir"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      onClick={() => move(idx, 1)}
+                      disabled={idx === notes.length - 1}
+                      className="text-[12px] px-1.5 h-6 rounded-[5px] text-[var(--arca-ink-3)] hover:bg-[var(--arca-surface)] disabled:opacity-30"
+                      title="Bajar"
+                    >
+                      ↓
+                    </button>
+                    <button
+                      onClick={() => remove(note.id)}
+                      className="text-[12px] px-1.5 h-6 rounded-[5px] text-red-500 hover:bg-red-50"
+                      title="Eliminar"
+                    >
+                      ✕
+                    </button>
+                  </>
+                )}
+              </div>
+              {isPreview ? (
+                <div className="px-4 py-3 text-[13px] text-[var(--arca-ink-2)] [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-1.5 [&_li]:my-0.5 [&_strong]:font-semibold [&_strong]:text-[var(--arca-ink)] [&_em]:italic [&_h1]:text-[15px] [&_h1]:font-semibold [&_h1]:my-2 [&_h2]:text-[14px] [&_h2]:font-semibold [&_h2]:my-2 [&_h3]:font-semibold [&_a]:text-blue-600 [&_a]:underline [&_code]:font-mono [&_code]:text-[12px] [&_code]:bg-[var(--arca-surface-2)] [&_code]:px-1 [&_code]:rounded [&_table]:w-full [&_th]:text-left [&_th]:border-b [&_th]:border-[var(--arca-border)] [&_td]:py-0.5 [&_blockquote]:border-l-2 [&_blockquote]:border-[var(--arca-border)] [&_blockquote]:pl-3 [&_blockquote]:text-[var(--arca-ink-3)]">
+                  {note.content.trim() ? (
+                    <Markdown remarkPlugins={[remarkGfm]}>
+                      {note.content}
+                    </Markdown>
+                  ) : (
+                    <span className="text-[var(--arca-ink-3)] italic">
+                      (sin contenido)
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <textarea
+                  value={note.content}
+                  onChange={(e) => update(note.id, { content: e.target.value })}
+                  placeholder="Escribí la nota en Markdown…"
+                  rows={6}
+                  className="w-full px-4 py-3 bg-transparent text-[13px] text-[var(--arca-ink)] outline-none resize-y font-mono"
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </ArcaCard>
   );
 }

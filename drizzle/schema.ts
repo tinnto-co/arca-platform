@@ -1722,6 +1722,51 @@ export const accountingLog = pgTable(
   (table) => [index("idx_accounting_log_client").on(table.clientId)],
 );
 
+/* ───────── Estados Contables (paquete EECC, Fase 6) ───────── */
+
+export const financialStatementStatusEnum = pgEnum(
+  "financial_statement_status",
+  ["draft", "approved"],
+);
+
+/**
+ * Paquete de Estados Contables de un ejercicio (notas libres + estado de aprobación).
+ * El ESP/ER/Anexo II se calculan on-the-fly desde los asientos; acá se persisten las
+ * notas markdown del Owner y la aprobación formal. Uno por ejercicio.
+ * Al aprobar (status='approved') las notas quedan inmutables hasta reabrir a borrador.
+ */
+export const financialStatement = pgTable(
+  "financial_statement",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => client.id, { onDelete: "cascade" }),
+    fiscalYearId: uuid("fiscal_year_id")
+      .notNull()
+      .references(() => fiscalYear.id, { onDelete: "cascade" }),
+    status: financialStatementStatusEnum("status").notNull().default("draft"),
+    /** Notas markdown en orden de exposición: [{ id, title, content }]. */
+    notes: jsonb("notes").notNull().default([]),
+    approvedAt: timestamp("approved_at"),
+    approvedBy: text("approved_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    unique("financial_statement_fy_unique").on(table.fiscalYearId),
+    index("idx_financial_statement_client").on(table.clientId),
+  ],
+);
+
 /* ───────── Reglas de mapeo (asientos automáticos, Fase 3) ───────── */
 
 /** Módulo origen del comprobante que dispara la regla. */
