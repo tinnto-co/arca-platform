@@ -1,6 +1,6 @@
 import { createFileRoute, redirect } from '@tanstack/react-router';
 import { listOrgModules } from '@/actions/admin';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, Fragment } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   BookOpen,
@@ -41,6 +41,7 @@ import {
   Boxes,
   CheckCircle2,
   XCircle,
+  FileBarChart,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { ArcaCard } from '@/components/dashboard/shared';
@@ -91,6 +92,7 @@ import {
   getClosingWizard,
   approveClosingStage,
   sealClosing,
+  getESP,
   type ChartAccount,
   type PeriodView,
   type LedgerRow,
@@ -99,6 +101,8 @@ import {
   type FixedAssetRow,
   type YearEndCheck,
   type ClosingEntryPreview,
+  type EspSection,
+  type EspRubro,
 } from '@/actions/accounting';
 import {
   exportMayorExcel,
@@ -217,7 +221,8 @@ type Tab =
   | 'reglas'
   | 'contabilizar'
   | 'pendientes'
-  | 'bienes';
+  | 'bienes'
+  | 'estados';
 
 function TabBar({
   active,
@@ -243,6 +248,12 @@ function TabBar({
     { id: 'contabilizar', label: 'Contabilizar', icon: Zap, ready: true },
     { id: 'pendientes', label: 'Pendientes', icon: Inbox, ready: true },
     { id: 'bienes', label: 'Bienes de uso', icon: Boxes, ready: true },
+    {
+      id: 'estados',
+      label: 'Estados Contables',
+      icon: FileBarChart,
+      ready: true,
+    },
   ];
   return (
     <div className="flex gap-1 mb-5 border-b border-[var(--arca-border)]">
@@ -390,6 +401,13 @@ function AccountingPage() {
         <BienesDeUso
           clientId={effectiveClientId}
           canWrite={roleData?.role !== 'viewer'}
+          clientName={
+            clients.find((c) => c.id === effectiveClientId)?.name ?? ''
+          }
+        />
+      ) : tab === 'estados' ? (
+        <EstadosContables
+          clientId={effectiveClientId}
           clientName={
             clients.find((c) => c.id === effectiveClientId)?.name ?? ''
           }
@@ -6610,6 +6628,335 @@ function AnexoICategoryRows({
           $ {fmtMoney(cat.totals.residualEnd)}
         </td>
       </tr>
+    </>
+  );
+}
+
+/* ════════════════════ Estados Contables — ESP (US 6.1.x) ════════════════════ */
+
+function EstadosContables({
+  clientId,
+  clientName,
+}: {
+  clientId: string;
+  clientName: string;
+}) {
+  const [view, setView] = useState<'esp' | 'er'>('esp');
+  return (
+    <div className="space-y-4">
+      <div className="inline-flex rounded-[8px] border border-[var(--arca-border)] p-0.5 bg-[var(--arca-surface-2)]">
+        {(['esp', 'er'] as const).map((v) => (
+          <button
+            key={v}
+            onClick={() => setView(v)}
+            className="px-3 h-7 text-[12.5px] font-medium rounded-[6px] transition-colors"
+            style={{
+              background: view === v ? 'var(--arca-surface)' : 'transparent',
+              color: view === v ? 'var(--arca-ink)' : 'var(--arca-ink-3)',
+              boxShadow: view === v ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+            }}
+          >
+            {v === 'esp'
+              ? 'Estado de Situación Patrimonial'
+              : 'Estado de Resultados'}
+          </button>
+        ))}
+      </div>
+
+      {view === 'esp' ? (
+        <EspView clientId={clientId} clientName={clientName} />
+      ) : (
+        <ArcaCard>
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            El Estado de Resultados se construye en la próxima fase.
+          </div>
+        </ArcaCard>
+      )}
+    </div>
+  );
+}
+
+function EspView({
+  clientId,
+  clientName,
+}: {
+  clientId: string;
+  clientName: string;
+}) {
+  const [selectedFyId, setSelectedFyId] = useState('');
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [drill, setDrill] = useState<LedgerDrill | null>(null);
+
+  const { data: fiscalYears = [] } = useQuery({
+    queryKey: ['accounting', 'fiscal-years', clientId],
+    queryFn: () => getFiscalYears({ data: { clientId } }),
+  });
+  const effectiveFyId =
+    selectedFyId ||
+    fiscalYears.find((y) => y.status === 'open')?.id ||
+    fiscalYears[0]?.id ||
+    '';
+  const selectedFy = fiscalYears.find((y) => y.id === effectiveFyId);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['accounting', 'esp', clientId, effectiveFyId],
+    queryFn: () => getESP({ data: { clientId, fiscalYearId: effectiveFyId } }),
+    enabled: !!effectiveFyId,
+  });
+
+  if (fiscalYears.length === 0) {
+    return (
+      <ArcaCard>
+        <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+          Creá un ejercicio en la pestaña <strong>Ejercicios</strong> para
+          generar el ESP.
+        </div>
+      </ArcaCard>
+    );
+  }
+
+  const toggle = (g: string) =>
+    setExpanded((prev) => {
+      const n = new Set(prev);
+      if (n.has(g)) n.delete(g);
+      else n.add(g);
+      return n;
+    });
+
+  const openLedger = (a: { accountId: string; code: string; name: string }) => {
+    if (!selectedFy) return;
+    setDrill({
+      accountId: a.accountId,
+      code: a.code,
+      name: a.name,
+      from: new Date(selectedFy.startDate).toISOString().slice(0, 10),
+      to: new Date(selectedFy.endDate).toISOString().slice(0, 10),
+    });
+  };
+
+  const macros: { macro: 'activo' | 'pasivo' | 'pn'; title: string }[] = [
+    { macro: 'activo', title: 'ACTIVO' },
+    { macro: 'pasivo', title: 'PASIVO' },
+    { macro: 'pn', title: 'PATRIMONIO NETO' },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <ArcaCard>
+        <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-[var(--arca-border)]">
+          <span className="text-[12px] text-[var(--arca-ink-3)]">
+            Ejercicio
+          </span>
+          <select
+            value={effectiveFyId}
+            onChange={(e) => setSelectedFyId(e.target.value)}
+            className={SELECT_CLASS}
+          >
+            {fiscalYears.map((y) => (
+              <option key={y.id} value={y.id}>
+                N°{y.number} ({y.status === 'open' ? 'abierto' : 'cerrado'})
+              </option>
+            ))}
+          </select>
+          <div className="flex-1" />
+          <span className="text-[10.5px] px-2 py-1 rounded-full bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
+            Valores históricos
+          </span>
+        </div>
+
+        {/* Carátula */}
+        <div className="px-5 pt-4">
+          <div className="text-[15px] font-semibold text-[var(--arca-ink)]">
+            {clientName}
+          </div>
+          <div className="text-[12.5px] text-[var(--arca-ink-2)]">
+            Estado de Situación Patrimonial
+            {data
+              ? ` · Ejercicio N°${data.fiscalYearNumber} · ${data.periodLabel}`
+              : ''}
+          </div>
+          <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
+            Expresado en valores históricos (sin ajuste por inflación · RT 6).
+          </div>
+        </div>
+
+        {isLoading || !data ? (
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            Calculando…
+          </div>
+        ) : (
+          <div className="px-2 py-3">
+            <table className="w-full text-[12.5px]">
+              <thead>
+                <tr className="text-[11px] uppercase tracking-wide text-[var(--arca-ink-3)] border-b border-[var(--arca-border)]">
+                  <th className="py-2 pl-3 text-left">Rubro</th>
+                  <th className="py-2 pr-3 text-right w-40">
+                    Ej. N°{data.fiscalYearNumber}
+                  </th>
+                  <th className="py-2 pr-3 text-right w-40">
+                    {data.hasPrior
+                      ? `Ej. N°${data.priorFiscalYearNumber}`
+                      : 'Anterior'}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {macros.map(({ macro, title }) => {
+                  const secs = data.sections.filter((s) => s.macro === macro);
+                  const totalCur = secs.reduce((s, x) => s + x.current, 0);
+                  const totalPri = secs.reduce((s, x) => s + x.prior, 0);
+                  return (
+                    <Fragment key={macro}>
+                      <tr className="bg-[var(--arca-surface-2)]">
+                        <td className="py-1.5 pl-3 font-semibold text-[var(--arca-ink)] uppercase text-[11px] tracking-wide">
+                          {title}
+                        </td>
+                        <td />
+                        <td />
+                      </tr>
+                      {secs.map((sec) => (
+                        <EspSectionRows
+                          key={sec.key}
+                          section={sec}
+                          hasPrior={data.hasPrior}
+                          expanded={expanded}
+                          onToggle={toggle}
+                          onAccount={openLedger}
+                        />
+                      ))}
+                      <tr className="border-t border-[var(--arca-ink-3)] font-semibold">
+                        <td className="py-1.5 pl-3">
+                          Total {title.toLowerCase()}
+                        </td>
+                        <td className="py-1.5 pr-3 text-right tabular-nums">
+                          $ {fmtMoney(totalCur)}
+                        </td>
+                        <td className="py-1.5 pr-3 text-right tabular-nums">
+                          {data.hasPrior ? `$ ${fmtMoney(totalPri)}` : '—'}
+                        </td>
+                      </tr>
+                    </Fragment>
+                  );
+                })}
+                <tr className="border-t-2 border-[var(--arca-ink)] font-bold">
+                  <td className="py-2 pl-3">TOTAL PASIVO + PATRIMONIO NETO</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">
+                    $ {fmtMoney(data.totals.pasivoMasPn.current)}
+                  </td>
+                  <td className="py-2 pr-3 text-right tabular-nums">
+                    {data.hasPrior
+                      ? `$ ${fmtMoney(data.totals.pasivoMasPn.prior)}`
+                      : '—'}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            {/* Validación A = P + PN */}
+            <div className="px-3 mt-3">
+              {data.balancedCurrent ? (
+                <div className="text-[12px] text-emerald-700">
+                  ✓ Activo = Pasivo + Patrimonio Neto (${' '}
+                  {fmtMoney(data.totals.activo.current)})
+                </div>
+              ) : (
+                <div className="text-[12px] text-red-600 font-medium">
+                  ✗ No cuadra: Activo $ {fmtMoney(data.totals.activo.current)} ≠
+                  Pasivo + PN $ {fmtMoney(data.totals.pasivoMasPn.current)}. La
+                  emisión está bloqueada hasta corregir.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </ArcaCard>
+
+      {drill && (
+        <LedgerDialog
+          clientId={clientId}
+          drill={drill}
+          canWrite={false}
+          onClose={() => setDrill(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function EspSectionRows({
+  section,
+  hasPrior,
+  expanded,
+  onToggle,
+  onAccount,
+}: {
+  section: EspSection;
+  hasPrior: boolean;
+  expanded: Set<string>;
+  onToggle: (g: string) => void;
+  onAccount: (a: { accountId: string; code: string; name: string }) => void;
+}) {
+  // Subtítulo de sección (Corriente / No Corriente) salvo en PN.
+  const sub =
+    section.macro === 'pn'
+      ? null
+      : section.label.replace('Activo ', '').replace('Pasivo ', '');
+  return (
+    <>
+      {sub && (
+        <tr>
+          <td
+            className="py-1 pl-5 text-[11px] font-medium text-[var(--arca-ink-2)]"
+            colSpan={3}
+          >
+            {sub}
+          </td>
+        </tr>
+      )}
+      {section.rubros.map((rubro: EspRubro) => {
+        const isOpen = expanded.has(rubro.group);
+        return (
+          <Fragment key={rubro.group}>
+            <tr
+              className="hover:bg-[var(--arca-surface-2)] cursor-pointer"
+              onClick={() => onToggle(rubro.group)}
+            >
+              <td className="py-1.5 pl-7 text-[var(--arca-ink)]">
+                <span className="text-[var(--arca-ink-3)] mr-1">
+                  {isOpen ? '▾' : '▸'}
+                </span>
+                {rubro.label}
+              </td>
+              <td className="py-1.5 pr-3 text-right tabular-nums">
+                $ {fmtMoney(rubro.current)}
+              </td>
+              <td className="py-1.5 pr-3 text-right tabular-nums">
+                {hasPrior ? `$ ${fmtMoney(rubro.prior)}` : '—'}
+              </td>
+            </tr>
+            {isOpen &&
+              rubro.accounts.map((a) => (
+                <tr
+                  key={a.accountId}
+                  className="text-[11.5px] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] cursor-pointer"
+                  onClick={() => onAccount(a)}
+                  title="Ver mayor de la cuenta"
+                >
+                  <td className="py-1 pl-12">
+                    <span className="text-[var(--arca-ink-3)]">{a.code}</span>{' '}
+                    {a.name}
+                  </td>
+                  <td className="py-1 pr-3 text-right tabular-nums">
+                    $ {fmtMoney(a.current)}
+                  </td>
+                  <td className="py-1 pr-3 text-right tabular-nums">
+                    {hasPrior ? `$ ${fmtMoney(a.prior)}` : '—'}
+                  </td>
+                </tr>
+              ))}
+          </Fragment>
+        );
+      })}
     </>
   );
 }

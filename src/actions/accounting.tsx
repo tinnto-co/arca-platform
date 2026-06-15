@@ -50,6 +50,9 @@ import {
   RESULT_ACCOUNT_GROUPS,
   RESULT_TARGET_GROUP,
   MONTH_NAMES,
+  ACCOUNT_GROUP_SECTIONS,
+  ACCOUNT_GROUP_LABELS,
+  type AccountGroup,
 } from '@/lib/accounting-labels';
 import {
   buildEntryLines,
@@ -4866,4 +4869,239 @@ export const sealClosing = createServerFn({ method: 'POST' })
       userId,
     });
     return { ok: true as const };
+  });
+
+/* ════════════════ Estado de Situación Patrimonial (US 6.1.x) ════════════════ */
+
+interface EspBalance {
+  accountId: string;
+  code: string;
+  name: string;
+  group: string | null;
+  saldo: number; // debe − haber
+}
+
+/**
+ * Saldos por cuenta de un ejercicio EXCLUYENDO los asientos de cierre/apertura
+ * (auto_closing/auto_opening). Así el ESP refleja la posición patrimonial pre-cierre
+ * (si no, un ejercicio cerrado daría todo en cero) y el resultado se computa de las
+ * cuentas de resultado.
+ */
+async function computeEspBalances(
+  orgId: string,
+  fyId: string
+): Promise<EspBalance[]> {
+  const rows = await db
+    .select({
+      accountId: account.id,
+      code: account.code,
+      name: account.name,
+      group: account.accountGroup,
+      debit: sql<string>`coalesce(sum(${journalEntryLine.debit}),0)`,
+      credit: sql<string>`coalesce(sum(${journalEntryLine.credit}),0)`,
+    })
+    .from(journalEntryLine)
+    .innerJoin(
+      journalEntry,
+      eq(journalEntry.id, journalEntryLine.journalEntryId)
+    )
+    .innerJoin(account, eq(account.id, journalEntryLine.accountId))
+    .where(
+      and(
+        eq(journalEntry.fiscalYearId, fyId),
+        eq(journalEntry.isVoided, false),
+        eq(account.organizationId, orgId),
+        sql`${journalEntry.origin} NOT IN ('auto_closing','auto_opening')`
+      )
+    )
+    .groupBy(account.id, account.code, account.name, account.accountGroup);
+  return rows.map((r) => ({
+    accountId: r.accountId,
+    code: r.code,
+    name: r.name,
+    group: r.group,
+    saldo: r2(parseFloat(r.debit) - parseFloat(r.credit)),
+  }));
+}
+
+export interface EspAccountRow {
+  accountId: string;
+  code: string;
+  name: string;
+  current: number;
+  prior: number;
+}
+export interface EspRubro {
+  group: string;
+  label: string;
+  current: number;
+  prior: number;
+  accounts: EspAccountRow[];
+}
+export interface EspSection {
+  key: string;
+  label: string;
+  macro: 'activo' | 'pasivo' | 'pn';
+  rubros: EspRubro[];
+  current: number;
+  prior: number;
+}
+export interface EspResult {
+  fiscalYearNumber: number;
+  priorFiscalYearNumber: number | null;
+  periodLabel: string;
+  sections: EspSection[];
+  totals: {
+    activo: { current: number; prior: number };
+    pasivo: { current: number; prior: number };
+    pn: { current: number; prior: number };
+    pasivoMasPn: { current: number; prior: number };
+  };
+  balancedCurrent: boolean;
+  balancedPrior: boolean;
+  hasPrior: boolean;
+}
+
+const ESP_SECTIONS = ACCOUNT_GROUP_SECTIONS.filter(
+  (s) => s.section !== 'Resultados'
+);
+
+/** Estado de Situación Patrimonial comparativo (actual vs anterior). (US 6.1.1/6.1.2) */
+export const getESP = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({ clientId: z.string().uuid(), fiscalYearId: z.string().uuid() })
+  )
+  .handler(async (ctx): Promise<EspResult> => {
+    const { orgId } = await getSessionWithOrg();
+    const { clientId } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
+
+    const [priorFy] = await db
+      .select()
+      .from(fiscalYear)
+      .where(
+        and(
+          eq(fiscalYear.clientId, clientId),
+          eq(fiscalYear.number, fy.number - 1)
+        )
+      )
+      .limit(1);
+
+    const curBal = await computeEspBalances(orgId, fy.id);
+    const priBal = priorFy ? await computeEspBalances(orgId, priorFy.id) : [];
+    const curMap = new Map(curBal.map((b) => [b.accountId, b]));
+    const priMap = new Map(priBal.map((b) => [b.accountId, b]));
+
+    const sign = (macro: 'activo' | 'pasivo' | 'pn', saldo: number) =>
+      macro === 'activo' ? saldo : r2(-saldo);
+
+    const macroOf = (sectionLabel: string): 'activo' | 'pasivo' | 'pn' =>
+      sectionLabel.startsWith('Activo')
+        ? 'activo'
+        : sectionLabel.startsWith('Pasivo')
+          ? 'pasivo'
+          : 'pn';
+
+    const sections: EspSection[] = ESP_SECTIONS.map((sec) => {
+      const macro = macroOf(sec.section);
+      const rubros: EspRubro[] = [];
+      for (const group of sec.groups) {
+        // El rubro "Resultado del ejercicio" se compone de las cuentas de resultado.
+        const isResultado = group === RESULT_TARGET_GROUP;
+        const groupsToPull = isResultado ? RESULT_ACCOUNT_GROUPS : [group];
+        const accIds = new Set<string>();
+        for (const b of curBal)
+          if (b.group && (groupsToPull as readonly string[]).includes(b.group))
+            accIds.add(b.accountId);
+        for (const b of priBal)
+          if (b.group && (groupsToPull as readonly string[]).includes(b.group))
+            accIds.add(b.accountId);
+
+        const accounts: EspAccountRow[] = [];
+        let curTotal = 0;
+        let priTotal = 0;
+        for (const id of accIds) {
+          const cb = curMap.get(id);
+          const pb = priMap.get(id);
+          const ref = cb ?? pb!;
+          const cur = sign(macro, cb?.saldo ?? 0);
+          const pri = sign(macro, pb?.saldo ?? 0);
+          if (Math.abs(cur) < 0.005 && Math.abs(pri) < 0.005) continue;
+          accounts.push({
+            accountId: id,
+            code: ref.code,
+            name: ref.name,
+            current: cur,
+            prior: pri,
+          });
+          curTotal = r2(curTotal + cur);
+          priTotal = r2(priTotal + pri);
+        }
+        if (accounts.length === 0) continue;
+        accounts.sort((a, b) => a.code.localeCompare(b.code));
+        rubros.push({
+          group,
+          label: ACCOUNT_GROUP_LABELS[group as AccountGroup] ?? group,
+          current: curTotal,
+          prior: priTotal,
+          accounts,
+        });
+      }
+      return {
+        key: sec.section,
+        label: sec.section,
+        macro,
+        rubros,
+        current: r2(rubros.reduce((s, r) => s + r.current, 0)),
+        prior: r2(rubros.reduce((s, r) => s + r.prior, 0)),
+      };
+    });
+
+    const sumMacro = (
+      macro: 'activo' | 'pasivo' | 'pn',
+      col: 'current' | 'prior'
+    ) =>
+      r2(
+        sections
+          .filter((s) => s.macro === macro)
+          .reduce((s, sec) => s + sec[col], 0)
+      );
+
+    const totals = {
+      activo: {
+        current: sumMacro('activo', 'current'),
+        prior: sumMacro('activo', 'prior'),
+      },
+      pasivo: {
+        current: sumMacro('pasivo', 'current'),
+        prior: sumMacro('pasivo', 'prior'),
+      },
+      pn: {
+        current: sumMacro('pn', 'current'),
+        prior: sumMacro('pn', 'prior'),
+      },
+      pasivoMasPn: { current: 0, prior: 0 },
+    };
+    totals.pasivoMasPn = {
+      current: r2(totals.pasivo.current + totals.pn.current),
+      prior: r2(totals.pasivo.prior + totals.pn.prior),
+    };
+
+    const fmtD = (d: Date) =>
+      `${d.getUTCDate().toString().padStart(2, '0')}/${(d.getUTCMonth() + 1).toString().padStart(2, '0')}/${d.getUTCFullYear()}`;
+
+    return {
+      fiscalYearNumber: fy.number,
+      priorFiscalYearNumber: priorFy?.number ?? null,
+      periodLabel: `${fmtD(fy.startDate)} – ${fmtD(fy.endDate)}`,
+      sections,
+      totals,
+      balancedCurrent:
+        Math.abs(totals.activo.current - totals.pasivoMasPn.current) < 0.005,
+      balancedPrior: priorFy
+        ? Math.abs(totals.activo.prior - totals.pasivoMasPn.prior) < 0.005
+        : true,
+      hasPrior: !!priorFy,
+    };
   });
