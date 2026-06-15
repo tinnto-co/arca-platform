@@ -93,6 +93,7 @@ import {
   approveClosingStage,
   sealClosing,
   getESP,
+  getER,
   type ChartAccount,
   type PeriodView,
   type LedgerRow,
@@ -103,6 +104,7 @@ import {
   type ClosingEntryPreview,
   type EspSection,
   type EspRubro,
+  type ErLine,
 } from '@/actions/accounting';
 import {
   exportMayorExcel,
@@ -6666,11 +6668,7 @@ function EstadosContables({
       {view === 'esp' ? (
         <EspView clientId={clientId} clientName={clientName} />
       ) : (
-        <ArcaCard>
-          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
-            El Estado de Resultados se construye en la próxima fase.
-          </div>
-        </ArcaCard>
+        <ErView clientId={clientId} clientName={clientName} />
       )}
     </div>
   );
@@ -6958,5 +6956,243 @@ function EspSectionRows({
         );
       })}
     </>
+  );
+}
+
+function ErView({
+  clientId,
+  clientName,
+}: {
+  clientId: string;
+  clientName: string;
+}) {
+  const [selectedFyId, setSelectedFyId] = useState('');
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [drill, setDrill] = useState<LedgerDrill | null>(null);
+
+  const { data: fiscalYears = [] } = useQuery({
+    queryKey: ['accounting', 'fiscal-years', clientId],
+    queryFn: () => getFiscalYears({ data: { clientId } }),
+  });
+  const effectiveFyId =
+    selectedFyId ||
+    fiscalYears.find((y) => y.status === 'open')?.id ||
+    fiscalYears[0]?.id ||
+    '';
+  const selectedFy = fiscalYears.find((y) => y.id === effectiveFyId);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['accounting', 'er', clientId, effectiveFyId],
+    queryFn: () => getER({ data: { clientId, fiscalYearId: effectiveFyId } }),
+    enabled: !!effectiveFyId,
+  });
+
+  if (fiscalYears.length === 0) {
+    return (
+      <ArcaCard>
+        <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+          Creá un ejercicio en la pestaña <strong>Ejercicios</strong> para
+          generar el Estado de Resultados.
+        </div>
+      </ArcaCard>
+    );
+  }
+
+  const toggle = (g: string) =>
+    setExpanded((prev) => {
+      const n = new Set(prev);
+      if (n.has(g)) n.delete(g);
+      else n.add(g);
+      return n;
+    });
+
+  const openLedger = (a: { accountId: string; code: string; name: string }) => {
+    if (!selectedFy) return;
+    setDrill({
+      accountId: a.accountId,
+      code: a.code,
+      name: a.name,
+      from: new Date(selectedFy.startDate).toISOString().slice(0, 10),
+      to: new Date(selectedFy.endDate).toISOString().slice(0, 10),
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <ArcaCard>
+        <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-[var(--arca-border)]">
+          <span className="text-[12px] text-[var(--arca-ink-3)]">
+            Ejercicio
+          </span>
+          <select
+            value={effectiveFyId}
+            onChange={(e) => setSelectedFyId(e.target.value)}
+            className={SELECT_CLASS}
+          >
+            {fiscalYears.map((y) => (
+              <option key={y.id} value={y.id}>
+                N°{y.number} ({y.status === 'open' ? 'abierto' : 'cerrado'})
+              </option>
+            ))}
+          </select>
+          <div className="flex-1" />
+          <span className="text-[10.5px] px-2 py-1 rounded-full bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
+            Valores históricos
+          </span>
+        </div>
+
+        {/* Carátula */}
+        <div className="px-5 pt-4">
+          <div className="text-[15px] font-semibold text-[var(--arca-ink)]">
+            {clientName}
+          </div>
+          <div className="text-[12.5px] text-[var(--arca-ink-2)]">
+            Estado de Resultados
+            {data
+              ? ` · Ejercicio N°${data.fiscalYearNumber} · ${data.periodLabel}`
+              : ''}
+          </div>
+          <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
+            Expresado en valores históricos (sin ajuste por inflación · RT 6).
+          </div>
+        </div>
+
+        {isLoading || !data ? (
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            Calculando…
+          </div>
+        ) : (
+          <div className="px-2 py-3">
+            <table className="w-full text-[12.5px]">
+              <thead>
+                <tr className="text-[11px] uppercase tracking-wide text-[var(--arca-ink-3)] border-b border-[var(--arca-border)]">
+                  <th className="py-2 pl-3 text-left">Concepto</th>
+                  <th className="py-2 pr-3 text-right w-40">
+                    Ej. N°{data.fiscalYearNumber}
+                  </th>
+                  <th className="py-2 pr-3 text-right w-40">
+                    {data.hasPrior
+                      ? `Ej. N°${data.priorFiscalYearNumber}`
+                      : 'Anterior'}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.lines.map((line: ErLine) => {
+                  if (line.kind === 'subtotal') {
+                    const isFinal = line.key === 'resultado_ejercicio';
+                    return (
+                      <tr
+                        key={line.key}
+                        className={
+                          isFinal
+                            ? 'border-t-2 border-[var(--arca-ink)] font-bold'
+                            : 'border-t border-[var(--arca-ink-3)] font-semibold'
+                        }
+                      >
+                        <td
+                          className={isFinal ? 'py-2 pl-3' : 'py-1.5 pl-3'}
+                        >
+                          {line.label}
+                        </td>
+                        <td
+                          className={`${isFinal ? 'py-2' : 'py-1.5'} pr-3 text-right tabular-nums`}
+                        >
+                          $ {fmtMoney(line.current)}
+                        </td>
+                        <td
+                          className={`${isFinal ? 'py-2' : 'py-1.5'} pr-3 text-right tabular-nums`}
+                        >
+                          {data.hasPrior ? `$ ${fmtMoney(line.prior)}` : '—'}
+                        </td>
+                      </tr>
+                    );
+                  }
+                  const canExpand = line.accounts.length > 0;
+                  const isOpen = expanded.has(line.key);
+                  return (
+                    <Fragment key={line.key}>
+                      <tr
+                        className={
+                          canExpand
+                            ? 'hover:bg-[var(--arca-surface-2)] cursor-pointer'
+                            : ''
+                        }
+                        onClick={
+                          canExpand ? () => toggle(line.key) : undefined
+                        }
+                      >
+                        <td className="py-1.5 pl-5 text-[var(--arca-ink)]">
+                          {canExpand && (
+                            <span className="text-[var(--arca-ink-3)] mr-1">
+                              {isOpen ? '▾' : '▸'}
+                            </span>
+                          )}
+                          {line.label}
+                        </td>
+                        <td className="py-1.5 pr-3 text-right tabular-nums">
+                          $ {fmtMoney(line.current)}
+                        </td>
+                        <td className="py-1.5 pr-3 text-right tabular-nums">
+                          {data.hasPrior ? `$ ${fmtMoney(line.prior)}` : '—'}
+                        </td>
+                      </tr>
+                      {isOpen &&
+                        line.accounts.map((a) => (
+                          <tr
+                            key={a.accountId}
+                            className="text-[11.5px] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] cursor-pointer"
+                            onClick={() => openLedger(a)}
+                            title="Ver mayor de la cuenta"
+                          >
+                            <td className="py-1 pl-12">
+                              <span className="text-[var(--arca-ink-3)]">
+                                {a.code}
+                              </span>{' '}
+                              {a.name}
+                            </td>
+                            <td className="py-1 pr-3 text-right tabular-nums">
+                              $ {fmtMoney(a.current)}
+                            </td>
+                            <td className="py-1 pr-3 text-right tabular-nums">
+                              {data.hasPrior ? `$ ${fmtMoney(a.prior)}` : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+
+            {/* US 6.2.2 — validación de consistencia ER ↔ ESP */}
+            <div className="px-3 mt-3">
+              {data.matchesEspCurrent ? (
+                <div className="text-[12px] text-emerald-700">
+                  ✓ El Resultado del ejercicio del ER coincide con el del ESP ($
+                  {fmtMoney(data.resultadoCurrent)}).
+                </div>
+              ) : (
+                <div className="text-[12px] text-red-600 font-medium">
+                  ✗ Discrepancia: Resultado del ER $
+                  {fmtMoney(data.resultadoCurrent)} ≠ Resultado del ESP $
+                  {fmtMoney(data.espResultadoCurrent)}. La emisión está
+                  bloqueada hasta corregir.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </ArcaCard>
+
+      {drill && (
+        <LedgerDialog
+          clientId={clientId}
+          drill={drill}
+          canWrite={false}
+          onClose={() => setDrill(null)}
+        />
+      )}
+    </div>
   );
 }

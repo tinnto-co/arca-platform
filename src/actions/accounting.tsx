@@ -5105,3 +5105,240 @@ export const getESP = createServerFn({ method: 'GET' })
       hasPrior: !!priorFy,
     };
   });
+
+/* ── Estado de Resultados (ER) — Fase 6.2 ── */
+
+export interface ErLine {
+  key: string;
+  label: string;
+  kind: 'component' | 'subtotal';
+  current: number;
+  prior: number;
+  accounts: EspAccountRow[]; // vacío en los subtotales
+}
+export interface ErResult {
+  fiscalYearNumber: number;
+  priorFiscalYearNumber: number | null;
+  periodLabel: string;
+  lines: ErLine[];
+  resultadoCurrent: number;
+  resultadoPrior: number;
+  /** Resultado del ejercicio según el ESP (saldo de la cuenta Resultado del ejercicio). */
+  espResultadoCurrent: number;
+  espResultadoPrior: number;
+  matchesEspCurrent: boolean;
+  matchesEspPrior: boolean;
+  hasPrior: boolean;
+}
+
+/** Líneas de componentes del ER (los subtotales se intercalan al armar). */
+const ER_COMPONENTS: {
+  key: string;
+  label: string;
+  groups: readonly string[];
+}[] = [
+  { key: 'ventas', label: 'Ventas netas', groups: ['ventas'] },
+  { key: 'costo_ventas', label: 'Costo de ventas', groups: ['costo_ventas'] },
+  {
+    key: 'gastos_administracion',
+    label: 'Gastos de administración',
+    groups: ['gastos_administracion'],
+  },
+  {
+    key: 'gastos_comercializacion',
+    label: 'Gastos de comercialización',
+    groups: ['gastos_comercializacion'],
+  },
+  {
+    key: 'gastos_financieros',
+    label: 'Gastos financieros',
+    groups: ['gastos_financieros'],
+  },
+  {
+    key: 'otros_resultados',
+    label: 'Otros resultados',
+    groups: ['otros_resultados_pos', 'otros_resultados_neg'],
+  },
+  {
+    key: 'impuesto_ganancias',
+    label: 'Impuesto a las ganancias',
+    groups: ['impuesto_ganancias'],
+  },
+];
+
+/** Estado de Resultados comparativo (actual vs anterior). (US 6.2.1/6.2.2) */
+export const getER = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({ clientId: z.string().uuid(), fiscalYearId: z.string().uuid() })
+  )
+  .handler(async (ctx): Promise<ErResult> => {
+    const { orgId } = await getSessionWithOrg();
+    const { clientId } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
+
+    const [priorFy] = await db
+      .select()
+      .from(fiscalYear)
+      .where(
+        and(
+          eq(fiscalYear.clientId, clientId),
+          eq(fiscalYear.number, fy.number - 1)
+        )
+      )
+      .limit(1);
+
+    const curBal = await computeEspBalances(orgId, fy.id);
+    const priBal = priorFy ? await computeEspBalances(orgId, priorFy.id) : [];
+    const curMap = new Map(curBal.map((b) => [b.accountId, b]));
+    const priMap = new Map(priBal.map((b) => [b.accountId, b]));
+
+    // Para el ER el aporte de toda cuenta de resultado es (−saldo):
+    // ingresos (acreedoras) suman, gastos (deudoras) restan.
+    const buildComponent = (groups: readonly string[]) => {
+      const accIds = new Set<string>();
+      for (const b of curBal)
+        if (b.group && groups.includes(b.group)) accIds.add(b.accountId);
+      for (const b of priBal)
+        if (b.group && groups.includes(b.group)) accIds.add(b.accountId);
+
+      const accounts: EspAccountRow[] = [];
+      let cur = 0;
+      let pri = 0;
+      for (const id of accIds) {
+        const cb = curMap.get(id);
+        const pb = priMap.get(id);
+        const ref = cb ?? pb!;
+        const c = r2(-(cb?.saldo ?? 0));
+        const p = r2(-(pb?.saldo ?? 0));
+        if (Math.abs(c) < 0.005 && Math.abs(p) < 0.005) continue;
+        accounts.push({
+          accountId: id,
+          code: ref.code,
+          name: ref.name,
+          current: c,
+          prior: p,
+        });
+        cur = r2(cur + c);
+        pri = r2(pri + p);
+      }
+      accounts.sort((a, b) => a.code.localeCompare(b.code));
+      return { accounts, current: cur, prior: pri };
+    };
+
+    const comp = new Map(
+      ER_COMPONENTS.map((c) => [
+        c.key,
+        { ...c, ...buildComponent(c.groups) },
+      ])
+    );
+    const compLine = (key: string): ErLine => {
+      const c = comp.get(key)!;
+      return {
+        key,
+        label: c.label,
+        kind: 'component',
+        current: c.current,
+        prior: c.prior,
+        accounts: c.accounts,
+      };
+    };
+
+    const ventas = comp.get('ventas')!;
+    const costo = comp.get('costo_ventas')!;
+    const resBruto = {
+      current: r2(ventas.current + costo.current),
+      prior: r2(ventas.prior + costo.prior),
+    };
+    const admin = comp.get('gastos_administracion')!;
+    const comerc = comp.get('gastos_comercializacion')!;
+    const fin = comp.get('gastos_financieros')!;
+    const otros = comp.get('otros_resultados')!;
+    const resOperativo = {
+      current: r2(
+        resBruto.current +
+          admin.current +
+          comerc.current +
+          fin.current +
+          otros.current
+      ),
+      prior: r2(
+        resBruto.prior +
+          admin.prior +
+          comerc.prior +
+          fin.prior +
+          otros.prior
+      ),
+    };
+    const impuesto = comp.get('impuesto_ganancias')!;
+    const resEjercicio = {
+      current: r2(resOperativo.current + impuesto.current),
+      prior: r2(resOperativo.prior + impuesto.prior),
+    };
+
+    const subtotal = (
+      key: string,
+      label: string,
+      v: { current: number; prior: number }
+    ): ErLine => ({
+      key,
+      label,
+      kind: 'subtotal',
+      current: v.current,
+      prior: v.prior,
+      accounts: [],
+    });
+
+    const lines: ErLine[] = [
+      compLine('ventas'),
+      compLine('costo_ventas'),
+      subtotal('resultado_bruto', 'Resultado bruto', resBruto),
+      compLine('gastos_administracion'),
+      compLine('gastos_comercializacion'),
+      compLine('gastos_financieros'),
+      compLine('otros_resultados'),
+      subtotal('resultado_operativo', 'Resultado operativo', resOperativo),
+      compLine('impuesto_ganancias'),
+      subtotal(
+        'resultado_ejercicio',
+        'Resultado del ejercicio',
+        resEjercicio
+      ),
+    ];
+
+    // US 6.2.2 — consistencia ESP↔ER: el resultado del ER debe coincidir con el
+    // saldo de "Resultado del ejercicio" del ESP, computado independientemente
+    // como −(suma de saldos de todas las cuentas de resultado).
+    const espResultado = (bal: EspBalance[]) =>
+      r2(
+        -bal
+          .filter(
+            (b) =>
+              b.group &&
+              (RESULT_ACCOUNT_GROUPS as readonly string[]).includes(b.group)
+          )
+          .reduce((s, b) => s + b.saldo, 0)
+      );
+    const espResultadoCurrent = espResultado(curBal);
+    const espResultadoPrior = espResultado(priBal);
+
+    const fmtD = (d: Date) =>
+      `${d.getUTCDate().toString().padStart(2, '0')}/${(d.getUTCMonth() + 1).toString().padStart(2, '0')}/${d.getUTCFullYear()}`;
+
+    return {
+      fiscalYearNumber: fy.number,
+      priorFiscalYearNumber: priorFy?.number ?? null,
+      periodLabel: `${fmtD(fy.startDate)} – ${fmtD(fy.endDate)}`,
+      lines,
+      resultadoCurrent: resEjercicio.current,
+      resultadoPrior: resEjercicio.prior,
+      espResultadoCurrent,
+      espResultadoPrior,
+      matchesEspCurrent:
+        Math.abs(resEjercicio.current - espResultadoCurrent) < 0.005,
+      matchesEspPrior: priorFy
+        ? Math.abs(resEjercicio.prior - espResultadoPrior) < 0.005
+        : true,
+      hasPrior: !!priorFy,
+    };
+  });
