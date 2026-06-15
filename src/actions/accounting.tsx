@@ -1469,6 +1469,11 @@ export const createJournalEntry = createServerFn({ method: 'POST' })
       clientId,
       ctx.data.entryDate
     );
+    if (fy.status === 'closed') {
+      throw new Error(
+        'No se puede cargar el asiento: el ejercicio está cerrado'
+      );
+    }
     if (period.status === 'closed') {
       throw new Error('No se puede cargar el asiento: el período está cerrado');
     }
@@ -4460,20 +4465,6 @@ async function loadResultadoAccount(orgId: string): Promise<ResultadoAccount> {
   return acc;
 }
 
-export interface ClosingPreview {
-  fiscalYearNumber: number;
-  fiscalYearStatus: 'open' | 'closing' | 'closed';
-  resultado: {
-    account: string;
-    net: number;
-    tipo: 'ganancia' | 'perdida' | 'neutro';
-  };
-  refundicion: ClosingEntryPreview;
-  cierre: ClosingEntryPreview;
-  nextFiscalYear: { number: number; startDate: string; endDate: string } | null;
-  alreadyClosed: boolean;
-}
-
 const nextFyDates = (end: Date): { start: Date; end: Date } => {
   const start = new Date(end.getTime() + 24 * 60 * 60 * 1000);
   const sY = start.getUTCFullYear();
@@ -4482,20 +4473,137 @@ const nextFyDates = (end: Date): { start: Date; end: Date } => {
   return { start, end: nextEnd };
 };
 
-/** Preview de los asientos de cierre (refundición + cierre patrimonial). (US 5.2.1/5.2.2) */
-export const getClosingPreview = createServerFn({ method: 'GET' })
+/** Líneas (cuenta + montos) de un asiento ya posteado, para el preview del wizard. */
+async function loadEntryClosingLines(entryId: string): Promise<ClosingLine[]> {
+  const ls = await db
+    .select({
+      accountId: journalEntryLine.accountId,
+      code: account.code,
+      name: account.name,
+      debit: journalEntryLine.debit,
+      credit: journalEntryLine.credit,
+    })
+    .from(journalEntryLine)
+    .innerJoin(account, eq(account.id, journalEntryLine.accountId))
+    .where(eq(journalEntryLine.journalEntryId, entryId))
+    .orderBy(asc(journalEntryLine.lineOrder));
+  return ls.map((l) => ({
+    accountId: l.accountId,
+    code: l.code,
+    name: l.name,
+    debit: parseFloat(l.debit),
+    credit: parseFloat(l.credit),
+  }));
+}
+
+const summarizeLines = (lines: ClosingLine[]): ClosingEntryPreview => {
+  const totalDebit = r2(lines.reduce((s, l) => s + l.debit, 0));
+  const totalCredit = r2(lines.reduce((s, l) => s + l.credit, 0));
+  return {
+    lines,
+    totalDebit,
+    totalCredit,
+    balanced: Math.abs(totalDebit - totalCredit) < 0.005,
+  };
+};
+
+export interface ClosingStageView {
+  status: 'done' | 'pending';
+  entryNumber: number | null;
+  preview: ClosingEntryPreview | null;
+}
+export interface ClosingWizardState {
+  fiscalYearNumber: number;
+  fiscalYearStatus: 'open' | 'closing' | 'closed';
+  resultado: {
+    account: string;
+    net: number;
+    tipo: 'ganancia' | 'perdida' | 'neutro';
+  };
+  refundicion: ClosingStageView;
+  cierre: ClosingStageView;
+  apertura: ClosingStageView & {
+    nextFy: { number: number; startDate: string; endDate: string } | null;
+  };
+}
+
+/** Estado del wizard de cierre por etapa (con previews editables). (US 5.3.x) */
+export const getClosingWizard = createServerFn({ method: 'GET' })
   .inputValidator(
     z.object({ clientId: z.string().uuid(), fiscalYearId: z.string().uuid() })
   )
-  .handler(async (ctx): Promise<ClosingPreview> => {
+  .handler(async (ctx): Promise<ClosingWizardState> => {
     const { orgId } = await getSessionWithOrg();
     const { clientId } = ctx.data;
     await ensureClientBelongsToOrg(clientId, orgId);
     const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
     const resultado = await loadResultadoAccount(orgId);
 
+    // Asientos de cierre ya posteados (refundición = el de menor número, cierre = el siguiente).
+    const closingEntries = await db
+      .select({
+        id: journalEntry.id,
+        number: journalEntry.number,
+        description: journalEntry.description,
+      })
+      .from(journalEntry)
+      .where(
+        and(
+          eq(journalEntry.clientId, clientId),
+          eq(journalEntry.fiscalYearId, fy.id),
+          eq(journalEntry.origin, 'auto_closing'),
+          eq(journalEntry.isVoided, false)
+        )
+      )
+      .orderBy(asc(journalEntry.number));
+    const refEntry = closingEntries[0] ?? null;
+    const cierreEntry = closingEntries[1] ?? null;
+
+    // Asiento de apertura (en el próximo ejercicio).
+    const [nextFy] = await db
+      .select()
+      .from(fiscalYear)
+      .where(
+        and(
+          eq(fiscalYear.clientId, clientId),
+          eq(fiscalYear.number, fy.number + 1)
+        )
+      )
+      .limit(1);
+    let aperturaEntry: { number: number } | null = null;
+    if (nextFy) {
+      const [op] = await db
+        .select({ number: journalEntry.number })
+        .from(journalEntry)
+        .where(
+          and(
+            eq(journalEntry.fiscalYearId, nextFy.id),
+            eq(journalEntry.origin, 'auto_opening'),
+            eq(journalEntry.isVoided, false)
+          )
+        )
+        .limit(1);
+      aperturaEntry = op ?? null;
+    }
+
     const balances = await computeFyBalances(orgId, fy.id);
     const built = buildClosingEntries(balances, resultado);
+
+    // Resultado del ejercicio (ganancia/pérdida) para mostrar.
+    const resultadoBal = balances.find((b) => b.accountId === resultado.id);
+    const net = refEntry ? r2(-(resultadoBal?.saldo ?? 0)) : built.net;
+
+    // Preview de apertura: si el cierre está posteado, invertir sus líneas.
+    let aperturaPreview: ClosingEntryPreview;
+    if (cierreEntry) {
+      const cl = await loadEntryClosingLines(cierreEntry.id);
+      aperturaPreview = summarizeLines(
+        cl.map((l) => ({ ...l, debit: l.credit, credit: l.debit }))
+      );
+    } else {
+      aperturaPreview = built.apertura;
+    }
+
     const nd = nextFyDates(fy.endDate);
 
     return {
@@ -4503,71 +4611,95 @@ export const getClosingPreview = createServerFn({ method: 'GET' })
       fiscalYearStatus: fy.status,
       resultado: {
         account: `${resultado.code} · ${resultado.name}`,
-        net: built.net,
-        tipo:
-          built.net > 0.005
-            ? 'ganancia'
-            : built.net < -0.005
-              ? 'perdida'
-              : 'neutro',
+        net,
+        tipo: net > 0.005 ? 'ganancia' : net < -0.005 ? 'perdida' : 'neutro',
       },
-      refundicion: built.refundicion,
-      cierre: built.cierre,
-      nextFiscalYear: {
-        number: fy.number + 1,
-        startDate: nd.start.toISOString(),
-        endDate: nd.end.toISOString(),
+      refundicion: {
+        status: refEntry ? 'done' : 'pending',
+        entryNumber: refEntry?.number ?? null,
+        preview: refEntry
+          ? summarizeLines(await loadEntryClosingLines(refEntry.id))
+          : built.refundicion,
       },
-      alreadyClosed: fy.status === 'closed',
+      cierre: {
+        status: cierreEntry ? 'done' : 'pending',
+        entryNumber: cierreEntry?.number ?? null,
+        preview: cierreEntry
+          ? summarizeLines(await loadEntryClosingLines(cierreEntry.id))
+          : built.cierre,
+      },
+      apertura: {
+        status: aperturaEntry ? 'done' : 'pending',
+        entryNumber: aperturaEntry?.number ?? null,
+        preview: aperturaEntry ? null : aperturaPreview,
+        nextFy: {
+          number: fy.number + 1,
+          startDate: nd.start.toISOString(),
+          endDate: nd.end.toISOString(),
+        },
+      },
     };
   });
 
-/** Ejecuta el cierre: refundición + cierre patrimonial + (opcional) apertura. (US 5.2.x) */
-export const executeClosing = createServerFn({ method: 'POST' })
+const closingLineInput = z.object({
+  accountId: z.string().uuid(),
+  debit: z.number().min(0),
+  credit: z.number().min(0),
+});
+
+/** Aprueba (persiste) el asiento de una etapa del cierre, con montos ya editados. (US 5.3.2) */
+export const approveClosingStage = createServerFn({ method: 'POST' })
   .inputValidator(
     z.object({
       clientId: z.string().uuid(),
       fiscalYearId: z.string().uuid(),
-      createOpening: z.boolean().default(false),
+      stage: z.enum(['refundicion', 'cierre', 'apertura']),
+      lines: z.array(closingLineInput).min(2),
     })
   )
   .handler(async (ctx) => {
     const { orgId, userId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertOwner(role);
-    const { clientId } = ctx.data;
+    const { clientId, stage } = ctx.data;
     await ensureClientBelongsToOrg(clientId, orgId);
     const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
     if (fy.status !== 'open') throw new Error('El ejercicio no está abierto');
 
-    // Defensa: no cerrar con pendientes de revisión.
-    const [{ pend }] = await db
-      .select({ pend: sql<number>`count(distinct ${journalEntry.id})::int` })
+    validateLineAmounts(ctx.data.lines);
+    await assertPostableAccounts(
+      clientId,
+      orgId,
+      ctx.data.lines.map((l) => l.accountId)
+    );
+
+    // Estado de etapas previas.
+    const closingEntries = await db
+      .select({ number: journalEntry.number })
       .from(journalEntry)
-      .innerJoin(
-        journalEntryLine,
-        eq(journalEntryLine.journalEntryId, journalEntry.id)
-      )
-      .innerJoin(account, eq(account.id, journalEntryLine.accountId))
       .where(
         and(
+          eq(journalEntry.clientId, clientId),
           eq(journalEntry.fiscalYearId, fy.id),
-          eq(journalEntry.isVoided, false),
-          eq(account.organizationId, orgId),
-          eq(account.code, PENDING_REVIEW_CODE)
+          eq(journalEntry.origin, 'auto_closing'),
+          eq(journalEntry.isVoided, false)
         )
-      );
-    if ((pend ?? 0) > 0) {
-      throw new Error(
-        'Hay asientos en pendiente de revisión. Resolvelos antes de cerrar'
-      );
+      )
+      .orderBy(asc(journalEntry.number));
+    const refDone = closingEntries.length >= 1;
+    const cierreDone = closingEntries.length >= 2;
+
+    if (stage === 'refundicion' && refDone)
+      throw new Error('La refundición ya fue registrada');
+    if (stage === 'cierre') {
+      if (!refDone) throw new Error('Primero registrá la refundición');
+      if (cierreDone)
+        throw new Error('El cierre patrimonial ya fue registrado');
     }
+    if (stage === 'apertura' && !cierreDone)
+      throw new Error('Primero registrá el cierre patrimonial');
 
-    const resultado = await loadResultadoAccount(orgId);
-    const balances = await computeFyBalances(orgId, fy.id);
-    const built = buildClosingEntries(balances, resultado);
-
-    // Período donde caen los asientos de cierre = el que contiene el fin del ejercicio.
+    // Período donde caen los asientos de cierre = el del fin del ejercicio.
     const [lastPeriod] = await db
       .select()
       .from(accountingPeriod)
@@ -4581,28 +4713,14 @@ export const executeClosing = createServerFn({ method: 'POST' })
       .limit(1);
     if (!lastPeriod) throw new Error('No se encontró el período de cierre');
 
-    const result = await db.transaction(async (tx) => {
-      const [{ maxNum }] = await tx
-        .select({
-          maxNum: sql<number>`coalesce(max(${journalEntry.number}),0)::int`,
-        })
-        .from(journalEntry)
-        .where(
-          and(
-            eq(journalEntry.clientId, clientId),
-            eq(journalEntry.fiscalYearId, fy.id)
-          )
-        );
-      let n = maxNum ?? 0;
-
+    const out = await db.transaction(async (tx) => {
       const insertEntry = async (
         fyId: string,
         periodId: string,
         date: Date,
         number: number,
         origin: 'auto_closing' | 'auto_opening',
-        description: string,
-        lines: ClosingLine[]
+        description: string
       ) => {
         const [je] = await tx
           .insert(journalEntry)
@@ -4619,7 +4737,7 @@ export const executeClosing = createServerFn({ method: 'POST' })
           })
           .returning();
         await tx.insert(journalEntryLine).values(
-          lines.map((l, i) => ({
+          ctx.data.lines.map((l, i) => ({
             journalEntryId: je.id,
             accountId: l.accountId,
             clientId,
@@ -4630,52 +4748,11 @@ export const executeClosing = createServerFn({ method: 'POST' })
             lineOrder: i,
           }))
         );
-        return je;
+        return je.number;
       };
 
-      // 1) Refundición (si hay resultados).
-      if (built.refundicion.lines.length > 0) {
-        n += 1;
-        await insertEntry(
-          fy.id,
-          lastPeriod.id,
-          fy.endDate,
-          n,
-          'auto_closing',
-          'Refundición de cuentas de resultado',
-          built.refundicion.lines
-        );
-      }
-      // 2) Cierre patrimonial.
-      if (built.cierre.lines.length > 0) {
-        n += 1;
-        await insertEntry(
-          fy.id,
-          lastPeriod.id,
-          fy.endDate,
-          n,
-          'auto_closing',
-          'Asiento de cierre patrimonial',
-          built.cierre.lines
-        );
-      }
-
-      // 3) Marcar el ejercicio cerrado.
-      await tx
-        .update(fiscalYear)
-        .set({ status: 'closed', closedAt: sql`now()`, closedBy: userId })
-        .where(eq(fiscalYear.id, fy.id));
-      await tx.insert(accountingLog).values({
-        clientId,
-        fiscalYearId: fy.id,
-        eventType: 'fiscal_year_closed',
-        eventData: { number: fy.number, net: built.net },
-        userId,
-      });
-
-      // 4) Apertura del próximo ejercicio (opcional).
-      let nextFyNumber: number | null = null;
-      if (ctx.data.createOpening && built.apertura.lines.length > 0) {
+      if (stage === 'apertura') {
+        // Crea el próximo ejercicio (si no existe) + asiento de apertura.
         const nd = nextFyDates(fy.endDate);
         const sY = nd.start.getUTCFullYear();
         const sM = nd.start.getUTCMonth();
@@ -4689,7 +4766,6 @@ export const executeClosing = createServerFn({ method: 'POST' })
             number: fy.number + 1,
           })
           .returning();
-        nextFyNumber = nfy.number;
         const periods = Array.from({ length: 12 }, (_, i) => {
           const d = new Date(Date.UTC(sY, sM + i, 1));
           return {
@@ -4700,28 +4776,94 @@ export const executeClosing = createServerFn({ method: 'POST' })
             status: 'open' as const,
           };
         });
-        const insertedPeriods = await tx
+        const inserted = await tx
           .insert(accountingPeriod)
           .values(periods)
           .returning();
-        const firstPeriod = insertedPeriods.find((p) => p.month === sM + 1)!;
+        const first = inserted.find((p) => p.month === sM + 1)!;
         await insertEntry(
           nfy.id,
-          firstPeriod.id,
+          first.id,
           nd.start,
           1,
           'auto_opening',
-          `Asiento de apertura · Ejercicio N°${nfy.number}`,
-          built.apertura.lines
+          `Asiento de apertura · Ejercicio N°${nfy.number}`
         );
+        return { entryNumber: 1, nextFyNumber: nfy.number };
       }
 
-      return { nextFyNumber };
+      // Refundición / cierre: número consecutivo del ejercicio.
+      const [{ maxNum }] = await tx
+        .select({
+          maxNum: sql<number>`coalesce(max(${journalEntry.number}),0)::int`,
+        })
+        .from(journalEntry)
+        .where(
+          and(
+            eq(journalEntry.clientId, clientId),
+            eq(journalEntry.fiscalYearId, fy.id)
+          )
+        );
+      const number = (maxNum ?? 0) + 1;
+      const description =
+        stage === 'refundicion'
+          ? 'Refundición de cuentas de resultado'
+          : 'Asiento de cierre patrimonial';
+      await insertEntry(
+        fy.id,
+        lastPeriod.id,
+        fy.endDate,
+        number,
+        'auto_closing',
+        description
+      );
+      return { entryNumber: number, nextFyNumber: null as number | null };
     });
 
-    return {
-      ok: true as const,
-      net: built.net,
-      nextFiscalYearNumber: result.nextFyNumber,
-    };
+    return { ok: true as const, stage, ...out };
+  });
+
+/** Sella el ejercicio: status='closed' + log. (US 5.3.3) */
+export const sealClosing = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({ clientId: z.string().uuid(), fiscalYearId: z.string().uuid() })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertOwner(role);
+    const { clientId } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
+    if (fy.status !== 'open') throw new Error('El ejercicio ya está cerrado');
+
+    const closingEntries = await db
+      .select({ id: journalEntry.id })
+      .from(journalEntry)
+      .where(
+        and(
+          eq(journalEntry.clientId, clientId),
+          eq(journalEntry.fiscalYearId, fy.id),
+          eq(journalEntry.origin, 'auto_closing'),
+          eq(journalEntry.isVoided, false)
+        )
+      );
+    if (closingEntries.length < 2) {
+      throw new Error(
+        'Faltan etapas: registrá la refundición y el cierre patrimonial antes de sellar'
+      );
+    }
+
+    await db
+      .update(fiscalYear)
+      .set({ status: 'closed', closedAt: sql`now()`, closedBy: userId })
+      .where(eq(fiscalYear.id, fy.id));
+    await db.insert(accountingLog).values({
+      clientId,
+      fiscalYearId: fy.id,
+      eventType: 'fiscal_year_closed',
+      eventData: { number: fy.number },
+      userId,
+    });
+    return { ok: true as const };
   });

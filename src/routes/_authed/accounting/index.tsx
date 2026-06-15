@@ -88,8 +88,9 @@ import {
   disposeFixedAsset,
   getAnexoI,
   getYearEndChecklist,
-  getClosingPreview,
-  executeClosing,
+  getClosingWizard,
+  approveClosingStage,
+  sealClosing,
   type ChartAccount,
   type PeriodView,
   type LedgerRow,
@@ -1879,48 +1880,134 @@ function CierreChecklist({
   );
 }
 
-/* ─── Wizard de cierre de ejercicio (US 5.2.x) ─── */
-function ClosingEntryTable({ entry }: { entry: ClosingEntryPreview }) {
+/* ─── Wizard de cierre de ejercicio (US 5.3.x) ─── */
+
+interface EditLine {
+  accountId: string;
+  code: string;
+  name: string;
+  debit: string;
+  credit: string;
+}
+
+/** Tabla de asiento con montos editables; informa al padre líneas + si balancea. */
+function EditableEntryTable({
+  preview,
+  readOnly,
+  onChange,
+}: {
+  preview: ClosingEntryPreview;
+  readOnly: boolean;
+  onChange?: (lines: EditLine[], balanced: boolean) => void;
+}) {
+  const [lines, setLines] = useState<EditLine[]>(
+    preview.lines.map((l) => ({
+      accountId: l.accountId,
+      code: l.code,
+      name: l.name,
+      debit: l.debit > 0 ? String(l.debit) : '',
+      credit: l.credit > 0 ? String(l.credit) : '',
+    }))
+  );
+
+  const totalD = lines.reduce((s, l) => s + num(l.debit), 0);
+  const totalC = lines.reduce((s, l) => s + num(l.credit), 0);
+  const balanced = Math.abs(totalD - totalC) < 0.005;
+
+  const update = (i: number, field: 'debit' | 'credit', v: string) => {
+    const next = lines.map((l, j) => (j === i ? { ...l, [field]: v } : l));
+    setLines(next);
+    onChange?.(
+      next,
+      Math.abs(
+        next.reduce((s, l) => s + num(l.debit), 0) -
+          next.reduce((s, l) => s + num(l.credit), 0)
+      ) < 0.005
+    );
+  };
+
   return (
     <table className="w-full text-[12px]">
       <thead>
         <tr className="text-left text-[10.5px] uppercase tracking-wide text-[var(--arca-ink-3)] border-b border-[var(--arca-border)]">
           <th className="py-1.5">Cuenta</th>
-          <th className="py-1.5 text-right">Debe</th>
-          <th className="py-1.5 text-right">Haber</th>
+          <th className="py-1.5 text-right w-32">Debe</th>
+          <th className="py-1.5 text-right w-32">Haber</th>
         </tr>
       </thead>
       <tbody>
-        {entry.lines.map((l, i) => (
+        {lines.map((l, i) => (
           <tr
-            key={i}
+            key={l.accountId}
             className="border-b border-[var(--arca-border)] last:border-0"
           >
             <td className="py-1.5">
               <span className="text-[var(--arca-ink-3)]">{l.code}</span>{' '}
               {l.name}
             </td>
-            <td className="py-1.5 text-right tabular-nums">
-              {l.debit > 0 ? `$ ${fmtMoney(l.debit)}` : ''}
+            <td className="py-1 text-right">
+              {readOnly ? (
+                <span className="tabular-nums">
+                  {num(l.debit) > 0 ? `$ ${fmtMoney(num(l.debit))}` : ''}
+                </span>
+              ) : (
+                <input
+                  value={l.debit}
+                  onChange={(e) => update(i, 'debit', e.target.value)}
+                  disabled={num(l.credit) > 0}
+                  className="w-28 h-7 px-2 text-[12px] text-right border border-[var(--arca-border)] rounded-[6px] disabled:opacity-40"
+                />
+              )}
             </td>
-            <td className="py-1.5 text-right tabular-nums">
-              {l.credit > 0 ? `$ ${fmtMoney(l.credit)}` : ''}
+            <td className="py-1 text-right">
+              {readOnly ? (
+                <span className="tabular-nums">
+                  {num(l.credit) > 0 ? `$ ${fmtMoney(num(l.credit))}` : ''}
+                </span>
+              ) : (
+                <input
+                  value={l.credit}
+                  onChange={(e) => update(i, 'credit', e.target.value)}
+                  disabled={num(l.debit) > 0}
+                  className="w-28 h-7 px-2 text-[12px] text-right border border-[var(--arca-border)] rounded-[6px] disabled:opacity-40"
+                />
+              )}
             </td>
           </tr>
         ))}
         <tr className="font-semibold border-t border-[var(--arca-ink-3)]">
-          <td className="py-1.5 text-right">Total</td>
-          <td className="py-1.5 text-right tabular-nums">
-            $ {fmtMoney(entry.totalDebit)}
+          <td className="py-1.5 text-right">
+            {balanced ? (
+              <span className="text-emerald-600">✓ Balanceado</span>
+            ) : (
+              <span className="text-red-600">Descuadrado</span>
+            )}
           </td>
           <td className="py-1.5 text-right tabular-nums">
-            $ {fmtMoney(entry.totalCredit)}
+            $ {fmtMoney(totalD)}
+          </td>
+          <td className="py-1.5 text-right tabular-nums">
+            $ {fmtMoney(totalC)}
           </td>
         </tr>
       </tbody>
     </table>
   );
 }
+
+type StageKey =
+  | 'verificacion'
+  | 'ajustes'
+  | 'refundicion'
+  | 'cierre'
+  | 'apertura';
+const STAGE_DEFS: { key: StageKey; label: string }[] = [
+  { key: 'verificacion', label: 'Verificación' },
+  { key: 'ajustes', label: 'Ajustes manuales' },
+  { key: 'refundicion', label: 'Refundición' },
+  { key: 'cierre', label: 'Cierre patrimonial' },
+  { key: 'apertura', label: 'Apertura' },
+];
 
 function ClosingWizard({
   clientId,
@@ -1932,128 +2019,345 @@ function ClosingWizard({
   onClose: () => void;
 }) {
   const qc = useQueryClient();
-  const [createOpening, setCreateOpening] = useState(true);
+  const [stage, setStage] = useState<StageKey>('verificacion');
+  const [ajustesAck, setAjustesAck] = useState(false);
+  const [aperturaWanted, setAperturaWanted] = useState(true);
+  const [aperturaSkipped, setAperturaSkipped] = useState(false);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['accounting', 'closing-preview', clientId, fiscalYearId],
-    queryFn: () => getClosingPreview({ data: { clientId, fiscalYearId } }),
+  const { data: checklist } = useQuery({
+    queryKey: ['accounting', 'year-end-checklist', clientId, fiscalYearId],
+    queryFn: () => getYearEndChecklist({ data: { clientId, fiscalYearId } }),
+  });
+  const { data: wiz } = useQuery({
+    queryKey: ['accounting', 'closing-wizard', clientId, fiscalYearId],
+    queryFn: () => getClosingWizard({ data: { clientId, fiscalYearId } }),
   });
 
-  const mut = useMutation({
-    mutationFn: () =>
-      executeClosing({ data: { clientId, fiscalYearId, createOpening } }),
-    onSuccess: (r) => {
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ['accounting'] });
+  };
+
+  const approveMut = useMutation({
+    mutationFn: (v: { stage: StageKey; lines: EditLine[] }) =>
+      approveClosingStage({
+        data: {
+          clientId,
+          fiscalYearId,
+          stage: v.stage as 'refundicion' | 'cierre' | 'apertura',
+          lines: v.lines.map((l) => ({
+            accountId: l.accountId,
+            debit: num(l.debit),
+            credit: num(l.credit),
+          })),
+        },
+      }),
+    onSuccess: (_r, v) => {
       toast.success(
-        r.nextFiscalYearNumber
-          ? `Ejercicio cerrado. Se creó el Ejercicio N°${r.nextFiscalYearNumber} con su apertura.`
-          : 'Ejercicio cerrado.'
+        v.stage === 'apertura'
+          ? 'Apertura registrada'
+          : v.stage === 'refundicion'
+            ? 'Refundición registrada'
+            : 'Cierre patrimonial registrado'
       );
-      void qc.invalidateQueries({ queryKey: ['accounting'] });
+      // Invalidación dirigida: refrescar solo el wizard (no la lista de ejercicios,
+      // para que crear el ejercicio siguiente en la apertura no desmonte el wizard).
+      void qc.invalidateQueries({
+        queryKey: ['accounting', 'closing-wizard', clientId, fiscalYearId],
+      });
+      const order: StageKey[] = ['refundicion', 'cierre', 'apertura'];
+      const next = order[order.indexOf(v.stage) + 1];
+      if (next) setStage(next);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const sealMut = useMutation({
+    mutationFn: () => sealClosing({ data: { clientId, fiscalYearId } }),
+    onSuccess: () => {
+      toast.success('Ejercicio sellado. Quedó cerrado.');
+      refresh();
       onClose();
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
+  if (!wiz || !checklist) {
+    return (
+      <Dialog open onOpenChange={(o) => !o && onClose()}>
+        <DialogContent className="max-w-3xl">
+          <div className="py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            Cargando…
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  const done: Record<StageKey, boolean> = {
+    verificacion: checklist.canClose,
+    ajustes: ajustesAck,
+    refundicion: wiz.refundicion.status === 'done',
+    cierre: wiz.cierre.status === 'done',
+    apertura: wiz.apertura.status === 'done' || aperturaSkipped,
+  };
+  const order = STAGE_DEFS.map((s) => s.key);
+  const firstIncomplete = order.find((k) => !done[k]) ?? 'apertura';
+  const activeIdx = order.indexOf(firstIncomplete);
+  const allDone = order.every((k) => done[k]);
+
+  const statusOf = (k: StageKey): 'completada' | 'en curso' | 'pendiente' => {
+    if (done[k]) return 'completada';
+    if (k === stage) return 'en curso';
+    return 'pendiente';
+  };
+
+  const goStage = (k: StageKey) => {
+    if (order.indexOf(k) <= activeIdx) setStage(k);
+  };
+
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl max-h-[88vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            Cierre del Ejercicio N°{data?.fiscalYearNumber ?? ''}
+            Cierre del Ejercicio N°{wiz.fiscalYearNumber}
           </DialogTitle>
           <DialogDescription>
-            Revisá los asientos antes de confirmar. El cierre marca el ejercicio
-            como cerrado y es definitivo (se puede reabrir un período si hiciera
-            falta).
+            Seguí las etapas. Podés pausar (cerrá esta ventana) y retomar: lo
+            aprobado queda guardado.
           </DialogDescription>
         </DialogHeader>
 
-        {isLoading || !data ? (
-          <div className="py-8 text-center text-[13px] text-[var(--arca-ink-3)]">
-            Calculando asientos de cierre…
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {/* Resultado del ejercicio */}
-            <div
-              className="rounded-[10px] px-4 py-3 text-[13px]"
-              style={{
-                background:
-                  data.resultado.tipo === 'ganancia'
-                    ? 'color-mix(in oklch, oklch(0.45 0.14 145), transparent 92%)'
-                    : data.resultado.tipo === 'perdida'
-                      ? 'color-mix(in oklch, oklch(0.55 0.18 25), transparent 92%)'
-                      : 'var(--arca-surface-2)',
-              }}
-            >
-              Resultado del ejercicio:{' '}
-              <strong>
-                {data.resultado.tipo === 'ganancia'
-                  ? 'Ganancia'
-                  : data.resultado.tipo === 'perdida'
-                    ? 'Pérdida'
-                    : 'Neutro'}{' '}
-                $ {fmtMoney(Math.abs(data.resultado.net))}
-              </strong>{' '}
-              <span className="text-[var(--arca-ink-3)]">
-                → {data.resultado.account}
-              </span>
-            </div>
-
-            {/* Refundición */}
-            <div>
-              <div className="text-[12.5px] font-semibold text-[var(--arca-ink)] mb-1">
-                1 · Refundición de resultados
-              </div>
-              {data.refundicion.lines.length === 0 ? (
-                <div className="text-[12px] text-[var(--arca-ink-3)]">
-                  No hay cuentas de resultado con saldo.
-                </div>
-              ) : (
-                <ClosingEntryTable entry={data.refundicion} />
-              )}
-            </div>
-
-            {/* Cierre patrimonial */}
-            <div>
-              <div className="text-[12.5px] font-semibold text-[var(--arca-ink)] mb-1">
-                2 · Asiento de cierre patrimonial
-              </div>
-              {data.cierre.lines.length === 0 ? (
-                <div className="text-[12px] text-[var(--arca-ink-3)]">
-                  No hay cuentas patrimoniales con saldo.
-                </div>
-              ) : (
-                <ClosingEntryTable entry={data.cierre} />
-              )}
-            </div>
-
-            {/* Apertura opcional */}
-            <label className="flex items-start gap-2 rounded-[10px] border border-[var(--arca-border)] px-4 py-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={createOpening}
-                onChange={(e) => setCreateOpening(e.target.checked)}
-                className="mt-0.5"
-              />
-              <div className="text-[12.5px] text-[var(--arca-ink-2)]">
-                <strong>
-                  Crear el ejercicio siguiente y su asiento de apertura
-                </strong>
-                {data.nextFiscalYear && (
-                  <span className="text-[var(--arca-ink-3)]">
-                    {' '}
-                    (Ejercicio N°{data.nextFiscalYear.number}:{' '}
-                    {fmtFecha(data.nextFiscalYear.startDate)} –{' '}
-                    {fmtFecha(data.nextFiscalYear.endDate)})
-                  </span>
+        <div className="flex items-center gap-1 flex-wrap">
+          {STAGE_DEFS.map((s, i) => {
+            const st = statusOf(s.key);
+            const navigable = i <= activeIdx;
+            return (
+              <button
+                key={s.key}
+                onClick={() => goStage(s.key)}
+                disabled={!navigable}
+                className="flex items-center gap-1.5 px-2.5 h-8 rounded-[8px] text-[12px] transition-colors disabled:cursor-not-allowed"
+                style={{
+                  background:
+                    s.key === stage ? 'var(--arca-surface-2)' : 'transparent',
+                  color: navigable ? 'var(--arca-ink)' : 'var(--arca-ink-3)',
+                  border:
+                    s.key === stage
+                      ? '1px solid var(--arca-border)'
+                      : '1px solid transparent',
+                }}
+              >
+                {st === 'completada' ? (
+                  <CheckCircle2
+                    className="w-3.5 h-3.5 text-emerald-600"
+                    strokeWidth={2}
+                  />
+                ) : st === 'en curso' ? (
+                  <span className="w-3.5 h-3.5 rounded-full border-2 border-[var(--arca-navy-900)] inline-block" />
+                ) : (
+                  <span className="w-3.5 h-3.5 rounded-full border border-[var(--arca-ink-3)] inline-block" />
                 )}
-                <div className="text-[11.5px] text-[var(--arca-ink-3)] mt-0.5">
-                  Crea el próximo ejercicio con sus 12 períodos y un asiento de
-                  apertura con los saldos invertidos.
-                </div>
+                <span className="font-medium">
+                  {i + 1}. {s.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-2 min-h-[200px]">
+          {stage === 'verificacion' && (
+            <div className="space-y-3">
+              <p className="text-[12.5px] text-[var(--arca-ink-3)]">
+                Precondiciones para cerrar el ejercicio.
+              </p>
+              <div className="divide-y divide-[var(--arca-border)] border border-[var(--arca-border)] rounded-[10px]">
+                {checklist.checks.map((c: YearEndCheck) => (
+                  <div key={c.key} className="flex items-start gap-2 px-3 py-2">
+                    {c.status === 'pass' ? (
+                      <CheckCircle2
+                        className="w-4 h-4 mt-0.5 text-emerald-600 shrink-0"
+                        strokeWidth={2}
+                      />
+                    ) : (
+                      <XCircle
+                        className="w-4 h-4 mt-0.5 text-red-600 shrink-0"
+                        strokeWidth={2}
+                      />
+                    )}
+                    <div>
+                      <div className="text-[12.5px]">{c.label}</div>
+                      <div className="text-[11.5px] text-[var(--arca-ink-3)]">
+                        {c.detail}
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
-            </label>
+              <div className="flex justify-end">
+                <button
+                  disabled={!checklist.canClose}
+                  onClick={() => setStage('ajustes')}
+                  className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-40"
+                >
+                  Continuar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {stage === 'ajustes' && (
+            <div className="space-y-3">
+              <div className="rounded-[10px] bg-[var(--arca-surface-2)] px-4 py-3 text-[12.5px] text-[var(--arca-ink-2)] leading-relaxed">
+                Antes de refundir, cargá los <strong>ajustes manuales</strong>{' '}
+                que falten (amortizaciones, provisiones, devengamientos) en la
+                pestaña <strong>Asientos</strong>. La amortización sugerida del
+                ejercicio está en <strong>Bienes de uso › Anexo I</strong>.
+              </div>
+              <div className="flex justify-between">
+                <button
+                  onClick={() => setStage('verificacion')}
+                  className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)]"
+                >
+                  Atrás
+                </button>
+                <button
+                  onClick={() => {
+                    setAjustesAck(true);
+                    setStage('refundicion');
+                  }}
+                  className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white"
+                >
+                  Ya cargué los ajustes · Continuar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {stage === 'refundicion' && wiz.refundicion.preview && (
+            <StageEntry
+              title="Refundición de cuentas de resultado"
+              subtitle={`Resultado del ejercicio: ${
+                wiz.resultado.tipo === 'ganancia'
+                  ? 'Ganancia'
+                  : wiz.resultado.tipo === 'perdida'
+                    ? 'Pérdida'
+                    : 'Neutro'
+              } $ ${fmtMoney(Math.abs(wiz.resultado.net))}`}
+              preview={wiz.refundicion.preview}
+              done={done.refundicion}
+              doneLabel={
+                wiz.refundicion.entryNumber
+                  ? `Registrado · Asiento N°${wiz.refundicion.entryNumber}`
+                  : 'Registrado'
+              }
+              pending={approveMut.isPending}
+              onBack={() => setStage('ajustes')}
+              onApprove={(lines) =>
+                approveMut.mutate({ stage: 'refundicion', lines })
+              }
+              onContinue={() => setStage('cierre')}
+            />
+          )}
+
+          {stage === 'cierre' && wiz.cierre.preview && (
+            <StageEntry
+              title="Asiento de cierre patrimonial"
+              preview={wiz.cierre.preview}
+              done={done.cierre}
+              doneLabel={
+                wiz.cierre.entryNumber
+                  ? `Registrado · Asiento N°${wiz.cierre.entryNumber}`
+                  : 'Registrado'
+              }
+              pending={approveMut.isPending}
+              onBack={() => setStage('refundicion')}
+              onApprove={(lines) =>
+                approveMut.mutate({ stage: 'cierre', lines })
+              }
+              onContinue={() => setStage('apertura')}
+            />
+          )}
+
+          {stage === 'apertura' && (
+            <div className="space-y-3">
+              {wiz.apertura.status === 'done' ? (
+                <div className="rounded-[10px] bg-[var(--arca-surface-2)] px-4 py-3 text-[12.5px]">
+                  ✓ Apertura registrada (Asiento N°{wiz.apertura.entryNumber}{' '}
+                  del Ejercicio N°{wiz.apertura.nextFy?.number}).
+                </div>
+              ) : aperturaSkipped ? (
+                <div className="rounded-[10px] bg-[var(--arca-surface-2)] px-4 py-3 text-[12.5px] text-[var(--arca-ink-3)]">
+                  Apertura omitida. Podés crear el próximo ejercicio manualmente
+                  más adelante.
+                </div>
+              ) : (
+                <>
+                  <label className="flex items-start gap-2 text-[12.5px]">
+                    <input
+                      type="checkbox"
+                      checked={aperturaWanted}
+                      onChange={(e) => setAperturaWanted(e.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <span>
+                      Crear el{' '}
+                      <strong>Ejercicio N°{wiz.apertura.nextFy?.number}</strong>{' '}
+                      ({fmtFecha(wiz.apertura.nextFy?.startDate ?? '')} –{' '}
+                      {fmtFecha(wiz.apertura.nextFy?.endDate ?? '')}) con su
+                      asiento de apertura (saldos invertidos).
+                    </span>
+                  </label>
+                  {aperturaWanted && wiz.apertura.preview && (
+                    <StageEntry
+                      title="Asiento de apertura"
+                      preview={wiz.apertura.preview}
+                      done={false}
+                      pending={approveMut.isPending}
+                      onBack={() => setStage('cierre')}
+                      onApprove={(lines) =>
+                        approveMut.mutate({ stage: 'apertura', lines })
+                      }
+                      hideContinue
+                    />
+                  )}
+                  {!aperturaWanted && (
+                    <div className="flex justify-between">
+                      <button
+                        onClick={() => setStage('cierre')}
+                        className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)]"
+                      >
+                        Atrás
+                      </button>
+                      <button
+                        onClick={() => setAperturaSkipped(true)}
+                        className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)]"
+                      >
+                        Omitir apertura
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {done.cierre && (done.apertura || aperturaSkipped) && (
+          <div className="mt-2 flex items-center justify-between gap-3 rounded-[10px] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-4 py-3">
+            <span className="text-[12.5px] text-[var(--arca-ink-2)]">
+              {allDone
+                ? 'Todo listo. Sellá el ejercicio para dejarlo inmutable.'
+                : 'Completá las etapas para sellar.'}
+            </span>
+            <button
+              onClick={() => sealMut.mutate()}
+              disabled={sealMut.isPending || !done.cierre}
+              className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+            >
+              {sealMut.isPending ? 'Sellando…' : 'Finalizar y sellar ejercicio'}
+            </button>
           </div>
         )}
 
@@ -2062,19 +2366,116 @@ function ClosingWizard({
             onClick={onClose}
             className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)]"
           >
-            Cancelar
-          </button>
-          <button
-            onClick={() => mut.mutate()}
-            disabled={isLoading || !data || mut.isPending}
-            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
-          >
-            {mut.isPending ? 'Cerrando…' : 'Confirmar cierre'}
+            Pausar
           </button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
+}
+
+function StageEntry({
+  title,
+  subtitle,
+  preview,
+  done,
+  doneLabel,
+  pending,
+  onBack,
+  onApprove,
+  onContinue,
+  hideContinue,
+}: {
+  title: string;
+  subtitle?: string;
+  preview: ClosingEntryPreview;
+  done: boolean;
+  doneLabel?: string;
+  pending: boolean;
+  onBack: () => void;
+  onApprove: (lines: EditLine[]) => void;
+  onContinue?: () => void;
+  hideContinue?: boolean;
+}) {
+  const [lines, setLines] = useState<EditLine[]>([]);
+  const [balanced, setBalanced] = useState(preview.balanced);
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <div className="text-[13px] font-semibold text-[var(--arca-ink)]">
+          {title}
+        </div>
+        {subtitle && (
+          <div className="text-[12px] text-[var(--arca-ink-3)]">{subtitle}</div>
+        )}
+      </div>
+
+      {done ? (
+        <>
+          <div className="rounded-[8px] bg-emerald-50 border border-emerald-200 px-3 py-2 text-[12px] text-emerald-700">
+            ✓ {doneLabel ?? 'Registrado'}
+          </div>
+          <EditableEntryTable preview={preview} readOnly />
+          {!hideContinue && onContinue && (
+            <div className="flex justify-between">
+              <button
+                onClick={onBack}
+                className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)]"
+              >
+                Atrás
+              </button>
+              <button
+                onClick={onContinue}
+                className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white"
+              >
+                Continuar
+              </button>
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          <EditableEntryTable
+            preview={preview}
+            readOnly={false}
+            onChange={(l, b) => {
+              setLines(l);
+              setBalanced(b);
+            }}
+          />
+          <div className="flex justify-between">
+            <button
+              onClick={onBack}
+              className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)]"
+            >
+              Atrás
+            </button>
+            <button
+              onClick={() =>
+                onApprove(lines.length ? lines : toEditLines(preview))
+              }
+              disabled={pending || !balanced}
+              title={balanced ? undefined : 'El asiento no balancea'}
+              className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+            >
+              {pending ? 'Registrando…' : 'Aprobar y registrar'}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function toEditLines(preview: ClosingEntryPreview): EditLine[] {
+  return preview.lines.map((l) => ({
+    accountId: l.accountId,
+    code: l.code,
+    name: l.name,
+    debit: l.debit > 0 ? String(l.debit) : '',
+    credit: l.credit > 0 ? String(l.credit) : '',
+  }));
 }
 
 function CreateFiscalYearDialog({
