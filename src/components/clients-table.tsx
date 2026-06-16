@@ -31,7 +31,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import {
-  getRepresentativesWithClients,
+  getClientsWithRepresentative,
   deleteRepresentative,
   scrapSingleJob,
 } from '@/actions/client';
@@ -39,14 +39,14 @@ import { EditRepresentativeDialog } from '@/components/edit-client-dialog';
 import { relativeTime } from '@/components/dashboard/shared';
 import { toTitleCase } from '@/lib/format-name';
 
-interface Representative {
+interface ClientRow {
   id: string;
   name: string;
   identityNumber: string;
-  phone: string;
+  status: string;
+  representativeId: string | null;
+  representativeName: string | null;
   createdAt: string | Date;
-  status?: string;
-  clients?: { name: string }[];
 }
 
 export function RepresentativesTable() {
@@ -55,20 +55,33 @@ export function RepresentativesTable() {
   const [representativeToDelete, setRepresentativeToDelete] = useState<string | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [representativeToEditId, setRepresentativeToEditId] = useState<string | null>(null);
-  const [selectedRepresentatives, setSelectedRepresentatives] = useState<Representative[]>([]);
+  const [selectedRepresentatives, setSelectedRepresentatives] = useState<ClientRow[]>([]);
   const [isScraping, setIsScraping] = useState(false);
+  const [search, setSearch] = useState('');
   const queryClient = useQueryClient();
 
-  const { data: representatives = [], isLoading } = useQuery({
-    queryKey: ['representativesWithClients'],
-    queryFn: () => getRepresentativesWithClients(),
+  const { data: allClients = [], isLoading } = useQuery({
+    queryKey: ['clientsWithRepresentative'],
+    queryFn: () => getClientsWithRepresentative(),
     retry: 1,
   });
+
+  const clients = search
+    ? allClients.filter((c) => {
+        const q = search.toLowerCase();
+        return (
+          c.name?.toLowerCase().includes(q) ||
+          c.representativeName?.toLowerCase().includes(q) ||
+          c.identityNumber?.includes(q)
+        );
+      })
+    : allClients;
+
 
   const deleteMutation = useMutation({
     mutationFn: (data: { id: string }) => deleteRepresentative({ data }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['representativesWithClients'] });
+      queryClient.invalidateQueries({ queryKey: ['clientsWithRepresentative'] });
       toast.success('Cliente eliminado exitosamente');
       setDeleteDialogOpen(false);
       setRepresentativeToDelete(null);
@@ -78,7 +91,7 @@ export function RepresentativesTable() {
     },
   });
 
-  const columns: ColumnDef<Representative>[] = [
+  const columns: ColumnDef<ClientRow>[] = [
     {
       accessorKey: 'name',
       header: 'Cliente',
@@ -87,9 +100,9 @@ export function RepresentativesTable() {
           <div className="font-medium text-[var(--arca-ink)]">
             {toTitleCase(row.original.name)}
           </div>
-          {row.original.clients?.[0] && (
+          {row.original.representativeName && (
             <div className="text-[11px] text-[var(--arca-ink-4)] mt-0.5">
-              {toTitleCase(row.original.clients[0].name)}
+              Repr: {toTitleCase(row.original.representativeName)}
             </div>
           )}
         </div>
@@ -194,13 +207,14 @@ export function RepresentativesTable() {
     <>
       <DataTable
         columns={columns}
-        data={representatives as Representative[]}
+        data={clients as ClientRow[]}
         isLoading={isLoading}
-        searchKey="name"
-        searchPlaceholder="Buscar por nombre, CUIT..."
+        searchValue={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Buscar por nombre, CUIT, representante..."
         filters={[]}
-        onRowClick={(representative) => navigate({ to: `/clients/${representative.id}` })}
-        onSelectionChange={(rows) => setSelectedRepresentatives(rows as Representative[])}
+        onRowClick={(row) => navigate({ to: `/clients/${row.representativeId}`, search: { client: row.id } })}
+        onSelectionChange={(rows) => setSelectedRepresentatives(rows as ClientRow[])}
         toolbar={
           selectedRepresentatives.length > 0 ? (
             <Button
