@@ -14,6 +14,7 @@ interface DetalleRow {
     cantidad: string | null;
     porcentaje: string | null;
     activoEnRecibo?: boolean | null;
+    memo?: string | null;
   };
   concepto: { nombre?: string | null; tipo?: string | null; numeroSos?: number | null } | null;
   conceptoAfip: { descripcion?: string | null } | null;
@@ -703,7 +704,7 @@ function ReciboPdfPage({
           value={
             convenio
               ? convenio.cctCodigo
-                ? `${convenio.nombre} (CCT ${convenio.cctCodigo})`
+                ? `${(convenio.nombre ?? '').replace(convenio.cctCodigo, '').trim()} (CCT ${convenio.cctCodigo})`
                 : (convenio.nombre ?? '—')
               : '—'
           }
@@ -751,7 +752,9 @@ function ReciboPdfPage({
             </View>
             <View style={S.colDesc}>
               <Text style={S.tdDesc}>
-                {concepto?.nombre ?? conceptoAfip?.descripcion ?? conceptoSos?.nombre ?? det.codigo}
+                {(det.memo && !det.memo.startsWith('source=') && !det.memo.includes('calc_error='))
+                  ? det.memo
+                  : (concepto?.nombre ?? conceptoAfip?.descripcion ?? conceptoSos?.nombre ?? det.codigo)}
               </Text>
             </View>
             <View style={S.colNum}>

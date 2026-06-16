@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Download,
@@ -14,6 +14,8 @@ import {
   Pencil,
   ShieldAlert,
   TrendingUp,
+  Upload,
+  Filter,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -41,6 +43,7 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import {
   previewLsd,
@@ -49,6 +52,9 @@ import {
   getParametrosPeriodo,
   upsertParametrosPeriodo,
   updateReciboLsdOverrides,
+  listLsdPresentaciones,
+  getLsdPresentacionContenido,
+  generarConceptosLsd,
 } from '@/actions/sueldos';
 import { legajoParaMostrar } from '@/lib/legajo';
 
@@ -93,6 +99,27 @@ function formatPesos(value: string | number | null | undefined): string {
     currency: 'ARS',
     maximumFractionDigits: 0,
   }).format(parseFloat(String(value)));
+}
+
+function formatDateTime(date: Date | string | null | undefined): string {
+  if (!date) return '—';
+  return new Intl.DateTimeFormat('es-AR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(date));
+}
+
+function triggerDownload(contenido: string, filename: string) {
+  const blob = new Blob([contenido], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 // ─── Widget: Tope imponible ──────────────────────────────────────────────────
@@ -154,7 +181,6 @@ function TopeImponibleWidget({
 
   if (isLoading) return null;
 
-  // Tope ya cargado
   if (params && !editando) {
     return (
       <div
@@ -170,15 +196,9 @@ function TopeImponibleWidget({
           <span className="ml-2 font-semibold font-mono text-[var(--arca-ink)]">
             {formatPesos(params.topeMaximoImponible)}
           </span>
-          {params.actualizadoPorCron ? (
-            <span className="ml-2 text-[11px] text-[var(--arca-ink-3)]">
-              (actualizado automáticamente)
-            </span>
-          ) : (
-            <span className="ml-2 text-[11px] text-[var(--arca-ink-3)]">
-              (cargado manualmente)
-            </span>
-          )}
+          <span className="ml-2 text-[11px] text-[var(--arca-ink-3)]">
+            {params.actualizadoPorCron ? '(actualizado automáticamente)' : '(cargado manualmente)'}
+          </span>
         </div>
         <Button
           variant="ghost"
@@ -193,7 +213,6 @@ function TopeImponibleWidget({
     );
   }
 
-  // Sin tope o editando
   const esFaltante = !params && !editando;
 
   return (
@@ -294,7 +313,6 @@ function ValidacionPanel({
       className="rounded-[var(--arca-r-md)] overflow-hidden"
       style={{ border: '1px solid var(--arca-border)' }}
     >
-      {/* Header */}
       <div
         className="flex items-center gap-2 px-4 py-2.5"
         style={{ background: 'var(--arca-surface-2, var(--arca-surface))' }}
@@ -317,7 +335,6 @@ function ValidacionPanel({
         )}
       </div>
 
-      {/* Issues */}
       <div className="divide-y" style={{ borderColor: 'var(--arca-border)' }}>
         {errores.map((issue, i) => (
           <IssueRow key={i} issue={issue} />
@@ -467,21 +484,174 @@ function LsdOverridesDialog({
   );
 }
 
-// ─── Componente principal ────────────────────────────────────────────────────
+// ─── Historial de presentaciones ─────────────────────────────────────────────
 
-export function SueldosCargas({ clientId, profileId }: SueldosCargasProps) {
-  const def = getPeriodoDefecto();
-  const [year, setYear] = useState(def.year);
-  const [month, setMonth] = useState(def.month);
+function HistorialPresentaciones({
+  clientId,
+  profileId,
+  periodo,
+}: {
+  clientId: string;
+  profileId: string;
+  periodo: string;
+}) {
+  const [reDescargando, setReDescargando] = useState<string | null>(null);
+
+  const { data: presentaciones = [], isLoading } = useQuery({
+    queryKey: ['lsd-presentaciones', profileId, periodo],
+    queryFn: () => listLsdPresentaciones({ data: { clientId, profileId, periodo } }),
+    enabled: !!(clientId && profileId),
+  });
+
+  const handleReDescargar = async (id: string) => {
+    setReDescargando(id);
+    try {
+      const pres = await getLsdPresentacionContenido({
+        data: { clientId, profileId, presentacionId: id },
+      });
+      triggerDownload(pres.contenido, pres.filename);
+      toast.success(`Presentación nro ${pres.nroPresentacion} descargada`);
+    } catch (err) {
+      toast.error(`Error al descargar: ${(err as Error).message}`);
+    } finally {
+      setReDescargando(null);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <RefreshCw className="h-4 w-4 animate-spin text-[var(--arca-ink-3)]" />
+      </div>
+    );
+  }
+
+  if (presentaciones.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-10 text-center">
+        <Upload className="h-7 w-7 text-[var(--arca-ink-3)] mb-3" strokeWidth={1.5} />
+        <p className="text-[13px] font-medium text-[var(--arca-ink)]">
+          Sin presentaciones para este período
+        </p>
+        <p className="text-[12px] text-[var(--arca-ink-3)] mt-1">
+          Prepará y generá la primera presentación en la sección siguiente.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="text-[12px] w-16">Nro</TableHead>
+          <TableHead className="text-[12px]">Tipo</TableHead>
+          <TableHead className="text-[12px]">Fecha y hora</TableHead>
+          <TableHead className="text-[12px] text-right">Empleados</TableHead>
+          <TableHead className="text-[12px] text-right">Conceptos</TableHead>
+          <TableHead className="text-[12px]">Archivo</TableHead>
+          <TableHead className="w-10" />
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {presentaciones.map((p) => (
+          <TableRow key={p.id}>
+            <TableCell className="text-[13px] font-mono font-semibold">
+              {p.nroPresentacion}
+            </TableCell>
+            <TableCell>
+              <Badge
+                variant="outline"
+                className={
+                  p.nroPresentacion === 1
+                    ? 'text-[11px] text-emerald-700 border-emerald-300 bg-emerald-50'
+                    : 'text-[11px] text-amber-700 border-amber-300 bg-amber-50'
+                }
+              >
+                {p.nroPresentacion === 1 ? 'Original' : 'Rectificativa'}
+              </Badge>
+            </TableCell>
+            <TableCell className="text-[13px] text-[var(--arca-ink-2)] tabular-nums">
+              {formatDateTime(p.generadoEn)}
+            </TableCell>
+            <TableCell className="text-[13px] text-right tabular-nums text-[var(--arca-ink-2)]">
+              {p.empleados}
+            </TableCell>
+            <TableCell className="text-[13px] text-right tabular-nums text-[var(--arca-ink-2)]">
+              {p.conceptos}
+            </TableCell>
+            <TableCell className="text-[12px] font-mono text-[var(--arca-ink-3)] truncate max-w-[200px]">
+              {p.filename}
+            </TableCell>
+            <TableCell className="w-10 pr-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                title="Re-descargar archivo"
+                disabled={reDescargando === p.id}
+                onClick={() => handleReDescargar(p.id)}
+              >
+                {reDescargando === p.id ? (
+                  <RefreshCw className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Download className="h-3 w-3" />
+                )}
+              </Button>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+// ─── Dialog: Generar presentación ────────────────────────────────────────────
+
+function GenerarPresentacionDialog({
+  clientId,
+  profileId,
+  periodo,
+  nroPresentacion,
+  onClose,
+}: {
+  clientId: string;
+  profileId: string;
+  periodo: string;
+  nroPresentacion: number;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
   const [editingOverride, setEditingOverride] = useState<OverrideRow | null>(null);
+  const [selectedCuils, setSelectedCuils] = useState<Set<string> | null>(null);
 
-  const periodo = `${year}-${month}`;
-
-  const { data: preview, isLoading, error, refetch } = useQuery({
+  const { data: preview, isLoading: loadingPreview, error } = useQuery({
     queryKey: ['lsd-preview', profileId, periodo],
     queryFn: () => previewLsd({ data: { clientId, profileId, periodo } }),
     enabled: !!(clientId && profileId),
   });
+
+  const allCuils = useMemo(
+    () => preview?.empleados.map((e) => e.empleadoCuil) ?? [],
+    [preview]
+  );
+
+  const effectiveCuils = selectedCuils ?? new Set(allCuils);
+  const allSelected = effectiveCuils.size === allCuils.length;
+  const someSelected = effectiveCuils.size > 0 && !allSelected;
+  const isFiltered = selectedCuils !== null && selectedCuils.size < allCuils.length;
+
+  const toggleCuil = (cuil: string) => {
+    const next = new Set(effectiveCuils);
+    if (next.has(cuil)) next.delete(cuil);
+    else next.add(cuil);
+    setSelectedCuils(next);
+  };
+
+  const toggleAll = () => {
+    if (allSelected) setSelectedCuils(new Set());
+    else setSelectedCuils(null);
+  };
 
   const { data: validacion } = useQuery({
     queryKey: ['lsd-validacion', profileId, periodo],
@@ -489,28 +659,268 @@ export function SueldosCargas({ clientId, profileId }: SueldosCargasProps) {
     enabled: !!(clientId && profileId),
   });
 
-  const { mutate: descargarLsd, isPending: isGenerating } = useMutation({
+  const { mutate: generar, isPending: isGenerating } = useMutation({
     mutationFn: () =>
-      generarArchivoLsd({ data: { clientId, profileId, periodo } }),
+      generarArchivoLsd({
+        data: {
+          clientId,
+          profileId,
+          periodo,
+          cuils: isFiltered ? [...effectiveCuils] : undefined,
+        },
+      }),
     onSuccess: (result) => {
-      const blob = new Blob([result.contenido], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = result.filename;
-      a.click();
-      URL.revokeObjectURL(url);
+      triggerDownload(result.contenido, result.filename);
       toast.success(
-        `Archivo generado: ${result.empleados} empleados, ${result.conceptos} conceptos`
+        `Presentación nro ${result.nroPresentacion} generada — ${result.empleados} empleados, ${result.conceptos} conceptos`
       );
+      queryClient.invalidateQueries({ queryKey: ['lsd-presentaciones', profileId, periodo] });
+      onClose();
     },
     onError: (err) => {
       toast.error(`Error al generar LSD: ${(err as Error).message}`);
     },
   });
 
+  const { mutate: generarConceptos, isPending: isGeneratingConceptos } = useMutation({
+    mutationFn: () => generarConceptosLsd({ data: { clientId, profileId, periodo } }),
+    onSuccess: (result) => {
+      triggerDownload(result.contenido, result.filename);
+      toast.success(`Conceptos LSD descargados — ${result.conceptos} conceptos`);
+    },
+    onError: (err) => {
+      toast.error(`Error al generar conceptos: ${(err as Error).message}`);
+    },
+  });
+
   const hasData = preview && preview.empleados.length > 0;
-  const puedeDescargar = validacion?.puedeDescargar !== false;
+  const puedeDescargar = validacion?.puedeDescargar !== false && effectiveCuils.size > 0;
+
+  return (
+    <>
+      <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+        <DialogContent className="w-[95vw] max-w-[95vw] sm:max-w-[95vw] max-h-[90vh] flex flex-col">
+          <DialogHeader className="shrink-0">
+            <DialogTitle className="text-[15px]">
+              Generar presentación
+              {nroPresentacion > 1 && (
+                <span className="ml-2 text-[13px] font-normal text-amber-600">(rectificativa)</span>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+            {/* Tope imponible */}
+            <TopeImponibleWidget clientId={clientId} profileId={profileId} periodo={periodo} />
+
+            {/* Panel de validación */}
+            <ValidacionPanel clientId={clientId} profileId={profileId} periodo={periodo} />
+
+            {/* Error de carga */}
+            {error && (
+              <div
+                className="flex items-start gap-3 p-3.5 rounded-[var(--arca-r-md)] text-[13px]"
+                style={{ background: 'var(--arca-surface)', border: '1px solid var(--arca-border)' }}
+              >
+                <AlertCircle className="h-4 w-4 mt-0.5 text-red-500 shrink-0" />
+                <p className="text-[var(--arca-ink-2)]">{(error as Error).message}</p>
+              </div>
+            )}
+
+            {/* Stats */}
+            {preview && (
+              <div className="grid grid-cols-4 gap-3">
+                <StatCard icon={<Building2 className="h-4 w-4" />} label="Empresa" value={preview.employer.cuit} sub={preview.employer.nombre} />
+                <StatCard icon={<FileText className="h-4 w-4" />} label="Tipo empleador" value={preview.employer.codigoLsd ?? '—'} sub={preview.employer.tipoEmpresaNombre ?? 'Sin configurar'} />
+                <StatCard icon={<Users className="h-4 w-4" />} label="Empleados" value={String(isFiltered ? effectiveCuils.size : preview.empleados.length)} sub={isFiltered ? `de ${preview.empleados.length} en el período` : 'en este período'} />
+                <StatCard icon={<Hash className="h-4 w-4" />} label="Conceptos" value={String(preview.conceptos)} sub="líneas en el archivo" />
+              </div>
+            )}
+
+            {/* Loading */}
+            {loadingPreview && (
+              <div className="flex items-center justify-center py-8">
+                <RefreshCw className="h-4 w-4 animate-spin text-[var(--arca-ink-3)]" />
+              </div>
+            )}
+
+            {/* Tabla de empleados */}
+            {!loadingPreview && hasData && (
+              <div className="rounded-[var(--arca-r-md)] overflow-hidden" style={{ border: '1px solid var(--arca-border)' }}>
+                {/* Barra de selección */}
+                <div
+                  className="flex items-center gap-3 px-3 py-2 border-b text-[12px]"
+                  style={{ borderColor: 'var(--arca-border)', background: 'var(--arca-surface)' }}
+                >
+                  <Checkbox
+                    checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+                    onCheckedChange={toggleAll}
+                  />
+                  <span className="text-[var(--arca-ink-2)]">
+                    {isFiltered ? (
+                      <>
+                        <span className="font-medium text-[var(--arca-ink)]">{effectiveCuils.size}</span>
+                        <span> de {allCuils.length} empleados seleccionados</span>
+                      </>
+                    ) : (
+                      `Todos los empleados seleccionados (${allCuils.length})`
+                    )}
+                  </span>
+                  {isFiltered && (
+                    <span className="flex items-center gap-1 text-amber-600">
+                      <Filter className="h-3 w-3" />
+                      Rectificativa parcial
+                    </span>
+                  )}
+                  {isFiltered && (
+                    <button
+                      className="ml-auto text-[11px] underline text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)]"
+                      onClick={() => setSelectedCuils(null)}
+                    >
+                      Seleccionar todos
+                    </button>
+                  )}
+                </div>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-8" />
+                      <TableHead className="text-[12px]">Legajo</TableHead>
+                      <TableHead className="text-[12px]">Empleado</TableHead>
+                      <TableHead className="text-[12px]">CUIL</TableHead>
+                      <TableHead className="text-[12px] max-w-[180px]">Situación revista</TableHead>
+                      <TableHead className="text-[12px] w-28">Modalidad</TableHead>
+                      <TableHead className="text-[12px] text-right">Días</TableHead>
+                      <TableHead className="text-[12px] text-right">Conceptos</TableHead>
+                      <TableHead className="w-8" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {preview.empleados.map((emp) => {
+                      const tieneError =
+                        validacion?.issues.some(
+                          (i) => i.tipo === 'error' && i.empleadoCuil === emp.empleadoCuil
+                        ) ?? false;
+                      const checked = effectiveCuils.has(emp.empleadoCuil);
+                      return (
+                        <TableRow
+                          key={emp.reciboId}
+                          className={!checked ? 'opacity-40' : tieneError ? 'bg-red-50/50' : undefined}
+                        >
+                          <TableCell className="w-8 pl-3 pr-0">
+                            <Checkbox checked={checked} onCheckedChange={() => toggleCuil(emp.empleadoCuil)} />
+                          </TableCell>
+                          <TableCell className="text-[13px] font-mono">{legajoParaMostrar(emp.empleadoLegajo)}</TableCell>
+                          <TableCell className="text-[13px] font-medium">{emp.empleadoNombre}</TableCell>
+                          <TableCell className="text-[13px] font-mono text-[var(--arca-ink-2)]">{emp.empleadoCuil}</TableCell>
+                          <TableCell className="max-w-[180px]">
+                            {emp.situacionCodigo ? (
+                              <span className="text-[12px] font-mono text-[var(--arca-ink-2)] block truncate" title={`${emp.situacionCodigo} — ${emp.situacionNombre}`}>
+                                {emp.situacionCodigo} — {emp.situacionNombre}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[12px] text-amber-600"><TriangleAlert className="h-3 w-3" />Sin situación</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {emp.modalidadCodigo ? (
+                              <span className="text-[12px] font-mono text-[var(--arca-ink-2)]">{emp.modalidadCodigo}</span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[12px] text-amber-600"><TriangleAlert className="h-3 w-3" />Sin modalidad</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-[13px] text-right tabular-nums text-[var(--arca-ink-2)]">{emp.diasTrabajados ?? '—'}</TableCell>
+                          <TableCell className="text-[13px] text-right tabular-nums font-medium">{emp.cantidadConceptos}</TableCell>
+                          <TableCell className="w-8 pr-2">
+                            <Button
+                              variant="ghost" size="icon" className="h-6 w-6" title="Editar bases LSD" tabIndex={-1}
+                              onClick={() => setEditingOverride({
+                                reciboId: emp.reciboId,
+                                empleadoNombre: emp.empleadoNombre,
+                                rem4y8Override: emp.rem4y8Override,
+                                rem9Override: emp.rem9Override,
+                                contribucionAdicionalOS: emp.contribucionAdicionalOS,
+                                importeADetraerLey27430: emp.importeADetraerLey27430,
+                                importeMaternidadArt13: emp.importeMaternidadArt13,
+                              })}
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
+            {!loadingPreview && preview && preview.empleados.length === 0 && (
+              <div
+                className="flex flex-col items-center justify-center py-10 text-center rounded-[var(--arca-r-md)]"
+                style={{ background: 'var(--arca-surface)', border: '1px solid var(--arca-border)' }}
+              >
+                <FileText className="h-7 w-7 text-[var(--arca-ink-3)] mb-2" strokeWidth={1.5} />
+                <p className="text-[13px] text-[var(--arca-ink)]">Sin recibos confirmados para este período</p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="shrink-0 pt-2 border-t" style={{ borderColor: 'var(--arca-border)' }}>
+            <Button variant="outline" onClick={() => generarConceptos()} disabled={isGeneratingConceptos} className="gap-2 mr-auto">
+              {isGeneratingConceptos ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              {isGeneratingConceptos ? 'Generando…' : 'Descargar Conceptos LSD'}
+            </Button>
+            <Button variant="outline" onClick={onClose}>Cancelar</Button>
+            {puedeDescargar ? (
+              <Button onClick={() => generar()} disabled={isGenerating || !hasData} className="gap-2">
+                {isGenerating ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                {isGenerating
+                  ? 'Generando…'
+                  : isFiltered
+                  ? `Generar presentación (${effectiveCuils.size} empleados)`
+                  : 'Generar presentación'}
+              </Button>
+            ) : (
+              <Button disabled className="gap-2">
+                <AlertCircle className="h-4 w-4" />
+                {effectiveCuils.size === 0 ? 'Seleccioná al menos un empleado' : 'Corrija los errores para continuar'}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {editingOverride && (
+        <LsdOverridesDialog
+          clientId={clientId}
+          profileId={profileId}
+          row={editingOverride}
+          onClose={() => setEditingOverride(null)}
+        />
+      )}
+    </>
+  );
+}
+
+// ─── Componente principal ─────────────────────────────────────────────────────
+
+export function SueldosCargas({ clientId, profileId }: SueldosCargasProps) {
+  const def = getPeriodoDefecto();
+  const [year, setYear] = useState(def.year);
+  const [month, setMonth] = useState(def.month);
+  const [showGenerarDialog, setShowGenerarDialog] = useState(false);
+
+  const periodo = `${year}-${month}`;
+  const mesNombre = MONTHS.find((m) => m.value === month)?.label ?? '';
+
+  const { data: presentaciones = [] } = useQuery({
+    queryKey: ['lsd-presentaciones', profileId, periodo],
+    queryFn: () => listLsdPresentaciones({ data: { clientId, profileId, periodo } }),
+    enabled: !!(clientId && profileId),
+  });
+
+  const nroPresentacionSiguiente = (presentaciones[presentaciones.length - 1]?.nroPresentacion ?? 0) + 1;
 
   return (
     <div className="space-y-4">
@@ -523,7 +933,7 @@ export function SueldosCargas({ clientId, profileId }: SueldosCargasProps) {
         }}
       >
         <span className="text-[13px] font-medium text-[var(--arca-ink-2)] min-w-max">
-          Período a presentar
+          Período
         </span>
         <div className="flex items-center gap-2">
           <Select value={month} onValueChange={setMonth}>
@@ -550,236 +960,55 @@ export function SueldosCargas({ clientId, profileId }: SueldosCargasProps) {
               ))}
             </SelectContent>
           </Select>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => refetch()}
-            disabled={isLoading}
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-          </Button>
         </div>
-
-        {hasData && (
-          <div className="sm:ml-auto flex items-center gap-2">
-            {puedeDescargar ? (
-              <Button
-                size="sm"
-                className="h-8 gap-1.5 text-[13px]"
-                onClick={() => descargarLsd()}
-                disabled={isGenerating}
-              >
-                {isGenerating ? (
-                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Download className="h-3.5 w-3.5" />
-                )}
-                {isGenerating ? 'Generando…' : 'Descargar LSD'}
-              </Button>
-            ) : (
-              <Button size="sm" className="h-8 gap-1.5 text-[13px]" disabled>
-                <AlertCircle className="h-3.5 w-3.5" />
-                Corrija los errores para descargar
-              </Button>
-            )}
-          </div>
-        )}
       </div>
 
-      {/* Tope imponible */}
-      <TopeImponibleWidget clientId={clientId} profileId={profileId} periodo={periodo} />
-
-      {/* Panel de validación */}
-      <ValidacionPanel clientId={clientId} profileId={profileId} periodo={periodo} />
-
-      {/* Error de carga */}
-      {error && (
+      {/* Historial de presentaciones */}
+      <div
+        className="rounded-[var(--arca-r-lg)] overflow-hidden"
+        style={{ border: '1px solid var(--arca-border)' }}
+      >
+        {/* Header */}
         <div
-          className="flex items-start gap-3 p-3.5 rounded-[var(--arca-r-md)] text-[13px]"
+          className="flex items-center gap-2 px-4 py-3"
           style={{
             background: 'var(--arca-surface)',
-            border: '1px solid var(--arca-border)',
+            borderBottom: '1px solid var(--arca-border)',
           }}
         >
-          <AlertCircle className="h-4 w-4 mt-0.5 text-red-500 shrink-0" />
-          <p className="text-[var(--arca-ink-2)]">{(error as Error).message}</p>
+          <Upload className="h-4 w-4 text-[var(--arca-ink-3)]" />
+          <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+            Presentaciones — {mesNombre} {year}
+          </span>
+          {presentaciones.length > 0 && (
+            <Badge variant="outline" className="ml-auto text-[11px]">
+              {presentaciones.length}
+            </Badge>
+          )}
         </div>
-      )}
 
-      {/* Stats cards */}
-      {preview && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <StatCard
-            icon={<Building2 className="h-4 w-4" />}
-            label="Empresa"
-            value={preview.employer.cuit}
-            sub={preview.employer.nombre}
-          />
-          <StatCard
-            icon={<FileText className="h-4 w-4" />}
-            label="Tipo empleador"
-            value={preview.employer.codigoLsd ?? '—'}
-            sub={preview.employer.tipoEmpresaNombre ?? 'Sin configurar'}
-          />
-          <StatCard
-            icon={<Users className="h-4 w-4" />}
-            label="Empleados"
-            value={String(preview.empleados.length)}
-            sub={`${MONTHS.find((m) => m.value === month)?.label} ${year}`}
-          />
-          <StatCard
-            icon={<Hash className="h-4 w-4" />}
-            label="Conceptos"
-            value={String(preview.conceptos)}
-            sub="líneas en el archivo"
-          />
-        </div>
-      )}
-
-      {/* Tabla de empleados — cargando */}
-      {isLoading && (
-        <div
-          className="flex items-center justify-center py-12 rounded-[var(--arca-r-lg)]"
-          style={{
-            background: 'var(--arca-surface)',
-            border: '1px solid var(--arca-border)',
-          }}
-        >
-          <RefreshCw className="h-5 w-5 animate-spin text-[var(--arca-ink-3)]" />
-        </div>
-      )}
-
-      {/* Tabla de empleados — sin datos */}
-      {!isLoading && preview && preview.empleados.length === 0 && (
-        <div
-          className="flex flex-col items-center justify-center py-14 text-center rounded-[var(--arca-r-lg)]"
-          style={{
-            background: 'var(--arca-surface)',
-            border: '1px solid var(--arca-border)',
-          }}
-        >
-          <FileText className="h-8 w-8 text-[var(--arca-ink-3)] mb-3" strokeWidth={1.5} />
-          <p className="text-[14px] font-medium text-[var(--arca-ink)]">
-            Sin recibos para este período
-          </p>
-          <p className="text-[13px] text-[var(--arca-ink-3)] mt-1">
-            No hay recibos cargados para{' '}
-            {MONTHS.find((m) => m.value === month)?.label} {year}.
-          </p>
-        </div>
-      )}
-
-      {/* Tabla de empleados — con datos */}
-      {!isLoading && preview && preview.empleados.length > 0 && (
-        <div
-          className="rounded-[var(--arca-r-lg)] overflow-hidden"
-          style={{ border: '1px solid var(--arca-border)' }}
-        >
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="text-[12px]">Legajo</TableHead>
-                <TableHead className="text-[12px]">Empleado</TableHead>
-                <TableHead className="text-[12px]">CUIL</TableHead>
-                <TableHead className="text-[12px]">Situación revista</TableHead>
-                <TableHead className="text-[12px]">Modalidad contratación</TableHead>
-                <TableHead className="text-[12px] text-right">Días trab.</TableHead>
-                <TableHead className="text-[12px] text-right">Conceptos</TableHead>
-                <TableHead className="text-[12px]">Origen</TableHead>
-                <TableHead className="w-8" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {preview.empleados.map((emp) => {
-                const tieneError =
-                  validacion?.issues.some(
-                    (i) => i.tipo === 'error' && i.empleadoCuil === emp.empleadoCuil
-                  ) ?? false;
-                return (
-                  <TableRow
-                    key={emp.reciboId}
-                    className={tieneError ? 'bg-red-50/50' : undefined}
-                  >
-                    <TableCell className="text-[13px] font-mono">
-                      {legajoParaMostrar(emp.empleadoLegajo)}
-                    </TableCell>
-                    <TableCell className="text-[13px] font-medium">
-                      {emp.empleadoNombre}
-                    </TableCell>
-                    <TableCell className="text-[13px] font-mono text-[var(--arca-ink-2)]">
-                      {emp.empleadoCuil}
-                    </TableCell>
-                    <TableCell>
-                      {emp.situacionCodigo ? (
-                        <span className="text-[12px] font-mono text-[var(--arca-ink-2)]">
-                          {emp.situacionCodigo} — {emp.situacionNombre}
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[12px] text-amber-600">
-                          <TriangleAlert className="h-3 w-3" />
-                          Sin situación
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {emp.modalidadCodigo ? (
-                        <span className="text-[12px] font-mono text-[var(--arca-ink-2)]">
-                          {emp.modalidadCodigo} — {emp.modalidadNombre}
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[12px] text-amber-600">
-                          <TriangleAlert className="h-3 w-3" />
-                          Sin modalidad
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-[13px] text-right tabular-nums text-[var(--arca-ink-2)]">
-                      {emp.diasTrabajados ?? '—'}
-                    </TableCell>
-                    <TableCell className="text-[13px] text-right tabular-nums font-medium">
-                      {emp.cantidadConceptos}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="text-[11px] font-normal">
-                        {emp.origen}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="w-8 pr-2">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        title="Editar bases LSD"
-                        onClick={() =>
-                          setEditingOverride({
-                            reciboId: emp.reciboId,
-                            empleadoNombre: emp.empleadoNombre,
-                            rem4y8Override: emp.rem4y8Override,
-                            rem9Override: emp.rem9Override,
-                            contribucionAdicionalOS: emp.contribucionAdicionalOS,
-                            importeADetraerLey27430: emp.importeADetraerLey27430,
-                            importeMaternidadArt13: emp.importeMaternidadArt13,
-                          })
-                        }
-                      >
-                        <Pencil className="h-3 w-3" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-
-      {editingOverride && (
-        <LsdOverridesDialog
+        <HistorialPresentaciones
           clientId={clientId}
           profileId={profileId}
-          row={editingOverride}
-          onClose={() => setEditingOverride(null)}
+          periodo={periodo}
+        />
+      </div>
+
+      {/* Botón generar presentación */}
+      <div className="flex justify-end">
+        <Button onClick={() => setShowGenerarDialog(true)} className="gap-2">
+          <Download className="h-4 w-4" />
+          Generar presentación
+        </Button>
+      </div>
+
+      {showGenerarDialog && (
+        <GenerarPresentacionDialog
+          clientId={clientId}
+          profileId={profileId}
+          periodo={periodo}
+          nroPresentacion={nroPresentacionSiguiente}
+          onClose={() => setShowGenerarDialog(false)}
         />
       )}
     </div>

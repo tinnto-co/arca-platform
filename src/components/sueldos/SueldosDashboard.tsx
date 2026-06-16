@@ -462,7 +462,7 @@ export function SueldosDashboard({
             <div className="text-2xl font-bold">
               {loadingLiq
                 ? '—'
-                : `$${totalBruto.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`}
+                : `$${totalBruto.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
             </div>
           </CardContent>
         </Card>
@@ -477,7 +477,7 @@ export function SueldosDashboard({
             <div className="text-2xl font-bold">
               {loadingLiq
                 ? '—'
-                : `$${totalNeto.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`}
+                : `$${totalNeto.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
             </div>
           </CardContent>
         </Card>
@@ -536,6 +536,7 @@ export function SueldosDashboard({
                       $
                       {Number(l.liquidacion.neto).toLocaleString('es-AR', {
                         minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
                       })}
                     </span>
                     <Button

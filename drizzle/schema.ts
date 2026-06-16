@@ -1511,3 +1511,34 @@ export const payrollParametrosPeriodo = pgTable("payroll_parametros_periodo", {
     .$onUpdate(() => new Date())
     .notNull(),
 });
+
+/**
+ * Registro de cada presentación LSD generada y descargada.
+ * Nro 1 = presentación original; nro 2+ = rectificativas.
+ * El campo `contenido` guarda el archivo completo para auditoría y re-descarga.
+ */
+export const payrollLsdPresentacion = pgTable(
+  "payroll_lsd_presentacion",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** FK a la empresa (client con CUIT propio). */
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => client.id, { onDelete: "cascade" }),
+    /** Período en formato "YYYY-MM". */
+    periodo: text("periodo").notNull(),
+    /** Número secuencial de presentación para el período (1, 2, 3...). */
+    nroPresentacion: integer("nro_presentacion").notNull(),
+    /** Nombre del archivo generado (ej. "30717554864_2026_05_LSD.txt"). */
+    filename: text("filename").notNull(),
+    /** Cantidad de empleados incluidos en la presentación. */
+    empleados: integer("empleados").notNull(),
+    /** Cantidad de líneas de conceptos (R03) en la presentación. */
+    conceptos: integer("conceptos").notNull(),
+    /** Contenido completo del archivo LSD (texto plano). */
+    contenido: text("contenido").notNull(),
+    /** Fecha y hora en que se generó la presentación. */
+    generadoEn: timestamp("generado_en").defaultNow().notNull(),
+  },
+  (t) => [unique("uq_lsd_pres_profile_periodo_nro").on(t.profileId, t.periodo, t.nroPresentacion)]
+);

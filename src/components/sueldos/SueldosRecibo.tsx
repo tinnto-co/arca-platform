@@ -873,7 +873,7 @@ function ReciboDocumento({
             value={
               convenio
                 ? convenio.cctCodigo
-                  ? `${convenio.nombre} (CCT ${convenio.cctCodigo})`
+                  ? `${(convenio.nombre ?? '').replace(convenio.cctCodigo, '').trim()} (CCT ${convenio.cctCodigo})`
                   : convenio.nombre
                 : '—'
             }
@@ -927,10 +927,12 @@ function ReciboDocumento({
                 {filas.map(({ detalle: det, concepto, conceptoAfip, conceptoSos, col }) => (
                   <tr key={det.id} className="hover:bg-muted/20">
                     <td className="px-2 py-1">
-                      {concepto?.nombre ??
-                        conceptoAfip?.descripcion ??
-                        conceptoSos?.nombre ??
-                        det.codigo}
+                      {(det.memo && !det.memo.startsWith('source=') && !det.memo.includes('calc_error='))
+                        ? det.memo
+                        : (concepto?.nombre ??
+                            conceptoAfip?.descripcion ??
+                            conceptoSos?.nombre ??
+                            det.codigo)}
                     </td>
                     <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">
                       {det.cantidad ? moneyFmt(det.cantidad) : '—'}
