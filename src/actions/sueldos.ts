@@ -566,14 +566,14 @@ export const listConceptosByPerfil = createServerFn({ method: 'GET' })
         conceptoSosClient,
         and(
           eq(conceptoSosClient.conceptoId, conceptoSos.id),
-          eq(conceptoSosClient.profileId, lsdPerfilConcepto.profileId)
+          eq(conceptoSosClient.clientId, lsdPerfilConcepto.clientId)
         )
       )
       .leftJoin(
         conceptosCompletosSos,
         sql`${conceptosCompletosSos.numeroSos} = cast(${lsdPerfilConcepto.codigoContribuyente} as integer)`
       )
-      .where(eq(lsdPerfilConcepto.profileId, ctx.data.profileId))
+      .where(eq(lsdPerfilConcepto.clientId, ctx.data.profileId))
       .orderBy(lsdPerfilConcepto.codigoContribuyente);
   });
 
@@ -642,7 +642,7 @@ export const agregarConvenioDesdeAfipEmpleadores = createServerFn({
       .where(
         and(
           eq(payrollConvenio.representativeId, ctx.data.clientId),
-          eq(payrollConvenio.clientId, ctx.data.profileId),
+          eq(payrollConvenio.clientId, afipRow.profileId),
           or(
             afipRow.cct ? eq(payrollConvenio.nombre, afipRow.cct) : undefined,
             cctNormalizado ? eq(payrollConvenio.nombre, cctNormalizado) : undefined,
@@ -675,7 +675,7 @@ export const agregarConvenioDesdeAfipEmpleadores = createServerFn({
       .insert(payrollConvenio)
       .values({
         representativeId: ctx.data.clientId,
-        clientId: ctx.data.profileId,
+        clientId: afipRow.profileId,
         nombre: nombreConvenio,
         cctCodigo,
       })
@@ -786,8 +786,7 @@ export const deleteEscala = createServerFn({ method: 'POST' })
       .where(
         and(
           eq(payrollEscala.id, ctx.data.escalaId),
-          eq(payrollConvenio.representativeId, ctx.data.clientId),
-          eq(payrollConvenio.clientId, ctx.data.profileId)
+          eq(payrollConvenio.representativeId, ctx.data.clientId)
         )
       )
       .limit(1);
@@ -1314,7 +1313,8 @@ export const createConcepto = createServerFn({ method: 'POST' })
     const [row] = await db
       .insert(payrollConcepto)
       .values({
-        clientId: ctx.data.clientId,
+        // `clientId` del contrato es el representante; conceptos se scopean por representativeId.
+        representativeId: ctx.data.clientId,
         codigo: ctx.data.codigo,
         nombre: ctx.data.nombre,
         tipo: ctx.data.tipo,
@@ -2631,7 +2631,9 @@ export const createEmpleadosMasivo = createServerFn({ method: 'POST' })
       .where(
         and(
           eq(payrollConvenio.representativeId, ctx.data.clientId),
-          eq(payrollConvenio.clientId, ctx.data.profileId)
+          ctx.data.profileId
+            ? eq(payrollConvenio.clientId, ctx.data.profileId)
+            : undefined
         )
       );
     const convenioByName = new Map(
@@ -2943,7 +2945,7 @@ async function calcularUnaLiquidacion(
       id: liquidacionImportEmpleado.id,
       categoriaId: liquidacionImportEmpleado.categoriaId,
       fechaAlta: liquidacionImportEmpleado.fechaAlta,
-      profileId: liquidacionImportEmpleado.clientId,
+      clientId: liquidacionImportEmpleado.clientId,
       convenioId: liquidacionImportEmpleado.convenioId,
       lugarPago: liquidacionImportEmpleado.lugarPago,
       formaPago: liquidacionImportEmpleado.formaPago,
@@ -2962,7 +2964,7 @@ async function calcularUnaLiquidacion(
   if (!emp) throw new Error('Empleado no encontrado');
 
   const periodoDate = parseISO(periodo + '-01');
-  const convenioIdResuelto = await resolveConvenioIdParaEmpleado(emp, emp.profileId);
+  const convenioIdResuelto = await resolveConvenioIdParaEmpleado(emp, emp.clientId);
   const categoriaIdResuelta = await resolveCategoriaIdParaBasico(
     { ...emp, convenioId: convenioIdResuelto } as typeof liquidacionImportEmpleado.$inferSelect
   );

@@ -758,8 +758,8 @@ export const classifyUnclassifiedNotifications = createServerFn({
 
         await db.insert(dataSourceEvent).values({
           organizationId: orgId,
+          representativeId: notif.representativeId ?? undefined,
           clientId: notif.clientId ?? undefined,
-          profileId: notif.profileId ?? undefined,
           entityType: 'notification',
           entityId: notif.id,
           source: 'ai',
