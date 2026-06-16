@@ -53,6 +53,14 @@ Ejemplo: si el tope es $1.357.033 y un empleado gana $2.000.000, los aportes de 
 
 Este valor **no viene en el recibo** — ANSES lo publica mensualmente y hay que cargarlo en la tabla `payroll_parametros_periodo`.
 
+### El tope NO aparece en el archivo LSD
+
+El tope máximo imponible **no es un campo que se escriba en el archivo TXT del LSD**. No existe ninguna línea ni posición en el archivo que lo contenga explícitamente.
+
+Lo que hace el tope es condicionar el *cálculo* de ciertas bases imponibles dentro del Record 04. Si un empleado no supera el tope, los valores en el R04 son iguales a los del salario real y la diferencia es invisible. Solo se nota cuando el salario bruto supera el tope: en ese caso, las bases 1 (jubilación aporte), 4 (OS aportes) y 5 (FNE/AAFF) quedan capadas al valor del tope en lugar de mostrar el salario real.
+
+Esto fue verificado al comparar el LSD generado por Arca contra el archivo de referencia exportado de SOS Contador (`30-71755486-4_2026-5_0__LSD.txt`): el tope no aparece en ningún campo del TXT. Es un parámetro interno de cálculo.
+
 ---
 
 ## Arquitectura técnica

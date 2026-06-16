@@ -41,6 +41,7 @@ function buildConceptosParaGuardar(
     importe: '',
     importeMinimo: '',
     importeMaximo: '',
+    memo: '',
   };
   return filas
     .map((c) => {
@@ -59,6 +60,7 @@ function buildConceptosParaGuardar(
           e.importeMinimo !== '' ? e.importeMinimo : (c.importeMinimo ?? ''),
         importeMaximo:
           e.importeMaximo !== '' ? e.importeMaximo : (c.importeMaximo ?? ''),
+        memo: e.memo !== '' ? e.memo : (c.memo ?? undefined),
       };
     })
     .filter((c) => {
@@ -304,6 +306,7 @@ export function SueldosSimulador({
             importe: prev.importe,
             importeMinimo: prev.importeMinimo,
             importeMaximo: prev.importeMaximo,
+            memo: prev.memo ?? null,
           };
         }),
         ...extras,
