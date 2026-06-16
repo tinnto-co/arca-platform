@@ -146,12 +146,11 @@ Se revisó y documentó el comportamiento del tope máximo imponible en relació
 
 ---
 
-## 5ter) Montos sin redondear en Dashboard ✅
+## 5ter) Montos redondeados en Dashboard y listado de Recibo ✅
 
-- **Problema:** Los montos en el Dashboard (total bruto, total neto, neto por recibo en el listado) mostraban decimales de más por imprecisión de floating-point (ej. `$1.234.567,890000001`). El `toLocaleString` tenía `minimumFractionDigits: 2` pero le faltaba `maximumFractionDigits: 2`.
-- **Fix:** Agregado `maximumFractionDigits: 2` a los 4 `toLocaleString` de `SueldosDashboard.tsx`.
-- **Nota:** La solapa Recibo ya usaba la función `moneyFmt` que tiene ambas opciones correctamente — no tenía el bug.
-- **Archivo:** `src/components/sueldos/SueldosDashboard.tsx`.
+- **Problema:** Los montos en el Dashboard (total bruto, total neto, neto por recibo) y en la lista de recibos de la solapa Recibo mostraban el valor crudo almacenado en DB, con decimales (ej. `$1.234.567,45`). El recibo de sueldo ya aplica redondeo hacia arriba (`Math.ceil`) sobre el neto calculado — ese valor redondeado es el correcto a mostrar.
+- **Fix:** Se aplica `Math.ceil(Number(neto)).toLocaleString('es-AR')` en todos los puntos de display. Así `$1.234.567,45` → `$1.234.568`, igual que en el recibo impreso.
+- **Archivos:** `src/components/sueldos/SueldosDashboard.tsx`, `src/components/sueldos/SueldosRecibo.tsx`.
 
 ---
 

@@ -600,7 +600,7 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, onEditRe
                       <div className="flex items-center gap-3 shrink-0 ml-4">
                         {r.liquidacion.neto && (
                           <span className="text-sm tabular-nums font-medium">
-                            ${moneyFmt(r.liquidacion.neto)}
+                            ${Math.ceil(Number(r.liquidacion.neto)).toLocaleString('es-AR')}
                           </span>
                         )}
                         {onEditRecibo && (
