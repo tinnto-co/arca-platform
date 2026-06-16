@@ -1,6 +1,6 @@
 # Escalas Salariales CCT — Investigación de Convenios Pendientes
 
-> Documento generado: 2026-06-08
+> Documento generado: 2026-06-08 — Última actualización: 2026-06-16
 > Fuentes consultadas: sitios web oficiales de los sindicatos, CAMARCO, publicaciones de estudios contables.
 
 ---
@@ -8,19 +8,27 @@
 ## Checklist de Tareas
 
 ### Carga en el sistema (Arca)
-- [ ] **CCT 272/96 Pastelería** — Cargar categorías y escala de marzo 2026
-- [ ] **CCT 167/91 Reposteros MDP (STARP)** — Cargar categorías y escala de diciembre 2025
-- [ ] **CCT 76/75 Construcción (UOCRA)** — Cargar categorías y escala mensual (confirmar zona geográfica primero)
-- [ ] **CCT 459/06 Emergencias Médicas (Sanidad)** — Cargar categorías y escala de febrero 2026
+- [x] **CCT 76/75 Construcción (UOCRA)** — Categorías por zona (A/B/C/C Austral) y escalas Marzo–Agosto 2026 cargadas. Empleados de Brique y NGVS asignados. *(2026-06-12/13)*
+- [x] **CCT 272/96 Pastelería** — 30 categorías (3 jornadas × 10 cats) y escala Marzo 2026 cargadas. 5 empleados de Sabenumitubeja asignados por jornada y puesto. *(2026-06-16)*
+- [x] **CCT 459/06 Emergencias Médicas (Sanidad)** — 8 categorías y escalas Feb–Abr 2026 cargadas. Empleados Admip asignados a 9999/99 (jefes). *(2026-06-16)*
+- [x] **CCT 167/91 Reposteros MDP (STARP)** — **DESESTIMADO** (información incorrecta, no corresponde a ninguna empresa activa). *(2026-06-16)*
 
 ### Por confirmar / investigar
-- [ ] Confirmar zona geográfica de las empresas de construcción (Zona A / B / C) — afecta directamente los valores horarios de UOCRA
-- [ ] Confirmar si los empleados de STARP son Mar del Plata o corresponde CCT nacional Pasteleros (272/96)
-- [ ] Buscar actualización de CCT 167/91 para 2026 (la última encontrada es diciembre 2025)
-- [ ] Buscar escalas CCT 459/06 para mayo–agosto 2026 (el acuerdo de feb 2026 cubre hasta abril)
-- [ ] Confirmar si la asignación no remunerativa de CCT 272/96 (abril–septiembre 2026) se liquida como concepto NR separado o ya está absorbida en el básico
-- [ ] Asignar categorías a los empleados de cada empresa antes de liquidar
-- [ ] Generar recibos de prueba una vez asignadas las categorías
+- [x] Zona geográfica empresas UOCRA → **todas Zona A** *(confirmado 2026-06-12)*
+- [x] Sabenumitubeja S.A. → confirmado **272/96** exclusivamente. Los puestos de sus empleados no matchean 167/91. El 167/91 en AFIP era incorrecto. *(2026-06-16)*
+- [x] ANR de CCT 272/96 (abril–septiembre 2026) → **concepto NR separado** (no absorbido en básico). Pendiente cargar el concepto en el sistema.
+- [ ] Buscar escalas CCT 459/06 para mayo–agosto 2026 (acuerdo de feb 2026 cubre hasta abril)
+- [ ] Asignar categorías a empleados de CONSTRUCTORA ARK-FA, Deze, GMONTAJES, GONZALEZ GUSTAVO RAMON (UOCRA) cuando se incorporen
+- [ ] Cargar ANR mensual CCT 272/96 como concepto NR en Sabenumitubeja (escalas abr–sep 2026)
+- [ ] Definir monto de categoría Jefe en Admip (9999/99) — completar manualmente en UI
+
+### Limpieza de convenios realizada (2026-06-12/13)
+- [x] Eliminados convenios sin respaldo AFIP en todas las empresas que liquidan sueldos (excepción: 9999/99 y Sanidad 459/06 pendiente re-scrapeo)
+- [x] Pahue Technologies: eliminados Comercio 130/75 y Gastronomía 389/04 (sin respaldo, sin empleados)
+- [x] NGVS: eliminado Gastronomía 389/04 sobrante; creado UOCRA 76/75 y 9999/99; 19 empleados de construcción asignados a UOCRA Zona A; Gramajo y Seybold a 9999/99
+
+### Regla establecida (2026-06-13)
+> Las categorías de convenio son fijas y provienen exclusivamente de fuentes oficiales (sindicato, CAMARCO, etc.). **No se crean categorías arbitrarias.** Cualquier empleado cuyo puesto no figure en el CCT → asignar a **9999/99 Excluido de Convenio**.
 
 ### LSD / Validación (E-presis Mayo 2026)
 - [x] Actualizar `rem4y8Override` para CUIL 23400741824: base OS = $1.378.940,11 — corregido (era centavos, ahora pesos)

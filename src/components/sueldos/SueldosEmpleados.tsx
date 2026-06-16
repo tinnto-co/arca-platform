@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
-import { Plus, Trash2, RefreshCw, Pencil, Save, Search, ChevronLeft, ChevronRight, FileText, Bookmark, BookmarkCheck } from 'lucide-react';
+import { Plus, Trash2, RefreshCw, Pencil, Save, Search, ChevronLeft, ChevronRight, FileText, Bookmark, BookmarkCheck, UserX, UserCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Table,
@@ -23,6 +23,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from '@/components/ui/dialog';
 import {
   listImportEmpleados,
@@ -184,8 +185,8 @@ function Seccion({ title, children, cols = 3 }: { title: string; children: React
         {title}
       </h4>
       <div className={cols === 2
-        ? 'grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3'
-        : 'grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3'}>
+        ? 'grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5'
+        : 'grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-3'}>
         {children}
       </div>
     </div>
@@ -223,6 +224,7 @@ function EmpleadoDetalleDialog({
   const [tipoJornada, setTipoJornada] = useState<'full_time' | 'part_time' | 'reducida'>('full_time');
   const [convenioId, setConvenioId] = useState('');
   const [categoriaId, setCategoriaId] = useState('');
+  const [categoria, setCategoria] = useState('');
   const [legajo, setLegajo] = useState('');
   const [lugarPago, setLugarPago] = useState('');
   const [formaPago, setFormaPago] = useState<(typeof FORMAS_PAGO)[number]['value']>('efectivo');
@@ -318,6 +320,7 @@ function EmpleadoDetalleDialog({
     setTipoJornada((emp.tipoJornada as 'full_time' | 'part_time' | 'reducida') ?? 'full_time');
     setConvenioId(emp.convenioId ?? '');
     setCategoriaId(emp.categoriaId ?? '');
+    setCategoria(emp.categoria ?? '');
     setLegajo(emp.legajo ?? '');
     setLugarPago(emp.lugarPago ?? '');
     setFormaPago(formaDbToSelect(emp.formaPago));
@@ -361,6 +364,7 @@ function EmpleadoDetalleDialog({
           tipoJornada,
           convenioId: convenioId || undefined,
           categoriaId: categoriaId || undefined,
+          categoria: categoria.trim() || undefined,
           legajo: legajo.trim() || null,
           lugarPago: lugarPago.trim() || null,
           formaPago,
@@ -577,8 +581,16 @@ function EmpleadoDetalleDialog({
                       </Select>
                     </div>
                     <div className="space-y-1">
-                      <Label>Categoría</Label>
-                      <Select value={categoriaId} onValueChange={setCategoriaId} disabled={!convenioId}>
+                      <Label>Categoría (sistema)</Label>
+                      <Select
+                        value={categoriaId}
+                        onValueChange={(v) => {
+                          setCategoriaId(v);
+                          const cat = categoriasEdit.find((c) => c.id === v);
+                          if (cat) setCategoria(cat.nombre);
+                        }}
+                        disabled={!convenioId}
+                      >
                         <SelectTrigger><SelectValue placeholder="Sin categoría" /></SelectTrigger>
                         <SelectContent>
                           {categoriasEdit.map((c) => (
@@ -586,6 +598,10 @@ function EmpleadoDetalleDialog({
                           ))}
                         </SelectContent>
                       </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Puesto</Label>
+                      <Input value={categoria} onChange={(ev) => setCategoria(ev.target.value)} placeholder="Nombre del puesto" />
                     </div>
                   </>
                 ) : (
@@ -1316,11 +1332,27 @@ export function SueldosEmpleados({
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Error al sincronizar'),
   });
 
-  const toggleActivo = useMutation({
-    mutationFn: ({ id, activo }: { id: string; activo: boolean }) =>
-      updateEmpleado({ data: { id, clientId, activo } }),
-    onSuccess: (_, vars) => {
-      toast.success(vars.activo ? 'Empleado activado' : 'Empleado inhabilitado');
+  // Dialog para dar de baja
+  const [dialogBaja, setDialogBaja] = useState<{ id: string; nombre: string } | null>(null);
+  const [fechaBajaInput, setFechaBajaInput] = useState('');
+
+  const darDeBaja = useMutation({
+    mutationFn: ({ id, fechaBaja }: { id: string; fechaBaja: string }) =>
+      updateEmpleado({ data: { id, clientId, fechaBaja } }),
+    onSuccess: () => {
+      toast.success('Fecha de baja registrada');
+      setDialogBaja(null);
+      setFechaBajaInput('');
+      queryClient.invalidateQueries({ queryKey: ['import-empleados', clientId, profileId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Error'),
+  });
+
+  const reactivar = useMutation({
+    mutationFn: (id: string) =>
+      updateEmpleado({ data: { id, clientId, fechaBaja: null } }),
+    onSuccess: () => {
+      toast.success('Empleado reactivado');
       queryClient.invalidateQueries({ queryKey: ['import-empleados', clientId, profileId] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Error'),
@@ -1498,19 +1530,29 @@ export function SueldosEmpleados({
                     </TableCell>
                     <TableCell className="align-top py-2" onClick={(ev) => ev.stopPropagation()}>
                       {baja ? (
-                        <Badge variant="secondary" className="whitespace-nowrap">Baja</Badge>
+                        <button
+                          type="button"
+                          className="focus:outline-none"
+                          disabled={reactivar.isPending}
+                          title="Reactivar empleado"
+                          onClick={() => reactivar.mutate(e.id)}
+                        >
+                          <Badge variant="secondary" className="whitespace-nowrap cursor-pointer hover:opacity-75 transition-opacity">
+                            Baja {e.fechaBaja ? formatDate(e.fechaBaja) : ''}
+                          </Badge>
+                        </button>
                       ) : (
                         <button
                           type="button"
                           className="focus:outline-none"
-                          disabled={toggleActivo.isPending}
-                          onClick={() => toggleActivo.mutate({ id: e.id, activo: !(e.activo !== false) })}
+                          title="Dar de baja"
+                          onClick={() => {
+                            setFechaBajaInput(format(new Date(), 'yyyy-MM-dd'));
+                            setDialogBaja({ id: e.id, nombre: e.nombre });
+                          }}
                         >
-                          <Badge
-                            variant={e.activo !== false ? 'default' : 'outline'}
-                            className="whitespace-nowrap cursor-pointer hover:opacity-75 transition-opacity"
-                          >
-                            {e.activo !== false ? 'Activo' : 'Inactivo'}
+                          <Badge variant="default" className="whitespace-nowrap cursor-pointer hover:opacity-75 transition-opacity">
+                            Activo
                           </Badge>
                         </button>
                       )}
@@ -1612,6 +1654,47 @@ export function SueldosEmpleados({
         convenios={convenios}
         onSaved={() => setDetalleRow(null)}
       />
+
+      {/* Dialog: Dar de baja */}
+      <Dialog open={dialogBaja !== null} onOpenChange={(open) => { if (!open) { setDialogBaja(null); setFechaBajaInput(''); } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-[15px]">Dar de baja</DialogTitle>
+          </DialogHeader>
+          <p className="text-[13px] text-muted-foreground -mt-2">
+            {dialogBaja?.nombre}
+          </p>
+          <div className="space-y-1 pt-1">
+            <Label className="text-[13px]">Fecha de baja</Label>
+            <Input
+              type="date"
+              value={fechaBajaInput}
+              onChange={(e) => setFechaBajaInput(e.target.value)}
+              className="h-9 text-[13px]"
+              autoFocus
+            />
+          </div>
+          <DialogFooter className="pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { setDialogBaja(null); setFechaBajaInput(''); }}
+              disabled={darDeBaja.isPending}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={!fechaBajaInput || darDeBaja.isPending}
+              onClick={() => dialogBaja && darDeBaja.mutate({ id: dialogBaja.id, fechaBaja: fechaBajaInput })}
+            >
+              {darDeBaja.isPending ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <UserX className="h-3.5 w-3.5" />}
+              Registrar baja
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
