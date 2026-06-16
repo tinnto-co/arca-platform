@@ -30,6 +30,7 @@ import {
   obraSocial,
   payrollParametrosPeriodo,
   payrollLocalidad,
+  payrollLsdPresentacion,
 } from '@/drizzle/schema';
 import {
   getSessionWithOrg,
@@ -51,6 +52,7 @@ import {
   ne,
   like,
   aliasedTable,
+  max,
 } from 'drizzle-orm';
 import {
   montoLiquidadoDesdeEditsSos,
@@ -1847,6 +1849,7 @@ export const getUltimoReciboImportado = createServerFn({ method: 'GET' })
         importe: liquidacionImportConceptoValor.importe,
         importeMinimo: liquidacionImportConceptoValor.importeMinimo,
         importeMaximo: liquidacionImportConceptoValor.importeMaximo,
+        memo: liquidacionImportConceptoValor.memo,
         nombre: conceptoSos.nombre,
         codigoAfip: conceptoSos.codigoAfip,
       })
@@ -1969,6 +1972,7 @@ export const listConceptosPlantillaManualSos = createServerFn({ method: 'GET' })
         tieneImporte: r.tieneImporte ?? null,
         tieneImpMin: r.tieneImpMin ?? null,
         tieneImpMax: r.tieneImpMax ?? null,
+        tieneMemo: r.tieneMemo ?? null,
         pctFijo: r.pctFijo != null ? Number(r.pctFijo) : null,
         /** true = concepto activo por defecto en la plantilla base */
         isPlantillaBase: plantillaMap.has(codigo),
@@ -2118,6 +2122,7 @@ const conceptoEditsSosSchema = z.object({
   importe: z.string().optional(),
   importeMinimo: z.string().optional(),
   importeMaximo: z.string().optional(),
+  memo: z.string().optional().nullable(),
 });
 
 function numericOrNullForSos(s: string | undefined): string | null {
@@ -2362,7 +2367,7 @@ export const guardarReciboDesdeTabla = createServerFn({ method: 'POST' })
           importeMaximo: numericOrNullForSos(c.importeMaximo),
           pctUsado: pctUsado != null ? String(pctUsado) : null,
           baseUsada: baseUsada != null ? String(baseUsada) : null,
-          memo: 'source=manual_sos',
+          memo: c.memo?.trim() || null,
         });
       }
 
@@ -2726,6 +2731,7 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
       fechaIngreso: z.string().optional(),
       convenioId: z.string().uuid().optional(),
       categoriaId: z.string().uuid().optional(),
+      categoria: z.string().optional().nullable(),
       tipoJornada: z.enum(['full_time', 'part_time', 'reducida']).optional(),
       activo: z.boolean().optional(),
       legajo: z.string().optional().nullable(),
@@ -2759,6 +2765,7 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
       provinciaId: z.string().uuid().optional().nullable(),
       observaciones: z.string().optional().nullable(),
       valorSueldo: z.string().optional().nullable(),
+      fechaBaja: z.string().optional().nullable(),
     })
   )
   .handler(async (ctx) => {
@@ -2789,6 +2796,7 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
       fechaIngreso,
       convenioId,
       categoriaId,
+      categoria,
       tipoJornada,
       activo,
       legajo,
@@ -2818,6 +2826,7 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
       provinciaId,
       observaciones,
       valorSueldo,
+      fechaBaja,
     } = ctx.data;
     // Combine nombre + apellido into nombre field if both provided
     if (nombre && apellido) {
@@ -2829,6 +2838,7 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
     if (fechaIngreso) set.fechaAlta = parseISO(fechaIngreso);
     if (convenioId !== undefined) set.convenioId = convenioId;
     if (categoriaId !== undefined) set.categoriaId = categoriaId;
+    if (categoria !== undefined) set.categoria = categoria?.trim() || null;
     if (tipoJornada !== undefined) set.tipoJornada = tipoJornada;
     if (activo !== undefined) set.activo = activo;
     if (legajo !== undefined) set.legajo = normalizeLegajo(legajo);
@@ -2858,6 +2868,7 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
     if (provinciaId !== undefined) set.provinciaId = provinciaId;
     if (observaciones !== undefined) set.observaciones = observaciones?.trim() || null;
     if (valorSueldo !== undefined) set.valorSueldo = valorSueldo != null && valorSueldo.trim() !== '' ? valorSueldo.trim() : null;
+    if (fechaBaja !== undefined) set.fechaBaja = fechaBaja ? new Date(fechaBaja) : null;
 
     const [row] = await db
       .update(liquidacionImportEmpleado)
@@ -4742,6 +4753,8 @@ export const generarArchivoLsd = createServerFn({ method: 'GET' })
       clientId: z.string().uuid(),
       profileId: z.string().uuid(),
       periodo: z.string().regex(/^\d{4}-\d{2}$/),
+      /** Si se pasa, solo se incluyen los recibos de estos CUILs (para rectificativas parciales). */
+      cuils: z.array(z.string()).optional(),
     })
   )
   .handler(async (ctx) => {
@@ -4749,7 +4762,7 @@ export const generarArchivoLsd = createServerFn({ method: 'GET' })
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
 
-    const { profileId, periodo } = ctx.data;
+    const { profileId, periodo, cuils } = ctx.data;
 
     // ── 1. Employer config ─────────────────────────────────────────────────
     const [employer] = await db
@@ -4818,6 +4831,9 @@ export const generarArchivoLsd = createServerFn({ method: 'GET' })
         and(
           eq(liquidacionImportEmpleado.clientId, profileId),
           eq(liquidacionImportRecibo.periodo, periodo),
+          cuils && cuils.length > 0
+            ? inArray(liquidacionImportEmpleado.cuil, cuils)
+            : undefined,
         )
       )
       .orderBy(asc(liquidacionImportEmpleado.legajo));
@@ -5050,17 +5066,207 @@ export const generarArchivoLsd = createServerFn({ method: 'GET' })
     }
 
     // ── Record 01 — Encabezado ─────────────────────────────────────────────
+    // Calcular el número de presentación secuencial para este período
+    const [maxPres] = await db
+      .select({ maxNro: max(payrollLsdPresentacion.nroPresentacion) })
+      .from(payrollLsdPresentacion)
+      .where(
+        and(
+          eq(payrollLsdPresentacion.profileId, profileId),
+          eq(payrollLsdPresentacion.periodo, periodo)
+        )
+      );
+    const nroPresentacion = (maxPres?.maxNro ?? 0) + 1;
+
+    // R01: pos 23-27 = nroPresentacion (5 dígitos), pos 28 = '3' (tipo forma, fijo según referencia AFIP)
+    const nroStr = String(nroPresentacion).padStart(5, '0');
     // Nota: posiciones 14-15 usan 'SJ' según archivo de referencia E-Presis.
-    const r01 = `01${cuit}SJ${periodoLsd}M${'0'.padStart(6, '0')}${String(numEmpleados).padStart(7, '0')}`;
+    const r01 = `01${cuit}SJ${periodoLsd}M${nroStr}3${String(numEmpleados).padStart(7, '0')}`;
 
     const lines = [r01, ...r02Lines, ...r03Lines, ...r04Lines];
     const contenido = lines.join('\n');
     const filename = `${cuit}_${year}_${month}_LSD.txt`;
+
+    // Guardar la presentación en la base de datos
+    await db.insert(payrollLsdPresentacion).values({
+      profileId,
+      periodo,
+      nroPresentacion,
+      filename,
+      empleados: numEmpleados,
+      conceptos: r03Lines.length,
+      contenido,
+    });
 
     return {
       filename,
       contenido,
       empleados: numEmpleados,
       conceptos: r03Lines.length,
+      nroPresentacion,
     };
+  });
+
+// Cargas Sociales — Historial de presentaciones
+
+/** Lista todas las presentaciones LSD generadas para un período y empresa. */
+export const listLsdPresentaciones = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      profileId: z.string().uuid(),
+      periodo: z.string().regex(/^\d{4}-\d{2}$/),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
+
+    return db
+      .select({
+        id: payrollLsdPresentacion.id,
+        nroPresentacion: payrollLsdPresentacion.nroPresentacion,
+        filename: payrollLsdPresentacion.filename,
+        empleados: payrollLsdPresentacion.empleados,
+        conceptos: payrollLsdPresentacion.conceptos,
+        generadoEn: payrollLsdPresentacion.generadoEn,
+      })
+      .from(payrollLsdPresentacion)
+      .where(
+        and(
+          eq(payrollLsdPresentacion.profileId, ctx.data.profileId),
+          eq(payrollLsdPresentacion.periodo, ctx.data.periodo)
+        )
+      )
+      .orderBy(asc(payrollLsdPresentacion.nroPresentacion));
+  });
+
+/** Devuelve el contenido de una presentación para re-descarga. */
+export const getLsdPresentacionContenido = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      profileId: z.string().uuid(),
+      presentacionId: z.string().uuid(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
+
+    const [pres] = await db
+      .select({
+        filename: payrollLsdPresentacion.filename,
+        contenido: payrollLsdPresentacion.contenido,
+        nroPresentacion: payrollLsdPresentacion.nroPresentacion,
+      })
+      .from(payrollLsdPresentacion)
+      .where(
+        and(
+          eq(payrollLsdPresentacion.id, ctx.data.presentacionId),
+          eq(payrollLsdPresentacion.profileId, ctx.data.profileId)
+        )
+      )
+      .limit(1);
+
+    if (!pres) throw new Error('Presentación no encontrada');
+    return pres;
+  });
+
+// Cargas Sociales — Archivo de conceptos LSD
+
+/** Normaliza nombre para el archivo conceptosLSD: solo ASCII imprimible, sin tildes. */
+function normalizarNombreLsd(nombre: string): string {
+  return nombre
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // strip accent combining marks
+    .replace(/[^\x20-\x7E]/g, '');   // keep only printable ASCII
+}
+
+/** Flags de 29 chars según el tipo AFIP. */
+function flagsConceptoLsd(tipoPrefijo: string): string {
+  if (tipoPrefijo === '81' || tipoPrefijo === '82') {
+    return '10000000000 0 0 00 0         '; // descuentos / retenciones
+  }
+  if (tipoPrefijo === '54' || tipoPrefijo === '52' || tipoPrefijo === '55' || tipoPrefijo === '56') {
+    return '10000111100 0 0 00 0         '; // no remunerativos
+  }
+  return '11111111111 1 1 10 0         '; // remunerativos (default)
+}
+
+/**
+ * Genera el archivo conceptosLSD a partir de los conceptos activos en los
+ * recibos del período. El formato es el esperado por el aplicativo LSD de AFIP:
+ * 195 chars/línea + CRLF — campos: codigoAfip(6) + 000000(6) + sos(4) + nombre(150) + flags(29).
+ */
+export const generarConceptosLsd = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      profileId: z.string().uuid(),
+      periodo: z.string().regex(/^\d{4}-\d{2}$/),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
+
+    const { profileId, periodo } = ctx.data;
+
+    // Conceptos activos usados en los recibos del período — únicos por numero_sos
+    const rows = await db
+      .selectDistinctOn([payrollConcepto.numeroSos], {
+        numeroSos: payrollConcepto.numeroSos,
+        nombre: payrollConcepto.nombre,
+        codigoAfip: lsdConceptoAfip.codigoAfip,
+      })
+      .from(liquidacionImportConceptoValor)
+      .innerJoin(
+        liquidacionImportRecibo,
+        eq(liquidacionImportConceptoValor.reciboId, liquidacionImportRecibo.id)
+      )
+      .innerJoin(
+        liquidacionImportEmpleado,
+        eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
+      )
+      .innerJoin(
+        payrollConcepto,
+        eq(liquidacionImportConceptoValor.conceptoId, payrollConcepto.id)
+      )
+      .leftJoin(
+        conceptoSos,
+        sql`${conceptoSos.codigo}::int = ${payrollConcepto.numeroSos}`
+      )
+      .leftJoin(lsdConceptoAfip, eq(conceptoSos.conceptoAfipId, lsdConceptoAfip.id))
+      .where(
+        and(
+          eq(liquidacionImportEmpleado.clientId, profileId),
+          eq(liquidacionImportRecibo.periodo, periodo),
+          eq(liquidacionImportConceptoValor.activoEnRecibo, true),
+          isNotNull(payrollConcepto.numeroSos)
+        )
+      )
+      .orderBy(payrollConcepto.numeroSos);
+
+    if (rows.length === 0) throw new Error('Sin conceptos activos para el período');
+
+    const lines = rows
+      .filter((r) => r.codigoAfip && r.numeroSos != null)
+      .map((r) => {
+        const afip6 = r.codigoAfip!.padEnd(6, '0').slice(0, 6);
+        const tipoPrefijo = afip6.slice(0, 2);
+        const sosPadded = String(r.numeroSos).padStart(4, '0');
+        const nombreNorm = normalizarNombreLsd(r.nombre).slice(0, 150).padEnd(150, ' ');
+        const flags = flagsConceptoLsd(tipoPrefijo);
+        return afip6 + '000000' + sosPadded + nombreNorm + flags;
+      });
+
+    const [year, month] = periodo.split('-');
+    const filename = `conceptos_${year}_${month}_LSD.txt`;
+    const contenido = lines.join('\r\n') + '\r\n';
+
+    return { filename, contenido, conceptos: lines.length };
   });

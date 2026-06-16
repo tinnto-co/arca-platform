@@ -54,6 +54,9 @@ export interface ConceptoImportado {
   tieneImporte?: boolean | null;
   tieneImpMin?: boolean | null;
   tieneImpMax?: boolean | null;
+  tieneMemo?: boolean | null;
+  /** Valor del memo (descripción libre) guardado en el recibo. */
+  memo?: string | null;
   /** Porcentaje fijo no editable (ej. 8.33 para Presentismo). */
   pctFijo?: number | null;
 }
@@ -80,6 +83,7 @@ export type EditsMap = Record<
     importe: string;
     importeMinimo: string;
     importeMaximo: string;
+    memo: string;
   }
 >;
 
@@ -91,6 +95,7 @@ const EMPTY_EDIT_ROW: EditsMap[string] = {
   importe: '',
   importeMinimo: '',
   importeMaximo: '',
+  memo: '',
 };
 
 /** Bases de cálculo dinámicas (dependen de subtotales acumulados de otras filas). */
@@ -514,12 +519,23 @@ function TableSection({
               <td className="px-2 py-1.5 text-center text-slate-400 tabular-nums">{c.codigo}</td>
               <td className="px-2 py-1.5 font-medium">
                 <div className="flex items-center gap-1 group/row">
-                  <span>
-                    {c.nombre ?? `Concepto ${c.codigo}`}
-                    {c.codigoAfip && c.codigoAfip !== '0' && (
-                      <span className="ml-1 text-slate-400 font-normal">[{c.codigoAfip}]</span>
+                  <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                    <span>
+                      {c.nombre ?? `Concepto ${c.codigo}`}
+                      {c.codigoAfip && c.codigoAfip !== '0' && (
+                        <span className="ml-1 text-slate-400 font-normal">[{c.codigoAfip}]</span>
+                      )}
+                    </span>
+                    {c.tieneMemo && (
+                      <input
+                        type="text"
+                        placeholder="Descripción en recibo..."
+                        value={edit?.memo ?? ''}
+                        onChange={(ev) => setField(c.codigo, 'memo', ev.target.value)}
+                        className="w-full rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] font-normal text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
+                      />
                     )}
-                  </span>
+                  </div>
                   {onRemoveConcepto && (
                     <button
                       type="button"
@@ -710,6 +726,7 @@ export function TablaReciboSos({
         importe: c.importe ?? '',
         importeMinimo: c.importeMinimo ?? '',
         importeMaximo: c.importeMaximo ?? '',
+        memo: c.memo ?? '',
       };
     }
     return map;
