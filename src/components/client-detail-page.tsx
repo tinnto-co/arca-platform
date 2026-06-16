@@ -144,9 +144,11 @@ import {
   Tooltip,
 } from 'recharts';
 import { userQuery } from '@/lib/user-query';
+import { toTitleCase } from '@/lib/format-name';
 
 interface RepresentativeDetailPageProps {
   representativeId: string;
+  initialClientId?: string;
 }
 
 const INVOICE_TYPE_MAP = new Map(
@@ -226,10 +228,10 @@ const MetricDelta = ({
   return (
     <p
       className={`text-xs mt-1 ${diff > 0
-          ? 'text-[var(--arca-accent-pos-fg)]'
-          : diff < 0
-            ? 'text-[var(--arca-accent-neg-fg)]'
-            : 'text-muted-foreground'
+        ? 'text-[var(--arca-accent-pos-fg)]'
+        : diff < 0
+          ? 'text-[var(--arca-accent-neg-fg)]'
+          : 'text-muted-foreground'
         }`}
     >
       {label}: {formattedPct}
@@ -290,7 +292,7 @@ function findBestMatchingProfileId(
   return profiles[0].id;
 }
 
-export function RepresentativeDetailPage({ representativeId }: RepresentativeDetailPageProps) {
+export function RepresentativeDetailPage({ representativeId, initialClientId }: RepresentativeDetailPageProps) {
   const navigate = useNavigate();
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [editRepresentativeDialogOpen, setEditRepresentativeDialogOpen] = useState(false);
@@ -299,6 +301,7 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
     now.getFullYear(),
     now.getMonth()
   );
+  const [selectedHeaderProfileId, setSelectedHeaderProfileId] = useState<string | undefined>(initialClientId);
   const [ivaProfileId, setIvaProfileId] = useState<string | undefined>(
     undefined
   );
@@ -630,11 +633,18 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
   const effectiveMultilateralProfileId =
     multilateralProfileId ?? defaultIvaProfileId ?? profiles[0]?.id;
 
-  /** Perfil efectivo para el cuadro de Resumen (selector de perfiles asociados). */
+  /** Perfil efectivo para el cuadro de Resumen (sigue al header select). */
   const effectiveResumenProfileId =
-    resumenProfileId ?? defaultIvaProfileId ?? profiles[0]?.id;
+    selectedHeaderProfileId ?? resumenProfileId ?? defaultIvaProfileId ?? profiles[0]?.id;
   const selectedResumenProfile = profiles.find(
     (p) => p.id === effectiveResumenProfileId
+  );
+
+  /** Perfil seleccionado en el header (por query param o primer perfil). */
+  const effectiveHeaderProfileId =
+    selectedHeaderProfileId ?? defaultIvaProfileId ?? profiles[0]?.id;
+  const selectedHeaderProfile = profiles.find(
+    (p) => p.id === effectiveHeaderProfileId
   );
 
   const periodoFiscalResumen = getResumenPeriodMMYYYY(ivaResumenDateRange.from);
@@ -772,16 +782,13 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
         'unreadNotifications',
         orgKey,
         representativeId,
-        resumenNotifProfileId,
+        effectiveHeaderProfileId,
       ],
       queryFn: () =>
         getNotifications({
           data: {
             representativeFilter: representativeId,
-            clientId:
-              resumenNotifProfileId !== 'all'
-                ? resumenNotifProfileId
-                : undefined,
+            clientId: effectiveHeaderProfileId ?? undefined,
             opened: false,
             limit: 50,
             page: 1,
@@ -1668,8 +1675,9 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
     );
   }
 
-  // Compute avatar initials from client name
-  const clientInitials = (client.name || '?')
+  // Compute avatar initials from selected profile or representative name
+  const headerDisplayName = selectedHeaderProfile?.name ?? client.name ?? '?';
+  const clientInitials = headerDisplayName
     .split(/[\s\-]+/)
     .filter(Boolean)
     .slice(0, 2)
@@ -1680,7 +1688,7 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
   const tabTriggerCls = (hasError?: boolean) =>
     cn(
       // shape overrides
-      'relative h-auto flex-none px-[14px] py-[10px] text-[13px] font-medium rounded-[8px_8px_0_0] border whitespace-nowrap gap-[7px] cursor-pointer',
+      'relative h-auto flex-none px-[18px] py-[10px] text-[13px] font-medium rounded-[8px_8px_0_0] border whitespace-nowrap gap-[7px] cursor-pointer',
       // inactive
       'border-transparent text-[var(--arca-ink-3)] hover:bg-transparent hover:text-[var(--arca-ink)]',
       // active
@@ -1692,7 +1700,7 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
     <div>
       <Tabs defaultValue="resumen" className="flex flex-col">
         {/* ── Sticky client header ── */}
-        <div className="sticky top-0 z-10 bg-[var(--arca-bg)] border-b border-[var(--arca-border)]">
+        <div className="sticky top-0 z-10 bg-[var(--arca-bg)] border-b border-[var(--arca-border)] overflow-hidden">
           <div className="px-4 md:px-[28px] pt-[18px]">
             {/* Top row */}
             <div className="flex items-center gap-[14px] pb-[18px] pt-4">
@@ -1711,28 +1719,36 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
               {/* Name + meta */}
               <div className="flex flex-col min-w-0 flex-1">
                 <div className="flex items-center gap-[10px] flex-wrap">
-                  <h1 className="font-display text-[24px] font-semibold tracking-tight text-[var(--arca-ink)] leading-none truncate">
-                    {client.name}
-                  </h1>
+                  {profiles.length > 1 ? (
+                    <Select
+                      value={effectiveHeaderProfileId}
+                      onValueChange={setSelectedHeaderProfileId}
+                    >
+                      <SelectTrigger className="h-auto border-none shadow-none p-0 font-display text-[24px] font-semibold tracking-tight bg-transparent  text-[var(--arca-ink)] leading-none gap-2 w-auto max-w-full [&>svg]:h-5 [&>svg]:w-5">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {profiles.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {toTitleCase(p.name)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <h1 className="font-display text-[24px] font-semibold tracking-tight text-[var(--arca-ink)] leading-none truncate">
+                      {toTitleCase(selectedHeaderProfile?.name ?? client.name)}
+                    </h1>
+                  )}
                 </div>
                 <div className="mt-[4px] flex flex-wrap items-center gap-x-[10px] gap-y-[2px] text-[11.5px] text-[var(--arca-ink-3)]">
-                  {client.identityNumber && (
+                  {selectedHeaderProfile?.identityNumber && (
                     <span className="font-mono">
-                      CUIT {client.identityNumber}
+                      CUIT {selectedHeaderProfile.identityNumber}
                     </span>
                   )}
-                  {client.fiscalCondition && (
-                    <>
-                      <span className="w-[3px] h-[3px] rounded-full bg-[var(--arca-ink-4)] shrink-0" />
-                      <span>{client.fiscalCondition}</span>
-                    </>
-                  )}
-                  {client.regimenLocal && (
-                    <>
-                      <span className="w-[3px] h-[3px] rounded-full bg-[var(--arca-ink-4)] shrink-0" />
-                      <span>{client.regimenLocal}</span>
-                    </>
-                  )}
+                  <span className="w-[3px] h-[3px] rounded-full bg-[var(--arca-ink-4)] shrink-0" />
+                  <span>Repr: {toTitleCase(client.name)}</span>
                   {client.registeredAt && (
                     <>
                       <span className="w-[3px] h-[3px] rounded-full bg-[var(--arca-ink-4)] shrink-0" />
@@ -1799,7 +1815,7 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
             </div>
 
             {/* Tab bar */}
-            <TabsList className="flex h-auto w-full bg-transparent p-0 rounded-none gap-0 overflow-x-auto justify-start">
+            <TabsList className="flex h-auto w-full bg-transparent p-0 rounded-none gap-0 overflow-x-auto overflow-y-hidden justify-start [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
               <TabsTrigger value="resumen" className={tabTriggerCls()}>
                 <FileText className="h-[14px] w-[14px]" />
                 Resumen
@@ -1869,171 +1885,8 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
         <div className="px-4 md:px-[28px] pt-5 pb-[60px]">
           {/* Resumen Tab */}
           <TabsContent value="resumen" className="mt-4 space-y-[14px]">
-            {/* Row 1: Perfiles (3fr) | Facturación (2fr) | IVA (2fr) */}
-            <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr_2fr] gap-[14px]">
-              {/* Perfiles Asociados */}
-              <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_20px] flex flex-col gap-[14px]">
-                <div className="flex items-center gap-2">
-                  <User className="h-3.5 w-3.5 shrink-0 text-[var(--arca-ink-3)]" />
-                  <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
-                    Perfiles asociados
-                  </span>
-                  <span className="text-[11px] font-mono text-[var(--arca-ink-4)]">
-                    {profiles.length}
-                  </span>
-                  <div className="flex-1" />
-                  <button
-                    onClick={() => setEditRepresentativeDialogOpen(true)}
-                    className="text-[12px] font-medium text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors"
-                  >
-                    Editar →
-                  </button>
-                </div>
-                {loadingProfiles ? (
-                  <div className="flex items-center gap-2 text-[var(--arca-ink-4)] text-xs">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Cargando...
-                  </div>
-                ) : profiles.length === 0 ? (
-                  <p className="text-[12.5px] text-[var(--arca-ink-4)]">
-                    Sin perfiles asociados.
-                  </p>
-                ) : (
-                  <>
-                    <div className="flex flex-wrap gap-[6px]">
-                      {profiles.map((prof) => {
-                        const normCuit = (s: string) => s.replace(/\D/g, '');
-                        const warningCuits =
-                          lastNotificacionesJob?.notificationFetchWarningCuits ??
-                          [];
-                        const isWarning = warningCuits.some(
-                          (c) =>
-                            normCuit(c) === normCuit(prof.identityNumber ?? '')
-                        );
-                        const isSelected =
-                          effectiveResumenProfileId === prof.id;
-                        const isUnmanaged = prof.managedByStudy === false;
-                        const initials = (
-                          prof.name ||
-                          prof.identityNumber ||
-                          '?'
-                        )
-                          .split(' ')
-                          .slice(0, 2)
-                          .map((w: string) => w[0])
-                          .join('')
-                          .toUpperCase();
-                        return (
-                          <div key={prof.id} className="relative group">
-                            <button
-                              onClick={() => setResumenProfileId(prof.id)}
-                              className={cn(
-                                'inline-flex items-center gap-[7px] px-[9px] py-[5px] rounded-[var(--arca-r-pill)] text-[11.5px] font-medium border transition-all',
-                                isUnmanaged
-                                  ? 'opacity-50 bg-[var(--arca-surface-2)] text-[var(--arca-ink-4)] border-[var(--arca-border)]'
-                                  : isSelected
-                                    ? 'bg-[var(--arca-ink)] text-[#F7F6F2] border-[var(--arca-ink)]'
-                                    : isWarning
-                                      ? 'bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)] border-[var(--arca-accent-warn)]/30'
-                                      : 'bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)] border-[var(--arca-border)] hover:text-[var(--arca-ink)]'
-                              )}
-                            >
-                              <span
-                                className={cn(
-                                  'w-4 h-4 rounded-[4px] inline-flex items-center justify-center text-[8.5px] font-bold text-white shrink-0',
-                                  isUnmanaged
-                                    ? 'bg-[var(--arca-ink-4)]'
-                                    : isSelected
-                                      ? 'bg-white/10'
-                                      : 'bg-[#1E3460]'
-                                )}
-                              >
-                                {initials}
-                              </span>
-                              {prof.name || prof.identityNumber}
-                              {isUnmanaged && (
-                                <span className="ml-1 text-[10px] font-semibold text-[var(--arca-ink-4)]">
-                                  No administrado
-                                </span>
-                              )}
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleClientManagementMutation.mutate({
-                                  clientId: prof.id,
-                                  managedByStudy: !prof.managedByStudy,
-                                });
-                              }}
-                              title={
-                                isUnmanaged
-                                  ? 'Marcar como administrado'
-                                  : 'Marcar como no administrado'
-                              }
-                              className="absolute -top-1 -right-1 hidden group-hover:flex items-center justify-center w-4 h-4 rounded-full bg-[var(--arca-surface)] border border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors shadow-sm"
-                            >
-                              {isUnmanaged ? (
-                                <Eye className="w-2.5 h-2.5" />
-                              ) : (
-                                <EyeOff className="w-2.5 h-2.5" />
-                              )}
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {selectedResumenProfile && (
-                      <div className="grid grid-cols-3 gap-[14px] pt-[2px]">
-                        <div>
-                          <div className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] mb-1">
-                            CUIT
-                          </div>
-                          <div className="font-mono text-[12.5px] text-[var(--arca-ink)]">
-                            {selectedResumenProfile.identityNumber || '—'}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] mb-1">
-                            Teléfono
-                          </div>
-                          <div className="font-mono text-[12.5px] text-[var(--arca-ink)]">
-                            {client?.phone || '—'}
-                          </div>
-                        </div>
-                        <div className="min-w-0">
-                          <div className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] mb-1">
-                            Email
-                          </div>
-                          <div className="font-mono text-[12.5px] text-[var(--arca-ink)] truncate">
-                            {client?.email || '—'}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                    {selectedResumenProfile && (
-                      <div className="pt-[6px] border-t border-[var(--arca-border)] flex items-center gap-3">
-                        <Link
-                          to="/clients/$clientId/$profileId"
-                          params={{
-                            clientId: representativeId,
-                            profileId: selectedResumenProfile.id,
-                          }}
-                          className="text-[12px] font-medium text-[var(--arca-navy-700)] hover:underline"
-                        >
-                          Ver perfil completo →
-                        </Link>
-                        <div className="flex-1" />
-                        {selectedResumenProfile.managedByStudy === false && (
-                          <span className="text-[11px] font-medium text-[var(--arca-ink-4)] bg-[var(--arca-surface-2)] border border-[var(--arca-border)] px-2 py-0.5 rounded-full">
-                            No administrado
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-
+            {/* Row 1: Facturación | IVA */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-[14px]">
               {/* Facturación */}
               <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_20px] flex flex-col gap-[12px]">
                 <div className="flex items-center gap-2">
@@ -2300,34 +2153,6 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                     {unreadNotifications?.notifications.length ?? 0}
                   </span>
                 </div>
-                {profiles.length > 0 && (
-                  <div className="flex flex-wrap gap-[6px]">
-                    {['all', ...profiles.map((p) => p.id)].map((pid) => {
-                      const label =
-                        pid === 'all'
-                          ? 'Todos'
-                          : profiles.find((p) => p.id === pid)?.name ||
-                          profiles.find((p) => p.id === pid)
-                            ?.identityNumber ||
-                          pid;
-                      const on = resumenNotifProfileId === pid;
-                      return (
-                        <button
-                          key={pid}
-                          onClick={() => setResumenNotifProfileId(pid)}
-                          className={cn(
-                            'px-[9px] py-[4px] rounded-[var(--arca-r-pill)] text-[11px] font-medium border transition-all',
-                            on
-                              ? 'bg-[var(--arca-ink)] text-[#F7F6F2] border-[var(--arca-ink)]'
-                              : 'bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)] border-[var(--arca-border)] hover:text-[var(--arca-ink)]'
-                          )}
-                        >
-                          {label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
                 {loadingUnreadNotifications ? (
                   <div className="flex items-center gap-2 text-[var(--arca-ink-4)] text-xs py-4 justify-center">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -2698,7 +2523,7 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                     <SelectItem value="all">Todas</SelectItem>
                     {profiles.map((p) => (
                       <SelectItem key={p.id} value={p.id}>
-                        {p.name}
+                        {toTitleCase(p.name)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -3857,7 +3682,7 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                       }[]
                     ).map((p) => (
                       <SelectItem key={p.id} value={p.id}>
-                        {p.name || p.identityNumber || p.id}
+                        {toTitleCase(p.name) || p.identityNumber || p.id}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -4177,7 +4002,7 @@ export function RepresentativeDetailPage({ representativeId }: RepresentativeDet
                             identityNumber?: string;
                           }) => (
                             <SelectItem key={profile.id} value={profile.id}>
-                              {profile.name ||
+                              {toTitleCase(profile.name) ||
                                 profile.identityNumber ||
                                 profile.id}
                             </SelectItem>
