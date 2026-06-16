@@ -15,3 +15,5 @@ dist
 # Local DB dumps
 *.dump
 *.sql.gz
+
+.claude/settings.local.json
