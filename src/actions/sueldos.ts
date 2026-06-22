@@ -2014,7 +2014,7 @@ export const getImportReciboDetalle = createServerFn({ method: 'GET' })
       .select()
       .from(liquidacionImportConceptoValor)
       .where(eq(liquidacionImportConceptoValor.reciboId, ctx.data.reciboId))
-      .orderBy(asc(liquidacionImportConceptoValor.codigo));
+      .orderBy(sql`${liquidacionImportConceptoValor.codigo}::int`);
     return { recibo: row.recibo, empleado: row.empleado, conceptos };
   });
 
@@ -4140,7 +4140,7 @@ export const getReciboDetalle = createServerFn({ method: 'GET' })
         )
       )
       .where(eq(liquidacionImportConceptoValor.reciboId, ctx.data.liquidacionId))
-      .orderBy(asc(liquidacionImportConceptoValor.codigo));
+      .orderBy(sql`${liquidacionImportConceptoValor.codigo}::int`);
 
     let merged = mergeDetalleFilasDuplicadas(detallesRaw);
     merged = await enrichConceptosFaltantes(merged);
@@ -4282,7 +4282,7 @@ export const listRecibosDetalleParaPDF = createServerFn({ method: 'GET' })
         )
       )
       .where(inArray(liquidacionImportConceptoValor.reciboId, reciboIds))
-      .orderBy(asc(liquidacionImportConceptoValor.codigo));
+      .orderBy(sql`${liquidacionImportConceptoValor.codigo}::int`);
 
     let allDetallesEnriched = await enrichConceptosFaltantes(
       allDetallesRaw as DetalleReciboRow[]
@@ -4858,7 +4858,7 @@ export const generarArchivoLsd = createServerFn({ method: 'GET' })
                 eq(liquidacionImportConceptoValor.activoEnRecibo, true)
               )
             )
-            .orderBy(asc(liquidacionImportConceptoValor.codigo))
+            .orderBy(sql`${liquidacionImportConceptoValor.codigo}::int`)
         : [];
 
     const conceptosByRecibo = new Map<string, typeof conceptoValores>();
