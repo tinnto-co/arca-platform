@@ -5766,3 +5766,424 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
     </div>
   );
 }
+
+// ── Portal Access Tab ────────────────────────────────────────────────────────
+
+type PortalUser = {
+  accessId: string;
+  userId: string;
+  name: string | null;
+  email: string | null;
+  canViewDebts: boolean;
+  canViewIva: boolean;
+  canViewPayroll: boolean;
+  canUploadDocuments: boolean;
+  canChatAi: boolean;
+  createdAt: Date;
+};
+
+type PermissionKey = 'canViewDebts' | 'canViewIva' | 'canViewPayroll' | 'canUploadDocuments' | 'canChatAi';
+
+const PERMISSION_LABELS: Record<PermissionKey, string> = {
+  canViewDebts: 'Deudas',
+  canViewIva: 'IVA',
+  canViewPayroll: 'Sueldos',
+  canUploadDocuments: 'Documentos',
+  canChatAi: 'Chat IA',
+};
+
+function PermissionBadge({ active, label }: { active: boolean; label: string }) {
+  if (!active) return null;
+  return (
+    <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-[var(--arca-accent-primary-bg)] text-[var(--arca-accent-primary)] border border-[var(--arca-accent-primary)]/20">
+      {label}
+    </span>
+  );
+}
+
+function PortalAccessTab({ representativeId }: { representativeId: string }) {
+  const queryClient = useQueryClient();
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<PortalUser | null>(null);
+  const [revokeTarget, setRevokeTarget] = useState<PortalUser | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+
+  // Create form state
+  const [createForm, setCreateForm] = useState({
+    name: '',
+    email: '',
+    password: '',
+    canViewDebts: true,
+    canViewIva: true,
+    canViewPayroll: false,
+    canUploadDocuments: true,
+    canChatAi: true,
+  });
+
+  // Edit form state (permissions only)
+  const [editPerms, setEditPerms] = useState<Record<PermissionKey, boolean>>({
+    canViewDebts: true,
+    canViewIva: true,
+    canViewPayroll: false,
+    canUploadDocuments: true,
+    canChatAi: true,
+  });
+
+  // Reset password state
+  const [newPassword, setNewPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+
+  const { data: users = [], isLoading } = useQuery({
+    queryKey: ['portalUsers', representativeId],
+    queryFn: () => listPortalUsers({ data: { representativeId } }),
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (vars: Parameters<typeof createPortalUser>[0]['data']) =>
+      createPortalUser({ data: vars }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['portalUsers', representativeId] });
+      toast.success('Usuario creado');
+      setCreateOpen(false);
+      setCreateForm({ name: '', email: '', password: '', canViewDebts: true, canViewIva: true, canViewPayroll: false, canUploadDocuments: true, canChatAi: true });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const editMutation = useMutation({
+    mutationFn: (vars: Parameters<typeof updatePortalUserPermissions>[0]['data']) =>
+      updatePortalUserPermissions({ data: vars }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['portalUsers', representativeId] });
+      toast.success('Permisos actualizados');
+      setEditTarget(null);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const resetPasswordMutation = useMutation({
+    mutationFn: (vars: Parameters<typeof resetPortalUserPassword>[0]['data']) =>
+      resetPortalUserPassword({ data: vars }),
+    onSuccess: () => {
+      toast.success('Contraseña actualizada');
+      setNewPassword('');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const revokeMutation = useMutation({
+    mutationFn: (vars: Parameters<typeof revokePortalAccess>[0]['data']) =>
+      revokePortalAccess({ data: vars }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['portalUsers', representativeId] });
+      toast.success('Acceso revocado');
+      setRevokeTarget(null);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  function openEdit(u: PortalUser) {
+    setEditPerms({
+      canViewDebts: u.canViewDebts,
+      canViewIva: u.canViewIva,
+      canViewPayroll: u.canViewPayroll,
+      canUploadDocuments: u.canUploadDocuments,
+      canChatAi: u.canChatAi,
+    });
+    setNewPassword('');
+    setEditTarget(u);
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-[var(--arca-ink)]">Usuarios con acceso al portal</h3>
+          <p className="text-xs text-[var(--arca-ink-3)] mt-0.5">
+            Los usuarios portal pueden consultar la información fiscal del cliente.
+          </p>
+        </div>
+        <Button
+          size="sm"
+          onClick={() => setCreateOpen(true)}
+          className="bg-[var(--arca-ink)] hover:bg-black text-white gap-1.5"
+        >
+          <UserPlus className="h-3.5 w-3.5" />
+          Agregar usuario
+        </Button>
+      </div>
+
+      {/* Table */}
+      {isLoading ? (
+        <div className="flex items-center justify-center h-24 text-sm text-[var(--arca-ink-3)]">
+          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+          Cargando…
+        </div>
+      ) : users.length === 0 ? (
+        <div className="flex flex-col items-center justify-center h-32 gap-2 rounded-lg border border-dashed border-[var(--arca-border)]">
+          <UserCheck className="h-6 w-6 text-[var(--arca-ink-3)]" />
+          <p className="text-sm text-[var(--arca-ink-3)]">No hay usuarios con acceso al portal</p>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-[var(--arca-border)] overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-[var(--arca-surface-2)]">
+                <TableHead className="text-xs">Nombre</TableHead>
+                <TableHead className="text-xs">Email</TableHead>
+                <TableHead className="text-xs">Permisos</TableHead>
+                <TableHead className="text-xs">Alta</TableHead>
+                <TableHead className="text-xs text-right">Acciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(users as PortalUser[]).map((u) => (
+                <TableRow key={u.accessId} className="hover:bg-[var(--arca-surface-2)]/50">
+                  <TableCell className="text-sm font-medium">{u.name ?? '—'}</TableCell>
+                  <TableCell className="text-sm text-[var(--arca-ink-3)]">{u.email ?? '—'}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      {(Object.keys(PERMISSION_LABELS) as PermissionKey[]).map((k) => (
+                        <PermissionBadge key={k} active={u[k]} label={PERMISSION_LABELS[k]} />
+                      ))}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-xs text-[var(--arca-ink-3)]">
+                    {new Date(u.createdAt).toLocaleDateString('es-AR')}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        title="Editar permisos"
+                        onClick={() => openEdit(u)}
+                      >
+                        <Edit className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-[var(--arca-accent-neg)] hover:text-[var(--arca-accent-neg)]"
+                        title="Revocar acceso"
+                        onClick={() => setRevokeTarget(u)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {/* Create Dialog */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Agregar usuario al portal</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[var(--arca-ink)]">Nombre completo</label>
+              <Input
+                value={createForm.name}
+                onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="Ej: Juan García"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[var(--arca-ink)]">Email</label>
+              <Input
+                type="email"
+                value={createForm.email}
+                onChange={(e) => setCreateForm((f) => ({ ...f, email: e.target.value }))}
+                placeholder="juan@empresa.com"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[var(--arca-ink)]">Contraseña</label>
+              <div className="relative">
+                <Input
+                  type={showPassword ? 'text' : 'password'}
+                  value={createForm.password}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, password: e.target.value }))}
+                  placeholder="Mínimo 8 caracteres"
+                  className="pr-9"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)]"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-[var(--arca-ink)]">Permisos</label>
+              <div className="grid grid-cols-2 gap-2">
+                {(Object.keys(PERMISSION_LABELS) as PermissionKey[]).map((k) => (
+                  <label key={k} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={createForm[k]}
+                      onChange={(e) => setCreateForm((f) => ({ ...f, [k]: e.target.checked }))}
+                      className="rounded border-[var(--arca-border)]"
+                    />
+                    {PERMISSION_LABELS[k]}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              className="bg-[var(--arca-ink)] hover:bg-black text-white"
+              disabled={!createForm.name || !createForm.email || createForm.password.length < 8 || createMutation.isPending}
+              onClick={() =>
+                createMutation.mutate({
+                  representativeId,
+                  name: createForm.name,
+                  email: createForm.email,
+                  password: createForm.password,
+                  permissions: {
+                    canViewDebts: createForm.canViewDebts,
+                    canViewIva: createForm.canViewIva,
+                    canViewPayroll: createForm.canViewPayroll,
+                    canUploadDocuments: createForm.canUploadDocuments,
+                    canChatAi: createForm.canChatAi,
+                  },
+                })
+              }
+            >
+              {createMutation.isPending ? (
+                <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Creando…</>
+              ) : (
+                'Crear usuario'
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Permissions Dialog */}
+      <Dialog open={!!editTarget} onOpenChange={(open) => { if (!open) setEditTarget(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Editar acceso — {editTarget?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-5 py-2">
+            {/* Permissions */}
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-[var(--arca-ink)]">Permisos</label>
+              <div className="grid grid-cols-2 gap-2">
+                {(Object.keys(PERMISSION_LABELS) as PermissionKey[]).map((k) => (
+                  <label key={k} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editPerms[k]}
+                      onChange={(e) => setEditPerms((p) => ({ ...p, [k]: e.target.checked }))}
+                      className="rounded border-[var(--arca-border)]"
+                    />
+                    {PERMISSION_LABELS[k]}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Reset password */}
+            <div className="space-y-2 border-t border-[var(--arca-border)] pt-4">
+              <label className="text-xs font-medium text-[var(--arca-ink)] flex items-center gap-1.5">
+                <KeyRound className="h-3.5 w-3.5" />
+                Cambiar contraseña
+              </label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Input
+                    type={showNewPassword ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Nueva contraseña (mín. 8 caracteres)"
+                    className="pr-9"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword((v) => !v)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)]"
+                  >
+                    {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={newPassword.length < 8 || resetPasswordMutation.isPending}
+                  onClick={() => editTarget && resetPasswordMutation.mutate({ userId: editTarget.userId, newPassword })}
+                >
+                  {resetPasswordMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Guardar'}
+                </Button>
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setEditTarget(null)}>
+              Cancelar
+            </Button>
+            <Button
+              className="bg-[var(--arca-ink)] hover:bg-black text-white"
+              disabled={editMutation.isPending}
+              onClick={() =>
+                editTarget &&
+                editMutation.mutate({ accessId: editTarget.accessId, permissions: editPerms })
+              }
+            >
+              {editMutation.isPending ? (
+                <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Guardando…</>
+              ) : (
+                'Guardar permisos'
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Revoke Confirm Dialog */}
+      <Dialog open={!!revokeTarget} onOpenChange={(open) => { if (!open) setRevokeTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Revocar acceso</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-[var(--arca-ink-3)] py-2">
+            ¿Confirmar revocar el acceso al portal de{' '}
+            <span className="font-medium text-[var(--arca-ink)]">{revokeTarget?.name}</span>?
+            El usuario no podrá ingresar más al portal.
+          </p>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setRevokeTarget(null)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={revokeMutation.isPending}
+              onClick={() => revokeTarget && revokeMutation.mutate({ accessId: revokeTarget.accessId })}
+            >
+              {revokeMutation.isPending ? (
+                <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Revocando…</>
+              ) : (
+                'Revocar acceso'
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
