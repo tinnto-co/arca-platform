@@ -220,6 +220,7 @@ function EmpleadoDetalleDialog({
   const [nombre, setNombre] = useState('');
   const [cuil, setCuil] = useState('');
   const [fechaAlta, setFechaAlta] = useState('');
+  const [fechaIngreso, setFechaIngreso] = useState('');
   const [activo, setActivo] = useState(true);
   const [tipoJornada, setTipoJornada] = useState<'full_time' | 'part_time' | 'reducida'>('full_time');
   const [convenioId, setConvenioId] = useState('');
@@ -316,6 +317,11 @@ function EmpleadoDetalleDialog({
         ? (typeof emp.fechaAlta === 'string' ? emp.fechaAlta : (emp.fechaAlta as Date).toISOString()).slice(0, 10)
         : ''
     );
+    setFechaIngreso(
+      emp.fechaIngreso
+        ? (typeof emp.fechaIngreso === 'string' ? emp.fechaIngreso : (emp.fechaIngreso as Date).toISOString()).slice(0, 10)
+        : ''
+    );
     setActivo(emp.activo ?? true);
     setTipoJornada((emp.tipoJornada as 'full_time' | 'part_time' | 'reducida') ?? 'full_time');
     setConvenioId(emp.convenioId ?? '');
@@ -359,7 +365,8 @@ function EmpleadoDetalleDialog({
           clientId,
           nombre: nombre.trim() || undefined,
           cuilCuil: cuil.trim() || undefined,
-          fechaIngreso: fechaAlta || undefined,
+          fechaAlta: fechaAlta || undefined,
+          fechaIngreso: fechaIngreso || undefined,
           activo,
           tipoJornada,
           convenioId: convenioId || undefined,
@@ -540,8 +547,12 @@ function EmpleadoDetalleDialog({
                       <Input value={legajo} onChange={(ev) => setLegajo(ev.target.value)} />
                     </div>
                     <div className="space-y-1">
-                      <Label>Fecha de alta</Label>
+                      <Label>Fecha de alta (antigüedad)</Label>
                       <Input type="date" value={fechaAlta} onChange={(ev) => setFechaAlta(ev.target.value)} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Fecha de ingreso</Label>
+                      <Input type="date" value={fechaIngreso} onChange={(ev) => setFechaIngreso(ev.target.value)} />
                     </div>
                     <div className="space-y-1">
                       <Label>Tipo jornada</Label>
@@ -557,7 +568,8 @@ function EmpleadoDetalleDialog({
                   </>
                 ) : (
                   <>
-                    <Campo label="Fecha de alta" value={formatDate(e.fechaAlta)} />
+                    <Campo label="Fecha de alta (antigüedad)" value={formatDate(e.fechaAlta)} />
+                    <Campo label="Fecha de ingreso" value={formatDate(e.fechaIngreso)} />
                     <Campo label="Fecha de baja" value={formatDate(e.fechaBaja)} />
                     <Campo label="Tipo jornada" value={tipoJornadaLabel(e.tipoJornada)} />
                     <Campo label="Modo contrato" value={e.modoContrato} />

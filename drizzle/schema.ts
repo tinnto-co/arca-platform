@@ -113,6 +113,28 @@ export const client = pgTable("client", {
    * "C" = por CUIL, "L" = por legajo.
    */
   ordenCLN: text("orden_cln"),
+  // --- Defaults de "Datos del Empleador" scrapeados de SOS Contador ---
+  /** Situación de revista por defecto para nuevos empleados. */
+  situacionDefaultId: uuid("situacion_default_id")
+    .references((): AnyPgColumn => payrollSituacion.id, { onDelete: "set null" }),
+  /** Condición del trabajador por defecto. */
+  condicionDefaultId: uuid("condicion_default_id")
+    .references((): AnyPgColumn => payrollCondicion.id, { onDelete: "set null" }),
+  /** Actividad SIJP por defecto del empleador. */
+  actividadDefaultId: uuid("actividad_default_id")
+    .references((): AnyPgColumn => payrollActividad.id, { onDelete: "set null" }),
+  /** Modalidad de contratación por defecto para nuevos empleados. */
+  contratacionDefaultId: uuid("contratacion_default_id")
+    .references((): AnyPgColumn => payrollModalidadContratacion.id, { onDelete: "set null" }),
+  /** Tipo de siniestro por defecto. */
+  siniestradoDefaultId: uuid("siniestrado_default_id")
+    .references((): AnyPgColumn => payrollSiniestrado.id, { onDelete: "set null" }),
+  /** Zona geográfica por defecto del empleador. */
+  zonaDefaultId: uuid("zona_default_id")
+    .references((): AnyPgColumn => payrollZona.id, { onDelete: "set null" }),
+  /** Obra social por defecto del empleador. */
+  obraSocialDefaultId: uuid("obra_social_default_id")
+    .references((): AnyPgColumn => obraSocial.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -556,6 +578,8 @@ export const obraSocial = pgTable("obra_social", {
   id: uuid("id").primaryKey().defaultRandom(),
   codigo: text("codigo").notNull().unique(),
   nombre: text("nombre").notNull(),
+  /** ID interno de SOS Contador (cbobrasocial.value). */
+  codigoSos: text("codigo_sos").unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -564,6 +588,8 @@ export const payrollSituacion = pgTable("payroll_situacion", {
   id: uuid("id").primaryKey().defaultRandom(),
   codigo: text("codigo").notNull().unique(),
   nombre: text("nombre").notNull(),
+  /** ID interno de SOS Contador (cbsituacion.value). */
+  codigoSos: text("codigo_sos").unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -572,6 +598,8 @@ export const payrollCondicion = pgTable("payroll_condicion", {
   id: uuid("id").primaryKey().defaultRandom(),
   codigo: text("codigo").notNull().unique(),
   nombre: text("nombre").notNull(),
+  /** ID interno de SOS Contador (cbcondicion.value). */
+  codigoSos: text("codigo_sos").unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -580,6 +608,8 @@ export const payrollActividad = pgTable("payroll_actividad", {
   id: uuid("id").primaryKey().defaultRandom(),
   codigo: text("codigo").notNull().unique(),
   nombre: text("nombre").notNull(),
+  /** ID interno de SOS Contador (cbactividad.value). */
+  codigoSos: text("codigo_sos").unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -588,6 +618,8 @@ export const payrollModalidadContratacion = pgTable("payroll_modalidad_contratac
   id: uuid("id").primaryKey().defaultRandom(),
   codigo: text("codigo").notNull().unique(),
   nombre: text("nombre").notNull(),
+  /** ID interno de SOS Contador (cbcontratacion.value). */
+  codigoSos: text("codigo_sos").unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -596,6 +628,8 @@ export const payrollSiniestrado = pgTable("payroll_siniestrado", {
   id: uuid("id").primaryKey().defaultRandom(),
   codigo: text("codigo").notNull().unique(),
   nombre: text("nombre").notNull(),
+  /** ID interno de SOS Contador (cbsiniestrado.value). */
+  codigoSos: text("codigo_sos").unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -620,6 +654,12 @@ export const payrollZona = pgTable("payroll_zona", {
   id: uuid("id").primaryKey().defaultRandom(),
   codigo: text("codigo").notNull().unique(),
   nombre: text("nombre").notNull(),
+  /**
+   * ID interno de SOS Contador para la opción canónica de esta zona (cbzona.value).
+   * SOS tiene múltiples entradas históricas por zona (una por período); aquí
+   * se guarda el ID de la más reciente/vigente para poder preseleccionarla.
+   */
+  codigoSos: text("codigo_sos").unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -854,6 +894,7 @@ export const liquidacionImportEmpleado = pgTable(
     legajo: text("legajo").notNull(),
     nombre: text("nombre").notNull(),
     fechaAlta: timestamp("fecha_alta", { mode: "date" }),
+    fechaIngreso: timestamp("fecha_ingreso", { mode: "date" }),
     fechaAntiguedadReconocida: timestamp("fecha_antiguedad_reconocida", { mode: "date" }),
     fechaBaja: timestamp("fecha_baja", { mode: "date" }),
     modoContrato: text("modo_contrato"),

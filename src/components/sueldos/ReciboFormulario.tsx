@@ -98,6 +98,8 @@ export interface ReciboFormularioSuccess {
   copiarUltimoRecibo: boolean;
   tipoRecibo: string;
   antiguedadAnios: number | null;
+  fechaAlta: string | null;
+  fechaIngreso: string | null;
   quincena: '0' | '1' | '2';
   fechaLiquidacion: string;
   obraSocialId: string | null;
@@ -246,6 +248,12 @@ export function ReciboFormulario({
       copiarUltimoRecibo: values.copiarUltimoRecibo === 'si',
       tipoRecibo: values.tipoRecibo,
       antiguedadAnios,
+      fechaAlta: emp?.empleado.fechaAlta
+        ? (typeof emp.empleado.fechaAlta === 'string' ? emp.empleado.fechaAlta : (emp.empleado.fechaAlta as Date).toISOString()).slice(0, 10)
+        : null,
+      fechaIngreso: emp?.empleado.fechaIngreso
+        ? (typeof emp.empleado.fechaIngreso === 'string' ? emp.empleado.fechaIngreso : (emp.empleado.fechaIngreso as Date).toISOString()).slice(0, 10)
+        : null,
       quincena: values.quincena,
       fechaLiquidacion: values.fechaLiquidacion,
       obraSocialId: emp?.empleado.obraSocialId ?? null,

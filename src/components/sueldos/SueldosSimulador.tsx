@@ -78,6 +78,12 @@ function buildConceptosParaGuardar(
     });
 }
 
+function fmtDate(s: string | null | undefined): string {
+  if (!s) return '—';
+  const [y, m, d] = s.split('-');
+  return `${d}/${m}/${y}`;
+}
+
 type TipoReciboGuardar =
   | 'sueldo'
   | 'anticipo'
@@ -95,6 +101,8 @@ interface FlowHeader {
   tipoRecibo: TipoReciboGuardar;
   copiarUltimoRecibo: boolean;
   antiguedadAnios: number | null;
+  fechaAlta?: string | null;
+  fechaIngreso?: string | null;
   // metadata from form — absent when coming from "Editar" (initialData flow)
   quincena?: '0' | '1' | '2';
   fechaLiquidacion?: string;
@@ -235,6 +243,9 @@ export function SueldosSimulador({
   const sinEscalaParaPeriodo = basicoData?.sinEscalaParaPeriodo ?? false;
   const fallbackPeriodoLabel = basicoData?.fallbackPeriodoLabel ?? null;
   const periodoEscalaLabel = basicoData?.periodoEscalaLabel ?? null;
+  // Fechas del empleado: primero desde el form (flujo nuevo recibo), luego desde basicoData (flujo editar)
+  const fechaAltaDisplay = flowHeader?.fechaAlta ?? basicoData?.fechaAlta ?? null;
+  const fechaIngresoDisplay = flowHeader?.fechaIngreso ?? basicoData?.fechaIngreso ?? null;
 
   const { data: employerConfig } = useQuery({
     queryKey: ['payroll-employer-config', clientId, profileId],
@@ -552,6 +563,8 @@ export function SueldosSimulador({
         tipoRecibo: payload.tipoRecibo as TipoReciboGuardar,
         copiarUltimoRecibo: payload.copiarUltimoRecibo,
         antiguedadAnios: payload.antiguedadAnios,
+        fechaAlta: payload.fechaAlta,
+        fechaIngreso: payload.fechaIngreso,
         quincena: payload.quincena,
         fechaLiquidacion: payload.fechaLiquidacion,
         obraSocialId: payload.obraSocialId,
@@ -721,6 +734,19 @@ export function SueldosSimulador({
           No hay recibo previo para este empleado — se muestra el catálogo completo
           con valores vacíos para carga manual.
         </p>
+      )}
+
+      {showBase && (fechaAltaDisplay || fechaIngresoDisplay) && (
+        <div className="flex flex-wrap gap-x-6 gap-y-1 rounded-md border border-border/50 bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
+          <span>
+            <span className="font-medium text-foreground">Fecha de alta (antigüedad):</span>{' '}
+            {fmtDate(fechaAltaDisplay)}
+          </span>
+          <span>
+            <span className="font-medium text-foreground">Fecha de ingreso:</span>{' '}
+            {fmtDate(fechaIngresoDisplay)}
+          </span>
+        </div>
       )}
 
       {showImportadoTable && (

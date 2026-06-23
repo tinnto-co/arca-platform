@@ -190,6 +190,8 @@ async function upsertLiquidacionEmpleadoForPayrollRow(input: {
     .values({
       clientId: input.profileId,
       cuil: input.cuil,
+      // fechaIngreso = misma que fechaAlta al crear; se puede editar luego si cambia la empresa
+      fechaIngreso: input.fechaAlta,
       ...campos,
     })
     .returning({ id: liquidacionImportEmpleado.id });
@@ -1185,7 +1187,7 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
       )
       .limit(1);
 
-    if (!emp) return { basico: 0 };
+    if (!emp) return { basico: 0, fechaAlta: null as string | null, fechaIngreso: null as string | null };
 
     const empleado = emp.liquidacion_import_empleado;
 
@@ -1208,7 +1210,9 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
     // 1° prioridad: override manual en el legajo (seteado explícitamente por el usuario)
     const override = empleado.valorSueldo != null ? Number(empleado.valorSueldo) : 0;
     if (!Number.isNaN(override) && override > 0) {
-      return { basico: override, categoriaNombre, sinEscalaParaPeriodo: false, fallbackPeriodoLabel: null, periodoEscalaLabel: null };
+      const fechaAltaStr = empleado.fechaAlta ? empleado.fechaAlta.toISOString().slice(0, 10) : null;
+      const fechaIngresoStr = empleado.fechaIngreso ? empleado.fechaIngreso.toISOString().slice(0, 10) : null;
+      return { basico: override, categoriaNombre, sinEscalaParaPeriodo: false, fallbackPeriodoLabel: null, periodoEscalaLabel: null, fechaAlta: fechaAltaStr, fechaIngreso: fechaIngresoStr };
     }
 
     // 2° prioridad: escala configurada para el período exacto
@@ -1242,10 +1246,14 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
         sinEscalaParaPeriodo: false,
         fallbackPeriodoLabel: null,
         periodoEscalaLabel: escalaPeriodo.periodoLabel,
+        fechaAlta: empleado.fechaAlta ? empleado.fechaAlta.toISOString().slice(0, 10) : null,
+        fechaIngreso: empleado.fechaIngreso ? empleado.fechaIngreso.toISOString().slice(0, 10) : null,
       };
     }
 
-    if (!categoriaId) return { basico: 0, categoriaNombre: null };
+    const fechaAltaStr2 = empleado.fechaAlta ? empleado.fechaAlta.toISOString().slice(0, 10) : null;
+    const fechaIngresoStr2 = empleado.fechaIngreso ? empleado.fechaIngreso.toISOString().slice(0, 10) : null;
+    if (!categoriaId) return { basico: 0, categoriaNombre: null, fechaAlta: fechaAltaStr2, fechaIngreso: fechaIngresoStr2 };
 
     // 3° prioridad: escala más reciente anterior al período (fallback)
     let basico = 0;
@@ -1277,6 +1285,8 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
       sinEscalaParaPeriodo,
       fallbackPeriodoLabel,
       periodoEscalaLabel,
+      fechaAlta: fechaAltaStr2,
+      fechaIngreso: fechaIngresoStr2,
     };
   });
 
@@ -1685,6 +1695,7 @@ export const createManualEmpleado = createServerFn({ method: 'POST' })
         legajo: ctx.data.legajo,
         nombre: ctx.data.nombre,
         fechaAlta: ctx.data.fechaAlta ? new Date(ctx.data.fechaAlta) : null,
+        fechaIngreso: ctx.data.fechaAlta ? new Date(ctx.data.fechaAlta) : null,
         fechaBaja: ctx.data.fechaBaja ? new Date(ctx.data.fechaBaja) : null,
         modoContrato: ctx.data.modoContrato ?? null,
         categoria: ctx.data.categoria ?? null,
@@ -2101,6 +2112,67 @@ export const listProvincias = createServerFn({ method: 'GET' }).handler(
       .orderBy(asc(payrollProvincia.nombre));
   }
 );
+
+export const listTiposEmpresa = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    await getSessionWithOrg();
+    return db
+      .select({ id: payrollTipoEmpresa.id, codigoLsd: payrollTipoEmpresa.codigoLsd, nombre: payrollTipoEmpresa.nombre })
+      .from(payrollTipoEmpresa)
+      .orderBy(asc(payrollTipoEmpresa.codigoLsd));
+  }
+);
+
+export const getEmpleadorConfig = createServerFn({ method: 'GET' })
+  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    const [row] = await db
+      .select({
+        tipoEmpresaId: client.tipoEmpresaId,
+        seguroColectivo: client.seguroColectivo,
+        mipyme: client.mipyme,
+        ordenCLN: client.ordenCLN,
+        situacionDefaultId: client.situacionDefaultId,
+        condicionDefaultId: client.condicionDefaultId,
+        actividadDefaultId: client.actividadDefaultId,
+        contratacionDefaultId: client.contratacionDefaultId,
+        siniestradoDefaultId: client.siniestradoDefaultId,
+        zonaDefaultId: client.zonaDefaultId,
+        obraSocialDefaultId: client.obraSocialDefaultId,
+      })
+      .from(client)
+      .where(eq(client.id, ctx.data.clientId))
+      .limit(1);
+    if (!row) throw new Error('Empresa no encontrada');
+    return row;
+  });
+
+const empleadorConfigSchema = z.object({
+  clientId: z.string().uuid(),
+  tipoEmpresaId: z.string().uuid().nullable(),
+  seguroColectivo: z.boolean(),
+  mipyme: z.boolean(),
+  ordenCLN: z.enum(['C', 'L', 'N']).nullable(),
+  situacionDefaultId: z.string().uuid().nullable(),
+  condicionDefaultId: z.string().uuid().nullable(),
+  actividadDefaultId: z.string().uuid().nullable(),
+  contratacionDefaultId: z.string().uuid().nullable(),
+  siniestradoDefaultId: z.string().uuid().nullable(),
+  zonaDefaultId: z.string().uuid().nullable(),
+  obraSocialDefaultId: z.string().uuid().nullable(),
+});
+
+export const updateEmpleadorConfig = createServerFn({ method: 'POST' })
+  .inputValidator(empleadorConfigSchema)
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await assertCanWrite(orgId);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    const { clientId, ...fields } = ctx.data;
+    await db.update(client).set(fields).where(eq(client.id, clientId));
+  });
 
 const tipoReciboReciboSchema = z.enum([
   'sueldo',
@@ -2728,6 +2800,7 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
       nombre: z.string().min(1).optional(),
       apellido: z.string().min(1).optional(),
       cuilCuil: z.string().optional(),
+      fechaAlta: z.string().optional(),
       fechaIngreso: z.string().optional(),
       convenioId: z.string().uuid().optional(),
       categoriaId: z.string().uuid().optional(),
@@ -2793,6 +2866,7 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
       nombre,
       apellido,
       cuilCuil,
+      fechaAlta,
       fechaIngreso,
       convenioId,
       categoriaId,
@@ -2835,7 +2909,8 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
       set.nombre = nombre;
     }
     if (cuilCuil !== undefined) set.cuil = cuilCuil;
-    if (fechaIngreso) set.fechaAlta = parseISO(fechaIngreso);
+    if (fechaAlta) set.fechaAlta = parseISO(fechaAlta);
+    if (fechaIngreso) set.fechaIngreso = parseISO(fechaIngreso);
     if (convenioId !== undefined) set.convenioId = convenioId;
     if (categoriaId !== undefined) set.categoriaId = categoriaId;
     if (categoria !== undefined) set.categoria = categoria?.trim() || null;
