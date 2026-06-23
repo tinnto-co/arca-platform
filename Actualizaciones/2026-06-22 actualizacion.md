@@ -2,7 +2,13 @@
 
 ## 1) Objetivo general del dia
 
-Implementar el Portal del Cliente (BLAK-G): sistema para que cada cliente pueda tener su propio usuario de consulta, gestionado íntegramente desde el estudio dentro de la app. La infraestructura de DB y rutas del portal ya existía — el trabajo de hoy consiste en construir las server functions de administración de accesos, el tab "Portal" en el detalle de cada cliente, y el fix del redirect post-login para usuarios portal.
+Jornada con 5 sesiones de trabajo:
+
+1. **Portal del Cliente (BLAK-G):** implementar gestión de usuarios portal desde el detalle de cada cliente (server functions + tab Portal + fix redirect post-login).
+2. **Fix sueldos — orden de conceptos:** corregir orden lexicográfico en la lista de conceptos del recibo.
+3. **Fix sueldos — concepto 211 / importe directo:** corregir cálculo cuando el usuario ingresa solo un monto fijo sin porcentaje ni cantidad.
+4. **Fix cargas sociales — scope de estado:** corregir error de runtime en `GenerarPresentacionDialog` por `showEmpleadorConfig` fuera de scope.
+5. **Feature sueldos — fechas del empleado:** nueva columna `fecha_ingreso`, display de ambas fechas sobre la tabla de conceptos en "Nuevo recibo", y campo editable en el dialog del empleado.
 
 ---
 
@@ -74,38 +80,6 @@ Agregadas en `src/actions/client-portal.tsx` (sección "Studio-side"):
 
 ---
 
-## 2e) Feature: fechas del empleado visibles en pantalla "Nuevo recibo" (quinta sesión)
-
-### 2e.1 Nueva columna `fecha_ingreso` en empleado
-
-- **Cambio:** Se agregó la columna `fecha_ingreso` (`timestamp`) en la tabla `liquidacion_import_empleado`.
-- **Semántica:**
-  - `fechaAlta` = fecha más antigua del empleado, usada para calcular antigüedad. Se carga desde el LSD y nunca cambia salvo corrección manual.
-  - `fechaIngreso` = fecha de ingreso a la empresa actual (CUIT corriente). Se usa cuando la empresa cambió de CUIT pero la relación laboral continuó.
-- **Al importar LSD:** `fechaIngreso` se inicializa igual que `fechaAlta` (INSERT). No se sobreescribe en updates.
-- **Al crear manualmente:** `fechaIngreso` se inicializa igual que `fechaAlta` en el momento de creación.
-- **Archivos:** `drizzle/schema.ts`, `src/actions/sueldos.ts` (`upsertLiquidacionEmpleadoForPayrollRow`, `createEmpleadoManual`, `updateEmpleado`, `getBasicoParaEmpleadoPeriodo`)
-
-### 2e.2 Ambas fechas visibles en la pantalla de conceptos del recibo
-
-- **Cambio:** Al llegar a la tabla de conceptos en "Nuevo recibo" (o "Editar recibo"), se muestra una barra de info con:
-  - **Fecha de alta (antigüedad):** DD/MM/YYYY
-  - **Fecha de ingreso:** DD/MM/YYYY
-- **Motivación:** El usuario del estudio necesita ver la antigüedad del empleado mientras carga el recibo para verificar el cálculo del bono.
-- **Flujo "Nuevo recibo":** Las fechas vienen del formulario `ReciboFormulario` → `onFormSuccess` → `FlowHeader`.
-- **Flujo "Editar recibo":** Las fechas vienen de `getBasicoParaEmpleadoPeriodo` como fallback (ya que `FlowHeader` no pasa por el form).
-- **Archivos:** `src/components/sueldos/SueldosSimulador.tsx`, `src/components/sueldos/ReciboFormulario.tsx`
-
-### 2e.3 Campo `fechaIngreso` editable en el dialog de empleado
-
-- **Cambio:** En `EmpleadoDetalleDialog` (pestaña Laboral):
-  - El campo "Fecha de alta" ahora se muestra como "Fecha de alta (antigüedad)" para distinguirlo.
-  - Se agregó campo "Fecha de ingreso" editable y visible en modo lectura.
-  - La mutación `updateEmpleado` ahora pasa correctamente `fechaAlta` (antes pasaba `fechaIngreso: fechaAlta` por error de naming).
-- **Archivos:** `src/components/sueldos/SueldosEmpleados.tsx`
-
----
-
 ## 2c) Diagnóstico y resolución: error "data is undefined" en módulo Sueldos (tercera sesión)
 
 ### 2c.1 Síntoma
@@ -154,6 +128,38 @@ Para producción: `bun run build && bun run start`.
 
 ---
 
+## 2e) Feature: fechas del empleado visibles en pantalla "Nuevo recibo" (quinta sesión)
+
+### 2e.1 Nueva columna `fecha_ingreso` en empleado
+
+- **Cambio:** Se agregó la columna `fecha_ingreso` (`timestamp`) en la tabla `liquidacion_import_empleado`.
+- **Semántica:**
+  - `fechaAlta` = fecha más antigua del empleado, usada para calcular antigüedad. Se carga desde el LSD y nunca cambia salvo corrección manual.
+  - `fechaIngreso` = fecha de ingreso a la empresa actual (CUIT corriente). Se usa cuando la empresa cambió de CUIT pero la relación laboral continuó.
+- **Al importar LSD:** `fechaIngreso` se inicializa igual que `fechaAlta` (INSERT). No se sobreescribe en updates.
+- **Al crear manualmente:** `fechaIngreso` se inicializa igual que `fechaAlta` en el momento de creación.
+- **Archivos:** `drizzle/schema.ts`, `src/actions/sueldos.ts` (`upsertLiquidacionEmpleadoForPayrollRow`, `createEmpleadoManual`, `updateEmpleado`, `getBasicoParaEmpleadoPeriodo`)
+
+### 2e.2 Ambas fechas visibles en la pantalla de conceptos del recibo
+
+- **Cambio:** Al llegar a la tabla de conceptos en "Nuevo recibo" (o "Editar recibo"), se muestra una barra de info con:
+  - **Fecha de alta (antigüedad):** DD/MM/YYYY
+  - **Fecha de ingreso:** DD/MM/YYYY
+- **Motivación:** El usuario del estudio necesita ver la antigüedad del empleado mientras carga el recibo para verificar el cálculo del bono.
+- **Flujo "Nuevo recibo":** Las fechas vienen del formulario `ReciboFormulario` → `onFormSuccess` → `FlowHeader`.
+- **Flujo "Editar recibo":** Las fechas vienen de `getBasicoParaEmpleadoPeriodo` como fallback (ya que `FlowHeader` no pasa por el form).
+- **Archivos:** `src/components/sueldos/SueldosSimulador.tsx`, `src/components/sueldos/ReciboFormulario.tsx`
+
+### 2e.3 Campo `fechaIngreso` editable en el dialog de empleado
+
+- **Cambio:** En `EmpleadoDetalleDialog` (pestaña Laboral):
+  - El campo "Fecha de alta" ahora se muestra como "Fecha de alta (antigüedad)" para distinguirlo.
+  - Se agregó campo "Fecha de ingreso" editable y visible en modo lectura.
+  - La mutación `updateEmpleado` ahora pasa correctamente `fechaAlta` (antes pasaba `fechaIngreso: fechaAlta` por error de naming).
+- **Archivos:** `src/components/sueldos/SueldosEmpleados.tsx`
+
+---
+
 ## 5) Riesgos, observaciones y pendientes
 
 ### 5.1 Observaciones
@@ -166,6 +172,7 @@ Para producción: `bun run build && bun run start`.
 
 - [ ] (Futuro) Soporte para que un usuario portal tenga acceso a múltiples representatives (muchos-a-muchos ya está soportado en DB, falta UI).
 - [ ] (Futuro) Log de accesos del portal para auditoría.
+- [ ] Scripts `src/scripts/seed-ngvs-uocra.ts` y `src/scripts/seed-uocra-escalas.ts` creados pero no commiteados — revisar si se incluyen o se descartan.
 
 ---
 
