@@ -81,9 +81,16 @@ Estos ítems ya fueron corregidos antes de esta sesión.
 - Primera iteración: campo de entrada de días en la UI del recibo; el sistema hace el cálculo.
 - Dependencia: el ítem 5 (SAC normal) define cómo se determina la mejor remuneración.
 
-**Archivos involucrados:** `src/actions/sueldos.ts`, `src/components/sueldos/SueldosSimulador.tsx`.
+**Implementación (sesión 2026-06-24):**
+- `getSacPreview` devuelve `fechaIngreso` del empleado (ya existía en schema).
+- `sugerirDiasSemestre(fechaIngreso, periodo)`: si el empleado ingresó dentro del semestre, calcula los días desde el ingreso hasta el último día del semestre (cap 180). Si ingresó antes, devuelve 180.
+- `GenerarSacDialog` extendido con columna "Días" editable por empleado (default auto-sugerido). Badge "prop." en naranja cuando días < 180.
+- Fórmula: `SAC = mejorMes / 360 × días`. Con días=180 equivale al SAC completo (÷2).
+- Sin cambios en `generarSacsMasivo` — la UI ya manda el `sacBase` ajustado.
 
-- [ ] Pendiente — implementar después del ítem 5
+**Archivos modificados:** `src/actions/sueldos.ts`, `src/components/sueldos/SueldosRecibo.tsx`.
+
+- [x] Resuelto — sesión 2026-06-24
 
 ---
 
@@ -194,6 +201,6 @@ El SAC no se crea manualmente — se genera automáticamente cuando el usuario g
 | 1 | Concepto 415 | Baja | **Resuelto** | — |
 | 5 | SAC normal automático | Media | **Resuelto** | — |
 | 2 + 7 | Media jornada (OS + LSD) | Alta | **Resuelto** | — |
-| 3 | SAC proporcional | Media | Pendiente | Ítem 5 |
+| 3 | SAC proporcional | Media | **Resuelto** | Ítem 5 |
 | 4 | Vacaciones + SAC vacaciones | Alta | Pendiente | Clarificar rangos CCT |
 | 6 | Campos calculados editables | Baja-Media | Revisión futura | — |
