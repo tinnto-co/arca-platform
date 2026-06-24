@@ -165,9 +165,16 @@ El SAC no se crea manualmente — se genera automáticamente cuando el usuario g
 - Caso adicional: `pctFijo` (ej. presentismo 8,33%) se muestra como texto estático no editable. Si el convenio usa un porcentaje distinto, no hay forma de cambiarlo.
 - La solución sería agregar una celda "Override" editable en la columna de resultado, que cuando tiene valor prevalece sobre el cálculo automático.
 
-**Estado:** Dejado para revisión más adelante.
+**Implementación (sesión 2026-06-24):**
+- `EditsMap` extendida con campo `montoFijo: string` (session-only, no persiste en DB).
+- `applySubtotalCascade`: cuando `montoFijo` está seteado, el cascade usa ese valor directamente y no recalcula la fórmula. El monto override se acumula igual en subtotales.
+- `ResultOverrideCell`: nuevo componente en `TablaReciboSos.tsx`. En estado normal muestra el valor calculado con ícono lápiz en hover. Al hacer click: input editable en ámbar. Cuando hay override activo: valor en naranja con botón X para limpiar.
+- Columnas de resultado (haberes/descuentos/retenciones/noRemunerativo) usan `ResultOverrideCell` en lugar de texto estático.
+- `pctFijo`: cambiado de `<span>` estático a `<EditableCell>`. El cascade ya usa `row.porcentaje`, por lo que el cambio de % se propaga automáticamente.
 
-- [ ] Pendiente — en revisión futura
+**Archivos modificados:** `src/components/sueldos/TablaReciboSos.tsx`.
+
+- [x] Resuelto — sesión 2026-06-24
 
 ---
 
@@ -203,4 +210,4 @@ El SAC no se crea manualmente — se genera automáticamente cuando el usuario g
 | 2 + 7 | Media jornada (OS + LSD) | Alta | **Resuelto** | — |
 | 3 | SAC proporcional | Media | **Resuelto** | Ítem 5 |
 | 4 | Vacaciones + SAC vacaciones | Alta | Pendiente | Clarificar rangos CCT |
-| 6 | Campos calculados editables | Baja-Media | Revisión futura | — |
+| 6 | Campos calculados editables | Baja-Media | **Resuelto** | — |
