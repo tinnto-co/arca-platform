@@ -1187,7 +1187,7 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
       )
       .limit(1);
 
-    if (!emp) return { basico: 0, fechaAlta: null as string | null, fechaIngreso: null as string | null };
+    if (!emp) return { basico: 0, tipoJornada: 'full_time' as const, fechaAlta: null as string | null, fechaIngreso: null as string | null };
 
     const empleado = emp.liquidacion_import_empleado;
 
@@ -1212,7 +1212,7 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
     if (!Number.isNaN(override) && override > 0) {
       const fechaAltaStr = empleado.fechaAlta ? empleado.fechaAlta.toISOString().slice(0, 10) : null;
       const fechaIngresoStr = empleado.fechaIngreso ? empleado.fechaIngreso.toISOString().slice(0, 10) : null;
-      return { basico: override, categoriaNombre, sinEscalaParaPeriodo: false, fallbackPeriodoLabel: null, periodoEscalaLabel: null, fechaAlta: fechaAltaStr, fechaIngreso: fechaIngresoStr };
+      return { basico: override, categoriaNombre, tipoJornada: empleado.tipoJornada ?? 'full_time', sinEscalaParaPeriodo: false, fallbackPeriodoLabel: null, periodoEscalaLabel: null, fechaAlta: fechaAltaStr, fechaIngreso: fechaIngresoStr };
     }
 
     // 2° prioridad: escala configurada para el período exacto
@@ -1239,10 +1239,13 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
       escalaPeriodo = row;
     }
 
+    const tipoJornada = empleado.tipoJornada ?? 'full_time';
+
     if (escalaPeriodo) {
       return {
         basico: Number(escalaPeriodo.monto),
         categoriaNombre,
+        tipoJornada,
         sinEscalaParaPeriodo: false,
         fallbackPeriodoLabel: null,
         periodoEscalaLabel: escalaPeriodo.periodoLabel,
@@ -1253,7 +1256,7 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
 
     const fechaAltaStr2 = empleado.fechaAlta ? empleado.fechaAlta.toISOString().slice(0, 10) : null;
     const fechaIngresoStr2 = empleado.fechaIngreso ? empleado.fechaIngreso.toISOString().slice(0, 10) : null;
-    if (!categoriaId) return { basico: 0, categoriaNombre: null, fechaAlta: fechaAltaStr2, fechaIngreso: fechaIngresoStr2 };
+    if (!categoriaId) return { basico: 0, categoriaNombre: null, tipoJornada, fechaAlta: fechaAltaStr2, fechaIngreso: fechaIngresoStr2 };
 
     // 3° prioridad: escala más reciente anterior al período (fallback)
     let basico = 0;
@@ -1282,6 +1285,7 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
     return {
       basico: Number.isNaN(basico) ? 0 : basico,
       categoriaNombre,
+      tipoJornada,
       sinEscalaParaPeriodo,
       fallbackPeriodoLabel,
       periodoEscalaLabel,
@@ -4943,6 +4947,35 @@ export const generarArchivoLsd = createServerFn({ method: 'GET' })
       conceptosByRecibo.get(key)!.push(cv);
     }
 
+    // ── 4.5. Básico de escala (jornada completa) para empleados no full_time ─
+    // Para part_time/reducida, rem4y8Base (bases OS 4 y 8 del LSD) debe ser el
+    // básico de escala al 100%, no la bruta real liquidada (que es proporcional).
+    const basicoEscalaCentavosByEmpleadoId = new Map<string, number>();
+    {
+      const periodoNorm = normalizarPeriodoYYYYMM(periodo);
+      const catPeriodos = new Set<string>();
+      for (const row of recibos) {
+        if (row.empleado.tipoJornada !== 'full_time' && row.empleado.categoriaId) {
+          catPeriodos.add(`${row.empleado.categoriaId}|${periodoNorm}`);
+        }
+      }
+      if (catPeriodos.size > 0) {
+        const escalaCache = new Map<string, number>();
+        await Promise.all(
+          [...catPeriodos].map(async (key) => {
+            const [catId, per] = key.split('|') as [string, string];
+            escalaCache.set(key, await getBasicoVigenteInternal(catId, per));
+          })
+        );
+        for (const row of recibos) {
+          if (row.empleado.tipoJornada !== 'full_time' && row.empleado.categoriaId) {
+            const val = escalaCache.get(`${row.empleado.categoriaId}|${periodoNorm}`) ?? 0;
+            if (val > 0) basicoEscalaCentavosByEmpleadoId.set(row.empleado.id, Math.round(val * 100));
+          }
+        }
+      }
+    }
+
     // ── 5. Construir líneas LSD ────────────────────────────────────────────
     const [year, month] = periodo.split('-');
     const periodoLsd = `${year}${month}`;
@@ -5028,10 +5061,15 @@ export const generarArchivoLsd = createServerFn({ method: 'GET' })
       const applyTope = (val: number) =>
         topeCentavos != null ? Math.min(val, topeCentavos) : val;
 
-      // Overrides manuales del recibo (rem4y8Override cubre OS; rem9Override cubre ART)
+      // Overrides manuales del recibo (rem4y8Override cubre OS; rem9Override cubre ART).
+      // Para part_time/reducida sin override explícito: rem4y8Base usa el básico de escala
+      // a jornada completa (rem9Base sí usa la bruta real liquidada).
+      const basicoEscalaFullTimeCentavos = basicoEscalaCentavosByEmpleadoId.get(emp.id) ?? 0;
       const rem4y8Base = rec.rem4y8Override != null
         ? montoCentavos(rec.rem4y8Override)
-        : brutaCentavos;
+        : basicoEscalaFullTimeCentavos > 0
+          ? basicoEscalaFullTimeCentavos
+          : brutaCentavos;
       const rem9Base = rec.rem9Override != null
         ? montoCentavos(rec.rem9Override)
         : brutaCentavos;
@@ -5344,4 +5382,214 @@ export const generarConceptosLsd = createServerFn({ method: 'GET' })
     const contenido = lines.join('\r\n') + '\r\n';
 
     return { filename, contenido, conceptos: lines.length };
+  });
+
+// ─── SAC: Preview y generación masiva ────────────────────────────────────────
+
+/**
+ * Previsualiza los montos SAC de todos los empleados activos para un período dado.
+ * Para cada empleado busca el mejor mes del semestre (máx. haberes + no-rem)
+ * y devuelve SAC = mejor_mes / 2.
+ */
+export const getSacPreview = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      profileId: z.string().uuid(),
+      periodo: z.string().regex(/^\d{4}-\d{2}$/),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
+
+    const { periodo } = ctx.data;
+    const [year, monthStr] = periodo.split('-') as [string, string];
+    const month = parseInt(monthStr, 10);
+
+    // Meses del semestre hasta el período indicado (inclusive)
+    const semesterStart = month <= 6 ? 1 : 7;
+    const semesterMonths: string[] = [];
+    for (let m = semesterStart; m <= month; m++) {
+      semesterMonths.push(`${year}-${String(m).padStart(2, '0')}`);
+    }
+
+    // Empleados activos
+    const empleados = await db
+      .select({
+        id: liquidacionImportEmpleado.id,
+        nombre: liquidacionImportEmpleado.nombre,
+        legajo: liquidacionImportEmpleado.legajo,
+      })
+      .from(liquidacionImportEmpleado)
+      .where(
+        and(
+          eq(liquidacionImportEmpleado.clientId, ctx.data.profileId),
+          eq(liquidacionImportEmpleado.activo, true)
+        )
+      );
+
+    if (empleados.length === 0) return [];
+
+    const empIds = empleados.map((e) => e.id);
+
+    // Recibos de sueldo del semestre
+    const recibos = await db
+      .select({
+        empleadoId: liquidacionImportRecibo.empleadoId,
+        periodo: liquidacionImportRecibo.periodo,
+        haberes: liquidacionImportRecibo.haberes,
+        noRemunerativo: liquidacionImportRecibo.noRemunerativo,
+      })
+      .from(liquidacionImportRecibo)
+      .where(
+        and(
+          inArray(liquidacionImportRecibo.empleadoId, empIds),
+          inArray(liquidacionImportRecibo.periodo, semesterMonths),
+          eq(liquidacionImportRecibo.tipo, 'sueldo')
+        )
+      );
+
+    // SAC existentes en este período
+    const sacExistentes = await db
+      .select({ empleadoId: liquidacionImportRecibo.empleadoId })
+      .from(liquidacionImportRecibo)
+      .where(
+        and(
+          inArray(liquidacionImportRecibo.empleadoId, empIds),
+          eq(liquidacionImportRecibo.periodo, periodo),
+          eq(liquidacionImportRecibo.tipo, 'SAC')
+        )
+      );
+    const sacExistenteIds = new Set(sacExistentes.map((s) => s.empleadoId));
+
+    // Mejor mes por empleado
+    const bestByEmp = new Map<string, { periodo: string; total: number }>();
+    for (const r of recibos) {
+      const total = Number(r.haberes) + Number(r.noRemunerativo);
+      const prev = bestByEmp.get(r.empleadoId);
+      if (!prev || total > prev.total) {
+        bestByEmp.set(r.empleadoId, { periodo: r.periodo, total });
+      }
+    }
+
+    return empleados
+      .map((emp) => {
+        const best = bestByEmp.get(emp.id);
+        return {
+          empleadoId: emp.id,
+          nombre: emp.nombre ?? '—',
+          legajo: emp.legajo ?? '',
+          mejorPeriodo: best?.periodo ?? null,
+          mejorMonto: best?.total ?? 0,
+          sacBase: best ? best.total / 2 : 0,
+          yaTieneSac: sacExistenteIds.has(emp.id),
+        };
+      })
+      .sort((a, b) => (a.nombre ?? '').localeCompare(b.nombre ?? ''));
+  });
+
+/**
+ * Genera recibos SAC para los empleados indicados.
+ * Solo inserta SOS 41 (importe fijo = SAC base). Las retenciones se calculan
+ * cuando el usuario abre y guarda el recibo desde la UI.
+ * Empleados que ya tienen SAC en el período son ignorados (no se sobreescribe).
+ */
+export const generarSacsMasivo = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      profileId: z.string().uuid(),
+      periodo: z.string().regex(/^\d{4}-\d{2}$/),
+      items: z.array(
+        z.object({
+          empleadoId: z.string().uuid(),
+          sacBase: z.number().positive(),
+        })
+      ),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
+
+    if (!puedeLiquidarPeriodo(ctx.data.periodo)) {
+      throw new Error('No se puede liquidar períodos futuros.');
+    }
+
+    const empIds = ctx.data.items.map((i) => i.empleadoId);
+
+    // Verificar pertenencia de todos los empleados al perfil
+    const empValidos = await db
+      .select({ id: liquidacionImportEmpleado.id })
+      .from(liquidacionImportEmpleado)
+      .where(
+        and(
+          inArray(liquidacionImportEmpleado.id, empIds),
+          eq(liquidacionImportEmpleado.clientId, ctx.data.profileId)
+        )
+      );
+    const empValidosSet = new Set(empValidos.map((e) => e.id));
+
+    // SAC existentes (para omitirlos)
+    const sacExistentes = await db
+      .select({ empleadoId: liquidacionImportRecibo.empleadoId })
+      .from(liquidacionImportRecibo)
+      .where(
+        and(
+          inArray(liquidacionImportRecibo.empleadoId, empIds),
+          eq(liquidacionImportRecibo.periodo, ctx.data.periodo),
+          eq(liquidacionImportRecibo.tipo, 'SAC')
+        )
+      );
+    const sacExistenteIds = new Set(sacExistentes.map((s) => s.empleadoId));
+
+    const itemsACrear = ctx.data.items.filter(
+      (i) => empValidosSet.has(i.empleadoId) && !sacExistenteIds.has(i.empleadoId)
+    );
+
+    if (itemsACrear.length === 0) return { generados: 0 };
+
+    await db.transaction(async (tx) => {
+      for (const item of itemsACrear) {
+        const sacBaseStr = item.sacBase.toFixed(2);
+
+        const [ins] = await tx
+          .insert(liquidacionImportRecibo)
+          .values({
+            empleadoId: item.empleadoId,
+            periodo: ctx.data.periodo,
+            tipo: 'SAC',
+            haberes: sacBaseStr,
+            noRemunerativo: '0',
+            descuentos: '0',
+            retenciones: '0',
+            neto: sacBaseStr,
+            origen: 'generado',
+          })
+          .returning({ id: liquidacionImportRecibo.id });
+        if (!ins) continue;
+
+        await tx.insert(liquidacionImportConceptoValor).values({
+          reciboId: ins.id,
+          codigo: '41',
+          monto: sacBaseStr,
+          importe: sacBaseStr,
+          cantidad: null,
+          porcentaje: null,
+          importeConceptoNumero: null,
+          importeMinimo: null,
+          importeMaximo: null,
+          pctUsado: null,
+          baseUsada: sacBaseStr,
+          memo: null,
+        });
+      }
+    });
+
+    return { generados: itemsACrear.length };
   });

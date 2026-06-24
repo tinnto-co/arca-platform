@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { FileText, ChevronRight, Pencil, Printer } from 'lucide-react';
+import { FileText, ChevronRight, Pencil, Printer, Loader2, Sparkles, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Select,
@@ -14,10 +15,19 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
   listLiquidacionesByFiltros,
   listImportEmpleados,
   getReciboDetalle,
   getPayrollEmployerConfig,
+  getSacPreview,
+  generarSacsMasivo,
 } from '@/actions/sueldos';
 import { getClient } from '@/actions/profile';
 import { legajoParaMostrar } from '@/lib/legajo';
@@ -361,6 +371,7 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, onEditRe
   const [empleadoId, setEmpleadoId] = useState(initialEmpleadoId ?? '');
   const [reciboId, setReciboId] = useState('');
   const [showImprimir, setShowImprimir] = useState(false);
+  const [showSacDialog, setShowSacDialog] = useState(false);
 
   useEffect(() => {
     if (initialEmpleadoId) {
@@ -377,6 +388,7 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, onEditRe
   );
 
   const hayFiltro = !!periodo || !!empleadoId;
+  const esMesSAC = mes === '06' || mes === '12';
 
   const resetFiltros = useCallback(() => {
     setAno('');
@@ -447,15 +459,28 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, onEditRe
                 Filtrá por período (mes + año) y/o por empleado. Podés usar solo empleado para ver todos sus recibos.
               </p>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="shrink-0 gap-1.5"
-              onClick={() => setShowImprimir(true)}
-            >
-              <Printer className="h-4 w-4" />
-              Imprimir PDF
-            </Button>
+            <div className="flex items-center gap-2">
+              {esMesSAC && ano && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 gap-1.5"
+                  onClick={() => setShowSacDialog(true)}
+                >
+                  <Sparkles className="h-4 w-4" />
+                  Generar SAC
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0 gap-1.5"
+                onClick={() => setShowImprimir(true)}
+              >
+                <Printer className="h-4 w-4" />
+                Imprimir PDF
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="flex flex-wrap items-end gap-4">
@@ -653,6 +678,16 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, onEditRe
         </Card>
       )}
 
+      {/* ── Dialog: generar SAC masivo ───────────────────────────────────── */}
+      {showSacDialog && ano && (esMesSAC) && (
+        <GenerarSacDialog
+          clientId={clientId}
+          profileId={profileId}
+          periodo={`${ano}-${mes}`}
+          onClose={() => setShowSacDialog(false)}
+        />
+      )}
+
       {/* ── Dialog: imprimir PDF ─────────────────────────────────────────── */}
       <ImprimirRecibosDialog
         open={showImprimir}
@@ -687,6 +722,150 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, onEditRe
         </>
       )}
     </div>
+  );
+}
+
+// ─── Diálogo: Generar SAC masivo ─────────────────────────────────────────────
+
+function moneyFmtSac(v: number): string {
+  return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 }).format(v);
+}
+
+function GenerarSacDialog({
+  clientId,
+  profileId,
+  periodo,
+  onClose,
+}: {
+  clientId: string;
+  profileId: string;
+  periodo: string;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const { data: preview = [], isLoading } = useQuery({
+    queryKey: ['sac-preview', clientId, profileId, periodo],
+    queryFn: () => getSacPreview({ data: { clientId, profileId, periodo } }),
+  });
+
+  // Pre-seleccionar empleados sin SAC existente
+  useEffect(() => {
+    if (preview.length > 0 && selected.size === 0) {
+      setSelected(new Set(preview.filter((p) => !p.yaTieneSac && p.sacBase > 0).map((p) => p.empleadoId)));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preview]);
+
+  const { mutate: generar, isPending } = useMutation({
+    mutationFn: () => {
+      const items = preview
+        .filter((p) => selected.has(p.empleadoId) && !p.yaTieneSac && p.sacBase > 0)
+        .map((p) => ({ empleadoId: p.empleadoId, sacBase: p.sacBase }));
+      return generarSacsMasivo({ data: { clientId, profileId, periodo, items } });
+    },
+    onSuccess: (result) => {
+      toast.success(`${result.generados} recibos SAC generados correctamente.`);
+      queryClient.invalidateQueries({ queryKey: ['liquidaciones-filtros'] });
+      queryClient.invalidateQueries({ queryKey: ['import-recibos'] });
+      onClose();
+    },
+    onError: (err) => {
+      toast.error((err as Error).message ?? 'Error al generar los SAC.');
+    },
+  });
+
+  const pendientes = preview.filter((p) => !p.yaTieneSac && p.sacBase > 0);
+  const seleccionados = preview.filter((p) => selected.has(p.empleadoId) && !p.yaTieneSac && p.sacBase > 0);
+  const semestre = parseInt(periodo.split('-')[1]!, 10) <= 6 ? '1er semestre' : '2do semestre';
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="text-[15px]">
+            Generar SAC — {semestre} {periodo.split('-')[0]}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="flex-1 overflow-y-auto">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-10">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : preview.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">No hay empleados activos.</p>
+          ) : (
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="border-b text-left text-[11px] text-muted-foreground uppercase tracking-wide">
+                  <th className="pb-2 pr-2 w-6"></th>
+                  <th className="pb-2 pr-3">Empleado</th>
+                  <th className="pb-2 pr-3">Mejor mes</th>
+                  <th className="pb-2 pr-3 text-right">Mejor rem+no rem</th>
+                  <th className="pb-2 text-right">SAC (÷2)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {preview.map((p) => (
+                  <tr key={p.empleadoId} className={`border-b last:border-0 ${p.yaTieneSac ? 'opacity-50' : ''}`}>
+                    <td className="py-2 pr-2">
+                      {p.yaTieneSac ? (
+                        <span title="Ya tiene SAC"><CheckCircle2 className="h-4 w-4 text-green-500" /></span>
+                      ) : p.sacBase === 0 ? (
+                        <span title="Sin recibos de sueldo en el semestre"><AlertCircle className="h-4 w-4 text-amber-500" /></span>
+                      ) : (
+                        <input
+                          type="checkbox"
+                          checked={selected.has(p.empleadoId)}
+                          onChange={(e) => {
+                            const next = new Set(selected);
+                            if (e.target.checked) next.add(p.empleadoId);
+                            else next.delete(p.empleadoId);
+                            setSelected(next);
+                          }}
+                          className="h-3.5 w-3.5"
+                        />
+                      )}
+                    </td>
+                    <td className="py-2 pr-3 font-medium">{p.nombre}</td>
+                    <td className="py-2 pr-3 text-muted-foreground">
+                      {p.mejorPeriodo ?? '—'}
+                      {p.yaTieneSac && <span className="ml-2 text-green-600 text-[11px]">Ya tiene SAC</span>}
+                    </td>
+                    <td className="py-2 pr-3 text-right font-mono">{p.mejorMonto > 0 ? moneyFmtSac(p.mejorMonto) : '—'}</td>
+                    <td className="py-2 text-right font-mono font-semibold">{p.sacBase > 0 ? moneyFmtSac(p.sacBase) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {!isLoading && pendientes.length > 0 && (
+          <p className="text-[12px] text-muted-foreground pt-2">
+            {seleccionados.length} de {pendientes.length} empleados seleccionados.
+            Los recibos se crean con el concepto 41 (SAC). Las retenciones se calculan al abrir y guardar cada recibo.
+          </p>
+        )}
+
+        <DialogFooter className="pt-3 border-t">
+          <Button variant="outline" size="sm" onClick={onClose} disabled={isPending}>
+            Cancelar
+          </Button>
+          <Button
+            size="sm"
+            disabled={isPending || seleccionados.length === 0}
+            onClick={() => generar()}
+            className="gap-1.5"
+          >
+            {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+            Generar {seleccionados.length > 0 ? `${seleccionados.length} SAC` : 'SAC'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
