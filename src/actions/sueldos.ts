@@ -5421,6 +5421,7 @@ export const getSacPreview = createServerFn({ method: 'GET' })
         id: liquidacionImportEmpleado.id,
         nombre: liquidacionImportEmpleado.nombre,
         legajo: liquidacionImportEmpleado.legajo,
+        fechaIngreso: liquidacionImportEmpleado.fechaIngreso,
       })
       .from(liquidacionImportEmpleado)
       .where(
@@ -5481,6 +5482,7 @@ export const getSacPreview = createServerFn({ method: 'GET' })
           empleadoId: emp.id,
           nombre: emp.nombre ?? '—',
           legajo: emp.legajo ?? '',
+          fechaIngreso: emp.fechaIngreso ?? null,
           mejorPeriodo: best?.periodo ?? null,
           mejorMonto: best?.total ?? 0,
           sacBase: best ? best.total / 2 : 0,

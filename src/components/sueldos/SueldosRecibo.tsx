@@ -731,6 +731,28 @@ function moneyFmtSac(v: number): string {
   return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 }).format(v);
 }
 
+/** Días que trabajó el empleado en el semestre según su fechaIngreso.
+ *  Si ingresó antes del inicio del semestre devuelve 180 (semestre completo).
+ *  Si ingresó dentro del semestre devuelve los días desde el ingreso hasta el último día del semestre.
+ */
+function sugerirDiasSemestre(fechaIngreso: Date | null, periodo: string): number {
+  if (!fechaIngreso) return 180;
+  const [yearStr, monthStr] = periodo.split('-');
+  const year = parseInt(yearStr!, 10);
+  const month = parseInt(monthStr!, 10);
+  const esPrimerSemestre = month <= 6;
+  const semStart = new Date(year, esPrimerSemestre ? 0 : 6, 1);     // 1/1 ó 1/7
+  const semEnd   = new Date(year, esPrimerSemestre ? 5 : 11, esPrimerSemestre ? 30 : 31); // 30/6 ó 31/12
+  if (fechaIngreso <= semStart) return 180;
+  if (fechaIngreso > semEnd)    return 0;
+  const msPerDay = 24 * 60 * 60 * 1000;
+  return Math.min(180, Math.max(1, Math.floor((semEnd.getTime() - fechaIngreso.getTime()) / msPerDay) + 1));
+}
+
+function sacProporcional(mejorMonto: number, dias: number): number {
+  return Math.round((mejorMonto / 360) * dias * 100) / 100;
+}
+
 function GenerarSacDialog({
   clientId,
   profileId,
@@ -744,25 +766,38 @@ function GenerarSacDialog({
 }) {
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // días trabajados por empleado (default 180 = semestre completo)
+  const [diasMap, setDiasMap] = useState<Record<string, number>>({});
 
   const { data: preview = [], isLoading } = useQuery({
     queryKey: ['sac-preview', clientId, profileId, periodo],
     queryFn: () => getSacPreview({ data: { clientId, profileId, periodo } }),
   });
 
-  // Pre-seleccionar empleados sin SAC existente
+  // Pre-seleccionar y auto-sugerir días al cargar
   useEffect(() => {
-    if (preview.length > 0 && selected.size === 0) {
-      setSelected(new Set(preview.filter((p) => !p.yaTieneSac && p.sacBase > 0).map((p) => p.empleadoId)));
+    if (preview.length === 0) return;
+    const nextSelected = new Set<string>();
+    const nextDias: Record<string, number> = {};
+    for (const p of preview) {
+      if (!p.yaTieneSac && p.mejorMonto > 0) {
+        nextSelected.add(p.empleadoId);
+        nextDias[p.empleadoId] = sugerirDiasSemestre(p.fechaIngreso, periodo);
+      }
     }
+    setSelected(nextSelected);
+    setDiasMap(nextDias);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preview]);
 
   const { mutate: generar, isPending } = useMutation({
     mutationFn: () => {
       const items = preview
-        .filter((p) => selected.has(p.empleadoId) && !p.yaTieneSac && p.sacBase > 0)
-        .map((p) => ({ empleadoId: p.empleadoId, sacBase: p.sacBase }));
+        .filter((p) => selected.has(p.empleadoId) && !p.yaTieneSac && p.mejorMonto > 0)
+        .map((p) => ({
+          empleadoId: p.empleadoId,
+          sacBase: sacProporcional(p.mejorMonto, diasMap[p.empleadoId] ?? 180),
+        }));
       return generarSacsMasivo({ data: { clientId, profileId, periodo, items } });
     },
     onSuccess: (result) => {
@@ -776,13 +811,13 @@ function GenerarSacDialog({
     },
   });
 
-  const pendientes = preview.filter((p) => !p.yaTieneSac && p.sacBase > 0);
-  const seleccionados = preview.filter((p) => selected.has(p.empleadoId) && !p.yaTieneSac && p.sacBase > 0);
+  const pendientes = preview.filter((p) => !p.yaTieneSac && p.mejorMonto > 0);
+  const seleccionados = preview.filter((p) => selected.has(p.empleadoId) && !p.yaTieneSac && p.mejorMonto > 0);
   const semestre = parseInt(periodo.split('-')[1]!, 10) <= 6 ? '1er semestre' : '2do semestre';
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+      <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="text-[15px]">
             Generar SAC — {semestre} {periodo.split('-')[0]}
@@ -804,40 +839,74 @@ function GenerarSacDialog({
                   <th className="pb-2 pr-3">Empleado</th>
                   <th className="pb-2 pr-3">Mejor mes</th>
                   <th className="pb-2 pr-3 text-right">Mejor rem+no rem</th>
-                  <th className="pb-2 text-right">SAC (÷2)</th>
+                  <th className="pb-2 px-2 text-center w-20">Días</th>
+                  <th className="pb-2 text-right">SAC</th>
                 </tr>
               </thead>
               <tbody>
-                {preview.map((p) => (
-                  <tr key={p.empleadoId} className={`border-b last:border-0 ${p.yaTieneSac ? 'opacity-50' : ''}`}>
-                    <td className="py-2 pr-2">
-                      {p.yaTieneSac ? (
-                        <span title="Ya tiene SAC"><CheckCircle2 className="h-4 w-4 text-green-500" /></span>
-                      ) : p.sacBase === 0 ? (
-                        <span title="Sin recibos de sueldo en el semestre"><AlertCircle className="h-4 w-4 text-amber-500" /></span>
-                      ) : (
-                        <input
-                          type="checkbox"
-                          checked={selected.has(p.empleadoId)}
-                          onChange={(e) => {
-                            const next = new Set(selected);
-                            if (e.target.checked) next.add(p.empleadoId);
-                            else next.delete(p.empleadoId);
-                            setSelected(next);
-                          }}
-                          className="h-3.5 w-3.5"
-                        />
-                      )}
-                    </td>
-                    <td className="py-2 pr-3 font-medium">{p.nombre}</td>
-                    <td className="py-2 pr-3 text-muted-foreground">
-                      {p.mejorPeriodo ?? '—'}
-                      {p.yaTieneSac && <span className="ml-2 text-green-600 text-[11px]">Ya tiene SAC</span>}
-                    </td>
-                    <td className="py-2 pr-3 text-right font-mono">{p.mejorMonto > 0 ? moneyFmtSac(p.mejorMonto) : '—'}</td>
-                    <td className="py-2 text-right font-mono font-semibold">{p.sacBase > 0 ? moneyFmtSac(p.sacBase) : '—'}</td>
-                  </tr>
-                ))}
+                {preview.map((p) => {
+                  const dias = diasMap[p.empleadoId] ?? 180;
+                  const sacMonto = p.mejorMonto > 0 ? sacProporcional(p.mejorMonto, dias) : 0;
+                  const esProporcional = dias < 180;
+                  return (
+                    <tr key={p.empleadoId} className={`border-b last:border-0 ${p.yaTieneSac ? 'opacity-50' : ''}`}>
+                      <td className="py-2 pr-2">
+                        {p.yaTieneSac ? (
+                          <span title="Ya tiene SAC"><CheckCircle2 className="h-4 w-4 text-green-500" /></span>
+                        ) : p.mejorMonto === 0 ? (
+                          <span title="Sin recibos de sueldo en el semestre"><AlertCircle className="h-4 w-4 text-amber-500" /></span>
+                        ) : (
+                          <input
+                            type="checkbox"
+                            checked={selected.has(p.empleadoId)}
+                            onChange={(e) => {
+                              const next = new Set(selected);
+                              if (e.target.checked) next.add(p.empleadoId);
+                              else next.delete(p.empleadoId);
+                              setSelected(next);
+                            }}
+                            className="h-3.5 w-3.5"
+                          />
+                        )}
+                      </td>
+                      <td className="py-2 pr-3 font-medium">
+                        {p.nombre}
+                        {p.yaTieneSac && <span className="ml-2 text-green-600 text-[11px]">Ya tiene SAC</span>}
+                      </td>
+                      <td className="py-2 pr-3 text-muted-foreground">{p.mejorPeriodo ?? '—'}</td>
+                      <td className="py-2 pr-3 text-right font-mono">{p.mejorMonto > 0 ? moneyFmtSac(p.mejorMonto) : '—'}</td>
+                      <td className="py-2 px-2 text-center">
+                        {!p.yaTieneSac && p.mejorMonto > 0 ? (
+                          <div className="flex flex-col items-center gap-0.5">
+                            <input
+                              type="number"
+                              min={1}
+                              max={180}
+                              value={dias}
+                              onChange={(e) => {
+                                const v = Math.min(180, Math.max(1, parseInt(e.target.value, 10) || 1));
+                                setDiasMap((prev) => ({ ...prev, [p.empleadoId]: v }));
+                              }}
+                              className="w-14 text-center text-[12px] border rounded px-1 py-0.5 font-mono"
+                            />
+                            {esProporcional && (
+                              <span className="text-[10px] text-amber-600 font-medium">prop.</span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="py-2 text-right font-mono font-semibold">
+                        {sacMonto > 0 ? (
+                          <span className={esProporcional ? 'text-amber-700' : ''}>
+                            {moneyFmtSac(sacMonto)}
+                          </span>
+                        ) : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
@@ -846,7 +915,8 @@ function GenerarSacDialog({
         {!isLoading && pendientes.length > 0 && (
           <p className="text-[12px] text-muted-foreground pt-2">
             {seleccionados.length} de {pendientes.length} empleados seleccionados.
-            Los recibos se crean con el concepto 41 (SAC). Las retenciones se calculan al abrir y guardar cada recibo.
+            Días = 180 → SAC completo (÷2). Días &lt; 180 → SAC proporcional (÷360 × días).
+            Las retenciones se calculan al abrir y guardar cada recibo.
           </p>
         )}
 
