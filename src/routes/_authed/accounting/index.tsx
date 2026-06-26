@@ -44,6 +44,7 @@ import {
   CheckCircle2,
   XCircle,
   FileBarChart,
+  ScrollText,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { ArcaCard } from '@/components/dashboard/shared';
@@ -97,6 +98,7 @@ import {
   getESP,
   getER,
   getAnexoII,
+  getAuditLog,
   getFinancialStatement,
   saveFinancialStatementNotes,
   approveFinancialStatement,
@@ -115,6 +117,8 @@ import {
   type ErLine,
   type AnexoIIFunction,
   type FsNote,
+  type AuditEventType,
+  type AuditLogEntry,
 } from '@/actions/accounting';
 import {
   exportMayorExcel,
@@ -237,22 +241,26 @@ type Tab =
   | 'contabilizar'
   | 'pendientes'
   | 'bienes'
-  | 'estados';
+  | 'estados'
+  | 'auditoria';
 
 function TabBar({
   active,
   onChange,
   pendingCount = 0,
+  isOwner = false,
 }: {
   active: Tab;
   onChange: (t: Tab) => void;
   pendingCount?: number;
+  isOwner?: boolean;
 }) {
   const tabs: {
     id: Tab;
     label: string;
     icon: React.ElementType;
     ready: boolean;
+    ownerOnly?: boolean;
   }[] = [
     { id: 'plan', label: 'Plan de cuentas', icon: List, ready: true },
     { id: 'ejercicios', label: 'Ejercicios', icon: CalendarDays, ready: true },
@@ -269,10 +277,19 @@ function TabBar({
       icon: FileBarChart,
       ready: true,
     },
+    {
+      id: 'auditoria',
+      label: 'Auditoría',
+      icon: ScrollText,
+      ready: true,
+      ownerOnly: true,
+    },
   ];
   return (
     <div className="flex gap-1 mb-5 border-b border-[var(--arca-border)]">
-      {tabs.map((tab) => (
+      {tabs
+        .filter((tab) => !tab.ownerOnly || isOwner)
+        .map((tab) => (
         <button
           key={tab.id}
           onClick={() => onChange(tab.id)}
@@ -357,6 +374,7 @@ function AccountingPage() {
         active={tab}
         onChange={setTab}
         pendingCount={pendingEntries.length}
+        isOwner={isOwner}
       />
 
       {!effectiveClientId ? (
@@ -431,6 +449,8 @@ function AccountingPage() {
             clients.find((c) => c.id === effectiveClientId)?.identityNumber ?? ''
           }
         />
+      ) : tab === 'auditoria' && isOwner ? (
+        <AuditoriaView clientId={effectiveClientId} />
       ) : (
         <ArcaCard>
           <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
@@ -7882,6 +7902,127 @@ function ExportView({
           </div>
         ))}
       </div>
+    </ArcaCard>
+  );
+}
+
+const AUDIT_EVENT_LABELS: Record<AuditEventType, string> = {
+  journal_entry_created: 'Asiento creado',
+  journal_entry_edited: 'Asiento editado',
+  journal_entry_voided: 'Asiento anulado',
+  period_closed: 'Período cerrado',
+  period_reopened: 'Período reabierto',
+  fiscal_year_closed: 'Ejercicio cerrado',
+  fiscal_year_reopened: 'Ejercicio reabierto',
+  account_created: 'Cuenta creada',
+  account_deactivated: 'Cuenta desactivada',
+  financial_statement_approved: 'EECC aprobados',
+};
+
+function describeAuditEvent(e: AuditLogEntry): string {
+  const d = e.eventData ?? {};
+  const parts: string[] = [];
+  if (d.number != null) parts.push(`Asiento N°${String(d.number)}`);
+  if (d.month != null && d.year != null)
+    parts.push(`${MONTH_NAMES[Number(d.month)]} ${String(d.year)}`);
+  if (d.fiscalYearNumber != null)
+    parts.push(`Ejercicio N°${String(d.fiscalYearNumber)}`);
+  if (d.code) parts.push(`${String(d.code)}${d.name ? ` ${String(d.name)}` : ''}`);
+  if (d.source) parts.push(String(d.source));
+  if (d.pendingReview) parts.push('pendiente de revisión');
+  if (d.reason) parts.push(`Motivo: ${String(d.reason)}`);
+  return parts.join(' · ');
+}
+
+function AuditoriaView({ clientId }: { clientId: string }) {
+  const [filter, setFilter] = useState<AuditEventType | 'all'>('all');
+
+  const { data: log = [], isLoading } = useQuery({
+    queryKey: ['accounting', 'audit-log', clientId, filter],
+    queryFn: () =>
+      getAuditLog({
+        data: {
+          clientId,
+          eventTypes: filter === 'all' ? undefined : [filter],
+        },
+      }),
+    enabled: !!clientId,
+  });
+
+  const isReopen = (t: AuditEventType) =>
+    t === 'period_reopened' || t === 'fiscal_year_reopened';
+  const isVoid = (t: AuditEventType) => t === 'journal_entry_voided';
+
+  return (
+    <ArcaCard>
+      <div className="flex flex-wrap items-center gap-3 px-5 py-3 border-b border-[var(--arca-border)]">
+        <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+          Log de auditoría
+        </span>
+        <span className="text-[11px] text-[var(--arca-ink-3)]">
+          Acciones sensibles · solo lectura (append-only)
+        </span>
+        <div className="flex-1" />
+        <select
+          value={filter}
+          onChange={(e) => setFilter(e.target.value as AuditEventType | 'all')}
+          className={SELECT_CLASS}
+        >
+          <option value="all">Todos los eventos</option>
+          {(Object.keys(AUDIT_EVENT_LABELS) as AuditEventType[]).map((t) => (
+            <option key={t} value={t}>
+              {AUDIT_EVENT_LABELS[t]}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {isLoading ? (
+        <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+          Cargando…
+        </div>
+      ) : log.length === 0 ? (
+        <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+          No hay eventos registrados para este filtro.
+        </div>
+      ) : (
+        <div className="divide-y divide-[var(--arca-border)]">
+          {log.map((e) => (
+            <div
+              key={e.id}
+              className="flex items-start gap-3 px-5 py-2.5 text-[12px]"
+            >
+              <span
+                className="mt-0.5 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium shrink-0"
+                style={{
+                  background: isVoid(e.eventType)
+                    ? 'color-mix(in oklch, oklch(0.55 0.18 25), transparent 88%)'
+                    : isReopen(e.eventType)
+                      ? 'color-mix(in oklch, oklch(0.55 0.15 50), transparent 88%)'
+                      : 'color-mix(in oklch, oklch(0.45 0.04 250), transparent 88%)',
+                  color: isVoid(e.eventType)
+                    ? 'oklch(0.45 0.18 25)'
+                    : isReopen(e.eventType)
+                      ? 'oklch(0.45 0.15 50)'
+                      : 'oklch(0.40 0.04 250)',
+                }}
+              >
+                {AUDIT_EVENT_LABELS[e.eventType]}
+              </span>
+              <div className="flex-1 min-w-0">
+                <span className="text-[var(--arca-ink)]">
+                  {describeAuditEvent(e) || '—'}
+                </span>
+                <span className="text-[var(--arca-ink-3)]">
+                  {' '}
+                  — {e.userName ?? e.userEmail ?? 'sistema'} ·{' '}
+                  {new Date(e.createdAt).toLocaleString('es-AR')}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </ArcaCard>
   );
 }

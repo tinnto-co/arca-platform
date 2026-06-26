@@ -1285,6 +1285,91 @@ export const getAccountingLog = createServerFn({ method: 'GET' })
       .orderBy(desc(accountingLog.createdAt));
   });
 
+/* ── Log auditable completo, filtrable, solo Owner (UST3) ── */
+
+export const AUDIT_EVENT_TYPES = [
+  'journal_entry_created',
+  'journal_entry_edited',
+  'journal_entry_voided',
+  'period_closed',
+  'period_reopened',
+  'fiscal_year_closed',
+  'fiscal_year_reopened',
+  'account_created',
+  'account_deactivated',
+  'financial_statement_approved',
+] as const;
+
+export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
+
+export type AuditEventData = Record<
+  string,
+  string | number | boolean | null
+> | null;
+
+export interface AuditLogEntry {
+  id: string;
+  eventType: AuditEventType;
+  eventData: AuditEventData;
+  createdAt: string;
+  userName: string | null;
+  userEmail: string | null;
+}
+
+/**
+ * Log auditable de TODAS las acciones sensibles del módulo para una empresa,
+ * con filtro opcional por tipo de evento. Solo Owner del estudio. (UST3)
+ */
+export const getAuditLog = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      eventTypes: z.array(z.enum(AUDIT_EVENT_TYPES)).optional(),
+      limit: z.number().int().min(1).max(1000).optional(),
+    })
+  )
+  .handler(async (ctx): Promise<AuditLogEntry[]> => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertOwner(role);
+    const { clientId } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+
+    const types =
+      ctx.data.eventTypes && ctx.data.eventTypes.length > 0
+        ? ctx.data.eventTypes
+        : [...AUDIT_EVENT_TYPES];
+
+    const rows = await db
+      .select({
+        id: accountingLog.id,
+        eventType: accountingLog.eventType,
+        eventData: accountingLog.eventData,
+        createdAt: accountingLog.createdAt,
+        userName: user.name,
+        userEmail: user.email,
+      })
+      .from(accountingLog)
+      .leftJoin(user, eq(user.id, accountingLog.userId))
+      .where(
+        and(
+          eq(accountingLog.clientId, clientId),
+          inArray(accountingLog.eventType, types)
+        )
+      )
+      .orderBy(desc(accountingLog.createdAt))
+      .limit(ctx.data.limit ?? 300);
+
+    return rows.map((r) => ({
+      id: r.id,
+      eventType: r.eventType as AuditEventType,
+      eventData: (r.eventData as AuditEventData) ?? null,
+      createdAt: r.createdAt.toISOString(),
+      userName: r.userName ?? null,
+      userEmail: r.userEmail ?? null,
+    }));
+  });
+
 /* ═══════════════════ ASIENTOS / LIBRO DIARIO (US 1.3.x) ═══════════════════ */
 
 type JournalEntryRow = typeof journalEntry.$inferSelect;

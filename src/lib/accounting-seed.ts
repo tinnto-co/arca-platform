@@ -8,7 +8,11 @@
 import { db } from '@/lib/db';
 import { account } from '@/drizzle/schema';
 import { and, eq } from 'drizzle-orm';
-import { BASE_CHART, parentCodeOf } from '@/lib/accounting-base-chart';
+import {
+  BASE_CHART,
+  parentCodeOf,
+  validateBaseChart,
+} from '@/lib/accounting-base-chart';
 
 export interface SeedResult {
   inserted: number;
@@ -16,6 +20,14 @@ export interface SeedResult {
 }
 
 export async function seedBaseChartForOrg(orgId: string): Promise<SeedResult> {
+  // UST5: validar el plan base antes de seedear para evitar inconsistencias críticas.
+  const validationErrors = validateBaseChart();
+  if (validationErrors.length > 0) {
+    throw new Error(
+      `Plan de cuentas base inválido — no se siembra:\n${validationErrors.join('\n')}`
+    );
+  }
+
   // Cuentas base ya existentes en esta organización.
   const existing = await db
     .select({ id: account.id, code: account.code })

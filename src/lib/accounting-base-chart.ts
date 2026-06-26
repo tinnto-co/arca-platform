@@ -13,6 +13,11 @@
  * - Cuentas de sistema (isSystemAccount): no se borran, desactivan ni renombran.
  */
 
+import {
+  ACCOUNT_GROUP_LABELS,
+  PENDING_REVIEW_CODE,
+} from '@/lib/accounting-labels';
+
 export interface BaseAccountSeed {
   code: string;
   name: string;
@@ -24,6 +29,15 @@ export interface BaseAccountSeed {
   /** Default global de activación de la cuenta base. */
   isActive?: boolean;
 }
+
+const VALID_ACCOUNT_GROUPS = new Set<string>(Object.keys(ACCOUNT_GROUP_LABELS));
+const VALID_EXPECTED_BALANCE = new Set<string>(['debit', 'credit', 'both']);
+const VALID_EXPENSE_FUNCTION = new Set<string>([
+  'administration',
+  'sales',
+  'financial',
+  'other',
+]);
 
 const G = (
   code: string,
@@ -349,4 +363,85 @@ export const BASE_CHART: BaseAccountSeed[] = [
 export function parentCodeOf(code: string): string | null {
   const idx = code.lastIndexOf('.');
   return idx === -1 ? null : code.slice(0, idx);
+}
+
+/**
+ * Valida la integridad del plan de cuentas base antes de seedearlo (UST5).
+ * Devuelve la lista de errores encontrados ([] = válido). Chequea:
+ * unicidad de códigos, jerarquía (padre existe, padre es agrupación, sin ciclos),
+ * rubros/atributos válidos, y existencia de la cuenta de sistema pending_review.
+ */
+export function validateBaseChart(chart: BaseAccountSeed[] = BASE_CHART): string[] {
+  const errors: string[] = [];
+  const byCode = new Map<string, BaseAccountSeed>();
+
+  // 1. Unicidad de códigos.
+  for (const a of chart) {
+    if (byCode.has(a.code)) errors.push(`Código duplicado: ${a.code}`);
+    byCode.set(a.code, a);
+  }
+
+  for (const a of chart) {
+    const parent = parentCodeOf(a.code);
+
+    // 2. Jerarquía: el padre debe existir y ser una agrupación.
+    if (parent !== null && !byCode.has(parent)) {
+      errors.push(`Cuenta ${a.code}: el padre "${parent}" no existe en el plan`);
+    } else if (parent !== null && byCode.get(parent)?.type === 'imputable') {
+      errors.push(
+        `Cuenta ${a.code}: su padre "${parent}" es imputable (debe ser agrupación)`
+      );
+    }
+
+    // 3. Rubros y atributos dentro de los enums válidos.
+    if (a.accountGroup && !VALID_ACCOUNT_GROUPS.has(a.accountGroup)) {
+      errors.push(`Cuenta ${a.code}: rubro inválido "${a.accountGroup}"`);
+    }
+    if (a.expectedBalance && !VALID_EXPECTED_BALANCE.has(a.expectedBalance)) {
+      errors.push(
+        `Cuenta ${a.code}: expectedBalance inválido "${a.expectedBalance}"`
+      );
+    }
+    if (a.expenseFunction && !VALID_EXPENSE_FUNCTION.has(a.expenseFunction)) {
+      errors.push(
+        `Cuenta ${a.code}: expenseFunction inválido "${a.expenseFunction}"`
+      );
+    }
+
+    // Las imputables requieren rubro y saldo esperado.
+    if (a.type === 'imputable') {
+      if (!a.accountGroup)
+        errors.push(`Cuenta imputable ${a.code}: falta accountGroup`);
+      if (!a.expectedBalance)
+        errors.push(`Cuenta imputable ${a.code}: falta expectedBalance`);
+    }
+
+    // 2b. Sin ciclos (defensivo: la jerarquía por prefijo no debería permitirlos).
+    const visited = new Set<string>();
+    let cur: string | null = a.code;
+    while (cur !== null) {
+      if (visited.has(cur)) {
+        errors.push(`Ciclo detectado en la jerarquía de ${a.code}`);
+        break;
+      }
+      visited.add(cur);
+      const next = parentCodeOf(cur);
+      if (next !== null && !byCode.has(next)) break;
+      cur = next;
+    }
+  }
+
+  // 4. Cuentas de sistema: al menos pending_review debe existir y estar marcada.
+  const pr = byCode.get(PENDING_REVIEW_CODE);
+  if (!pr) {
+    errors.push(
+      `Falta la cuenta de sistema pending_review (${PENDING_REVIEW_CODE})`
+    );
+  } else if (!pr.isSystemAccount) {
+    errors.push(
+      `La cuenta ${PENDING_REVIEW_CODE} (pending_review) debe tener isSystemAccount=true`
+    );
+  }
+
+  return errors;
 }

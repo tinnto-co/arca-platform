@@ -452,6 +452,16 @@ async function initializeServer() {
     process.exit(1);
   }
 
+  // Start background crons (guarded: a cron failure must never break the server).
+  try {
+    const { startAccountingInvoiceCron } = (await import(
+      './src/lib/accounting-cron'
+    )) as { startAccountingInvoiceCron: () => void };
+    startAccountingInvoiceCron();
+  } catch (error) {
+    log.warning(`Accounting batch cron not started: ${String(error)}`);
+  }
+
   // Build static routes with intelligent preloading
   const { routes } = await initializeStaticRoutes(CLIENT_DIRECTORY);
 

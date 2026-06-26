@@ -248,6 +248,79 @@ function setWidths(ws: XLWorksheet) {
   });
 }
 
+/* Opción 2 (US 7.2.2): tabla plana en una sola hoja con columna de cuenta, para filtrar. */
+const FLAT_HEADERS = [
+  'Código',
+  'Cuenta',
+  'Fecha',
+  'N° Asiento',
+  'Detalle',
+  'Origen',
+  'Debe',
+  'Haber',
+  'Saldo',
+];
+const FNCOLS = 9;
+
+function writeFlatMayor(ws: XLWorksheet, data: MayorExportData) {
+  const head = ws.addRow(FLAT_HEADERS);
+  setBold(head, FNCOLS);
+  fillRow(head, GREY, FNCOLS);
+  for (let c = 1; c <= FNCOLS; c++) {
+    head.getCell(c).border = {
+      bottom: { style: 'thin', color: { argb: BORDER_GREY } },
+    };
+    if (c >= 7) head.getCell(c).alignment = { horizontal: 'right' };
+  }
+  let lastRow = head.number;
+  for (const section of data.sections) {
+    // Saldo inicial de la cuenta (preserva el saldo progresivo por cuenta).
+    const ini = ws.addRow([
+      section.code,
+      section.name,
+      '',
+      '',
+      'Saldo inicial',
+      '',
+      null,
+      null,
+      section.saldoInicial,
+    ]);
+    ini.getCell(1).numFmt = '@';
+    ini.getCell(5).font = { italic: true, color: { argb: 'FF888888' } };
+    ini.getCell(9).numFmt = SALDO_FMT;
+    ini.getCell(9).alignment = { horizontal: 'right' };
+    lastRow = ini.number;
+    for (const r of section.rows) {
+      const row = ws.addRow([
+        section.code,
+        section.name,
+        fmtDate(r.entryDate),
+        r.number,
+        r.description ?? r.lineDescription ?? '',
+        JOURNAL_ORIGIN_LABELS[r.origin] ?? r.origin,
+        r.debit > 0 ? r.debit : null,
+        r.credit > 0 ? r.credit : null,
+        r.balance,
+      ]);
+      row.getCell(1).numFmt = '@'; // código como texto
+      row.getCell(7).numFmt = MONEY_FMT;
+      row.getCell(8).numFmt = MONEY_FMT;
+      row.getCell(9).numFmt = SALDO_FMT;
+      for (const c of [7, 8, 9])
+        row.getCell(c).alignment = { horizontal: 'right' };
+      lastRow = row.number;
+    }
+  }
+  (ws as unknown as { autoFilter: unknown }).autoFilter = {
+    from: { row: head.number, column: 1 },
+    to: { row: lastRow, column: FNCOLS },
+  };
+  [16, 34, 13, 11, 40, 16, 15, 15, 16].forEach((w, i) => {
+    if (ws.columns[i]) ws.columns[i].width = w;
+  });
+}
+
 export async function exportMayorExcel(
   data: MayorExportData,
   opts: { sheetPerAccount: boolean }
@@ -269,8 +342,7 @@ export async function exportMayorExcel(
   } else {
     const ws = wb.addWorksheet('Mayor', { views: [{ showGridLines: false }] });
     writeTitle(ws, data);
-    for (const section of data.sections) writeSection(ws, section);
-    setWidths(ws);
+    writeFlatMayor(ws, data);
   }
 
   const buffer = await wb.xlsx.writeBuffer();
@@ -470,6 +542,7 @@ export async function exportBalanceExcel(
       r.saldoDeudor || null,
       r.saldoAcreedor || null,
     ]);
+    row.getCell(1).numFmt = '@'; // código como texto
     for (let c = 3; c <= 6; c++) {
       row.getCell(c).numFmt = MONEY_FMT;
       row.getCell(c).alignment = { horizontal: 'right' };
