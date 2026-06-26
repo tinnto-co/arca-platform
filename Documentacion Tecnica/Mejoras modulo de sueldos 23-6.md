@@ -110,7 +110,19 @@ Estos ítems ya fueron corregidos antes de esta sesión.
 
 **Archivos involucrados:** `src/lib/payroll-formula.ts`, `src/actions/sueldos.ts`, `src/components/sueldos/SueldosSimulador.tsx`.
 
-- [ ] Pendiente — es el más complejo; implementar último
+**Puntos a clarificar antes de implementar:**
+
+1. **CCTs activos y tabla de días** — ¿Todos los convenios del sistema usan la tabla estándar de ley 20.744 (hasta 5 años → 14 días, 5–10 → 21, 10–20 → 28, más de 20 → 35)? ¿Algún CCT tiene tabla propia?
+
+2. **Flujo actual de carga** — ¿Hoy el usuario abre un recibo de tipo `vacaciones` manualmente y carga el monto a mano? ¿O hay algún flujo de generación asistida (similar al diálogo del SAC)?
+
+3. **Vacaciones no gozadas** — ¿El sistema también necesita calcular vacaciones no gozadas (típicamente al liquidar una desvinculación)? ¿Es el mismo cálculo base o tiene diferencias?
+
+4. **SAC sobre vacaciones** — ¿Va como un concepto dentro del mismo recibo de vacaciones, o se genera como un recibo separado de tipo `SAC`?
+
+5. **Base de cálculo** — ¿La base es siempre el básico de escala del período / 25? ¿O puede ser el mejor sueldo del semestre u otra referencia según el convenio o la situación?
+
+- [ ] Pendiente — clarificar los puntos anteriores antes de implementar
 
 ---
 
@@ -211,3 +223,53 @@ El SAC no se crea manualmente — se genera automáticamente cuando el usuario g
 | 3 | SAC proporcional | Media | **Resuelto** | Ítem 5 |
 | 4 | Vacaciones + SAC vacaciones | Alta | Pendiente | Clarificar rangos CCT |
 | 6 | Campos calculados editables | Baja-Media | **Resuelto** | — |
+
+---
+
+## Preguntas pendientes
+
+### Ítem 4 — Cálculo automático de vacaciones y SAC sobre vacaciones
+
+Antes de implementar este ítem se necesitan respuestas a los siguientes puntos:
+
+**4.1 — Tabla de días por CCT**
+¿Todos los convenios del sistema usan la tabla estándar de la ley 20.744?
+
+| Antigüedad | Días ley 20.744 |
+|------------|-----------------|
+| Hasta 5 años | 14 días |
+| 5 a 10 años | 21 días |
+| 10 a 20 años | 28 días |
+| Más de 20 años | 35 días |
+
+¿Algún CCT activo en el sistema tiene una tabla distinta? Si es así, ¿cuál es y qué días corresponden?
+
+> Respuesta: ___
+
+---
+
+**4.2 — Flujo actual de carga**
+¿Cómo se carga hoy un recibo de vacaciones? ¿El usuario abre un recibo de tipo `vacaciones` manualmente y carga el monto a mano? ¿O existe algún flujo asistido (como el diálogo del SAC)?
+
+> Respuesta: ___
+
+---
+
+**4.3 — Vacaciones no gozadas**
+¿El sistema necesita calcular también vacaciones no gozadas (típicamente al liquidar una desvinculación)? ¿Es el mismo cálculo base (básico / 25 × días) o tiene diferencias?
+
+> Respuesta: ___
+
+---
+
+**4.4 — SAC sobre vacaciones: mismo recibo o recibo separado**
+¿El SAC sobre vacaciones va como un concepto dentro del mismo recibo de vacaciones, o se genera como un recibo separado de tipo `SAC`?
+
+> Respuesta: ___
+
+---
+
+**4.5 — Base de cálculo**
+¿La base es siempre el básico de escala del período / 25, o puede ser el mejor sueldo del semestre u otra referencia dependiendo del convenio o la situación?
+
+> Respuesta: ___

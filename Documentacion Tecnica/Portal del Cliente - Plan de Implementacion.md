@@ -222,6 +222,40 @@ No se requieren migraciones de base de datos.
 
 ---
 
+## Pendientes y plan de prueba
+
+### Prueba funcional (a realizar antes de considerar la feature completa)
+
+**Como usuario del estudio:**
+
+1. Ir a Clientes → abrir cualquier cliente
+2. Verificar que aparece el tab "Portal" (al lado de "Solicitudes")
+3. Click "Agregar usuario" → completar nombre, email, contraseña (mín. 8 caracteres) y permisos
+4. Confirmar que el usuario aparece en la tabla con sus badges de permisos
+
+**Como usuario portal (ventana incógnita):**
+
+5. Abrir la app en modo incógnito
+6. Login con el email y contraseña creados en el paso 3
+7. Verificar que aterriza en `/portal` (no en el dashboard del estudio)
+8. Verificar que el dashboard muestra los datos del cliente correcto y respeta los permisos configurados
+
+**Verificar edición y revocación:**
+
+9. Desde el estudio, editar permisos del usuario (quitar alguno) → recargar la ventana incógnita → confirmar que el cambio se refleja
+10. Desde el estudio, revocar acceso → recargar la ventana incógnita → confirmar que redirige a `/login`
+
+### Pendiente funcional inmediato
+
+- **Guard del módulo `portal_cliente`:** el tab "Portal" aparece en todos los clientes sin importar si el módulo está activado para la org. Habría que ocultarlo cuando `portal_cliente` está desactivado en `organizationModule`.
+
+### Pendiente funcional futuro
+
+- **Usuario portal con múltiples clientes:** la DB lo soporta (un row de `representativeUserAccess` por representative), pero `getPortalSession()` toma el primero con `.limit(1)`. Si un usuario tiene acceso a más de un cliente, no hay forma de cambiar entre ellos desde el portal.
+- **Log de accesos:** no hay auditoría de quién entró al portal ni cuándo.
+
+---
+
 ## Lógica aplicada en la implementación
 
 ### Decisión de diseño: usuario sin organización
