@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -21,6 +21,7 @@ import {
 } from '@/actions/sueldos';
 import { getClient } from '@/actions/profile';
 import { legajoParaMostrar } from '@/lib/legajo';
+import { toTitleCase } from '@/lib/format-name';
 import { Button } from '@/components/ui/button';
 import { ImprimirRecibosDialog } from '@/components/sueldos/ImprimirRecibosDialog';
 
@@ -34,11 +35,29 @@ const MESES = Array.from({ length: 12 }, (_, i) => ({
 interface SueldosReciboProps {
   clientId: string;
   profileId: string;
+  initialEmpleadoId?: string;
   onEditRecibo?: (data: {
     importEmpleadoId: string;
     empleadoNombre: string;
     periodo: string;
     tipoRecibo: string;
+    quincena?: string | null;
+    fechaLiquidacion?: string | null;
+    fechaPago?: string | null;
+    obraSocialId?: string | null;
+    periodoCargas?: string | null;
+    fechaDepositoCargas?: string | null;
+    observacionInterna?: string | null;
+    observacionRecibo?: string | null;
+    situacionRevista1Id?: string | null;
+    situacionRevista1DiaInicio?: number | null;
+    situacionRevista2Id?: string | null;
+    situacionRevista2DiaInicio?: number | null;
+    situacionRevista3Id?: string | null;
+    situacionRevista3DiaInicio?: number | null;
+    diasTrabajados?: number | null;
+    horasTrabajadas?: number | null;
+    importeMaternidadArt13?: string | null;
   }) => void;
 }
 
@@ -336,12 +355,21 @@ function DocCell({
   );
 }
 
-export function SueldosRecibo({ clientId, profileId, onEditRecibo }: SueldosReciboProps) {
-  const [ano, setAno] = useState(String(now.getFullYear()));
-  const [mes, setMes] = useState(String(now.getMonth() + 1).padStart(2, '0'));
-  const [empleadoId, setEmpleadoId] = useState('');
+export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, onEditRecibo }: SueldosReciboProps) {
+  const [ano, setAno] = useState('');
+  const [mes, setMes] = useState('');
+  const [empleadoId, setEmpleadoId] = useState(initialEmpleadoId ?? '');
   const [reciboId, setReciboId] = useState('');
   const [showImprimir, setShowImprimir] = useState(false);
+
+  useEffect(() => {
+    if (initialEmpleadoId) {
+      setEmpleadoId(initialEmpleadoId);
+      setAno('');
+      setMes('');
+      setReciboId('');
+    }
+  }, [initialEmpleadoId]);
 
   const periodo = useMemo(
     () => (ano && mes ? `${ano}-${mes}` : ''),
@@ -358,9 +386,9 @@ export function SueldosRecibo({ clientId, profileId, onEditRecibo }: SueldosReci
   }, []);
 
   const { data: clientData } = useQuery({
-    queryKey: ['client', clientId],
-    queryFn: () => getClient({ data: { id: clientId } }),
-    enabled: !!clientId,
+    queryKey: ['client', profileId],
+    queryFn: () => getClient({ data: { id: profileId } }),
+    enabled: !!profileId,
   });
 
   const { data: empleadosRaw = [] } = useQuery({
@@ -500,7 +528,7 @@ export function SueldosRecibo({ clientId, profileId, onEditRecibo }: SueldosReci
                 <SelectItem value="__all">Todos los empleados</SelectItem>
                 {empleados.map((e) => (
                   <SelectItem key={e.empleado.id} value={e.empleado.id}>
-                    {e.empleado.nombre}
+                    {toTitleCase(e.empleado.nombre)}
                     {e.empleado.legajo
                       ? ` (Leg. ${legajoParaMostrar(e.empleado.legajo)})`
                       : ''}
@@ -555,7 +583,7 @@ export function SueldosRecibo({ clientId, profileId, onEditRecibo }: SueldosReci
                     >
                       <div className="flex flex-col gap-0.5 min-w-0">
                         <span className="font-medium truncate">
-                          {r.empleado.nombre}
+                          {toTitleCase(r.empleado.nombre)}
                           {r.empleado.legajo && (
                             <span className="ml-2 text-xs font-normal text-muted-foreground">
                               Leg. {legajoParaMostrar(r.empleado.legajo)}
@@ -572,7 +600,7 @@ export function SueldosRecibo({ clientId, profileId, onEditRecibo }: SueldosReci
                       <div className="flex items-center gap-3 shrink-0 ml-4">
                         {r.liquidacion.neto && (
                           <span className="text-sm tabular-nums font-medium">
-                            ${moneyFmt(r.liquidacion.neto)}
+                            ${Math.ceil(Number(r.liquidacion.neto)).toLocaleString('es-AR')}
                           </span>
                         )}
                         {onEditRecibo && (
@@ -585,6 +613,23 @@ export function SueldosRecibo({ clientId, profileId, onEditRecibo }: SueldosReci
                                 empleadoNombre: r.empleado.nombre,
                                 periodo: r.liquidacion.periodo,
                                 tipoRecibo: r.liquidacion.tipo ?? 'sueldo',
+                                quincena: r.liquidacion.quincena,
+                                fechaLiquidacion: r.liquidacion.fecha ? (r.liquidacion.fecha instanceof Date ? r.liquidacion.fecha.toISOString().slice(0, 10) : String(r.liquidacion.fecha).slice(0, 10)) : null,
+                                fechaPago: r.liquidacion.fechaPago ? (r.liquidacion.fechaPago instanceof Date ? r.liquidacion.fechaPago.toISOString().slice(0, 10) : String(r.liquidacion.fechaPago).slice(0, 10)) : null,
+                                obraSocialId: r.liquidacion.obraSocialId,
+                                periodoCargas: r.liquidacion.periodoCargas,
+                                fechaDepositoCargas: r.liquidacion.fechaDepositoCargas ? (r.liquidacion.fechaDepositoCargas instanceof Date ? r.liquidacion.fechaDepositoCargas.toISOString().slice(0, 10) : String(r.liquidacion.fechaDepositoCargas).slice(0, 10)) : null,
+                                observacionInterna: r.liquidacion.observacionInterna,
+                                observacionRecibo: r.liquidacion.observacionRecibo,
+                                situacionRevista1Id: r.liquidacion.situacionRevista1Id,
+                                situacionRevista1DiaInicio: r.liquidacion.situacionRevista1DiaInicio,
+                                situacionRevista2Id: r.liquidacion.situacionRevista2Id,
+                                situacionRevista2DiaInicio: r.liquidacion.situacionRevista2DiaInicio,
+                                situacionRevista3Id: r.liquidacion.situacionRevista3Id,
+                                situacionRevista3DiaInicio: r.liquidacion.situacionRevista3DiaInicio,
+                                diasTrabajados: r.liquidacion.diasTrabajados,
+                                horasTrabajadas: r.liquidacion.horasTrabajadas,
+                                importeMaternidadArt13: r.liquidacion.importeMaternidadArt13,
                               });
                             }}
                             className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
@@ -725,12 +770,14 @@ function ReciboDocumento({
   const totalDescuentos = redondearPesos(sumaMontosDetalle(descuentos));
   const totalRetenciones = redondearPesos(sumaMontosDetalle(retenciones));
   const totalNoRemunerativo = redondearPesos(sumaMontosDetalle(haberesSin));
-  const neto = redondearPesos(
+  const netoRaw = redondearPesos(
     totalHaberes +
       totalNoRemunerativo -
       totalDescuentos -
       totalRetenciones
   );
+  const redondeo = netoRaw > 0 && netoRaw % 1 > 0.001 ? Math.ceil(netoRaw) - netoRaw : 0;
+  const neto = redondeo > 0 ? Math.ceil(netoRaw) : netoRaw;
 
   const cab = completarCabeceraConLegajo(
     pickCabecera(liquidacion as unknown as Record<string, unknown>),
@@ -746,7 +793,7 @@ function ReciboDocumento({
           {/* Empresa (izquierda) */}
           <div className="flex flex-col justify-center gap-1 border-r border-border px-5 py-4">
             <span className="text-xl font-bold leading-tight">
-              {clientData?.name ?? '—'}
+              {toTitleCase(clientData?.name) || '—'}
             </span>
             {clientData?.address && (
               <span className="text-sm text-muted-foreground">
@@ -792,7 +839,7 @@ function ReciboDocumento({
 
         {/* ── FILA 1 EMPLEADO: Categoría | Tipo de liquidación ───────────── */}
         <div className="grid grid-cols-2 divide-x divide-border border-b border-border">
-          <DocCell label="Categoría" value={categoria?.nombre ?? '—'} />
+          <DocCell label="Categoría" value={empleado.categoria ? toTitleCase(empleado.categoria) : (categoria?.nombre ?? '—')} />
           <DocCell
             label="Tipo de liquidación"
             value={`${tipoReciboLabel(liquidacion.tipo)} — ${quincenaLabel(liquidacion.quincena)}`}
@@ -809,7 +856,7 @@ function ReciboDocumento({
           />
           <DocCell
             label="Apellido y Nombres"
-            value={empleado.nombre}
+            value={toTitleCase(empleado.nombre)}
           />
           <DocCell
             label="Fecha de ingreso"
@@ -826,7 +873,7 @@ function ReciboDocumento({
             value={
               convenio
                 ? convenio.cctCodigo
-                  ? `${convenio.nombre} (CCT ${convenio.cctCodigo})`
+                  ? `${(convenio.nombre ?? '').replace(convenio.cctCodigo, '').trim()} (CCT ${convenio.cctCodigo})`
                   : convenio.nombre
                 : '—'
             }
@@ -849,10 +896,8 @@ function ReciboDocumento({
         <table className="w-full border-collapse">
           <thead>
             <tr className="border-b border-border bg-muted/40 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              <th className="w-[70px] px-2 py-2 text-left">Código</th>
               <th className="px-2 py-2 text-left">Descripción del concepto</th>
               <th className="w-[70px] px-2 py-2 text-right">Cant.</th>
-              <th className="w-[70px] px-2 py-2 text-right">%</th>
               <th className="w-[140px] border-l border-border px-2 py-2 text-right">
                 Haberes
               </th>
@@ -871,50 +916,48 @@ function ReciboDocumento({
             {filas.length === 0 ? (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={6}
                   className="px-2 py-4 text-center text-sm text-muted-foreground"
                 >
                   Sin conceptos cargados
                 </td>
               </tr>
             ) : (
-              filas.map(({ detalle: det, concepto, conceptoAfip, conceptoSos, col }) => (
-                <tr key={det.id} className="hover:bg-muted/20">
-                  <td className="px-2 py-1 font-mono text-xs text-muted-foreground">
-                    {det.codigo}
-                  </td>
-                  <td className="px-2 py-1">
-                    {concepto?.nombre ??
-                      conceptoAfip?.descripcion ??
-                      conceptoSos?.nombre ??
-                      det.codigo}
-                  </td>
-                  <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">
-                    {det.cantidad ? moneyFmt(det.cantidad) : '—'}
-                  </td>
-                  <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">
-                    {det.porcentaje ? moneyFmt(det.porcentaje) : '—'}
-                  </td>
-                  <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
-                    {col === 'hab' ? moneyFmt(det.monto) : ''}
-                  </td>
-                  <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
-                    {col === 'desc' ? moneyFmt(det.monto) : ''}
-                  </td>
-                  <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
-                    {col === 'ret' ? moneyFmt(det.monto) : ''}
-                  </td>
-                  <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
-                    {col === 'noRem' ? moneyFmt(det.monto) : ''}
-                  </td>
-                </tr>
-              ))
+              <>
+                {filas.map(({ detalle: det, concepto, conceptoAfip, conceptoSos, col }) => (
+                  <tr key={det.id} className="hover:bg-muted/20">
+                    <td className="px-2 py-1">
+                      {(det.memo && !det.memo.startsWith('source=') && !det.memo.includes('calc_error='))
+                        ? det.memo
+                        : (concepto?.nombre ??
+                            conceptoAfip?.descripcion ??
+                            conceptoSos?.nombre ??
+                            det.codigo)}
+                    </td>
+                    <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">
+                      {det.cantidad ? moneyFmt(det.cantidad) : '—'}
+                    </td>
+                    <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                      {col === 'hab' ? moneyFmt(det.monto) : ''}
+                    </td>
+                    <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                      {col === 'desc' ? moneyFmt(det.monto) : ''}
+                    </td>
+                    <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                      {col === 'ret' ? moneyFmt(det.monto) : ''}
+                    </td>
+                    <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                      {col === 'noRem' ? moneyFmt(det.monto) : ''}
+                    </td>
+                  </tr>
+                ))}
+              </>
             )}
           </tbody>
           {/* ── Fila de totales ─────────────────────────────────────────── */}
           <tfoot>
             <tr className="border-t-2 border-border bg-muted/30 font-semibold">
-              <td colSpan={4} className="px-2 py-2 uppercase tracking-wide text-xs">
+              <td colSpan={2} className="px-2 py-2 uppercase tracking-wide text-xs">
                 Totales
               </td>
               <td className="border-l border-border px-2 py-2 text-right tabular-nums">
@@ -930,6 +973,30 @@ function ReciboDocumento({
                 {moneyFmt(totalNoRemunerativo)}
               </td>
             </tr>
+            {redondeo > 0 && (
+              <>
+                <tr className="border-t border-border text-xs text-muted-foreground">
+                  <td colSpan={5} className="px-2 py-1.5 text-right">Neto sin redondeo</td>
+                  <td className="border-l border-border px-2 py-1.5 text-right tabular-nums font-medium">
+                    {moneyFmt(netoRaw)}
+                  </td>
+                </tr>
+                <tr className="border-t border-border text-xs italic text-muted-foreground">
+                  <td colSpan={5} className="px-2 py-1.5 text-right">Redondeo</td>
+                  <td className="border-l border-border px-2 py-1.5 text-right tabular-nums font-medium">
+                    +{moneyFmt(redondeo)}
+                  </td>
+                </tr>
+                <tr className="border-t-2 border-border bg-muted/30 text-sm font-bold">
+                  <td colSpan={5} className="px-2 py-2 text-right uppercase tracking-wide text-xs">
+                    Total neto
+                  </td>
+                  <td className="border-l border-border px-2 py-2 text-right tabular-nums">
+                    {moneyFmt(neto)}
+                  </td>
+                </tr>
+              </>
+            )}
           </tfoot>
         </table>
 

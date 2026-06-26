@@ -1,14 +1,14 @@
 import { db } from '@/lib/db';
 import {
-  profile,
   client,
+  representative,
   alert,
   debt,
   notification,
   dueDate,
   invoice,
   ivaScrape,
-  profileRiskSnapshot,
+  clientRiskSnapshot,
 } from '@/drizzle/schema';
 import { eq, and, lt, isNull, gte, lte, sql } from 'drizzle-orm';
 
@@ -50,17 +50,17 @@ export async function calculateRiskScore(
   profileId: string,
   period: string
 ): Promise<RiskScoreResult> {
-  // Resolve the client linked to this profile
+  // Resolve the representative (agrupador) linked to this client (empresa).
   const profileRow = await db
-    .select({ id: profile.id, clientId: profile.client })
-    .from(profile)
-    .where(eq(profile.id, profileId))
+    .select({ id: client.id, representativeId: client.representativeId })
+    .from(client)
+    .where(eq(client.id, profileId))
     .limit(1)
     .then((rows) => rows[0]);
 
   if (!profileRow) throw new Error(`Profile ${profileId} not found`);
 
-  const clientId = profileRow.clientId;
+  const representativeId = profileRow.representativeId;
   const now = new Date();
   const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
@@ -76,13 +76,13 @@ export async function calculateRiskScore(
     ivaRow,
   ] = await Promise.all([
     // 1. Overdue open debts (30% weight)
-    clientId
+    representativeId
       ? db
           .select({ n: sql<number>`COUNT(*)` })
           .from(debt)
           .where(
             and(
-              eq(debt.client, clientId),
+              eq(debt.representativeId, representativeId),
               eq(debt.status, 'open'),
               lt(debt.dueDate, now)
             )
@@ -96,7 +96,7 @@ export async function calculateRiskScore(
       .from(notification)
       .where(
         and(
-          eq(notification.profile, profileId),
+          eq(notification.clientId, profileId),
           eq(notification.severity, 'critical'),
           isNull(notification.resolvedAt)
         )
@@ -104,13 +104,13 @@ export async function calculateRiskScore(
       .then((r) => Number(r[0]?.n ?? 0)),
 
     // 3. Upcoming due dates not completed within 30 days (15% weight)
-    clientId
+    representativeId
       ? db
           .select({ n: sql<number>`COUNT(*)` })
           .from(dueDate)
           .where(
             and(
-              eq(dueDate.client, clientId),
+              eq(dueDate.representativeId, representativeId),
               isNull(dueDate.completedAt),
               gte(dueDate.dueDate, now),
               lte(dueDate.dueDate, in30Days)
@@ -119,14 +119,14 @@ export async function calculateRiskScore(
           .then((r) => Number(r[0]?.n ?? 0))
       : Promise.resolve(0),
 
-    // 4. Scraper errors on the client (10% weight) — check open scraper_error alerts
-    clientId
+    // 4. Scraper errors on the representative (10% weight) — check open scraper_error alerts
+    representativeId
       ? db
           .select({ n: sql<number>`COUNT(*)` })
           .from(alert)
           .where(
             and(
-              eq(alert.clientId, clientId),
+              eq(alert.representativeId, representativeId),
               eq(alert.type, 'scraper_error'),
               eq(alert.status, 'open')
             )
@@ -140,7 +140,7 @@ export async function calculateRiskScore(
       .from(ivaScrape)
       .where(
         and(
-          eq(ivaScrape.profileId, profileId),
+          eq(ivaScrape.clientId, profileId),
           eq(ivaScrape.periodoFiscal, period)
         )
       )
@@ -256,7 +256,7 @@ async function countMonthsWithoutInvoices(
       .from(invoice)
       .where(
         and(
-          eq(invoice.profile, profileId),
+          eq(invoice.clientId, profileId),
           gte(invoice.emitionDate, monthStart),
           lt(invoice.emitionDate, monthEnd)
         )
@@ -268,18 +268,18 @@ async function countMonthsWithoutInvoices(
 }
 
 /**
- * Generate (or update) risk snapshots for all profiles in an organization.
- * Uses upsert on (profile_id, period) so re-running is safe.
+ * Generate (or update) risk snapshots for all clients in an organization.
+ * Uses upsert on (client_id, period) so re-running is safe.
  */
 export async function generateRiskSnapshots(
   orgId: string,
   period: string
 ): Promise<{ processed: number; errors: number }> {
   const profiles = await db
-    .select({ id: profile.id })
-    .from(profile)
-    .innerJoin(client, eq(profile.client, client.id))
-    .where(eq(client.organizationId, orgId));
+    .select({ id: client.id })
+    .from(client)
+    .innerJoin(representative, eq(client.representativeId, representative.id))
+    .where(eq(representative.organizationId, orgId));
 
   let processed = 0;
   let errors = 0;
@@ -289,16 +289,16 @@ export async function generateRiskSnapshots(
       const result = await calculateRiskScore(p.id, period);
 
       await db
-        .insert(profileRiskSnapshot)
+        .insert(clientRiskSnapshot)
         .values({
-          profileId: p.id,
+          clientId: p.id,
           period,
           score: String(result.score),
           riskLevel: result.riskLevel,
           factors: result.factors,
         })
         .onConflictDoUpdate({
-          target: [profileRiskSnapshot.profileId, profileRiskSnapshot.period],
+          target: [clientRiskSnapshot.clientId, clientRiskSnapshot.period],
           set: {
             score: String(result.score),
             riskLevel: result.riskLevel,

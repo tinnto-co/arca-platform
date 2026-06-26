@@ -1,0 +1,327 @@
+/**
+ * Seed de los catálogos del Libro de Sueldos Digital (LSD) de AFIP/ARCA.
+ * Sincroniza: payroll_situacion, payroll_condicion, payroll_actividad,
+ *             payroll_modalidad_contratacion, payroll_siniestrado.
+ *
+ * Idempotente: ON CONFLICT (codigo) DO UPDATE SET nombre = EXCLUDED.nombre
+ *
+ * Uso: bun run src/scripts/seed-catalogos-afip.ts
+ */
+import postgres from "postgres";
+
+const SITUACIONES = [
+  { codigo: "01", nombre: "Activo" },
+  { codigo: "05", nombre: "Licencia por maternidad" },
+  { codigo: "06", nombre: "Suspensiones otras causales" },
+  { codigo: "09", nombre: "Suspendido. Ley 20744 art.223bis" },
+  { codigo: "10", nombre: "Licencia por excedencia" },
+  { codigo: "11", nombre: "Licencia por maternidad Down" },
+  { codigo: "12", nombre: "Licencia por vacaciones" },
+  { codigo: "13", nombre: "Licencia sin goce de haberes" },
+  { codigo: "14", nombre: "Reserva de puesto" },
+  { codigo: "15", nombre: "E.S.E. Cese transitorio de servicios (art.6, i.6/7 Dto.342/92)" },
+  { codigo: "16", nombre: "Personal Siniestrado de terceros uso por la ART" },
+  { codigo: "17", nombre: "Reingreso por disposición judicial" },
+  { codigo: "18", nombre: "ILT primeros 10 días" },
+  { codigo: "19", nombre: "ILT días 11 y siguientes" },
+  { codigo: "20", nombre: "Trabajador siniestrado en nomina de ART" },
+  { codigo: "21", nombre: "Trabajador de temporada Reserva de puesto" },
+  { codigo: "30", nombre: "Activo - LSD (sin remuneracion)" },
+  { codigo: "31", nombre: "Activo - Funciones en el exterior" },
+  { codigo: "32", nombre: "Licencia por paternidad" },
+  { codigo: "33", nombre: "Licencia por fuerza mayor (ART. 221 LCT)" },
+  { codigo: "42", nombre: "Empleado eventual en EU (para uso de la ESE)" },
+  { codigo: "43", nombre: "Empl. eventual en EU (p/uso ESE) mes incompleto" },
+  { codigo: "44", nombre: "Conservación del empleo p/accidente o enf. Inculpable art. 211 LCT" },
+  { codigo: "45", nombre: "Suspensiones p/causas disciplinarias" },
+  { codigo: "49", nombre: "Susp. período parcial L 20744 art.223bis" },
+  { codigo: "51", nombre: "Licencia Ley 27.674 Art. 13 - Régimen De Protección Integral Del Niño, Niña y Adolescente Con Cáncer" },
+];
+
+const CONDICIONES = [
+  { codigo: "00", nombre: "Jubilado Decreto Nro 894/01 y/o Dec 2288/02" },
+  { codigo: "01", nombre: "SERVICIOS COMUNES Mayor de 18 años" },
+  { codigo: "02", nombre: "Jubilado" },
+  { codigo: "03", nombre: "Menor" },
+  { codigo: "05", nombre: "SERVICIOS DIFERENCIADOS Mayor de 18 años" },
+  { codigo: "06", nombre: "Pre-jubilables Sin relación de dependencia - Sin servicios reales" },
+  { codigo: "09", nombre: "Jubilado Decreto Nro 206/00 y/o Decreto Nro 894/01" },
+  { codigo: "10", nombre: "Pensión (NO SIPA)" },
+  { codigo: "11", nombre: "Pensión no Contributiva (NO SIPA)" },
+  { codigo: "12", nombre: "Art. 8º Ley Nº 27426" },
+  { codigo: "13", nombre: "Servicios Diferenciados no alcanzados por el Dto. 633/2018" },
+  { codigo: "14", nombre: "Jubilado - Docentes universitarios. Docentes e investigadores cientif./tecnolog." },
+];
+
+const MODALIDADES_CONTRATACION = [
+  { codigo: "001", nombre: "A tiempo parcial: Indeterminado /permanente" },
+  { codigo: "002", nombre: "Becarios - Residencias médicas Ley 22127" },
+  { codigo: "003", nombre: "De aprendizaje L.25013" },
+  { codigo: "008", nombre: "A Tiempo completo indeterminado /Trabajo permanente" },
+  { codigo: "010", nombre: "Practica profesionalizante - Dcto. 1374/11 - Pasantias sin obra social" },
+  { codigo: "011", nombre: "Trabajo de temporada" },
+  { codigo: "012", nombre: "Trabajo eventual" },
+  { codigo: "014", nombre: "Nuevo Período de Prueba" },
+  { codigo: "015", nombre: "Puesto Nuevo Varones y Mujeres de 25 a 44 años Ley 25250" },
+  { codigo: "016", nombre: "Nuevo Periodo de Prueba Trabajador Discapacitado Art.34 Ley 24147" },
+  { codigo: "017", nombre: "Puesto Nuevo menor de 25 años, Varones y Mujeres de 45 o más años y Mujer Jefe de fam. S/límite/edad Ley 25250" },
+  { codigo: "018", nombre: "Trabajador Discapacitado Art. 34. Ley 24147" },
+  { codigo: "019", nombre: "Puesto Nuevo. Varones y Mujeres 25 a 44 años Art. 34. Ley 24147 Ley 25250" },
+  { codigo: "020", nombre: "Pto. Nuevo Menor 25 años, Varones y Mujeres 45 años más y Mujer Jefe de flia. S/límite de edad. Art 34 L. 24147 Ley 25250" },
+  { codigo: "021", nombre: "A tiempo parcial determinado (contrato a plazo fijo)" },
+  { codigo: "022", nombre: "A Tiempo completo determinado (contrato a plazo fijo)" },
+  { codigo: "023", nombre: "Personal no permanente L 22248" },
+  { codigo: "024", nombre: "Personal de la Construcción L 22250" },
+  { codigo: "025", nombre: "Empleo público provincial" },
+  { codigo: "026", nombre: "Beneficiario de programa de empleo, capacitación y de recuperación productiva" },
+  { codigo: "027", nombre: "Pasantías Ley 26427 -con obra social-" },
+  { codigo: "028", nombre: "Programas Jefes y Jefas de Hogar" },
+  { codigo: "029", nombre: "AFA Regimen especial. Aportante autonomo" },
+  { codigo: "030", nombre: "Nuevo Periodo de Prueba Trabajador Discapacitado Art. 87. L 24013" },
+  { codigo: "031", nombre: "Trabajador Discapacitado Art. 87 L 24013" },
+  { codigo: "044", nombre: "Changa Solidaria. CCT 62/75" },
+  { codigo: "045", nombre: "Personal no permanente hoteles CCT 362/03 art.68 inc b" },
+  { codigo: "046", nombre: "Planta transitoria Adm Pública Nacional, Provincial y/o Municipal" },
+  { codigo: "047", nombre: "Representación gremial" },
+  { codigo: "048", nombre: "Art 4to L 24241. Traslado temporario desde el exterior. Con bilaterales de Seg Social" },
+  { codigo: "049", nombre: "Directores - empleado SA con Obra Social y LRT" },
+  { codigo: "051", nombre: "Pasantías Ley 26427 -con obra social- beneficiario pensión de discapacidad" },
+  { codigo: "059", nombre: "Taller Protegido de Producción Ley 26816, art. 2º punto 2" },
+  { codigo: "060", nombre: "Taller Protegido Especial para el Empleo (TPEE) Ley 26816, art. 2º punto 1" },
+  { codigo: "061", nombre: "Actividad Actoral Ley 27.203 - c/Obra Social" },
+  { codigo: "062", nombre: "Actividad Actoral Ley 27.203 - s/Obra Social" },
+  { codigo: "063", nombre: "Acciones de Entrenamiento para el Trabajo - Res 1107/2022" },
+  { codigo: "065", nombre: "A Tiempo indeterminado /Trabajo permanente discontinuo" },
+  { codigo: "095", nombre: "Planes Ministerio de Trabajo" },
+  { codigo: "096", nombre: "Plan Trabajo por San Luis Ley 5411/03" },
+  { codigo: "097", nombre: "Programa Trabajo para jóvenes tucumanos" },
+  { codigo: "098", nombre: "BONUS 2da Oportunidad" },
+  { codigo: "099", nombre: "LRT (Directores SA, municipios, org, cent y descent. Emp mixt docentes privados o públicos de jurisdicciones incorporadas o no al SIJP)" },
+  { codigo: "102", nombre: "Personal permanente discontinuo con ART (para uso de la EU Decreto Nro 762/14)" },
+  { codigo: "103", nombre: "Retiro Voluntario - Decreto 263/2018 y otros" },
+  { codigo: "110", nombre: "Trabajo permanente prestación continua Ley 26727" },
+  { codigo: "111", nombre: "Trabajo temporario Ley 26727" },
+  { codigo: "112", nombre: "Trabajo permanente discontinuo ley 26727" },
+  { codigo: "113", nombre: "Trabajo por equipo o cuadrilla familiar Ley 26727" },
+  { codigo: "601", nombre: "Contrato por plazo indeterminado a tiempo completo (art 90 Ley 20744) Art 2 Dec 551/22 y 1085/24. Reduccion 100%" },
+  { codigo: "602", nombre: "Contrato por plazo indeterminado a tiempo parcial (art 90 y art 92 Ley 20744) Art 2 Dec 551/22 y 1085/24. Reduccion 50%" },
+  { codigo: "603", nombre: "Contrato de trabajo a plazo fijo a tiempo completo (art 93 Ley 20744) Art 2 Dec 551/22 y 1085/24. Reduccion 100%" },
+  { codigo: "604", nombre: "Contrato de trabajo a plazo fijo a tiempo parcial (art 92 y art 93 Ley 20744) Art 2 Dec 551/22 y 1085/24. Reduccion 50%" },
+  { codigo: "605", nombre: "Contrato trabajo de temporada a tiempo completo (art 96 Ley 20744) Art 2 Dec 551/22 y 1085/24. Reduccion 100%" },
+  { codigo: "606", nombre: "Contrato trabajo de temporada a tiempo parcial (art 92 y art 96 Ley 20744) Art 2 Dec 551/22 y 1085/24. Reduccion 50%" },
+  { codigo: "607", nombre: "Contrato de trabajo agrario permanente prestación continua a tiempo completo (Ley 26727). Puesto Nuevo Art 2 Dec 551/22 y 1085/24. Reduccion 100%" },
+  { codigo: "608", nombre: "Contrato de trabajo agrario permanente prestación continua a tiempo parcial (Ley 26727). Puesto Nuevo Art 2 Dec 551/22 y 1085/24. Reduccion 50%" },
+  { codigo: "609", nombre: "Contrato de trabajo agrario permanente discontinuo a tiempo completo (Ley 26727). Puesto Nuevo Art 2 Dec 551/22 y 1085/24. Reduccion 100%" },
+  { codigo: "610", nombre: "Contrato de trabajo agrario permanente discontinuo a tiempo parcial (Ley 26727). Puesto Nuevo Art 2 Dec 551/22 y 1085/24. Reduccion 50%" },
+  { codigo: "611", nombre: "Contrato de trabajo agrario de temporada a tiempo completo (Ley 26727). Puesto Nuevo Art 2 Dec 551/22 y 1085/24. Reduccion 100%" },
+  { codigo: "612", nombre: "Contrato de trabajo agrario de temporada a tiempo parcial (Ley 26727). Puesto Nuevo Art 2 Dec 551/22 y 1085/24. Reduccion 50%" },
+  { codigo: "613", nombre: "Personal de la Construcción a tiempo completo (Ley 22250) Puesto Nuevo Art 2 Dec 551/22 y 1085/24. Reduccion 100%" },
+  { codigo: "614", nombre: "Personal de la Construcción a tiempo parcial (Ley 22250 y art 92 Ley 20744) Puesto Nuevo Art 2. Dec 551/22 y 1085/24. Reduccion 50%" },
+  { codigo: "710", nombre: "Régimen de Incentivo para la Formalización Laboral - Ley 27.802" },
+  { codigo: "982", nombre: "CCG vitivinícola de Catamarca" },
+  { codigo: "983", nombre: "CCG vitivinícola de Salta" },
+  { codigo: "984", nombre: "CCG foresto industrial del Chaco" },
+  { codigo: "985", nombre: "CCG vitivinícola de Neuquén" },
+  { codigo: "987", nombre: "CCG vitivinícola de La Rioja" },
+  { codigo: "988", nombre: "CCG limón Tucumán, Salta y Jujuy" },
+  { codigo: "989", nombre: "CCG Tabaco Salta" },
+  { codigo: "990", nombre: "CCG Tabaco Jujuy" },
+  { codigo: "991", nombre: "CCG vitivinícola de Río Negro" },
+  { codigo: "992", nombre: "CCG multiproducto del Chaco" },
+  { codigo: "994", nombre: "CCG yerba mate Misiones y Corrientes" },
+  { codigo: "996", nombre: "CCG vitivinícola de Mendoza" },
+  { codigo: "997", nombre: "CCG forestal del Chaco" },
+  { codigo: "998", nombre: "CCG tabaco Virginia del Chaco" },
+];
+
+const SINIESTRADOS = [
+  { codigo: "00", nombre: "No Incapacitado" },
+  { codigo: "01", nombre: "ILT Incapacidad Laboral Temporaria" },
+  { codigo: "02", nombre: "ILPPP Incapacidad Laboral Permanente Parcial Provisoria" },
+  { codigo: "03", nombre: "ILPPD Incapacidad Laboral Permanente Parcial Definitiva" },
+  { codigo: "04", nombre: "ILPTP Incapacidad Laboral Permanente Total Provisoria" },
+  { codigo: "05", nombre: "Capital de recomposición Art. 15, ap. 3, Ley 24557" },
+  { codigo: "06", nombre: "Ajuste Definitivo ILPPD de pago mensual" },
+  { codigo: "07", nombre: "RENTA PERIODICA ILPPD Inc. Lab Perm Parc Def >50%<66%" },
+  { codigo: "08", nombre: "SRT/SSN F.Garantía/F Reserva ILT Incapacidad Laboral Temporaria" },
+  { codigo: "09", nombre: "SRT/SSN F.Garantía/F Reserva ILPPP Inc Lab Perm Parc Prov" },
+  { codigo: "10", nombre: "SRT/SSN F.Garantía/F Reserva ILPTP Inc Lab Perm Total Prov" },
+  { codigo: "11", nombre: "SRT/SSN F.Garantía/F Reserva ILPPD Inc Laboral Perm Parc Definitiva" },
+  { codigo: "12", nombre: "ILPPD Beneficios devengados art. 11 p.4" },
+  { codigo: "13", nombre: "INFORME Incremento salarial de trabajador siniestrado a ART" },
+];
+
+const ACTIVIDADES = [
+  { codigo: "000", nombre: "Zona de Desastre. Decreto 1386/01 excepto actividad agropecuaria" },
+  { codigo: "001", nombre: "Producción Primaria excepto actividad agropecuaria" },
+  { codigo: "002", nombre: "Producción de bienes sin comercialización" },
+  { codigo: "003", nombre: "Construcción de inmuebles" },
+  { codigo: "004", nombre: "Turismo" },
+  { codigo: "005", nombre: "Investigación Científica y Tecnológica" },
+  { codigo: "006", nombre: "Administración Publica. CON OBRA SOCIAL 23660" },
+  { codigo: "007", nombre: "Enseñanza Privada L.13047 no comprendidos en el D 137/05" },
+  { codigo: "008", nombre: "Servicio Doméstico" },
+  { codigo: "009", nombre: "Servicios energéticos Res.MTESS 268 y 824/09" },
+  { codigo: "010", nombre: "UNIVERSIDADES PRIVADAS. Personal no Docente D.1123/99" },
+  { codigo: "011", nombre: "Personal Permanente Discont. Empresas de Servicios Eventuales" },
+  { codigo: "012", nombre: "PIT - Programas Intensivos de Trabajo" },
+  { codigo: "013", nombre: "Personal embarcado" },
+  { codigo: "014", nombre: "Personal embarcado Dec 1255 S/res SSS 18/99" },
+  { codigo: "015", nombre: "L.R.T. - Directores SA, municipios, org, cent y descent. Emp mixt provin y otros" },
+  { codigo: "016", nombre: "No obligados con el SIJP (colegios, reciprocidad previsional y otros)" },
+  { codigo: "017", nombre: "Obligados al SIJP - sin Obra Social Nacional (Adm Pub y otros)" },
+  { codigo: "018", nombre: "Provincia incorporada al SIJP sin obra social nacional con ART" },
+  { codigo: "019", nombre: "Provincia incorporada al SIJP sin obra social nacional sin ART" },
+  { codigo: "020", nombre: "Ley Nro 24.331 Zona Franca" },
+  { codigo: "021", nombre: "Dec Nro 1024/93 Empr del Estado, Org. y Entes Públicos con OS y FNE" },
+  { codigo: "022", nombre: "Dec Nro 1024/93 Empr del Estado, Org. y Entes Públicos sin OS y con FNE" },
+  { codigo: "027", nombre: "Servicio exterior Ley N° 22731" },
+  { codigo: "029", nombre: "Personal embarcado Dec 1255 S/res SSS 18/99 con Obra Social" },
+  { codigo: "030", nombre: "AFA Regimen especial. Aportante autonomo" },
+  { codigo: "031", nombre: "Trabajador rural de la Armada Argentina Ley 26727" },
+  { codigo: "032", nombre: "CSJN Corte Supr de Justicia, Magistrados provinciales, Revisores de Cta con ART" },
+  { codigo: "033", nombre: "Representante gremial en uso de licencia" },
+  { codigo: "034", nombre: "Docentes estatales nacionales. CON OBRA SOCIAL 23660 - Dec 137/05" },
+  { codigo: "035", nombre: "Docentes estatales nacionales. SIN OBRA SOCIAL 23660 Dec 137/05" },
+  { codigo: "036", nombre: "Invest científico/tecnológico/docente universitario estatal nacional" },
+  { codigo: "037", nombre: "Invest científico/tecnológico/docente universitario privado" },
+  { codigo: "038", nombre: "Docentes de Provincia incorporada/SIJP con OS nacional con ART Dec 137/05" },
+  { codigo: "039", nombre: "Docentes de Prov. inc/SIJP con OS nac, Enseñanza Priv sin ART - Dec 137/05" },
+  { codigo: "040", nombre: "Magistrados provinciales, Revisores de Cta - docentes con ART" },
+  { codigo: "041", nombre: "Docente privado L 13047 y sus modificatorias - comprendido en el D 137/05" },
+  { codigo: "042", nombre: "Enseñanza Privada Docentes L 13047 - Dec 137/05" },
+  { codigo: "043", nombre: "Docente de Prov inc/SIJP s/OS nac, con ART Dec 137/05 - Enseñanza Pública" },
+  { codigo: "044", nombre: "Docente de Prov inc/SIJP s/OS nac, sin ART Dec 137/05 - Enseñanza Pública" },
+  { codigo: "045", nombre: "Docentes e Invest. Univ Priv con OS. Dec 137/05" },
+  { codigo: "046", nombre: "Docentes e Invest. Univ Priv sin OS. Dec 137/05" },
+  { codigo: "047", nombre: "Empleo en el Sector Privado" },
+  { codigo: "048", nombre: "Empleo en el Sector Privado - Servicios Eventuales" },
+  { codigo: "049", nombre: "Actividades no clasificadas" },
+  { codigo: "050", nombre: "Empleados en Clubes con Fútbol Profesional sin contrato L 20160" },
+  { codigo: "051", nombre: "POLICIA DE ENTRE RIOS" },
+  { codigo: "052", nombre: "POLICIA DE CORRIENTES" },
+  { codigo: "053", nombre: "POLICIA DE CHACO" },
+  { codigo: "054", nombre: "POLICIA DE FORMOSA" },
+  { codigo: "055", nombre: "POLICIA DE MISIONES" },
+  { codigo: "056", nombre: "POLICIA DE SANTIAGO DEL ESTERO" },
+  { codigo: "057", nombre: "POLICIA DE SALTA" },
+  { codigo: "058", nombre: "POLICIA DE SAN JUAN" },
+  { codigo: "059", nombre: "POLICIA DE SAN LUIS" },
+  { codigo: "060", nombre: "SERVICIO PENITENCIARIO DE SAN LUIS" },
+  { codigo: "061", nombre: "POLICIA METROPOLITANA DEL GOBIERNO DE LA CIUDAD DE BS AS" },
+  { codigo: "062", nombre: "Personal sin estado policial POLICIA METROPOLITANA DEL GOB. CIUDAD DE BS AS" },
+  { codigo: "063", nombre: "SERVICIO PENITENCIARIO DE LA RIOJA" },
+  { codigo: "064", nombre: "SERVICIO PENITENCIARIO DE JUJUY" },
+  { codigo: "065", nombre: "SERVICIO PENITENCIARIO DE TUCUMAN" },
+  { codigo: "066", nombre: "SERVICIO PENITENCIARIO DE CATAMARCA" },
+  { codigo: "067", nombre: "SERVICIO PENITENCIARIO DE RIO NEGRO" },
+  { codigo: "068", nombre: "SERVICIO PENITENCIARIO DE MENDOZA" },
+  { codigo: "069", nombre: "Legisladores nacionales (diputados y senadores)" },
+  { codigo: "070", nombre: "SERVICIO PENITENCIARIO DE SANTIAGO DEL ESTERO" },
+  { codigo: "071", nombre: "SERVICIO PENITENCIARIO DE SALTA" },
+  { codigo: "072", nombre: "SERVICIO PENITENCIARIO DE SAN JUAN" },
+  { codigo: "073", nombre: "Internas Unidad 31 c/Asignaciones Familiares" },
+  { codigo: "075", nombre: "Docente de Prov incorporada/SIJP S/obra social nacional C/ART Dec 137/05" },
+  { codigo: "076", nombre: "Docente de Prov incorporada/SIJP S/obra social nacional S/ART Dec 137/05" },
+  { codigo: "077", nombre: "Investigación Científica y Tecnológica - Fac. c/exclusividad en univ priv" },
+  { codigo: "078", nombre: "Investigación Científica y Tecnológica - Fac. s/exclusividad en univ priv" },
+  { codigo: "079", nombre: "Investigación Científica y Tecnológica en univ privada - Fac. c/excl., jubilado" },
+  { codigo: "080", nombre: "Investigación Científica y Tecnológica en univ privada - Fac. s/excl., jubilado" },
+  { codigo: "082", nombre: "Docentes de la UBA" },
+  { codigo: "083", nombre: "Docentes e Inv Univ Priv, Jubilado con OS. Dec 137/05" },
+  { codigo: "084", nombre: "Docentes e Inv Univ Priv, Jubilado sin OS. Dec 137/05" },
+  { codigo: "090", nombre: "Docente Univ Pub, Investig Nac, con exclusividad" },
+  { codigo: "091", nombre: "Docente Univ Pub, Investig Nac, sin exclusividad" },
+  { codigo: "092", nombre: "Docente Univ Pub, Investig Nac, con exclusividad, jubilado" },
+  { codigo: "093", nombre: "Docente Univ Pub, Investig Nac, sin exclusividad, jubilado" },
+  { codigo: "094", nombre: "Productores de seguros de vida - Ley 22400" },
+  { codigo: "095", nombre: "Empleo Público Nac. y Prov. con PAMI (Dto 1024/93 y modif)" },
+  { codigo: "096", nombre: "Servicio Penitenciario Federal" },
+  { codigo: "097", nombre: "Poder Judicial de la Nación" },
+  { codigo: "098", nombre: "Policía Federal Argentina" },
+  { codigo: "099", nombre: "Prefectura Naval Argentina" },
+  { codigo: "100", nombre: "Gendarmería Nacional" },
+  { codigo: "101", nombre: "Magistrados provinciales, Revisores de Cta - docentes sin ART" },
+  { codigo: "102", nombre: "Zona de Desastre Decreto N° 1386/01. Actividad Agropecuaria Ley N° 25191" },
+  { codigo: "103", nombre: "Trabajador Agrario Ley 23808 y otros regímenes" },
+  { codigo: "104", nombre: "Zona de Desastre Decreto N° 1386/01. Actividad Agropecuaria Ley N° 23808 y otros regímenes" },
+  { codigo: "105", nombre: "Dto. 637/13. Personal civil de las Fuerzas Armadas y de Seguridad excepto personal civil docente perteneciente a otra OS" },
+  { codigo: "106", nombre: "Administración Pública CON OBRA SOCIAL 23660 (con PAMI) Tipo de empleador especial" },
+  { codigo: "107", nombre: "Serv. energéticos Res. MTESS 268 y 824/09 Empr del Estado, Org. y Entes Públicos (Dto. 1024/93) s/OS, c/FNE s/As. Fs." },
+  { codigo: "108", nombre: "Serv. energéticos Res. MTESS 268 y 824/09 Emp. del estado y Org. y Entes públicos (Dto. 1024/93) con OS y FNE sin As. Fs." },
+  { codigo: "109", nombre: "Servicios energéticos Res.MTESS 268 y 824/09 - Provincias (sin PAMI y sin OS)" },
+  { codigo: "110", nombre: "Servicios energéticos Res.MTESS 268 y 824/09 - Provincias con OS" },
+  { codigo: "111", nombre: "Servicios energéticos Res.MTESS 268 y 824/09 - Provincias con PAMI" },
+  { codigo: "112", nombre: "Servicios energéticos Res.MTESS 268 y 824/09 - Provincias con OS y con PAMI" },
+  { codigo: "120", nombre: "Ley N° 27.506 Promoción de Economía del Conocimiento - Art. 8°" },
+  { codigo: "121", nombre: "Ley N° 27.506 Promoción de Economía del Conocimiento - Art. 8° - Mipyme" },
+  { codigo: "130", nombre: "Ley N° 27.506 Promoción de Economía del Conocimiento - Art. 9°" },
+  { codigo: "131", nombre: "Ley N° 27.506 Promoción de Economía del Conocimiento - Art. 9° - Mipyme" },
+  { codigo: "132", nombre: "Ley N° 27.506 Prom. Economía del Conocimiento - Art. 9° - Dec N° 1024/93 Empr del Estado, Org. y Entes Públicos sin OS y FNE" },
+  { codigo: "133", nombre: "Ley N° 27.506 Prom. Economía del Conocimiento - Art. 9° - Dec N° 1024/93 Empr del Estado, Org. y Entes Públicos sin OS con FNE" },
+  { codigo: "134", nombre: "Ley N° 27.506 Prom. Economía del Conocimiento - Art. 9° - Dec N° 1024/93 Empr del Estado, Org. y Entes Públicos con OS sin FNE" },
+  { codigo: "135", nombre: "Ley N° 27.506 Prom. Economía del Conocimiento - Art. 9° - Mipyme Dec N° 1024/93 Empr del Estado, Org. y Entes Públicos sin OS y FNE" },
+  { codigo: "136", nombre: "Ley N° 27.506 Prom. Economía del Conocimiento - Art. 9° - Dec N° 1024/93 Empr del Estado, Org. y Entes Públicos con OS y FNE" },
+  { codigo: "137", nombre: "Dec. 209/2022. - Bienes de Capital - Empleador NO Mipyme" },
+  { codigo: "143", nombre: "Regimen nacional sin obra social nacional, INSSJP y AAFF" },
+  { codigo: "901", nombre: "Poder judicial (sin ART)" },
+  { codigo: "902", nombre: "Poder judicial (con ART)" },
+  { codigo: "903", nombre: "Poder Legislativo (sin ART)" },
+  { codigo: "904", nombre: "Poder Legislativo (con ART)" },
+  { codigo: "905", nombre: "Empleo público en Gral. (sin ART)" },
+  { codigo: "906", nombre: "Empleo público en Gral. (con ART)" },
+  { codigo: "907", nombre: "Docente (sin ART)" },
+  { codigo: "908", nombre: "Docente (con ART)" },
+  { codigo: "909", nombre: "Fuerza de seguridad (sin ART)" },
+  { codigo: "910", nombre: "Fuerza de seguridad (con ART)" },
+  { codigo: "911", nombre: "No clasificados (sin ART)" },
+  { codigo: "912", nombre: "No clasificados (con ART)" },
+  { codigo: "913", nombre: "Prestadores de servicios (monotributo y/o autónomos)" },
+  { codigo: "914", nombre: "Bombero voluntario. Pcia de Bs. As. Ley PBA 13.802 (sin ART)" },
+  { codigo: "915", nombre: "Bombero voluntario. Pcia de Bs. As. Ley PBA 13.802 (con ART)" },
+  { codigo: "920", nombre: "No obligados al SIPA - informativo (sin ART)" },
+  { codigo: "921", nombre: "No obligados al SIPA - informativo (con ART)" },
+];
+
+async function seedTable(
+  sql: postgres.Sql,
+  table: string,
+  rows: { codigo: string; nombre: string }[],
+) {
+  let inserted = 0;
+  let updated = 0;
+  for (const row of rows) {
+    const result = await sql`
+      INSERT INTO ${sql(table)} (id, codigo, nombre, created_at)
+      VALUES (gen_random_uuid(), ${row.codigo}, ${row.nombre}, now())
+      ON CONFLICT (codigo) DO UPDATE SET nombre = EXCLUDED.nombre
+      RETURNING (xmax = 0) AS is_insert
+    `;
+    if (result[0]?.is_insert) inserted++;
+    else updated++;
+  }
+  console.log(`  ✓ ${table}: ${inserted} insertados, ${updated} actualizados`);
+}
+
+async function main() {
+  const url = process.env.MIGRATION_URL ?? process.env.DATABASE_URL;
+  if (!url) throw new Error("Falta MIGRATION_URL o DATABASE_URL en el entorno.");
+
+  const sql = postgres(url, { prepare: false });
+
+  console.log("Seeding catálogos AFIP/LSD...\n");
+
+  await seedTable(sql, "payroll_situacion", SITUACIONES);
+  await seedTable(sql, "payroll_condicion", CONDICIONES);
+  await seedTable(sql, "payroll_modalidad_contratacion", MODALIDADES_CONTRATACION);
+  await seedTable(sql, "payroll_siniestrado", SINIESTRADOS);
+  await seedTable(sql, "payroll_actividad", ACTIVIDADES);
+
+  await sql.end();
+  console.log("\nListo.");
+}
+
+main().catch((e) => {
+  console.error("Error:", e.message);
+  process.exit(1);
+});

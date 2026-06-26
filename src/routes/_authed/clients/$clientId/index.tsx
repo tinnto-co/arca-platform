@@ -13,10 +13,13 @@ const CLIENT_DETAIL_TABS = [
   'solicitudes',
 ] as const;
 
+const searchSchema = z.object({
+  tab: z.enum(CLIENT_DETAIL_TABS).optional(),
+  client: z.string().optional(),
+});
+
 export const Route = createFileRoute('/_authed/clients/$clientId/')({
-  validateSearch: z.object({
-    tab: z.enum(CLIENT_DETAIL_TABS).optional(),
-  }),
+  validateSearch: searchSchema,
   component: RouteComponent,
 });
 
@@ -30,7 +33,10 @@ function RouteComponent() {
     void navigate({
       to: '/clients/$clientId',
       params: { clientId },
-      search: { tab: next === 'resumen' ? undefined : (next as never) },
+      search: {
+        tab: next === 'resumen' ? undefined : (next as never),
+        client: search.client,
+      },
       replace: true,
     });
   };
@@ -39,6 +45,7 @@ function RouteComponent() {
     <>
       <RepresentativeDetailPage
         representativeId={clientId}
+        initialClientId={search.client}
         activeTab={activeTab}
         onTabChange={onTabChange}
       />
