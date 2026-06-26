@@ -239,6 +239,10 @@ export function SueldosSimulador({
   // El básico de escala se pasa como prop implícito a TablaReciboSos.
   // No se inyecta en la columna Importe — el cálculo ocurre internamente en la grilla.
   const basicoEscala = basicoData?.basico ?? 0;
+  const tipoJornada = basicoData?.tipoJornada ?? 'full_time';
+  // Para part_time/reducida: la base OS en el recibo usa el básico de escala (100%) en
+  // lugar del subtotal real liquidado (que está reducido proporcionalmente).
+  const basicoJornadaCompleta = tipoJornada !== 'full_time' ? basicoEscala : 0;
   const categoriaEscala = basicoData?.categoriaNombre ?? null;
   const sinEscalaParaPeriodo = basicoData?.sinEscalaParaPeriodo ?? false;
   const fallbackPeriodoLabel = basicoData?.fallbackPeriodoLabel ?? null;
@@ -768,6 +772,7 @@ export function SueldosSimulador({
               recibo={ultimoRecibo.recibo}
               conceptos={conceptosFilas}
               basico={basicoEscala}
+              basicoJornadaCompleta={basicoJornadaCompleta}
               activeCodigos={activeCodigos}
               catalogoCompleto={conceptosFilas}
               onAddConcepto={handleAddConcepto}
@@ -867,6 +872,7 @@ export function SueldosSimulador({
                   recibo={reciboHeaderSimulado}
                   conceptos={conceptosFilas}
                   basico={basicoEscala}
+                  basicoJornadaCompleta={basicoJornadaCompleta}
                   activeCodigos={activeCodigos}
                   catalogoCompleto={conceptosFilas}
                   onAddConcepto={handleAddConcepto}

@@ -30,6 +30,8 @@ const BASE_LABEL: Record<string, string> = {
   sub1_199: 'S1-199',
   sub411_469: 'S411-469',
   sub1_199_plus_411_469: '(S1-199 + S411-469)',
+  sub411_414_qty: 'S411-414',
+  os_base: 'S-OS',
 };
 
 /** Mapeo baseColumna → clave de leyenda para subtotales (no el string de fórmula). */
@@ -41,6 +43,7 @@ const SUB_BASE_LEYENDA: Record<string, string> = {
   sub1_199: 'S1-199',
   sub411_469: 'S411-469',
   sub1_199_plus_411_469: 'S1-199 + S411-469',
+  os_base: 'S-OS',
 };
 
 const SUB_BASES = new Set([
@@ -51,6 +54,7 @@ const SUB_BASES = new Set([
   'sub1_199',
   'sub411_469',
   'sub1_199_plus_411_469',
+  'os_base',
 ]);
 
 /** Leyenda completa (índice por `sigla`). */
@@ -92,9 +96,18 @@ export const LEYENDA_FORMULA_SOS: readonly { sigla: string; texto: string }[] =
       texto: 'Total no remunerativos: suma de conceptos en el rango 411 a 469.',
     },
     {
+      sigla: 'S411-414',
+      texto: 'Subtotal no remunerativos: suma de conceptos en el rango 411 a 414 (base para asignación complementaria no remunerativa).',
+    },
+    {
       sigla: 'S1-199 + S411-469',
       texto:
         'Suma del total haberes (1–199) más el total no remunerativo (411–469).',
+    },
+    {
+      sigla: 'S-OS',
+      texto:
+        'Base obra social: básico de escala a jornada completa (para empleados part_time/reducida); equivale a S1-199 para jornada completa.',
     },
     {
       sigla: 'pct/100',
@@ -157,6 +170,12 @@ export function siglasUsadasFormulaSos(c: ConceptoSosMetadata): string[] {
   const hasMax = !!c.tieneImpMax;
 
   const orden: string[] = [];
+
+  if (bc === 'sub411_414_qty') {
+    orden.push('S411-414');
+    if (hasPct) orden.push('pct/100');
+    return [...new Set(orden)];
+  }
 
   if (SUB_BASES.has(bc)) {
     orden.push(SUB_BASE_LEYENDA[bc] ?? BASE_LABEL[bc] ?? bc);
@@ -235,6 +254,11 @@ export function formulaLegibleSos(c: ConceptoSosMetadata): string {
         : hasMax
           ? ' [máx]'
           : '';
+
+  // ── Asignación complementaria no remunerativa (cant = suma 411–414) ──────
+  if (bc === 'sub411_414_qty') {
+    return `cant (auto: S411-414)${hasPct ? ' × pct/100' : ''}`;
+  }
 
   // ── Conceptos con base de subtotal acumulado ──────────────────────────────
   if (SUB_BASES.has(bc)) {
