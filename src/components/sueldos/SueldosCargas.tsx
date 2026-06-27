@@ -390,6 +390,8 @@ type OverrideRow = {
   empleadoNombre: string;
   rem4y8Override: string | null;
   rem9Override: string | null;
+  rem4y8Sugerido: string | null;
+  rem9Sugerido: string | null;
   contribucionAdicionalOS: string | null;
   importeADetraerLey27430: string | null;
   importeMaternidadArt13: string | null;
@@ -407,8 +409,8 @@ function LsdOverridesDialog({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
-  const [rem4y8, setRem4y8] = useState(row.rem4y8Override ?? '');
-  const [rem9, setRem9] = useState(row.rem9Override ?? '');
+  const [rem4y8, setRem4y8] = useState(row.rem4y8Override ?? row.rem4y8Sugerido ?? '');
+  const [rem9, setRem9] = useState(row.rem9Override ?? row.rem9Sugerido ?? '');
   const [aporteOS, setAporteOS] = useState(row.contribucionAdicionalOS ?? '');
   const [detraer, setDetraer] = useState(row.importeADetraerLey27430 ?? '');
   const [maternidad, setMaternidad] = useState(row.importeMaternidadArt13 ?? '');
@@ -874,6 +876,8 @@ function GenerarPresentacionDialog({
                                 empleadoNombre: emp.empleadoNombre,
                                 rem4y8Override: emp.rem4y8Override,
                                 rem9Override: emp.rem9Override,
+                                rem4y8Sugerido: emp.rem4y8Sugerido ?? null,
+                                rem9Sugerido: emp.rem9Sugerido ?? null,
                                 contribucionAdicionalOS: emp.contribucionAdicionalOS,
                                 importeADetraerLey27430: emp.importeADetraerLey27430,
                                 importeMaternidadArt13: emp.importeMaternidadArt13,

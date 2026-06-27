@@ -1,6 +1,6 @@
 'use client';
 // Simulador de sueldos
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Save, FilePlus2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -136,6 +136,7 @@ interface SueldosSimuladorProps {
   onConfirmRecibo?: (periodo: string, reciboImportId: string) => void;
   /** Pre-carga el simulador (desde Recibo → Editar) saltando el formulario. */
   initialData?: {
+    reciboId?: string;
     importEmpleadoId: string;
     empleadoNombre: string;
     periodo: string;
@@ -181,6 +182,7 @@ export function SueldosSimulador({
   const queryClient = useQueryClient();
   const [flowHeader, setFlowHeader] = useState<FlowHeader | null>(null);
   const [sosEmpleadoId, setSosEmpleadoId] = useState<string | null>(null);
+  const [reciboIdToLoad, setReciboIdToLoad] = useState<string | null>(null);
   const [tablaEdits, setTablaEdits] = useState<EditsMap>({});
   const [activeCodigos, setActiveCodigos] = useState<Set<string>>(new Set());
   const [recalcularConEscalaVigente, setRecalcularConEscalaVigente] =
@@ -193,10 +195,14 @@ export function SueldosSimulador({
     periodo.length === 7 && puedeLiquidarPeriodo(periodo);
 
   const { data: ultimoRecibo, isLoading: loadingUltimo } = useQuery({
-    queryKey: ['ultimo-recibo-importado', clientId, sosEmpleadoId],
+    queryKey: ['ultimo-recibo-importado', clientId, sosEmpleadoId, reciboIdToLoad],
     queryFn: () =>
       getUltimoReciboImportado({
-        data: { clientId, importEmpleadoId: sosEmpleadoId! },
+        data: {
+          clientId,
+          importEmpleadoId: sosEmpleadoId!,
+          ...(reciboIdToLoad ? { liquidacionId: reciboIdToLoad } : {}),
+        },
       }),
     enabled: !!sosEmpleadoId,
   });
@@ -240,9 +246,9 @@ export function SueldosSimulador({
   // No se inyecta en la columna Importe — el cálculo ocurre internamente en la grilla.
   const basicoEscala = basicoData?.basico ?? 0;
   const tipoJornada = basicoData?.tipoJornada ?? 'full_time';
-  // Para part_time/reducida: la base OS en el recibo usa el básico de escala (100%) en
-  // lugar del subtotal real liquidado (que está reducido proporcionalmente).
-  const basicoJornadaCompleta = tipoJornada !== 'full_time' ? basicoEscala : 0;
+  // La base OS (conceptos 203, 502, etc.) siempre calcula sobre el básico de escala al 100%,
+  // independientemente del porcentaje que tenga seteado el concepto 1 o el 411.
+  const basicoJornadaCompleta = basicoEscala;
   const categoriaEscala = basicoData?.categoriaNombre ?? null;
   const sinEscalaParaPeriodo = basicoData?.sinEscalaParaPeriodo ?? false;
   const fallbackPeriodoLabel = basicoData?.fallbackPeriodoLabel ?? null;
@@ -334,6 +340,15 @@ export function SueldosSimulador({
     const { antiguedadAnios } = flowHeader;
     return filas.map((c) => {
       const num = parseInt(c.codigo, 10);
+      if (num === 1) {
+        // Sueldo básico: pre-llenar porcentaje=100 y cantidad=30 si no tienen valor.
+        // El monto se calcula automáticamente cuando basicoEscala está disponible.
+        return {
+          ...c,
+          porcentaje: c.porcentaje ?? '100',
+          cantidad: c.cantidad ?? '30',
+        };
+      }
       if (num === 3) {
         // Antigüedad: % siempre 1, cantidad = años completos desde fecha de ingreso
         return {
@@ -401,7 +416,10 @@ export function SueldosSimulador({
     plantillaKey,
   ]);
 
-  // En modo copia: pre-cargar los códigos activos del último recibo
+  // En modo copia: pre-cargar los códigos activos del último recibo.
+  // `initialData` es dep para que se re-ejecute cuando el usuario abre un nuevo recibo
+  // a editar aunque `ultimoRecibo` y `isCopyMode` no hayan cambiado de referencia
+  // (caso: mismo recibo abierto dos veces con el componente todavía montado).
   useEffect(() => {
     if (!isCopyMode || !ultimoRecibo) return;
     setActiveCodigos(
@@ -411,18 +429,19 @@ export function SueldosSimulador({
             const montoN = Number(c.monto);
             return (
               (!isNaN(montoN) && montoN !== 0) ||
-              c.cantidad !== '' ||
-              c.porcentaje !== '' ||
-              c.importe !== '' ||
-              c.importeConceptoNumero !== '' ||
-              c.importeMinimo !== '' ||
-              c.importeMaximo !== ''
+              c.cantidad !== null ||
+              c.porcentaje !== null ||
+              c.importe !== null ||
+              c.importeConceptoNumero !== null ||
+              c.importeMinimo !== null ||
+              c.importeMaximo !== null
             );
           })
           .map((c) => c.codigo)
       )
     );
-  }, [isCopyMode, ultimoRecibo]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCopyMode, ultimoRecibo, initialData]);
 
   const guardarRecibo = useMutation({
     mutationFn: async () => {
@@ -493,12 +512,11 @@ export function SueldosSimulador({
   }, []);
 
   // Cuando llega initialData (desde "Editar" en la solapa Recibo), pre-carga el simulador.
-  const lastInitialDataRef = useRef<string | null>(null);
+  // No usamos guard de referencia: el prop solo cambia cuando el usuario hace click en "Editar"
+  // (viene de useState en el padre), y queremos reinicializar siempre para que reciboIdToLoad
+  // se setee correctamente aunque haya quedado en null por una operación previa.
   useEffect(() => {
     if (!initialData) return;
-    const key = JSON.stringify(initialData);
-    if (lastInitialDataRef.current === key) return;
-    lastInitialDataRef.current = key;
     setFlowHeader({
       importEmpleadoId: initialData.importEmpleadoId,
       empleadoNombre: initialData.empleadoNombre,
@@ -525,8 +543,11 @@ export function SueldosSimulador({
       importeMaternidadArt13: initialData.importeMaternidadArt13,
     });
     setSosEmpleadoId(initialData.importEmpleadoId);
+    setReciboIdToLoad(initialData.reciboId ?? null);
     setTablaEdits({});
-    setActiveCodigos(new Set());
+    // No reseteamos activeCodigos aquí: Effect 3 (declarado antes) ya se ejecuta
+    // con `initialData` como dep y carga los códigos del recibo. Si lo resetearamos
+    // aquí (declarado después), sobreescribiríamos el set de Effect 3 con Set vacío.
     setRecalcularConEscalaVigente(true);
   }, [initialData]);
 
@@ -602,6 +623,7 @@ export function SueldosSimulador({
       setSosEmpleadoId(
         payload.copiarUltimoRecibo ? payload.importEmpleadoId : null
       );
+      setReciboIdToLoad(null);
       setTablaEdits({});
       setActiveCodigos(new Set());
       setRecalcularConEscalaVigente(payload.copiarUltimoRecibo);
@@ -613,6 +635,7 @@ export function SueldosSimulador({
     setFlowHeader(null);
     setInitialFormValues(null);
     setSosEmpleadoId(null);
+    setReciboIdToLoad(null);
     setTablaEdits({});
     setActiveCodigos(new Set());
     setRecalcularConEscalaVigente(false);
@@ -767,12 +790,13 @@ export function SueldosSimulador({
           <CardContent className="space-y-4">
             <div className="rounded-lg border bg-background p-3">
             <TablaReciboSos
-              key={plantillaKey}
+              key={`${plantillaKey}|${ultimoRecibo.recibo.id}`}
               variant="importado"
               recibo={ultimoRecibo.recibo}
               conceptos={conceptosFilas}
               basico={basicoEscala}
               basicoJornadaCompleta={basicoJornadaCompleta}
+              mejorSueldoSemestre={ultimoRecibo.mejorSueldoSemestre ?? 0}
               activeCodigos={activeCodigos}
               catalogoCompleto={conceptosFilas}
               onAddConcepto={handleAddConcepto}
@@ -873,6 +897,7 @@ export function SueldosSimulador({
                   conceptos={conceptosFilas}
                   basico={basicoEscala}
                   basicoJornadaCompleta={basicoJornadaCompleta}
+                  mejorSueldoSemestre={ultimoRecibo?.mejorSueldoSemestre ?? 0}
                   activeCodigos={activeCodigos}
                   catalogoCompleto={conceptosFilas}
                   onAddConcepto={handleAddConcepto}
