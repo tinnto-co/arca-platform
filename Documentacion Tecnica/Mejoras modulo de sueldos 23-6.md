@@ -3,6 +3,10 @@
 Documento de seguimiento de bugs y mejoras detectadas en el módulo de sueldos.
 Incluye análisis técnico y estado de cada ítem.
 
+> **Sesión de correcciones — 2026-06-26:**
+> Se revisaron y corrigieron los tickets TIN-943, TIN-945, TIN-947, TIN-949, TIN-950, TIN-952.
+> Todos los tickets del documento resueltos.
+
 ---
 
 ## Ítems resueltos anteriormente (referencia)
@@ -11,7 +15,8 @@ Estos ítems ya fueron corregidos antes de esta sesión.
 
 - [x] **Orden numérico de conceptos en el recibo** — Las queries usaban `ORDER BY codigo` sobre texto (orden lexicográfico: 1, 10, 19, 2...). Se corrigió a `ORDER BY codigo::int`. Commit `69a6e1e`.
 - [x] **Corrección de tipo de empleador/empleado en LSD/F.931** — Los catálogos AFIP en producción usaban IDs de SOS Contador como código primario en lugar de los códigos AFIP oficiales, causando que el LSD generara valores inválidos (ej. "1070" en lugar de "01"). Se migró la base de producción con `migrate-catalogos-prod.ts`. Sesión 2026-06-23.
-- [x] **Concepto 211: importe directo** — Cuando el usuario ingresaba solo un importe fijo (sin porcentaje ni cantidad), `montoLiquidadoDesdeEditsSos` calculaba `0 × 0 × base = 0`. Se agregó detección del caso `cant=0, pct=0` con importe presente y se devuelve el importe directamente. Commit `69a6e1e`. | Notion: `[SUELDOS] Bug: corrección del concepto 211`
+- [x] **TIN-943 — Concepto 211: importe directo** — Cuando el usuario ingresaba solo un importe fijo (sin porcentaje ni cantidad), `montoLiquidadoDesdeEditsSos` calculaba `0 × 0 × base = 0`. Se agregó detección del caso `cant=0, pct=0` con importe presente y se devuelve el importe directamente. Commit `69a6e1e`. | Noción: `[SUELDOS] Bug: corrección del concepto 211`
+  - **⚠️ Regresión detectada — sesión 2026-06-26:** el concepto 211 (baseColumna: `sub1_199`) ignoraba el campo `importe` ingresado por el usuario al calcular: siempre usaba el subtotal dinámico como base. Corrección: en el path `SUB_BASES` de `applySubtotalCascade`, si el concepto tiene `tieneImporte` o `tieneImpConceptoNro` y el usuario completó esos campos, el importe explícito tiene prioridad sobre el subtotal como base. Resuelto sesión 2026-06-26.
 
 ---
 
@@ -19,7 +24,7 @@ Estos ítems ya fueron corregidos antes de esta sesión.
 
 ### 1. Concepto 415: cálculo automático sobre no remunerativos
 
-**Notion:** `[SUELDOS] Concepto 415: cálculo automático sobre no remunerativos`
+**Notion:** `TIN-944` — `[SUELDOS] Concepto 415: cálculo automático sobre no remunerativos`
 
 **Descripción:** Crear el concepto 415 (presentismo / asignación complementaria no remunerativa) que calcule automáticamente un porcentaje configurable (ej: 8,33%) sobre la suma de los conceptos no remunerativos 411 al 414. Replicar la lógica de la asignación complementaria remunerativa. El monto resultante debe poder editarse manualmente.
 
@@ -38,7 +43,7 @@ Estos ítems ya fueron corregidos antes de esta sesión.
 
 ### 2. Obra social en media jornada: calcular sobre base de jornada completa
 
-**Notion:** `[SUELDOS] Obra social en media jornada: calcular sobre base de jornada completa`
+**Notion:** `TIN-945` — `[SUELDOS] Obra social en media jornada: calcular sobre base de jornada completa`
 
 **Descripción:** Los aportes de obra social deben calcularse siempre sobre la base de jornada completa, independientemente de si el empleado trabaja media jornada o jornada reducida. Si el sueldo básico se liquida al 50%, la obra social igualmente debe descontarse como si la base fuera el 100%.
 
@@ -66,12 +71,13 @@ Estos ítems ya fueron corregidos antes de esta sesión.
 - Conceptos SOS 203, 204, 221, 222 actualizados a `baseColumna: 'os_base'` en seed y DB.
 
 - [x] Resuelto — sesión 2026-06-24
+- [~] Corrección — sesión 2026-06-26 (TIN-945)
 
 ---
 
 ### 3. SAC proporcional: cálculo por días trabajados en el semestre
 
-**Notion:** `[SUELDOS] SAC proporcional: cálculo por días trabajados en el semestre`
+**Notion:** `TIN-949` — `[SUELDOS] SAC proporcional: cálculo por días trabajados en el semestre`
 
 **Descripción:** Para empleados que no trabajaron todo el semestre: tomar la mejor remuneración del período trabajado, dividirla por 360 y multiplicarla por los días trabajados. Primera iteración: el usuario ingresa la cantidad de días y el sistema calcula el monto. Etapa futura: calcular los días automáticamente.
 
@@ -96,7 +102,7 @@ Estos ítems ya fueron corregidos antes de esta sesión.
 
 ### 4. Cálculo automático de vacaciones y SAC sobre vacaciones
 
-**Notion:** `[SUELDOS] Cálculo automático de vacaciones y SAC sobre vacaciones`
+**Notion:** `TIN-950` — `[SUELDOS] Cálculo automático de vacaciones y SAC sobre vacaciones`
 
 **Descripción:** Vacaciones normales: tomar sueldo básico de escala mensual, dividir por 25 y multiplicar por los días según antigüedad. El sistema determina los días automáticamente por rangos. SAC sobre vacaciones: monto de vacaciones dividido 12. Incluye vacaciones no gozadas con la misma lógica base.
 
@@ -110,25 +116,48 @@ Estos ítems ya fueron corregidos antes de esta sesión.
 
 **Archivos involucrados:** `src/lib/payroll-formula.ts`, `src/actions/sueldos.ts`, `src/components/sueldos/SueldosSimulador.tsx`.
 
-**Puntos a clarificar antes de implementar:**
+**Decisiones acordadas — reunión 2026-06-26:**
 
-1. **CCTs activos y tabla de días** — ¿Todos los convenios del sistema usan la tabla estándar de ley 20.744 (hasta 5 años → 14 días, 5–10 → 21, 10–20 → 28, más de 20 → 35)? ¿Algún CCT tiene tabla propia?
+> ⚠️ Estas decisiones se tomaron en una conversación preliminar y pueden requerir revisión antes de dar el ticket por cerrado.
 
-2. **Flujo actual de carga** — ¿Hoy el usuario abre un recibo de tipo `vacaciones` manualmente y carga el monto a mano? ¿O hay algún flujo de generación asistida (similar al diálogo del SAC)?
+1. **Días de vacaciones** — No se calculan automáticamente. El usuario ingresa manualmente la cantidad de días (ya los conoce). El sistema solo calcula el monto.
 
-3. **Vacaciones no gozadas** — ¿El sistema también necesita calcular vacaciones no gozadas (típicamente al liquidar una desvinculación)? ¿Es el mismo cálculo base o tiene diferencias?
+2. **Concepto 51 — Vacaciones gozadas** — Va en el recibo común de sueldo. Fórmula: `basicoEscala / 25 × días`. El usuario ingresa los días en el campo `cantidad`. Se implementa con nuevo `baseColumna = 'basico_div25'` en la cascada.
 
-4. **SAC sobre vacaciones** — ¿Va como un concepto dentro del mismo recibo de vacaciones, o se genera como un recibo separado de tipo `SAC`?
+3. **Concepto 401 — Vacaciones no gozadas** — Va en el recibo común (ej. liquidación final). Fórmula: `mejorSueldo (rem + no-rem del semestre) / 25 × días`. Mismo criterio de "mejor sueldo" que el SAC. Se implementa con nuevo `baseColumna = 'mejor_div25'`. El `mejorSueldo` se pre-calcula en `getReciboDetalle` (misma lógica que `getSacPreview`).
 
-5. **Base de cálculo** — ¿La base es siempre el básico de escala del período / 25? ¿O puede ser el mejor sueldo del semestre u otra referencia según el convenio o la situación?
+4. **Concepto 402 — SAC sobre vacaciones no gozadas** — Derivado del 401: `monto401 / 12`. Se implementa referenciando el monto del concepto 401 via `importeConceptoNumero = '401'` con porcentaje pre-seteado en `8.33` (= 100/12). El usuario no necesita cargar nada.
 
-- [ ] Pendiente — clarificar los puntos anteriores antes de implementar
+5. **SAC sobre vacaciones gozadas** — No mencionado explícitamente. Pendiente confirmar si aplica y si es `monto51 / 12`.
+
+**Plan de implementación:**
+
+1. Agregar `baseColumna = 'basico_div25'` a la cascada en `TablaReciboSos.tsx` (y al type en el seed)
+2. Agregar `baseColumna = 'mejor_div25'` a la cascada — requiere que `mejorSueldoSemestre` esté disponible como variable adicional
+3. En `getReciboDetalle` (`src/actions/sueldos.ts`), calcular `mejorSueldoSemestre` por empleado (reutilizando la query de `getSacPreview`) y devolverlo en la respuesta
+4. En `SueldosRecibo.tsx`, pasar `mejorSueldoSemestre` a `TablaReciboSos` como prop
+5. Actualizar el seed de conceptos SOS: concepto 51 → `basico_div25`, concepto 401 → `mejor_div25`, concepto 402 → `tieneImpConceptoNro = true` + ref '401' + pct 8.33
+
+**Archivos involucrados:** `src/actions/sueldos.ts`, `src/components/sueldos/TablaReciboSos.tsx`, `src/components/sueldos/SueldosRecibo.tsx`, `src/scripts/seed-conceptos-sos-catalog.ts`.
+
+**Implementación (sesión 2026-06-26):**
+
+- Nuevos `baseColumna` en la cascada (`TablaReciboSos.tsx`):
+  - `'basico_div25'` → `basicoEscala / 25 × cantidad`
+  - `'mejor_div25'` → `mejorSueldoSemestre / 25 × cantidad`
+  - `'concepto_401_div12'` → `monto concepto 401 / 12` (sin input del usuario)
+- `applySubtotalCascade` recibe nuevo parámetro `mejorSueldo = 0`; se propaga via `mejorSueldoRef` en todos los call sites.
+- `getUltimoReciboImportado` (`src/actions/sueldos.ts`): calcula `mejorSueldoSemestre` consultando los recibos tipo `'sueldo'` del semestre del período del recibo y devolviendo el max `haberes + noRemunerativo`.
+- `SueldosSimulador.tsx`: pasa `mejorSueldoSemestre` a ambas instancias de `TablaReciboSos` (importada y manual).
+- Seed actualizado: concepto 51 → `basico_div25` + `tieneCantidad`, concepto 401 → `mejor_div25` + `tieneCantidad`, concepto 402 → `concepto_401_div12`. Corrido: 231 actualizados.
+
+- [x] Resuelto — sesión 2026-06-26
 
 ---
 
 ### 5. Automatización del SAC normal (mejor sueldo semestre / 2)
 
-**Notion:** `[SUELDOS] Automatización del SAC normal (mejor sueldo semestre / 2)`
+**Notion:** `TIN-947` — `[SUELDOS] Automatización del SAC normal (mejor sueldo semestre / 2)`
 
 **Descripción:** El sistema debe calcular automáticamente el SAC normal buscando el mejor recibo de los últimos seis meses (suma de haberes remunerativos y no remunerativos) y dividiéndolo por dos. El monto calculado debe poder editarse manualmente.
 
@@ -163,11 +192,31 @@ El SAC no se crea manualmente — se genera automáticamente cuando el usuario g
 
 - [x] Resuelto — sesión 2026-06-24
 
+**Revisión — reunión 2026-06-26:**
+
+Se definieron las siguientes correcciones:
+
+1. **Concepto 41 vs 42:**
+   - SOS 41 → SAC semestre completo: `mejor sueldo del semestre / 2`
+   - SOS 42 → SAC proporcional: `mejor sueldo del semestre / 360 × días trabajados`
+   - La implementación actual usa SOS 41 en ambos casos. Debe diferenciarse: usar 42 cuando los días < 180.
+
+2. **Base de cálculo del "mejor sueldo":**
+   - Debe incluir haberes remunerativos + no remunerativos, sin descontar retenciones.
+   - Verificar que `getSacPreview` use `haberes + noRemunerativo` (bruto, no neto).
+
+3. **Retenciones en el recibo de SAC:**
+   - Al recibo SAC le faltan retenciones. Deben incluirse: 201, 202, 203, 206, 207.
+   - El sindicato queda al 0,5%.
+   - Verificar que esos conceptos estén activos en el recibo SAC y que el cascade los calcule.
+
+- [x] Corrección aplicada — sesión 2026-06-26 (TIN-947)
+
 ---
 
 ### 6. Campos calculados siempre editables manualmente
 
-**Notion:** `[SUELDOS] Campos calculados siempre editables manualmente`
+**Notion:** `TIN-948` — `[SUELDOS] Campos calculados siempre editables manualmente`
 
 **Descripción:** Todos los conceptos calculados automáticamente (antigüedad, SAC, obra social, etc.) deben permitir ser sobreescritos manualmente. Garantizar que ningún campo quede bloqueado solo por tener un cálculo automático asociado.
 
@@ -192,7 +241,7 @@ El SAC no se crea manualmente — se genera automáticamente cuando el usuario g
 
 ### 7. LSD/F.931: remuneraciones 4, 8 y 9 diferenciadas para media jornada
 
-**Notion:** `[SUELDOS] LSD/F.931: remuneraciones 4, 8 y 9 diferenciadas para media jornada`
+**Notion:** `TIN-952` — `[SUELDOS] LSD/F.931: remuneraciones 4, 8 y 9 diferenciadas para media jornada`
 
 **Descripción:** En jornada completa, las remuneraciones 4, 8 y 9 del F.931 coinciden con la suma de haberes. En media jornada, las remuneraciones 4 y 8 deben informarse con la base al 100% (jornada completa), mientras que la 9 debe reflejar la remuneración real liquidada.
 
@@ -209,20 +258,33 @@ El SAC no se crea manualmente — se genera automáticamente cuando el usuario g
 - `rem4y8Base` (bases 4 y 8 del F.931 = OS) usa ese básico en centavos. `rem9Base` (base 9 = ART) sigue usando bruta real.
 - `rem4y8Override` manual sigue teniendo prioridad cuando está seteado.
 
+**Corrección (sesión 2026-06-26):**
+- Se identificó que `tipoJornada` no es un campo confiable ni relevante en este contexto: el sistema de SOS no lo usa, y cada recibo ya refleja la jornada real mediante el porcentaje/cantidad del concepto 1.
+- **Nueva regla para rem4y8**: `max(basicoEscala, brutoCentavos)`. Esto cubre ambos casos sin depender de `tipoJornada`:
+  - Empleado full-time: `bruto > basicoEscala` (incluye antigüedad, presentismo, etc.) → `rem4y8 = rem9 = bruto` ✓
+  - Jornada reducida: `basicoEscala > bruto` (liquida al X%) → `rem4y8 = basicoEscala`, `rem9 = bruto` ✓
+  - Sin categoría/escala: `basicoEscala = 0` → `rem4y8 = rem9 = bruto` (sin cambio) ✓
+- El paso 4.5 de `generarArchivoLsd` ahora busca escala para **todos** los empleados con `categoriaId` (no solo `part_time`/`reducida`).
+- `previewLsd`: se agregan `haberes`, `noRemunerativo`, `categoriaId` al select (se quitó `tipoJornada`). Se calcula `rem4y8Sugerido = max(basicoEscala, rem9Sugerido)`.
+- `LsdOverridesDialog` en `SueldosCargas.tsx`: el estado de `rem4y8` y `rem9` se pre-carga con `override ?? sugerido` en lugar de `override ?? ''`.
+
 - [x] Resuelto — sesión 2026-06-24 (junto con ítem 2)
+- [x] Corrección lógica + pre-carga en UI — sesión 2026-06-26
 
 ---
 
 ## Resumen y orden de ejecución sugerido
 
-| # | Ítem | Complejidad | Estado | Depende de |
-|---|------|-------------|--------|------------|
-| 1 | Concepto 415 | Baja | **Resuelto** | — |
-| 5 | SAC normal automático | Media | **Resuelto** | — |
-| 2 + 7 | Media jornada (OS + LSD) | Alta | **Resuelto** | — |
-| 3 | SAC proporcional | Media | **Resuelto** | Ítem 5 |
-| 4 | Vacaciones + SAC vacaciones | Alta | Pendiente | Clarificar rangos CCT |
-| 6 | Campos calculados editables | Baja-Media | **Resuelto** | — |
+| Ticket | # | Ítem | Complejidad | Estado | Corrección |
+|--------|---|------|-------------|--------|------------|
+| TIN-943 | 0 | Concepto 211: importe como base de cálculo | Baja | **Resuelto** | 2026-06-26 |
+| TIN-944 | 1 | Concepto 415 | Baja | **Resuelto** | — |
+| TIN-945 | 2 | Obra social en media jornada | Alta | **Resuelto** | 2026-06-26 |
+| TIN-947 | 5 | SAC normal automático | Media | **Corrección aplicada** | 2026-06-26 |
+| TIN-948 | 6 | Campos calculados editables | Baja-Media | **Resuelto** | — |
+| TIN-949 | 3 | SAC proporcional | Media | **Resuelto** | 2026-06-26 |
+| TIN-950 | 4 | Vacaciones + SAC vacaciones | Alta | **Resuelto** | 2026-06-26 |
+| TIN-952 | 7 | Remuneraciones 4, 8 y 9 (LSD media jornada) | Alta | **Resuelto** | 2026-06-26 |
 
 ---
 
