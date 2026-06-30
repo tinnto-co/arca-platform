@@ -15,6 +15,12 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import {
@@ -41,7 +47,7 @@ import {
   classifyNotification,
   classifyUnclassifiedNotifications,
 } from '@/actions/notification';
-import { getRepresentatives, getRepresentativeClients } from '@/actions/client';
+import { getRepresentatives } from '@/actions/client';
 import { listOrgModules } from '@/actions/admin';
 import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
 import { cn } from '@/lib/utils';
@@ -105,6 +111,8 @@ interface NotificationData {
 interface NotificationsViewProps {
   /** When set, only show notifications for this client and hide client filter */
   clientId?: string;
+  /** When set (junto con clientId), pre-filtra por este perfil. El usuario puede sobreescribirlo. */
+  profileId?: string;
   /** When set, opens this notification on mount (used via ?notificationId= query param) */
   initialNotificationId?: string;
   /** Optional toolbar (e.g. "Actualizar" button + last update) rendered above the list/detail */
@@ -115,6 +123,7 @@ interface NotificationsViewProps {
 
 export function NotificationsView({
   clientId: clientIdProp,
+  profileId: profileIdProp,
   initialNotificationId,
   toolbar,
   className,
@@ -151,26 +160,18 @@ export function NotificationsView({
     enabled: !clientIdProp,
   });
 
-  // Clients of the representative (only when scoped to a single representative)
-  const { data: representativeClients = [], isLoading: loadingRepresentativeClients } = useQuery({
-    queryKey: ['representativeClients', clientIdProp],
-    queryFn: () =>
-      getRepresentativeClients({
-        data: { representativeId: clientIdProp! },
-      }),
-    enabled: !!clientIdProp,
-  });
-
   const effectiveClientFilter = clientIdProp ?? clientFilter;
   const effectiveProfileFilter =
     clientIdProp && profileFilter !== 'all' ? profileFilter : undefined;
 
-  // Reset filtros cuando cambia el cliente (por si se reusa el componente)
+  // Pre-filtrar por el perfil elegido en el header. Si no hay perfil del header
+  // (cambio de cliente sin perfil), volver a "todos". El usuario puede sobreescribir
+  // el filtro con el select interno hasta que el header vuelva a cambiar.
   useEffect(() => {
     if (clientIdProp) {
-      setProfileFilter('all');
+      setProfileFilter(profileIdProp ?? 'all');
     }
-  }, [clientIdProp]);
+  }, [clientIdProp, profileIdProp]);
 
   // Get notifications
   const { data: notificationsData, isLoading } = useQuery({
@@ -200,9 +201,9 @@ export function NotificationsView({
         data: {
           page: 1,
           limit: 100,
-          clientFilter:
+          representativeFilter:
             effectiveClientFilter === 'all' ? undefined : effectiveClientFilter,
-          profileId: effectiveProfileFilter,
+          clientId: effectiveProfileFilter,
           search: searchTerm || undefined,
           category: categoryFilter === 'all' ? undefined : categoryFilter,
           onlyUnresolved: onlyUnresolved || undefined,
@@ -226,8 +227,10 @@ export function NotificationsView({
   const invalidateNotificationQueries = () => {
     queryClient.invalidateQueries({ queryKey: ['notifications'] });
     if (clientIdProp) {
+      // La key real es ['clientNotifications', orgKey, clientIdProp, ...]:
+      // invalidamos por el prefijo correcto para que la lista se refresque.
       queryClient.invalidateQueries({
-        queryKey: ['clientNotifications', clientIdProp],
+        queryKey: ['clientNotifications', orgKey, clientIdProp],
       });
     }
     if (selectedNotificationId) {
@@ -477,27 +480,35 @@ export function NotificationsView({
                   className="pl-10"
                 />
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => markAllReadMutation.mutate()}
-                disabled={markAllReadMutation.isPending}
-                title="Marcar todas como leídas"
-              >
-                <CheckCheck className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => classifyAllMutation.mutate()}
-                disabled={classifyAllMutation.isPending}
-                title="Clasificar pendientes con IA"
-              >
-                <Sparkles className="h-4 w-4" />
-                {classifyAllMutation.isPending ? '…' : null}
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => markAllReadMutation.mutate()}
+                    disabled={markAllReadMutation.isPending}
+                  >
+                    <CheckCheck className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Marcar todas como leídas</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => classifyAllMutation.mutate()}
+                    disabled={classifyAllMutation.isPending}
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    {classifyAllMutation.isPending ? '…' : null}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Clasificar pendientes con IA</TooltipContent>
+              </Tooltip>
             </div>
-            {!clientIdProp ? (
+            {!clientIdProp && (
               <SearchableSelect
                 options={[
                   { value: 'all', label: 'Todos los clientes' },
@@ -508,22 +519,6 @@ export function NotificationsView({
                 placeholder="Filtrar por cliente"
                 searchPlaceholder="Buscar cliente..."
                 width="100%"
-              />
-            ) : (
-              <SearchableSelect
-                options={[
-                  { value: 'all', label: 'Todos los perfiles' },
-                  ...representativeClients.map((p: any) => ({
-                    value: p.id,
-                    label: p.name || p.identityNumber || p.id,
-                  })),
-                ]}
-                value={profileFilter}
-                onValueChange={setProfileFilter}
-                placeholder="Filtrar por perfil"
-                searchPlaceholder="Buscar perfil..."
-                width="100%"
-                disabled={loadingRepresentativeClients || representativeClients.length === 0}
               />
             )}
             <SearchableSelect
@@ -543,17 +538,13 @@ export function NotificationsView({
               searchPlaceholder="Buscar categoría..."
               width="100%"
             />
-            <button
-              onClick={() => setOnlyUnresolved((v) => !v)}
-              className={cn(
-                'text-xs px-3 py-1.5 rounded border transition-colors w-full text-left',
-                onlyUnresolved
-                  ? 'bg-primary text-primary-foreground border-primary'
-                  : 'bg-background text-muted-foreground border-border hover:bg-muted'
-              )}
-            >
-              Solo sin resolver
-            </button>
+            <label className="flex items-center justify-between gap-2 px-3 py-[7px] rounded-[var(--arca-r-md)] text-[13px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink)] hover:bg-[var(--arca-surface-2)] transition-colors duration-[120ms] cursor-pointer">
+              <span>Ocultar notificaciones resueltas</span>
+              <Switch
+                checked={onlyUnresolved}
+                onCheckedChange={setOnlyUnresolved}
+              />
+            </label>
           </div>
 
           {/* Notifications List */}
@@ -605,7 +596,10 @@ export function NotificationsView({
                                 ? notification.profileName ||
                                   notification.profileIdentityNumber ||
                                   'Sin perfil'
-                                : notification.clientName || 'Sin cliente'}
+                                : notification.profileName ||
+                                  notification.profileIdentityNumber ||
+                                  notification.clientName ||
+                                  'Sin cliente'}
                             </p>
                             <SeverityBadge
                               severity={(notification as any).severity ?? null}
@@ -626,28 +620,33 @@ export function NotificationsView({
                             </span>
                           </div>
                         </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (notification.opened) {
-                              markUnreadMutation.mutate(notification.id);
-                            } else {
-                              markOpenedMutation.mutate(notification.id);
-                            }
-                          }}
-                          className="shrink-0 p-1 rounded hover:bg-muted transition-colors"
-                          title={
-                            notification.opened
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (notification.opened) {
+                                  markUnreadMutation.mutate(notification.id);
+                                } else {
+                                  markOpenedMutation.mutate(notification.id);
+                                }
+                              }}
+                              className="shrink-0 cursor-pointer p-1 rounded text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                            >
+                              {notification.opened ? (
+                                <MailOpen className="h-3.5 w-3.5" />
+                              ) : (
+                                <Mail className="h-3.5 w-3.5" />
+                              )}
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {notification.opened
                               ? 'Marcar como no leída'
-                              : 'Marcar como leída'
-                          }
-                        >
-                          {notification.opened ? (
-                            <Mail className="h-3.5 w-3.5 text-muted-foreground" />
-                          ) : (
-                            <MailOpen className="h-3.5 w-3.5 text-muted-foreground" />
-                          )}
-                        </button>
+                              : 'Marcar como leída'}
+                          </TooltipContent>
+                        </Tooltip>
                       </div>
                     </div>
                   ))}
@@ -667,8 +666,17 @@ export function NotificationsView({
                   <div className="flex-1">
                     <div className="items-center gap-2 mb-2">
                       <h2 className="text-xl font-semibold">
-                        {selectedNotification.clientName || 'Sin cliente'}
+                        {(selectedNotification as any).profileName ||
+                          (selectedNotification as any).profileIdentityNumber ||
+                          selectedNotification.clientName ||
+                          'Sin cliente'}
                       </h2>
+                      {(selectedNotification as any).profileName &&
+                        selectedNotification.clientName && (
+                          <p className="text-xs text-muted-foreground">
+                            {selectedNotification.clientName}
+                          </p>
+                        )}
                       <span className="font-light text-muted-foreground text-xs">
                         ID Externo: {selectedNotification.externalId}
                       </span>

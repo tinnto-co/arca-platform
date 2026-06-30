@@ -2,6 +2,34 @@
 
 import { useFrontendTool } from '@copilotkit/react-core';
 import { useNavigate } from '@tanstack/react-router';
+import { Loader2, ArrowUpRight } from 'lucide-react';
+
+/** Render compacto para las tools de navegación: evita el bloque gigante por defecto de CopilotKit. */
+function NavToolStatus({
+  status,
+  result,
+}: {
+  status: string;
+  result?: unknown;
+}) {
+  const done = status === 'complete';
+  const text =
+    typeof result === 'string' && result.length > 0
+      ? result
+      : done
+        ? 'Listo'
+        : 'Navegando…';
+  return (
+    <div className="inline-flex items-center gap-1.5 rounded-md border bg-muted/30 px-2.5 py-1 text-xs text-muted-foreground">
+      {done ? (
+        <ArrowUpRight className="h-3.5 w-3.5 shrink-0" />
+      ) : (
+        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+      )}
+      <span>{text}</span>
+    </div>
+  );
+}
 
 const CLIENT_DETAIL_TABS = [
   'resumen',
@@ -44,19 +72,28 @@ export function FrontendTools() {
   useFrontendTool({
     name: 'abrirCliente',
     description:
-      'Abrí la página de detalle de un cliente (sin recargar). Si el usuario menciona el cliente por nombre (incluso parcial o con tipeo distinto, ej: "e-presis" o "epresis sa"), buscá el `clientId` en el readable global "Lista global de clientes" haciendo fuzzy match (case-insensitive, ignorá guiones/espacios extras). Si hay coincidencia única, invocá esta tool con ese `clientId`. Si hay varias, ofrecé al usuario que elija. NO le pidas el UUID al usuario, ya tenés la lista. NUNCA inventes un UUID. Opcionalmente pasá `tab` para abrir directo en esa pestaña.',
+      'Abrí la página de detalle de un cliente (sin recargar). El `clientId` es el REPRESENTANTE; `empresaId` (opcional) es la entidad fiscal específica dentro de él. Resolvé ambos desde el readable global "Lista global de clientes" según su regla (preferí SIEMPRE la EMPRESA específica: pasá clientId + empresaId; usá solo clientId si ninguna empresa coincide). ' +
+      'IMPORTANTE: si el usuario menciona una SECCIÓN/módulo, pasá SIEMPRE el `tab` correspondiente. Mapeo: "facturación"/"facturas"/"comprobantes"→facturas, "deudas"→deudas, "vencimientos"→vencimientos, "notificaciones"→notificaciones, "iva"→iva, "convenio"/"multilateral"→convenio-multilateral, "resumen"/"overview"→resumen. ' +
+      'NO le pidas UUIDs al usuario. NUNCA inventes un UUID.',
     parameters: [
       {
         name: 'clientId',
         type: 'string',
         description:
-          'UUID del cliente. Obtenelo del contexto del listado o del cliente activo. Nunca inventes un UUID.',
+          'UUID del REPRESENTANTE (agrupador). Campo `clientId` del readable. Nunca inventes un UUID.',
         required: true,
+      },
+      {
+        name: 'empresaId',
+        type: 'string',
+        description:
+          'UUID de la EMPRESA/entidad fiscal específica dentro del representante (campo `empresas[].empresaId` del readable). Pasalo cuando el usuario menciona una empresa puntual para que quede preseleccionada en el header. Omitilo si solo se menciona al representante en general. Nunca inventes un UUID.',
+        required: false,
       },
       {
         name: 'clientName',
         type: 'string',
-        description: 'Nombre del cliente, sólo para mostrar feedback.',
+        description: 'Nombre del cliente/empresa, sólo para mostrar feedback.',
         required: false,
       },
       {
@@ -68,23 +105,33 @@ export function FrontendTools() {
         required: false,
       },
     ],
-    handler: ({ clientId, clientName, tab }) => {
+    handler: ({ clientId, empresaId, clientName, tab }) => {
       if (!clientId || !UUID_LIKE.test(clientId)) {
         return 'Falta un clientId válido. Obtenelo del contexto del listado de clientes.';
       }
       const tabStr = tab ? String(tab) : undefined;
       const validTab =
         tabStr && isClientDetailTab(tabStr) ? tabStr : undefined;
+      const empresa =
+        empresaId && UUID_LIKE.test(String(empresaId))
+          ? String(empresaId)
+          : undefined;
       void navigate({
         to: '/clients/$clientId',
         params: { clientId },
-        search: validTab ? { tab: validTab } : {},
+        search: {
+          ...(validTab ? { tab: validTab } : {}),
+          ...(empresa ? { client: empresa } : {}),
+        },
       });
       const name = clientName ? `"${String(clientName)}"` : 'el cliente';
       return validTab
         ? `Abierto ${name} en la pestaña "${validTab}".`
         : `Abierto ${name}.`;
     },
+    render: ({ status, result }) => (
+      <NavToolStatus status={status} result={result} />
+    ),
   });
 
   useFrontendTool({
@@ -130,6 +177,9 @@ export function FrontendTools() {
         ? `Abiertos los sueldos de ${name} en la pestaña "${validTab}".`
         : `Abiertos los sueldos de ${name}.`;
     },
+    render: ({ status, result }) => (
+      <NavToolStatus status={status} result={result} />
+    ),
   });
 
   useFrontendTool({
@@ -165,6 +215,9 @@ export function FrontendTools() {
       });
       return `Pestaña cambiada a "${tabStr}".`;
     },
+    render: ({ status, result }) => (
+      <NavToolStatus status={status} result={result} />
+    ),
   });
 
   useFrontendTool({
@@ -200,6 +253,9 @@ export function FrontendTools() {
       });
       return `Pestaña de Sueldos cambiada a "${tabStr}".`;
     },
+    render: ({ status, result }) => (
+      <NavToolStatus status={status} result={result} />
+    ),
   });
 
   return null;

@@ -41,6 +41,19 @@ function RouteComponent() {
     });
   };
 
+  // Perfil (client) elegido en el header → query param ?client= de la URL.
+  const onProfileChange = (profileId: string | undefined) => {
+    void navigate({
+      to: '/clients/$clientId',
+      params: { clientId },
+      search: {
+        tab: activeTab === 'resumen' ? undefined : (activeTab as never),
+        client: profileId,
+      },
+      replace: true,
+    });
+  };
+
   return (
     <>
       <RepresentativeDetailPage
@@ -48,6 +61,7 @@ function RouteComponent() {
         initialClientId={search.client}
         activeTab={activeTab}
         onTabChange={onTabChange}
+        onProfileChange={onProfileChange}
       />
       <Outlet />
     </>
