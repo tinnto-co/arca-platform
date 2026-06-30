@@ -43,6 +43,7 @@ function RouteComponent() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [editReciboData, setEditReciboData] = useState<
     | {
+      reciboId: string;
       importEmpleadoId: string;
       empleadoNombre: string;
       periodo: string;
