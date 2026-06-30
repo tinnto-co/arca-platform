@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { getClient } from '@/actions/profile';
 import { toTitleCase } from '@/lib/format-name';
 import { getInvoiceStatsByProfile } from '@/actions/invoice';
+import { listOrgModules } from '@/actions/admin';
+import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
 import { InvoicesTable } from '@/components/invoices-table';
 import {
   ChartContainer,
@@ -68,6 +70,13 @@ export function ClientDetailView({
     queryKey: ['clientStats', clientId],
     queryFn: () => getInvoiceStatsByProfile({ data: { profileId: clientId } }),
   });
+
+  const { data: orgModules = [] } = useQuery({
+    queryKey: ['orgModules'],
+    queryFn: () => listOrgModules(),
+  });
+  const aiAgentEnabled =
+    orgModules.find((m) => m.module === 'ai_agent')?.enabled ?? false;
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -160,6 +169,18 @@ export function ClientDetailView({
 
   return (
     <div className="space-y-4 p-4 md:space-y-6 md:p-0 md:m-[3rem]">
+      {aiAgentEnabled && (
+        <CopilotReadableEntity
+          description="Profile fiscal actualmente visible en pantalla"
+          value={{
+            id: profile.id,
+            name: profile.name,
+            identityNumber: profile.identityNumber,
+            clientId: profile.clientId,
+            status: profile.status,
+          }}
+        />
+      )}
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 min-w-0">

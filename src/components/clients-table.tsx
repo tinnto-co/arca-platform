@@ -35,7 +35,9 @@ import {
   deleteRepresentative,
   scrapSingleJob,
 } from '@/actions/client';
+import { listOrgModules } from '@/actions/admin';
 import { EditRepresentativeDialog } from '@/components/edit-client-dialog';
+import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
 import { relativeTime } from '@/components/dashboard/shared';
 import { toTitleCase } from '@/lib/format-name';
 
@@ -47,6 +49,8 @@ interface ClientRow {
   representativeId: string | null;
   representativeName: string | null;
   createdAt: string | Date;
+  hasErrors?: boolean;
+  errorMessage?: string | null;
 }
 
 export function RepresentativesTable() {
@@ -76,6 +80,23 @@ export function RepresentativesTable() {
         );
       })
     : allClients;
+
+  const { data: orgModules = [] } = useQuery({
+    queryKey: ['orgModules'],
+    queryFn: () => listOrgModules(),
+  });
+  const aiAgentEnabled =
+    orgModules.find((m) => m.module === 'ai_agent')?.enabled ?? false;
+
+  const clientsTyped = clients as ClientRow[];
+  const clientsConErrores = clientsTyped.filter((c) => c.hasErrors === true);
+  const clientesResumen = clientsTyped.slice(0, 30).map((c) => ({
+    id: c.id,
+    name: c.name,
+    cuit: c.identityNumber,
+    hasErrors: c.hasErrors === true,
+    errorMessage: c.errorMessage ?? null,
+  }));
 
 
   const deleteMutation = useMutation({
@@ -205,6 +226,20 @@ export function RepresentativesTable() {
 
   return (
     <>
+      {aiAgentEnabled && (
+        <CopilotReadableEntity
+          description="Listado de clientes visible en pantalla. clientesResumen incluye los primeros 30 con id/CUIT — usá el id para referenciar un cliente al invocar acciones."
+          value={{
+            modulo: 'clientes',
+            vista: 'lista',
+            totalClientes: clientsTyped.length,
+            clientesConErrores: clientsConErrores.length,
+            clientesSinErrores:
+              clientsTyped.length - clientsConErrores.length,
+            clientesResumen,
+          }}
+        />
+      )}
       <DataTable
         columns={columns}
         data={clients as ClientRow[]}
