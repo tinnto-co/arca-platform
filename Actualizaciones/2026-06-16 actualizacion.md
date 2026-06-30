@@ -164,6 +164,69 @@ Se revisó y documentó el comportamiento del tope máximo imponible en relació
 
 ---
 
+## 4bis) Deploy a producción ✅
+
+### Migración de schema
+- Se generó `drizzle/0002_pink_living_tribunal.sql` con la tabla `payroll_lsd_presentacion` (registro de presentaciones LSD generadas).
+- Se eliminaron del archivo las líneas con timestamp hardcodeado que Drizzle generó incorrectamente para `debt` y `due_date`.
+- Migración aplicada en producción con `MIGRATION_URL=prod bun run db:migrate` — sin tocar el `.env` local.
+
+### Sincronización de datos local → producción
+- Se ejecutó el script `sync-local-to-prod.ts` que hace upsert tabla por tabla respetando el orden de FKs.
+- 19 tablas sincronizadas en total:
+
+| Tablas | Filas |
+|---|---|
+| Catálogos AFIP (situaciones, condiciones, modalidades, actividades, zonas, provincias, localidades, siniestros) | ~800 |
+| Obras sociales | 563 |
+| Tipos de empresa | 8 |
+| Convenios (`payroll_convenio`) | 64 |
+| Categorías de convenio | 1.793 |
+| Escalas salariales | 7.117 |
+| Conceptos SOS (`payroll_concepto`) | 37 |
+| Perfil LSD (`lsd_perfil_concepto`) | 716 |
+| Parámetros de período (topes) | 6 |
+| Empleados | 241 |
+| Recibos | 19 |
+| Líneas de concepto en recibos | 234 |
+
+- El script usa `ON CONFLICT (...) DO UPDATE SET` con el conflict target correcto por tabla (no siempre es `id` — algunas tablas usan `codigo` o claves compuestas como `(client_id, cuil)`).
+
+---
+
+## 5quater) Corrección de mappings `codigo_sos` en catálogos AFIP ✅
+
+### Problema detectado
+
+Los campos `codigo_sos` de las tablas de catálogo (`payroll_situacion`, `payroll_condicion`, `payroll_actividad`) tenían asignaciones incorrectas — los IDs de SOS Contador estaban desplazados o intercambiados, causando que el sistema enviara códigos erróneos a SOS al crear/actualizar empleados.
+
+Ejemplos del error:
+- AFIP "09" (Suspendido art.223bis) tenía asignado SOS `1081` = *"Licencia por vacaciones"*
+- AFIP "05" (Licencia por maternidad) tenía asignado SOS `3260` = *"Empleado Eventual en Empresa Usuaria"*
+- AFIP actividad "909" (Fuerza de seguridad sin ART) tenía asignado SOS `10048` = *"Servicios energéticos Empr del Estado"*
+
+### Solución
+
+Script `fix-codigo-sos-mappings.ts` (ejecutado y eliminado):
+
+1. **`payroll_situacion`**: Reset completo + reasignación correcta de los 26 códigos. Los 6 que estaban en NULL quedaron correctamente mapeados.
+2. **`payroll_condicion`**: Reset completo + reasignación correcta de los 13 códigos con equivalente SOS. AFIP "00" queda NULL (sin equivalente único en SOS).
+3. **`payroll_actividad`**:
+   - Códigos 909–913 corregidos a sus SOS IDs correctos (10071–10075).
+   - Código 914 (Bombero voluntario PBA) desvinculado — no tiene equivalente SOS.
+   - Códigos 107–112 (Servicios Energéticos) mapeados a SOS 10048–10053 (liberados por la corrección anterior).
+
+### Estado final de mappings
+
+| Tabla | NULL restantes | Motivo |
+|---|---|---|
+| `payroll_situacion` | 0 | Todos los 26 códigos mapeados |
+| `payroll_condicion` | 1 (AFIP "00") | Sin equivalente SOS único |
+| `payroll_actividad` | 50 | Códigos 040–099 range: SOS usa spec AFIP antigua con descripciones distintas; 914 sin equivalente |
+| `payroll_modalidad_contratacion` | 7 | Códigos sin equivalente SOS (010, 059, 060, 102, 103, 982, 983) |
+
+---
+
 ## 6) Archivos principales involucrados
 
 - `src/scripts/seed-pasteleria-272-escalas.ts`

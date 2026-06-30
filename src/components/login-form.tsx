@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { authClient } from '@/lib/auth-client';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { getPortalSession } from '@/actions/client-portal';
 
 export function LoginForm({ className }: React.ComponentProps<'div'>) {
   const searchParams = useSearch({ from: '/login' });
@@ -76,6 +77,13 @@ export function LoginForm({ className }: React.ComponentProps<'div'>) {
         throw new Error(
           result.error.message || 'Hubo un error al iniciar sesion'
         );
+      }
+
+      // Detect portal users (no org membership) and redirect to their portal
+      const portalSession = await getPortalSession().catch(() => null);
+      if (portalSession) {
+        navigate({ to: '/portal' });
+        return;
       }
 
       navigate({
