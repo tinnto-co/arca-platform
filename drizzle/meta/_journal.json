@@ -22,6 +22,20 @@
       "when": 1781632908201,
       "tag": "0002_pink_living_tribunal",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1782164373454,
+      "tag": "0003_debug_diff",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1782823630559,
+      "tag": "0004_nasty_ben_parker",
+      "breakpoints": true
     }
   ]
 }
