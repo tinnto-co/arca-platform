@@ -19,7 +19,7 @@ import {
   getMemberRole,
 } from '@/actions/helpers';
 import { encrypt, safeDecrypt } from '@/lib/crypto';
-import { eq, and, inArray, desc, asc } from 'drizzle-orm';
+import { eq, and, inArray, desc, asc, or } from 'drizzle-orm';
 const JOBS_API_URL =
   process.env.SCRAPPER_JOBS_URL ||
   process.env.BACKEND_API_URL ||
@@ -298,6 +298,45 @@ export const getRepresentatives = createServerFn({
     return representatives;
   } catch (error) {
     throw new Error(`Error loading clients: ${getErrorMessage(error)}`);
+  }
+});
+
+/** Clientes con régimen local o convenio multilateral (módulo IIBB). */
+export const getRepresentativesForIIBB = createServerFn({
+  method: 'GET',
+}).handler(async () => {
+  try {
+    const { orgId } = await getSessionWithOrg();
+
+    const rows = await db
+      .select({
+        ...representativeBaseSelect,
+        clientId: client.id,
+        clientName: client.name,
+        clientIdentityNumber: client.identityNumber,
+      })
+      .from(representative)
+      .leftJoin(client, eq(client.representativeId, representative.id))
+      .where(
+        and(
+          eq(representative.organizationId, orgId),
+          or(eq(representative.convenioMultilateral, true), eq(representative.regimenLocal, true))
+        )
+      )
+      .orderBy(asc(representative.name));
+
+    const grouped = Map.groupBy(rows, (r) => r.id);
+    return [...grouped.values()].map((repRows) => {
+      const { clientId, clientName, clientIdentityNumber, ...rep } = repRows[0];
+      return {
+        ...rep,
+        clients: repRows
+          .filter((r) => r.clientId !== null)
+          .map((r) => ({ id: r.clientId!, name: r.clientName, identityNumber: r.clientIdentityNumber })),
+      };
+    });
+  } catch (error) {
+    throw new Error(`Error loading IIBB clients: ${getErrorMessage(error)}`);
   }
 });
 
