@@ -2409,11 +2409,15 @@ function AsientoEditor({
 function EntryDetailBody({
   entryId,
   canWrite,
+  readOnly,
   onAction,
   onDone,
 }: {
   entryId: string;
   canWrite: boolean;
+  /** Solo lectura: oculta las acciones (Duplicar/Anular/Editar). Se usa en el
+   * drill-down del Mayor/Balance, donde el asiento se consulta, no se edita. */
+  readOnly?: boolean;
   onAction: (action: 'edit' | 'duplicate', initial: EditorInitial) => void;
   onDone: () => void;
 }) {
@@ -2515,7 +2519,7 @@ function EntryDetailBody({
       )}
 
       {/* Acciones */}
-      {canWrite && (
+      {canWrite && !readOnly && (
         <div className="flex flex-wrap items-center gap-2 pt-0.5">
           <button
             onClick={() =>
@@ -2587,12 +2591,14 @@ function EntryDetailBody({
 function AsientoDetail({
   entryId,
   canWrite,
+  readOnly,
   onClose,
   onAction,
   onChanged,
 }: {
   entryId: string;
   canWrite: boolean;
+  readOnly?: boolean;
   onClose: () => void;
   onAction: (action: 'edit' | 'duplicate', initial: EditorInitial) => void;
   onChanged: () => void;
@@ -2634,6 +2640,7 @@ function AsientoDetail({
         <EntryDetailBody
           entryId={entryId}
           canWrite={canWrite}
+          readOnly={readOnly}
           onAction={onAction}
           onDone={() => {
             onChanged();
@@ -3084,6 +3091,7 @@ function Mayor({
         <AsientoDetail
           entryId={detailId}
           canWrite={canWrite}
+          readOnly
           onClose={() => setDetailId(null)}
           onAction={() => setDetailId(null)}
           onChanged={() => {
@@ -3572,6 +3580,7 @@ function LedgerDialog({
         <AsientoDetail
           entryId={detailId}
           canWrite={canWrite}
+          readOnly
           onClose={() => setDetailId(null)}
           onAction={() => setDetailId(null)}
           onChanged={() => {
