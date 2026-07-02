@@ -190,6 +190,8 @@ async function upsertLiquidacionEmpleadoForPayrollRow(input: {
     .values({
       clientId: input.profileId,
       cuil: input.cuil,
+      // fechaIngreso = misma que fechaAlta al crear; se puede editar luego si cambia la empresa
+      fechaIngreso: input.fechaAlta,
       ...campos,
     })
     .returning({ id: liquidacionImportEmpleado.id });
@@ -1185,7 +1187,7 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
       )
       .limit(1);
 
-    if (!emp) return { basico: 0 };
+    if (!emp) return { basico: 0, tipoJornada: 'full_time' as const, fechaAlta: null as string | null, fechaIngreso: null as string | null };
 
     const empleado = emp.liquidacion_import_empleado;
 
@@ -1208,7 +1210,9 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
     // 1° prioridad: override manual en el legajo (seteado explícitamente por el usuario)
     const override = empleado.valorSueldo != null ? Number(empleado.valorSueldo) : 0;
     if (!Number.isNaN(override) && override > 0) {
-      return { basico: override, categoriaNombre, sinEscalaParaPeriodo: false, fallbackPeriodoLabel: null, periodoEscalaLabel: null };
+      const fechaAltaStr = empleado.fechaAlta ? empleado.fechaAlta.toISOString().slice(0, 10) : null;
+      const fechaIngresoStr = empleado.fechaIngreso ? empleado.fechaIngreso.toISOString().slice(0, 10) : null;
+      return { basico: override, categoriaNombre, tipoJornada: empleado.tipoJornada ?? 'full_time', sinEscalaParaPeriodo: false, fallbackPeriodoLabel: null, periodoEscalaLabel: null, fechaAlta: fechaAltaStr, fechaIngreso: fechaIngresoStr };
     }
 
     // 2° prioridad: escala configurada para el período exacto
@@ -1235,17 +1239,24 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
       escalaPeriodo = row;
     }
 
+    const tipoJornada = empleado.tipoJornada ?? 'full_time';
+
     if (escalaPeriodo) {
       return {
         basico: Number(escalaPeriodo.monto),
         categoriaNombre,
+        tipoJornada,
         sinEscalaParaPeriodo: false,
         fallbackPeriodoLabel: null,
         periodoEscalaLabel: escalaPeriodo.periodoLabel,
+        fechaAlta: empleado.fechaAlta ? empleado.fechaAlta.toISOString().slice(0, 10) : null,
+        fechaIngreso: empleado.fechaIngreso ? empleado.fechaIngreso.toISOString().slice(0, 10) : null,
       };
     }
 
-    if (!categoriaId) return { basico: 0, categoriaNombre: null };
+    const fechaAltaStr2 = empleado.fechaAlta ? empleado.fechaAlta.toISOString().slice(0, 10) : null;
+    const fechaIngresoStr2 = empleado.fechaIngreso ? empleado.fechaIngreso.toISOString().slice(0, 10) : null;
+    if (!categoriaId) return { basico: 0, categoriaNombre: null, tipoJornada, fechaAlta: fechaAltaStr2, fechaIngreso: fechaIngresoStr2 };
 
     // 3° prioridad: escala más reciente anterior al período (fallback)
     let basico = 0;
@@ -1274,9 +1285,12 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
     return {
       basico: Number.isNaN(basico) ? 0 : basico,
       categoriaNombre,
+      tipoJornada,
       sinEscalaParaPeriodo,
       fallbackPeriodoLabel,
       periodoEscalaLabel,
+      fechaAlta: fechaAltaStr2,
+      fechaIngreso: fechaIngresoStr2,
     };
   });
 
@@ -1685,6 +1699,7 @@ export const createManualEmpleado = createServerFn({ method: 'POST' })
         legajo: ctx.data.legajo,
         nombre: ctx.data.nombre,
         fechaAlta: ctx.data.fechaAlta ? new Date(ctx.data.fechaAlta) : null,
+        fechaIngreso: ctx.data.fechaAlta ? new Date(ctx.data.fechaAlta) : null,
         fechaBaja: ctx.data.fechaBaja ? new Date(ctx.data.fechaBaja) : null,
         modoContrato: ctx.data.modoContrato ?? null,
         categoria: ctx.data.categoria ?? null,
@@ -1813,29 +1828,48 @@ export const getUltimoReciboImportado = createServerFn({ method: 'GET' })
     z.object({
       importEmpleadoId: z.string().uuid(),
       clientId: z.string().uuid(),
+      /** Cuando se provee, carga ese recibo específico en lugar del último. */
+      liquidacionId: z.string().uuid().optional(),
     })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
 
-    const [row] = await db
-      .select({ recibo: liquidacionImportRecibo })
-      .from(liquidacionImportRecibo)
-      .innerJoin(
-        liquidacionImportEmpleado,
-        eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
-      )
-      .innerJoin(client, eq(liquidacionImportEmpleado.clientId, client.id))
-      .where(
-        and(
-          eq(liquidacionImportRecibo.empleadoId, ctx.data.importEmpleadoId),
-          eq(client.representativeId, ctx.data.clientId)
-        )
-      )
-      .orderBy(desc(liquidacionImportRecibo.periodo))
-      .limit(1);
+    const rowQuery = ctx.data.liquidacionId
+      ? await db
+          .select({ recibo: liquidacionImportRecibo })
+          .from(liquidacionImportRecibo)
+          .innerJoin(
+            liquidacionImportEmpleado,
+            eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
+          )
+          .innerJoin(client, eq(liquidacionImportEmpleado.clientId, client.id))
+          .where(
+            and(
+              eq(liquidacionImportRecibo.id, ctx.data.liquidacionId),
+              eq(client.representativeId, ctx.data.clientId)
+            )
+          )
+          .limit(1)
+      : await db
+          .select({ recibo: liquidacionImportRecibo })
+          .from(liquidacionImportRecibo)
+          .innerJoin(
+            liquidacionImportEmpleado,
+            eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
+          )
+          .innerJoin(client, eq(liquidacionImportEmpleado.clientId, client.id))
+          .where(
+            and(
+              eq(liquidacionImportRecibo.empleadoId, ctx.data.importEmpleadoId),
+              eq(client.representativeId, ctx.data.clientId)
+            )
+          )
+          .orderBy(desc(liquidacionImportRecibo.periodo))
+          .limit(1);
 
+    const row = rowQuery[0];
     if (!row) return null;
 
     const conceptos = await db
@@ -1861,7 +1895,33 @@ export const getUltimoReciboImportado = createServerFn({ method: 'GET' })
       .where(eq(liquidacionImportConceptoValor.reciboId, row.recibo.id))
       .orderBy(sql`${liquidacionImportConceptoValor.codigo}::int`);
 
-    return { recibo: row.recibo, conceptos };
+    // Mejor sueldo del semestre para concepto 401 (vacaciones no gozadas) — TIN-950
+    const [rYear, rMonthStr] = row.recibo.periodo.split('-');
+    const rMonth = parseInt(rMonthStr, 10);
+    const rSemesterStart = rMonth <= 6 ? 1 : 7;
+    const rSemesterMonths: string[] = [];
+    for (let m = rSemesterStart; m <= rMonth; m++) {
+      rSemesterMonths.push(`${rYear}-${String(m).padStart(2, '0')}`);
+    }
+    const rRecibosSemestre = await db
+      .select({
+        haberes: liquidacionImportRecibo.haberes,
+        noRemunerativo: liquidacionImportRecibo.noRemunerativo,
+      })
+      .from(liquidacionImportRecibo)
+      .where(
+        and(
+          eq(liquidacionImportRecibo.empleadoId, row.recibo.empleadoId),
+          inArray(liquidacionImportRecibo.periodo, rSemesterMonths),
+          eq(liquidacionImportRecibo.tipo, 'sueldo')
+        )
+      );
+    const mejorSueldoSemestre = rRecibosSemestre.reduce((max, r) => {
+      const total = (Number(r.haberes) || 0) + (Number(r.noRemunerativo) || 0);
+      return total > max ? total : max;
+    }, 0);
+
+    return { recibo: row.recibo, conceptos, mejorSueldoSemestre };
   });
 
 /**
@@ -2014,7 +2074,7 @@ export const getImportReciboDetalle = createServerFn({ method: 'GET' })
       .select()
       .from(liquidacionImportConceptoValor)
       .where(eq(liquidacionImportConceptoValor.reciboId, ctx.data.reciboId))
-      .orderBy(asc(liquidacionImportConceptoValor.codigo));
+      .orderBy(sql`${liquidacionImportConceptoValor.codigo}::int`);
     return { recibo: row.recibo, empleado: row.empleado, conceptos };
   });
 
@@ -2101,6 +2161,67 @@ export const listProvincias = createServerFn({ method: 'GET' }).handler(
       .orderBy(asc(payrollProvincia.nombre));
   }
 );
+
+export const listTiposEmpresa = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    await getSessionWithOrg();
+    return db
+      .select({ id: payrollTipoEmpresa.id, codigoLsd: payrollTipoEmpresa.codigoLsd, nombre: payrollTipoEmpresa.nombre })
+      .from(payrollTipoEmpresa)
+      .orderBy(asc(payrollTipoEmpresa.codigoLsd));
+  }
+);
+
+export const getEmpleadorConfig = createServerFn({ method: 'GET' })
+  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    const [row] = await db
+      .select({
+        tipoEmpresaId: client.tipoEmpresaId,
+        seguroColectivo: client.seguroColectivo,
+        mipyme: client.mipyme,
+        ordenCLN: client.ordenCLN,
+        situacionDefaultId: client.situacionDefaultId,
+        condicionDefaultId: client.condicionDefaultId,
+        actividadDefaultId: client.actividadDefaultId,
+        contratacionDefaultId: client.contratacionDefaultId,
+        siniestradoDefaultId: client.siniestradoDefaultId,
+        zonaDefaultId: client.zonaDefaultId,
+        obraSocialDefaultId: client.obraSocialDefaultId,
+      })
+      .from(client)
+      .where(eq(client.id, ctx.data.clientId))
+      .limit(1);
+    if (!row) throw new Error('Empresa no encontrada');
+    return row;
+  });
+
+const empleadorConfigSchema = z.object({
+  clientId: z.string().uuid(),
+  tipoEmpresaId: z.string().uuid().nullable(),
+  seguroColectivo: z.boolean(),
+  mipyme: z.boolean(),
+  ordenCLN: z.enum(['C', 'L', 'N']).nullable(),
+  situacionDefaultId: z.string().uuid().nullable(),
+  condicionDefaultId: z.string().uuid().nullable(),
+  actividadDefaultId: z.string().uuid().nullable(),
+  contratacionDefaultId: z.string().uuid().nullable(),
+  siniestradoDefaultId: z.string().uuid().nullable(),
+  zonaDefaultId: z.string().uuid().nullable(),
+  obraSocialDefaultId: z.string().uuid().nullable(),
+});
+
+export const updateEmpleadorConfig = createServerFn({ method: 'POST' })
+  .inputValidator(empleadorConfigSchema)
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await assertCanWrite(orgId);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    const { clientId, ...fields } = ctx.data;
+    await db.update(client).set(fields).where(eq(client.id, clientId));
+  });
 
 const tipoReciboReciboSchema = z.enum([
   'sueldo',
@@ -2728,6 +2849,7 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
       nombre: z.string().min(1).optional(),
       apellido: z.string().min(1).optional(),
       cuilCuil: z.string().optional(),
+      fechaAlta: z.string().optional(),
       fechaIngreso: z.string().optional(),
       convenioId: z.string().uuid().optional(),
       categoriaId: z.string().uuid().optional(),
@@ -2793,6 +2915,7 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
       nombre,
       apellido,
       cuilCuil,
+      fechaAlta,
       fechaIngreso,
       convenioId,
       categoriaId,
@@ -2835,7 +2958,8 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
       set.nombre = nombre;
     }
     if (cuilCuil !== undefined) set.cuil = cuilCuil;
-    if (fechaIngreso) set.fechaAlta = parseISO(fechaIngreso);
+    if (fechaAlta) set.fechaAlta = parseISO(fechaAlta);
+    if (fechaIngreso) set.fechaIngreso = parseISO(fechaIngreso);
     if (convenioId !== undefined) set.convenioId = convenioId;
     if (categoriaId !== undefined) set.categoriaId = categoriaId;
     if (categoria !== undefined) set.categoria = categoria?.trim() || null;
@@ -3700,13 +3824,17 @@ export const listLiquidacionesByFiltros = createServerFn({ method: 'GET' })
       .object({
         clientId: z.string().uuid(),
         profileId: z.string().uuid(),
-        /** Período en formato YYYY-MM (opcional). */
+        /** Período en formato YYYY-MM (opcional). Mutuamente excluyente con ano+semestre. */
         periodo: z.string().optional(),
         /** ID de liquidacion_import_empleado (opcional). */
         importEmpleadoId: z.string().uuid().optional(),
+        /** Año en formato YYYY — requerido cuando se filtra por semestre. */
+        ano: z.string().optional(),
+        /** 1 = enero–junio, 2 = julio–diciembre. Requiere `ano`. */
+        semestre: z.number().int().min(1).max(2).optional(),
       })
-      .refine((d) => d.periodo || d.importEmpleadoId, {
-        message: 'Se requiere al menos período o empleado',
+      .refine((d) => d.periodo || d.importEmpleadoId || (d.ano && d.semestre), {
+        message: 'Se requiere al menos período, empleado, o año + semestre',
       })
   )
   .handler(async (ctx) => {
@@ -3721,6 +3849,11 @@ export const listLiquidacionesByFiltros = createServerFn({ method: 'GET' })
     if (ctx.data.periodo) {
       const cond = condicionPeriodoRecibo(ctx.data.periodo);
       if (cond) conditions.push(cond);
+    } else if (ctx.data.ano && ctx.data.semestre) {
+      const meses = ctx.data.semestre === 1
+        ? ['01', '02', '03', '04', '05', '06']
+        : ['07', '08', '09', '10', '11', '12'];
+      conditions.push(inArray(liquidacionImportRecibo.periodo, meses.map((m) => `${ctx.data.ano}-${m}`)));
     }
     if (ctx.data.importEmpleadoId) {
       conditions.push(eq(liquidacionImportEmpleado.id, ctx.data.importEmpleadoId));
@@ -4140,7 +4273,7 @@ export const getReciboDetalle = createServerFn({ method: 'GET' })
         )
       )
       .where(eq(liquidacionImportConceptoValor.reciboId, ctx.data.liquidacionId))
-      .orderBy(asc(liquidacionImportConceptoValor.codigo));
+      .orderBy(sql`${liquidacionImportConceptoValor.codigo}::int`);
 
     let merged = mergeDetalleFilasDuplicadas(detallesRaw);
     merged = await enrichConceptosFaltantes(merged);
@@ -4154,6 +4287,32 @@ export const getReciboDetalle = createServerFn({ method: 'GET' })
         row.conceptoSos
       ),
     }));
+
+    // Mejor sueldo del semestre para concepto 401 (vacaciones no gozadas) — TIN-950
+    const [periodoYear, periodoMonthStr] = liq.liquidacion.periodo.split('-');
+    const periodoMonth = parseInt(periodoMonthStr, 10);
+    const semesterStart = periodoMonth <= 6 ? 1 : 7;
+    const semesterMonths: string[] = [];
+    for (let m = semesterStart; m <= periodoMonth; m++) {
+      semesterMonths.push(`${periodoYear}-${String(m).padStart(2, '0')}`);
+    }
+    const recibosSemestre = await db
+      .select({
+        haberes: liquidacionImportRecibo.haberes,
+        noRemunerativo: liquidacionImportRecibo.noRemunerativo,
+      })
+      .from(liquidacionImportRecibo)
+      .where(
+        and(
+          eq(liquidacionImportRecibo.empleadoId, liq.empleado.id),
+          inArray(liquidacionImportRecibo.periodo, semesterMonths),
+          eq(liquidacionImportRecibo.tipo, 'sueldo')
+        )
+      );
+    const mejorSueldoSemestre = recibosSemestre.reduce((max, r) => {
+      const total = (Number(r.haberes) || 0) + (Number(r.noRemunerativo) || 0);
+      return total > max ? total : max;
+    }, 0);
 
     const plantillaCabecera = await obtenerCabeceraPagoPlantilla(
       liq.empleado.id,
@@ -4178,6 +4337,7 @@ export const getReciboDetalle = createServerFn({ method: 'GET' })
       liquidacion: liquidacionParaVista,
       basicoCalculado,
       basicoEscalaCategoria,
+      mejorSueldoSemestre,
       detalles,
     };
     return JSON.parse(JSON.stringify(payload)) as typeof payload;
@@ -4282,7 +4442,7 @@ export const listRecibosDetalleParaPDF = createServerFn({ method: 'GET' })
         )
       )
       .where(inArray(liquidacionImportConceptoValor.reciboId, reciboIds))
-      .orderBy(asc(liquidacionImportConceptoValor.codigo));
+      .orderBy(sql`${liquidacionImportConceptoValor.codigo}::int`);
 
     let allDetallesEnriched = await enrichConceptosFaltantes(
       allDetallesRaw as DetalleReciboRow[]
@@ -4543,6 +4703,10 @@ export const previewLsd = createServerFn({ method: 'GET' })
         contribucionAdicionalOS: liquidacionImportRecibo.contribucionAdicionalOS,
         importeADetraerLey27430: liquidacionImportRecibo.importeADetraerLey27430,
         importeMaternidadArt13: liquidacionImportRecibo.importeMaternidadArt13,
+        // Campos para pre-calcular rem4y8 y rem9 sugeridos (TIN-952)
+        haberes: liquidacionImportRecibo.haberes,
+        noRemunerativo: liquidacionImportRecibo.noRemunerativo,
+        categoriaId: liquidacionImportEmpleado.categoriaId,
       })
       .from(liquidacionImportRecibo)
       .innerJoin(
@@ -4563,6 +4727,24 @@ export const previewLsd = createServerFn({ method: 'GET' })
         )
       )
       .orderBy(asc(liquidacionImportEmpleado.legajo));
+
+    // ── Escala del convenio para rem4y8Sugerido (TIN-952) ───────────────────
+    // rem4y8 = basicoEscala del convenio (siempre, cuando hay categoría con escala vigente)
+    // rem9   = haberes + noRemunerativo (bruto real liquidado)
+    const catPeriodoPairs = new Set<string>();
+    const periodoNormPreview = normalizarPeriodoYYYYMM(periodo);
+    for (const r of rows) {
+      if (r.categoriaId && periodoNormPreview) {
+        catPeriodoPairs.add(`${r.categoriaId}|${periodoNormPreview}`);
+      }
+    }
+    const escalaCache = new Map<string, number>();
+    await Promise.all(
+      [...catPeriodoPairs].map(async (key) => {
+        const [catId, per] = key.split('|') as [string, string];
+        escalaCache.set(key, await getBasicoVigenteInternal(catId, per));
+      })
+    );
 
     const reciboIds = rows.map((r) => r.reciboId);
 
@@ -4589,10 +4771,20 @@ export const previewLsd = createServerFn({ method: 'GET' })
 
     return {
       employer,
-      empleados: rows.map((r) => ({
-        ...r,
-        cantidadConceptos: conceptosPorRecibo[r.reciboId] ?? 0,
-      })),
+      empleados: rows.map((r) => {
+        const rem9Sugerido = (Number(r.haberes) || 0) + (Number(r.noRemunerativo) || 0);
+        const basicoEscala = r.categoriaId && periodoNormPreview
+          ? (escalaCache.get(`${r.categoriaId}|${periodoNormPreview}`) ?? 0)
+          : 0;
+        // max(escala, bruto): para jornada reducida escala > bruto; para full-time bruto >= escala
+        const rem4y8Sugerido = Math.max(basicoEscala, rem9Sugerido);
+        return {
+          ...r,
+          cantidadConceptos: conceptosPorRecibo[r.reciboId] ?? 0,
+          rem4y8Sugerido: rem4y8Sugerido > 0 ? rem4y8Sugerido.toFixed(2) : null,
+          rem9Sugerido: rem9Sugerido > 0 ? rem9Sugerido.toFixed(2) : null,
+        };
+      }),
       conceptos: totalConceptos,
     };
   });
@@ -4952,7 +5144,7 @@ export const generarArchivoLsd = createServerFn({ method: 'GET' })
                 eq(liquidacionImportConceptoValor.activoEnRecibo, true)
               )
             )
-            .orderBy(asc(liquidacionImportConceptoValor.codigo))
+            .orderBy(sql`${liquidacionImportConceptoValor.codigo}::int`)
         : [];
 
     const conceptosByRecibo = new Map<string, typeof conceptoValores>();
@@ -4960,6 +5152,36 @@ export const generarArchivoLsd = createServerFn({ method: 'GET' })
       const key = cv.valor.reciboId;
       if (!conceptosByRecibo.has(key)) conceptosByRecibo.set(key, []);
       conceptosByRecibo.get(key)!.push(cv);
+    }
+
+    // ── 4.5. Básico de escala del convenio para rem4y8 (bases OS 4 y 8 del LSD) ─
+    // La base OS siempre es el básico del convenio al 100%, independientemente de
+    // cuánto haya trabajado el empleado ese mes (el concepto 1 ya ajusta con su
+    // porcentaje/cantidad lo que se liquida; OS se informa sobre la escala completa).
+    const basicoEscalaCentavosByEmpleadoId = new Map<string, number>();
+    {
+      const periodoNorm = normalizarPeriodoYYYYMM(periodo);
+      const catPeriodos = new Set<string>();
+      for (const row of recibos) {
+        if (row.empleado.categoriaId) {
+          catPeriodos.add(`${row.empleado.categoriaId}|${periodoNorm}`);
+        }
+      }
+      if (catPeriodos.size > 0) {
+        const escalaCache = new Map<string, number>();
+        await Promise.all(
+          [...catPeriodos].map(async (key) => {
+            const [catId, per] = key.split('|') as [string, string];
+            escalaCache.set(key, await getBasicoVigenteInternal(catId, per));
+          })
+        );
+        for (const row of recibos) {
+          if (row.empleado.categoriaId) {
+            const val = escalaCache.get(`${row.empleado.categoriaId}|${periodoNorm}`) ?? 0;
+            if (val > 0) basicoEscalaCentavosByEmpleadoId.set(row.empleado.id, Math.round(val * 100));
+          }
+        }
+      }
     }
 
     // ── 5. Construir líneas LSD ────────────────────────────────────────────
@@ -5047,10 +5269,14 @@ export const generarArchivoLsd = createServerFn({ method: 'GET' })
       const applyTope = (val: number) =>
         topeCentavos != null ? Math.min(val, topeCentavos) : val;
 
-      // Overrides manuales del recibo (rem4y8Override cubre OS; rem9Override cubre ART)
+      // Overrides manuales del recibo (rem4y8Override cubre OS; rem9Override cubre ART).
+      // rem4y8Base = max(basicoEscala, bruto): si el empleado liquida jornada reducida,
+      // basicoEscala > bruto y se usa la escala completa; si es full-time, el bruto
+      // ya incluye antigüedad/presentismo y supera al básico, por lo que se usa el bruto.
+      const basicoEscalaFullTimeCentavos = basicoEscalaCentavosByEmpleadoId.get(emp.id) ?? 0;
       const rem4y8Base = rec.rem4y8Override != null
         ? montoCentavos(rec.rem4y8Override)
-        : brutaCentavos;
+        : Math.max(basicoEscalaFullTimeCentavos, brutaCentavos);
       const rem9Base = rec.rem9Override != null
         ? montoCentavos(rec.rem9Override)
         : brutaCentavos;
@@ -5363,4 +5589,314 @@ export const generarConceptosLsd = createServerFn({ method: 'GET' })
     const contenido = lines.join('\r\n') + '\r\n';
 
     return { filename, contenido, conceptos: lines.length };
+  });
+
+// ─── SAC: Preview y generación masiva ────────────────────────────────────────
+
+/**
+ * Previsualiza los montos SAC de todos los empleados activos para un período dado.
+ * Para cada empleado busca el mejor mes del semestre (máx. haberes + no-rem)
+ * y devuelve SAC = mejor_mes / 2.
+ */
+export const getSacPreview = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      profileId: z.string().uuid(),
+      periodo: z.string().regex(/^\d{4}-\d{2}$/),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
+
+    const { periodo } = ctx.data;
+    const [year, monthStr] = periodo.split('-') as [string, string];
+    const month = parseInt(monthStr, 10);
+
+    // Meses del semestre hasta el período indicado (inclusive)
+    const semesterStart = month <= 6 ? 1 : 7;
+    const semesterMonths: string[] = [];
+    for (let m = semesterStart; m <= month; m++) {
+      semesterMonths.push(`${year}-${String(m).padStart(2, '0')}`);
+    }
+
+    // Empleados activos
+    const empleados = await db
+      .select({
+        id: liquidacionImportEmpleado.id,
+        nombre: liquidacionImportEmpleado.nombre,
+        legajo: liquidacionImportEmpleado.legajo,
+        fechaIngreso: liquidacionImportEmpleado.fechaIngreso,
+      })
+      .from(liquidacionImportEmpleado)
+      .where(
+        and(
+          eq(liquidacionImportEmpleado.clientId, ctx.data.profileId),
+          eq(liquidacionImportEmpleado.activo, true)
+        )
+      );
+
+    if (empleados.length === 0) return [];
+
+    const empIds = empleados.map((e) => e.id);
+
+    // Recibos de sueldo del semestre
+    const recibos = await db
+      .select({
+        empleadoId: liquidacionImportRecibo.empleadoId,
+        periodo: liquidacionImportRecibo.periodo,
+        haberes: liquidacionImportRecibo.haberes,
+        noRemunerativo: liquidacionImportRecibo.noRemunerativo,
+      })
+      .from(liquidacionImportRecibo)
+      .where(
+        and(
+          inArray(liquidacionImportRecibo.empleadoId, empIds),
+          inArray(liquidacionImportRecibo.periodo, semesterMonths),
+          eq(liquidacionImportRecibo.tipo, 'sueldo')
+        )
+      );
+
+    // SAC existentes en este período
+    const sacExistentes = await db
+      .select({ empleadoId: liquidacionImportRecibo.empleadoId })
+      .from(liquidacionImportRecibo)
+      .where(
+        and(
+          inArray(liquidacionImportRecibo.empleadoId, empIds),
+          eq(liquidacionImportRecibo.periodo, periodo),
+          eq(liquidacionImportRecibo.tipo, 'SAC')
+        )
+      );
+    const sacExistenteIds = new Set(sacExistentes.map((s) => s.empleadoId));
+
+    // Mejor mes por empleado
+    const bestByEmp = new Map<string, { periodo: string; total: number }>();
+    for (const r of recibos) {
+      const total = Number(r.haberes) + Number(r.noRemunerativo);
+      const prev = bestByEmp.get(r.empleadoId);
+      if (!prev || total > prev.total) {
+        bestByEmp.set(r.empleadoId, { periodo: r.periodo, total });
+      }
+    }
+
+    return empleados
+      .map((emp) => {
+        const best = bestByEmp.get(emp.id);
+        return {
+          empleadoId: emp.id,
+          nombre: emp.nombre ?? '—',
+          legajo: emp.legajo ?? '',
+          fechaIngreso: emp.fechaIngreso ?? null,
+          mejorPeriodo: best?.periodo ?? null,
+          mejorMonto: best?.total ?? 0,
+          sacBase: best ? best.total / 2 : 0,
+          yaTieneSac: sacExistenteIds.has(emp.id),
+        };
+      })
+      .sort((a, b) => (a.nombre ?? '').localeCompare(b.nombre ?? ''));
+  });
+
+/**
+ * Genera recibos SAC para los empleados indicados.
+ * Solo inserta SOS 41 (importe fijo = SAC base). Las retenciones se calculan
+ * cuando el usuario abre y guarda el recibo desde la UI.
+ * Empleados que ya tienen SAC en el período son ignorados (no se sobreescribe).
+ */
+export const generarSacsMasivo = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      profileId: z.string().uuid(),
+      periodo: z.string().regex(/^\d{4}-\d{2}$/),
+      items: z.array(
+        z.object({
+          empleadoId: z.string().uuid(),
+          sacBase: z.number().positive(),
+          /** Días trabajados en el semestre. 180 = semestre completo (usa SOS 41), < 180 = proporcional (usa SOS 42). */
+          dias: z.number().int().min(1).max(180),
+        })
+      ),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
+
+    if (!puedeLiquidarPeriodo(ctx.data.periodo)) {
+      throw new Error('No se puede liquidar períodos futuros.');
+    }
+
+    const empIds = ctx.data.items.map((i) => i.empleadoId);
+
+    // Verificar pertenencia de todos los empleados al perfil
+    const empValidos = await db
+      .select({ id: liquidacionImportEmpleado.id })
+      .from(liquidacionImportEmpleado)
+      .where(
+        and(
+          inArray(liquidacionImportEmpleado.id, empIds),
+          eq(liquidacionImportEmpleado.clientId, ctx.data.profileId)
+        )
+      );
+    const empValidosSet = new Set(empValidos.map((e) => e.id));
+
+    // SAC existentes (para omitirlos)
+    const sacExistentes = await db
+      .select({ empleadoId: liquidacionImportRecibo.empleadoId })
+      .from(liquidacionImportRecibo)
+      .where(
+        and(
+          inArray(liquidacionImportRecibo.empleadoId, empIds),
+          eq(liquidacionImportRecibo.periodo, ctx.data.periodo),
+          eq(liquidacionImportRecibo.tipo, 'SAC')
+        )
+      );
+    const sacExistenteIds = new Set(sacExistentes.map((s) => s.empleadoId));
+
+    const itemsACrear = ctx.data.items.filter(
+      (i) => empValidosSet.has(i.empleadoId) && !sacExistenteIds.has(i.empleadoId)
+    );
+
+    if (itemsACrear.length === 0) return { generados: 0 };
+
+    // Cargar porcentajes de retenciones del último recibo de sueldo del semestre.
+    // Permite pre-poblar 201/202/203/206/207 con los % reales del empleado.
+    const RETENCION_CODES = ['201', '202', '203', '206', '207'] as const;
+    const DEFAULT_PCTS: Record<string, number> = {
+      '201': 11, '202': 3, '203': 3, '206': 2, '207': 0.5,
+    };
+
+    const [periodoYear, periodoMes] = ctx.data.periodo.split('-') as [string, string];
+    const mes = parseInt(periodoMes, 10);
+    const semStart = mes <= 6 ? 1 : 7;
+    const semesterMonths = Array.from({ length: mes - semStart + 1 }, (_, i) =>
+      `${periodoYear}-${String(semStart + i).padStart(2, '0')}`
+    );
+
+    const saldoRecibos = await db
+      .select({
+        id: liquidacionImportRecibo.id,
+        empleadoId: liquidacionImportRecibo.empleadoId,
+        periodo: liquidacionImportRecibo.periodo,
+      })
+      .from(liquidacionImportRecibo)
+      .where(
+        and(
+          inArray(liquidacionImportRecibo.empleadoId, empIds),
+          inArray(liquidacionImportRecibo.periodo, semesterMonths),
+          eq(liquidacionImportRecibo.tipo, 'sueldo')
+        )
+      );
+
+    // Recibo más reciente del semestre por empleado
+    const bestReciboByEmp = new Map<string, string>();
+    for (const r of [...saldoRecibos].sort((a, b) => b.periodo.localeCompare(a.periodo))) {
+      if (!bestReciboByEmp.has(r.empleadoId)) bestReciboByEmp.set(r.empleadoId, r.id);
+    }
+
+    // Porcentajes de retenciones desde esos recibos
+    const reciboIdsRef = [...bestReciboByEmp.values()];
+    const retencionRows = reciboIdsRef.length > 0
+      ? await db
+          .select({
+            reciboId: liquidacionImportConceptoValor.reciboId,
+            codigo: liquidacionImportConceptoValor.codigo,
+            porcentaje: liquidacionImportConceptoValor.porcentaje,
+          })
+          .from(liquidacionImportConceptoValor)
+          .where(
+            and(
+              inArray(liquidacionImportConceptoValor.reciboId, reciboIdsRef),
+              inArray(liquidacionImportConceptoValor.codigo, [...RETENCION_CODES])
+            )
+          )
+      : [];
+
+    // Mapa empleadoId → { codigo → porcentaje }
+    const empPcts = new Map<string, Map<string, number>>();
+    for (const [empId, reciboId] of bestReciboByEmp) {
+      const pcts = new Map<string, number>();
+      for (const r of retencionRows.filter((x) => x.reciboId === reciboId)) {
+        if (r.porcentaje !== null) pcts.set(r.codigo, Number(r.porcentaje));
+      }
+      empPcts.set(empId, pcts);
+    }
+
+    await db.transaction(async (tx) => {
+      for (const item of itemsACrear) {
+        const sacBaseStr = item.sacBase.toFixed(2);
+        // SOS 41 = semestre completo, SOS 42 = proporcional
+        const codigoSac = item.dias >= 180 ? '41' : '42';
+
+        // Calcular retenciones con porcentajes del último recibo o defaults
+        const pcts = empPcts.get(item.empleadoId) ?? new Map<string, number>();
+        let totalRetenciones = 0;
+        const retencionesAInsertar: { codigo: string; pct: number; monto: number }[] = [];
+        for (const code of RETENCION_CODES) {
+          const pct = pcts.get(code) ?? DEFAULT_PCTS[code];
+          const monto = Math.round(item.sacBase * (pct / 100) * 100) / 100;
+          totalRetenciones += monto;
+          retencionesAInsertar.push({ codigo: code, pct, monto });
+        }
+        const neto = Math.round((item.sacBase - totalRetenciones) * 100) / 100;
+
+        const [ins] = await tx
+          .insert(liquidacionImportRecibo)
+          .values({
+            empleadoId: item.empleadoId,
+            periodo: ctx.data.periodo,
+            tipo: 'SAC',
+            haberes: sacBaseStr,
+            noRemunerativo: '0',
+            descuentos: '0',
+            retenciones: totalRetenciones.toFixed(2),
+            neto: neto.toFixed(2),
+            origen: 'generado',
+          })
+          .returning({ id: liquidacionImportRecibo.id });
+        if (!ins) continue;
+
+        // Concepto principal SAC (41 o 42)
+        await tx.insert(liquidacionImportConceptoValor).values({
+          reciboId: ins.id,
+          codigo: codigoSac,
+          monto: sacBaseStr,
+          importe: sacBaseStr,
+          cantidad: null,
+          porcentaje: null,
+          importeConceptoNumero: null,
+          importeMinimo: null,
+          importeMaximo: null,
+          pctUsado: null,
+          baseUsada: sacBaseStr,
+          memo: null,
+        });
+
+        // Retenciones pre-cargadas
+        for (const ret of retencionesAInsertar) {
+          await tx.insert(liquidacionImportConceptoValor).values({
+            reciboId: ins.id,
+            codigo: ret.codigo,
+            monto: ret.monto.toFixed(2),
+            porcentaje: String(ret.pct),
+            importe: null,
+            cantidad: null,
+            importeConceptoNumero: null,
+            importeMinimo: null,
+            importeMaximo: null,
+            pctUsado: String(ret.pct),
+            baseUsada: sacBaseStr,
+            memo: null,
+          });
+        }
+      }
+    });
+
+    return { generados: itemsACrear.length };
   });

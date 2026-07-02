@@ -8,7 +8,7 @@ import {
   useEffect,
   useRef,
 } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Pencil, X } from 'lucide-react';
 import {
   Popover,
   PopoverContent,
@@ -77,6 +77,9 @@ export type EditsMap = Record<
   string,
   {
     monto: string;
+    /** Override directo del resultado final. Cuando está seteado, el cascade no recalcula.
+     *  No se persiste en DB — se pierde al reabrir el recibo. Para override permanente, ajustá % o cant. */
+    montoFijo: string;
     cantidad: string;
     porcentaje: string;
     importeConceptoNumero: string;
@@ -89,6 +92,7 @@ export type EditsMap = Record<
 
 const EMPTY_EDIT_ROW: EditsMap[string] = {
   monto: '',
+  montoFijo: '',
   cantidad: '',
   porcentaje: '',
   importeConceptoNumero: '',
@@ -102,6 +106,11 @@ const EMPTY_EDIT_ROW: EditsMap[string] = {
 const SUB_BASES = new Set([
   'sub1_9', 'sub1_19', 'sub1_26', 'sub1_39', 'sub1_199', 'sub411_469',
   'sub1_199_plus_411_469',
+  'os_base',            // base OS rem: subtotal 1-99 como si concepto 1 estuviera al 100%
+  'os_norem_base',      // base OS no-rem: subtotal 411-469 como si concepto 411 estuviera al 100%
+  'basico_div25',       // basicoEscala / 25 × cantidad (vacaciones gozadas — concepto 51)
+  'mejor_div25',        // mejorSueldoSemestre / 25 × cantidad (vacaciones no gozadas — concepto 401)
+  'concepto_401_div12', // monto concepto 401 / 12 (SAC sobre vacaciones no gozadas — concepto 402)
 ]);
 
 /**
@@ -169,17 +178,25 @@ const MAX_PCT_WARN = 500;
 function applySubtotalCascade(
   edits: EditsMap,
   allConcepts: ConceptoImportado[],
-  activeCodigos?: Set<string>
+  activeCodigos?: Set<string>,
+  osBase = 0,
+  mejorSueldo = 0,
 ): EditsMap {
   const subTotals: Record<string, number> = {
     sub1_9: 0, sub1_19: 0, sub1_26: 0,
-    sub1_39: 0, sub1_99: 0, sub1_199: 0, sub411_469: 0,
+    sub1_39: 0, sub1_99: 0, sub1_199: 0, sub411_469: 0, sub411_414: 0,
+    // Subtotales paralelos "OS": se acumulan como si concepto 1 y 411 estuvieran al 100%.
+    // Usados por os_base (concepto 203/204/221/222) y os_norem_base (concepto 502).
+    sub1_9_os: 0, sub1_19_os: 0, sub1_26_os: 0, sub1_39_os: 0,
+    sub1_99_os: 0, sub411_469_os: 0,
   };
 
   // Mapa de montos computados por código, para referencias entre conceptos.
   const conceptMontos: Record<string, number> = {};
   // Monto del concepto 1 (sueldo básico), base para conceptos con baseColumna='sueldo'.
   let sueldoBase = 0;
+  // Versión "OS" del sueldo base: usa osBase (básico escala 100%) cuando está disponible.
+  let sueldoBase_os = 0;
 
   const sorted = [...allConcepts].sort(
     (a, b) => (parseInt(a.codigo, 10) || 9999) - (parseInt(b.codigo, 10) || 9999)
@@ -197,6 +214,17 @@ function applySubtotalCascade(
     const row = next[c.codigo] ?? EMPTY_EDIT_ROW;
     let effectiveMonto = toNum(row.monto);
 
+    // Override manual: si el usuario pisó el resultado, respetar sin recalcular.
+    const montoFijo = (row.montoFijo ?? '').trim();
+    if (montoFijo !== '') {
+      effectiveMonto = parseDecimalSos(montoFijo) ?? effectiveMonto;
+      const montoFijoStr = effectiveMonto.toFixed(2);
+      if (row.monto !== montoFijoStr) {
+        next = { ...next, [c.codigo]: { ...row, monto: montoFijoStr } };
+      }
+      // Acumular subtotales con el valor override y continuar al siguiente concepto
+    } else {
+
     const bc = c.baseColumna;
     if (bc != null && SUB_BASES.has(bc)) {
       const hasPct = (row.porcentaje ?? '').trim() !== '';
@@ -208,22 +236,40 @@ function applySubtotalCascade(
       if (hasPct || noUsaPct) {
         // Para retenciones (200–299) con base 'sub1_199': la base correcta es
         // haberes (1–99) minus descuentos (100–199), no la suma bruta de ambos.
+        // 'os_base': usa sub1_99_os (haberes al 100% de jornada, independiente del pct del concepto 1).
+        // 'os_norem_base': usa sub411_469_os (no-rem con concepto 411 siempre al 100%).
         const subBase =
-          bc === 'sub1_199_plus_411_469'
-            ? (subTotals['sub1_199'] ?? 0) + (subTotals['sub411_469'] ?? 0)
-            : bc === 'sub1_199' && n >= 200 && n <= 299
-              ? (subTotals['sub1_99'] ?? 0) - ((subTotals['sub1_199'] ?? 0) - (subTotals['sub1_99'] ?? 0))
-              : (subTotals[bc] ?? 0);
+          bc === 'os_base'
+            ? (subTotals['sub1_99_os'] ?? 0)
+            : bc === 'os_norem_base'
+              ? (subTotals['sub411_469_os'] ?? 0)
+              : bc === 'basico_div25'
+                ? (osBase > 0 ? osBase : sueldoBase) / 25
+                : bc === 'mejor_div25'
+                  ? mejorSueldo / 25
+                  : bc === 'concepto_401_div12'
+                    ? (conceptMontos['401'] ?? 0) / 12
+                    : bc === 'sub1_199_plus_411_469'
+                      ? (subTotals['sub1_199'] ?? 0) + (subTotals['sub411_469'] ?? 0)
+                      : bc === 'sub1_199' && n >= 200 && n <= 299
+                        ? (subTotals['sub1_99'] ?? 0) - ((subTotals['sub1_199'] ?? 0) - (subTotals['sub1_99'] ?? 0))
+                        : (subTotals[bc] ?? 0);
 
-        if (subBase > 0) {
+        // Si el concepto tiene campo importe propio (tieneImporte/tieneImpConceptoNro) y el
+        // usuario lo completó, ese valor tiene prioridad como base sobre el subtotal dinámico.
+        const refCodigo = (row.importeConceptoNumero ?? '').trim();
+        const refBase = refCodigo !== '' ? (conceptMontos[refCodigo] ?? 0) : 0;
+        const ownImporte = (c.tieneImporte || c.tieneImpConceptoNro)
+          ? (parseDecimalSos(row.importe) ?? 0)
+          : 0;
+        const explicitBase = refBase > 0 ? refBase : ownImporte;
+        const effectiveBase = explicitBase > 0 ? explicitBase : subBase;
+
+        if (effectiveBase > 0) {
           const cantNum =
             !c.tieneCantidad && (row.cantidad ?? '') === ''
               ? 1
               : (parseDecimalSos(row.cantidad) ?? 1);
-          // Para conceptos con base dinámica (subtotales), el campo `importe` almacenado
-          // en el recibo anterior NO debe sobreescribir la base calculada. El importe en
-          // estos conceptos es la base de cálculo que se determina automáticamente.
-          const effectiveBase = subBase;
 
           let raw = effectiveBase * (effectivePct / 100) * cantNum;
 
@@ -264,7 +310,20 @@ function applySubtotalCascade(
           next = { ...next, [c.codigo]: { ...row, monto: effectiveMonto.toFixed(2) } };
         }
       }
+    } else if (bc === 'sub411_414_qty') {
+      // La cantidad se auto-rellena con la suma de conceptos 411–414.
+      // El resultado es: cantidad × (pct / 100).
+      const sub = subTotals['sub411_414'] ?? 0;
+      const hasPct = (row.porcentaje ?? '').trim() !== '';
+      if (hasPct && sub > 0) {
+        const pct = parseDecimalSos(row.porcentaje) ?? 0;
+        effectiveMonto = Math.round(sub * (pct / 100) * 100) / 100;
+        next = { ...next, [c.codigo]: { ...row, cantidad: sub.toFixed(2), monto: effectiveMonto.toFixed(2) } };
+      } else if (sub > 0) {
+        next = { ...next, [c.codigo]: { ...row, cantidad: sub.toFixed(2) } };
+      }
     }
+    } // cierre del else (montoFijo no seteado)
 
     // Registrar monto computado para que conceptos posteriores puedan referenciarlo.
     conceptMontos[c.codigo] = effectiveMonto;
@@ -279,6 +338,50 @@ function applySubtotalCascade(
       if (n <= 39) subTotals['sub1_39'] += effectiveMonto;
     } else if (n >= 411 && n <= 469) {
       subTotals['sub411_469'] += effectiveMonto;
+      if (n <= 414) subTotals['sub411_414'] += effectiveMonto;
+    }
+
+    // Acumulación de subtotales OS paralelos.
+    // Los sub1_X_os replican sub1_X pero con concepto 1 anclado a osBase (básico 100%).
+    // Los conceptos que cascadean desde sub-rangos usan la versión OS del sub-rango,
+    // garantizando que todo el cascade de haberes refleje la jornada completa.
+    if (n >= 1 && n <= 99) {
+      let osContrib = effectiveMonto;
+      if (n === 1) {
+        sueldoBase_os = osBase > 0 ? osBase : effectiveMonto;
+        osContrib = sueldoBase_os;
+      } else if (c.baseColumna === 'sueldo' && sueldoBase_os > 0 && sueldoBase_os !== sueldoBase) {
+        // Cascadea del básico (ej: antigüedad): reescalar con sueldoBase_os.
+        const osPct = (row.porcentaje ?? '').trim() !== '' ? (parseDecimalSos(row.porcentaje) ?? 0) : 0;
+        const osCant = !c.tieneCantidad && (row.cantidad ?? '') === '' ? 1 : (parseDecimalSos(row.cantidad) ?? 1);
+        if (osPct > 0) osContrib = Math.round(sueldoBase_os * (osPct / 100) * osCant * 100) / 100;
+      } else if (c.baseColumna != null && SUB_BASES.has(c.baseColumna)) {
+        // Cascadea desde un sub-rango (ej: presentismo usa sub1_9): usar la versión OS.
+        // Solo si existe el paralelo _os para ese sub-rango (sub1_9_os, sub1_19_os, etc.).
+        const osSubName = c.baseColumna + '_os';
+        const osSubVal = subTotals[osSubName]; // undefined si no tiene versión OS
+        const realSubVal = subTotals[c.baseColumna] ?? 0;
+        if (osSubVal !== undefined && osSubVal !== realSubVal && realSubVal > 0) {
+          const osPct2 = (row.porcentaje ?? '').trim() !== '' ? (parseDecimalSos(row.porcentaje) ?? 0) : (c.tienePct === false ? 100 : 0);
+          const osCant2 = !c.tieneCantidad && (row.cantidad ?? '') === '' ? 1 : (parseDecimalSos(row.cantidad) ?? 1);
+          if (osPct2 > 0) osContrib = Math.round(osSubVal * (osPct2 / 100) * osCant2 * 100) / 100;
+        }
+      }
+      subTotals['sub1_99_os'] += osContrib;
+      if (n <= 9)  subTotals['sub1_9_os']  += osContrib;
+      if (n <= 19) subTotals['sub1_19_os'] += osContrib;
+      if (n <= 26) subTotals['sub1_26_os'] += osContrib;
+      if (n <= 39) subTotals['sub1_39_os'] += osContrib;
+    } else if (n >= 411 && n <= 469) {
+      let noremsOsContrib = effectiveMonto;
+      if (n === 411) {
+        // Concepto 411: back-calcular al 100% del porcentaje efectivo.
+        const pct411 = parseDecimalSos(row.porcentaje);
+        noremsOsContrib = (pct411 !== null && pct411 > 0)
+          ? Math.round((effectiveMonto / (pct411 / 100)) * 100) / 100
+          : effectiveMonto;
+      }
+      subTotals['sub411_469_os'] += noremsOsContrib;
     }
   }
 
@@ -339,6 +442,93 @@ function EditableCell({
       }}
       className="w-full bg-white border border-slate-200 rounded px-1 py-1 text-[10px] text-right focus:bg-yellow-50 focus:ring-1 focus:ring-yellow-300 focus:border-yellow-300 outline-none"
     />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Result cell with manual override
+// ---------------------------------------------------------------------------
+
+function ResultOverrideCell({
+  monto,
+  montoFijo,
+  onOverride,
+}: {
+  monto: string;
+  montoFijo: string;
+  onOverride: (v: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [local, setLocal] = useState('');
+
+  const isOverridden = montoFijo.trim() !== '';
+  const num = toNum(isOverridden ? montoFijo : monto);
+
+  const startEdit = () => {
+    setLocal(isOverridden ? montoFijo : monto);
+    setEditing(true);
+  };
+
+  const commit = () => {
+    onOverride(local.trim());
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-0.5">
+        <input
+          autoFocus
+          type="text"
+          value={local}
+          onChange={(e) => setLocal(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); commit(); }
+            if (e.key === 'Escape') { setEditing(false); }
+          }}
+          className="w-full bg-amber-50 border border-amber-300 rounded px-1 py-0.5 text-[10px] text-right focus:ring-1 focus:ring-amber-400 outline-none"
+        />
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setEditing(false)}
+          className="text-slate-400 hover:text-slate-600 shrink-0 p-0.5"
+        >
+          <X className="h-2.5 w-2.5" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-end gap-0.5 group/result">
+      {isOverridden ? (
+        <>
+          <span className="text-amber-700 tabular-nums">{fmtArs(num)}</span>
+          <button
+            type="button"
+            onClick={() => onOverride('')}
+            className="text-amber-400 hover:text-red-500 shrink-0"
+            title="Quitar override"
+          >
+            <X className="h-2.5 w-2.5" />
+          </button>
+        </>
+      ) : (
+        <>
+          <span className="tabular-nums">{num !== 0 ? fmtArsSign(num) : '—'}</span>
+          <button
+            type="button"
+            onClick={startEdit}
+            className="opacity-0 group-hover/result:opacity-100 text-slate-300 hover:text-slate-500 shrink-0 transition-opacity ml-0.5"
+            title="Override manual (solo esta sesión)"
+          >
+            <Pencil className="h-2.5 w-2.5" />
+          </button>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -555,11 +745,9 @@ function TableSection({
                   : DASH}
               </td>
               <td className="px-1 py-1.5">
-                {c.pctFijo != null
-                  ? <span className="block w-full px-1 text-right tabular-nums text-muted-foreground">{c.pctFijo}</span>
-                  : c.tienePct !== false
-                    ? <EditableCell value={edit?.porcentaje ?? ''} onChange={(v) => setField(c.codigo, 'porcentaje', v)} />
-                    : DASH}
+                {(c.pctFijo != null || c.tienePct !== false)
+                  ? <EditableCell value={edit?.porcentaje ?? ''} onChange={(v) => setField(c.codigo, 'porcentaje', v)} />
+                  : DASH}
               </td>
               <td className="px-1 py-1.5">
                 {c.tieneImpConceptoNro !== false
@@ -595,24 +783,24 @@ function TableSection({
                   ? <EditableCell value={edit?.importeMaximo ?? ''} onChange={(v) => setField(c.codigo, 'importeMaximo', v)} />
                   : DASH}
               </td>
-              <td className="px-2 py-1.5 text-right tabular-nums !border-l-2 !border-l-slate-600">
-                {isHaberes && toNum(edit?.monto) !== 0
-                  ? fmtArsSign(toNum(edit?.monto))
+              <td className="px-2 py-1.5 !border-l-2 !border-l-slate-600">
+                {isHaberes
+                  ? <ResultOverrideCell monto={edit?.monto ?? ''} montoFijo={edit?.montoFijo ?? ''} onOverride={(v) => setField(c.codigo, 'montoFijo', v)} />
                   : DASH}
               </td>
-              <td className="px-2 py-1.5 text-right tabular-nums">
-                {isDesc && toNum(edit?.monto) !== 0
-                  ? fmtArsSign(toNum(edit?.monto))
+              <td className="px-2 py-1.5">
+                {isDesc
+                  ? <ResultOverrideCell monto={edit?.monto ?? ''} montoFijo={edit?.montoFijo ?? ''} onOverride={(v) => setField(c.codigo, 'montoFijo', v)} />
                   : DASH}
               </td>
-              <td className="px-2 py-1.5 text-right tabular-nums">
-                {isReten && toNum(edit?.monto) !== 0
-                  ? fmtArsSign(toNum(edit?.monto))
+              <td className="px-2 py-1.5">
+                {isReten
+                  ? <ResultOverrideCell monto={edit?.monto ?? ''} montoFijo={edit?.montoFijo ?? ''} onOverride={(v) => setField(c.codigo, 'montoFijo', v)} />
                   : DASH}
               </td>
-              <td className="px-2 py-1.5 text-right tabular-nums">
-                {isNoRem && toNum(edit?.monto) !== 0
-                  ? fmtArsSign(toNum(edit?.monto))
+              <td className="px-2 py-1.5">
+                {isNoRem
+                  ? <ResultOverrideCell monto={edit?.monto ?? ''} montoFijo={edit?.montoFijo ?? ''} onOverride={(v) => setField(c.codigo, 'montoFijo', v)} />
                   : DASH}
               </td>
             </tr>
@@ -693,6 +881,17 @@ interface TablaReciboSosProps {
    * Si no se define, se muestran todas las filas de `conceptos` (último recibo importado).
    */
   activeCodigos?: Set<string>;
+  /**
+   * Básico de escala a jornada completa (pesos). Solo para empleados `part_time` o `reducida`.
+   * Cuando se provee (> 0), los conceptos con `baseColumna = 'os_base'` (obra social) lo usan
+   * como base en lugar del subtotal real liquidado, que estaría reducido proporcionalmente.
+   */
+  basicoJornadaCompleta?: number;
+  /**
+   * Mejor sueldo del semestre (rem + no-rem) para el empleado.
+   * Usado por los conceptos con `baseColumna = 'mejor_div25'` (vacaciones no gozadas — concepto 401).
+   */
+  mejorSueldoSemestre?: number;
   /** Catálogo para "Agregar concepto" (toda la plantilla). Por defecto coincide con `conceptos`. */
   catalogoCompleto?: ConceptoImportado[];
   onAddConcepto?: (codigos: string[]) => void;
@@ -713,6 +912,8 @@ export function TablaReciboSos({
   onAddConcepto,
   onRemoveConcepto,
   recalculateWithBasico = false,
+  basicoJornadaCompleta = 0,
+  mejorSueldoSemestre = 0,
 }: TablaReciboSosProps) {
   const catalogoCompleto = catalogoCompletoProp ?? conceptos;
   const initialEdits = useMemo<EditsMap>(() => {
@@ -720,6 +921,7 @@ export function TablaReciboSos({
     for (const c of conceptos) {
       map[c.codigo] = {
         monto: c.monto ?? '',
+        montoFijo: '',
         cantidad: c.cantidad ?? '',
         porcentaje: c.porcentaje ?? (c.pctFijo != null ? String(c.pctFijo) : ''),
         importeConceptoNumero: c.importeConceptoNumero ?? '',
@@ -767,6 +969,46 @@ export function TablaReciboSos({
   const activeCodigosRef = useRef<Set<string>>(new Set());
   useEffect(() => { activeCodigosRef.current = codigosActivosSet; }, [codigosActivosSet]);
 
+  const osBaseRef = useRef(basicoJornadaCompleta);
+  useEffect(() => { osBaseRef.current = basicoJornadaCompleta; }, [basicoJornadaCompleta]);
+
+  const mejorSueldoRef = useRef(mejorSueldoSemestre);
+  useEffect(() => { mejorSueldoRef.current = mejorSueldoSemestre; }, [mejorSueldoSemestre]);
+
+  // Cuando basicoEscala carga por primera vez (async), calcular montos de conceptos con base
+  // implícita que todavía tienen monto vacío (recibo nuevo desde cero).
+  // Debe correr DESPUÉS del effect que actualiza implicitBaseRef (misma dep `basico`, mismo orden).
+  useEffect(() => {
+    const b = basico ?? 0;
+    if (b <= 0) return;
+    setEdits((prev) => {
+      let next = { ...prev };
+      let changed = false;
+      for (const c of conceptosRef.current) {
+        if (!activeCodigosRef.current.has(c.codigo)) continue;
+        const row = next[c.codigo] ?? EMPTY_EDIT_ROW;
+        const currentMonto = parseDecimalSos(row.monto);
+        if (currentMonto !== null && currentMonto !== 0) continue; // ya tiene valor, no pisar
+        const implicitBase = implicitBaseRef.current[c.codigo];
+        if (implicitBase == null || implicitBase <= 0) continue;
+        const hasPct = (row.porcentaje ?? '').trim() !== '';
+        const noUsaPct = c.tienePct === false;
+        if (!hasPct && !noUsaPct) continue;
+        const rowParaFormula = {
+          ...row,
+          importe: String(implicitBase),
+          ...(noUsaPct && !hasPct ? { porcentaje: '100' } : {}),
+        };
+        if (!canApplyFormula(rowParaFormula)) continue;
+        const m = montoLiquidadoDesdeEditsSos(rowParaFormula, { forceFormula: true }).toFixed(2);
+        next = { ...next, [c.codigo]: { ...row, importe: String(implicitBase), monto: m } };
+        changed = true;
+      }
+      if (!changed) return prev;
+      return applySubtotalCascade(next, conceptosRef.current, activeCodigosRef.current, osBaseRef.current, mejorSueldoRef.current);
+    });
+  }, [basico]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
@@ -782,12 +1024,14 @@ export function TablaReciboSos({
         if (!prev[c.codigo]) {
           newEntries[c.codigo] = {
             monto: c.monto ?? '',
+            montoFijo: '',
             cantidad: c.cantidad ?? '',
             porcentaje: c.porcentaje ?? (c.pctFijo != null ? String(c.pctFijo) : ''),
             importeConceptoNumero: c.importeConceptoNumero ?? '',
             importe: c.importe ?? '',
             importeMinimo: c.importeMinimo ?? '',
             importeMaximo: c.importeMaximo ?? '',
+            memo: c.memo ?? '',
           };
         }
       }
@@ -976,7 +1220,7 @@ export function TablaReciboSos({
           }
         }
 
-        return applySubtotalCascade(newEdits, conceptosRef.current, activeCodigosRef.current);
+        return applySubtotalCascade(newEdits, conceptosRef.current, activeCodigosRef.current, osBaseRef.current);
       });
     },
     []
@@ -999,7 +1243,7 @@ export function TablaReciboSos({
   // para que conceptos subtotal-based con % pre-cargado calculen su monto automáticamente.
   useEffect(() => {
     activeCodigosRef.current = codigosActivosSet;
-    setEdits((prev) => applySubtotalCascade(prev, conceptosRef.current, codigosActivosSet));
+    setEdits((prev) => applySubtotalCascade(prev, conceptosRef.current, codigosActivosSet, osBaseRef.current, mejorSueldoRef.current));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [codigosActivosSet]);
 

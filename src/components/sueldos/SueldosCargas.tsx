@@ -16,6 +16,7 @@ import {
   TrendingUp,
   Upload,
   Filter,
+  Settings,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -57,6 +58,7 @@ import {
   generarConceptosLsd,
 } from '@/actions/sueldos';
 import { legajoParaMostrar } from '@/lib/legajo';
+import { EmpleadorConfigDialog } from '@/components/sueldos/EmpleadorConfigDialog';
 
 interface SueldosCargasProps {
   clientId: string;
@@ -388,6 +390,8 @@ type OverrideRow = {
   empleadoNombre: string;
   rem4y8Override: string | null;
   rem9Override: string | null;
+  rem4y8Sugerido: string | null;
+  rem9Sugerido: string | null;
   contribucionAdicionalOS: string | null;
   importeADetraerLey27430: string | null;
   importeMaternidadArt13: string | null;
@@ -405,8 +409,8 @@ function LsdOverridesDialog({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
-  const [rem4y8, setRem4y8] = useState(row.rem4y8Override ?? '');
-  const [rem9, setRem9] = useState(row.rem9Override ?? '');
+  const [rem4y8, setRem4y8] = useState(row.rem4y8Override ?? row.rem4y8Sugerido ?? '');
+  const [rem9, setRem9] = useState(row.rem9Override ?? row.rem9Sugerido ?? '');
   const [aporteOS, setAporteOS] = useState(row.contribucionAdicionalOS ?? '');
   const [detraer, setDetraer] = useState(row.importeADetraerLey27430 ?? '');
   const [maternidad, setMaternidad] = useState(row.importeMaternidadArt13 ?? '');
@@ -624,6 +628,7 @@ function GenerarPresentacionDialog({
   const queryClient = useQueryClient();
   const [editingOverride, setEditingOverride] = useState<OverrideRow | null>(null);
   const [selectedCuils, setSelectedCuils] = useState<Set<string> | null>(null);
+  const [showEmpleadorConfig, setShowEmpleadorConfig] = useState(false);
 
   const { data: preview, isLoading: loadingPreview, error } = useQuery({
     queryKey: ['lsd-preview', profileId, periodo],
@@ -731,11 +736,43 @@ function GenerarPresentacionDialog({
             {preview && (
               <div className="grid grid-cols-4 gap-3">
                 <StatCard icon={<Building2 className="h-4 w-4" />} label="Empresa" value={preview.employer.cuit} sub={preview.employer.nombre} />
-                <StatCard icon={<FileText className="h-4 w-4" />} label="Tipo empleador" value={preview.employer.codigoLsd ?? '—'} sub={preview.employer.tipoEmpresaNombre ?? 'Sin configurar'} />
+                {/* Tipo empleador con botón de configuración */}
+                <div
+                  className="flex flex-col gap-1.5 p-4 rounded-[var(--arca-r-lg)] relative group"
+                  style={{ background: 'var(--arca-surface)', border: '1px solid var(--arca-border)' }}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-[var(--arca-ink-3)]">
+                      <FileText className="h-4 w-4" />
+                      <span className="text-[11px] font-medium uppercase tracking-wide">Tipo empleador</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowEmpleadorConfig(true)}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-[var(--arca-border)] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)]"
+                      title="Editar configuración de empleador"
+                    >
+                      <Settings className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <p className="text-[18px] font-semibold text-[var(--arca-ink)] font-mono leading-tight">
+                    {preview.employer.codigoLsd ?? '—'}
+                  </p>
+                  <p className={`text-[11px] truncate ${!preview.employer.tipoEmpresaNombre ? 'text-amber-500' : 'text-[var(--arca-ink-3)]'}`}>
+                    {preview.employer.tipoEmpresaNombre ?? 'Sin configurar'}
+                  </p>
+                </div>
                 <StatCard icon={<Users className="h-4 w-4" />} label="Empleados" value={String(isFiltered ? effectiveCuils.size : preview.empleados.length)} sub={isFiltered ? `de ${preview.empleados.length} en el período` : 'en este período'} />
                 <StatCard icon={<Hash className="h-4 w-4" />} label="Conceptos" value={String(preview.conceptos)} sub="líneas en el archivo" />
               </div>
             )}
+
+            <EmpleadorConfigDialog
+              open={showEmpleadorConfig}
+              onOpenChange={setShowEmpleadorConfig}
+              clientId={profileId}
+              empresaNombre={preview?.employer.nombre ?? ''}
+            />
 
             {/* Loading */}
             {loadingPreview && (
@@ -839,6 +876,8 @@ function GenerarPresentacionDialog({
                                 empleadoNombre: emp.empleadoNombre,
                                 rem4y8Override: emp.rem4y8Override,
                                 rem9Override: emp.rem9Override,
+                                rem4y8Sugerido: emp.rem4y8Sugerido ?? null,
+                                rem9Sugerido: emp.rem9Sugerido ?? null,
                                 contribucionAdicionalOS: emp.contribucionAdicionalOS,
                                 importeADetraerLey27430: emp.importeADetraerLey27430,
                                 importeMaternidadArt13: emp.importeMaternidadArt13,
