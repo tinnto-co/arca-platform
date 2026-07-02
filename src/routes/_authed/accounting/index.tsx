@@ -24,7 +24,6 @@ import {
   Copy,
   Ban,
   ChevronLeft,
-  X,
   Download,
   FileSpreadsheet,
 } from 'lucide-react';
@@ -63,6 +62,7 @@ import {
   type PeriodView,
   type LedgerRow,
   type ConsolidatedAccount,
+  type JournalEntryListRow,
 } from '@/actions/accounting';
 import {
   exportMayorExcel,
@@ -1883,7 +1883,7 @@ function Asientos({
   const pageSize = 25;
 
   const [editor, setEditor] = useState<EditorState | null>(null);
-  const [detailId, setDetailId] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const { data: postable = [] } = useQuery({
     queryKey: ['accounting', 'postable', clientId],
@@ -1915,6 +1915,17 @@ function Asientos({
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
+  const toggleExpand = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const allExpanded = rows.length > 0 && rows.every((r) => expanded.has(r.id));
+  const toggleExpandAll = () =>
+    setExpanded(allExpanded ? new Set() : new Set(rows.map((r) => r.id)));
+
   const exportLibroDiario = () => {
     getJournalBook({
       data: { clientId, fiscalYearId: data?.fiscalYearId ?? undefined },
@@ -1940,7 +1951,6 @@ function Asientos({
     action: 'edit' | 'duplicate',
     d: EditorInitial
   ) {
-    setDetailId(null);
     setEditor({ mode: action, initial: d });
   }
 
@@ -2031,6 +2041,13 @@ function Asientos({
           </label>
 
           <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={toggleExpandAll}
+              disabled={rows.length === 0}
+              className="h-8 px-2.5 text-[11.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] disabled:opacity-40 transition-colors"
+            >
+              {allExpanded ? 'Colapsar todo' : 'Expandir todo'}
+            </button>
             <select
               value={`${sortBy}:${sortDir}`}
               onChange={(e) => {
@@ -2069,6 +2086,7 @@ function Asientos({
 
         {/* Column headers */}
         <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+          <div className="w-4 shrink-0" />
           <div className="w-12 shrink-0">N°</div>
           <div className="w-24 shrink-0">Fecha</div>
           <div className="flex-1 min-w-0">Descripción</div>
@@ -2087,46 +2105,15 @@ function Asientos({
           </div>
         ) : (
           rows.map((r) => (
-            <button
+            <EntryRow
               key={r.id}
-              onClick={() => setDetailId(r.id)}
-              className="w-full flex items-center gap-3 px-4 py-2.5 border-b border-[var(--arca-border)] hover:bg-[var(--arca-surface-2)] transition-colors text-left"
-            >
-              <div className="w-12 shrink-0 text-[12px] font-mono text-[var(--arca-ink-3)]">
-                {r.number}
-              </div>
-              <div className="w-24 shrink-0 text-[12px] text-[var(--arca-ink-2)]">
-                {fmtFecha(r.entryDate)}
-              </div>
-              <div
-                className={`flex-1 min-w-0 truncate text-[13px] ${
-                  r.isVoided
-                    ? 'line-through text-[var(--arca-ink-3)]'
-                    : 'text-[var(--arca-ink)]'
-                }`}
-              >
-                {r.description?.trim() ? (
-                  r.description
-                ) : (
-                  <span className="text-[var(--arca-ink-3)] italic">
-                    (sin descripción)
-                  </span>
-                )}
-                {r.isVoided && (
-                  <span className="ml-2 text-[10px] not-italic no-underline text-[oklch(0.55_0.18_25)]">
-                    ANULADO
-                  </span>
-                )}
-              </div>
-              <div className="w-28 shrink-0 text-right text-[12.5px] font-medium text-[var(--arca-ink)]">
-                $ {fmtMoney(r.total)}
-              </div>
-              <div className="w-28 shrink-0">
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
-                  {JOURNAL_ORIGIN_LABELS[r.origin] ?? r.origin}
-                </span>
-              </div>
-            </button>
+              row={r}
+              expanded={expanded.has(r.id)}
+              onToggle={() => toggleExpand(r.id)}
+              canWrite={canWrite}
+              onAction={openEditorFromDetail}
+              onChanged={invalidate}
+            />
           ))
         )}
 
@@ -2169,16 +2156,6 @@ function Asientos({
             setEditor(null);
             invalidate();
           }}
-        />
-      )}
-
-      {detailId && (
-        <AsientoDetail
-          entryId={detailId}
-          canWrite={canWrite}
-          onClose={() => setDetailId(null)}
-          onAction={openEditorFromDetail}
-          onChanged={invalidate}
         />
       )}
     </>
@@ -2425,18 +2402,20 @@ function AsientoEditor({
   );
 }
 
-function AsientoDetail({
+/**
+ * Cuerpo del detalle de un asiento (líneas + log + acciones). Compartido por la
+ * fila expandible del libro diario y por el diálogo de drill-down (Mayor/Balance).
+ */
+function EntryDetailBody({
   entryId,
   canWrite,
-  onClose,
   onAction,
-  onChanged,
+  onDone,
 }: {
   entryId: string;
   canWrite: boolean;
-  onClose: () => void;
   onAction: (action: 'edit' | 'duplicate', initial: EditorInitial) => void;
-  onChanged: () => void;
+  onDone: () => void;
 }) {
   const [voidOpen, setVoidOpen] = useState(false);
   const [reason, setReason] = useState('');
@@ -2452,17 +2431,24 @@ function AsientoDetail({
     onSuccess: () => {
       toast.success('Asiento anulado');
       setVoidOpen(false);
-      onChanged();
-      onClose();
+      onDone();
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
+  if (isLoading || !data) {
+    return (
+      <div className="py-6 text-center text-[12.5px] text-[var(--arca-ink-3)]">
+        Cargando…
+      </div>
+    );
+  }
+
   const toInitial = (): EditorInitial => ({
-    id: data!.entry.id,
-    entryDate: new Date(data!.entry.entryDate).toISOString().slice(0, 10),
-    description: data!.entry.description ?? '',
-    lines: data!.lines.map((l) => ({
+    id: data.entry.id,
+    entryDate: new Date(data.entry.entryDate).toISOString().slice(0, 10),
+    description: data.entry.description ?? '',
+    lines: data.lines.map((l) => ({
       accountId: l.accountId,
       debit: l.debit > 0 ? String(l.debit) : '',
       credit: l.credit > 0 ? String(l.credit) : '',
@@ -2470,182 +2456,270 @@ function AsientoDetail({
     })),
   });
 
-  const editable =
-    !!data && !data.entry.isVoided && data.entry.periodStatus === 'open';
+  const editable = !data.entry.isVoided && data.entry.periodStatus === 'open';
+
+  return (
+    <div className="space-y-3">
+      {data.entry.isVoided && data.entry.voidReason && (
+        <div className="text-[12px] rounded-[8px] bg-[color-mix(in_oklch,oklch(0.55_0.18_25),transparent_92%)] text-[oklch(0.45_0.16_25)] px-3 py-2">
+          Motivo de anulación: {data.entry.voidReason}
+        </div>
+      )}
+
+      {/* Líneas */}
+      <div className="border border-[var(--arca-border)] rounded-[10px] overflow-hidden bg-[var(--arca-surface)]">
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-surface-2)] text-[10px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+          <div className="flex-1">Cuenta</div>
+          <div className="w-28 text-right">Debe</div>
+          <div className="w-28 text-right">Haber</div>
+        </div>
+        {data.lines.map((l) => (
+          <div
+            key={l.id}
+            className="flex items-center gap-2 px-3 py-1.5 border-t border-[var(--arca-border)] text-[12.5px]"
+          >
+            <div className="flex-1 min-w-0">
+              <span className="font-mono text-[11px] text-[var(--arca-ink-3)]">
+                {l.accountCode}
+              </span>{' '}
+              <span className="text-[var(--arca-ink)]">{l.accountName}</span>
+              {l.description && (
+                <span className="text-[var(--arca-ink-3)]">
+                  {' '}
+                  · {l.description}
+                </span>
+              )}
+            </div>
+            <div className="w-28 text-right text-[var(--arca-ink)]">
+              {l.debit > 0 ? `$ ${fmtMoney(l.debit)}` : ''}
+            </div>
+            <div className="w-28 text-right text-[var(--arca-ink)]">
+              {l.credit > 0 ? `$ ${fmtMoney(l.credit)}` : ''}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Log adjunto */}
+      {data.log.length > 0 && (
+        <div className="text-[11.5px] text-[var(--arca-ink-3)] space-y-1">
+          {data.log.map((e) => (
+            <div key={e.id}>
+              {e.eventType === 'journal_entry_voided' ? 'Anulado' : 'Editado'}{' '}
+              por {e.userName ?? e.userEmail ?? 'usuario'} ·{' '}
+              {new Date(e.createdAt).toLocaleString('es-AR')}
+              {e.eventData?.reason ? ` · Motivo: ${e.eventData.reason}` : ''}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Acciones */}
+      {canWrite && (
+        <div className="flex flex-wrap items-center gap-2 pt-0.5">
+          <button
+            onClick={() =>
+              onAction('duplicate', {
+                ...toInitial(),
+                id: undefined,
+                entryDate: '',
+              })
+            }
+            className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
+          >
+            <Copy className="w-3.5 h-3.5" strokeWidth={1.8} /> Duplicar
+          </button>
+          {editable && (
+            <>
+              <button
+                onClick={() => setVoidOpen((v) => !v)}
+                className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[oklch(0.50_0.16_25)] hover:bg-[color-mix(in_oklch,oklch(0.55_0.18_25),transparent_92%)]"
+              >
+                <Ban className="w-3.5 h-3.5" strokeWidth={1.8} /> Anular
+              </button>
+              <button
+                onClick={() => onAction('edit', toInitial())}
+                className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90"
+              >
+                <Pencil className="w-3.5 h-3.5" strokeWidth={1.8} /> Editar
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Anular: confirmación inline con motivo */}
+      {voidOpen && (
+        <div className="rounded-[10px] border border-[var(--arca-border)] bg-[var(--arca-surface)] p-3 space-y-2">
+          <p className="text-[12px] text-[var(--arca-ink-3)]">
+            El asiento no se borra: queda marcado como anulado y conserva su
+            número. El motivo queda en el log.
+          </p>
+          <textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            rows={2}
+            placeholder="Motivo de la anulación…"
+            className="w-full px-2.5 py-2 text-[12.5px] border border-[var(--arca-border)] rounded-[8px] bg-[var(--arca-surface)] text-[var(--arca-ink)] focus:outline-none resize-none"
+          />
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setVoidOpen(false)}
+              className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)]"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={() => voidMut.mutate()}
+              disabled={!reason.trim() || voidMut.isPending}
+              className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[oklch(0.50_0.16_25)] text-white disabled:opacity-50"
+            >
+              Anular asiento
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Diálogo de detalle de un asiento (drill-down desde Mayor/Balance). */
+function AsientoDetail({
+  entryId,
+  canWrite,
+  onClose,
+  onAction,
+  onChanged,
+}: {
+  entryId: string;
+  canWrite: boolean;
+  onClose: () => void;
+  onAction: (action: 'edit' | 'duplicate', initial: EditorInitial) => void;
+  onChanged: () => void;
+}) {
+  const { data } = useQuery({
+    queryKey: ['accounting', 'entry', entryId],
+    queryFn: () => getJournalEntry({ data: { id: entryId } }),
+  });
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-[680px]">
-        {isLoading || !data ? (
-          <div className="py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
-            Cargando…
-          </div>
-        ) : (
-          <>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                Asiento N°{data.entry.number}
-                {data.entry.isVoided && (
-                  <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-[color-mix(in_oklch,oklch(0.55_0.18_25),transparent_88%)] text-[oklch(0.50_0.18_25)]">
-                    Anulado
-                  </span>
-                )}
-              </DialogTitle>
-              <DialogDescription>
-                {fmtFecha(data.entry.entryDate)} ·{' '}
-                {JOURNAL_ORIGIN_LABELS[data.entry.origin] ?? data.entry.origin}{' '}
-                · Ejercicio N°
-                {data.entry.fyNumber}
-                {data.entry.createdByName
-                  ? ` · cargado por ${data.entry.createdByName}`
-                  : ''}
-              </DialogDescription>
-            </DialogHeader>
-
-            {data.entry.description && (
-              <p className="text-[13px] text-[var(--arca-ink)] -mt-1">
-                {data.entry.description}
-              </p>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            {data ? `Asiento N°${data.entry.number}` : 'Asiento'}
+            {data?.entry.isVoided && (
+              <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-[color-mix(in_oklch,oklch(0.55_0.18_25),transparent_88%)] text-[oklch(0.50_0.18_25)]">
+                Anulado
+              </span>
             )}
-
-            {data.entry.isVoided && data.entry.voidReason && (
-              <div className="text-[12px] rounded-[8px] bg-[color-mix(in_oklch,oklch(0.55_0.18_25),transparent_92%)] text-[oklch(0.45_0.16_25)] px-3 py-2">
-                Motivo de anulación: {data.entry.voidReason}
-              </div>
-            )}
-
-            {/* Líneas */}
-            <div className="border border-[var(--arca-border)] rounded-[10px] overflow-hidden">
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-surface-2)] text-[10px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
-                <div className="flex-1">Cuenta</div>
-                <div className="w-28 text-right">Debe</div>
-                <div className="w-28 text-right">Haber</div>
-              </div>
-              {data.lines.map((l) => (
-                <div
-                  key={l.id}
-                  className="flex items-center gap-2 px-3 py-1.5 border-t border-[var(--arca-border)] text-[12.5px]"
-                >
-                  <div className="flex-1 min-w-0">
-                    <span className="font-mono text-[11px] text-[var(--arca-ink-3)]">
-                      {l.accountCode}
-                    </span>{' '}
-                    <span className="text-[var(--arca-ink)]">
-                      {l.accountName}
-                    </span>
-                    {l.description && (
-                      <span className="text-[var(--arca-ink-3)]">
-                        {' '}
-                        · {l.description}
-                      </span>
-                    )}
-                  </div>
-                  <div className="w-28 text-right text-[var(--arca-ink)]">
-                    {l.debit > 0 ? `$ ${fmtMoney(l.debit)}` : ''}
-                  </div>
-                  <div className="w-28 text-right text-[var(--arca-ink)]">
-                    {l.credit > 0 ? `$ ${fmtMoney(l.credit)}` : ''}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Log adjunto */}
-            {data.log.length > 0 && (
-              <div className="text-[11.5px] text-[var(--arca-ink-3)] space-y-1">
-                {data.log.map((e) => (
-                  <div key={e.id}>
-                    {e.eventType === 'journal_entry_voided'
-                      ? 'Anulado'
-                      : 'Editado'}{' '}
-                    por {e.userName ?? e.userEmail ?? 'usuario'} ·{' '}
-                    {new Date(e.createdAt).toLocaleString('es-AR')}
-                    {e.eventData?.reason
-                      ? ` · Motivo: ${e.eventData.reason}`
-                      : ''}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <DialogFooter className="flex-wrap">
-              {canWrite && (
-                <button
-                  onClick={() =>
-                    onAction('duplicate', {
-                      ...toInitial(),
-                      id: undefined,
-                      entryDate: '',
-                    })
-                  }
-                  className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
-                >
-                  <Copy className="w-3.5 h-3.5" strokeWidth={1.8} /> Duplicar
-                </button>
-              )}
-              {canWrite && editable && (
-                <>
-                  <button
-                    onClick={() => setVoidOpen(true)}
-                    className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[oklch(0.50_0.16_25)] hover:bg-[color-mix(in_oklch,oklch(0.55_0.18_25),transparent_92%)]"
-                  >
-                    <Ban className="w-3.5 h-3.5" strokeWidth={1.8} /> Anular
-                  </button>
-                  <button
-                    onClick={() => onAction('edit', toInitial())}
-                    className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90"
-                  >
-                    <Pencil className="w-3.5 h-3.5" strokeWidth={1.8} /> Editar
-                  </button>
-                </>
-              )}
-            </DialogFooter>
-
-            {/* Sub-diálogo de anulación */}
-            {voidOpen && (
-              <div className="absolute inset-0 bg-[var(--arca-surface)]/95 rounded-[14px] flex items-center justify-center p-6">
-                <div className="w-full max-w-[420px] space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-[14px] font-semibold text-[var(--arca-ink)]">
-                      Anular asiento N°{data.entry.number}
-                    </h3>
-                    <button onClick={() => setVoidOpen(false)}>
-                      <X className="w-4 h-4 text-[var(--arca-ink-3)]" />
-                    </button>
-                  </div>
-                  <p className="text-[12px] text-[var(--arca-ink-3)]">
-                    El asiento no se borra: queda marcado como anulado y
-                    conserva su número. El motivo queda en el log.
-                  </p>
-                  <textarea
-                    value={reason}
-                    onChange={(e) => setReason(e.target.value)}
-                    rows={3}
-                    placeholder="Motivo de la anulación…"
-                    className="w-full px-2.5 py-2 text-[12.5px] border border-[var(--arca-border)] rounded-[8px] bg-[var(--arca-surface)] text-[var(--arca-ink)] focus:outline-none resize-none"
-                  />
-                  <div className="flex justify-end gap-2">
-                    <button
-                      onClick={() => setVoidOpen(false)}
-                      className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)]"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      onClick={() => voidMut.mutate()}
-                      disabled={!reason.trim() || voidMut.isPending}
-                      className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[oklch(0.50_0.16_25)] text-white disabled:opacity-50"
-                    >
-                      Anular asiento
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </>
+          </DialogTitle>
+          <DialogDescription>
+            {data
+              ? `${fmtFecha(data.entry.entryDate)} · ${
+                  JOURNAL_ORIGIN_LABELS[data.entry.origin] ?? data.entry.origin
+                } · Ejercicio N°${data.entry.fyNumber}${
+                  data.entry.createdByName
+                    ? ` · cargado por ${data.entry.createdByName}`
+                    : ''
+                }`
+              : 'Cargando…'}
+          </DialogDescription>
+        </DialogHeader>
+        {data?.entry.description && (
+          <p className="text-[13px] text-[var(--arca-ink)] -mt-1">
+            {data.entry.description}
+          </p>
         )}
+        <EntryDetailBody
+          entryId={entryId}
+          canWrite={canWrite}
+          onAction={onAction}
+          onDone={() => {
+            onChanged();
+            onClose();
+          }}
+        />
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Fila expandible del libro diario: resumen clickeable + detalle inline. */
+function EntryRow({
+  row,
+  expanded,
+  onToggle,
+  canWrite,
+  onAction,
+  onChanged,
+}: {
+  row: JournalEntryListRow;
+  expanded: boolean;
+  onToggle: () => void;
+  canWrite: boolean;
+  onAction: (action: 'edit' | 'duplicate', initial: EditorInitial) => void;
+  onChanged: () => void;
+}) {
+  return (
+    <div className="border-b border-[var(--arca-border)]">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--arca-surface-2)] transition-colors text-left"
+      >
+        <span className="w-4 shrink-0 text-[var(--arca-ink-3)]">
+          {expanded ? (
+            <ChevronDown className="w-4 h-4" strokeWidth={1.8} />
+          ) : (
+            <ChevronRight className="w-4 h-4" strokeWidth={1.8} />
+          )}
+        </span>
+        <div className="w-12 shrink-0 text-[12px] font-mono text-[var(--arca-ink-3)]">
+          {row.number}
+        </div>
+        <div className="w-24 shrink-0 text-[12px] text-[var(--arca-ink-2)]">
+          {fmtFecha(row.entryDate)}
+        </div>
+        <div
+          className={`flex-1 min-w-0 truncate text-[13px] ${
+            row.isVoided
+              ? 'line-through text-[var(--arca-ink-3)]'
+              : 'text-[var(--arca-ink)]'
+          }`}
+        >
+          {row.description?.trim() ? (
+            row.description
+          ) : (
+            <span className="text-[var(--arca-ink-3)] italic">
+              (sin descripción)
+            </span>
+          )}
+          {row.isVoided && (
+            <span className="ml-2 text-[10px] not-italic no-underline text-[oklch(0.55_0.18_25)]">
+              ANULADO
+            </span>
+          )}
+        </div>
+        <div className="w-28 shrink-0 text-right text-[12.5px] font-medium text-[var(--arca-ink)]">
+          $ {fmtMoney(row.total)}
+        </div>
+        <div className="w-28 shrink-0">
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
+            {JOURNAL_ORIGIN_LABELS[row.origin] ?? row.origin}
+          </span>
+        </div>
+      </button>
+      {expanded && (
+        <div className="px-4 pb-4 pt-1 pl-11 bg-[color-mix(in_oklch,var(--arca-surface-2),transparent_45%)]">
+          <EntryDetailBody
+            entryId={row.id}
+            canWrite={canWrite}
+            onAction={onAction}
+            onDone={onChanged}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
