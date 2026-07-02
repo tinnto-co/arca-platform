@@ -20,9 +20,17 @@ import {
   representative,
   user,
 } from '@/drizzle/schema';
-import { getSessionWithOrg, getMemberRole, assertCanWrite } from '@/actions/helpers';
+import {
+  getSessionWithOrg,
+  getMemberRole,
+  assertCanWrite,
+} from '@/actions/helpers';
 import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from 'drizzle-orm';
-import { CUSTOM_CODE_PREFIX, PENDING_REVIEW_CODE } from '@/lib/accounting-labels';
+import {
+  CUSTOM_CODE_PREFIX,
+  CUSTOM_SEGMENT_START,
+  PENDING_REVIEW_CODE,
+} from '@/lib/accounting-labels';
 
 /* ───────────────────────────── Helpers ───────────────────────────── */
 
@@ -130,6 +138,42 @@ async function countMovements(
     )
     .where(and(...conditions));
   return row?.count ?? 0;
+}
+
+/** Último segmento numérico de un código ("2.1.05.901" → 901), o -1 si no aplica. */
+function lastCodeSegment(code: string): number {
+  const seg = code.slice(code.lastIndexOf('.') + 1);
+  const n = parseInt(seg, 10);
+  return Number.isNaN(n) ? -1 : n;
+}
+
+/**
+ * Genera el próximo código libre para una cuenta propia bajo `parent`, dentro
+ * del rango reservado (último segmento ≥ CUSTOM_SEGMENT_START). Considera los
+ * hijos base del estudio y los custom de la empresa para no repetir código.
+ */
+async function generateCustomChildCode(
+  orgId: string,
+  clientId: string,
+  parent: AccountRow
+): Promise<string> {
+  const siblings = await db
+    .select({ code: account.code })
+    .from(account)
+    .where(
+      and(
+        eq(account.organizationId, orgId),
+        eq(account.parentId, parent.id),
+        sql`(${account.scope} = 'base' OR ${account.clientId} = ${clientId})`
+      )
+    );
+  let max = CUSTOM_SEGMENT_START - 1;
+  for (const s of siblings) {
+    const seg = lastCodeSegment(s.code);
+    if (seg > max) max = seg;
+  }
+  const next = max + 1;
+  return `${parent.code}.${String(next).padStart(3, '0')}`;
 }
 
 /* ───────────────────────────── Queries ───────────────────────────── */
@@ -352,14 +396,15 @@ export const setAccountActive = createServerFn({ method: 'POST' })
 
 /**
  * Crea una cuenta custom propia de la empresa.  (US 1.1.3)
- * - Código en rango reservado (empieza con "9.").
- * - No puede colisionar con un código del plan base ni de otra custom de la empresa.
+ * - Se cuelga de un agrupador (cuenta padre) del plan visible para la empresa.
+ * - El código se autogenera dentro del rubro del padre, en el rango reservado
+ *   para cuentas propias (`.900+`), así queda ordenada junto a sus hermanas sin
+ *   colisionar con cuentas base.
  */
 export const createCustomAccount = createServerFn({ method: 'POST' })
   .inputValidator(
     z.object({
       clientId: z.string().uuid(),
-      code: z.string().min(1),
       name: z.string().min(1),
       type: z.enum(['imputable', 'group']),
       accountGroup: z.string().optional(),
@@ -368,7 +413,7 @@ export const createCustomAccount = createServerFn({ method: 'POST' })
         .enum(['administration', 'sales', 'financial', 'other'])
         .optional(),
       description: z.string().optional(),
-      parentId: z.string().uuid().optional(),
+      parentId: z.string().uuid(),
     })
   )
   .handler(async (ctx) => {
@@ -379,26 +424,24 @@ export const createCustomAccount = createServerFn({ method: 'POST' })
     const d = ctx.data;
     await ensureClientBelongsToOrg(d.clientId, orgId);
 
-    const code = d.code.trim();
-    if (!/^[0-9]+(\.[0-9]+)*$/.test(code)) {
-      throw new Error(
-        'El código solo admite números separados por puntos (ej. "9.1.01")'
-      );
-    }
-    if (!code.startsWith(CUSTOM_CODE_PREFIX)) {
-      throw new Error(
-        'Las cuentas propias deben usar el rango reservado (código que empieza con "9.")'
-      );
-    }
     if (d.type === 'imputable' && (!d.accountGroup || !d.expectedBalance)) {
       throw new Error(
         'Las cuentas imputables requieren rubro de exposición y saldo esperado'
       );
     }
 
-    // No colisión con el plan base del estudio ni con otra custom de la empresa.
+    // La cuenta propia se cuelga de un agrupador del plan visible para la empresa.
+    const parent = await loadAccountForClient(d.parentId, orgId, d.clientId);
+    if (parent.type !== 'group') {
+      throw new Error('La cuenta padre debe ser una agrupación');
+    }
+
+    // Código autogenerado en el rango reservado, ordenado junto a sus hermanas.
+    const code = await generateCustomChildCode(orgId, d.clientId, parent);
+
+    // Chequeo de colisión defensivo (por si dos altas simultáneas).
     const [collision] = await db
-      .select({ id: account.id, scope: account.scope })
+      .select({ id: account.id })
       .from(account)
       .where(
         and(
@@ -409,14 +452,8 @@ export const createCustomAccount = createServerFn({ method: 'POST' })
       )
       .limit(1);
     if (collision) {
-      throw new Error(
-        collision.scope === 'base'
-          ? 'Ese código ya existe en el plan base del estudio'
-          : 'Ya existe una cuenta con ese código en esta empresa'
-      );
+      throw new Error('No se pudo asignar un código libre. Reintentá');
     }
-
-    if (d.parentId) await loadAccountForClient(d.parentId, orgId, d.clientId);
 
     const [created] = await db
       .insert(account)
@@ -428,7 +465,7 @@ export const createCustomAccount = createServerFn({ method: 'POST' })
         name: d.name.trim(),
         description: d.description?.trim() ? d.description.trim() : null,
         type: d.type,
-        parentId: d.parentId ?? null,
+        parentId: parent.id,
         accountGroup: (d.accountGroup ?? null) as never,
         expectedBalance: (d.expectedBalance ?? null) as never,
         expenseFunction: (d.expenseFunction ?? null) as never,
@@ -559,6 +596,11 @@ export const createBaseAccount = createServerFn({ method: 'POST' })
         'El rango "9.x" está reservado para cuentas propias de cada empresa'
       );
     }
+    if (lastCodeSegment(code) >= CUSTOM_SEGMENT_START) {
+      throw new Error(
+        'El rango ".900" en adelante está reservado para cuentas propias de cada empresa'
+      );
+    }
     if (d.type === 'imputable' && (!d.accountGroup || !d.expectedBalance)) {
       throw new Error(
         'Las cuentas imputables requieren rubro de exposición y saldo esperado'
@@ -578,7 +620,19 @@ export const createBaseAccount = createServerFn({ method: 'POST' })
       .limit(1);
     if (collision) throw new Error('Ese código ya existe en el plan base');
 
-    if (d.parentId) await loadBaseAccount(d.parentId, orgId);
+    // Si se cuelga de un padre: debe ser agrupación y el código tiene que
+    // empezar con el del padre (evita jerarquías código↔padre inconsistentes).
+    if (d.parentId) {
+      const parent = await loadBaseAccount(d.parentId, orgId);
+      if (parent.type !== 'group') {
+        throw new Error('La cuenta padre debe ser una agrupación');
+      }
+      if (!code.startsWith(`${parent.code}.`)) {
+        throw new Error(
+          `El código debe empezar con el de la cuenta padre ("${parent.code}.")`
+        );
+      }
+    }
 
     const [created] = await db
       .insert(account)
@@ -707,6 +761,48 @@ export const deleteBaseAccount = createServerFn({ method: 'POST' })
     return { ok: true };
   });
 
+/**
+ * Borra una cuenta custom propia de la empresa.  (US 1.1.3)
+ * No permitido si tiene movimientos en la empresa o si tiene subcuentas.
+ */
+export const deleteCustomAccount = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({ clientId: z.string().uuid(), id: z.string().uuid() })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertOwner(role);
+
+    const { clientId, id } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    const acc = await loadAccountForClient(id, orgId, clientId);
+    if (acc.scope !== 'custom') {
+      throw new Error('La cuenta no es una cuenta propia de la empresa');
+    }
+
+    const currentCount = await countMovements(clientId, id, null);
+    if (currentCount > 0) {
+      throw new Error(
+        'No se puede borrar: la cuenta tiene movimientos en esta empresa'
+      );
+    }
+
+    const [child] = await db
+      .select({ id: account.id })
+      .from(account)
+      .where(eq(account.parentId, id))
+      .limit(1);
+    if (child) {
+      throw new Error(
+        'No se puede borrar: la cuenta tiene subcuentas. Borrá o reasigná las hijas primero'
+      );
+    }
+
+    await db.delete(account).where(eq(account.id, id));
+    return { ok: true };
+  });
+
 /* ═══════════════ EJERCICIOS Y PERÍODOS (US 1.2.x) ═══════════════ */
 
 type FiscalYearRow = typeof fiscalYear.$inferSelect;
@@ -723,7 +819,10 @@ async function loadFiscalYearForOrg(
     .innerJoin(client, eq(client.id, fiscalYear.clientId))
     .innerJoin(representative, eq(representative.id, client.representativeId))
     .where(
-      and(eq(fiscalYear.id, fiscalYearId), eq(representative.organizationId, orgId))
+      and(
+        eq(fiscalYear.id, fiscalYearId),
+        eq(representative.organizationId, orgId)
+      )
     )
     .limit(1);
   if (!row) throw new Error('Ejercicio no encontrado o no autorizado');
@@ -742,7 +841,10 @@ async function loadPeriodForOrg(
     .innerJoin(client, eq(client.id, accountingPeriod.clientId))
     .innerJoin(representative, eq(representative.id, client.representativeId))
     .where(
-      and(eq(accountingPeriod.id, periodId), eq(representative.organizationId, orgId))
+      and(
+        eq(accountingPeriod.id, periodId),
+        eq(representative.organizationId, orgId)
+      )
     )
     .limit(1);
   if (!row) throw new Error('Período no encontrado o no autorizado');
@@ -757,7 +859,10 @@ async function countPendingReviewEntries(
   const [r] = await db
     .select({ count: sql<number>`count(distinct ${journalEntry.id})::int` })
     .from(journalEntry)
-    .innerJoin(journalEntryLine, eq(journalEntryLine.journalEntryId, journalEntry.id))
+    .innerJoin(
+      journalEntryLine,
+      eq(journalEntryLine.journalEntryId, journalEntry.id)
+    )
     .innerJoin(account, eq(account.id, journalEntryLine.accountId))
     .where(
       and(
@@ -826,14 +931,22 @@ export const createFiscalYear = createServerFn({ method: 'POST' })
     }
 
     const [{ maxNum }] = await db
-      .select({ maxNum: sql<number>`coalesce(max(${fiscalYear.number}),0)::int` })
+      .select({
+        maxNum: sql<number>`coalesce(max(${fiscalYear.number}),0)::int`,
+      })
       .from(fiscalYear)
       .where(eq(fiscalYear.clientId, clientId));
     const number = (maxNum ?? 0) + 1;
 
     const [fy] = await db
       .insert(fiscalYear)
-      .values({ clientId, startDate: start, endDate: end, status: 'open', number })
+      .values({
+        clientId,
+        startDate: start,
+        endDate: end,
+        status: 'open',
+        number,
+      })
       .returning();
 
     const periods = Array.from({ length: 12 }, (_, i) => {
@@ -916,8 +1029,16 @@ export const getFiscalYearDetail = createServerFn({ method: 'GET' })
         totalDebit: sql<string>`coalesce(sum(${journalEntryLine.debit}),0)`,
       })
       .from(journalEntry)
-      .leftJoin(journalEntryLine, eq(journalEntryLine.journalEntryId, journalEntry.id))
-      .where(and(eq(journalEntry.fiscalYearId, fy.id), eq(journalEntry.isVoided, false)))
+      .leftJoin(
+        journalEntryLine,
+        eq(journalEntryLine.journalEntryId, journalEntry.id)
+      )
+      .where(
+        and(
+          eq(journalEntry.fiscalYearId, fy.id),
+          eq(journalEntry.isVoided, false)
+        )
+      )
       .groupBy(journalEntry.periodId);
     const byPeriod = new Map(stats.map((s) => [s.periodId, s]));
 
@@ -955,13 +1076,17 @@ export const closePeriod = createServerFn({ method: 'POST' })
 
     const { period, fy } = await loadPeriodForOrg(ctx.data.periodId, orgId);
     if (fy.status === 'closed') throw new Error('El ejercicio está cerrado');
-    if (period.status === 'closed') throw new Error('El período ya está cerrado');
+    if (period.status === 'closed')
+      throw new Error('El período ya está cerrado');
 
     const [earliest] = await db
       .select({ id: accountingPeriod.id })
       .from(accountingPeriod)
       .where(
-        and(eq(accountingPeriod.fiscalYearId, fy.id), eq(accountingPeriod.status, 'open'))
+        and(
+          eq(accountingPeriod.fiscalYearId, fy.id),
+          eq(accountingPeriod.status, 'open')
+        )
       )
       .orderBy(asc(accountingPeriod.year), asc(accountingPeriod.month))
       .limit(1);
@@ -987,7 +1112,11 @@ export const closePeriod = createServerFn({ method: 'POST' })
       clientId: period.clientId,
       fiscalYearId: fy.id,
       eventType: 'period_closed',
-      eventData: { periodId: period.id, year: period.year, month: period.month },
+      eventData: {
+        periodId: period.id,
+        year: period.year,
+        month: period.month,
+      },
       userId,
     });
 
@@ -1011,7 +1140,8 @@ export const reopenPeriod = createServerFn({ method: 'POST' })
     if (fy.status === 'closed') {
       throw new Error('El ejercicio está cerrado. Reabrí el ejercicio primero');
     }
-    if (period.status !== 'closed') throw new Error('El período no está cerrado');
+    if (period.status !== 'closed')
+      throw new Error('El período no está cerrado');
 
     await db
       .update(accountingPeriod)
@@ -1075,7 +1205,12 @@ async function loadJournalEntryForOrg(
     .from(journalEntry)
     .innerJoin(client, eq(client.id, journalEntry.clientId))
     .innerJoin(representative, eq(representative.id, client.representativeId))
-    .where(and(eq(journalEntry.id, entryId), eq(representative.organizationId, orgId)))
+    .where(
+      and(
+        eq(journalEntry.id, entryId),
+        eq(representative.organizationId, orgId)
+      )
+    )
     .limit(1);
   if (!row) throw new Error('Asiento no encontrado o no autorizado');
   return row.je;
@@ -1097,7 +1232,9 @@ async function resolvePeriodForDate(clientId: string, dateStr: string) {
     )
     .limit(1);
   if (!fy) {
-    throw new Error('No hay un ejercicio que cubra esa fecha. Creá el ejercicio primero');
+    throw new Error(
+      'No hay un ejercicio que cubra esa fecha. Creá el ejercicio primero'
+    );
   }
   const [period] = await db
     .select()
@@ -1122,7 +1259,9 @@ function validateLineAmounts(lines: { debit: number; credit: number }[]) {
     const hasD = l.debit > 0;
     const hasC = l.credit > 0;
     if (hasD && hasC) {
-      throw new Error('Cada línea debe tener importe en Debe o en Haber, no en ambos');
+      throw new Error(
+        'Cada línea debe tener importe en Debe o en Haber, no en ambos'
+      );
     }
     if (!hasD && !hasC) {
       throw new Error('Cada línea debe tener un importe en Debe o en Haber');
@@ -1153,21 +1292,28 @@ async function assertPostableAccounts(
     .select()
     .from(accountOverride)
     .where(
-      and(eq(accountOverride.clientId, clientId), inArray(accountOverride.accountId, ids))
+      and(
+        eq(accountOverride.clientId, clientId),
+        inArray(accountOverride.accountId, ids)
+      )
     );
   const ovMap = new Map(overrides.map((o) => [o.accountId, o]));
   const byId = new Map(accs.map((a) => [a.id, a]));
   for (const id of ids) {
     const a = byId.get(id);
-    if (!a) throw new Error('Una de las cuentas no existe o no pertenece al estudio');
+    if (!a)
+      throw new Error('Una de las cuentas no existe o no pertenece al estudio');
     if (a.scope === 'custom' && a.clientId !== clientId) {
       throw new Error('Una de las cuentas es custom de otra empresa');
     }
     if (a.type !== 'imputable') {
-      throw new Error(`La cuenta ${a.code} es de agrupación; solo se imputan cuentas imputables`);
+      throw new Error(
+        `La cuenta ${a.code} es de agrupación; solo se imputan cuentas imputables`
+      );
     }
     const active = ovMap.get(id)?.isActive ?? a.isActive;
-    if (!active) throw new Error(`La cuenta ${a.code} está inactiva para esta empresa`);
+    if (!active)
+      throw new Error(`La cuenta ${a.code} está inactiva para esta empresa`);
   }
 }
 
@@ -1197,7 +1343,7 @@ export const getPostableAccounts = createServerFn({ method: 'GET' })
     const ovMap = new Map(overrides.map((o) => [o.accountId, o]));
 
     return accounts
-      .filter((a) => (ovMap.get(a.id)?.isActive ?? a.isActive))
+      .filter((a) => ovMap.get(a.id)?.isActive ?? a.isActive)
       .map((a) => ({
         id: a.id,
         code: a.code,
@@ -1230,12 +1376,19 @@ export const createJournalEntry = createServerFn({ method: 'POST' })
 
     const { clientId } = ctx.data;
     await ensureClientBelongsToOrg(clientId, orgId);
-    const { fy, period, date } = await resolvePeriodForDate(clientId, ctx.data.entryDate);
+    const { fy, period, date } = await resolvePeriodForDate(
+      clientId,
+      ctx.data.entryDate
+    );
     if (period.status === 'closed') {
       throw new Error('No se puede cargar el asiento: el período está cerrado');
     }
     validateLineAmounts(ctx.data.lines);
-    await assertPostableAccounts(clientId, orgId, ctx.data.lines.map((l) => l.accountId));
+    await assertPostableAccounts(
+      clientId,
+      orgId,
+      ctx.data.lines.map((l) => l.accountId)
+    );
 
     const entry = await db.transaction(async (tx) => {
       const [{ maxNum }] = await tx
@@ -1259,7 +1412,9 @@ export const createJournalEntry = createServerFn({ method: 'POST' })
           periodId: period.id,
           number,
           entryDate: date,
-          description: ctx.data.description?.trim() ? ctx.data.description.trim() : null,
+          description: ctx.data.description?.trim()
+            ? ctx.data.description.trim()
+            : null,
           origin: 'manual',
           createdBy: userId,
         })
@@ -1299,12 +1454,18 @@ export const updateJournalEntry = createServerFn({ method: 'POST' })
     assertCanWrite(role);
 
     const entry = await loadJournalEntryForOrg(ctx.data.id, orgId);
-    if (entry.isVoided) throw new Error('No se puede editar un asiento anulado');
+    if (entry.isVoided)
+      throw new Error('No se puede editar un asiento anulado');
 
     // El período actual del asiento debe estar abierto.
-    const { period: currentPeriod } = await loadPeriodForOrg(entry.periodId, orgId);
+    const { period: currentPeriod } = await loadPeriodForOrg(
+      entry.periodId,
+      orgId
+    );
     if (currentPeriod.status === 'closed') {
-      throw new Error('No se puede editar: el período del asiento está cerrado');
+      throw new Error(
+        'No se puede editar: el período del asiento está cerrado'
+      );
     }
 
     // Resolver el período de la (posible nueva) fecha; debe ser del mismo ejercicio y abierto.
@@ -1313,7 +1474,9 @@ export const updateJournalEntry = createServerFn({ method: 'POST' })
       ctx.data.entryDate
     );
     if (fy.id !== entry.fiscalYearId) {
-      throw new Error('La fecha debe estar dentro del mismo ejercicio del asiento');
+      throw new Error(
+        'La fecha debe estar dentro del mismo ejercicio del asiento'
+      );
     }
     if (period.status === 'closed') {
       throw new Error('No se puede mover el asiento a un período cerrado');
@@ -1332,7 +1495,9 @@ export const updateJournalEntry = createServerFn({ method: 'POST' })
         .set({
           entryDate: date,
           periodId: period.id,
-          description: ctx.data.description?.trim() ? ctx.data.description.trim() : null,
+          description: ctx.data.description?.trim()
+            ? ctx.data.description.trim()
+            : null,
         })
         .where(eq(journalEntry.id, entry.id));
       await tx
@@ -1376,7 +1541,9 @@ export const voidJournalEntry = createServerFn({ method: 'POST' })
     if (entry.isVoided) throw new Error('El asiento ya está anulado');
     const { period } = await loadPeriodForOrg(entry.periodId, orgId);
     if (period.status === 'closed') {
-      throw new Error('No se puede anular: el período del asiento está cerrado');
+      throw new Error(
+        'No se puede anular: el período del asiento está cerrado'
+      );
     }
 
     await db
@@ -1461,7 +1628,11 @@ export const listJournalEntries = createServerFn({ method: 'GET' })
       fyId = fy?.id;
     }
     if (!fyId) {
-      return { rows: [] as JournalEntryListRow[], total: 0, fiscalYearId: null };
+      return {
+        rows: [] as JournalEntryListRow[],
+        total: 0,
+        fiscalYearId: null,
+      };
     }
 
     const conditions = [
@@ -1470,8 +1641,14 @@ export const listJournalEntries = createServerFn({ method: 'GET' })
     ];
     if (!d.includeVoided) conditions.push(eq(journalEntry.isVoided, false));
     if (d.origin) conditions.push(eq(journalEntry.origin, d.origin));
-    if (d.from) conditions.push(gte(journalEntry.entryDate, new Date(`${d.from}T00:00:00Z`)));
-    if (d.to) conditions.push(lte(journalEntry.entryDate, new Date(`${d.to}T00:00:00Z`)));
+    if (d.from)
+      conditions.push(
+        gte(journalEntry.entryDate, new Date(`${d.from}T00:00:00Z`))
+      );
+    if (d.to)
+      conditions.push(
+        lte(journalEntry.entryDate, new Date(`${d.to}T00:00:00Z`))
+      );
 
     if (d.accountId) {
       const lineEntries = await db
@@ -1485,7 +1662,11 @@ export const listJournalEntries = createServerFn({ method: 'GET' })
         );
       const ids = lineEntries.map((r) => r.id);
       if (ids.length === 0) {
-        return { rows: [] as JournalEntryListRow[], total: 0, fiscalYearId: fyId };
+        return {
+          rows: [] as JournalEntryListRow[],
+          total: 0,
+          fiscalYearId: fyId,
+        };
       }
       conditions.push(inArray(journalEntry.id, ids));
     }
@@ -1495,7 +1676,8 @@ export const listJournalEntries = createServerFn({ method: 'GET' })
       .from(journalEntry)
       .where(and(...conditions));
 
-    const orderCol = d.sortBy === 'date' ? journalEntry.entryDate : journalEntry.number;
+    const orderCol =
+      d.sortBy === 'date' ? journalEntry.entryDate : journalEntry.number;
     const rows = await db
       .select({
         id: journalEntry.id,
@@ -1513,7 +1695,10 @@ export const listJournalEntries = createServerFn({ method: 'GET' })
 
     // Totales y cantidad de líneas por asiento (query agregado aparte).
     const pageIds = rows.map((r) => r.id);
-    const totalsByEntry = new Map<string, { total: number; lineCount: number }>();
+    const totalsByEntry = new Map<
+      string,
+      { total: number; lineCount: number }
+    >();
     if (pageIds.length > 0) {
       const stats = await db
         .select({
@@ -1566,7 +1751,10 @@ export const getJournalEntry = createServerFn({ method: 'GET' })
       })
       .from(journalEntry)
       .leftJoin(fiscalYear, eq(fiscalYear.id, journalEntry.fiscalYearId))
-      .leftJoin(accountingPeriod, eq(accountingPeriod.id, journalEntry.periodId))
+      .leftJoin(
+        accountingPeriod,
+        eq(accountingPeriod.id, journalEntry.periodId)
+      )
       .leftJoin(user, eq(user.id, journalEntry.createdBy))
       .where(eq(journalEntry.id, entry.id))
       .limit(1);
@@ -1702,7 +1890,10 @@ export const getLedgerAccount = createServerFn({ method: 'GET' })
         h: sql<string>`coalesce(sum(${journalEntryLine.credit}),0)`,
       })
       .from(journalEntryLine)
-      .innerJoin(journalEntry, eq(journalEntry.id, journalEntryLine.journalEntryId))
+      .innerJoin(
+        journalEntry,
+        eq(journalEntry.id, journalEntryLine.journalEntryId)
+      )
       .where(
         and(
           eq(journalEntryLine.clientId, d.clientId),
@@ -1737,7 +1928,10 @@ export const getLedgerAccount = createServerFn({ method: 'GET' })
         lineOrder: journalEntryLine.lineOrder,
       })
       .from(journalEntryLine)
-      .innerJoin(journalEntry, eq(journalEntry.id, journalEntryLine.journalEntryId))
+      .innerJoin(
+        journalEntry,
+        eq(journalEntry.id, journalEntryLine.journalEntryId)
+      )
       .where(and(...conds))
       .orderBy(
         asc(journalEntry.entryDate),
@@ -1817,7 +2011,12 @@ export const getLedgerConsolidated = createServerFn({ method: 'GET' })
     await ensureClientBelongsToOrg(d.clientId, orgId);
     const fy = await resolveFiscalYear(d.clientId, orgId, d.fiscalYearId);
     if (!fy) {
-      return { fiscalYear: null, accounts: [], grandTotalDebit: 0, grandTotalCredit: 0 };
+      return {
+        fiscalYear: null,
+        accounts: [],
+        grandTotalDebit: 0,
+        grandTotalCredit: 0,
+      };
     }
 
     const fromDate = d.from ? new Date(`${d.from}T00:00:00Z`) : fy.startDate;
@@ -1831,7 +2030,10 @@ export const getLedgerConsolidated = createServerFn({ method: 'GET' })
         h: sql<string>`coalesce(sum(${journalEntryLine.credit}),0)`,
       })
       .from(journalEntryLine)
-      .innerJoin(journalEntry, eq(journalEntry.id, journalEntryLine.journalEntryId))
+      .innerJoin(
+        journalEntry,
+        eq(journalEntry.id, journalEntryLine.journalEntryId)
+      )
       .where(
         and(
           eq(journalEntryLine.clientId, d.clientId),
@@ -1870,7 +2072,10 @@ export const getLedgerConsolidated = createServerFn({ method: 'GET' })
         lineOrder: journalEntryLine.lineOrder,
       })
       .from(journalEntryLine)
-      .innerJoin(journalEntry, eq(journalEntry.id, journalEntryLine.journalEntryId))
+      .innerJoin(
+        journalEntry,
+        eq(journalEntry.id, journalEntryLine.journalEntryId)
+      )
       .innerJoin(account, eq(account.id, journalEntryLine.accountId))
       .where(and(...conds))
       .orderBy(
@@ -1938,7 +2143,12 @@ export const getLedgerConsolidated = createServerFn({ method: 'GET' })
       const metas = await db
         .select({ id: account.id, code: account.code, name: account.name })
         .from(account)
-        .where(inArray(account.id, missing.map((m) => m.accountId)));
+        .where(
+          inArray(
+            account.id,
+            missing.map((m) => m.accountId)
+          )
+        );
       const metaById = new Map(metas.map((m) => [m.id, m]));
       for (const a of missing) {
         const m = metaById.get(a.accountId);
@@ -2004,7 +2214,10 @@ export const getTrialBalance = createServerFn({ method: 'GET' })
         h: sql<string>`coalesce(sum(${journalEntryLine.credit}),0)`,
       })
       .from(journalEntryLine)
-      .innerJoin(journalEntry, eq(journalEntry.id, journalEntryLine.journalEntryId))
+      .innerJoin(
+        journalEntry,
+        eq(journalEntry.id, journalEntryLine.journalEntryId)
+      )
       .innerJoin(account, eq(account.id, journalEntryLine.accountId))
       .where(
         and(
@@ -2082,7 +2295,10 @@ export interface JournalBookEntry {
 /** Todos los asientos del ejercicio (incl. anulados) con sus líneas, para el Libro Diario. (US 2.3.1) */
 export const getJournalBook = createServerFn({ method: 'GET' })
   .inputValidator(
-    z.object({ clientId: z.string().uuid(), fiscalYearId: z.string().uuid().optional() })
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid().optional(),
+    })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
@@ -2108,7 +2324,12 @@ export const getJournalBook = createServerFn({ method: 'GET' })
         voidReason: journalEntry.voidReason,
       })
       .from(journalEntry)
-      .where(and(eq(journalEntry.clientId, clientId), eq(journalEntry.fiscalYearId, fy.id)))
+      .where(
+        and(
+          eq(journalEntry.clientId, clientId),
+          eq(journalEntry.fiscalYearId, fy.id)
+        )
+      )
       .orderBy(asc(journalEntry.number));
 
     const lineRows = await db
@@ -2122,9 +2343,17 @@ export const getJournalBook = createServerFn({ method: 'GET' })
         lineOrder: journalEntryLine.lineOrder,
       })
       .from(journalEntryLine)
-      .innerJoin(journalEntry, eq(journalEntry.id, journalEntryLine.journalEntryId))
+      .innerJoin(
+        journalEntry,
+        eq(journalEntry.id, journalEntryLine.journalEntryId)
+      )
       .innerJoin(account, eq(account.id, journalEntryLine.accountId))
-      .where(and(eq(journalEntry.clientId, clientId), eq(journalEntry.fiscalYearId, fy.id)))
+      .where(
+        and(
+          eq(journalEntry.clientId, clientId),
+          eq(journalEntry.fiscalYearId, fy.id)
+        )
+      )
       .orderBy(asc(journalEntry.number), asc(journalEntryLine.lineOrder));
 
     const linesByEntry = new Map<string, JournalBookLine[]>();
@@ -2153,7 +2382,11 @@ export const getJournalBook = createServerFn({ method: 'GET' })
     return {
       empresaName: empresa?.name ?? '',
       cuit: empresa?.cuit ?? '',
-      fiscalYear: { number: fy.number, startDate: fy.startDate, endDate: fy.endDate },
+      fiscalYear: {
+        number: fy.number,
+        startDate: fy.startDate,
+        endDate: fy.endDate,
+      },
       entries: result,
     };
   });

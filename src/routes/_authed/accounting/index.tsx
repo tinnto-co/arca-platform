@@ -42,6 +42,7 @@ import {
   createBaseAccount,
   updateBaseAccount,
   deleteBaseAccount,
+  deleteCustomAccount,
   getFiscalYears,
   createFiscalYear,
   getFiscalYearDetail,
@@ -78,7 +79,7 @@ import {
   ACCOUNT_TYPE_LABELS,
   EXPECTED_BALANCE_LABELS,
   EXPENSE_FUNCTION_LABELS,
-  CUSTOM_CODE_PREFIX,
+  CUSTOM_SEGMENT_START,
   MONTH_NAMES,
   FISCAL_YEAR_STATUS_LABELS,
   JOURNAL_ORIGIN_LABELS,
@@ -269,13 +270,17 @@ function AccountingPage() {
         <Mayor
           clientId={effectiveClientId}
           canWrite={roleData?.role !== 'viewer'}
-          clientName={clients.find((c) => c.id === effectiveClientId)?.name ?? ''}
+          clientName={
+            clients.find((c) => c.id === effectiveClientId)?.name ?? ''
+          }
         />
       ) : tab === 'balance' ? (
         <Balance
           clientId={effectiveClientId}
           canWrite={roleData?.role !== 'viewer'}
-          clientName={clients.find((c) => c.id === effectiveClientId)?.name ?? ''}
+          clientName={
+            clients.find((c) => c.id === effectiveClientId)?.name ?? ''
+          }
         />
       ) : (
         <ArcaCard>
@@ -411,6 +416,13 @@ function PlanDeCuentas({
     const hasChildren = children.length > 0;
     const isExpanded =
       expanded.has(account.id) || (filterActive && visibleIds?.has(account.id));
+    // El rubro de sistema ("0" y sus hijas) no se toca: ni desactivar, ni
+    // renombrar, ni editar, ni borrar. Cubre también bases ya sembradas donde
+    // el grupo "0" quedó sin isSystemAccount.
+    const isProtected =
+      account.isSystemAccount ||
+      account.code === '0' ||
+      account.code.startsWith('0.');
 
     return (
       <div key={account.id}>
@@ -453,7 +465,7 @@ function PlanDeCuentas({
                 (renombrada)
               </span>
             )}
-            {account.isSystemAccount && (
+            {isProtected && (
               <Lock
                 className="inline-block ml-1.5 w-3 h-3 text-[var(--arca-ink-3)] align-[-1px]"
                 strokeWidth={1.8}
@@ -497,8 +509,8 @@ function PlanDeCuentas({
 
           {isOwner && (
             <div className="w-[176px] shrink-0 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              {/* Renombrar (solo cuentas base no-sistema) */}
-              {account.scope === 'base' && !account.isSystemAccount && (
+              {/* Renombrar (solo cuentas base no protegidas) */}
+              {account.scope === 'base' && !isProtected && (
                 <>
                   <IconBtn
                     title="Renombrar para esta empresa"
@@ -523,13 +535,21 @@ function PlanDeCuentas({
                 </>
               )}
               {/* Editar / borrar cuenta base (plan del estudio) */}
-              {account.scope === 'base' && !account.isSystemAccount && (
-                <IconBtn
-                  title="Editar en el plan base del estudio"
-                  onClick={() => setFormMode({ kind: 'base-edit', account })}
-                >
-                  <Layers className="w-3.5 h-3.5" strokeWidth={1.8} />
-                </IconBtn>
+              {account.scope === 'base' && !isProtected && (
+                <>
+                  <IconBtn
+                    title="Editar en el plan base del estudio"
+                    onClick={() => setFormMode({ kind: 'base-edit', account })}
+                  >
+                    <Layers className="w-3.5 h-3.5" strokeWidth={1.8} />
+                  </IconBtn>
+                  <IconBtn
+                    title="Borrar del plan base del estudio"
+                    onClick={() => setDeleteTarget(account)}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" strokeWidth={1.8} />
+                  </IconBtn>
+                </>
               )}
               {account.scope === 'custom' && (
                 <IconBtn
@@ -540,7 +560,7 @@ function PlanDeCuentas({
                 </IconBtn>
               )}
               {/* Activar / desactivar */}
-              {!account.isSystemAccount && (
+              {!isProtected && (
                 <button
                   onClick={() => onToggleActive(account)}
                   className="text-[11px] px-2 py-0.5 rounded-full border border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors"
@@ -704,25 +724,37 @@ function PlanDeCuentas({
         />
       )}
 
-      {/* Confirmar borrado de cuenta propia */}
+      {/* Confirmar borrado (cuenta propia o del plan base) */}
       {deleteTarget && (
         <AlertDialog open onOpenChange={(o) => !o && setDeleteTarget(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Borrar cuenta propia</AlertDialogTitle>
+              <AlertDialogTitle>
+                {deleteTarget.scope === 'custom'
+                  ? 'Borrar cuenta propia'
+                  : 'Borrar cuenta del plan base'}
+              </AlertDialogTitle>
               <AlertDialogDescription>
                 ¿Borrar la cuenta{' '}
                 <strong>
                   {deleteTarget.code} · {deleteTarget.name}
                 </strong>
-                ? No se puede borrar si tiene movimientos o subcuentas.
+                ?{' '}
+                {deleteTarget.scope === 'custom'
+                  ? 'No se puede borrar si tiene movimientos o subcuentas.'
+                  : 'Afecta a todas las empresas del estudio. No se puede borrar si tiene movimientos en alguna empresa o subcuentas.'}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancelar</AlertDialogCancel>
               <AlertDialogAction
                 onClick={() =>
-                  deleteBaseAccount({ data: { id: deleteTarget.id } })
+                  (deleteTarget.scope === 'custom'
+                    ? deleteCustomAccount({
+                        data: { clientId, id: deleteTarget.id },
+                      })
+                    : deleteBaseAccount({ data: { id: deleteTarget.id } })
+                  )
                     .then(() => {
                       toast.success('Cuenta borrada');
                       setDeleteTarget(null);
@@ -893,6 +925,30 @@ function DeactivateDialog({
   );
 }
 
+/**
+ * Sugiere el próximo código libre para una cuenta hija bajo `parentId`, dentro
+ * del rango [startSegment, maxExclusive). Base → [1, 900); propias → [900, ∞).
+ * El backend es la fuente autoritativa; esto es solo para prellenar/mostrar.
+ */
+function suggestNextChildCode(
+  accounts: ChartAccount[],
+  parentId: string,
+  startSegment: number,
+  maxExclusive?: number
+): string {
+  const parent = accounts.find((a) => a.id === parentId);
+  if (!parent) return '';
+  let max = startSegment - 1;
+  for (const k of accounts) {
+    if (k.parentId !== parentId) continue;
+    const seg = parseInt(k.code.slice(k.code.lastIndexOf('.') + 1), 10);
+    if (Number.isNaN(seg)) continue;
+    if (maxExclusive != null && seg >= maxExclusive) continue;
+    if (seg > max) max = seg;
+  }
+  return `${parent.code}.${String(max + 1).padStart(3, '0')}`;
+}
+
 /* ─── Create / edit account dialog (US 1.1.3 custom, US 1.1.5 base) ─── */
 function AccountFormDialog({
   mode,
@@ -910,9 +966,7 @@ function AccountFormDialog({
   const editing = mode.kind === 'base-edit' ? mode.account : null;
   const isCustom = mode.kind === 'custom';
 
-  const [code, setCode] = useState(
-    editing?.code ?? (isCustom ? CUSTOM_CODE_PREFIX : '')
-  );
+  const [code, setCode] = useState(editing?.code ?? '');
   const [name, setName] = useState(editing?.name ?? '');
   const [description, setDescription] = useState(editing?.description ?? '');
   const [type, setType] = useState<'imputable' | 'group'>(
@@ -928,6 +982,16 @@ function AccountFormDialog({
     editing?.expenseFunction ?? ''
   );
   const [parentId, setParentId] = useState<string>(editing?.parentId ?? '');
+
+  // Código sugerido para cuenta propia: se autoasigna en el rango reservado
+  // (.900+) bajo el padre elegido. El backend es la fuente autoritativa.
+  const customCodePreview = useMemo(
+    () =>
+      mode.kind === 'custom' && parentId
+        ? suggestNextChildCode(accounts, parentId, CUSTOM_SEGMENT_START)
+        : '',
+    [mode.kind, parentId, accounts]
+  );
 
   const title =
     mode.kind === 'custom'
@@ -961,14 +1025,13 @@ function AccountFormDialog({
         return createCustomAccount({
           data: {
             clientId,
-            code,
             name,
             type,
             accountGroup: groupVal,
             expectedBalance: balVal,
             expenseFunction: expVal,
             description: description || undefined,
-            parentId: parentId || undefined,
+            parentId,
           },
         });
       }
@@ -1022,21 +1085,30 @@ function AccountFormDialog({
           )}
           {mode.kind === 'custom' && (
             <DialogDescription>
-              Cuenta propia de esta empresa. El código debe estar en el rango
-              reservado (empieza con &quot;{CUSTOM_CODE_PREFIX}&quot;).
+              Cuenta propia de esta empresa. Elegí la cuenta padre (rubro) y el
+              código se asigna automáticamente dentro de ese rubro.
             </DialogDescription>
           )}
         </DialogHeader>
 
         <div className="grid grid-cols-2 gap-3 py-1">
           <Field label="Código *">
-            <input
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              disabled={mode.kind === 'base-edit'}
-              placeholder={isCustom ? '9.1.01' : '1.1.07'}
-              className={`${INPUT_CLASS} w-full h-9 disabled:opacity-60`}
-            />
+            {mode.kind === 'custom' ? (
+              <input
+                value={customCodePreview || '—'}
+                disabled
+                title="Se asigna automáticamente dentro del rubro elegido"
+                className={`${INPUT_CLASS} w-full h-9 disabled:opacity-60`}
+              />
+            ) : (
+              <input
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                disabled={mode.kind === 'base-edit'}
+                placeholder="1.1.07"
+                className={`${INPUT_CLASS} w-full h-9 disabled:opacity-60`}
+              />
+            )}
           </Field>
           <Field label="Tipo *">
             <select
@@ -1112,10 +1184,35 @@ function AccountFormDialog({
           )}
 
           {mode.kind !== 'base-edit' && (
-            <Field label="Cuenta padre" full>
+            <Field
+              label={isCustom ? 'Cuenta padre (rubro) *' : 'Cuenta padre'}
+              full
+            >
               <select
                 value={parentId}
-                onChange={(e) => setParentId(e.target.value)}
+                onChange={(e) => {
+                  const pid = e.target.value;
+                  setParentId(pid);
+                  const p = pid
+                    ? accounts.find((a) => a.id === pid)
+                    : undefined;
+                  // Al elegir el rubro, prefill del rubro de exposición si está vacío.
+                  if (pid && p?.accountGroup && !accountGroup) {
+                    setAccountGroup(p.accountGroup);
+                  }
+                  // Base: prellenar el código (editable) con el próximo libre en
+                  // rango base [1, 900). Propias usan preview read-only aparte.
+                  if (mode.kind === 'base-create' && pid) {
+                    setCode(
+                      suggestNextChildCode(
+                        accounts,
+                        pid,
+                        1,
+                        CUSTOM_SEGMENT_START
+                      )
+                    );
+                  }
+                }}
                 className={`${SELECT_CLASS} w-full h-9`}
               >
                 <option value="">— Ninguna —</option>
@@ -1149,7 +1246,8 @@ function AccountFormDialog({
             onClick={() => mut.mutate()}
             disabled={
               !name.trim() ||
-              (mode.kind !== 'base-edit' && !code.trim()) ||
+              (mode.kind === 'base-create' && !code.trim()) ||
+              (mode.kind === 'custom' && !parentId) ||
               (type === 'imputable' && (!accountGroup || !expectedBalance)) ||
               mut.isPending
             }
@@ -1214,7 +1312,13 @@ function computeEnd(startStr: string): string {
   return end.toISOString().slice(0, 10);
 }
 
-function Ejercicios({ clientId, isOwner }: { clientId: string; isOwner: boolean }) {
+function Ejercicios({
+  clientId,
+  isOwner,
+}: {
+  clientId: string;
+  isOwner: boolean;
+}) {
   const qc = useQueryClient();
   const [selectedFyId, setSelectedFyId] = useState<string>('');
   const [showCreate, setShowCreate] = useState(false);
@@ -1235,7 +1339,8 @@ function Ejercicios({ clientId, isOwner }: { clientId: string; isOwner: boolean 
 
   const { data: detail } = useQuery({
     queryKey: ['accounting', 'fy-detail', effectiveFyId],
-    queryFn: () => getFiscalYearDetail({ data: { fiscalYearId: effectiveFyId } }),
+    queryFn: () =>
+      getFiscalYearDetail({ data: { fiscalYearId: effectiveFyId } }),
     enabled: !!effectiveFyId,
   });
 
@@ -1312,7 +1417,9 @@ function Ejercicios({ clientId, isOwner }: { clientId: string; isOwner: boolean 
               className="flex items-center gap-2 h-9 px-3 rounded-[10px] border transition-colors text-[12.5px]"
               style={{
                 borderColor: active ? 'var(--arca-ink)' : 'var(--arca-border)',
-                background: active ? 'var(--arca-surface-2)' : 'var(--arca-surface)',
+                background: active
+                  ? 'var(--arca-surface-2)'
+                  : 'var(--arca-surface)',
                 color: active ? 'var(--arca-ink)' : 'var(--arca-ink-2)',
               }}
             >
@@ -1366,14 +1473,20 @@ function Ejercicios({ clientId, isOwner }: { clientId: string; isOwner: boolean 
       {log.length > 0 && (
         <ArcaCard className="mt-4">
           <div className="flex items-center gap-2 px-5 py-3 border-b border-[var(--arca-border)]">
-            <History className="w-4 h-4 text-[var(--arca-ink-3)]" strokeWidth={1.8} />
+            <History
+              className="w-4 h-4 text-[var(--arca-ink-3)]"
+              strokeWidth={1.8}
+            />
             <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
               Historial de cierres y reaperturas
             </span>
           </div>
           <div className="divide-y divide-[var(--arca-border)]">
             {log.map((e) => (
-              <div key={e.id} className="flex items-start gap-3 px-5 py-2.5 text-[12px]">
+              <div
+                key={e.id}
+                className="flex items-start gap-3 px-5 py-2.5 text-[12px]"
+              >
                 <span
                   className="mt-0.5 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium shrink-0"
                   style={{
@@ -1435,8 +1548,9 @@ function Ejercicios({ clientId, isOwner }: { clientId: string; isOwner: boolean 
                 <strong>
                   {MONTH_NAMES[closeTarget.month]} {closeTarget.year}
                 </strong>
-                . Sus {closeTarget.entryCount} asiento(s) quedarán inmutables y se
-                habilitará el período siguiente. Esta acción queda registrada en el log.
+                . Sus {closeTarget.entryCount} asiento(s) quedarán inmutables y
+                se habilitará el período siguiente. Esta acción queda registrada
+                en el log.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -1509,7 +1623,9 @@ function PeriodCard({
     <div
       className="rounded-[10px] border p-3 flex flex-col gap-2"
       style={{
-        borderColor: period.isCurrent ? 'oklch(0.45 0.14 145)' : 'var(--arca-border)',
+        borderColor: period.isCurrent
+          ? 'oklch(0.45 0.14 145)'
+          : 'var(--arca-border)',
         background: period.isCurrent
           ? 'color-mix(in oklch, oklch(0.45 0.14 145), transparent 95%)'
           : 'var(--arca-surface)',
@@ -1582,7 +1698,9 @@ function CreateFiscalYearDialog({
 
   const mut = useMutation({
     mutationFn: () =>
-      createFiscalYear({ data: { clientId, startDate: startFirst, endDate: end } }),
+      createFiscalYear({
+        data: { clientId, startDate: startFirst, endDate: end },
+      }),
     onSuccess: () => {
       toast.success('Ejercicio creado con sus 12 períodos');
       onSaved();
@@ -1596,8 +1714,8 @@ function CreateFiscalYearDialog({
         <DialogHeader>
           <DialogTitle>Nuevo ejercicio</DialogTitle>
           <DialogDescription>
-            Elegí el mes de inicio. El ejercicio dura exactamente 12 meses calendario y se
-            crean automáticamente los 12 períodos mensuales.
+            Elegí el mes de inicio. El ejercicio dura exactamente 12 meses
+            calendario y se crean automáticamente los 12 períodos mensuales.
           </DialogDescription>
         </DialogHeader>
 
@@ -1618,7 +1736,8 @@ function CreateFiscalYearDialog({
             <div className="rounded-[8px] bg-[var(--arca-surface-2)] border border-[var(--arca-border)] px-3 py-2.5 text-[12.5px]">
               <span className="text-[var(--arca-ink-3)]">Ejercicio: </span>
               <span className="font-medium text-[var(--arca-ink)]">
-                {fmtFecha(`${startFirst}T00:00:00Z`)} → {fmtFecha(`${end}T00:00:00Z`)}
+                {fmtFecha(`${startFirst}T00:00:00Z`)} →{' '}
+                {fmtFecha(`${end}T00:00:00Z`)}
               </span>
               <span className="text-[var(--arca-ink-3)]"> (12 meses)</span>
             </div>
@@ -1656,7 +1775,8 @@ function ReopenPeriodDialog({
 }) {
   const [reason, setReason] = useState('');
   const mut = useMutation({
-    mutationFn: () => reopenPeriod({ data: { periodId: period.id, reason: reason.trim() } }),
+    mutationFn: () =>
+      reopenPeriod({ data: { periodId: period.id, reason: reason.trim() } }),
     onSuccess: () => {
       toast.success('Período reabierto');
       onSaved();
@@ -1672,13 +1792,15 @@ function ReopenPeriodDialog({
             Reabrir {MONTH_NAMES[period.month]} {period.year}
           </DialogTitle>
           <DialogDescription>
-            El período vuelve a estado abierto y sus asientos se conservan. El motivo queda
-            registrado en el log auditable.
+            El período vuelve a estado abierto y sus asientos se conservan. El
+            motivo queda registrado en el log auditable.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-1 py-1">
-          <label className="text-[11px] text-[var(--arca-ink-3)]">Motivo *</label>
+          <label className="text-[11px] text-[var(--arca-ink-3)]">
+            Motivo *
+          </label>
           <textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}
@@ -1794,7 +1916,9 @@ function Asientos({
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const exportLibroDiario = () => {
-    getJournalBook({ data: { clientId, fiscalYearId: data?.fiscalYearId ?? undefined } })
+    getJournalBook({
+      data: { clientId, fiscalYearId: data?.fiscalYearId ?? undefined },
+    })
       .then((book) => {
         if (!book || book.entries.length === 0) {
           toast.error('No hay asientos para exportar');
@@ -1812,7 +1936,10 @@ function Asientos({
       .catch((e: Error) => toast.error(e.message));
   };
 
-  function openEditorFromDetail(action: 'edit' | 'duplicate', d: EditorInitial) {
+  function openEditorFromDetail(
+    action: 'edit' | 'duplicate',
+    d: EditorInitial
+  ) {
     setDetailId(null);
     setEditor({ mode: action, initial: d });
   }
@@ -1823,7 +1950,9 @@ function Asientos({
         {/* Toolbar */}
         <div className="flex flex-wrap items-end gap-2 px-4 py-3 border-b border-[var(--arca-border)]">
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">Desde</label>
+            <label className="text-[10px] text-[var(--arca-ink-3)]">
+              Desde
+            </label>
             <input
               type="date"
               value={from}
@@ -1835,7 +1964,9 @@ function Asientos({
             />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">Hasta</label>
+            <label className="text-[10px] text-[var(--arca-ink-3)]">
+              Hasta
+            </label>
             <input
               type="date"
               value={to}
@@ -1847,7 +1978,9 @@ function Asientos({
             />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">Cuenta</label>
+            <label className="text-[10px] text-[var(--arca-ink-3)]">
+              Cuenta
+            </label>
             <select
               value={accountId}
               onChange={(e) => {
@@ -1865,7 +1998,9 @@ function Asientos({
             </select>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">Origen</label>
+            <label className="text-[10px] text-[var(--arca-ink-3)]">
+              Origen
+            </label>
             <select
               value={origin}
               onChange={(e) => {
@@ -1973,7 +2108,9 @@ function Asientos({
                 {r.description?.trim() ? (
                   r.description
                 ) : (
-                  <span className="text-[var(--arca-ink-3)] italic">(sin descripción)</span>
+                  <span className="text-[var(--arca-ink-3)] italic">
+                    (sin descripción)
+                  </span>
                 )}
                 {r.isVoided && (
                   <span className="ml-2 text-[10px] not-italic no-underline text-[oklch(0.55_0.18_25)]">
@@ -1996,7 +2133,9 @@ function Asientos({
         {/* Pagination */}
         {total > 0 && (
           <div className="flex items-center justify-between px-4 py-2.5 text-[12px] text-[var(--arca-ink-3)]">
-            <span>{total} asiento{total === 1 ? '' : 's'}</span>
+            <span>
+              {total} asiento{total === 1 ? '' : 's'}
+            </span>
             <div className="flex items-center gap-2">
               <button
                 disabled={page <= 1}
@@ -2067,7 +2206,9 @@ function AsientoEditor({
   const [entryDate, setEntryDate] = useState(init?.entryDate ?? '');
   const [description, setDescription] = useState(init?.description ?? '');
   const [lines, setLines] = useState<LineDraft[]>(
-    init?.lines && init.lines.length >= 2 ? init.lines : [emptyLine(), emptyLine()]
+    init?.lines && init.lines.length >= 2
+      ? init.lines
+      : [emptyLine(), emptyLine()]
   );
 
   const title =
@@ -2081,12 +2222,14 @@ function AsientoEditor({
   const totalCredit = lines.reduce((s, l) => s + num(l.credit), 0);
   const balanced = Math.abs(totalDebit - totalCredit) < 0.005 && totalDebit > 0;
   const allLinesValid = lines.every(
-    (l) => l.accountId && (num(l.debit) > 0) !== (num(l.credit) > 0)
+    (l) => l.accountId && num(l.debit) > 0 !== num(l.credit) > 0
   );
   const canSave = !!entryDate && lines.length >= 2 && balanced && allLinesValid;
 
   const updateLine = (i: number, patch: Partial<LineDraft>) =>
-    setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
+    setLines((prev) =>
+      prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l))
+    );
 
   const mut = useMutation({
     mutationFn: async () => {
@@ -2098,16 +2241,28 @@ function AsientoEditor({
       }));
       if (state.mode === 'edit' && init?.id) {
         await updateJournalEntry({
-          data: { id: init.id, entryDate, description: description || undefined, lines: payloadLines },
+          data: {
+            id: init.id,
+            entryDate,
+            description: description || undefined,
+            lines: payloadLines,
+          },
         });
       } else {
         await createJournalEntry({
-          data: { clientId, entryDate, description: description || undefined, lines: payloadLines },
+          data: {
+            clientId,
+            entryDate,
+            description: description || undefined,
+            lines: payloadLines,
+          },
         });
       }
     },
     onSuccess: () => {
-      toast.success(state.mode === 'edit' ? 'Asiento actualizado' : 'Asiento guardado');
+      toast.success(
+        state.mode === 'edit' ? 'Asiento actualizado' : 'Asiento guardado'
+      );
       onSaved();
     },
     onError: (e: Error) => toast.error(e.message),
@@ -2119,15 +2274,17 @@ function AsientoEditor({
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            Debe = Haber para poder guardar. Solo cuentas imputables y activas. La fecha define
-            el período (no puede estar en un período cerrado).
+            Debe = Haber para poder guardar. Solo cuentas imputables y activas.
+            La fecha define el período (no puede estar en un período cerrado).
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3 py-1">
           <div className="flex gap-3">
             <div className="flex flex-col gap-1 w-44">
-              <label className="text-[11px] text-[var(--arca-ink-3)]">Fecha *</label>
+              <label className="text-[11px] text-[var(--arca-ink-3)]">
+                Fecha *
+              </label>
               <input
                 type="date"
                 value={entryDate}
@@ -2136,7 +2293,9 @@ function AsientoEditor({
               />
             </div>
             <div className="flex flex-col gap-1 flex-1">
-              <label className="text-[11px] text-[var(--arca-ink-3)]">Descripción</label>
+              <label className="text-[11px] text-[var(--arca-ink-3)]">
+                Descripción
+              </label>
               <input
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
@@ -2174,7 +2333,9 @@ function AsientoEditor({
                 </select>
                 <input
                   value={l.description}
-                  onChange={(e) => updateLine(i, { description: e.target.value })}
+                  onChange={(e) =>
+                    updateLine(i, { description: e.target.value })
+                  }
                   placeholder="opcional"
                   className={`${INPUT_CLASS} w-40 h-8`}
                 />
@@ -2183,7 +2344,9 @@ function AsientoEditor({
                   step="0.01"
                   min="0"
                   value={l.debit}
-                  onChange={(e) => updateLine(i, { debit: e.target.value, credit: '' })}
+                  onChange={(e) =>
+                    updateLine(i, { debit: e.target.value, credit: '' })
+                  }
                   className={`${INPUT_CLASS} w-24 h-8 text-right`}
                 />
                 <input
@@ -2191,11 +2354,15 @@ function AsientoEditor({
                   step="0.01"
                   min="0"
                   value={l.credit}
-                  onChange={(e) => updateLine(i, { credit: e.target.value, debit: '' })}
+                  onChange={(e) =>
+                    updateLine(i, { credit: e.target.value, debit: '' })
+                  }
                   className={`${INPUT_CLASS} w-24 h-8 text-right`}
                 />
                 <button
-                  onClick={() => setLines((prev) => prev.filter((_, idx) => idx !== i))}
+                  onClick={() =>
+                    setLines((prev) => prev.filter((_, idx) => idx !== i))
+                  }
                   disabled={lines.length <= 2}
                   className="w-6 h-6 flex items-center justify-center rounded-[6px] text-[var(--arca-ink-3)] hover:text-[oklch(0.55_0.18_25)] disabled:opacity-30"
                   title="Eliminar línea"
@@ -2214,18 +2381,25 @@ function AsientoEditor({
               </button>
               <div className="flex-1" />
               <div className="w-40" />
-              <div className="w-24 text-right text-[var(--arca-ink)]">$ {fmtMoney(totalDebit)}</div>
-              <div className="w-24 text-right text-[var(--arca-ink)]">$ {fmtMoney(totalCredit)}</div>
+              <div className="w-24 text-right text-[var(--arca-ink)]">
+                $ {fmtMoney(totalDebit)}
+              </div>
+              <div className="w-24 text-right text-[var(--arca-ink)]">
+                $ {fmtMoney(totalCredit)}
+              </div>
               <div className="w-6" />
             </div>
           </div>
 
           <div className="flex items-center justify-end text-[12px]">
             {balanced ? (
-              <span className="text-[oklch(0.40_0.14_145)]">✓ Asiento balanceado</span>
+              <span className="text-[oklch(0.40_0.14_145)]">
+                ✓ Asiento balanceado
+              </span>
             ) : (
               <span className="text-[oklch(0.55_0.18_25)]">
-                Diferencia: $ {fmtMoney(Math.abs(totalDebit - totalCredit))} — Debe debe ser igual a Haber
+                Diferencia: $ {fmtMoney(Math.abs(totalDebit - totalCredit))} —
+                Debe debe ser igual a Haber
               </span>
             )}
           </div>
@@ -2273,7 +2447,8 @@ function AsientoDetail({
   });
 
   const voidMut = useMutation({
-    mutationFn: () => voidJournalEntry({ data: { id: entryId, reason: reason.trim() } }),
+    mutationFn: () =>
+      voidJournalEntry({ data: { id: entryId, reason: reason.trim() } }),
     onSuccess: () => {
       toast.success('Asiento anulado');
       setVoidOpen(false);
@@ -2295,7 +2470,8 @@ function AsientoDetail({
     })),
   });
 
-  const editable = !!data && !data.entry.isVoided && data.entry.periodStatus === 'open';
+  const editable =
+    !!data && !data.entry.isVoided && data.entry.periodStatus === 'open';
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -2317,9 +2493,12 @@ function AsientoDetail({
               </DialogTitle>
               <DialogDescription>
                 {fmtFecha(data.entry.entryDate)} ·{' '}
-                {JOURNAL_ORIGIN_LABELS[data.entry.origin] ?? data.entry.origin} · Ejercicio N°
+                {JOURNAL_ORIGIN_LABELS[data.entry.origin] ?? data.entry.origin}{' '}
+                · Ejercicio N°
                 {data.entry.fyNumber}
-                {data.entry.createdByName ? ` · cargado por ${data.entry.createdByName}` : ''}
+                {data.entry.createdByName
+                  ? ` · cargado por ${data.entry.createdByName}`
+                  : ''}
               </DialogDescription>
             </DialogHeader>
 
@@ -2351,9 +2530,14 @@ function AsientoDetail({
                     <span className="font-mono text-[11px] text-[var(--arca-ink-3)]">
                       {l.accountCode}
                     </span>{' '}
-                    <span className="text-[var(--arca-ink)]">{l.accountName}</span>
+                    <span className="text-[var(--arca-ink)]">
+                      {l.accountName}
+                    </span>
                     {l.description && (
-                      <span className="text-[var(--arca-ink-3)]"> · {l.description}</span>
+                      <span className="text-[var(--arca-ink-3)]">
+                        {' '}
+                        · {l.description}
+                      </span>
                     )}
                   </div>
                   <div className="w-28 text-right text-[var(--arca-ink)]">
@@ -2371,10 +2555,14 @@ function AsientoDetail({
               <div className="text-[11.5px] text-[var(--arca-ink-3)] space-y-1">
                 {data.log.map((e) => (
                   <div key={e.id}>
-                    {e.eventType === 'journal_entry_voided' ? 'Anulado' : 'Editado'} por{' '}
-                    {e.userName ?? e.userEmail ?? 'usuario'} ·{' '}
+                    {e.eventType === 'journal_entry_voided'
+                      ? 'Anulado'
+                      : 'Editado'}{' '}
+                    por {e.userName ?? e.userEmail ?? 'usuario'} ·{' '}
                     {new Date(e.createdAt).toLocaleString('es-AR')}
-                    {e.eventData?.reason ? ` · Motivo: ${e.eventData.reason}` : ''}
+                    {e.eventData?.reason
+                      ? ` · Motivo: ${e.eventData.reason}`
+                      : ''}
                   </div>
                 ))}
               </div>
@@ -2383,7 +2571,13 @@ function AsientoDetail({
             <DialogFooter className="flex-wrap">
               {canWrite && (
                 <button
-                  onClick={() => onAction('duplicate', { ...toInitial(), id: undefined, entryDate: '' })}
+                  onClick={() =>
+                    onAction('duplicate', {
+                      ...toInitial(),
+                      id: undefined,
+                      entryDate: '',
+                    })
+                  }
                   className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
                 >
                   <Copy className="w-3.5 h-3.5" strokeWidth={1.8} /> Duplicar
@@ -2420,8 +2614,8 @@ function AsientoDetail({
                     </button>
                   </div>
                   <p className="text-[12px] text-[var(--arca-ink-3)]">
-                    El asiento no se borra: queda marcado como anulado y conserva su número. El
-                    motivo queda en el log.
+                    El asiento no se borra: queda marcado como anulado y
+                    conserva su número. El motivo queda en el log.
                   </p>
                   <textarea
                     value={reason}
@@ -2488,18 +2682,31 @@ function Mayor({
   const effectiveFyId =
     fiscalYearId !== ''
       ? fiscalYearId
-      : (fiscalYears.find((y) => y.status === 'open')?.id ?? fiscalYears[0]?.id ?? '');
+      : (fiscalYears.find((y) => y.status === 'open')?.id ??
+        fiscalYears[0]?.id ??
+        '');
 
   const { data: chart } = useQuery({
     queryKey: ['accounting', 'chart', clientId],
     queryFn: () => getChartOfAccounts({ data: { clientId } }),
   });
-  const imputables = (chart?.accounts ?? []).filter((a) => a.type === 'imputable');
+  const imputables = (chart?.accounts ?? []).filter(
+    (a) => a.type === 'imputable'
+  );
 
   const originArg = (origin || undefined) as never;
 
   const { data: ledger, isLoading: loadingLedger } = useQuery({
-    queryKey: ['accounting', 'ledger-account', clientId, accountId, effectiveFyId, from, to, origin],
+    queryKey: [
+      'accounting',
+      'ledger-account',
+      clientId,
+      accountId,
+      effectiveFyId,
+      from,
+      to,
+      origin,
+    ],
     queryFn: () =>
       getLedgerAccount({
         data: {
@@ -2515,7 +2722,15 @@ function Mayor({
   });
 
   const { data: consol, isLoading: loadingConsol } = useQuery({
-    queryKey: ['accounting', 'ledger-consol', clientId, effectiveFyId, from, to, origin],
+    queryKey: [
+      'accounting',
+      'ledger-consol',
+      clientId,
+      effectiveFyId,
+      from,
+      to,
+      origin,
+    ],
     queryFn: () =>
       getLedgerConsolidated({
         data: {
@@ -2573,7 +2788,9 @@ function Mayor({
       toast.error('No hay datos para exportar');
       return;
     }
-    exportMayorExcel(data, { sheetPerAccount }).catch((e: Error) => toast.error(e.message));
+    exportMayorExcel(data, { sheetPerAccount }).catch((e: Error) =>
+      toast.error(e.message)
+    );
   };
   const exportPdf = () => {
     const data = buildExportData();
@@ -2596,7 +2813,8 @@ function Mayor({
     return (
       <ArcaCard>
         <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
-          Esta empresa no tiene ejercicios. Creá uno en la pestaña Ejercicios para ver el mayor.
+          Esta empresa no tiene ejercicios. Creá uno en la pestaña Ejercicios
+          para ver el mayor.
         </div>
       </ArcaCard>
     );
@@ -2614,7 +2832,8 @@ function Mayor({
                 onClick={() => setMode(m)}
                 className="px-3 text-[12px] font-medium transition-colors"
                 style={{
-                  background: mode === m ? 'var(--arca-navy-900)' : 'transparent',
+                  background:
+                    mode === m ? 'var(--arca-navy-900)' : 'transparent',
                   color: mode === m ? 'white' : 'var(--arca-ink-2)',
                 }}
               >
@@ -2625,7 +2844,9 @@ function Mayor({
 
           {fiscalYears.length > 1 && (
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-[var(--arca-ink-3)]">Ejercicio</label>
+              <label className="text-[10px] text-[var(--arca-ink-3)]">
+                Ejercicio
+              </label>
               <select
                 value={effectiveFyId}
                 onChange={(e) => setFiscalYearId(e.target.value)}
@@ -2642,7 +2863,9 @@ function Mayor({
 
           {mode === 'cuenta' && (
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-[var(--arca-ink-3)]">Cuenta</label>
+              <label className="text-[10px] text-[var(--arca-ink-3)]">
+                Cuenta
+              </label>
               <select
                 value={accountId}
                 onChange={(e) => setAccountId(e.target.value)}
@@ -2659,16 +2882,36 @@ function Mayor({
           )}
 
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">Desde</label>
-            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={`${INPUT_CLASS} w-36`} />
+            <label className="text-[10px] text-[var(--arca-ink-3)]">
+              Desde
+            </label>
+            <input
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              className={`${INPUT_CLASS} w-36`}
+            />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">Hasta</label>
-            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={`${INPUT_CLASS} w-36`} />
+            <label className="text-[10px] text-[var(--arca-ink-3)]">
+              Hasta
+            </label>
+            <input
+              type="date"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              className={`${INPUT_CLASS} w-36`}
+            />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">Origen</label>
-            <select value={origin} onChange={(e) => setOrigin(e.target.value)} className={`${SELECT_CLASS} w-36`}>
+            <label className="text-[10px] text-[var(--arca-ink-3)]">
+              Origen
+            </label>
+            <select
+              value={origin}
+              onChange={(e) => setOrigin(e.target.value)}
+              className={`${SELECT_CLASS} w-36`}
+            >
               <option value="">Todos</option>
               {Object.entries(JOURNAL_ORIGIN_LABELS).map(([k, v]) => (
                 <option key={k} value={k}>
@@ -2694,7 +2937,8 @@ function Mayor({
               onClick={exportXlsx}
               className="flex items-center gap-1.5 h-8 px-2.5 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
             >
-              <FileSpreadsheet className="w-3.5 h-3.5" strokeWidth={1.8} /> Excel
+              <FileSpreadsheet className="w-3.5 h-3.5" strokeWidth={1.8} />{' '}
+              Excel
             </button>
             <button
               onClick={exportPdf}
@@ -2712,9 +2956,13 @@ function Mayor({
               Elegí una cuenta para ver su mayor.
             </div>
           ) : loadingLedger ? (
-            <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">Cargando…</div>
+            <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+              Cargando…
+            </div>
           ) : !ledger ? (
-            <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">Sin datos.</div>
+            <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+              Sin datos.
+            </div>
           ) : (
             <LedgerTable
               saldoInicial={ledger.saldoInicial}
@@ -2726,7 +2974,9 @@ function Mayor({
             />
           )
         ) : loadingConsol ? (
-          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">Cargando…</div>
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            Cargando…
+          </div>
         ) : !consol || consol.accounts.length === 0 ? (
           <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
             No hay movimientos en el rango seleccionado.
@@ -2744,8 +2994,12 @@ function Mayor({
             ))}
             <div className="flex items-center gap-3 px-4 py-3 border-t-2 border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[13px] font-semibold">
               <span className="flex-1">Totales generales</span>
-              <span className="w-28 text-right">$ {fmtMoney(consol.grandTotalDebit)}</span>
-              <span className="w-28 text-right">$ {fmtMoney(consol.grandTotalCredit)}</span>
+              <span className="w-28 text-right">
+                $ {fmtMoney(consol.grandTotalDebit)}
+              </span>
+              <span className="w-28 text-right">
+                $ {fmtMoney(consol.grandTotalCredit)}
+              </span>
               <span className="w-28" />
             </div>
           </div>
@@ -2809,21 +3063,33 @@ function LedgerTable({
             onClick={() => onRowClick(r.entryId)}
             className="w-full flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] hover:bg-[var(--arca-surface-2)] transition-colors text-left text-[12.5px]"
           >
-            <div className="w-24 shrink-0 text-[var(--arca-ink-2)]">{fmtFecha(r.entryDate)}</div>
-            <div className="w-12 shrink-0 font-mono text-[var(--arca-ink-3)]">{r.number}</div>
+            <div className="w-24 shrink-0 text-[var(--arca-ink-2)]">
+              {fmtFecha(r.entryDate)}
+            </div>
+            <div className="w-12 shrink-0 font-mono text-[var(--arca-ink-3)]">
+              {r.number}
+            </div>
             <div className="flex-1 min-w-0 truncate text-[var(--arca-ink)]">
               {r.description ?? r.lineDescription ?? ''}
             </div>
-            <div className="w-24 shrink-0 text-right">{r.debit ? fmtMoney(r.debit) : ''}</div>
-            <div className="w-24 shrink-0 text-right">{r.credit ? fmtMoney(r.credit) : ''}</div>
-            <div className="w-28 shrink-0 text-right font-medium">{saldoLabel(r.balance)}</div>
+            <div className="w-24 shrink-0 text-right">
+              {r.debit ? fmtMoney(r.debit) : ''}
+            </div>
+            <div className="w-24 shrink-0 text-right">
+              {r.credit ? fmtMoney(r.credit) : ''}
+            </div>
+            <div className="w-28 shrink-0 text-right font-medium">
+              {saldoLabel(r.balance)}
+            </div>
           </button>
         ))
       )}
       <div className="flex items-center gap-3 px-4 py-2.5 border-t border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[12.5px] font-semibold">
         <div className="flex-1">Totales del período</div>
         <div className="w-24 shrink-0 text-right">$ {fmtMoney(totalDebit)}</div>
-        <div className="w-24 shrink-0 text-right">$ {fmtMoney(totalCredit)}</div>
+        <div className="w-24 shrink-0 text-right">
+          $ {fmtMoney(totalCredit)}
+        </div>
         <div className="w-28 shrink-0 text-right">{saldoLabel(saldoFinal)}</div>
       </div>
     </div>
@@ -2848,23 +3114,39 @@ function ConsolidatedAccountRow({
         className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--arca-surface-2)] transition-colors text-left"
       >
         {expanded ? (
-          <ChevronDown className="w-4 h-4 shrink-0 text-[var(--arca-ink-3)]" strokeWidth={1.8} />
+          <ChevronDown
+            className="w-4 h-4 shrink-0 text-[var(--arca-ink-3)]"
+            strokeWidth={1.8}
+          />
         ) : (
-          <ChevronRight className="w-4 h-4 shrink-0 text-[var(--arca-ink-3)]" strokeWidth={1.8} />
+          <ChevronRight
+            className="w-4 h-4 shrink-0 text-[var(--arca-ink-3)]"
+            strokeWidth={1.8}
+          />
         )}
-        <span className="w-24 shrink-0 text-[12px] font-mono text-[var(--arca-ink-3)]">{acc.code}</span>
+        <span className="w-24 shrink-0 text-[12px] font-mono text-[var(--arca-ink-3)]">
+          {acc.code}
+        </span>
         <span className="flex-1 min-w-0 truncate text-[13px] font-medium text-[var(--arca-ink)]">
           {acc.name}
         </span>
-        <span className="w-24 shrink-0 text-right text-[12px]">$ {fmtMoney(acc.totalDebit)}</span>
-        <span className="w-24 shrink-0 text-right text-[12px]">$ {fmtMoney(acc.totalCredit)}</span>
-        <span className="w-28 shrink-0 text-right text-[12.5px] font-medium">{saldoLabel(acc.saldoFinal)}</span>
+        <span className="w-24 shrink-0 text-right text-[12px]">
+          $ {fmtMoney(acc.totalDebit)}
+        </span>
+        <span className="w-24 shrink-0 text-right text-[12px]">
+          $ {fmtMoney(acc.totalCredit)}
+        </span>
+        <span className="w-28 shrink-0 text-right text-[12.5px] font-medium">
+          {saldoLabel(acc.saldoFinal)}
+        </span>
       </button>
       {expanded && (
         <div className="bg-[var(--arca-surface-2)] pl-6">
           <div className="flex items-center gap-3 px-4 py-1.5 text-[11.5px] italic text-[var(--arca-ink-3)]">
             <div className="flex-1">Saldo inicial</div>
-            <div className="w-28 shrink-0 text-right not-italic">{saldoLabel(acc.saldoInicial)}</div>
+            <div className="w-28 shrink-0 text-right not-italic">
+              {saldoLabel(acc.saldoInicial)}
+            </div>
           </div>
           {acc.movements.map((r, i) => (
             <button
@@ -2872,14 +3154,24 @@ function ConsolidatedAccountRow({
               onClick={() => onRowClick(r.entryId)}
               className="w-full flex items-center gap-3 px-4 py-1.5 hover:bg-[var(--arca-surface)] transition-colors text-left text-[12px] border-t border-[var(--arca-border)]"
             >
-              <div className="w-24 shrink-0 text-[var(--arca-ink-2)]">{fmtFecha(r.entryDate)}</div>
-              <div className="w-12 shrink-0 font-mono text-[var(--arca-ink-3)]">{r.number}</div>
+              <div className="w-24 shrink-0 text-[var(--arca-ink-2)]">
+                {fmtFecha(r.entryDate)}
+              </div>
+              <div className="w-12 shrink-0 font-mono text-[var(--arca-ink-3)]">
+                {r.number}
+              </div>
               <div className="flex-1 min-w-0 truncate text-[var(--arca-ink)]">
                 {r.description ?? r.lineDescription ?? ''}
               </div>
-              <div className="w-24 shrink-0 text-right">{r.debit ? fmtMoney(r.debit) : ''}</div>
-              <div className="w-24 shrink-0 text-right">{r.credit ? fmtMoney(r.credit) : ''}</div>
-              <div className="w-28 shrink-0 text-right">{saldoLabel(r.balance)}</div>
+              <div className="w-24 shrink-0 text-right">
+                {r.debit ? fmtMoney(r.debit) : ''}
+              </div>
+              <div className="w-24 shrink-0 text-right">
+                {r.credit ? fmtMoney(r.credit) : ''}
+              </div>
+              <div className="w-28 shrink-0 text-right">
+                {saldoLabel(r.balance)}
+              </div>
             </button>
           ))}
         </div>
@@ -2922,13 +3214,19 @@ function Balance({
   const effectiveFyId =
     fiscalYearId !== ''
       ? fiscalYearId
-      : (fiscalYears.find((y) => y.status === 'open')?.id ?? fiscalYears[0]?.id ?? '');
+      : (fiscalYears.find((y) => y.status === 'open')?.id ??
+        fiscalYears[0]?.id ??
+        '');
 
   const { data, isLoading } = useQuery({
     queryKey: ['accounting', 'trial-balance', clientId, effectiveFyId, asOf],
     queryFn: () =>
       getTrialBalance({
-        data: { clientId, fiscalYearId: effectiveFyId || undefined, asOf: asOf || undefined },
+        data: {
+          clientId,
+          fiscalYearId: effectiveFyId || undefined,
+          asOf: asOf || undefined,
+        },
       }),
     enabled: !!effectiveFyId,
   });
@@ -2946,7 +3244,8 @@ function Balance({
       totals: data.totals,
       balanced: data.balanced,
     };
-    const p = kind === 'xlsx' ? exportBalanceExcel(payload) : exportBalancePdf(payload);
+    const p =
+      kind === 'xlsx' ? exportBalanceExcel(payload) : exportBalancePdf(payload);
     p.catch((e: Error) => toast.error(e.message));
   }
 
@@ -2967,7 +3266,9 @@ function Balance({
         <div className="flex flex-wrap items-end gap-2 px-4 py-3 border-b border-[var(--arca-border)]">
           {fiscalYears.length > 1 && (
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-[var(--arca-ink-3)]">Ejercicio</label>
+              <label className="text-[10px] text-[var(--arca-ink-3)]">
+                Ejercicio
+              </label>
               <select
                 value={effectiveFyId}
                 onChange={(e) => setFiscalYearId(e.target.value)}
@@ -2982,7 +3283,9 @@ function Balance({
             </div>
           )}
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">Fecha de corte</label>
+            <label className="text-[10px] text-[var(--arca-ink-3)]">
+              Fecha de corte
+            </label>
             <input
               type="date"
               value={asOf}
@@ -3001,7 +3304,8 @@ function Balance({
               onClick={() => doExport('xlsx')}
               className="flex items-center gap-1.5 h-8 px-2.5 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
             >
-              <FileSpreadsheet className="w-3.5 h-3.5" strokeWidth={1.8} /> Excel
+              <FileSpreadsheet className="w-3.5 h-3.5" strokeWidth={1.8} />{' '}
+              Excel
             </button>
             <button
               onClick={() => doExport('pdf')}
@@ -3017,15 +3321,16 @@ function Balance({
           <div
             className="px-4 py-2.5 text-[12.5px] font-medium border-b border-[var(--arca-border)]"
             style={{
-              background: 'color-mix(in oklch, oklch(0.55 0.18 25), transparent 92%)',
+              background:
+                'color-mix(in oklch, oklch(0.55 0.18 25), transparent 92%)',
               color: 'oklch(0.45 0.18 25)',
             }}
           >
-            ⚠ El balance NO cuadra. Débitos $ {fmtMoney(data.totals.sumaDebe)} vs Créditos ${' '}
-            {fmtMoney(data.totals.sumaHaber)} (dif. ${' '}
-            {fmtMoney(Math.abs(data.totals.sumaDebe - data.totals.sumaHaber))}) · Saldos deudores $
-            {' '}
-            {fmtMoney(data.totals.saldoDeudor)} vs acreedores $ {fmtMoney(data.totals.saldoAcreedor)}.
+            ⚠ El balance NO cuadra. Débitos $ {fmtMoney(data.totals.sumaDebe)}{' '}
+            vs Créditos $ {fmtMoney(data.totals.sumaHaber)} (dif. ${' '}
+            {fmtMoney(Math.abs(data.totals.sumaDebe - data.totals.sumaHaber))})
+            · Saldos deudores $ {fmtMoney(data.totals.saldoDeudor)} vs
+            acreedores $ {fmtMoney(data.totals.saldoAcreedor)}.
           </div>
         )}
 
@@ -3040,7 +3345,9 @@ function Balance({
         </div>
 
         {isLoading ? (
-          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">Cargando…</div>
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            Cargando…
+          </div>
         ) : !data || data.rows.length === 0 ? (
           <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
             No hay movimientos hasta la fecha de corte.
@@ -3061,12 +3368,24 @@ function Balance({
                 }
                 className="w-full flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] hover:bg-[var(--arca-surface-2)] transition-colors text-left text-[12.5px]"
               >
-                <div className="w-24 shrink-0 font-mono text-[12px] text-[var(--arca-ink-3)]">{r.code}</div>
-                <div className="flex-1 min-w-0 truncate text-[var(--arca-ink)]">{r.name}</div>
-                <div className="w-28 shrink-0 text-right">{fmtMoney(r.sumaDebe)}</div>
-                <div className="w-28 shrink-0 text-right">{fmtMoney(r.sumaHaber)}</div>
-                <div className="w-28 shrink-0 text-right">{r.saldoDeudor ? fmtMoney(r.saldoDeudor) : ''}</div>
-                <div className="w-28 shrink-0 text-right">{r.saldoAcreedor ? fmtMoney(r.saldoAcreedor) : ''}</div>
+                <div className="w-24 shrink-0 font-mono text-[12px] text-[var(--arca-ink-3)]">
+                  {r.code}
+                </div>
+                <div className="flex-1 min-w-0 truncate text-[var(--arca-ink)]">
+                  {r.name}
+                </div>
+                <div className="w-28 shrink-0 text-right">
+                  {fmtMoney(r.sumaDebe)}
+                </div>
+                <div className="w-28 shrink-0 text-right">
+                  {fmtMoney(r.sumaHaber)}
+                </div>
+                <div className="w-28 shrink-0 text-right">
+                  {r.saldoDeudor ? fmtMoney(r.saldoDeudor) : ''}
+                </div>
+                <div className="w-28 shrink-0 text-right">
+                  {r.saldoAcreedor ? fmtMoney(r.saldoAcreedor) : ''}
+                </div>
               </button>
             ))}
             <div
@@ -3075,14 +3394,23 @@ function Balance({
             >
               <div className="w-24 shrink-0" />
               <div className="flex-1 min-w-0">Totales</div>
-              <div className="w-28 shrink-0 text-right">$ {fmtMoney(data.totals.sumaDebe)}</div>
-              <div className="w-28 shrink-0 text-right">$ {fmtMoney(data.totals.sumaHaber)}</div>
-              <div className="w-28 shrink-0 text-right">$ {fmtMoney(data.totals.saldoDeudor)}</div>
-              <div className="w-28 shrink-0 text-right">$ {fmtMoney(data.totals.saldoAcreedor)}</div>
+              <div className="w-28 shrink-0 text-right">
+                $ {fmtMoney(data.totals.sumaDebe)}
+              </div>
+              <div className="w-28 shrink-0 text-right">
+                $ {fmtMoney(data.totals.sumaHaber)}
+              </div>
+              <div className="w-28 shrink-0 text-right">
+                $ {fmtMoney(data.totals.saldoDeudor)}
+              </div>
+              <div className="w-28 shrink-0 text-right">
+                $ {fmtMoney(data.totals.saldoAcreedor)}
+              </div>
             </div>
             {data.balanced && (
               <div className="px-4 py-2 text-[11.5px] text-[oklch(0.40_0.14_145)] flex items-center gap-1.5">
-                ✓ El balance cuadra (débitos = créditos y saldos deudores = acreedores).
+                ✓ El balance cuadra (débitos = créditos y saldos deudores =
+                acreedores).
               </div>
             )}
           </>
@@ -3114,10 +3442,24 @@ function LedgerDialog({
 }) {
   const [detailId, setDetailId] = useState<string | null>(null);
   const { data, isLoading } = useQuery({
-    queryKey: ['accounting', 'ledger-account', clientId, drill.accountId, '', drill.from, drill.to, ''],
+    queryKey: [
+      'accounting',
+      'ledger-account',
+      clientId,
+      drill.accountId,
+      '',
+      drill.from,
+      drill.to,
+      '',
+    ],
     queryFn: () =>
       getLedgerAccount({
-        data: { clientId, accountId: drill.accountId, from: drill.from, to: drill.to },
+        data: {
+          clientId,
+          accountId: drill.accountId,
+          from: drill.from,
+          to: drill.to,
+        },
       }),
   });
 
@@ -3130,13 +3472,15 @@ function LedgerDialog({
               Mayor · {drill.code} · {drill.name}
             </DialogTitle>
             <DialogDescription>
-              Movimientos del {fmtFecha(drill.from)} al {fmtFecha(drill.to)}. Click en un movimiento
-              abre el asiento.
+              Movimientos del {fmtFecha(drill.from)} al {fmtFecha(drill.to)}.
+              Click en un movimiento abre el asiento.
             </DialogDescription>
           </DialogHeader>
           <div className="max-h-[60vh] overflow-y-auto border border-[var(--arca-border)] rounded-[10px]">
             {isLoading || !data ? (
-              <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">Cargando…</div>
+              <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+                Cargando…
+              </div>
             ) : (
               <LedgerTable
                 saldoInicial={data.saldoInicial}
