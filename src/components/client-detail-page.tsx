@@ -143,6 +143,7 @@ import {
 import { userQuery } from '@/lib/user-query';
 import { listOrgModules } from '@/actions/admin';
 import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
+import { toTitleCase } from '@/lib/format-name';
 
 interface RepresentativeDetailPageProps {
   representativeId: string;
@@ -1670,8 +1671,9 @@ export function RepresentativeDetailPage({
     );
   }
 
-  // Compute avatar initials from client name
-  const clientInitials = (client.name || '?')
+  // Compute avatar initials from selected profile or representative name
+  const headerDisplayName = selectedProfile?.name ?? client.name ?? '?';
+  const clientInitials = headerDisplayName
     .split(/[\s\-]+/)
     .filter(Boolean)
     .slice(0, 2)
@@ -1682,7 +1684,7 @@ export function RepresentativeDetailPage({
   const tabTriggerCls = (hasError?: boolean) =>
     cn(
       // shape overrides
-      'relative h-auto flex-none px-[14px] py-[10px] text-[13px] font-medium rounded-[8px_8px_0_0] border whitespace-nowrap gap-[7px] cursor-pointer',
+      'relative h-auto flex-none px-[18px] py-[10px] text-[13px] font-medium rounded-[8px_8px_0_0] border whitespace-nowrap gap-[7px] cursor-pointer',
       // inactive
       'border-transparent text-[var(--arca-ink-3)] hover:bg-transparent hover:text-[var(--arca-ink)]',
       // active
@@ -1712,7 +1714,7 @@ export function RepresentativeDetailPage({
         className="flex flex-col"
       >
         {/* ── Sticky client header ── */}
-        <div className="sticky top-0 z-10 bg-[var(--arca-bg)] border-b border-[var(--arca-border)]">
+        <div className="sticky top-0 z-10 bg-[var(--arca-bg)] border-b border-[var(--arca-border)] overflow-hidden">
           <div className="px-4 md:px-[28px] pt-[18px]">
             {/* Top row */}
             <div className="flex items-center gap-[14px] pb-[18px] pt-4">
@@ -1742,20 +1744,20 @@ export function RepresentativeDetailPage({
                         className="group h-auto w-fit max-w-full gap-2 border-0 bg-transparent p-0 shadow-none rounded-md hover:opacity-70 focus-visible:ring-0 transition-opacity [&>svg]:!size-[18px] [&>svg]:!opacity-40 [&>svg]:text-[var(--arca-ink-3)] group-hover:[&>svg]:!opacity-70"
                       >
                         <span className="font-display text-[24px] font-semibold tracking-tight text-[var(--arca-ink)] leading-none truncate">
-                          {selectedProfile?.name ?? client.name}
+                          {toTitleCase(selectedProfile?.name ?? client.name)}
                         </span>
                       </SelectTrigger>
                       <SelectContent>
                         {profiles.map((p) => (
                           <SelectItem key={p.id} value={p.id}>
-                            {p.name || p.identityNumber || p.id}
+                            {toTitleCase(p.name) || p.identityNumber || p.id}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   ) : (
                     <h1 className="font-display text-[24px] font-semibold tracking-tight text-[var(--arca-ink)] leading-none truncate">
-                      {selectedProfile?.name ?? client.name}
+                      {toTitleCase(selectedProfile?.name ?? client.name)}
                     </h1>
                   )}
                 </div>
@@ -1767,7 +1769,7 @@ export function RepresentativeDetailPage({
                   )}
                   <span className="w-[3px] h-[3px] rounded-full bg-[var(--arca-ink-4)] shrink-0" />
                   <span className="truncate max-w-[220px]">
-                    Representante: {client.name}
+                    Representante: {toTitleCase(client.name)}
                   </span>
                   {client.fiscalCondition && (
                     <>
@@ -1847,7 +1849,7 @@ export function RepresentativeDetailPage({
             </div>
 
             {/* Tab bar */}
-            <TabsList className="flex h-auto w-full bg-transparent p-0 rounded-none gap-0 overflow-x-auto justify-start">
+            <TabsList className="flex h-auto w-full bg-transparent p-0 rounded-none gap-0 overflow-x-auto overflow-y-hidden justify-start [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
               <TabsTrigger value="resumen" className={tabTriggerCls()}>
                 <FileText className="h-[14px] w-[14px]" />
                 Resumen

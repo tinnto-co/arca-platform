@@ -31,7 +31,7 @@ export const getPortalSession = createServerFn({ method: 'GET' }).handler(
 
     if (!access) throw new Error('Sin acceso al portal del cliente');
 
-    return { userId, clientId: access.clientId, access };
+    return { userId, clientId: access.representativeId, access };
   }
 );
 
@@ -436,7 +436,7 @@ export const createClientRequest = createServerFn({ method: 'POST' })
         id: representativeRequest.id,
         organizationId: representativeRequest.organizationId,
         clientId: representativeRequest.representativeId,
-        profileId: representativeRequest.profileId,
+        profileId: representativeRequest.clientId,
         requestedByUserId: representativeRequest.requestedByUserId,
         title: representativeRequest.title,
         description: representativeRequest.description,
@@ -487,7 +487,7 @@ export const uploadDocumentForRequest = createServerFn({ method: 'POST' })
     const [doc] = await db
       .insert(documentTable)
       .values({
-        representativeId: request.representativeId,
+        representativeId: request.clientId,
         type: 'uploaded',
         name: data.fileName,
         url: dataUrl,

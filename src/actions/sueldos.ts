@@ -21,12 +21,16 @@ import {
   payrollActividad,
   payrollSiniestrado,
   payrollProvincia,
+  payrollTipoEmpresa,
   afipEmpleadoresConvenio,
   conveniosDeTrabajo,
   liquidacionImportEmpleado,
   liquidacionImportRecibo,
   liquidacionImportConceptoValor,
   obraSocial,
+  payrollParametrosPeriodo,
+  payrollLocalidad,
+  payrollLsdPresentacion,
 } from '@/drizzle/schema';
 import {
   getSessionWithOrg,
@@ -47,12 +51,15 @@ import {
   sql,
   ne,
   like,
+  aliasedTable,
+  max,
 } from 'drizzle-orm';
 import {
   montoLiquidadoDesdeEditsSos,
   parseDecimalSos,
   totalesReciboSosDesdeMontos,
 } from '@/lib/sos-recibo-totales';
+import { normalizeLegajo } from '@/lib/legajo';
 
 /** Verifica que el cliente pertenezca a la org. y tenga al menos un perfil con liquidación de sueldos habilitada. */
 async function ensureClientBelongsToOrg(
@@ -152,7 +159,7 @@ async function upsertLiquidacionEmpleadoForPayrollRow(input: {
     .from(liquidacionImportEmpleado)
     .where(
       and(
-        eq(liquidacionImportEmpleado.profileId, input.profileId),
+        eq(liquidacionImportEmpleado.clientId, input.profileId),
         eq(liquidacionImportEmpleado.cuil, input.cuil)
       )
     )
@@ -160,7 +167,7 @@ async function upsertLiquidacionEmpleadoForPayrollRow(input: {
 
   const campos = {
     nombre: input.nombreCompleto,
-    legajo: input.legajo,
+    legajo: normalizeLegajo(input.legajo),
     fechaAlta: input.fechaAlta,
     convenioId: input.convenioId,
     categoriaId: input.categoriaId,
@@ -181,7 +188,7 @@ async function upsertLiquidacionEmpleadoForPayrollRow(input: {
   const [inserted] = await db
     .insert(liquidacionImportEmpleado)
     .values({
-      profileId: input.profileId,
+      clientId: input.profileId,
       cuil: input.cuil,
       ...campos,
     })
@@ -214,7 +221,7 @@ export const listConvenios = createServerFn({ method: 'GET' })
   .inputValidator(
     z.object({
       clientId: z.string().uuid(),
-      profileId: z.string().uuid().optional(),
+      profileId: z.string().uuid(),
     })
   )
   .handler(async (ctx) => {
@@ -224,6 +231,7 @@ export const listConvenios = createServerFn({ method: 'GET' })
       .select({
         id: payrollConvenio.id,
         clientId: payrollConvenio.representativeId,
+        profileId: payrollConvenio.clientId,
         nombre: payrollConvenio.nombre,
         cctCodigo: payrollConvenio.cctCodigo,
         activo: payrollConvenio.activo,
@@ -238,21 +246,26 @@ export const listConvenios = createServerFn({ method: 'GET' })
           OR ${payrollConvenio.cctCodigo} = REGEXP_REPLACE(${conveniosDeTrabajo.cct}, '^0+', '')
           OR '0' || ${payrollConvenio.cctCodigo} = ${conveniosDeTrabajo.cct}`
       )
-      .where(eq(payrollConvenio.representativeId, ctx.data.clientId))
+      .where(
+        and(
+          eq(payrollConvenio.representativeId, ctx.data.clientId),
+          eq(payrollConvenio.clientId, ctx.data.profileId)
+        )
+      )
       .orderBy(payrollConvenio.nombre);
 
     if (ctx.data.profileId) {
       await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
     }
 
+    // Si se pasa profileId, traer solo los CCTs de ese perfil; si no, traer todos del cliente.
     const afipRows = await db
       .select({
         cct: afipEmpleadoresConvenio.cct,
         updatedAt: afipEmpleadoresConvenio.updatedAt,
       })
       .from(afipEmpleadoresConvenio)
-      .innerJoin(client, eq(afipEmpleadoresConvenio.profileId, client.id))
-      .where(eq(client.representativeId, ctx.data.clientId));
+      .where(eq(afipEmpleadoresConvenio.clientId, ctx.data.profileId));
 
     const afipByCct = new Map<string, Date>();
     for (const row of afipRows) {
@@ -274,7 +287,12 @@ export const listConvenios = createServerFn({ method: 'GET' })
         payrollConvenio,
         eq(payrollConvenioFuente.convenioId, payrollConvenio.id)
       )
-      .where(eq(payrollConvenio.representativeId, ctx.data.clientId));
+      .where(
+        and(
+          eq(payrollConvenio.representativeId, ctx.data.clientId),
+          eq(payrollConvenio.clientId, ctx.data.profileId)
+        )
+      );
 
     const fuentesEscalasRows = await db
       .select({
@@ -290,7 +308,12 @@ export const listConvenios = createServerFn({ method: 'GET' })
         payrollConvenio,
         eq(payrollConvenioCategoria.convenioId, payrollConvenio.id)
       )
-      .where(eq(payrollConvenio.representativeId, ctx.data.clientId));
+      .where(
+        and(
+          eq(payrollConvenio.representativeId, ctx.data.clientId),
+          eq(payrollConvenio.clientId, ctx.data.profileId)
+        )
+      );
 
     const fuentesByConvenio = new Map<string, Set<string>>();
     for (const row of fuentesConvenioRows) {
@@ -309,10 +332,7 @@ export const listConvenios = createServerFn({ method: 'GET' })
       fuentesByConvenio.set(row.convenioId, list);
     }
 
-    // Los convenios se gestionan a nivel cliente (no por perfil).
-    // Si filtramos por CCT del perfil activo, los convenios cargados manualmente
-    // pueden quedar ocultos en la solapa de Convenios.
-    return convenios.map((convenio) => {
+    const mapped = convenios.map((convenio) => {
       const cct =
         convenio.cctCodigo ??
         extractCctCodigo(convenio.nombre);
@@ -328,12 +348,23 @@ export const listConvenios = createServerFn({ method: 'GET' })
         afipUpdatedAt,
       };
     });
+
+    // Cuando se filtra por perfil y el perfil tiene CCTs registrados en AFIP,
+    // mostrar solo los convenios cuyo código CCT está en afip_empleadores_convenio
+    // para ese perfil. Si el perfil no tiene ningún CCT en AFIP, mostrar todos
+    // (estado inicial antes del primer scraping).
+    if (ctx.data.profileId && afipRows.length > 0) {
+      return mapped.filter((c) => c.afipUpdatedAt !== null);
+    }
+
+    return mapped;
   });
 
 export const createConvenio = createServerFn({ method: 'POST' })
   .inputValidator(
     z.object({
       clientId: z.string().uuid(),
+      profileId: z.string().uuid(),
       nombre: z.string().min(1),
       cctCodigo: z.string().optional(),
       descripcion: z.string().optional(),
@@ -344,10 +375,12 @@ export const createConvenio = createServerFn({ method: 'POST' })
     const role = await getMemberRole();
     assertCanWrite(role);
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
     const [row] = await db
       .insert(payrollConvenio)
       .values({
-        clientId: ctx.data.clientId,
+        representativeId: ctx.data.clientId,
+        clientId: ctx.data.profileId,
         nombre: ctx.data.nombre,
         cctCodigo: ctx.data.cctCodigo?.trim() || extractCctCodigo(ctx.data.nombre),
         descripcion: ctx.data.descripcion ?? null,
@@ -371,6 +404,7 @@ export const updateConvenio = createServerFn({ method: 'POST' })
     z.object({
       id: z.string().uuid(),
       clientId: z.string().uuid(),
+      profileId: z.string().uuid(),
       nombre: z.string().min(1),
       cctCodigo: z.string().optional(),
       descripcion: z.string().optional(),
@@ -381,6 +415,7 @@ export const updateConvenio = createServerFn({ method: 'POST' })
     const role = await getMemberRole();
     assertCanWrite(role);
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
     const [row] = await db
       .update(payrollConvenio)
       .set({
@@ -392,7 +427,8 @@ export const updateConvenio = createServerFn({ method: 'POST' })
       .where(
         and(
           eq(payrollConvenio.id, ctx.data.id),
-          eq(payrollConvenio.representativeId, ctx.data.clientId)
+          eq(payrollConvenio.representativeId, ctx.data.clientId),
+          eq(payrollConvenio.clientId, ctx.data.profileId)
         )
       )
       .returning();
@@ -404,6 +440,7 @@ export const deleteConvenio = createServerFn({ method: 'POST' })
     z.object({
       id: z.string().uuid(),
       clientId: z.string().uuid(),
+      profileId: z.string().uuid(),
     })
   )
   .handler(async (ctx) => {
@@ -411,6 +448,7 @@ export const deleteConvenio = createServerFn({ method: 'POST' })
     const role = await getMemberRole();
     assertCanWrite(role);
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
     const [emp] = await db
       .select({ id: liquidacionImportEmpleado.id })
       .from(liquidacionImportEmpleado)
@@ -426,7 +464,8 @@ export const deleteConvenio = createServerFn({ method: 'POST' })
       .where(
         and(
           eq(payrollConvenio.id, ctx.data.id),
-          eq(payrollConvenio.representativeId, ctx.data.clientId)
+          eq(payrollConvenio.representativeId, ctx.data.clientId),
+          eq(payrollConvenio.clientId, ctx.data.profileId)
         )
       );
     return { ok: true };
@@ -442,7 +481,7 @@ export const listConveniosAfipEmpleadores = createServerFn({ method: 'GET' })
     const rows = await db
       .select({
         id: afipEmpleadoresConvenio.id,
-        profileId: afipEmpleadoresConvenio.profileId,
+        profileId: afipEmpleadoresConvenio.clientId,
         cct: conveniosDeTrabajo.cct,
         actividad: conveniosDeTrabajo.nombre,
         signatarios: conveniosDeTrabajo.signatarios,
@@ -450,7 +489,7 @@ export const listConveniosAfipEmpleadores = createServerFn({ method: 'GET' })
         updatedAt: afipEmpleadoresConvenio.updatedAt,
       })
       .from(afipEmpleadoresConvenio)
-      .innerJoin(client, eq(afipEmpleadoresConvenio.profileId, client.id))
+      .innerJoin(client, eq(afipEmpleadoresConvenio.clientId, client.id))
       .leftJoin(conveniosDeTrabajo, eq(afipEmpleadoresConvenio.convenioId, conveniosDeTrabajo.id))
       .where(eq(client.representativeId, ctx.data.clientId))
       .orderBy(desc(afipEmpleadoresConvenio.updatedAt));
@@ -529,14 +568,14 @@ export const listConceptosByPerfil = createServerFn({ method: 'GET' })
         conceptoSosClient,
         and(
           eq(conceptoSosClient.conceptoId, conceptoSos.id),
-          eq(conceptoSosClient.profileId, lsdPerfilConcepto.profileId)
+          eq(conceptoSosClient.clientId, lsdPerfilConcepto.clientId)
         )
       )
       .leftJoin(
         conceptosCompletosSos,
         sql`${conceptosCompletosSos.numeroSos} = cast(${lsdPerfilConcepto.codigoContribuyente} as integer)`
       )
-      .where(eq(lsdPerfilConcepto.profileId, ctx.data.profileId))
+      .where(eq(lsdPerfilConcepto.clientId, ctx.data.profileId))
       .orderBy(lsdPerfilConcepto.codigoContribuyente);
   });
 
@@ -573,14 +612,14 @@ export const agregarConvenioDesdeAfipEmpleadores = createServerFn({
     const [afipRow] = await db
       .select({
         id: afipEmpleadoresConvenio.id,
-        profileId: afipEmpleadoresConvenio.profileId,
+        profileId: afipEmpleadoresConvenio.clientId,
         cct: conveniosDeTrabajo.cct,
         actividad: conveniosDeTrabajo.nombre,
         signatarios: conveniosDeTrabajo.signatarios,
         fechaNovedad: afipEmpleadoresConvenio.fechaNovedad,
       })
       .from(afipEmpleadoresConvenio)
-      .innerJoin(client, eq(afipEmpleadoresConvenio.profileId, client.id))
+      .innerJoin(client, eq(afipEmpleadoresConvenio.clientId, client.id))
       .leftJoin(conveniosDeTrabajo, eq(afipEmpleadoresConvenio.convenioId, conveniosDeTrabajo.id))
       .where(
         and(
@@ -605,6 +644,7 @@ export const agregarConvenioDesdeAfipEmpleadores = createServerFn({
       .where(
         and(
           eq(payrollConvenio.representativeId, ctx.data.clientId),
+          eq(payrollConvenio.clientId, afipRow.profileId),
           or(
             afipRow.cct ? eq(payrollConvenio.nombre, afipRow.cct) : undefined,
             cctNormalizado ? eq(payrollConvenio.nombre, cctNormalizado) : undefined,
@@ -636,7 +676,8 @@ export const agregarConvenioDesdeAfipEmpleadores = createServerFn({
     const [inserted] = await db
       .insert(payrollConvenio)
       .values({
-        clientId: ctx.data.clientId,
+        representativeId: ctx.data.clientId,
+        clientId: afipRow.profileId,
         nombre: nombreConvenio,
         cctCodigo,
       })
@@ -1040,13 +1081,13 @@ async function resolveCategoriaIdParaBasico(
  */
 async function resolveConvenioIdParaEmpleado(
   empleado: Pick<typeof liquidacionImportEmpleado.$inferSelect, 'convenioId'>,
-  clientId: string
+  profileId: string
 ): Promise<string | null> {
   if (empleado.convenioId) return empleado.convenioId;
   const convenios = await db
     .select({ id: payrollConvenio.id })
     .from(payrollConvenio)
-    .where(eq(payrollConvenio.representativeId, clientId));
+    .where(eq(payrollConvenio.clientId, profileId));
   if (convenios.length === 1) return convenios[0]!.id;
   return null;
 }
@@ -1135,7 +1176,7 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
     const [emp] = await db
       .select()
       .from(liquidacionImportEmpleado)
-      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.clientId, client.id))
       .where(
         and(
           eq(liquidacionImportEmpleado.id, ctx.data.importEmpleadoId),
@@ -1148,63 +1189,86 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
 
     const empleado = emp.liquidacion_import_empleado;
 
-    // Override manual en el legajo tiene prioridad
-    const override = empleado.valorSueldo != null ? Number(empleado.valorSueldo) : 0;
-    if (!Number.isNaN(override) && override > 0) return { basico: override };
-
+    // Resolver categoría para incluirla siempre en la respuesta
     const categoriaId =
       empleado.categoriaId ?? (await resolveCategoriaIdParaBasico(empleado));
 
-    if (!categoriaId) return { basico: 0, categoriaNombre: null };
-
-    // Nombre de la categoría para mostrar en UI
-    const [catRow] = await db
-      .select({ nombre: payrollConvenioCategoria.nombre })
-      .from(payrollConvenioCategoria)
-      .where(eq(payrollConvenioCategoria.id, categoriaId))
-      .limit(1);
-    const categoriaNombre = catRow?.nombre ?? null;
+    let categoriaNombre: string | null = null;
+    if (categoriaId) {
+      const [catRow] = await db
+        .select({ nombre: payrollConvenioCategoria.nombre })
+        .from(payrollConvenioCategoria)
+        .where(eq(payrollConvenioCategoria.id, categoriaId))
+        .limit(1);
+      categoriaNombre = catRow?.nombre ?? null;
+    }
 
     const periodoNorm = normalizarPeriodoYYYYMM(ctx.data.periodo);
-    const [escalaPeriodo] = await db
-      .select({
-        monto: payrollEscala.montoBasico,
-        periodoLabel: payrollEscala.periodoLabel,
-      })
+
+    // 1° prioridad: override manual en el legajo (seteado explícitamente por el usuario)
+    const override = empleado.valorSueldo != null ? Number(empleado.valorSueldo) : 0;
+    if (!Number.isNaN(override) && override > 0) {
+      return { basico: override, categoriaNombre, sinEscalaParaPeriodo: false, fallbackPeriodoLabel: null, periodoEscalaLabel: null };
+    }
+
+    // 2° prioridad: escala configurada para el período exacto
+    let escalaPeriodo: { monto: string; periodoLabel: string | null } | undefined;
+    if (categoriaId) {
+      const [row] = await db
+        .select({
+          monto: payrollEscala.montoBasico,
+          periodoLabel: payrollEscala.periodoLabel,
+        })
+        .from(payrollEscala)
+        .where(
+          and(
+            eq(payrollEscala.categoriaId, categoriaId),
+            sql`(${payrollEscala.vigenciaDesde})::date <= (to_date(${periodoNorm} || '-01', 'YYYY-MM-DD') + interval '1 month - 1 day')::date`,
+            or(
+              isNull(payrollEscala.vigenciaHasta),
+              sql`(${payrollEscala.vigenciaHasta})::date >= to_date(${periodoNorm} || '-01', 'YYYY-MM-DD')`
+            )
+          )
+        )
+        .orderBy(desc(payrollEscala.vigenciaDesde))
+        .limit(1);
+      escalaPeriodo = row;
+    }
+
+    if (escalaPeriodo) {
+      return {
+        basico: Number(escalaPeriodo.monto),
+        categoriaNombre,
+        sinEscalaParaPeriodo: false,
+        fallbackPeriodoLabel: null,
+        periodoEscalaLabel: escalaPeriodo.periodoLabel,
+      };
+    }
+
+    if (!categoriaId) return { basico: 0, categoriaNombre: null };
+
+    // 3° prioridad: escala más reciente anterior al período (fallback)
+    let basico = 0;
+    let sinEscalaParaPeriodo = false;
+    let fallbackPeriodoLabel: string | null = null;
+    let periodoEscalaLabel: string | null = null;
+
+    const [masReciente] = await db
+      .select({ monto: payrollEscala.montoBasico, periodoLabel: payrollEscala.periodoLabel })
       .from(payrollEscala)
       .where(
         and(
           eq(payrollEscala.categoriaId, categoriaId),
-          sql`(${payrollEscala.vigenciaDesde})::date <= (to_date(${periodoNorm} || '-01', 'YYYY-MM-DD') + interval '1 month - 1 day')::date`,
-          or(
-            isNull(payrollEscala.vigenciaHasta),
-            sql`(${payrollEscala.vigenciaHasta})::date >= to_date(${periodoNorm} || '-01', 'YYYY-MM-DD')`
-          )
+          sql`(${payrollEscala.vigenciaDesde})::date <= (to_date(${periodoNorm} || '-01', 'YYYY-MM-DD') + interval '1 month - 1 day')::date`
         )
       )
       .orderBy(desc(payrollEscala.vigenciaDesde))
       .limit(1);
-
-    // Busca la escala exacta para el período
-    let basico = escalaPeriodo ? Number(escalaPeriodo.monto) : 0;
-    let sinEscalaParaPeriodo = false;
-    let fallbackPeriodoLabel: string | null = null;
-    let periodoEscalaLabel: string | null = escalaPeriodo?.periodoLabel ?? null;
-
-    // Fallback: si no hay escala para el período exacto, usa la más reciente disponible.
-    if ((!basico || Number.isNaN(basico)) && categoriaId) {
-      const [masReciente] = await db
-        .select({ monto: payrollEscala.montoBasico, periodoLabel: payrollEscala.periodoLabel })
-        .from(payrollEscala)
-        .where(eq(payrollEscala.categoriaId, categoriaId))
-        .orderBy(desc(payrollEscala.vigenciaDesde))
-        .limit(1);
-      if (masReciente) {
-        basico = Number(masReciente.monto);
-        sinEscalaParaPeriodo = true;
-        fallbackPeriodoLabel = masReciente.periodoLabel;
-        periodoEscalaLabel = masReciente.periodoLabel;
-      }
+    if (masReciente) {
+      basico = Number(masReciente.monto);
+      sinEscalaParaPeriodo = true;
+      fallbackPeriodoLabel = masReciente.periodoLabel;
+      periodoEscalaLabel = masReciente.periodoLabel;
     }
 
     return {
@@ -1251,7 +1315,8 @@ export const createConcepto = createServerFn({ method: 'POST' })
     const [row] = await db
       .insert(payrollConcepto)
       .values({
-        clientId: ctx.data.clientId,
+        // `clientId` del contrato es el representante; conceptos se scopean por representativeId.
+        representativeId: ctx.data.clientId,
         codigo: ctx.data.codigo,
         nombre: ctx.data.nombre,
         tipo: ctx.data.tipo,
@@ -1344,7 +1409,7 @@ export const listEmpleados = createServerFn({ method: 'GET' })
         categoriaNombre: payrollConvenioCategoria.nombre,
       })
       .from(liquidacionImportEmpleado)
-      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.clientId, client.id))
       .leftJoin(
         payrollConvenio,
         eq(liquidacionImportEmpleado.convenioId, payrollConvenio.id)
@@ -1356,7 +1421,7 @@ export const listEmpleados = createServerFn({ method: 'GET' })
       .where(
         and(
           eq(client.representativeId, ctx.data.clientId),
-          eq(liquidacionImportEmpleado.profileId, ctx.data.profileId)
+          eq(liquidacionImportEmpleado.clientId, ctx.data.profileId)
         )
       )
       .orderBy(liquidacionImportEmpleado.nombre);
@@ -1389,7 +1454,7 @@ export const listImportEmpleados = createServerFn({ method: 'GET' })
         provinciaNombre: payrollProvincia.nombre,
       })
       .from(liquidacionImportEmpleado)
-      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.clientId, client.id))
       .leftJoin(payrollConvenio, eq(liquidacionImportEmpleado.convenioId, payrollConvenio.id))
       .leftJoin(payrollConvenioCategoria, eq(liquidacionImportEmpleado.categoriaId, payrollConvenioCategoria.id))
       .leftJoin(obraSocial, eq(liquidacionImportEmpleado.obraSocialId, obraSocial.id))
@@ -1403,7 +1468,7 @@ export const listImportEmpleados = createServerFn({ method: 'GET' })
       .where(
         and(
           eq(client.representativeId, ctx.data.clientId),
-          eq(liquidacionImportEmpleado.profileId, ctx.data.profileId)
+          eq(liquidacionImportEmpleado.clientId, ctx.data.profileId)
         )
       )
       .orderBy(
@@ -1483,7 +1548,7 @@ export const sincronizarConveniosEmpleados = createServerFn({ method: 'POST' })
     const afipRows = await db
       .select({ cct: afipEmpleadoresConvenio.cct })
       .from(afipEmpleadoresConvenio)
-      .where(eq(afipEmpleadoresConvenio.profileId, ctx.data.profileId));
+      .where(eq(afipEmpleadoresConvenio.clientId, ctx.data.profileId));
 
     const cctSet = new Set(
       afipRows.map((r) => extractCct(r.cct)).filter((c): c is string => Boolean(c))
@@ -1493,7 +1558,12 @@ export const sincronizarConveniosEmpleados = createServerFn({ method: 'POST' })
     const conveniosClient = await db
       .select()
       .from(payrollConvenio)
-      .where(eq(payrollConvenio.representativeId, ctx.data.clientId));
+      .where(
+        and(
+          eq(payrollConvenio.representativeId, ctx.data.clientId),
+          eq(payrollConvenio.clientId, ctx.data.profileId)
+        )
+      );
 
     const conveniosFiltrados = cctSet.size > 0
       ? conveniosClient.filter((conv) => {
@@ -1523,7 +1593,7 @@ export const sincronizarConveniosEmpleados = createServerFn({ method: 'POST' })
       .from(liquidacionImportEmpleado)
       .where(
         and(
-          eq(liquidacionImportEmpleado.profileId, ctx.data.profileId),
+          eq(liquidacionImportEmpleado.clientId, ctx.data.profileId),
           isNull(liquidacionImportEmpleado.convenioId)
         )
       );
@@ -1576,6 +1646,28 @@ export const createManualEmpleado = createServerFn({ method: 'POST' })
       fechaBaja: z.string().optional(),
       modoContrato: z.string().optional(),
       categoria: z.string().optional(),
+      tipoJornada: z.enum(['full_time', 'part_time', 'reducida']).optional(),
+      convenioId: z.string().uuid().optional(),
+      categoriaId: z.string().uuid().optional(),
+      formaPago: z.string().optional(),
+      banco: z.string().optional(),
+      cbu: z.string().optional(),
+      lugarPago: z.string().optional(),
+      domicilio: z.string().optional(),
+      localidad: z.string().optional(),
+      codigoPostal: z.string().optional(),
+      conyuge: z.number().int().optional(),
+      hijos: z.number().int().optional(),
+      adherentes: z.number().int().optional(),
+      obraSocialId: z.string().uuid().optional(),
+      provinciaId: z.string().uuid().optional(),
+      modalidadContratacionId: z.string().uuid().optional(),
+      situacionId: z.string().uuid().optional(),
+      zonaId: z.string().uuid().optional(),
+      condicionId: z.string().uuid().optional(),
+      actividadId: z.string().uuid().optional(),
+      siniestradoId: z.string().uuid().optional(),
+      observaciones: z.string().optional(),
     })
   )
   .handler(async (ctx) => {
@@ -1588,7 +1680,7 @@ export const createManualEmpleado = createServerFn({ method: 'POST' })
     const [row] = await db
       .insert(liquidacionImportEmpleado)
       .values({
-        profileId: ctx.data.profileId,
+        clientId: ctx.data.profileId,
         cuil: ctx.data.cuil,
         legajo: ctx.data.legajo,
         nombre: ctx.data.nombre,
@@ -1597,6 +1689,28 @@ export const createManualEmpleado = createServerFn({ method: 'POST' })
         modoContrato: ctx.data.modoContrato ?? null,
         categoria: ctx.data.categoria ?? null,
         origen: 'manual',
+        tipoJornada: ctx.data.tipoJornada ?? null,
+        convenioId: ctx.data.convenioId ?? null,
+        categoriaId: ctx.data.categoriaId ?? null,
+        formaPago: ctx.data.formaPago ?? null,
+        banco: ctx.data.banco ?? null,
+        cbu: ctx.data.cbu ?? null,
+        lugarPago: ctx.data.lugarPago ?? null,
+        domicilio: ctx.data.domicilio ?? null,
+        localidad: ctx.data.localidad ?? null,
+        codigoPostal: ctx.data.codigoPostal ?? null,
+        conyuge: ctx.data.conyuge ?? null,
+        hijos: ctx.data.hijos ?? null,
+        adherentes: ctx.data.adherentes ?? null,
+        obraSocialId: ctx.data.obraSocialId ?? null,
+        provinciaId: ctx.data.provinciaId ?? null,
+        modalidadContratacionId: ctx.data.modalidadContratacionId ?? null,
+        situacionId: ctx.data.situacionId ?? null,
+        zonaId: ctx.data.zonaId ?? null,
+        condicionId: ctx.data.condicionId ?? null,
+        actividadId: ctx.data.actividadId ?? null,
+        siniestradoId: ctx.data.siniestradoId ?? null,
+        observaciones: ctx.data.observaciones ?? null,
       })
       .returning();
     return row;
@@ -1642,12 +1756,12 @@ export const listImportEmpleadosConConfig = createServerFn({ method: 'GET' })
         obraSocialCodigo: obraSocial.codigo,
       })
       .from(liquidacionImportEmpleado)
-      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.clientId, client.id))
       .leftJoin(obraSocial, eq(liquidacionImportEmpleado.obraSocialId, obraSocial.id))
       .where(
         and(
           eq(client.representativeId, ctx.data.clientId),
-          eq(liquidacionImportEmpleado.profileId, ctx.data.profileId),
+          eq(liquidacionImportEmpleado.clientId, ctx.data.profileId),
           eq(liquidacionImportEmpleado.activo, true)
         )
       )
@@ -1682,7 +1796,7 @@ export const listImportRecibosByPeriodo = createServerFn({ method: 'GET' })
         liquidacionImportEmpleado,
         eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
       )
-      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.clientId, client.id))
       .where(
         and(
           eq(client.representativeId, ctx.data.clientId),
@@ -1712,7 +1826,7 @@ export const getUltimoReciboImportado = createServerFn({ method: 'GET' })
         liquidacionImportEmpleado,
         eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
       )
-      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.clientId, client.id))
       .where(
         and(
           eq(liquidacionImportRecibo.empleadoId, ctx.data.importEmpleadoId),
@@ -1735,6 +1849,7 @@ export const getUltimoReciboImportado = createServerFn({ method: 'GET' })
         importe: liquidacionImportConceptoValor.importe,
         importeMinimo: liquidacionImportConceptoValor.importeMinimo,
         importeMaximo: liquidacionImportConceptoValor.importeMaximo,
+        memo: liquidacionImportConceptoValor.memo,
         nombre: conceptoSos.nombre,
         codigoAfip: conceptoSos.codigoAfip,
       })
@@ -1758,12 +1873,15 @@ export const listConceptosPlantillaManualSos = createServerFn({ method: 'GET' })
   .inputValidator(
     z.object({
       clientId: z.string().uuid(),
+      /** Si se pasa, usa el profileId para buscar el empleado de referencia de plantilla. */
+      profileId: z.string().uuid().optional(),
     })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
 
+    // Cargar catálogo completo SOS (1-699)
     const rows = await db
       .select()
       .from(conceptosCompletosSos)
@@ -1773,29 +1891,93 @@ export const listConceptosPlantillaManualSos = createServerFn({ method: 'GET' })
       ))
       .orderBy(conceptosCompletosSos.numeroSos);
 
-    return rows.map((r) => ({
-      id: r.id,
-      codigo: String(r.numeroSos),
-      monto: null as string | null,
-      cantidad: null as string | null,
-      porcentaje: r.pctFijo != null ? String(r.pctFijo) : null as string | null,
-      importeConceptoNumero: null as string | null,
-      importe: null as string | null,
-      importeMinimo: null as string | null,
-      importeMaximo: null as string | null,
-      nombre: r.nombre,
-      codigoAfip: r.codigoAfip,
-      baseColumna: r.baseColumna ?? null,
-      divCantidad: r.divCantidad != null ? Number(r.divCantidad) : null,
-      divHsNorm: r.divHsNorm != null ? r.divHsNorm > 0 : null,
-      tieneCantidad: r.tieneCantidad ?? null,
-      tienePct: r.tienePct ?? null,
-      tieneImpConceptoNro: r.tieneImpConceptoNro ?? null,
-      tieneImporte: r.tieneImporte ?? null,
-      tieneImpMin: r.tieneImpMin ?? null,
-      tieneImpMax: r.tieneImpMax ?? null,
-      pctFijo: r.pctFijo != null ? Number(r.pctFijo) : null,
-    }));
+    // Buscar el empleado de referencia para la plantilla base (si el perfil tiene uno configurado)
+    const refProfileId = ctx.data.profileId ?? ctx.data.clientId;
+    const profileRow = await db
+      .select({ plantillaEmpleadoId: client.payrollPlantillaEmpleadoId })
+      .from(client)
+      .where(eq(client.id, refProfileId))
+      .then((r) => r[0] ?? null);
+
+    // Mapa de código SOS → valores del empleado de referencia
+    const plantillaMap = new Map<string, {
+      cantidad: string | null;
+      porcentaje: string | null;
+      importeConceptoNumero: string | null;
+      importe: string | null;
+      importeMinimo: string | null;
+      importeMaximo: string | null;
+    }>();
+
+    if (profileRow?.plantillaEmpleadoId) {
+      // Buscar el último recibo del empleado de referencia
+      const ultimoReciboRef = await db
+        .select({ id: liquidacionImportRecibo.id })
+        .from(liquidacionImportRecibo)
+        .where(eq(liquidacionImportRecibo.empleadoId, profileRow.plantillaEmpleadoId))
+        .orderBy(liquidacionImportRecibo.periodo)
+        .then((r) => r.at(-1) ?? null);
+
+      if (ultimoReciboRef) {
+        const conceptosRef = await db
+          .select({
+            codigo: liquidacionImportConceptoValor.codigo,
+            cantidad: liquidacionImportConceptoValor.cantidad,
+            porcentaje: liquidacionImportConceptoValor.porcentaje,
+            importeConceptoNumero: liquidacionImportConceptoValor.importeConceptoNumero,
+            importe: liquidacionImportConceptoValor.importe,
+            importeMinimo: liquidacionImportConceptoValor.importeMinimo,
+            importeMaximo: liquidacionImportConceptoValor.importeMaximo,
+          })
+          .from(liquidacionImportConceptoValor)
+          .where(eq(liquidacionImportConceptoValor.reciboId, ultimoReciboRef.id));
+
+        for (const c of conceptosRef) {
+          const num = parseInt(c.codigo, 10);
+          if (num >= 1 && num <= 699) {
+            plantillaMap.set(c.codigo, {
+              cantidad: c.cantidad ?? null,
+              porcentaje: c.porcentaje ?? null,
+              importeConceptoNumero: c.importeConceptoNumero ?? null,
+              importe: c.importe ?? null,
+              importeMinimo: c.importeMinimo ?? null,
+              importeMaximo: c.importeMaximo ?? null,
+            });
+          }
+        }
+      }
+    }
+
+    return rows.map((r) => {
+      const codigo = String(r.numeroSos);
+      const ref = plantillaMap.get(codigo);
+      return {
+        id: r.id,
+        codigo,
+        monto: null as string | null,
+        cantidad: ref?.cantidad ?? null,
+        porcentaje: ref?.porcentaje ?? (r.pctFijo != null ? String(r.pctFijo) : null) as string | null,
+        importeConceptoNumero: ref?.importeConceptoNumero ?? null,
+        importe: ref?.importe ?? null,
+        importeMinimo: ref?.importeMinimo ?? null,
+        importeMaximo: ref?.importeMaximo ?? null,
+        nombre: r.nombre,
+        codigoAfip: r.codigoAfip,
+        baseColumna: r.baseColumna ?? null,
+        divCantidad: r.divCantidad != null ? Number(r.divCantidad) : null,
+        divHsNorm: r.divHsNorm != null ? r.divHsNorm > 0 : null,
+        tieneCantidad: r.tieneCantidad ?? null,
+        tienePct: r.tienePct ?? null,
+        tieneImpConceptoNro: r.tieneImpConceptoNro ?? null,
+        tieneImporte: r.tieneImporte ?? null,
+        tieneImpMin: r.tieneImpMin ?? null,
+        tieneImpMax: r.tieneImpMax ?? null,
+        tieneMemo: r.tieneMemo ?? null,
+        pctFijo: r.pctFijo != null ? Number(r.pctFijo) : null,
+        /** true = concepto activo por defecto en la plantilla base */
+        isPlantillaBase: plantillaMap.has(codigo),
+      };
+    });
   });
 
 /** Detalle de un recibo importado + conceptos LSD. */
@@ -1819,7 +2001,7 @@ export const getImportReciboDetalle = createServerFn({ method: 'GET' })
         liquidacionImportEmpleado,
         eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
       )
-      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.clientId, client.id))
       .where(
         and(
           eq(liquidacionImportRecibo.id, ctx.data.reciboId),
@@ -1940,6 +2122,7 @@ const conceptoEditsSosSchema = z.object({
   importe: z.string().optional(),
   importeMinimo: z.string().optional(),
   importeMaximo: z.string().optional(),
+  memo: z.string().optional().nullable(),
 });
 
 function numericOrNullForSos(s: string | undefined): string | null {
@@ -2015,6 +2198,17 @@ export const guardarReciboDesdeTabla = createServerFn({ method: 'POST' })
       fechaDepositoCargas: z.string().optional().nullable(),
       observacionInterna: z.string().optional().nullable(),
       observacionRecibo: z.string().optional().nullable(),
+      // Situaciones de revista LSD (hasta 3 por período)
+      situacionRevista1Id: z.string().uuid().optional().nullable(),
+      situacionRevista1DiaInicio: z.number().int().min(1).max(31).optional().nullable(),
+      situacionRevista2Id: z.string().uuid().optional().nullable(),
+      situacionRevista2DiaInicio: z.number().int().min(1).max(31).optional().nullable(),
+      situacionRevista3Id: z.string().uuid().optional().nullable(),
+      situacionRevista3DiaInicio: z.number().int().min(1).max(31).optional().nullable(),
+      // Datos complementarios LSD
+      diasTrabajados: z.number().int().min(0).max(31).optional().nullable(),
+      horasTrabajadas: z.number().int().min(0).optional().nullable(),
+      importeMaternidadArt13: z.string().optional().nullable(),
     })
   )
   .handler(async (ctx) => {
@@ -2030,11 +2224,11 @@ export const guardarReciboDesdeTabla = createServerFn({ method: 'POST' })
     const [empRow] = await db
       .select({ id: liquidacionImportEmpleado.id })
       .from(liquidacionImportEmpleado)
-      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.clientId, client.id))
       .where(
         and(
           eq(liquidacionImportEmpleado.id, ctx.data.importEmpleadoId),
-          eq(liquidacionImportEmpleado.profileId, ctx.data.profileId),
+          eq(liquidacionImportEmpleado.clientId, ctx.data.profileId),
           eq(client.representativeId, ctx.data.clientId)
         )
       )
@@ -2105,6 +2299,15 @@ export const guardarReciboDesdeTabla = createServerFn({ method: 'POST' })
               : null,
             observacionInterna: ctx.data.observacionInterna ?? null,
             observacionRecibo: ctx.data.observacionRecibo ?? null,
+            situacionRevista1Id: ctx.data.situacionRevista1Id ?? null,
+            situacionRevista1DiaInicio: ctx.data.situacionRevista1DiaInicio ?? null,
+            situacionRevista2Id: ctx.data.situacionRevista2Id ?? null,
+            situacionRevista2DiaInicio: ctx.data.situacionRevista2DiaInicio ?? null,
+            situacionRevista3Id: ctx.data.situacionRevista3Id ?? null,
+            situacionRevista3DiaInicio: ctx.data.situacionRevista3DiaInicio ?? null,
+            diasTrabajados: ctx.data.diasTrabajados ?? null,
+            horasTrabajadas: ctx.data.horasTrabajadas ?? null,
+            importeMaternidadArt13: ctx.data.importeMaternidadArt13 ?? null,
             origen: 'generado' as const,
           }
         : {};
@@ -2164,7 +2367,7 @@ export const guardarReciboDesdeTabla = createServerFn({ method: 'POST' })
           importeMaximo: numericOrNullForSos(c.importeMaximo),
           pctUsado: pctUsado != null ? String(pctUsado) : null,
           baseUsada: baseUsada != null ? String(baseUsada) : null,
-          memo: 'source=manual_sos',
+          memo: c.memo?.trim() || null,
         });
       }
 
@@ -2370,7 +2573,7 @@ export const createEmpleado = createServerFn({ method: 'POST' })
         .slice(-11) || ctx.data.cuilCuil.trim();
     const nombreCompleto =
       `${ctx.data.nombre} ${ctx.data.apellido}`.trim();
-    const legajo = (ctx.data.legajo?.trim() || '').trim() || '';
+    const legajo = normalizeLegajo(ctx.data.legajo);
     const tipoJornada = ctx.data.tipoJornada ?? 'full_time';
     const fechaIngreso = parseISO(ctx.data.fechaIngreso);
 
@@ -2430,7 +2633,14 @@ export const createEmpleadosMasivo = createServerFn({ method: 'POST' })
     const convenios = await db
       .select()
       .from(payrollConvenio)
-      .where(eq(payrollConvenio.representativeId, ctx.data.clientId));
+      .where(
+        and(
+          eq(payrollConvenio.representativeId, ctx.data.clientId),
+          ctx.data.profileId
+            ? eq(payrollConvenio.clientId, ctx.data.profileId)
+            : undefined
+        )
+      );
     const convenioByName = new Map(
       convenios.map((c) => [c.nombre.trim().toLowerCase(), c] as const)
     );
@@ -2521,6 +2731,7 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
       fechaIngreso: z.string().optional(),
       convenioId: z.string().uuid().optional(),
       categoriaId: z.string().uuid().optional(),
+      categoria: z.string().optional().nullable(),
       tipoJornada: z.enum(['full_time', 'part_time', 'reducida']).optional(),
       activo: z.boolean().optional(),
       legajo: z.string().optional().nullable(),
@@ -2553,6 +2764,8 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
       siniestradoId: z.string().uuid().optional().nullable(),
       provinciaId: z.string().uuid().optional().nullable(),
       observaciones: z.string().optional().nullable(),
+      valorSueldo: z.string().optional().nullable(),
+      fechaBaja: z.string().optional().nullable(),
     })
   )
   .handler(async (ctx) => {
@@ -2565,7 +2778,7 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
     const [empCheck] = await db
       .select({ id: liquidacionImportEmpleado.id })
       .from(liquidacionImportEmpleado)
-      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.clientId, client.id))
       .where(
         and(
           eq(liquidacionImportEmpleado.id, ctx.data.id),
@@ -2583,6 +2796,7 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
       fechaIngreso,
       convenioId,
       categoriaId,
+      categoria,
       tipoJornada,
       activo,
       legajo,
@@ -2611,6 +2825,8 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
       siniestradoId,
       provinciaId,
       observaciones,
+      valorSueldo,
+      fechaBaja,
     } = ctx.data;
     // Combine nombre + apellido into nombre field if both provided
     if (nombre && apellido) {
@@ -2622,9 +2838,10 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
     if (fechaIngreso) set.fechaAlta = parseISO(fechaIngreso);
     if (convenioId !== undefined) set.convenioId = convenioId;
     if (categoriaId !== undefined) set.categoriaId = categoriaId;
+    if (categoria !== undefined) set.categoria = categoria?.trim() || null;
     if (tipoJornada !== undefined) set.tipoJornada = tipoJornada;
     if (activo !== undefined) set.activo = activo;
-    if (legajo !== undefined) set.legajo = legajo;
+    if (legajo !== undefined) set.legajo = normalizeLegajo(legajo);
     if (lugarPago !== undefined) set.lugarPago = lugarPago?.trim() || null;
     if (formaPago !== undefined) set.formaPago = formaPago?.trim() || null;
     if (cbu !== undefined) set.cbu = cbu?.trim() || null;
@@ -2650,6 +2867,8 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
     if (siniestradoId !== undefined) set.siniestradoId = siniestradoId;
     if (provinciaId !== undefined) set.provinciaId = provinciaId;
     if (observaciones !== undefined) set.observaciones = observaciones?.trim() || null;
+    if (valorSueldo !== undefined) set.valorSueldo = valorSueldo != null && valorSueldo.trim() !== '' ? valorSueldo.trim() : null;
+    if (fechaBaja !== undefined) set.fechaBaja = fechaBaja ? new Date(fechaBaja) : null;
 
     const [row] = await db
       .update(liquidacionImportEmpleado)
@@ -2676,7 +2895,7 @@ export const deleteEmpleado = createServerFn({ method: 'POST' })
     const [empCheck] = await db
       .select({ id: liquidacionImportEmpleado.id })
       .from(liquidacionImportEmpleado)
-      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.clientId, client.id))
       .where(
         and(
           eq(liquidacionImportEmpleado.id, ctx.data.id),
@@ -2737,6 +2956,7 @@ async function calcularUnaLiquidacion(
       id: liquidacionImportEmpleado.id,
       categoriaId: liquidacionImportEmpleado.categoriaId,
       fechaAlta: liquidacionImportEmpleado.fechaAlta,
+      clientId: liquidacionImportEmpleado.clientId,
       convenioId: liquidacionImportEmpleado.convenioId,
       lugarPago: liquidacionImportEmpleado.lugarPago,
       formaPago: liquidacionImportEmpleado.formaPago,
@@ -2744,7 +2964,7 @@ async function calcularUnaLiquidacion(
       banco: liquidacionImportEmpleado.banco,
     })
     .from(liquidacionImportEmpleado)
-    .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
+    .innerJoin(client, eq(liquidacionImportEmpleado.clientId, client.id))
     .where(
       and(
         eq(liquidacionImportEmpleado.id, empleadoId),
@@ -2755,7 +2975,7 @@ async function calcularUnaLiquidacion(
   if (!emp) throw new Error('Empleado no encontrado');
 
   const periodoDate = parseISO(periodo + '-01');
-  const convenioIdResuelto = await resolveConvenioIdParaEmpleado(emp, clientId);
+  const convenioIdResuelto = await resolveConvenioIdParaEmpleado(emp, emp.clientId);
   const categoriaIdResuelta = await resolveCategoriaIdParaBasico(
     { ...emp, convenioId: convenioIdResuelto } as typeof liquidacionImportEmpleado.$inferSelect
   );
@@ -3215,11 +3435,11 @@ export const calcularLiquidacionMasiva = createServerFn({ method: 'POST' })
         legajo: liquidacionImportEmpleado.legajo,
       })
       .from(liquidacionImportEmpleado)
-      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.clientId, client.id))
       .where(
         and(
           eq(client.representativeId, ctx.data.clientId),
-          eq(liquidacionImportEmpleado.profileId, ctx.data.profileId),
+          eq(liquidacionImportEmpleado.clientId, ctx.data.profileId),
           eq(liquidacionImportEmpleado.activo, true)
         )
       );
@@ -3232,11 +3452,11 @@ export const calcularLiquidacionMasiva = createServerFn({ method: 'POST' })
         liquidacionImportEmpleado,
         eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
       )
-      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.clientId, client.id))
       .where(
         and(
           eq(client.representativeId, ctx.data.clientId),
-          eq(liquidacionImportEmpleado.profileId, ctx.data.profileId),
+          eq(liquidacionImportEmpleado.clientId, ctx.data.profileId),
           eq(liquidacionImportRecibo.periodo, ctx.data.periodo),
           eq(liquidacionImportRecibo.tipo, 'sueldo'),
           ...(usaLsdReferencia
@@ -3315,7 +3535,7 @@ export const eliminarLiquidacionesDelPeriodo = createServerFn({
         liquidacionImportEmpleado,
         eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
       )
-      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.clientId, client.id))
       .where(
         and(
           eq(client.representativeId, ctx.data.clientId),
@@ -3353,7 +3573,7 @@ export const eliminarLiquidacion = createServerFn({ method: 'POST' })
         liquidacionImportEmpleado,
         eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
       )
-      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.clientId, client.id))
       .where(
         and(
           eq(liquidacionImportRecibo.id, ctx.data.liquidacionId),
@@ -3400,7 +3620,7 @@ export const updateDetalleInputs = createServerFn({ method: 'POST' })
       .from(liquidacionImportConceptoValor)
       .innerJoin(liquidacionImportRecibo, eq(liquidacionImportConceptoValor.reciboId, liquidacionImportRecibo.id))
       .innerJoin(liquidacionImportEmpleado, eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id))
-      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.clientId, client.id))
       .where(eq(liquidacionImportConceptoValor.id, ctx.data.detalleId))
       .limit(1);
     const resolvedClientId = row?.clientId;
@@ -3447,7 +3667,7 @@ export const listLiquidacionesByPeriodo = createServerFn({ method: 'GET' })
     const conditions = [
       condicionPeriodoRecibo(ctx.data.periodo),
       eq(client.representativeId, ctx.data.clientId),
-      eq(liquidacionImportEmpleado.profileId, ctx.data.profileId),
+      eq(liquidacionImportEmpleado.clientId, ctx.data.profileId),
       ...(ctx.data.soloRecibosConfirmados
         ? [eq(liquidacionImportRecibo.reciboConfirmado, true)]
         : []),
@@ -3462,7 +3682,7 @@ export const listLiquidacionesByPeriodo = createServerFn({ method: 'GET' })
         liquidacionImportEmpleado,
         eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
       )
-      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.clientId, client.id))
       .where(and(...conditions))
       .orderBy(
         sql`(CASE WHEN ${liquidacionImportEmpleado.legajo} ~ '^[0-9]+$' THEN (${liquidacionImportEmpleado.legajo})::bigint END) NULLS LAST`,
@@ -3495,7 +3715,7 @@ export const listLiquidacionesByFiltros = createServerFn({ method: 'GET' })
     await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
     const conditions = [
       eq(client.representativeId, ctx.data.clientId),
-      eq(liquidacionImportEmpleado.profileId, ctx.data.profileId),
+      eq(liquidacionImportEmpleado.clientId, ctx.data.profileId),
       eq(liquidacionImportRecibo.origen, 'generado'),
     ];
     if (ctx.data.periodo) {
@@ -3515,7 +3735,7 @@ export const listLiquidacionesByFiltros = createServerFn({ method: 'GET' })
         liquidacionImportEmpleado,
         eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
       )
-      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.clientId, client.id))
       .where(and(...conditions))
       .orderBy(
         desc(liquidacionImportRecibo.periodo),
@@ -3542,7 +3762,7 @@ export const confirmarReciboLiquidacion = createServerFn({ method: 'POST' })
         liquidacionImportEmpleado,
         eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
       )
-      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.clientId, client.id))
       .where(
         and(
           eq(liquidacionImportRecibo.id, ctx.data.liquidacionId),
@@ -3565,14 +3785,47 @@ export const getPayrollEmployerConfig = createServerFn({ method: 'GET' })
     const { orgId } = await getSessionWithOrg();
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     const row = await db
-      .select({ firmaDigitalEmpleador: client.firmaDigitalEmpleador })
+      .select({
+        firmaDigitalEmpleador: client.firmaDigitalEmpleador,
+        plantillaEmpleadoId: client.payrollPlantillaEmpleadoId,
+      })
       .from(client)
       .where(eq(client.id, ctx.data.profileId))
       .then((r) => r[0] ?? null);
     return {
       imprimirTotalRedondeado: false,
       firmaEmpleadorUrl: row?.firmaDigitalEmpleador ?? null,
+      plantillaEmpleadoId: row?.plantillaEmpleadoId ?? null,
     };
+  });
+
+/** Establece el empleado de referencia para la plantilla base de nuevos recibos. */
+export const setPlantillaEmpleado = createServerFn({ method: 'POST' })
+  .inputValidator(z.object({
+    clientId: z.string().uuid(),
+    profileId: z.string().uuid(),
+    empleadoId: z.string().uuid().nullable(),
+  }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    // Verificar que el empleado pertenece al profile
+    if (ctx.data.empleadoId) {
+      const emp = await db
+        .select({ id: liquidacionImportEmpleado.id })
+        .from(liquidacionImportEmpleado)
+        .where(and(
+          eq(liquidacionImportEmpleado.id, ctx.data.empleadoId),
+          eq(liquidacionImportEmpleado.clientId, ctx.data.profileId),
+        ))
+        .then((r) => r[0] ?? null);
+      if (!emp) throw new Error('Empleado no encontrado');
+    }
+    await db
+      .update(client)
+      .set({ payrollPlantillaEmpleadoId: ctx.data.empleadoId })
+      .where(eq(client.id, ctx.data.profileId));
+    return { ok: true };
   });
 
 /** Guarda (o elimina) la firma digital del empleador en el perfil. */
@@ -3753,6 +4006,54 @@ async function enrichConceptosFaltantes(
   );
 }
 
+/**
+ * Para filas donde `conceptoSos` no resolvió (código no está en concepto_sos),
+ * busca el nombre en conceptos_completos_sos como fallback.
+ */
+async function enrichConceptosSosFaltantes(
+  rows: DetalleReciboRow[]
+): Promise<DetalleReciboRow[]> {
+  const codigosFaltantes = [
+    ...new Set(
+      rows
+        .filter((r) => !r.conceptoSos)
+        .map((r) => r.detalle.codigo)
+        .filter((c) => c && !isNaN(Number(c)))
+    ),
+  ];
+  if (codigosFaltantes.length === 0) return rows;
+
+  const numeros = codigosFaltantes.map(Number);
+  const extras = await db
+    .select({
+      numeroSos: conceptosCompletosSos.numeroSos,
+      nombre: conceptosCompletosSos.nombre,
+      codigoAfip: conceptosCompletosSos.codigoAfip,
+    })
+    .from(conceptosCompletosSos)
+    .where(inArray(conceptosCompletosSos.numeroSos, numeros));
+
+  const byNum = new Map(extras.map((e) => [String(e.numeroSos), e]));
+
+  return rows.map((r) => {
+    if (r.conceptoSos) return r;
+    const extra = byNum.get(r.detalle.codigo);
+    if (!extra) return r;
+    return {
+      ...r,
+      conceptoSos: {
+        id: r.detalle.codigo,
+        codigo: String(extra.numeroSos),
+        nombre: extra.nombre,
+        codigoAfip: extra.codigoAfip ?? '',
+        conceptoAfipId: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as typeof conceptoSos.$inferSelect,
+    };
+  });
+}
+
 export const getReciboDetalle = createServerFn({ method: 'GET' })
   .inputValidator(
     z.object({ liquidacionId: z.string().uuid(), clientId: z.string().uuid() })
@@ -3773,7 +4074,7 @@ export const getReciboDetalle = createServerFn({ method: 'GET' })
         liquidacionImportEmpleado,
         eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
       )
-      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.clientId, client.id))
       .leftJoin(
         payrollConvenio,
         eq(liquidacionImportEmpleado.convenioId, payrollConvenio.id)
@@ -3843,6 +4144,7 @@ export const getReciboDetalle = createServerFn({ method: 'GET' })
 
     let merged = mergeDetalleFilasDuplicadas(detallesRaw);
     merged = await enrichConceptosFaltantes(merged);
+    merged = await enrichConceptosSosFaltantes(merged);
 
     const detalles = merged.map((row) => ({
       ...row,
@@ -3905,7 +4207,7 @@ export const listRecibosDetalleParaPDF = createServerFn({ method: 'GET' })
 
     const conditions = [
       eq(client.representativeId, ctx.data.clientId),
-      eq(liquidacionImportEmpleado.profileId, ctx.data.profileId),
+      eq(liquidacionImportEmpleado.clientId, ctx.data.profileId),
       eq(liquidacionImportRecibo.origen, 'generado'),
       eq(liquidacionImportEmpleado.activo, true),
       mes
@@ -3931,7 +4233,7 @@ export const listRecibosDetalleParaPDF = createServerFn({ method: 'GET' })
         liquidacionImportEmpleado,
         eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
       )
-      .innerJoin(client, eq(liquidacionImportEmpleado.profileId, client.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.clientId, client.id))
       .leftJoin(payrollConvenio, eq(liquidacionImportEmpleado.convenioId, payrollConvenio.id))
       .leftJoin(
         payrollConvenioCategoria,
@@ -3982,9 +4284,10 @@ export const listRecibosDetalleParaPDF = createServerFn({ method: 'GET' })
       .where(inArray(liquidacionImportConceptoValor.reciboId, reciboIds))
       .orderBy(asc(liquidacionImportConceptoValor.codigo));
 
-    const allDetallesEnriched = await enrichConceptosFaltantes(
+    let allDetallesEnriched = await enrichConceptosFaltantes(
       allDetallesRaw as DetalleReciboRow[]
     );
+    allDetallesEnriched = await enrichConceptosSosFaltantes(allDetallesEnriched);
 
     const detallesByReciboId = new Map<string, DetalleReciboRow[]>();
     for (const d of allDetallesEnriched) {
@@ -4122,11 +4425,11 @@ export const getResumenLiquidacionMes = createServerFn({ method: 'GET' })
         liquidacionImportEmpleado,
         eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
       )
-      .innerJoin(profile, eq(liquidacionImportEmpleado.profileId, profile.id))
+      .innerJoin(client, eq(liquidacionImportEmpleado.clientId, client.id))
       .where(
         and(
           condicionPeriodoRecibo(ctx.data.periodo),
-          eq(profile.client, ctx.data.clientId)
+          eq(client.representativeId, ctx.data.clientId)
         )
       );
 
@@ -4188,3 +4491,876 @@ export const getResumenLiquidacionMes = createServerFn({ method: 'GET' })
 export type GetResumenLiquidacionMesResult = Awaited<
   ReturnType<typeof getResumenLiquidacionMes>
 >;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cargas Sociales — Generación de archivos LSD
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Previsualización de los datos que se exportarán en el LSD para un período. */
+export const previewLsd = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      profileId: z.string().uuid(),
+      periodo: z.string().regex(/^\d{4}-\d{2}$/),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
+
+    const { profileId, periodo } = ctx.data;
+
+    const [employer] = await db
+      .select({
+        nombre: client.name,
+        cuit: client.identityNumber,
+        codigoLsd: payrollTipoEmpresa.codigoLsd,
+        tipoEmpresaNombre: payrollTipoEmpresa.nombre,
+      })
+      .from(client)
+      .leftJoin(payrollTipoEmpresa, eq(client.tipoEmpresaId, payrollTipoEmpresa.id))
+      .where(eq(client.id, profileId))
+      .limit(1);
+
+    if (!employer) throw new Error('Empresa no encontrada');
+
+    const rows = await db
+      .select({
+        reciboId: liquidacionImportRecibo.id,
+        origen: liquidacionImportRecibo.origen,
+        empleadoNombre: liquidacionImportEmpleado.nombre,
+        empleadoCuil: liquidacionImportEmpleado.cuil,
+        empleadoLegajo: liquidacionImportEmpleado.legajo,
+        diasTrabajados: liquidacionImportRecibo.diasTrabajados,
+        situacionCodigo: payrollSituacion.codigo,
+        situacionNombre: payrollSituacion.nombre,
+        modalidadCodigo: payrollModalidadContratacion.codigo,
+        modalidadNombre: payrollModalidadContratacion.nombre,
+        rem4y8Override: liquidacionImportRecibo.rem4y8Override,
+        rem9Override: liquidacionImportRecibo.rem9Override,
+        contribucionAdicionalOS: liquidacionImportRecibo.contribucionAdicionalOS,
+        importeADetraerLey27430: liquidacionImportRecibo.importeADetraerLey27430,
+        importeMaternidadArt13: liquidacionImportRecibo.importeMaternidadArt13,
+      })
+      .from(liquidacionImportRecibo)
+      .innerJoin(
+        liquidacionImportEmpleado,
+        eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
+      )
+      .leftJoin(
+        payrollSituacion,
+        // Fallback: si el recibo no tiene situación seteada (recibos importados de Excel),
+        // usar la situación del empleado.
+        sql`${payrollSituacion.id} = COALESCE(${liquidacionImportRecibo.situacionRevista1Id}, ${liquidacionImportEmpleado.situacionId})`
+      )
+      .leftJoin(payrollModalidadContratacion, eq(liquidacionImportEmpleado.modalidadContratacionId, payrollModalidadContratacion.id))
+      .where(
+        and(
+          eq(liquidacionImportEmpleado.clientId, profileId),
+          eq(liquidacionImportRecibo.periodo, periodo),
+        )
+      )
+      .orderBy(asc(liquidacionImportEmpleado.legajo));
+
+    const reciboIds = rows.map((r) => r.reciboId);
+
+    // Per-employee concept count (Record 03 lines)
+    const conceptosPorRecibo: Record<string, number> =
+      reciboIds.length > 0
+        ? await db
+            .select({
+              reciboId: liquidacionImportConceptoValor.reciboId,
+              cnt: sql<number>`count(*)::int`,
+            })
+            .from(liquidacionImportConceptoValor)
+            .where(
+              and(
+                inArray(liquidacionImportConceptoValor.reciboId, reciboIds),
+                eq(liquidacionImportConceptoValor.activoEnRecibo, true)
+              )
+            )
+            .groupBy(liquidacionImportConceptoValor.reciboId)
+            .then((r) => Object.fromEntries(r.map((x) => [x.reciboId, x.cnt])))
+        : {};
+
+    const totalConceptos = Object.values(conceptosPorRecibo).reduce((a, b) => a + b, 0);
+
+    return {
+      employer,
+      empleados: rows.map((r) => ({
+        ...r,
+        cantidadConceptos: conceptosPorRecibo[r.reciboId] ?? 0,
+      })),
+      conceptos: totalConceptos,
+    };
+  });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cargas Sociales — Parámetros de período (tope imponible)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Obtiene los parámetros del período (tope imponible, SMVM) para la solapa Cargas Sociales. */
+export const getParametrosPeriodo = createServerFn({ method: 'GET' })
+  .inputValidator(z.object({ periodo: z.string().regex(/^\d{4}-\d{2}$/) }))
+  .handler(async (ctx) => {
+    await getSessionWithOrg();
+    const [row] = await db
+      .select()
+      .from(payrollParametrosPeriodo)
+      .where(eq(payrollParametrosPeriodo.periodo, ctx.data.periodo))
+      .limit(1);
+    return row ?? null;
+  });
+
+/** Crea o actualiza el tope imponible y SMVM para un período. */
+export const upsertParametrosPeriodo = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      periodo: z.string().regex(/^\d{4}-\d{2}$/),
+      topeMaximoImponible: z.string().regex(/^\d+(\.\d{1,2})?$/, 'Debe ser un número con hasta 2 decimales'),
+      salarioMinimo: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+      fuente: z.string().optional(),
+    })
+  )
+  .handler(async (ctx) => {
+    await getSessionWithOrg();
+    const { periodo, topeMaximoImponible, salarioMinimo, fuente } = ctx.data;
+    await db
+      .insert(payrollParametrosPeriodo)
+      .values({
+        periodo,
+        topeMaximoImponible,
+        salarioMinimo: salarioMinimo ?? null,
+        fuente: fuente ?? null,
+        actualizadoPorCron: false,
+      })
+      .onConflictDoUpdate({
+        target: payrollParametrosPeriodo.periodo,
+        set: {
+          topeMaximoImponible,
+          salarioMinimo: salarioMinimo ?? null,
+          fuente: fuente ?? null,
+          actualizadoPorCron: false,
+          updatedAt: new Date(),
+        },
+      });
+    return { ok: true };
+  });
+
+/** Actualiza los campos de override LSD de un recibo (bases imponibles, aportes adicionales, etc.). */
+export const updateReciboLsdOverrides = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      profileId: z.string().uuid(),
+      reciboId: z.string().uuid(),
+      rem4y8Override: z.number().nullable().optional(),
+      rem9Override: z.number().nullable().optional(),
+      contribucionAdicionalOS: z.number().nullable().optional(),
+      importeADetraerLey27430: z.number().nullable().optional(),
+      importeMaternidadArt13: z.number().nullable().optional(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
+
+    const [rec] = await db
+      .select({ id: liquidacionImportRecibo.id })
+      .from(liquidacionImportRecibo)
+      .innerJoin(liquidacionImportEmpleado, eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id))
+      .where(
+        and(
+          eq(liquidacionImportRecibo.id, ctx.data.reciboId),
+          eq(liquidacionImportEmpleado.clientId, ctx.data.profileId)
+        )
+      )
+      .limit(1);
+    if (!rec) throw new Error('Recibo no encontrado');
+
+    const toStr = (v: number | null | undefined) => (v != null ? String(v) : null);
+    const update: Record<string, unknown> = { updatedAt: new Date() };
+    if (ctx.data.rem4y8Override !== undefined) update.rem4y8Override = toStr(ctx.data.rem4y8Override);
+    if (ctx.data.rem9Override !== undefined) update.rem9Override = toStr(ctx.data.rem9Override);
+    if (ctx.data.contribucionAdicionalOS !== undefined) update.contribucionAdicionalOS = toStr(ctx.data.contribucionAdicionalOS);
+    if (ctx.data.importeADetraerLey27430 !== undefined) update.importeADetraerLey27430 = toStr(ctx.data.importeADetraerLey27430);
+    if (ctx.data.importeMaternidadArt13 !== undefined) update.importeMaternidadArt13 = toStr(ctx.data.importeMaternidadArt13);
+
+    await db
+      .update(liquidacionImportRecibo)
+      .set(update)
+      .where(eq(liquidacionImportRecibo.id, ctx.data.reciboId));
+
+    return { ok: true };
+  });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cargas Sociales — Validación pre-descarga
+// ─────────────────────────────────────────────────────────────────────────────
+
+type LsdIssue = {
+  tipo: 'error' | 'warning';
+  codigo: string;
+  mensaje: string;
+  empleadoCuil?: string;
+  empleadoNombre?: string;
+};
+
+/**
+ * Valida que el período esté listo para generar el LSD.
+ * Devuelve la lista de errores (bloqueantes) y warnings, y si se puede descargar.
+ */
+export const validarLsd = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      profileId: z.string().uuid(),
+      periodo: z.string().regex(/^\d{4}-\d{2}$/),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
+
+    const { profileId, periodo } = ctx.data;
+    const issues: LsdIssue[] = [];
+
+    // 1. Tipo de empleador
+    const [employer] = await db
+      .select({ codigoLsd: payrollTipoEmpresa.codigoLsd })
+      .from(client)
+      .leftJoin(payrollTipoEmpresa, eq(client.tipoEmpresaId, payrollTipoEmpresa.id))
+      .where(eq(client.id, profileId))
+      .limit(1);
+
+    if (!employer?.codigoLsd) {
+      issues.push({
+        tipo: 'error',
+        codigo: 'SIN_TIPO_EMPLEADOR',
+        mensaje: 'La empresa no tiene tipo de empleador configurado. Es requerido para el Record 01 del LSD.',
+      });
+    }
+
+    // 2. Tope máximo imponible del período
+    const [params] = await db
+      .select({ topeMaximoImponible: payrollParametrosPeriodo.topeMaximoImponible })
+      .from(payrollParametrosPeriodo)
+      .where(eq(payrollParametrosPeriodo.periodo, periodo))
+      .limit(1);
+
+    if (!params) {
+      issues.push({
+        tipo: 'error',
+        codigo: 'SIN_TOPE_IMPONIBLE',
+        mensaje: `No hay tope máximo imponible cargado para ${periodo}. Sin este dato las bases imponibles del Record 04 se calculan incorrectamente.`,
+      });
+    }
+
+    // 3. Recibos del período
+    // La situación de revista se toma del recibo (situacionRevista1Id) con fallback al empleado
+    // (situacionId) — misma lógica que previewLsd para recibos importados desde SOS.
+    const recibos = await db
+      .select({
+        situacionRevista1Id: liquidacionImportRecibo.situacionRevista1Id,
+        situacionIdEmpleado: liquidacionImportEmpleado.situacionId,
+        cuil: liquidacionImportEmpleado.cuil,
+        nombre: liquidacionImportEmpleado.nombre,
+        modalidadContratacionId: liquidacionImportEmpleado.modalidadContratacionId,
+        obraSocialId: liquidacionImportEmpleado.obraSocialId,
+      })
+      .from(liquidacionImportRecibo)
+      .innerJoin(
+        liquidacionImportEmpleado,
+        eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
+      )
+      .where(
+        and(
+          eq(liquidacionImportEmpleado.clientId, profileId),
+          eq(liquidacionImportRecibo.periodo, periodo),
+        )
+      );
+
+    if (recibos.length === 0) {
+      issues.push({
+        tipo: 'error',
+        codigo: 'SIN_RECIBOS',
+        mensaje: `No hay recibos cargados para el período ${periodo}.`,
+      });
+    }
+
+    for (const row of recibos) {
+      // Error solo si AMBOS son null: ni el recibo ni el empleado tienen situación
+      if (!row.situacionRevista1Id && !row.situacionIdEmpleado) {
+        issues.push({
+          tipo: 'error',
+          codigo: 'SIN_SITUACION_REVISTA',
+          mensaje: 'Sin situación de revista. Es obligatoria para Records 02 y 04.',
+          empleadoCuil: row.cuil,
+          empleadoNombre: row.nombre,
+        });
+      }
+      if (!row.modalidadContratacionId) {
+        issues.push({
+          tipo: 'error',
+          codigo: 'SIN_MODALIDAD_CONTRATACION',
+          mensaje: 'Sin modalidad de contratación. Es obligatoria para Record 04.',
+          empleadoCuil: row.cuil,
+          empleadoNombre: row.nombre,
+        });
+      }
+      if (!row.obraSocialId) {
+        issues.push({
+          tipo: 'warning',
+          codigo: 'SIN_OBRA_SOCIAL',
+          mensaje: 'Sin obra social asignada. El código OS en Record 04 quedará vacío.',
+          empleadoCuil: row.cuil,
+          empleadoNombre: row.nombre,
+        });
+      }
+    }
+
+    const puedeDescargar = !issues.some((i) => i.tipo === 'error');
+    return { puedeDescargar, issues };
+  });
+
+/** Convierte un monto en pesos (puede ser string decimal de Drizzle) a centavos enteros. */
+function montoCentavos(value: string | number | null | undefined): number {
+  if (value == null) return 0;
+  return Math.round(Math.abs(parseFloat(String(value))) * 100);
+}
+
+/** Formatea un valor en centavos como campo monetario LSD (15 dígitos, cero-padding). */
+function lsdMoney(centavos: number): string {
+  return String(centavos).padStart(15, '0');
+}
+
+/** Genera el archivo LSD (Records 01-04) para un período. */
+export const generarArchivoLsd = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      profileId: z.string().uuid(),
+      periodo: z.string().regex(/^\d{4}-\d{2}$/),
+      /** Si se pasa, solo se incluyen los recibos de estos CUILs (para rectificativas parciales). */
+      cuils: z.array(z.string()).optional(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
+
+    const { profileId, periodo, cuils } = ctx.data;
+
+    // ── 1. Employer config ─────────────────────────────────────────────────
+    const [employer] = await db
+      .select({
+        cuit: client.identityNumber,
+        codigoLsd: payrollTipoEmpresa.codigoLsd,
+        seguroColectivo: client.seguroColectivo,
+        mipyme: client.mipyme,
+      })
+      .from(client)
+      .leftJoin(payrollTipoEmpresa, eq(client.tipoEmpresaId, payrollTipoEmpresa.id))
+      .where(eq(client.id, profileId))
+      .limit(1);
+
+    if (!employer) throw new Error('Empresa no encontrada');
+    const cuit = employer.cuit.replace(/[-\s]/g, '').padStart(11, '0');
+    // tipo_empleador: primer carácter del código LSD (ej. "1", "4", "7")
+    const tipoEmpleadorCode = (employer.codigoLsd ?? '1').charAt(0);
+
+    // ── 2. Tope máximo imponible del período ───────────────────────────────
+    const [paramsPeriodo] = await db
+      .select({ topeMaximoImponible: payrollParametrosPeriodo.topeMaximoImponible })
+      .from(payrollParametrosPeriodo)
+      .where(eq(payrollParametrosPeriodo.periodo, periodo))
+      .limit(1);
+    // tope en centavos (null = no configurado → sin tope aplicado)
+    const topeCentavos = paramsPeriodo
+      ? montoCentavos(paramsPeriodo.topeMaximoImponible)
+      : null;
+
+    // ── 3. Recibos del período con catálogos para Record 04 ───────────────
+    const sit1Alias = aliasedTable(payrollSituacion, 'sit1');
+    const sit2Alias = aliasedTable(payrollSituacion, 'sit2');
+    const sit3Alias = aliasedTable(payrollSituacion, 'sit3');
+
+    const recibos = await db
+      .select({
+        recibo: liquidacionImportRecibo,
+        empleado: liquidacionImportEmpleado,
+        sit1Codigo: sit1Alias.codigo,
+        sit2Codigo: sit2Alias.codigo,
+        sit3Codigo: sit3Alias.codigo,
+        condicionCodigo: payrollCondicion.codigo,
+        actividadCodigo: payrollActividad.codigo,
+        modalidadCodigo: payrollModalidadContratacion.codigo,
+        siniestradoCodigo: payrollSiniestrado.codigo,
+        localidadCodigo: payrollLocalidad.codigo,
+        obraSocialCodigo: obraSocial.codigo,
+      })
+      .from(liquidacionImportRecibo)
+      .innerJoin(
+        liquidacionImportEmpleado,
+        eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
+      )
+      // sit1: recibo.situacionRevista1Id con fallback a empleado.situacionId (recibos importados SOS)
+      .leftJoin(sit1Alias, sql`${sit1Alias.id} = COALESCE(${liquidacionImportRecibo.situacionRevista1Id}, ${liquidacionImportEmpleado.situacionId})`)
+      .leftJoin(sit2Alias, eq(liquidacionImportRecibo.situacionRevista2Id, sit2Alias.id))
+      .leftJoin(sit3Alias, eq(liquidacionImportRecibo.situacionRevista3Id, sit3Alias.id))
+      .leftJoin(payrollCondicion, eq(liquidacionImportEmpleado.condicionId, payrollCondicion.id))
+      .leftJoin(payrollActividad, eq(liquidacionImportEmpleado.actividadId, payrollActividad.id))
+      .leftJoin(payrollModalidadContratacion, eq(liquidacionImportEmpleado.modalidadContratacionId, payrollModalidadContratacion.id))
+      .leftJoin(payrollSiniestrado, eq(liquidacionImportEmpleado.siniestradoId, payrollSiniestrado.id))
+      .leftJoin(payrollLocalidad, eq(liquidacionImportEmpleado.localidadId, payrollLocalidad.id))
+      .leftJoin(obraSocial, eq(liquidacionImportEmpleado.obraSocialId, obraSocial.id))
+      .where(
+        and(
+          eq(liquidacionImportEmpleado.clientId, profileId),
+          eq(liquidacionImportRecibo.periodo, periodo),
+          cuils && cuils.length > 0
+            ? inArray(liquidacionImportEmpleado.cuil, cuils)
+            : undefined,
+        )
+      )
+      .orderBy(asc(liquidacionImportEmpleado.legajo));
+
+    // ── 4. Conceptos de todos los recibos ──────────────────────────────────
+    const reciboIds = recibos.map((r) => r.recibo.id);
+    const conceptoValores =
+      reciboIds.length > 0
+        ? await db
+            .select({
+              valor: liquidacionImportConceptoValor,
+              numeroSos: payrollConcepto.numeroSos,
+            })
+            .from(liquidacionImportConceptoValor)
+            .leftJoin(
+              payrollConcepto,
+              eq(liquidacionImportConceptoValor.conceptoId, payrollConcepto.id)
+            )
+            .where(
+              and(
+                inArray(liquidacionImportConceptoValor.reciboId, reciboIds),
+                eq(liquidacionImportConceptoValor.activoEnRecibo, true)
+              )
+            )
+            .orderBy(asc(liquidacionImportConceptoValor.codigo))
+        : [];
+
+    const conceptosByRecibo = new Map<string, typeof conceptoValores>();
+    for (const cv of conceptoValores) {
+      const key = cv.valor.reciboId;
+      if (!conceptosByRecibo.has(key)) conceptosByRecibo.set(key, []);
+      conceptosByRecibo.get(key)!.push(cv);
+    }
+
+    // ── 5. Construir líneas LSD ────────────────────────────────────────────
+    const [year, month] = periodo.split('-');
+    const periodoLsd = `${year}${month}`;
+    const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
+    const fechaFin = `${year}${month}${String(lastDay).padStart(2, '0')}`;
+    const numEmpleados = recibos.length;
+
+    const r02Lines: string[] = [];
+    const r03Lines: string[] = [];
+    const r04Lines: string[] = [];
+
+    for (const row of recibos) {
+      const emp = row.empleado;
+      const rec = row.recibo;
+      const cuil = emp.cuil.replace(/[-\s]/g, '').padStart(11, '0');
+      const legajo = emp.legajo;
+
+      // ── Record 02 — Empleado ─────────────────────────────────────────────
+      const r02prefix = `02${cuil}${legajo}`;
+      r02Lines.push(r02prefix.padEnd(96) + `000${fechaFin}${' '.repeat(8)}1`);
+
+      // ── Record 03 — Conceptos ─────────────────────────────────────────────
+      const conceptos = conceptosByRecibo.get(rec.id) ?? [];
+      for (const cv of conceptos) {
+        const sosNum =
+          cv.numeroSos != null ? cv.numeroSos : parseInt(cv.valor.codigo) || 0;
+        if (sosNum === 0) continue;
+
+        const sosCode = String(sosNum).padStart(3, '0');
+        const cantidadRaw = cv.valor.cantidad != null ? Number(cv.valor.cantidad) : 1;
+        const centavos = Math.round(Math.abs(Number(cv.valor.monto)) * 100);
+
+        let credDeb: 'C' | 'D';
+        if (cv.valor.tipoLiquidacion === 'descuento' || cv.valor.tipoLiquidacion === 'retencion') {
+          credDeb = 'D';
+        } else if (cv.valor.tipoLiquidacion) {
+          credDeb = 'C';
+        } else {
+          credDeb = (sosNum >= 200 && sosNum < 400) || sosNum >= 500 ? 'D' : 'C';
+        }
+
+        const amountStr = String(centavos).padStart(15, '0');
+
+        if (sosNum >= 400) {
+          const qty = String(Math.round(cantidadRaw * 100)).padStart(6, '0');
+          r03Lines.push(`03${cuil}${'0'.repeat(9)}${sosCode}${qty}$${amountStr}${credDeb}`);
+        } else {
+          const qty = String(Math.round(cantidadRaw * 100)).padStart(5, '0');
+          r03Lines.push(`03${cuil}${'0'.repeat(7)}${sosCode}${qty}$${amountStr}${credDeb}`);
+        }
+      }
+
+      // ── Record 04 — Bases imponibles ─────────────────────────────────────
+
+      // Calcular bases desde los conceptos del recibo
+      // total_rem:    SOS 001-399 con indicador C (remunerativos)
+      // total_nonrem: SOS 400-499 con indicador C (no remunerativos)
+      let totalRemCentavos = 0;
+      let totalNonRemCentavos = 0;
+      for (const cv of conceptos) {
+        const sosNum =
+          cv.numeroSos != null ? cv.numeroSos : parseInt(cv.valor.codigo) || 0;
+        if (sosNum === 0) continue;
+
+        let credDeb: 'C' | 'D';
+        if (cv.valor.tipoLiquidacion === 'descuento' || cv.valor.tipoLiquidacion === 'retencion') {
+          credDeb = 'D';
+        } else if (cv.valor.tipoLiquidacion) {
+          credDeb = 'C';
+        } else {
+          credDeb = (sosNum >= 200 && sosNum < 400) || sosNum >= 500 ? 'D' : 'C';
+        }
+
+        if (credDeb === 'C') {
+          const c = Math.round(Math.abs(Number(cv.valor.monto)) * 100);
+          if (sosNum >= 1 && sosNum <= 399) totalRemCentavos += c;
+          else if (sosNum >= 400 && sosNum <= 499) totalNonRemCentavos += c;
+        }
+      }
+      const brutaCentavos = totalRemCentavos + totalNonRemCentavos;
+
+      // Aplicar tope (si está configurado)
+      const applyTope = (val: number) =>
+        topeCentavos != null ? Math.min(val, topeCentavos) : val;
+
+      // Overrides manuales del recibo (rem4y8Override cubre OS; rem9Override cubre ART)
+      const rem4y8Base = rec.rem4y8Override != null
+        ? montoCentavos(rec.rem4y8Override)
+        : brutaCentavos;
+      const rem9Base = rec.rem9Override != null
+        ? montoCentavos(rec.rem9Override)
+        : brutaCentavos;
+
+      // 20 campos monetarios de 15 chars cada uno (= 300 chars de [70] a [370])
+      // base dif LRT = parte de bruta que supera el tope (o la suma no-rem cuando totalRem ≤ tope)
+      // = bruta - B1(jubApor) = brutaCentavos - applyTope(totalRemCentavos)
+      const baseDifLRT = Math.max(0, brutaCentavos - applyTope(totalRemCentavos));
+      // base dif OS = exceso de la base OS sobre bruta (cuando rem4y8 override > bruta)
+      const baseDifAporOS = Math.max(0, applyTope(rem4y8Base) - brutaCentavos);
+      const baseDifContOS = Math.max(0, rem4y8Base - brutaCentavos);
+
+      const moneyFields = [
+        lsdMoney(0),                                          // [70:85]  aporte adicional OS
+        lsdMoney(montoCentavos(rec.contribucionAdicionalOS)), // [85:100] contrib adicional OS
+        lsdMoney(baseDifAporOS),                              // [100:115] base dif aporte OS
+        lsdMoney(baseDifContOS),                              // [115:130] base dif contrib OS
+        lsdMoney(baseDifLRT),                                 // [130:145] base dif LRT
+        lsdMoney(montoCentavos(rec.importeMaternidadArt13)), // [145:160] remun maternidad
+        lsdMoney(brutaCentavos),                             // [160:175] remuneración bruta
+        lsdMoney(applyTope(totalRemCentavos)),               // [175:190] base 1: jubilación aporte
+        lsdMoney(totalRemCentavos),                          // [190:205] base 2: jubilación contrib
+        lsdMoney(totalRemCentavos),                          // [205:220] base 3: PAMI
+        lsdMoney(applyTope(rem4y8Base)),                     // [220:235] base 4: OS aportes
+        lsdMoney(applyTope(totalRemCentavos)),               // [235:250] base 5: FNE/AAFF
+        lsdMoney(0),                                          // [250:265] base 6 (regímenes especiales)
+        lsdMoney(0),                                          // [265:280] base 7 (regímenes especiales)
+        lsdMoney(rem4y8Base),                                // [280:295] base 8: OS contrib
+        lsdMoney(rem9Base),                                  // [295:310] base 9: ART/LRT
+        lsdMoney(0),                                          // [310:325] base dif SS aportes
+        lsdMoney(0),                                          // [325:340] base dif SS contrib
+        lsdMoney(0),                                          // [340:355] base 10
+        lsdMoney(montoCentavos(rec.importeADetraerLey27430)), // [355:370] importe a detraer
+      ].join('');
+
+      // Header del Record 04 (70 chars)
+      const sit1 = row.sit1Codigo ?? '';
+      const sit2 = row.sit2Codigo ?? '';
+      const sit3 = row.sit3Codigo ?? '';
+
+      const marcaConyuge = (emp.conyuge ?? 0) > 0 ? '1' : '0';
+      const hijos = String(emp.hijos ?? 0).padStart(2, '0');
+      const marcaCct = emp.convenioId ? '1' : '0';
+      const marcaScvo = employer.seguroColectivo ? '1' : '0';
+      // marca_reduccion: MiPyME con reducción de contribuciones
+      const marcaReduccion = employer.mipyme ? '1' : '0';
+      const tipoOp = '0'; // 0 = alta/modificación normal
+      // Campos alfanuméricos LSD: sin cero a la izquierda, right-padded con espacio
+      const lsdAlpha = (code: string | null | undefined, len: number) =>
+        (parseInt(code ?? '0') || 0).toString().padEnd(len, ' ');
+      const sitGeneral = lsdAlpha(sit1 || '1', 2);
+      const condicion = lsdAlpha(row.condicionCodigo ?? '1', 2);
+      const actividad = (row.actividadCodigo ?? '000').padStart(3, '0'); // numérico: zero-pad
+      const modalidad = lsdAlpha(row.modalidadCodigo ?? '1', 3);
+      const siniestrado = lsdAlpha(row.siniestradoCodigo ?? '0', 2);
+      const localidad = (row.localidadCodigo ?? '00').padStart(2, '0'); // numérico: zero-pad
+      // Situaciones 1/2/3 y sus días de inicio
+      const sitRev1 = sit1 ? lsdAlpha(sit1, 2) : '  ';
+      const diaInicio1 = sit1
+        ? String(rec.situacionRevista1DiaInicio ?? 1).padStart(2, '0')
+        : '  ';
+      const sitRev2 = sit2 ? lsdAlpha(sit2, 2) : '  ';
+      const diaInicio2 = sit2
+        ? String(rec.situacionRevista2DiaInicio ?? 1).padStart(2, '0')
+        : '00';
+      const sitRev3 = sit3 ? lsdAlpha(sit3, 2) : '  ';
+      const diaInicio3 = sit3
+        ? String(rec.situacionRevista3DiaInicio ?? 1).padStart(2, '0')
+        : '00';
+      const diasTrabajados = String(rec.diasTrabajados ?? 30).padStart(2, '0');
+      const pctAporteAdSS = '000';   // porcentaje aporte adicional SS (3 chars)
+      const pctContribTarea = '00000'; // porcentaje contrib tarea diferencial (5 chars)
+      const campoReservado = '00000'; // campo reservado (5 chars)
+      // obra social: código AFIP 6 chars, right-padded with spaces if shorter
+      const osCode = (row.obraSocialCodigo ?? '').padEnd(6, ' ');
+      const adherentes = String(emp.adherentes ?? 0).padStart(2, '0');
+
+      const r04Header =
+        `04${cuil}` +
+        marcaConyuge +
+        hijos +
+        marcaCct +
+        marcaScvo +
+        marcaReduccion +
+        tipoEmpleadorCode +
+        tipoOp +
+        sitGeneral +
+        condicion +
+        actividad +
+        modalidad +
+        siniestrado +
+        localidad +
+        sitRev1 +
+        diaInicio1 +
+        sitRev2 +
+        diaInicio2 +
+        sitRev3 +
+        diaInicio3 +
+        diasTrabajados +
+        pctAporteAdSS +
+        pctContribTarea +
+        campoReservado +
+        osCode +
+        adherentes;
+
+      r04Lines.push(r04Header + moneyFields);
+    }
+
+    // ── Record 01 — Encabezado ─────────────────────────────────────────────
+    // Calcular el número de presentación secuencial para este período
+    const [maxPres] = await db
+      .select({ maxNro: max(payrollLsdPresentacion.nroPresentacion) })
+      .from(payrollLsdPresentacion)
+      .where(
+        and(
+          eq(payrollLsdPresentacion.profileId, profileId),
+          eq(payrollLsdPresentacion.periodo, periodo)
+        )
+      );
+    const nroPresentacion = (maxPres?.maxNro ?? 0) + 1;
+
+    // R01: pos 23-27 = nroPresentacion (5 dígitos), pos 28 = '3' (tipo forma, fijo según referencia AFIP)
+    const nroStr = String(nroPresentacion).padStart(5, '0');
+    // Nota: posiciones 14-15 usan 'SJ' según archivo de referencia E-Presis.
+    const r01 = `01${cuit}SJ${periodoLsd}M${nroStr}3${String(numEmpleados).padStart(7, '0')}`;
+
+    const lines = [r01, ...r02Lines, ...r03Lines, ...r04Lines];
+    const contenido = lines.join('\n');
+    const filename = `${cuit}_${year}_${month}_LSD.txt`;
+
+    // Guardar la presentación en la base de datos
+    await db.insert(payrollLsdPresentacion).values({
+      profileId,
+      periodo,
+      nroPresentacion,
+      filename,
+      empleados: numEmpleados,
+      conceptos: r03Lines.length,
+      contenido,
+    });
+
+    return {
+      filename,
+      contenido,
+      empleados: numEmpleados,
+      conceptos: r03Lines.length,
+      nroPresentacion,
+    };
+  });
+
+// Cargas Sociales — Historial de presentaciones
+
+/** Lista todas las presentaciones LSD generadas para un período y empresa. */
+export const listLsdPresentaciones = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      profileId: z.string().uuid(),
+      periodo: z.string().regex(/^\d{4}-\d{2}$/),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
+
+    return db
+      .select({
+        id: payrollLsdPresentacion.id,
+        nroPresentacion: payrollLsdPresentacion.nroPresentacion,
+        filename: payrollLsdPresentacion.filename,
+        empleados: payrollLsdPresentacion.empleados,
+        conceptos: payrollLsdPresentacion.conceptos,
+        generadoEn: payrollLsdPresentacion.generadoEn,
+      })
+      .from(payrollLsdPresentacion)
+      .where(
+        and(
+          eq(payrollLsdPresentacion.profileId, ctx.data.profileId),
+          eq(payrollLsdPresentacion.periodo, ctx.data.periodo)
+        )
+      )
+      .orderBy(asc(payrollLsdPresentacion.nroPresentacion));
+  });
+
+/** Devuelve el contenido de una presentación para re-descarga. */
+export const getLsdPresentacionContenido = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      profileId: z.string().uuid(),
+      presentacionId: z.string().uuid(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
+
+    const [pres] = await db
+      .select({
+        filename: payrollLsdPresentacion.filename,
+        contenido: payrollLsdPresentacion.contenido,
+        nroPresentacion: payrollLsdPresentacion.nroPresentacion,
+      })
+      .from(payrollLsdPresentacion)
+      .where(
+        and(
+          eq(payrollLsdPresentacion.id, ctx.data.presentacionId),
+          eq(payrollLsdPresentacion.profileId, ctx.data.profileId)
+        )
+      )
+      .limit(1);
+
+    if (!pres) throw new Error('Presentación no encontrada');
+    return pres;
+  });
+
+// Cargas Sociales — Archivo de conceptos LSD
+
+/** Normaliza nombre para el archivo conceptosLSD: solo ASCII imprimible, sin tildes. */
+function normalizarNombreLsd(nombre: string): string {
+  return nombre
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // strip accent combining marks
+    .replace(/[^\x20-\x7E]/g, '');   // keep only printable ASCII
+}
+
+/** Flags de 29 chars según el tipo AFIP. */
+function flagsConceptoLsd(tipoPrefijo: string): string {
+  if (tipoPrefijo === '81' || tipoPrefijo === '82') {
+    return '10000000000 0 0 00 0         '; // descuentos / retenciones
+  }
+  if (tipoPrefijo === '54' || tipoPrefijo === '52' || tipoPrefijo === '55' || tipoPrefijo === '56') {
+    return '10000111100 0 0 00 0         '; // no remunerativos
+  }
+  return '11111111111 1 1 10 0         '; // remunerativos (default)
+}
+
+/**
+ * Genera el archivo conceptosLSD a partir de los conceptos activos en los
+ * recibos del período. El formato es el esperado por el aplicativo LSD de AFIP:
+ * 195 chars/línea + CRLF — campos: codigoAfip(6) + 000000(6) + sos(4) + nombre(150) + flags(29).
+ */
+export const generarConceptosLsd = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      profileId: z.string().uuid(),
+      periodo: z.string().regex(/^\d{4}-\d{2}$/),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
+
+    const { profileId, periodo } = ctx.data;
+
+    // Conceptos activos usados en los recibos del período — únicos por numero_sos
+    const rows = await db
+      .selectDistinctOn([payrollConcepto.numeroSos], {
+        numeroSos: payrollConcepto.numeroSos,
+        nombre: payrollConcepto.nombre,
+        codigoAfip: lsdConceptoAfip.codigoAfip,
+      })
+      .from(liquidacionImportConceptoValor)
+      .innerJoin(
+        liquidacionImportRecibo,
+        eq(liquidacionImportConceptoValor.reciboId, liquidacionImportRecibo.id)
+      )
+      .innerJoin(
+        liquidacionImportEmpleado,
+        eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
+      )
+      .innerJoin(
+        payrollConcepto,
+        eq(liquidacionImportConceptoValor.conceptoId, payrollConcepto.id)
+      )
+      .leftJoin(
+        conceptoSos,
+        sql`${conceptoSos.codigo}::int = ${payrollConcepto.numeroSos}`
+      )
+      .leftJoin(lsdConceptoAfip, eq(conceptoSos.conceptoAfipId, lsdConceptoAfip.id))
+      .where(
+        and(
+          eq(liquidacionImportEmpleado.clientId, profileId),
+          eq(liquidacionImportRecibo.periodo, periodo),
+          eq(liquidacionImportConceptoValor.activoEnRecibo, true),
+          isNotNull(payrollConcepto.numeroSos)
+        )
+      )
+      .orderBy(payrollConcepto.numeroSos);
+
+    if (rows.length === 0) throw new Error('Sin conceptos activos para el período');
+
+    const lines = rows
+      .filter((r) => r.codigoAfip && r.numeroSos != null)
+      .map((r) => {
+        const afip6 = r.codigoAfip!.padEnd(6, '0').slice(0, 6);
+        const tipoPrefijo = afip6.slice(0, 2);
+        const sosPadded = String(r.numeroSos).padStart(4, '0');
+        const nombreNorm = normalizarNombreLsd(r.nombre).slice(0, 150).padEnd(150, ' ');
+        const flags = flagsConceptoLsd(tipoPrefijo);
+        return afip6 + '000000' + sosPadded + nombreNorm + flags;
+      });
+
+    const [year, month] = periodo.split('-');
+    const filename = `conceptos_${year}_${month}_LSD.txt`;
+    const contenido = lines.join('\r\n') + '\r\n';
+
+    return { filename, contenido, conceptos: lines.length };
+  });

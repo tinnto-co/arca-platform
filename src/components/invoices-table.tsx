@@ -6,6 +6,7 @@ import {
   forwardRef,
 } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { toTitleCase } from '@/lib/format-name';
 import {
   Search,
   Download,
@@ -834,7 +835,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                   { value: 'all', label: 'Todos los clientes' },
                   ...representatives.map((rep) => ({
                     value: rep.id,
-                    label: rep.name,
+                    label: toTitleCase(rep.name),
                   })),
                 ]}
                 width={192}
@@ -859,7 +860,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                       identityNumber?: string;
                     }) => ({
                       value: p.id,
-                      label: p.name || p.identityNumber || p.id,
+                      label: toTitleCase(p.name) || p.identityNumber || p.id,
                     })
                   ),
                 ]}

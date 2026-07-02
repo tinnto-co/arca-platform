@@ -611,7 +611,10 @@ export function NotificationsView({
                                 ? notification.profileName ||
                                   notification.profileIdentityNumber ||
                                   'Sin perfil'
-                                : notification.clientName || 'Sin cliente'}
+                                : notification.profileName ||
+                                  notification.profileIdentityNumber ||
+                                  notification.clientName ||
+                                  'Sin cliente'}
                             </p>
                             <SeverityBadge
                               severity={(notification as any).severity ?? null}
@@ -673,8 +676,17 @@ export function NotificationsView({
                   <div className="flex-1">
                     <div className="items-center gap-2 mb-2">
                       <h2 className="text-xl font-semibold">
-                        {selectedNotification.clientName || 'Sin cliente'}
+                        {(selectedNotification as any).profileName ||
+                          (selectedNotification as any).profileIdentityNumber ||
+                          selectedNotification.clientName ||
+                          'Sin cliente'}
                       </h2>
+                      {(selectedNotification as any).profileName &&
+                        selectedNotification.clientName && (
+                          <p className="text-xs text-muted-foreground">
+                            {selectedNotification.clientName}
+                          </p>
+                        )}
                       <span className="font-light text-muted-foreground text-xs">
                         ID Externo: {selectedNotification.externalId}
                       </span>
