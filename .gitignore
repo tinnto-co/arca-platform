@@ -17,4 +17,8 @@ dist
 
 # Local DB dumps
 *.dump
+*.pgdump
 *.sql.gz
+
+# Claude Code worktrees
+.claude/worktrees/

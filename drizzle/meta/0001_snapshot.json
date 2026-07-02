@@ -1,5 +1,5 @@
 {
-  "id": "a4566820-6500-4d3f-b6dd-75f9256cd12c",
+  "id": "3c23dc2a-870b-4193-8a4f-0ae8992f790d",
   "prevId": "26183732-24d1-48df-a69a-8223fd88b919",
   "version": "7",
   "dialect": "postgresql",
@@ -15,24 +15,11 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "scope": {
-          "name": "scope",
-          "type": "account_scope",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "organization_id": {
-          "name": "organization_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "client_id": {
-          "name": "client_id",
+        "representative_id": {
+          "name": "representative_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "code": {
           "name": "code",
@@ -46,16 +33,9 @@
           "primaryKey": false,
           "notNull": true
         },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "type": {
           "name": "type",
-          "type": "account_type",
-          "typeSchema": "public",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
@@ -65,50 +45,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "account_group": {
-          "name": "account_group",
-          "type": "account_group",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "expected_balance": {
-          "name": "expected_balance",
-          "type": "account_expected_balance",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "expense_function": {
-          "name": "expense_function",
-          "type": "account_expense_function",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "inflation_nature": {
-          "name": "inflation_nature",
-          "type": "account_inflation_nature",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cash_flow_activity": {
-          "name": "cash_flow_activity",
-          "type": "account_cash_flow_activity",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "is_system_account": {
-          "name": "is_system_account",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "is_active": {
-          "name": "is_active",
+        "active": {
+          "name": "active",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
@@ -120,104 +58,16 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
         }
       },
-      "indexes": {
-        "account_base_org_code_unique": {
-          "name": "account_base_org_code_unique",
-          "columns": [
-            {
-              "expression": "organization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "code",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "scope = 'base'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "account_custom_client_code_unique": {
-          "name": "account_custom_client_code_unique",
-          "columns": [
-            {
-              "expression": "client_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "code",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "scope = 'custom'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_account_org_scope": {
-          "name": "idx_account_org_scope",
-          "columns": [
-            {
-              "expression": "organization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "scope",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_account_client": {
-          "name": "idx_account_client",
-          "columns": [
-            {
-              "expression": "client_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
-        "accounting_account_organization_id_organization_id_fk": {
-          "name": "accounting_account_organization_id_organization_id_fk",
+        "accounting_account_representative_id_representative_id_fk": {
+          "name": "accounting_account_representative_id_representative_id_fk",
           "tableFrom": "accounting_account",
-          "tableTo": "organization",
+          "tableTo": "representative",
           "columnsFrom": [
-            "organization_id"
+            "representative_id"
           ],
           "columnsTo": [
             "id"
@@ -225,21 +75,8 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "accounting_account_client_id_client_id_fk": {
-          "name": "accounting_account_client_id_client_id_fk",
-          "tableFrom": "accounting_account",
-          "tableTo": "client",
-          "columnsFrom": [
-            "client_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "account_parent_id_fkey": {
-          "name": "account_parent_id_fkey",
+        "accounting_account_parent_id_fkey": {
+          "name": "accounting_account_parent_id_fkey",
           "tableFrom": "accounting_account",
           "tableTo": "accounting_account",
           "columnsFrom": [
@@ -253,355 +90,13 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.account_override": {
-      "name": "account_override",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "client_id": {
-          "name": "client_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "is_active": {
-          "name": "is_active",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "custom_name": {
-          "name": "custom_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "account_override_client_id_client_id_fk": {
-          "name": "account_override_client_id_client_id_fk",
-          "tableFrom": "account_override",
-          "tableTo": "client",
-          "columnsFrom": [
-            "client_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "account_override_account_id_accounting_account_id_fk": {
-          "name": "account_override_account_id_accounting_account_id_fk",
-          "tableFrom": "account_override",
-          "tableTo": "accounting_account",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "account_override_client_account_unique": {
-          "name": "account_override_client_account_unique",
+        "accounting_account_representative_id_code_unique": {
+          "name": "accounting_account_representative_id_code_unique",
           "nullsNotDistinct": false,
           "columns": [
-            "client_id",
-            "account_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.accounting_log": {
-      "name": "accounting_log",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "client_id": {
-          "name": "client_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "fiscal_year_id": {
-          "name": "fiscal_year_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "event_type": {
-          "name": "event_type",
-          "type": "accounting_log_event_type",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "event_data": {
-          "name": "event_data",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_accounting_log_client": {
-          "name": "idx_accounting_log_client",
-          "columns": [
-            {
-              "expression": "client_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "accounting_log_client_id_client_id_fk": {
-          "name": "accounting_log_client_id_client_id_fk",
-          "tableFrom": "accounting_log",
-          "tableTo": "client",
-          "columnsFrom": [
-            "client_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "accounting_log_fiscal_year_id_fiscal_year_id_fk": {
-          "name": "accounting_log_fiscal_year_id_fiscal_year_id_fk",
-          "tableFrom": "accounting_log",
-          "tableTo": "fiscal_year",
-          "columnsFrom": [
-            "fiscal_year_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "accounting_log_user_id_user_id_fk": {
-          "name": "accounting_log_user_id_user_id_fk",
-          "tableFrom": "accounting_log",
-          "tableTo": "user",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.accounting_period": {
-      "name": "accounting_period",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "fiscal_year_id": {
-          "name": "fiscal_year_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "client_id": {
-          "name": "client_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "year": {
-          "name": "year",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "month": {
-          "name": "month",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "accounting_period_status",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'open'"
-        },
-        "closed_at": {
-          "name": "closed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "closed_by": {
-          "name": "closed_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_accounting_period_client_fy": {
-          "name": "idx_accounting_period_client_fy",
-          "columns": [
-            {
-              "expression": "client_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "fiscal_year_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "accounting_period_fiscal_year_id_fiscal_year_id_fk": {
-          "name": "accounting_period_fiscal_year_id_fiscal_year_id_fk",
-          "tableFrom": "accounting_period",
-          "tableTo": "fiscal_year",
-          "columnsFrom": [
-            "fiscal_year_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "accounting_period_client_id_client_id_fk": {
-          "name": "accounting_period_client_id_client_id_fk",
-          "tableFrom": "accounting_period",
-          "tableTo": "client",
-          "columnsFrom": [
-            "client_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "accounting_period_closed_by_user_id_fk": {
-          "name": "accounting_period_closed_by_user_id_fk",
-          "tableFrom": "accounting_period",
-          "tableTo": "user",
-          "columnsFrom": [
-            "closed_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "accounting_period_fy_year_month_unique": {
-          "name": "accounting_period_fy_year_month_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "fiscal_year_id",
-            "year",
-            "month"
+            "representative_id",
+            "code"
           ]
         }
       },
@@ -1644,6 +1139,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "payroll_plantilla_empleado_id": {
+          "name": "payroll_plantilla_empleado_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "managed_by_study": {
           "name": "managed_by_study",
           "type": "boolean",
@@ -1676,6 +1177,32 @@
           "primaryKey": false,
           "notNull": false
         },
+        "tipo_empresa_id": {
+          "name": "tipo_empresa_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "seguro_colectivo": {
+          "name": "seguro_colectivo",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "mipyme": {
+          "name": "mipyme",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "orden_cln": {
+          "name": "orden_cln",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -1704,6 +1231,32 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "client_payroll_plantilla_empleado_id_liquidacion_import_empleado_id_fk": {
+          "name": "client_payroll_plantilla_empleado_id_liquidacion_import_empleado_id_fk",
+          "tableFrom": "client",
+          "tableTo": "liquidacion_import_empleado",
+          "columnsFrom": [
+            "payroll_plantilla_empleado_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "client_tipo_empresa_id_payroll_tipo_empresa_id_fk": {
+          "name": "client_tipo_empresa_id_payroll_tipo_empresa_id_fk",
+          "tableFrom": "client",
+          "tableTo": "payroll_tipo_empresa",
+          "columnsFrom": [
+            "tipo_empresa_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -2360,7 +1913,7 @@
           "type": "timestamp",
           "primaryKey": false,
           "notNull": true,
-          "default": "'2026-06-05 14:59:29.370'"
+          "default": "'2026-06-11 18:09:27.578'"
         },
         "balance": {
           "name": "balance",
@@ -2648,7 +2201,7 @@
           "type": "timestamp",
           "primaryKey": false,
           "notNull": true,
-          "default": "'2026-06-05 14:59:29.369'"
+          "default": "'2026-06-11 18:09:27.577'"
         },
         "detail": {
           "name": "detail",
@@ -3028,160 +2581,6 @@
           "nullsNotDistinct": false,
           "columns": [
             "cuil_cuit"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.fiscal_year": {
-      "name": "fiscal_year",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "client_id": {
-          "name": "client_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "start_date": {
-          "name": "start_date",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "end_date": {
-          "name": "end_date",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "fiscal_year_status",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'open'"
-        },
-        "number": {
-          "name": "number",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "closed_at": {
-          "name": "closed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "closed_by": {
-          "name": "closed_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reopened_at": {
-          "name": "reopened_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reopened_by": {
-          "name": "reopened_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reopen_reason": {
-          "name": "reopen_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_fiscal_year_client": {
-          "name": "idx_fiscal_year_client",
-          "columns": [
-            {
-              "expression": "client_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "fiscal_year_client_id_client_id_fk": {
-          "name": "fiscal_year_client_id_client_id_fk",
-          "tableFrom": "fiscal_year",
-          "tableTo": "client",
-          "columnsFrom": [
-            "client_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "fiscal_year_closed_by_user_id_fk": {
-          "name": "fiscal_year_closed_by_user_id_fk",
-          "tableFrom": "fiscal_year",
-          "tableTo": "user",
-          "columnsFrom": [
-            "closed_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "fiscal_year_reopened_by_user_id_fk": {
-          "name": "fiscal_year_reopened_by_user_id_fk",
-          "tableFrom": "fiscal_year",
-          "tableTo": "user",
-          "columnsFrom": [
-            "reopened_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "fiscal_year_client_number_unique": {
-          "name": "fiscal_year_client_number_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "client_id",
-            "number"
           ]
         }
       },
@@ -3937,29 +3336,17 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
+        "representative_id": {
+          "name": "representative_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
         "client_id": {
           "name": "client_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
-        },
-        "fiscal_year_id": {
-          "name": "fiscal_year_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "period_id": {
-          "name": "period_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "number": {
-          "name": "number",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "entry_date": {
           "name": "entry_date",
@@ -3973,18 +3360,9 @@
           "primaryKey": false,
           "notNull": false
         },
-        "origin": {
-          "name": "origin",
-          "type": "journal_entry_origin",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'manual'"
-        },
         "source_type": {
           "name": "source_type",
-          "type": "journal_entry_source_type",
-          "typeSchema": "public",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -3994,46 +3372,15 @@
           "primaryKey": false,
           "notNull": false
         },
-        "mapping_rule_id": {
-          "name": "mapping_rule_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "is_voided": {
-          "name": "is_voided",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "voided_at": {
-          "name": "voided_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "voided_by": {
-          "name": "voided_by",
+        "status": {
+          "name": "status",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
-        },
-        "void_reason": {
-          "name": "void_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "is_edited_post_generation": {
-          "name": "is_edited_post_generation",
-          "type": "boolean",
-          "primaryKey": false,
           "notNull": true,
-          "default": false
+          "default": "'draft'"
         },
-        "created_by": {
-          "name": "created_by",
+        "created_by_user_id": {
+          "name": "created_by_user_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -4044,66 +3391,23 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
         }
       },
-      "indexes": {
-        "idx_journal_entry_client_fy": {
-          "name": "idx_journal_entry_client_fy",
-          "columns": [
-            {
-              "expression": "client_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "fiscal_year_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_journal_entry_client_period_voided": {
-          "name": "idx_journal_entry_client_period_voided",
-          "columns": [
-            {
-              "expression": "client_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "period_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "is_voided",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
+        "journal_entry_representative_id_representative_id_fk": {
+          "name": "journal_entry_representative_id_representative_id_fk",
+          "tableFrom": "journal_entry",
+          "tableTo": "representative",
+          "columnsFrom": [
+            "representative_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
         "journal_entry_client_id_client_id_fk": {
           "name": "journal_entry_client_id_client_id_fk",
           "tableFrom": "journal_entry",
@@ -4114,54 +3418,15 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "journal_entry_fiscal_year_id_fiscal_year_id_fk": {
-          "name": "journal_entry_fiscal_year_id_fiscal_year_id_fk",
-          "tableFrom": "journal_entry",
-          "tableTo": "fiscal_year",
-          "columnsFrom": [
-            "fiscal_year_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "journal_entry_period_id_accounting_period_id_fk": {
-          "name": "journal_entry_period_id_accounting_period_id_fk",
-          "tableFrom": "journal_entry",
-          "tableTo": "accounting_period",
-          "columnsFrom": [
-            "period_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "journal_entry_voided_by_user_id_fk": {
-          "name": "journal_entry_voided_by_user_id_fk",
-          "tableFrom": "journal_entry",
-          "tableTo": "user",
-          "columnsFrom": [
-            "voided_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
-        "journal_entry_created_by_user_id_fk": {
-          "name": "journal_entry_created_by_user_id_fk",
+        "journal_entry_created_by_user_id_user_id_fk": {
+          "name": "journal_entry_created_by_user_id_user_id_fk",
           "tableFrom": "journal_entry",
           "tableTo": "user",
           "columnsFrom": [
-            "created_by"
+            "created_by_user_id"
           ],
           "columnsTo": [
             "id"
@@ -4171,17 +3436,7 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "journal_entry_client_fy_number_unique": {
-          "name": "journal_entry_client_fy_number_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "client_id",
-            "fiscal_year_id",
-            "number"
-          ]
-        }
-      },
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -4209,28 +3464,16 @@
           "primaryKey": false,
           "notNull": true
         },
-        "client_id": {
-          "name": "client_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "period_id": {
-          "name": "period_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
         "debit": {
           "name": "debit",
-          "type": "numeric(18, 2)",
+          "type": "numeric(14, 2)",
           "primaryKey": false,
           "notNull": true,
           "default": "'0'"
         },
         "credit": {
           "name": "credit",
-          "type": "numeric(18, 2)",
+          "type": "numeric(14, 2)",
           "primaryKey": false,
           "notNull": true,
           "default": "'0'"
@@ -4240,66 +3483,9 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "line_order": {
-          "name": "line_order",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
         }
       },
-      "indexes": {
-        "idx_jel_client_account_period": {
-          "name": "idx_jel_client_account_period",
-          "columns": [
-            {
-              "expression": "client_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "period_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_jel_journal_entry": {
-          "name": "idx_jel_journal_entry",
-          "columns": [
-            {
-              "expression": "journal_entry_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "journal_entry_line_journal_entry_id_journal_entry_id_fk": {
           "name": "journal_entry_line_journal_entry_id_journal_entry_id_fk",
@@ -4320,32 +3506,6 @@
           "tableTo": "accounting_account",
           "columnsFrom": [
             "account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "journal_entry_line_client_id_client_id_fk": {
-          "name": "journal_entry_line_client_id_client_id_fk",
-          "tableFrom": "journal_entry_line",
-          "tableTo": "client",
-          "columnsFrom": [
-            "client_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "journal_entry_line_period_id_accounting_period_id_fk": {
-          "name": "journal_entry_line_period_id_accounting_period_id_fk",
-          "tableFrom": "journal_entry_line",
-          "tableTo": "accounting_period",
-          "columnsFrom": [
-            "period_id"
           ],
           "columnsTo": [
             "id"
@@ -4619,13 +3779,6 @@
           "notNull": false,
           "default": "'full_time'"
         },
-        "tipo_empleador": {
-          "name": "tipo_empleador",
-          "type": "payroll_tipo_empleador",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": false
-        },
         "tarea": {
           "name": "tarea",
           "type": "text",
@@ -4787,6 +3940,12 @@
         "codigo_zona": {
           "name": "codigo_zona",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "localidad_id": {
+          "name": "localidad_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },
@@ -4952,6 +4111,19 @@
           "tableTo": "payroll_zona",
           "columnsFrom": [
             "zona_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "liquidacion_import_empleado_localidad_id_payroll_localidad_id_fk": {
+          "name": "liquidacion_import_empleado_localidad_id_payroll_localidad_id_fk",
+          "tableFrom": "liquidacion_import_empleado",
+          "tableTo": "payroll_localidad",
+          "columnsFrom": [
+            "localidad_id"
           ],
           "columnsTo": [
             "id"
@@ -5152,10 +4324,57 @@
           "primaryKey": false,
           "notNull": false
         },
-        "situacion_revista": {
-          "name": "situacion_revista",
-          "type": "payroll_situacion_revista",
-          "typeSchema": "public",
+        "situacion_revista1_id": {
+          "name": "situacion_revista1_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "situacion_revista1_dia_inicio": {
+          "name": "situacion_revista1_dia_inicio",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "situacion_revista2_id": {
+          "name": "situacion_revista2_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "situacion_revista2_dia_inicio": {
+          "name": "situacion_revista2_dia_inicio",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "situacion_revista3_id": {
+          "name": "situacion_revista3_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "situacion_revista3_dia_inicio": {
+          "name": "situacion_revista3_dia_inicio",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dias_trabajados": {
+          "name": "dias_trabajados",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "horas_trabajadas": {
+          "name": "horas_trabajadas",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "importe_maternidad_art13": {
+          "name": "importe_maternidad_art13",
+          "type": "numeric(12, 2)",
           "primaryKey": false,
           "notNull": false
         },
@@ -5257,6 +4476,45 @@
           "tableTo": "obra_social",
           "columnsFrom": [
             "obra_social_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "liquidacion_import_recibo_situacion_revista1_id_payroll_situacion_id_fk": {
+          "name": "liquidacion_import_recibo_situacion_revista1_id_payroll_situacion_id_fk",
+          "tableFrom": "liquidacion_import_recibo",
+          "tableTo": "payroll_situacion",
+          "columnsFrom": [
+            "situacion_revista1_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "liquidacion_import_recibo_situacion_revista2_id_payroll_situacion_id_fk": {
+          "name": "liquidacion_import_recibo_situacion_revista2_id_payroll_situacion_id_fk",
+          "tableFrom": "liquidacion_import_recibo",
+          "tableTo": "payroll_situacion",
+          "columnsFrom": [
+            "situacion_revista2_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "liquidacion_import_recibo_situacion_revista3_id_payroll_situacion_id_fk": {
+          "name": "liquidacion_import_recibo_situacion_revista3_id_payroll_situacion_id_fk",
+          "tableFrom": "liquidacion_import_recibo",
+          "tableTo": "payroll_situacion",
+          "columnsFrom": [
+            "situacion_revista3_id"
           ],
           "columnsTo": [
             "id"
@@ -6324,6 +5582,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "client_id": {
+          "name": "client_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
         "nombre": {
           "name": "nombre",
           "type": "text",
@@ -6372,6 +5636,19 @@
           "tableTo": "representative",
           "columnsFrom": [
             "representative_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "payroll_convenio_client_id_client_id_fk": {
+          "name": "payroll_convenio_client_id_client_id_fk",
+          "tableFrom": "payroll_convenio",
+          "tableTo": "client",
+          "columnsFrom": [
+            "client_id"
           ],
           "columnsTo": [
             "id"
@@ -6631,6 +5908,53 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.payroll_localidad": {
+      "name": "payroll_localidad",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "codigo": {
+          "name": "codigo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nombre": {
+          "name": "nombre",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "payroll_localidad_codigo_unique": {
+          "name": "payroll_localidad_codigo_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "codigo"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.payroll_modalidad_contratacion": {
       "name": "payroll_modalidad_contratacion",
       "schema": "",
@@ -6721,6 +6045,64 @@
           ]
         }
       },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.payroll_parametros_periodo": {
+      "name": "payroll_parametros_periodo",
+      "schema": "",
+      "columns": {
+        "periodo": {
+          "name": "periodo",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "tope_maximo_imponible": {
+          "name": "tope_maximo_imponible",
+          "type": "numeric(14, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "salario_minimo": {
+          "name": "salario_minimo",
+          "type": "numeric(14, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fuente": {
+          "name": "fuente",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actualizado_por_cron": {
+          "name": "actualizado_por_cron",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -7035,6 +6417,53 @@
           "nullsNotDistinct": false,
           "columns": [
             "codigo"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.payroll_tipo_empresa": {
+      "name": "payroll_tipo_empresa",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "codigo_lsd": {
+          "name": "codigo_lsd",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nombre": {
+          "name": "nombre",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "payroll_tipo_empresa_codigo_lsd_unique": {
+          "name": "payroll_tipo_empresa_codigo_lsd_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "codigo_lsd"
           ]
         }
       },
@@ -8222,129 +7651,6 @@
     }
   },
   "enums": {
-    "public.account_cash_flow_activity": {
-      "name": "account_cash_flow_activity",
-      "schema": "public",
-      "values": [
-        "operating",
-        "investing",
-        "financing"
-      ]
-    },
-    "public.account_expected_balance": {
-      "name": "account_expected_balance",
-      "schema": "public",
-      "values": [
-        "debit",
-        "credit",
-        "both"
-      ]
-    },
-    "public.account_expense_function": {
-      "name": "account_expense_function",
-      "schema": "public",
-      "values": [
-        "administration",
-        "sales",
-        "financial",
-        "other"
-      ]
-    },
-    "public.account_group": {
-      "name": "account_group",
-      "schema": "public",
-      "values": [
-        "caja_bancos",
-        "inversiones_temporarias",
-        "creditos_ventas",
-        "otros_creditos_cte",
-        "bienes_cambio",
-        "otros_activos_cte",
-        "creditos_largo_plazo",
-        "bienes_uso",
-        "intangibles",
-        "inversiones_permanentes",
-        "otros_activos_no_cte",
-        "deudas_comerciales",
-        "deudas_financieras",
-        "deudas_sociales",
-        "deudas_fiscales",
-        "otras_deudas_cte",
-        "deudas_largo_plazo",
-        "previsiones",
-        "capital",
-        "aportes_irrevocables",
-        "primas_emision",
-        "reservas",
-        "resultados_no_asignados",
-        "resultado_ejercicio",
-        "ventas",
-        "costo_ventas",
-        "gastos_administracion",
-        "gastos_comercializacion",
-        "gastos_financieros",
-        "otros_resultados_pos",
-        "otros_resultados_neg",
-        "impuesto_ganancias"
-      ]
-    },
-    "public.account_inflation_nature": {
-      "name": "account_inflation_nature",
-      "schema": "public",
-      "values": [
-        "monetaria",
-        "no_monetaria"
-      ]
-    },
-    "public.account_scope": {
-      "name": "account_scope",
-      "schema": "public",
-      "values": [
-        "base",
-        "custom"
-      ]
-    },
-    "public.account_type": {
-      "name": "account_type",
-      "schema": "public",
-      "values": [
-        "imputable",
-        "group"
-      ]
-    },
-    "public.accounting_log_event_type": {
-      "name": "accounting_log_event_type",
-      "schema": "public",
-      "values": [
-        "period_closed",
-        "period_reopened",
-        "fiscal_year_closed",
-        "fiscal_year_reopened",
-        "journal_entry_created",
-        "journal_entry_edited",
-        "journal_entry_voided",
-        "account_created",
-        "account_deactivated",
-        "financial_statement_approved"
-      ]
-    },
-    "public.accounting_period_status": {
-      "name": "accounting_period_status",
-      "schema": "public",
-      "values": [
-        "open",
-        "closed"
-      ]
-    },
-    "public.fiscal_year_status": {
-      "name": "fiscal_year_status",
-      "schema": "public",
-      "values": [
-        "open",
-        "closing",
-        "closed"
-      ]
-    },
     "public.job_status": {
       "name": "job_status",
       "schema": "public",
@@ -8364,28 +7670,8 @@
         "comprobantes_full",
         "notificaciones",
         "deuda",
-        "vencimientos"
-      ]
-    },
-    "public.journal_entry_origin": {
-      "name": "journal_entry_origin",
-      "schema": "public",
-      "values": [
-        "manual",
-        "auto_invoice",
-        "auto_payroll",
-        "auto_closing",
-        "auto_opening",
-        "import_excel"
-      ]
-    },
-    "public.journal_entry_source_type": {
-      "name": "journal_entry_source_type",
-      "schema": "public",
-      "values": [
-        "invoice",
-        "payroll",
-        "closing"
+        "vencimientos",
+        "batch"
       ]
     },
     "public.payroll_base_columna": {
@@ -8437,37 +7723,6 @@
         "full_time",
         "part_time",
         "reducida"
-      ]
-    },
-    "public.payroll_situacion_revista": {
-      "name": "payroll_situacion_revista",
-      "schema": "public",
-      "values": [
-        "activo",
-        "licencia_enfermedad",
-        "licencia_maternidad",
-        "licencia_sin_goce",
-        "suspendido_con_goce",
-        "suspendido_sin_goce",
-        "vacaciones",
-        "accidente_trabajo",
-        "baja_despido",
-        "baja_fallecimiento",
-        "baja_otras",
-        "ilt_primeros_10",
-        "ilt_once_o_mas",
-        "reserva_puesto",
-        "excedencia",
-        "otro"
-      ]
-    },
-    "public.payroll_tipo_empleador": {
-      "name": "payroll_tipo_empleador",
-      "schema": "public",
-      "values": [
-        "dec814_inc_a",
-        "dec814_inc_b",
-        "dec814_inc_c"
       ]
     }
   },

@@ -115,6 +115,14 @@ export function montoLiquidadoDesdeEditsSos(
   const pct = parseDecimalSos(row.porcentaje) ?? 0;
   const impNro = parseDecimalSos(row.importeConceptoNumero);
   const imp = parseDecimalSos(row.importe);
+
+  // Caso: importe directo sin porcentaje ni cantidad (ej. monto fijo override).
+  // Evita calcular 0 x 0 x base = 0 cuando el usuario solo ingresa un importe.
+  if (cant === 0 && pct === 0) {
+    const directAmount = impNro ?? imp;
+    if (directAmount !== null) return roundMoney(directAmount);
+    return 0;
+  }
   // Si no hay base explícita, la fórmula reduce a: cantidad × (pct/100)
   const base = impNro ?? imp ?? 1;
   let result = cant * (pct / 100) * base;

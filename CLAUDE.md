@@ -109,7 +109,15 @@ export const createThing = createServerFn({ method: "POST" })
 - `job_status`: `pending | running | failed | finished`
 - `payroll_concepto_tipo`: `remunerativo | no_remunerativo | descuento | retencion`
 - `payroll_concepto_base`: `basico | bruto | total_remunerativo | neto | custom | ...`
-- `payroll_situacion_revista`: `activo | licencia_enfermedad | vacaciones | baja_despido | ...`
+
+**LSD catalog tables** (códigos AFIP, no enums):
+- `payroll_situacion` — Situaciones de revista (códigos 2 dígitos AFIP: "01"–"51"). Un recibo puede tener hasta 3 por período via `situacionRevista1Id/2Id/3Id` + `DiaInicio` en `liquidacionImportRecibo`.
+- `payroll_condicion` — Condición del trabajador (códigos "00"–"14").
+- `payroll_modalidad_contratacion` — Modalidad de contratación (códigos "001"–"998").
+- `payroll_siniestrado` — Tipo de siniestro ART (códigos "00"–"13").
+- `payroll_actividad` — Actividad económica (códigos "000"–"921").
+- `payroll_zona` — Zona geográfica.
+- `payroll_provincia` — Provincia.
 
 ### Payroll / Sueldos module
 
