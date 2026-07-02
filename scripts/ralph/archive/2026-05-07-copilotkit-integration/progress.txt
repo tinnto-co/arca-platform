@@ -1,0 +1,32 @@
+# Ralph Progress Log
+Started: (initialize on first run of this branch)
+Branch: ralph/copilotkit-suggestions-tools-instructions
+Project: ARCA Platform — CopilotKit Phase 2
+
+---
+
+## Codebase Patterns
+(Will be populated by Ralph as it discovers reusable patterns. Read this section first before starting any user story.)
+
+- **Lint baseline (CRITICAL)**: project has ~576 pre-existing eslint errors. DO NOT run `bun run lint` for verification — it always exits 1 with a huge irrelevant baseline (`.claude/skills/`, `src/scripts/`, scattered production files). Instead, run `npx eslint <only-the-files-you-modified>` and confirm 0 NEW errors. Pre-existing errors are out of scope for this run; do not attempt to fix them.
+
+## Inherited from previous run (ralph/copilotkit-integration)
+
+### CopilotKit basics
+- CopilotKit provider mounted in src/routes/_authed/route.tsx, gated by `aiAgentEnabled` (orgModules?.ai_agent flag)
+- Runtime endpoint at src/routes/api/copilotkit.ts using GoogleGenerativeAIAdapter + gemini-2.5-flash
+- The env var that the SDK reads is GOOGLE_GENERATIVE_AI_API_KEY (not GEMINI_API_KEY despite naming in the codebase)
+- Existing actions live in src/components/copilot/CopilotActions.tsx, server fns in src/actions/copilot.tsx
+- Existing readables in client-detail-page.tsx, profile-detail-page.tsx, notifications-view.tsx, clients-table.tsx, sueldos/index.tsx
+- The page /chat uses Vercel AI SDK (separate system); never modify
+
+### After original Ralph run, manual changes (not commited via Ralph):
+- CopilotBottomPanel replaces CopilotSidebar — chat lives at the bottom of the screen, full-width minus app sidebar
+- AgentInput is the primary trigger; clicking it opens the panel; placeholder switches to "Continuar conversación..." when there's an active chat
+- AttachmentBar (paperclip + pill) integrated to the input area via .copilot-attachment-area wrapper
+- Generative UI components use container queries (@container, @[XXrem]:grid-cols-N) for responsive layout in panel and dashboard
+- New actions: getResumenSaludCliente, getResumenLiquidacionMes (with components ResumenSaludCliente.tsx, ResumenLiquidacionMes.tsx)
+- copilot-control.ts is a module-level bridge between AgentInput (outside CopilotKit subtree) and CopilotBottomPanel (inside)
+- Actions that take a clientId should ALSO accept clientName as fallback — Gemini sometimes regenerates UUIDs incorrectly
+
+---
