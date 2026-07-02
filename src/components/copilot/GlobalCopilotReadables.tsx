@@ -11,7 +11,7 @@ interface ClientRow {
   id: string;
   name: string;
   cuit: string | null;
-  clients?: { id: string; name: string }[];
+  clients?: { id: string; name: string; identityNumber?: string | null }[];
 }
 
 /**
@@ -43,7 +43,11 @@ export function GlobalCopilotReadables() {
       clientId: c.id,
       nombre: c.name,
       cuit: c.cuit ?? null,
-      perfilPrincipal: c.clients?.[0]?.name ?? null,
+      empresas: (c.clients ?? []).map((p) => ({
+        empresaId: p.id,
+        nombre: p.name,
+        cuit: p.identityNumber ?? null,
+      })),
     }));
 
   const sueldosGlobal = (sueldosClients ?? []).slice(0, 100).map((c) => ({
@@ -55,7 +59,12 @@ export function GlobalCopilotReadables() {
 
   useCopilotReadable({
     description:
-      'Lista global de clientes de la organización (hasta 100). Usá este contexto para resolver `clientId` cuando el usuario menciona un cliente por nombre, parcial o variante (ej: "e-presis" → "E-Presis SA"). Hacé fuzzy match: ignorá mayúsculas, guiones y espacios extras. Si hay coincidencia única, invocá `abrirCliente` con ese clientId. Si hay varias coincidencias, ofrecé la lista al usuario para que elija. NUNCA inventes un UUID.',
+      'Lista global de la organización (hasta 100 representantes). Cada entrada es un REPRESENTANTE (agrupador, campo `clientId`) y dentro tiene `empresas`: las ENTIDADES FISCALES reales con CUIT propio, cada una con `empresaId`, `nombre` y `cuit`. ' +
+      'REGLA DE RESOLUCIÓN para navegar con `abrirCliente`: cuando el usuario nombra un "cliente" casi SIEMPRE se refiere a una EMPRESA, no al representante. ' +
+      '1) Buscá PRIMERO en TODAS las `empresas` de todos los representantes, por nombre o CUIT, con fuzzy match (ignorá mayúsculas, puntos, guiones, espacios y sufijos como "S.A."/"SA"/"SRL"). ' +
+      '2) Si encontrás una empresa que coincide, llamá `abrirCliente` con el `clientId` del representante que la contiene Y su `empresaId` para que quede preseleccionada — hacé esto INCLUSO si el término también coincide con el nombre del representante (ej: el representante "E-Presis SA" tiene una empresa "E-presis S.A.": si piden "e-presis", pasá esa empresa). ' +
+      '3) Solo si NINGUNA empresa coincide pero sí un representante, llamá `abrirCliente` con solo el `clientId`. ' +
+      'Si varias empresas coinciden, ofrecé la lista para que elija. NUNCA inventes un UUID.',
     value: clientesGlobal,
   });
 

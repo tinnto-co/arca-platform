@@ -23,6 +23,7 @@ import {
   Paperclip,
   FileDown,
   RefreshCw,
+  ListFilter,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -1916,10 +1917,10 @@ export function RepresentativeDetailPage({
         </div>
 
         {/* ── Content area ── */}
-        <div className="px-4 md:px-[28px] pt-5 pb-[60px]">
+        <div className="px-4 md:px-[28px] pt-3 pb-[60px]">
           {/* Resumen Tab */}
           <TabsContent value="resumen" className="mt-4 space-y-[14px]">
-            {/* Row 1: Perfiles (3fr) | Facturación (2fr) | IVA (2fr) */}
+            {/* Row 1: Estado general (3fr) | Facturación (2fr) | IVA (2fr) */}
             <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr_2fr] gap-[14px]">
               {/* Estado general */}
               <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_20px] flex flex-col gap-[12px]">
@@ -2255,8 +2256,8 @@ export function RepresentativeDetailPage({
               )}
 
               {/* Notificaciones */}
-              <div className="h-[300px] bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_20px] flex flex-col gap-[14px]">
-                <div className="flex items-center gap-2">
+              <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_20px] flex flex-col gap-[14px] min-h-[260px]">
+                <div className="flex items-center gap-2 shrink-0">
                   <Bell className="h-3.5 w-3.5 shrink-0 text-[var(--arca-ink-3)]" />
                   <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
                     Notificaciones
@@ -2266,13 +2267,14 @@ export function RepresentativeDetailPage({
                     {unreadNotifications?.notifications.length ?? 0}
                   </span>
                 </div>
+                <div className="relative flex-1 min-h-0">
                 {loadingUnreadNotifications ? (
-                  <div className="flex items-center gap-2 text-[var(--arca-ink-4)] text-xs py-4 justify-center">
+                  <div className="absolute inset-0 flex items-center gap-2 text-[var(--arca-ink-4)] text-xs justify-center">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     Cargando...
                   </div>
                 ) : !unreadNotifications?.notifications.length ? (
-                  <div className="flex flex-col items-center justify-center gap-2 py-8">
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
                     <div className="w-9 h-9 rounded-full bg-[var(--arca-surface-2)] border border-[var(--arca-border)] flex items-center justify-center">
                       <Check className="h-4 w-4 text-[var(--arca-ink-4)]" />
                     </div>
@@ -2284,7 +2286,7 @@ export function RepresentativeDetailPage({
                     </p>
                   </div>
                 ) : (
-                  <div className="space-y-1.5 overflow-y-auto pr-1 flex-1 min-h-0">
+                  <div className="absolute inset-0 space-y-1.5 overflow-y-auto pr-1">
                     {unreadNotifications.notifications.map((notif) => (
                       <div
                         key={notif.id}
@@ -2324,6 +2326,7 @@ export function RepresentativeDetailPage({
                     ))}
                   </div>
                 )}
+                </div>
               </div>
             </div>
 
@@ -2523,7 +2526,7 @@ export function RepresentativeDetailPage({
           </Dialog>
 
           {/* Deudas Tab */}
-          <TabsContent value="deudas" className="mt-4 space-y-[14px]">
+          <TabsContent value="deudas" className="space-y-[14px]">
             {/* KPI Cards */}
             {!loadingDebts && debts.length > 0 && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px]">
@@ -2584,84 +2587,138 @@ export function RepresentativeDetailPage({
               </div>
             )}
 
-            {/* Filter Bar */}
-            <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[12px_18px] flex flex-wrap items-center gap-[14px]">
-              <div className="flex flex-col gap-[2px]">
-                <span className="text-[11.5px] text-[var(--arca-ink-4)]">
-                  Últ. actualización{' '}
-                  {lastDeudaJob?.createdAt ? (
-                    <span
-                      className={cn(
-                        'font-mono',
-                        lastDeudaJob.success
-                          ? 'text-[var(--arca-accent-pos-fg)]'
-                          : 'text-destructive'
-                      )}
-                      title={lastDeudaJob.failedReason ?? undefined}
-                    >
-                      {formatLastUpdateAt(lastDeudaJob.createdAt)}
-                    </span>
+            {/* Actualizar deudas (acción) + última actualización */}
+            <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[12px_18px] flex flex-col gap-[12px]">
+              <div className="flex flex-wrap items-center gap-[14px]">
+                <div className="flex flex-col gap-[2px]">
+                  <span className="text-[11.5px] text-[var(--arca-ink-4)]">
+                    Últ. actualización{' '}
+                    {lastDeudaJob?.createdAt ? (
+                      <span
+                        className={cn(
+                          'font-mono',
+                          lastDeudaJob.success
+                            ? 'text-[var(--arca-accent-pos-fg)]'
+                            : 'text-destructive'
+                        )}
+                        title={lastDeudaJob.failedReason ?? undefined}
+                      >
+                        {formatLastUpdateAt(lastDeudaJob.createdAt)}
+                      </span>
+                    ) : (
+                      <span className="font-mono text-[var(--arca-ink-2)]">
+                        —
+                      </span>
+                    )}
+                  </span>
+                  {lastDeudaJob &&
+                    !lastDeudaJob.success &&
+                    lastDeudaJob.failedReason && (
+                      <p className="text-[11px] text-destructive max-w-md">
+                        {lastDeudaJob.failedReason}
+                      </p>
+                    )}
+                </div>
+                <div className="flex-1" />
+                <Button
+                  size="sm"
+                  disabled={!!scrapingSection}
+                  onClick={async () => {
+                    setScrapingSection('deudas');
+                    try {
+                      await scrapSingleJob({
+                        data: { representativeId, jobType: 'deuda' },
+                      });
+                      await Promise.all([
+                        queryClient.invalidateQueries({
+                          queryKey: ['representativeDebts', representativeId],
+                        }),
+                        queryClient.invalidateQueries({
+                          queryKey: ['lastDeudaJob', representativeId],
+                        }),
+                      ]);
+                      toast.success('Deudas actualizadas correctamente');
+                    } catch (err) {
+                      toast.error(
+                        err instanceof Error
+                          ? err.message
+                          : 'Error al actualizar deudas'
+                      );
+                      queryClient.invalidateQueries({
+                        queryKey: ['lastDeudaJob', representativeId],
+                      });
+                    } finally {
+                      setScrapingSection(null);
+                    }
+                  }}
+                  className="bg-[var(--arca-ink)] hover:bg-black text-white text-[12.5px] h-8 px-3 rounded-[var(--arca-r-md)] shrink-0"
+                >
+                  {scrapingSection === 'deudas' ? (
+                    <>
+                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                      Actualizando…
+                    </>
                   ) : (
-                    <span className="font-mono text-[var(--arca-ink-2)]">
-                      —
-                    </span>
+                    'Actualizar deudas'
                   )}
-                </span>
-                {lastDeudaJob &&
-                  !lastDeudaJob.success &&
-                  lastDeudaJob.failedReason && (
-                    <p className="text-[11px] text-destructive max-w-md">
-                      {lastDeudaJob.failedReason}
-                    </p>
-                  )}
+                </Button>
               </div>
-              <div className="flex-1" />
+
+              {/* Filtros de tabla (solo afectan la vista, no la actualización) */}
               {!loadingDebts && debts.length > 0 && (
-                <>
-                  <Select
-                    value={debtFilterImpuesto || 'all'}
-                    onValueChange={(v) => {
-                      setDebtFilterImpuesto(v === 'all' ? '' : v);
-                      setDebtPage(1);
-                    }}
-                  >
-                    <SelectTrigger className="h-8 gap-1.5 px-3 text-[12px] border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] bg-[var(--arca-surface)] min-w-[130px]">
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
-                        Impuesto
-                      </span>
-                      <SelectValue placeholder="Todos" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Todos</SelectItem>
-                      {debtFilterOptions.impuestos.map((v) => (
-                        <SelectItem key={v} value={v}>
-                          {v}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select
-                    value={debtFilterConcepto || 'all'}
-                    onValueChange={(v) => {
-                      setDebtFilterConcepto(v === 'all' ? '' : v);
-                      setDebtPage(1);
-                    }}
-                  >
-                    <SelectTrigger className="h-8 gap-1.5 px-3 text-[12px] border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] bg-[var(--arca-surface)] min-w-[130px]">
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
-                        Concepto
-                      </span>
-                      <SelectValue placeholder="Todos" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Todos</SelectItem>
-                      {debtFilterOptions.conceptos.map((v) => (
-                        <SelectItem key={v} value={v}>
-                          {v}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className="flex flex-wrap items-center gap-x-[16px] gap-y-[8px] pt-[12px] border-t border-[var(--arca-border)]">
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[var(--arca-ink-3)]">
+                    <ListFilter className="h-3.5 w-3.5 text-[var(--arca-ink-4)]" />
+                    Filtrar
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-[var(--arca-ink-4)]">
+                      Impuesto
+                    </span>
+                    <Select
+                      value={debtFilterImpuesto || 'all'}
+                      onValueChange={(v) => {
+                        setDebtFilterImpuesto(v === 'all' ? '' : v);
+                        setDebtPage(1);
+                      }}
+                    >
+                      <SelectTrigger className="h-8 min-w-[140px] text-[12px] border-[var(--arca-border)] rounded-full bg-[var(--arca-surface-2)] hover:bg-[var(--arca-surface)] data-[state=open]:bg-[var(--arca-surface)] data-[state=open]:ring-1 data-[state=open]:ring-[var(--arca-border-strong)] transition-colors">
+                        <SelectValue placeholder="Todos" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos</SelectItem>
+                        {debtFilterOptions.impuestos.map((v) => (
+                          <SelectItem key={v} value={v}>
+                            {v}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-[var(--arca-ink-4)]">
+                      Concepto
+                    </span>
+                    <Select
+                      value={debtFilterConcepto || 'all'}
+                      onValueChange={(v) => {
+                        setDebtFilterConcepto(v === 'all' ? '' : v);
+                        setDebtPage(1);
+                      }}
+                    >
+                      <SelectTrigger className="h-8 min-w-[140px] text-[12px] border-[var(--arca-border)] rounded-full bg-[var(--arca-surface-2)] hover:bg-[var(--arca-surface)] data-[state=open]:bg-[var(--arca-surface)] data-[state=open]:ring-1 data-[state=open]:ring-[var(--arca-border-strong)] transition-colors">
+                        <SelectValue placeholder="Todos" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos</SelectItem>
+                        {debtFilterOptions.conceptos.map((v) => (
+                          <SelectItem key={v} value={v}>
+                            {v}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                   {(debtFilterImpuesto || debtFilterConcepto) && (
                     <button
                       onClick={() => {
@@ -2675,50 +2732,8 @@ export function RepresentativeDetailPage({
                       Limpiar
                     </button>
                   )}
-                </>
+                </div>
               )}
-              <Button
-                size="sm"
-                disabled={!!scrapingSection}
-                onClick={async () => {
-                  setScrapingSection('deudas');
-                  try {
-                    await scrapSingleJob({
-                      data: { representativeId, jobType: 'deuda' },
-                    });
-                    await Promise.all([
-                      queryClient.invalidateQueries({
-                        queryKey: ['representativeDebts', representativeId],
-                      }),
-                      queryClient.invalidateQueries({
-                        queryKey: ['lastDeudaJob', representativeId],
-                      }),
-                    ]);
-                    toast.success('Deudas actualizadas correctamente');
-                  } catch (err) {
-                    toast.error(
-                      err instanceof Error
-                        ? err.message
-                        : 'Error al actualizar deudas'
-                    );
-                    queryClient.invalidateQueries({
-                      queryKey: ['lastDeudaJob', representativeId],
-                    });
-                  } finally {
-                    setScrapingSection(null);
-                  }
-                }}
-                className="bg-[var(--arca-ink)] hover:bg-black text-white text-[12.5px] h-8 px-3 rounded-[var(--arca-r-md)] shrink-0"
-              >
-                {scrapingSection === 'deudas' ? (
-                  <>
-                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                    Actualizando…
-                  </>
-                ) : (
-                  'Actualizar deudas'
-                )}
-              </Button>
             </div>
 
             {/* Table */}
@@ -2760,7 +2775,7 @@ export function RepresentativeDetailPage({
                           { label: 'Concepto', key: 'concept' as const },
                           { label: 'Período', key: 'period' as const },
                           { label: 'Vencimiento', key: 'dueDate' as const },
-                          { label: 'Últ. Actualización', key: 'detectedAt' as const },
+                          { label: 'Actualiz.', key: 'detectedAt' as const },
                         ]).map(({ label, key }) => (
                           <th
                             key={key}
@@ -2838,16 +2853,20 @@ export function RepresentativeDetailPage({
                             style={{ background: rowBg }}
                           >
                             <td
-                              className="px-[14px] py-[10px] whitespace-nowrap text-[var(--arca-ink)] font-medium"
+                              className="px-[14px] py-[10px] text-[var(--arca-ink)] font-medium"
                               title={debt.tax || '-'}
                             >
-                              {debt.tax || '-'}
+                              <span className="block max-w-[150px] truncate">
+                                {debt.tax || '-'}
+                              </span>
                             </td>
                             <td
-                              className="px-[14px] py-[10px] whitespace-nowrap text-[var(--arca-ink-2)]"
+                              className="px-[14px] py-[10px] text-[var(--arca-ink-2)]"
                               title={debt.concept || '-'}
                             >
-                              {debt.concept || '-'}
+                              <span className="block max-w-[170px] truncate">
+                                {debt.concept || '-'}
+                              </span>
                             </td>
                             <td className="px-[14px] py-[10px] whitespace-nowrap font-mono text-[var(--arca-ink-3)]">
                               {debt.period || '-'}
@@ -2857,12 +2876,12 @@ export function RepresentativeDetailPage({
                                 'es-AR'
                               )}
                             </td>
-                            <td className="px-[14px] py-[10px] whitespace-nowrap text-[11px] text-[var(--arca-ink-4)]">
+                            <td className="px-[14px] py-[10px] whitespace-nowrap font-mono text-[10.5px] text-[var(--arca-ink-4)]">
                               {debt.detectedAt
                                 ? new Date(debt.detectedAt).toLocaleDateString('es-AR', {
                                   day: '2-digit',
-                                  month: 'short',
-                                  year: 'numeric',
+                                  month: '2-digit',
+                                  year: '2-digit',
                                 })
                                 : '-'}
                             </td>
@@ -2909,11 +2928,6 @@ export function RepresentativeDetailPage({
                               ) : (
                                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]">
                                   Abierta
-                                </span>
-                              )}
-                              {isIntimated && (
-                                <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9.5px] font-semibold bg-orange-100 text-orange-700">
-                                  Intimada
                                 </span>
                               )}
                             </td>
@@ -3057,7 +3071,7 @@ export function RepresentativeDetailPage({
           </TabsContent>
 
           {/* Vencimientos Tab */}
-          <TabsContent value="vencimientos" className="space-y-6 mt-6">
+          <TabsContent value="vencimientos" className="space-y-6">
             {/* Due Date Summary Cards */}
             {!loadingDueDates && dueDates.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -3440,7 +3454,7 @@ export function RepresentativeDetailPage({
                         data: { representativeId, jobType: 'notificaciones' },
                       });
                       await queryClient.invalidateQueries({
-                        queryKey: ['clientNotifications', representativeId],
+                        queryKey: ['clientNotifications', orgKey, representativeId],
                       });
                       await queryClient.invalidateQueries({
                         queryKey: ['lastNotificacionesJob', representativeId],
@@ -3481,7 +3495,7 @@ export function RepresentativeDetailPage({
           </TabsContent>
 
           {/* Facturas Tab */}
-          <TabsContent value="facturas" className="space-y-6 mt-6">
+          <TabsContent value="facturas" className="space-y-6">
             {/* <div className="flex justify-end">
             <Button
               variant="default"
@@ -4028,7 +4042,7 @@ export function RepresentativeDetailPage({
           </TabsContent>
 
           {/* Convenio Multilateral Tab */}
-          <TabsContent value="convenio-multilateral" className="space-y-6 mt-6">
+          <TabsContent value="convenio-multilateral" className="space-y-6">
             <div className="rounded-lg border bg-card p-4 space-y-4">
               <div className="flex items-center gap-2">
                 <Receipt className="h-5 w-5 shrink-0" />
@@ -4466,7 +4480,7 @@ export function RepresentativeDetailPage({
           </TabsContent>
 
           {/* IVA Tab */}
-          <TabsContent value="iva" className="mt-6">
+          <TabsContent value="iva" className="">
             <div className="rounded-lg border bg-card p-4 space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-col gap-1">
@@ -4701,7 +4715,7 @@ export function RepresentativeDetailPage({
           </TabsContent>
 
           {/* Solicitudes Tab */}
-          <TabsContent value="solicitudes" className="mt-4">
+          <TabsContent value="solicitudes" className="">
             <div className="space-y-4">
               {/* Header row */}
               <div className="flex items-center justify-between gap-3 flex-wrap">
