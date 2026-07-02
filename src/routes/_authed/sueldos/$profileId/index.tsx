@@ -9,6 +9,7 @@ import {
   Sliders,
   FileText,
   PenLine,
+  Upload,
   ChevronLeft,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -21,6 +22,7 @@ import { SueldosConceptos } from '@/components/sueldos/SueldosConceptos';
 import { SueldosSimulador } from '@/components/sueldos/SueldosSimulador';
 import { SueldosRecibo } from '@/components/sueldos/SueldosRecibo';
 import { SueldosFirmaDigital } from '@/components/sueldos/SueldosFirmaDigital';
+import { SueldosCargas } from '@/components/sueldos/SueldosCargas';
 import { getRepresentativesForSueldos } from '@/actions/client';
 import { listOrgModules } from '@/actions/admin';
 import { PageHeader } from '@/components/shared/page-header';
@@ -38,6 +40,7 @@ const SUELDOS_TABS = [
   'simulador',
   'recibo',
   'firma-digital',
+  'cargas',
 ] as const;
 type SueldosTab = (typeof SUELDOS_TABS)[number];
 
@@ -49,6 +52,7 @@ const TAB_DESCRIPTIONS: Record<SueldosTab, string> = {
   simulador: 'Generación de un nuevo recibo individual',
   recibo: 'Visor e impresor de recibos confirmados',
   'firma-digital': 'Carga y gestión de la firma digital del empleador',
+  cargas: 'Cargas sociales y generación del archivo LSD para AFIP',
 };
 
 export const Route = createFileRoute('/_authed/sueldos/$profileId/')({
@@ -192,6 +196,11 @@ function RouteComponent() {
                     icon: <PenLine className="h-[14px] w-[14px]" />,
                     label: 'Firma Digital',
                   },
+                  {
+                    value: 'cargas',
+                    icon: <Upload className="h-[14px] w-[14px]" />,
+                    label: 'Cargas Sociales',
+                  },
                 ] as const
               ).map((tab) => (
                 <TabsTrigger
@@ -234,6 +243,9 @@ function RouteComponent() {
             </TabsContent>
             <TabsContent value="firma-digital">
               <SueldosFirmaDigital clientId={clientId} profileId={profileId} />
+            </TabsContent>
+            <TabsContent value="cargas">
+              <SueldosCargas clientId={clientId} profileId={profileId} />
             </TabsContent>
           </div>
         </Tabs>
