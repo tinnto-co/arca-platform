@@ -244,10 +244,10 @@ const MetricDelta = ({
   return (
     <p
       className={`text-xs mt-1 ${diff > 0
-          ? 'text-[var(--arca-accent-pos-fg)]'
-          : diff < 0
-            ? 'text-[var(--arca-accent-neg-fg)]'
-            : 'text-muted-foreground'
+        ? 'text-[var(--arca-accent-pos-fg)]'
+        : diff < 0
+          ? 'text-[var(--arca-accent-neg-fg)]'
+          : 'text-muted-foreground'
         }`}
     >
       {label}: {formattedPct}
@@ -1853,7 +1853,7 @@ export function RepresentativeDetailPage({
                 <button
                   onClick={() => setEditRepresentativeDialogOpen(true)}
                   className="w-[24px] h-[24px] shrink-0 rounded-[var(--arca-r-sm)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-3)] inline-flex items-center justify-center hover:bg-[var(--arca-surface-2)] transition-colors"
-                  title="Editar representante"
+                  title="Editar"
                 >
                   <Edit className="h-3 w-3" />
                 </button>
@@ -1963,11 +1963,10 @@ export function RepresentativeDetailPage({
                       <span className="text-[10.5px] text-[var(--arca-ink-4)] mt-1">
                         {debtStats.totalDebts === 0
                           ? 'Sin deudas'
-                          : `${debtStats.totalDebts} ${debtStats.totalDebts === 1 ? 'deuda' : 'deudas'}${
-                              debtStats.overdueCount > 0
-                                ? ` · ${debtStats.overdueCount} vencida${debtStats.overdueCount === 1 ? '' : 's'}`
-                                : ''
-                            }`}
+                          : `${debtStats.totalDebts} ${debtStats.totalDebts === 1 ? 'deuda' : 'deudas'}${debtStats.overdueCount > 0
+                            ? ` · ${debtStats.overdueCount} vencida${debtStats.overdueCount === 1 ? '' : 's'}`
+                            : ''
+                          }`}
                       </span>
                     </div>
                   </div>
@@ -1980,12 +1979,12 @@ export function RepresentativeDetailPage({
                     <span className="flex-1 font-display font-semibold text-[14px] leading-none tracking-tight tabular-nums text-right text-[var(--arca-ink)]">
                       {dueDateStats.nextDueDate
                         ? new Date(
-                            dueDateStats.nextDueDate.dueDate
-                          ).toLocaleDateString('es-AR', {
-                            day: 'numeric',
-                            month: 'short',
-                            year: 'numeric',
-                          })
+                          dueDateStats.nextDueDate.dueDate
+                        ).toLocaleDateString('es-AR', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric',
+                        })
                         : '—'}
                     </span>
                   </div>
@@ -2283,64 +2282,64 @@ export function RepresentativeDetailPage({
                   </span>
                 </div>
                 <div className="relative flex-1 min-h-0">
-                {loadingUnreadNotifications ? (
-                  <div className="absolute inset-0 flex items-center gap-2 text-[var(--arca-ink-4)] text-xs justify-center">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Cargando...
-                  </div>
-                ) : !unreadNotifications?.notifications.length ? (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                    <div className="w-9 h-9 rounded-full bg-[var(--arca-surface-2)] border border-[var(--arca-border)] flex items-center justify-center">
-                      <Check className="h-4 w-4 text-[var(--arca-ink-4)]" />
+                  {loadingUnreadNotifications ? (
+                    <div className="absolute inset-0 flex items-center gap-2 text-[var(--arca-ink-4)] text-xs justify-center">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Cargando...
                     </div>
-                    <p className="text-[13px] text-[var(--arca-ink-3)] font-medium">
-                      Sin notificaciones pendientes
-                    </p>
-                    <p className="text-[11.5px] text-[var(--arca-ink-4)]">
-                      Te avisaremos cuando AFIP publique novedades.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="absolute inset-0 space-y-1.5 overflow-y-auto pr-1">
-                    {unreadNotifications.notifications.map((notif) => (
-                      <div
-                        key={notif.id}
-                        className="flex items-start gap-2 rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-3 py-2 hover:bg-[var(--arca-bg)] transition-colors"
-                      >
-                        <button
-                          className="flex-1 min-w-0 text-left"
-                          onClick={() => setResumenNotifSelected(notif)}
-                        >
-                          {notif.profileName && (
-                            <div className="text-[9.5px] text-[var(--arca-ink-4)] mb-0.5 font-semibold uppercase tracking-[0.06em]">
-                              {notif.profileName}
-                            </div>
-                          )}
-                          <p className="text-[var(--arca-ink)] text-[12px] line-clamp-2 leading-snug">
-                            {notif.message}
-                          </p>
-                          <p className="text-[10px] font-mono text-[var(--arca-ink-4)] mt-0.5">
-                            {notif.publicationDate
-                              ? format(
-                                new Date(notif.publicationDate),
-                                'dd/MM/yyyy',
-                                { locale: es }
-                              )
-                              : '—'}
-                          </p>
-                        </button>
-                        <button
-                          onClick={() => markOpenedMutation.mutate(notif.id)}
-                          disabled={markOpenedMutation.isPending}
-                          className="shrink-0 mt-0.5 text-[var(--arca-accent-pos)] hover:text-[var(--arca-accent-pos-fg)] transition-colors"
-                          title="Marcar como leída"
-                        >
-                          <Check className="h-3.5 w-3.5" />
-                        </button>
+                  ) : !unreadNotifications?.notifications.length ? (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+                      <div className="w-9 h-9 rounded-full bg-[var(--arca-surface-2)] border border-[var(--arca-border)] flex items-center justify-center">
+                        <Check className="h-4 w-4 text-[var(--arca-ink-4)]" />
                       </div>
-                    ))}
-                  </div>
-                )}
+                      <p className="text-[13px] text-[var(--arca-ink-3)] font-medium">
+                        Sin notificaciones pendientes
+                      </p>
+                      <p className="text-[11.5px] text-[var(--arca-ink-4)]">
+                        Te avisaremos cuando AFIP publique novedades.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="absolute inset-0 space-y-1.5 overflow-y-auto pr-1">
+                      {unreadNotifications.notifications.map((notif) => (
+                        <div
+                          key={notif.id}
+                          className="flex items-start gap-2 rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-3 py-2 hover:bg-[var(--arca-bg)] transition-colors"
+                        >
+                          <button
+                            className="flex-1 min-w-0 text-left"
+                            onClick={() => setResumenNotifSelected(notif)}
+                          >
+                            {notif.profileName && (
+                              <div className="text-[9.5px] text-[var(--arca-ink-4)] mb-0.5 font-semibold uppercase tracking-[0.06em]">
+                                {notif.profileName}
+                              </div>
+                            )}
+                            <p className="text-[var(--arca-ink)] text-[12px] line-clamp-2 leading-snug">
+                              {notif.message}
+                            </p>
+                            <p className="text-[10px] font-mono text-[var(--arca-ink-4)] mt-0.5">
+                              {notif.publicationDate
+                                ? format(
+                                  new Date(notif.publicationDate),
+                                  'dd/MM/yyyy',
+                                  { locale: es }
+                                )
+                                : '—'}
+                            </p>
+                          </button>
+                          <button
+                            onClick={() => markOpenedMutation.mutate(notif.id)}
+                            disabled={markOpenedMutation.isPending}
+                            className="shrink-0 mt-0.5 text-[var(--arca-accent-pos)] hover:text-[var(--arca-accent-pos-fg)] transition-colors"
+                            title="Marcar como leída"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

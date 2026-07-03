@@ -11,6 +11,7 @@ import {
   ivaScrape,
   job,
   representativeBalanceConfig,
+  alert,
 } from '@/drizzle/schema';
 import { auth } from '@/lib/auth';
 import {
@@ -19,7 +20,7 @@ import {
   getMemberRole,
 } from '@/actions/helpers';
 import { encrypt, safeDecrypt } from '@/lib/crypto';
-import { eq, and, inArray, desc, asc, or } from 'drizzle-orm';
+import { eq, and, inArray, desc, asc, or, sql } from 'drizzle-orm';
 const JOBS_API_URL =
   process.env.SCRAPPER_JOBS_URL ||
   process.env.BACKEND_API_URL ||
@@ -686,6 +687,58 @@ export const updateRepresentative = createServerFn({
     if (!updatedRepresentative) throw new Error('Error al actualizar el cliente');
 
     return updatedRepresentative;
+  });
+
+export const updateRepresentativePassword = createServerFn({
+  method: 'POST',
+})
+  .inputValidator(
+    z.object({
+      id: z.string(),
+      password: z.string().min(1, 'La contrasena es requerida'),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const [updated] = await db
+      .update(representative)
+      .set({
+        afipPassword: encrypt(ctx.data.password),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(representative.id, ctx.data.id),
+          eq(representative.organizationId, orgId)
+        )
+      )
+      .returning({ id: representative.id });
+
+    if (!updated) throw new Error('Error al actualizar la contrasena');
+
+    // Resolver alertas abiertas de credenciales invalidas de este representante
+    await db
+      .update(alert)
+      .set({
+        status: 'resolved',
+        resolvedAt: new Date(),
+        resolvedByUserId: userId,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(alert.organizationId, orgId),
+          eq(alert.representativeId, ctx.data.id),
+          eq(alert.type, 'scraper_error'),
+          eq(alert.status, 'open'),
+          sql`${alert.metadata}->>'errorCategory' = 'credentials'`
+        )
+      );
+
+    return { success: true };
   });
 
 export const deleteRepresentative = createServerFn({
