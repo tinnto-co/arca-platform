@@ -673,6 +673,41 @@ export const updateRepresentative = createServerFn({
     return updatedRepresentative;
   });
 
+export const updateRepresentativePassword = createServerFn({
+  method: 'POST',
+})
+  .inputValidator(
+    z.object({
+      representativeId: z.string(),
+      password: z.string().min(1, 'La contraseña es requerida'),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const [rep] = await db
+      .select({ id: representative.id })
+      .from(representative)
+      .where(
+        and(
+          eq(representative.id, ctx.data.representativeId),
+          eq(representative.organizationId, orgId)
+        )
+      )
+      .limit(1);
+
+    if (!rep) throw new Error('Cliente no encontrado o no autorizado');
+
+    await db
+      .update(representative)
+      .set({ afipPassword: encrypt(ctx.data.password), updatedAt: new Date() })
+      .where(eq(representative.id, ctx.data.representativeId));
+
+    return { ok: true };
+  });
+
 export const deleteRepresentative = createServerFn({
   method: 'POST',
 })

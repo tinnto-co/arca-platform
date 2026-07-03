@@ -4,7 +4,7 @@ import { useForm, type Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Edit } from 'lucide-react';
+import { Loader2, Edit, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 
 import {
@@ -27,7 +27,12 @@ import {
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { getRepresentative, updateRepresentative } from '@/actions/client';
+import {
+  getRepresentative,
+  getRepresentativePassword,
+  updateRepresentative,
+  updateRepresentativePassword,
+} from '@/actions/client';
 
 const clientSchema = z.object({
   name: z.string().min(1, 'El nombre es requerido'),
@@ -43,6 +48,7 @@ const clientSchema = z.object({
   address: z.string().optional().or(z.literal('')),
   image: z.string().optional(),
   regimenFiscal: z.enum(['local', 'multilateral', 'sin_definir']),
+  password: z.string().optional(),
 });
 
 type ClientFormValues = z.infer<typeof clientSchema>;
@@ -62,6 +68,7 @@ export function EditRepresentativeDialog({
 }: EditRepresentativeDialogProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const queryClient = useQueryClient();
 
   const isControlled =
@@ -79,6 +86,12 @@ export function EditRepresentativeDialog({
     enabled: open && !!representativeId,
   });
 
+  const { data: passwordData } = useQuery({
+    queryKey: ['representativePassword', representativeId],
+    queryFn: () => getRepresentativePassword({ data: { representativeId } }),
+    enabled: open && !!representativeId,
+  });
+
   const form = useForm<ClientFormValues>({
     resolver: zodResolver(clientSchema) as Resolver<ClientFormValues>,
     defaultValues: {
@@ -88,27 +101,29 @@ export function EditRepresentativeDialog({
       address: '',
       image: '',
       regimenFiscal: 'sin_definir',
+      password: '',
     },
   });
 
   React.useEffect(() => {
-    if (representative && initializedRef.current !== representativeId) {
-      initializedRef.current = representativeId;
-      const regimenFiscal = representative.convenioMultilateral
-        ? 'multilateral'
-        : representative.regimenLocal
-          ? 'local'
-          : 'sin_definir';
-      form.reset({
-        name: representative.name ?? '',
-        email: representative.email || '',
-        phone: representative.phone || '',
-        address: representative.address || '',
-        image: representative.image || '',
-        regimenFiscal,
-      });
-    }
-  }, [representative, representativeId, form]);
+    if (!representative) return;
+    // Re-run whenever representative or passwordData arrive (passwordData may come after)
+    const regimenFiscal = representative.convenioMultilateral
+      ? 'multilateral'
+      : representative.regimenLocal
+        ? 'local'
+        : 'sin_definir';
+    form.reset({
+      name: representative.name ?? '',
+      email: representative.email || '',
+      phone: representative.phone || '',
+      address: representative.address || '',
+      image: representative.image || '',
+      regimenFiscal,
+      password: passwordData?.password ?? '',
+    });
+    initializedRef.current = representativeId;
+  }, [representative, passwordData, representativeId, form]);
 
   React.useEffect(() => {
     if (!open) {
@@ -118,29 +133,42 @@ export function EditRepresentativeDialog({
 
   const updateMutation = useMutation({
     mutationFn: (data: any) => updateRepresentative({ data }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['representatives'] });
-      queryClient.invalidateQueries({ queryKey: ['representativesWithClients'] });
-      queryClient.invalidateQueries({ queryKey: ['representative', representativeId] });
-      toast.success('Cliente actualizado exitosamente');
-      setOpen(false);
-    },
     onError: (error) => {
       console.error('Error updating client:', error);
       toast.error('Error al actualizar el cliente');
     },
   });
 
+  const updatePasswordMutation = useMutation({
+    mutationFn: (password: string) =>
+      updateRepresentativePassword({ data: { representativeId, password } }),
+    onError: (error) => {
+      console.error('Error updating password:', error);
+      toast.error('Error al actualizar la contraseña');
+    },
+  });
+
   const onSubmit = async (values: ClientFormValues) => {
     setLoading(true);
     try {
-      const { regimenFiscal, ...rest } = values;
+      const { regimenFiscal, password, ...rest } = values;
       await updateMutation.mutateAsync({
         id: representativeId,
         ...rest,
         convenioMultilateral: regimenFiscal === 'multilateral',
         regimenLocal: regimenFiscal === 'local',
       });
+
+      if (password && password !== (passwordData?.password ?? '')) {
+        await updatePasswordMutation.mutateAsync(password);
+        queryClient.invalidateQueries({ queryKey: ['representativePassword', representativeId] });
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['representatives'] });
+      queryClient.invalidateQueries({ queryKey: ['representativesWithClients'] });
+      queryClient.invalidateQueries({ queryKey: ['representative', representativeId] });
+      toast.success('Cliente actualizado exitosamente');
+      setOpen(false);
     } finally {
       setLoading(false);
     }
@@ -286,6 +314,40 @@ export function EditRepresentativeDialog({
                           </label>
                         ))}
                       </RadioGroup>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Clave fiscal ARCA / AFIP</FormLabel>
+                    <FormControl>
+                      <div className="relative">
+                        <Input
+                          type={showPassword ? 'text' : 'password'}
+                          placeholder="Clave fiscal"
+                          {...field}
+                          value={field.value || ''}
+                          className="pr-10"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword((v) => !v)}
+                          className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground hover:text-foreground"
+                          tabIndex={-1}
+                        >
+                          {showPassword ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </button>
+                      </div>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
