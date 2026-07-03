@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { z } from 'zod';
 import {
   LayoutDashboard,
@@ -9,6 +10,7 @@ import {
   Sliders,
   FileText,
   PenLine,
+  Upload,
   ChevronLeft,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -21,6 +23,7 @@ import { SueldosConceptos } from '@/components/sueldos/SueldosConceptos';
 import { SueldosSimulador } from '@/components/sueldos/SueldosSimulador';
 import { SueldosRecibo } from '@/components/sueldos/SueldosRecibo';
 import { SueldosFirmaDigital } from '@/components/sueldos/SueldosFirmaDigital';
+import { SueldosCargas } from '@/components/sueldos/SueldosCargas';
 import { getRepresentativesForSueldos } from '@/actions/client';
 import { listOrgModules } from '@/actions/admin';
 import { PageHeader } from '@/components/shared/page-header';
@@ -38,6 +41,7 @@ const SUELDOS_TABS = [
   'simulador',
   'recibo',
   'firma-digital',
+  'cargas',
 ] as const;
 type SueldosTab = (typeof SUELDOS_TABS)[number];
 
@@ -49,7 +53,33 @@ const TAB_DESCRIPTIONS: Record<SueldosTab, string> = {
   simulador: 'Generación de un nuevo recibo individual',
   recibo: 'Visor e impresor de recibos confirmados',
   'firma-digital': 'Carga y gestión de la firma digital del empleador',
+  cargas: 'Cargas sociales y generación del archivo LSD para AFIP',
 };
+
+/** Datos para precargar el simulador al editar un recibo existente. */
+interface EditReciboData {
+  importEmpleadoId: string;
+  empleadoNombre: string;
+  periodo: string;
+  tipoRecibo: string;
+  quincena?: string | null;
+  fechaLiquidacion?: string | null;
+  fechaPago?: string | null;
+  obraSocialId?: string | null;
+  periodoCargas?: string | null;
+  fechaDepositoCargas?: string | null;
+  observacionInterna?: string | null;
+  observacionRecibo?: string | null;
+  situacionRevista1Id?: string | null;
+  situacionRevista1DiaInicio?: number | null;
+  situacionRevista2Id?: string | null;
+  situacionRevista2DiaInicio?: number | null;
+  situacionRevista3Id?: string | null;
+  situacionRevista3DiaInicio?: number | null;
+  diasTrabajados?: number | null;
+  horasTrabajadas?: number | null;
+  importeMaternidadArt13?: string | null;
+}
 
 export const Route = createFileRoute('/_authed/sueldos/$profileId/')({
   validateSearch: z.object({
@@ -63,6 +93,11 @@ function RouteComponent() {
   const search = Route.useSearch();
   const navigate = useNavigate();
   const activeTab: SueldosTab = search.tab ?? 'dashboard';
+
+  const [editReciboData, setEditReciboData] = useState<
+    EditReciboData | undefined
+  >(undefined);
+  const [reciboFiltroEmpleadoId, setReciboFiltroEmpleadoId] = useState('');
 
   const { data: clients = [], isLoading } = useQuery({
     queryKey: ['clients', 'sueldos'],
@@ -83,6 +118,8 @@ function RouteComponent() {
   const clientId = selectedOption?.representativeId ?? '';
 
   const setTab = (next: SueldosTab) => {
+    if (next !== 'simulador') setEditReciboData(undefined);
+    if (next !== 'recibo') setReciboFiltroEmpleadoId('');
     void navigate({
       to: '/sueldos/$profileId',
       params: { profileId },
@@ -192,6 +229,11 @@ function RouteComponent() {
                     icon: <PenLine className="h-[14px] w-[14px]" />,
                     label: 'Firma Digital',
                   },
+                  {
+                    value: 'cargas',
+                    icon: <Upload className="h-[14px] w-[14px]" />,
+                    label: 'Cargas Sociales',
+                  },
                 ] as const
               ).map((tab) => (
                 <TabsTrigger
@@ -214,7 +256,14 @@ function RouteComponent() {
               <SueldosDashboard clientId={clientId} profileId={profileId} />
             </TabsContent>
             <TabsContent value="empleados">
-              <SueldosEmpleados clientId={clientId} profileId={profileId} />
+              <SueldosEmpleados
+                clientId={clientId}
+                profileId={profileId}
+                onVerRecibos={(empleadoId) => {
+                  setReciboFiltroEmpleadoId(empleadoId);
+                  setTab('recibo');
+                }}
+              />
             </TabsContent>
             <TabsContent value="convenios">
               <SueldosConvenios clientId={clientId} profileId={profileId} />
@@ -227,13 +276,27 @@ function RouteComponent() {
                 clientId={clientId}
                 profileId={profileId}
                 onConfirmRecibo={() => setTab('recibo')}
+                initialData={editReciboData}
+                onReset={() => setEditReciboData(undefined)}
               />
             </TabsContent>
             <TabsContent value="recibo">
-              <SueldosRecibo clientId={clientId} profileId={profileId} />
+              <SueldosRecibo
+                key={reciboFiltroEmpleadoId}
+                clientId={clientId}
+                profileId={profileId}
+                initialEmpleadoId={reciboFiltroEmpleadoId || undefined}
+                onEditRecibo={(data) => {
+                  setEditReciboData(data);
+                  setTab('simulador');
+                }}
+              />
             </TabsContent>
             <TabsContent value="firma-digital">
               <SueldosFirmaDigital clientId={clientId} profileId={profileId} />
+            </TabsContent>
+            <TabsContent value="cargas">
+              <SueldosCargas clientId={clientId} profileId={profileId} />
             </TabsContent>
           </div>
         </Tabs>

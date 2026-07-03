@@ -67,7 +67,7 @@ const I = (
 
 export const BASE_CHART: BaseAccountSeed[] = [
   // ───────────────────────── Cuentas de sistema ─────────────────────────
-  G('0', 'Cuentas de sistema'),
+  { ...G('0', 'Cuentas de sistema'), isSystemAccount: true },
   I('0.001', 'Cuenta pendiente de revisión', 'otros_activos_cte', 'both', {
     isSystemAccount: true,
   }),
@@ -81,9 +81,17 @@ export const BASE_CHART: BaseAccountSeed[] = [
   I('1.1.01.002', 'Banco cuenta corriente', 'caja_bancos', 'debit'),
   I('1.1.01.003', 'Recaudaciones a depositar', 'caja_bancos', 'debit'),
   I('1.1.01.004', 'Fondo fijo', 'caja_bancos', 'debit'),
+  I('1.1.01.005', 'Caja en moneda extranjera', 'caja_bancos', 'debit'),
+  I('1.1.01.006', 'Banco moneda extranjera', 'caja_bancos', 'debit'),
 
   G('1.1.02', 'Inversiones temporarias', 'inversiones_temporarias'),
   I('1.1.02.001', 'Plazo fijo', 'inversiones_temporarias', 'debit'),
+  I(
+    '1.1.02.002',
+    'Fondos comunes de inversión',
+    'inversiones_temporarias',
+    'debit'
+  ),
 
   G('1.1.03', 'Créditos por ventas', 'creditos_ventas'),
   I('1.1.03.001', 'Deudores por ventas', 'creditos_ventas', 'debit'),
@@ -96,6 +104,7 @@ export const BASE_CHART: BaseAccountSeed[] = [
     'creditos_ventas',
     'credit'
   ),
+  I('1.1.03.006', 'Cheques diferidos a cobrar', 'creditos_ventas', 'debit'),
 
   G('1.1.04', 'Otros créditos', 'otros_creditos_cte'),
   I('1.1.04.001', 'IVA crédito fiscal', 'otros_creditos_cte', 'debit'),
@@ -113,11 +122,13 @@ export const BASE_CHART: BaseAccountSeed[] = [
     'otros_creditos_cte',
     'debit'
   ),
+  I('1.1.04.006', 'Créditos al personal', 'otros_creditos_cte', 'debit'),
 
   G('1.1.05', 'Bienes de cambio', 'bienes_cambio'),
   I('1.1.05.001', 'Mercaderías de reventa', 'bienes_cambio', 'debit'),
   I('1.1.05.002', 'Materias primas', 'bienes_cambio', 'debit'),
   I('1.1.05.003', 'Productos terminados', 'bienes_cambio', 'debit'),
+  I('1.1.05.004', 'Mercaderías en tránsito', 'bienes_cambio', 'debit'),
 
   G('1.1.06', 'Otros activos corrientes', 'otros_activos_cte'),
 
@@ -186,6 +197,7 @@ export const BASE_CHART: BaseAccountSeed[] = [
   I('2.1.01.001', 'Proveedores', 'deudas_comerciales', 'credit'),
   I('2.1.01.002', 'Documentos a pagar', 'deudas_comerciales', 'credit'),
   I('2.1.01.003', 'Anticipos de clientes', 'deudas_comerciales', 'credit'),
+  I('2.1.01.004', 'Cheques emitidos a pagar', 'deudas_comerciales', 'credit'),
 
   G('2.1.02', 'Deudas financieras', 'deudas_financieras'),
   I('2.1.02.001', 'Préstamos bancarios', 'deudas_financieras', 'credit'),
@@ -215,6 +227,7 @@ export const BASE_CHART: BaseAccountSeed[] = [
   I('2.1.04.005', 'Ingresos brutos a pagar', 'deudas_fiscales', 'credit'),
 
   G('2.1.05', 'Otras deudas', 'otras_deudas_cte'),
+  I('2.1.05.001', 'Acreedores varios', 'otras_deudas_cte', 'credit'),
 
   G('2.2', 'Pasivo No Corriente'),
   G('2.2.01', 'Deudas a largo plazo', 'deudas_largo_plazo'),
@@ -349,6 +362,9 @@ export const BASE_CHART: BaseAccountSeed[] = [
     'debit',
     { expenseFunction: 'financial' }
   ),
+  I('5.4.004', 'RECPAM', 'gastos_financieros', 'both', {
+    expenseFunction: 'financial',
+  }),
 
   G('5.5', 'Impuesto a las ganancias', 'impuesto_ganancias'),
   I('5.5.001', 'Impuesto a las ganancias', 'impuesto_ganancias', 'debit'),

@@ -1,15 +1,15 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import z from 'zod';
 import { useQuery } from '@tanstack/react-query';
-import { format, differenceInYears } from 'date-fns';
+import { format, differenceInYears, endOfMonth, addMonths } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { FilePlus2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { legajoParaMostrar } from '@/lib/legajo';
-import { listImportEmpleadosConConfig } from '@/actions/sueldos';
+import { listImportEmpleadosConConfig, listSituaciones } from '@/actions/sueldos';
 import { Button } from '@/components/ui/button';
 import {
   Form,
@@ -76,6 +76,17 @@ const formSchema = z.object({
   observacionInterna: z.string().optional(),
   observacionRecibo: z.string().optional(),
   copiarUltimoRecibo: z.enum(['no', 'si']),
+  // Situaciones de revista LSD
+  situacionRevista1Id: z.string().optional(),
+  situacionRevista1DiaInicio: z.string().optional(),
+  situacionRevista2Id: z.string().optional(),
+  situacionRevista2DiaInicio: z.string().optional(),
+  situacionRevista3Id: z.string().optional(),
+  situacionRevista3DiaInicio: z.string().optional(),
+  // Datos complementarios LSD
+  diasTrabajados: z.string().optional(),
+  horasTrabajadas: z.string().optional(),
+  importeMaternidadArt13: z.string().optional(),
 });
 
 export type ReciboFormValues = z.infer<typeof formSchema>;
@@ -87,6 +98,8 @@ export interface ReciboFormularioSuccess {
   copiarUltimoRecibo: boolean;
   tipoRecibo: string;
   antiguedadAnios: number | null;
+  fechaAlta: string | null;
+  fechaIngreso: string | null;
   quincena: '0' | '1' | '2';
   fechaLiquidacion: string;
   obraSocialId: string | null;
@@ -99,12 +112,24 @@ export interface ReciboFormularioSuccess {
   fechaDepositoCargas: string | null;
   observacionInterna: string | null;
   observacionRecibo: string | null;
+  // Situaciones de revista LSD
+  situacionRevista1Id: string | null;
+  situacionRevista1DiaInicio: number | null;
+  situacionRevista2Id: string | null;
+  situacionRevista2DiaInicio: number | null;
+  situacionRevista3Id: string | null;
+  situacionRevista3DiaInicio: number | null;
+  // Datos complementarios LSD
+  diasTrabajados: number | null;
+  horasTrabajadas: number | null;
+  importeMaternidadArt13: string | null;
 }
 
 interface ReciboFormularioProps {
   clientId: string;
   profileId: string;
   onSuccess: (payload: ReciboFormularioSuccess) => void;
+  initialValues?: Partial<ReciboFormValues>;
 }
 
 const now = new Date();
@@ -128,6 +153,7 @@ export function ReciboFormulario({
   clientId,
   profileId,
   onSuccess,
+  initialValues,
 }: ReciboFormularioProps) {
   const [step, setStep] = useState(1);
 
@@ -136,6 +162,12 @@ export function ReciboFormulario({
     queryFn: () =>
       listImportEmpleadosConConfig({ data: { clientId, profileId } }),
     enabled: !!clientId && !!profileId,
+  });
+
+  const { data: situaciones = [] } = useQuery({
+    queryKey: ['catalog-situaciones'],
+    queryFn: () => listSituaciones(),
+    staleTime: 30 * 60 * 1000,
   });
 
   const defaultAno = String(now.getFullYear());
@@ -157,6 +189,16 @@ export function ReciboFormulario({
       observacionInterna: '',
       observacionRecibo: '',
       copiarUltimoRecibo: 'no',
+      situacionRevista1Id: '',
+      situacionRevista1DiaInicio: '1',
+      situacionRevista2Id: '',
+      situacionRevista2DiaInicio: '',
+      situacionRevista3Id: '',
+      situacionRevista3DiaInicio: '',
+      diasTrabajados: '30',
+      horasTrabajadas: '',
+      importeMaternidadArt13: '',
+      ...initialValues,
     },
   });
 
@@ -172,6 +214,29 @@ export function ReciboFormulario({
     return differenceInYears(now, new Date(fechaAlta as unknown as string));
   }, [empleadoSel]);
 
+  // Actualizar fechaLiquidacion y fechaDepositoCargas al cambiar año/mes
+  const ano = form.watch('ano');
+  const mes = form.watch('mes');
+  useEffect(() => {
+    if (!ano || !mes) return;
+    const periodoDate = new Date(Number(ano), Number(mes) - 1, 1);
+    const mesSiguiente = addMonths(periodoDate, 1);
+    const ultimoDia = format(endOfMonth(periodoDate), 'yyyy-MM-dd');
+    form.setValue('fechaLiquidacion', ultimoDia);
+    form.setValue('fechaPago', ultimoDia);
+    form.setValue('fechaDepositoCargas', format(new Date(mesSiguiente.getFullYear(), mesSiguiente.getMonth(), 10), 'yyyy-MM-dd'));
+  }, [ano, mes, form]);
+
+  // Pre-llenar situación de revista 1 desde el empleado si el campo está vacío
+  useEffect(() => {
+    if (!empleadoSel) return;
+    const situacionId = empleadoSel.empleado.situacionId;
+    if (!situacionId) return;
+    if (!form.getValues('situacionRevista1Id')) {
+      form.setValue('situacionRevista1Id', situacionId);
+    }
+  }, [empleadoSel, form]);
+
   const onSubmit = (values: ReciboFormValues) => {
     const emp = empleados.find((e) => e.empleado.id === values.importEmpleadoId);
     const periodo = `${values.ano}-${values.mes}`;
@@ -183,6 +248,12 @@ export function ReciboFormulario({
       copiarUltimoRecibo: values.copiarUltimoRecibo === 'si',
       tipoRecibo: values.tipoRecibo,
       antiguedadAnios,
+      fechaAlta: emp?.empleado.fechaAlta
+        ? (typeof emp.empleado.fechaAlta === 'string' ? emp.empleado.fechaAlta : (emp.empleado.fechaAlta as Date).toISOString()).slice(0, 10)
+        : null,
+      fechaIngreso: emp?.empleado.fechaIngreso
+        ? (typeof emp.empleado.fechaIngreso === 'string' ? emp.empleado.fechaIngreso : (emp.empleado.fechaIngreso as Date).toISOString()).slice(0, 10)
+        : null,
       quincena: values.quincena,
       fechaLiquidacion: values.fechaLiquidacion,
       obraSocialId: emp?.empleado.obraSocialId ?? null,
@@ -198,6 +269,15 @@ export function ReciboFormulario({
       fechaDepositoCargas: values.fechaDepositoCargas?.trim() || null,
       observacionInterna: values.observacionInterna?.trim() || null,
       observacionRecibo: values.observacionRecibo?.trim() || null,
+      situacionRevista1Id: values.situacionRevista1Id || null,
+      situacionRevista1DiaInicio: values.situacionRevista1DiaInicio ? parseInt(values.situacionRevista1DiaInicio, 10) : null,
+      situacionRevista2Id: values.situacionRevista2Id || null,
+      situacionRevista2DiaInicio: values.situacionRevista2DiaInicio ? parseInt(values.situacionRevista2DiaInicio, 10) : null,
+      situacionRevista3Id: values.situacionRevista3Id || null,
+      situacionRevista3DiaInicio: values.situacionRevista3DiaInicio ? parseInt(values.situacionRevista3DiaInicio, 10) : null,
+      diasTrabajados: values.diasTrabajados ? parseInt(values.diasTrabajados, 10) : null,
+      horasTrabajadas: values.horasTrabajadas ? parseInt(values.horasTrabajadas, 10) : null,
+      importeMaternidadArt13: values.importeMaternidadArt13?.trim() || null,
     });
   };
 
@@ -521,6 +601,114 @@ export function ReciboFormulario({
                         <FormLabel>Fecha depósito cargas</FormLabel>
                         <FormControl>
                           <Input type="date" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                {/* ── Datos Complementarios LSD ── */}
+                <div>
+                  <h4 className="text-sm font-semibold">Situaciones de revista del período</h4>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Hasta 3 situaciones distintas en el mismo mes. Indicá el día de inicio de cada una.
+                  </p>
+                  <div className="space-y-3">
+                    {([1, 2, 3] as const).map((n) => {
+                      const idKey = `situacionRevista${n}Id` as keyof ReciboFormValues;
+                      const diaKey = `situacionRevista${n}DiaInicio` as keyof ReciboFormValues;
+                      return (
+                        <div key={n} className="flex flex-wrap items-end gap-3">
+                          <FormField
+                            control={form.control}
+                            name={idKey}
+                            render={({ field }) => (
+                              <FormItem className="flex-1 min-w-[200px]">
+                                {n === 1 && <FormLabel>Situación de revista {n}</FormLabel>}
+                                {n > 1 && <FormLabel className="text-muted-foreground">Situación {n} (opcional)</FormLabel>}
+                                <Select
+                                  onValueChange={(val) => field.onChange(val === '__none__' ? '' : val)}
+                                  value={(field.value as string) || (n > 1 ? '__none__' : '')}
+                                >
+                                  <FormControl>
+                                    <SelectTrigger>
+                                      <SelectValue placeholder={n === 1 ? 'Seleccione situación' : 'Sin segunda situación'} />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent className="max-h-[240px]">
+                                    {n > 1 && <SelectItem value="__none__">—</SelectItem>}
+                                    {situaciones.map((s) => (
+                                      <SelectItem key={s.id} value={s.id}>
+                                        {s.codigo} — {s.nombre}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={form.control}
+                            name={diaKey}
+                            render={({ field }) => (
+                              <FormItem className="w-28">
+                                {n === 1 && <FormLabel>Día inicio</FormLabel>}
+                                {n > 1 && <FormLabel className="text-muted-foreground">Día inicio</FormLabel>}
+                                <FormControl>
+                                  <Input
+                                    type="number"
+                                    min={1}
+                                    max={31}
+                                    placeholder="1"
+                                    {...field}
+                                    disabled={n > 1 && !form.watch((`situacionRevista${n}Id`) as keyof ReciboFormValues)}
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <FormField
+                    control={form.control}
+                    name="diasTrabajados"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Días trabajados</FormLabel>
+                        <FormControl>
+                          <Input type="number" min={0} max={31} placeholder="30" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="horasTrabajadas"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Horas trabajadas</FormLabel>
+                        <FormControl>
+                          <Input type="number" min={0} placeholder="200" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="importeMaternidadArt13"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Maternidad Art.13 Ley 27.674</FormLabel>
+                        <FormControl>
+                          <Input type="number" min={0} step="0.01" placeholder="0.00" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>

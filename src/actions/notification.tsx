@@ -171,11 +171,21 @@ export const getNotification = createServerFn({
         clientId: notification.representativeId,
         clientName: representative.name,
         clientEmail: representative.email,
+        profileId: notification.clientId,
+        profileName: client.name,
+        profileIdentityNumber: client.identityNumber,
+        severity: notification.severity,
+        category: notification.category,
+        aiSummary: notification.aiSummary,
+        assignedToUserId: notification.assignedToUserId,
+        resolvedAt: notification.resolvedAt,
+        resolvedByUserId: notification.resolvedByUserId,
         createdAt: notification.createdAt,
         updatedAt: notification.updatedAt,
       })
       .from(notification)
       .leftJoin(representative, eq(notification.representativeId, representative.id))
+      .leftJoin(client, eq(notification.clientId, client.id))
       .where(
         and(
           eq(notification.id, ctx.data.id),
@@ -748,8 +758,8 @@ export const classifyUnclassifiedNotifications = createServerFn({
 
         await db.insert(dataSourceEvent).values({
           organizationId: orgId,
+          representativeId: notif.representativeId ?? undefined,
           clientId: notif.clientId ?? undefined,
-          profileId: notif.profileId ?? undefined,
           entityType: 'notification',
           entityId: notif.id,
           source: 'ai',

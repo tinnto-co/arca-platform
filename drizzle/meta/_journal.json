@@ -12,36 +12,64 @@
     {
       "idx": 1,
       "version": "7",
-      "when": 1780671687822,
-      "tag": "0001_dear_jamie_braddock",
+      "when": 1781201447244,
+      "tag": "0001_bitter_miss_america",
       "breakpoints": true
     },
     {
       "idx": 2,
       "version": "7",
-      "when": 1780910772339,
-      "tag": "0002_mapping_rules",
+      "when": 1781632908201,
+      "tag": "0002_pink_living_tribunal",
       "breakpoints": true
     },
     {
       "idx": 3,
       "version": "7",
-      "when": 1781270336602,
-      "tag": "0003_fixed_assets",
+      "when": 1782164373454,
+      "tag": "0003_debug_diff",
       "breakpoints": true
     },
     {
       "idx": 4,
       "version": "7",
-      "when": 1781555394889,
-      "tag": "0004_financial_statement",
+      "when": 1782823630559,
+      "tag": "0004_nasty_ben_parker",
       "breakpoints": true
     },
     {
       "idx": 5,
       "version": "7",
-      "when": 1781557097891,
-      "tag": "0005_eecc_pdf",
+      "when": 1782844387863,
+      "tag": "0005_fuzzy_nextwave",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783009304726,
+      "tag": "0006_balances_module",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783045376189,
+      "tag": "0007_balances_02_features",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1783052369039,
+      "tag": "0008_fixed_assets_closing",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1783089856393,
+      "tag": "0009_feat05_audit_batch_eecc",
       "breakpoints": true
     }
   ]

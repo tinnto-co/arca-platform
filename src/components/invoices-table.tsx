@@ -6,6 +6,7 @@ import {
   forwardRef,
 } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { toTitleCase } from '@/lib/format-name';
 import {
   Search,
   Download,
@@ -206,6 +207,8 @@ interface InvoicesTableProps {
     typeFilter: string;
     directionFilter: string;
   }) => void;
+  /** Si se pasa, abre automáticamente el detalle de esa factura (deep-link). */
+  openInvoiceId?: string;
 }
 
 export interface InvoicesTableRef {
@@ -225,6 +228,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
       controlledSearchTerm,
       toolbarExtra,
       onFiltersChange,
+      openInvoiceId,
     }: InvoicesTableProps = {},
     ref
   ) {
@@ -365,7 +369,9 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
     const { data: representativeClients = [] } = useQuery({
       queryKey: ['representativeClients', representativeForClients],
       queryFn: () =>
-        getRepresentativeClients({ data: { representativeId: representativeForClients! } }),
+        getRepresentativeClients({
+          data: { representativeId: representativeForClients! },
+        }),
       enabled: !!representativeForClients,
     });
 
@@ -452,6 +458,26 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
         console.error(error);
       }
     };
+
+    // Deep-link: si viene openInvoiceId, abrir el detalle de esa factura al montar.
+    useEffect(() => {
+      if (!openInvoiceId) return;
+      let cancelled = false;
+      void (async () => {
+        try {
+          const details = await getInvoice({ data: { id: openInvoiceId } });
+          if (cancelled || !details) return;
+          setSelectedInvoice(details as unknown as InvoiceData);
+          setInvoiceDetails(details);
+          setViewDialogOpen(true);
+        } catch {
+          toast.error('No se pudo abrir la factura');
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [openInvoiceId]);
 
     const handleDownloadAttachment = (url: string, filename: string) => {
       const link = document.createElement('a');
@@ -834,7 +860,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                   { value: 'all', label: 'Todos los clientes' },
                   ...representatives.map((rep) => ({
                     value: rep.id,
-                    label: rep.name,
+                    label: toTitleCase(rep.name),
                   })),
                 ]}
                 width={192}
@@ -859,7 +885,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                       identityNumber?: string;
                     }) => ({
                       value: p.id,
-                      label: p.name || p.identityNumber || p.id,
+                      label: toTitleCase(p.name) || p.identityNumber || p.id,
                     })
                   ),
                 ]}
@@ -875,10 +901,12 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                 searchPlaceholder="Buscar tipo..."
                 options={[
                   { value: 'all', label: 'Todas las facturas' },
-                  ...Object.entries(INVOICE_TYPE_LABELS).map(([code, label]) => ({
-                    value: code,
-                    label,
-                  })),
+                  ...Object.entries(INVOICE_TYPE_LABELS).map(
+                    ([code, label]) => ({
+                      value: code,
+                      label,
+                    })
+                  ),
                 ]}
                 width={256}
               />
