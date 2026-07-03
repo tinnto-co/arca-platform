@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from '@tanstack/react-router';
+import { createFileRoute, redirect, Link } from '@tanstack/react-router';
 import { listOrgModules } from '@/actions/admin';
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -2610,6 +2610,37 @@ function EntryDetailBody({
       {data.entry.isVoided && data.entry.voidReason && (
         <div className="text-[12px] rounded-[8px] bg-[color-mix(in_oklch,oklch(0.55_0.18_25),transparent_92%)] text-[oklch(0.45_0.16_25)] px-3 py-2">
           Motivo de anulación: {data.entry.voidReason}
+        </div>
+      )}
+
+      {/* Comprobante origen + regla aplicada (asientos automáticos) — US 1.3.5 */}
+      {(data.source != null || data.rule != null) && (
+        <div className="text-[12px] rounded-[8px] bg-[var(--arca-surface-2)] px-3 py-2 space-y-1">
+          {data.source && (
+            <div className="flex flex-wrap items-center gap-x-1.5">
+              <span className="text-[var(--arca-ink-3)]">
+                Comprobante origen:
+              </span>
+              <Link
+                to="/invoices"
+                search={{ open: data.source.id }}
+                className="font-medium text-[var(--arca-navy-900)] underline underline-offset-2 hover:opacity-80"
+              >
+                {data.source.label}
+              </Link>
+              <span className="text-[var(--arca-ink-3)]">
+                · {data.source.counterparty} · $ {fmtMoney(data.source.amount)}
+              </span>
+            </div>
+          )}
+          {data.rule && (
+            <div>
+              <span className="text-[var(--arca-ink-3)]">Regla aplicada: </span>
+              <span className="font-medium text-[var(--arca-ink)]">
+                {data.rule.name}
+              </span>
+            </div>
+          )}
         </div>
       )}
 

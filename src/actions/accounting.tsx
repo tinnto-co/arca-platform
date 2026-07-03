@@ -1958,6 +1958,55 @@ export const getJournalEntry = createServerFn({ method: 'GET' })
       )
       .orderBy(desc(accountingLog.createdAt));
 
+    // Comprobante origen (si el asiento vino de una factura) y regla aplicada. (US 1.3.5)
+    let source: {
+      kind: 'invoice';
+      id: string;
+      label: string;
+      counterparty: string;
+      amount: number;
+    } | null = null;
+    if (entry.sourceType === 'invoice' && entry.sourceId) {
+      const [inv] = await db
+        .select({
+          id: invoice.id,
+          type: invoice.type,
+          salePoint: invoice.salePoint,
+          idFrom: invoice.idFrom,
+          direction: invoice.direction,
+          emitterName: invoice.emitterName,
+          recipientName: invoice.recipientName,
+          amount: invoice.amount,
+        })
+        .from(invoice)
+        .where(eq(invoice.id, entry.sourceId))
+        .limit(1);
+      if (inv) {
+        const pv = String(inv.salePoint).padStart(5, '0');
+        const nro = String(inv.idFrom).padStart(8, '0');
+        source = {
+          kind: 'invoice',
+          id: inv.id,
+          label: `Factura ${inv.type} ${pv}-${nro}`,
+          counterparty:
+            normalizeDirection(inv.direction) === 'purchase'
+              ? inv.emitterName
+              : inv.recipientName,
+          amount: parseFloat(inv.amount),
+        };
+      }
+    }
+
+    let rule: { id: string; name: string } | null = null;
+    if (entry.mappingRuleId) {
+      const [r] = await db
+        .select({ id: ledgerMappingRule.id, name: ledgerMappingRule.name })
+        .from(ledgerMappingRule)
+        .where(eq(ledgerMappingRule.id, entry.mappingRuleId))
+        .limit(1);
+      if (r) rule = r;
+    }
+
     return {
       entry: {
         ...entry,
@@ -1973,6 +2022,8 @@ export const getJournalEntry = createServerFn({ method: 'GET' })
         credit: parseFloat(l.credit),
       })),
       log: logRows,
+      source,
+      rule,
     };
   });
 
