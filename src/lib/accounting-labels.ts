@@ -163,8 +163,16 @@ export const EXPENSE_FUNCTION_LABELS: Record<
   other: 'Otros',
 };
 
-/** Prefijo reservado para cuentas custom de cada empresa. */
+/** Prefijo reservado para cuentas custom de cada empresa (esquema legacy "9.x"). */
 export const CUSTOM_CODE_PREFIX = '9.';
+
+/**
+ * Inicio del rango reservado para cuentas propias dentro del último segmento del
+ * código. Las cuentas base crecen `.001, .002…`; las propias se autoasignan
+ * `.900, .901…` bajo el mismo padre, así quedan ordenadas junto a sus hermanas
+ * sin colisionar con futuras cuentas base.
+ */
+export const CUSTOM_SEGMENT_START = 900;
 
 /** Código de la cuenta de sistema "pendiente de revisión" (asientos auto sin regla). */
 export const PENDING_REVIEW_CODE = '0.001';
@@ -186,7 +194,10 @@ export const MONTH_NAMES = [
   'Diciembre',
 ] as const;
 
-export const FISCAL_YEAR_STATUS_LABELS: Record<'open' | 'closing' | 'closed', string> = {
+export const FISCAL_YEAR_STATUS_LABELS: Record<
+  'open' | 'closing' | 'closed',
+  string
+> = {
   open: 'Abierto',
   closing: 'En cierre',
   closed: 'Cerrado',

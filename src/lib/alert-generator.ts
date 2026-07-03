@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { alert, client, debt, notification, dueDate } from '@/drizzle/schema';
+import { alert, representative, debt, notification, dueDate } from '@/drizzle/schema';
 import { and, eq, lt, isNull, gte, lte, inArray } from 'drizzle-orm';
 
 /**
@@ -15,17 +15,17 @@ import { and, eq, lt, isNull, gte, lte, inArray } from 'drizzle-orm';
 export async function generateAlerts(
   orgId: string
 ): Promise<{ created: number }> {
-  const orgClients = await db
+  const orgRepresentatives = await db
     .select({
-      id: client.id,
-      name: client.name,
+      id: representative.id,
+      name: representative.name,
     })
-    .from(client)
-    .where(eq(client.organizationId, orgId));
+    .from(representative)
+    .where(eq(representative.organizationId, orgId));
 
-  if (orgClients.length === 0) return { created: 0 };
+  if (orgRepresentatives.length === 0) return { created: 0 };
 
-  const clientIds = orgClients.map((c) => c.id);
+  const representativeIds = orgRepresentatives.map((c) => c.id);
 
   const now = new Date();
   const in7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
@@ -61,7 +61,7 @@ export async function generateAlerts(
     .from(debt)
     .where(
       and(
-        inArray(debt.client, clientIds),
+        inArray(debt.representativeId, representativeIds),
         eq(debt.status, 'open'),
         lt(debt.dueDate, now)
       )
@@ -70,7 +70,7 @@ export async function generateAlerts(
   for (const d of overdueDebts) {
     maybeAdd(`overdue_debt:debt:${d.id}`, {
       organizationId: orgId,
-      clientId: d.client ?? undefined,
+      representativeId: d.representativeId ?? undefined,
       type: 'overdue_debt',
       severity: 'high',
       title: `Deuda vencida: ${d.tax || d.concept || 'Sin concepto'}`,
@@ -87,7 +87,7 @@ export async function generateAlerts(
     .from(notification)
     .where(
       and(
-        inArray(notification.client, clientIds),
+        inArray(notification.representativeId, representativeIds),
         eq(notification.severity, 'critical'),
         isNull(notification.resolvedAt)
       )
@@ -97,8 +97,8 @@ export async function generateAlerts(
     const summary = n.aiSummary ?? n.message.slice(0, 80);
     maybeAdd(`critical_notification:notification:${n.id}`, {
       organizationId: orgId,
-      clientId: n.client ?? undefined,
-      profileId: n.profile ?? undefined,
+      representativeId: n.representativeId ?? undefined,
+      clientId: n.clientId ?? undefined,
       type: 'critical_notification',
       severity: 'critical',
       title: `Notificación crítica: ${summary}`,
@@ -114,7 +114,7 @@ export async function generateAlerts(
     .from(dueDate)
     .where(
       and(
-        inArray(dueDate.client, clientIds),
+        inArray(dueDate.representativeId, representativeIds),
         isNull(dueDate.completedAt),
         gte(dueDate.dueDate, now),
         lte(dueDate.dueDate, in7Days)
@@ -124,7 +124,7 @@ export async function generateAlerts(
   for (const dd of upcomingDueDates) {
     maybeAdd(`upcoming_due_date:due_date:${dd.id}`, {
       organizationId: orgId,
-      clientId: dd.client ?? undefined,
+      representativeId: dd.representativeId ?? undefined,
       type: 'upcoming_due_date',
       severity: 'medium',
       title: `Vencimiento próximo: ${dd.tax || dd.concept || 'Sin concepto'}`,

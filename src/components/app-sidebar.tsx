@@ -21,6 +21,7 @@ import {
   AlertTriangle,
   Landmark,
   BookOpen,
+  Globe,
 } from 'lucide-react';
 
 import { Sidebar, SidebarRail, useSidebar } from '@/components/ui/sidebar';
@@ -326,6 +327,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <NavItem to="/jobs" icon={Clock} label="Jobs" />
           <NavItem to="/invoices" icon={FileText} label="Facturas" />
           <NavItem to="/sueldos" icon={DollarSign} label="Sueldos" />
+          <NavItem to="/iibb" icon={Globe} label="IIBB" />
           <NavItem to="/vencimientos" icon={Calendar} label="Vencimientos" />
           <NavItem
             to="/alerts"

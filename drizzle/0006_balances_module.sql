@@ -72,8 +72,6 @@ ALTER TABLE "journal_entry" DROP CONSTRAINT "journal_entry_created_by_user_id_us
 ALTER TABLE "journal_entry" DROP CONSTRAINT "journal_entry_client_id_client_id_fk";
 --> statement-breakpoint
 ALTER TABLE "accounting_account" ALTER COLUMN "type" SET DATA TYPE "public"."account_type" USING "type"::"public"."account_type";--> statement-breakpoint
-ALTER TABLE "debt" ALTER COLUMN "due_date" SET DEFAULT '2026-06-05 14:59:29.370';--> statement-breakpoint
-ALTER TABLE "due_date" ALTER COLUMN "due_date" SET DEFAULT '2026-06-05 14:59:29.369';--> statement-breakpoint
 ALTER TABLE "journal_entry" ALTER COLUMN "client_id" SET NOT NULL;--> statement-breakpoint
 ALTER TABLE "journal_entry" ALTER COLUMN "source_type" SET DATA TYPE "public"."journal_entry_source_type" USING "source_type"::"public"."journal_entry_source_type";--> statement-breakpoint
 ALTER TABLE "journal_entry_line" ALTER COLUMN "debit" SET DATA TYPE numeric(18, 2);--> statement-breakpoint
