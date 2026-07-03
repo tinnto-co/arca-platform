@@ -23,6 +23,7 @@ import {
   Paperclip,
   FileDown,
   RefreshCw,
+  ListFilter,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -85,6 +86,11 @@ import {
   createClientRequest,
   updateClientRequestStatus,
   getRequestDocument,
+  listPortalUsers,
+  createPortalUser,
+  updatePortalUserPermissions,
+  resetPortalUserPassword,
+  revokePortalAccess,
 } from '@/actions/client-portal';
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
@@ -95,6 +101,12 @@ import {
   Loader2,
   Play,
   Activity,
+  UserCheck,
+  UserPlus,
+  Trash2,
+  KeyRound,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import {
   Table,
@@ -143,6 +155,7 @@ import {
 import { userQuery } from '@/lib/user-query';
 import { listOrgModules } from '@/actions/admin';
 import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
+import { toTitleCase } from '@/lib/format-name';
 
 interface RepresentativeDetailPageProps {
   representativeId: string;
@@ -1670,8 +1683,9 @@ export function RepresentativeDetailPage({
     );
   }
 
-  // Compute avatar initials from client name
-  const clientInitials = (client.name || '?')
+  // Compute avatar initials from selected profile or representative name
+  const headerDisplayName = selectedProfile?.name ?? client.name ?? '?';
+  const clientInitials = headerDisplayName
     .split(/[\s\-]+/)
     .filter(Boolean)
     .slice(0, 2)
@@ -1682,7 +1696,7 @@ export function RepresentativeDetailPage({
   const tabTriggerCls = (hasError?: boolean) =>
     cn(
       // shape overrides
-      'relative h-auto flex-none px-[14px] py-[10px] text-[13px] font-medium rounded-[8px_8px_0_0] border whitespace-nowrap gap-[7px] cursor-pointer',
+      'relative h-auto flex-none px-[18px] py-[10px] text-[13px] font-medium rounded-[8px_8px_0_0] border whitespace-nowrap gap-[7px] cursor-pointer',
       // inactive
       'border-transparent text-[var(--arca-ink-3)] hover:bg-transparent hover:text-[var(--arca-ink)]',
       // active
@@ -1712,7 +1726,7 @@ export function RepresentativeDetailPage({
         className="flex flex-col"
       >
         {/* ── Sticky client header ── */}
-        <div className="sticky top-0 z-10 bg-[var(--arca-bg)] border-b border-[var(--arca-border)]">
+        <div className="sticky top-0 z-10 bg-[var(--arca-bg)] border-b border-[var(--arca-border)] overflow-hidden">
           <div className="px-4 md:px-[28px] pt-[18px]">
             {/* Top row */}
             <div className="flex items-center gap-[14px] pb-[18px] pt-4">
@@ -1742,20 +1756,20 @@ export function RepresentativeDetailPage({
                         className="group h-auto w-fit max-w-full gap-2 border-0 bg-transparent p-0 shadow-none rounded-md hover:opacity-70 focus-visible:ring-0 transition-opacity [&>svg]:!size-[18px] [&>svg]:!opacity-40 [&>svg]:text-[var(--arca-ink-3)] group-hover:[&>svg]:!opacity-70"
                       >
                         <span className="font-display text-[24px] font-semibold tracking-tight text-[var(--arca-ink)] leading-none truncate">
-                          {selectedProfile?.name ?? client.name}
+                          {toTitleCase(selectedProfile?.name ?? client.name)}
                         </span>
                       </SelectTrigger>
                       <SelectContent>
                         {profiles.map((p) => (
                           <SelectItem key={p.id} value={p.id}>
-                            {p.name || p.identityNumber || p.id}
+                            {toTitleCase(p.name) || p.identityNumber || p.id}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   ) : (
                     <h1 className="font-display text-[24px] font-semibold tracking-tight text-[var(--arca-ink)] leading-none truncate">
-                      {selectedProfile?.name ?? client.name}
+                      {toTitleCase(selectedProfile?.name ?? client.name)}
                     </h1>
                   )}
                 </div>
@@ -1767,7 +1781,7 @@ export function RepresentativeDetailPage({
                   )}
                   <span className="w-[3px] h-[3px] rounded-full bg-[var(--arca-ink-4)] shrink-0" />
                   <span className="truncate max-w-[220px]">
-                    Representante: {client.name}
+                    Representante: {toTitleCase(client.name)}
                   </span>
                   {client.fiscalCondition && (
                     <>
@@ -1847,7 +1861,7 @@ export function RepresentativeDetailPage({
             </div>
 
             {/* Tab bar */}
-            <TabsList className="flex h-auto w-full bg-transparent p-0 rounded-none gap-0 overflow-x-auto justify-start">
+            <TabsList className="flex h-auto w-full bg-transparent p-0 rounded-none gap-0 overflow-x-auto overflow-y-hidden justify-start [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
               <TabsTrigger value="resumen" className={tabTriggerCls()}>
                 <FileText className="h-[14px] w-[14px]" />
                 Resumen
@@ -1909,15 +1923,19 @@ export function RepresentativeDetailPage({
                 <ClipboardList className="h-[14px] w-[14px]" />
                 Solicitudes
               </TabsTrigger>
+              <TabsTrigger value="portal" className={tabTriggerCls()}>
+                <UserCheck className="h-[14px] w-[14px]" />
+                Portal
+              </TabsTrigger>
             </TabsList>
           </div>
         </div>
 
         {/* ── Content area ── */}
-        <div className="px-4 md:px-[28px] pt-5 pb-[60px]">
+        <div className="px-4 md:px-[28px] pt-3 pb-[60px]">
           {/* Resumen Tab */}
           <TabsContent value="resumen" className="mt-4 space-y-[14px]">
-            {/* Row 1: Perfiles (3fr) | Facturación (2fr) | IVA (2fr) */}
+            {/* Row 1: Estado general (3fr) | Facturación (2fr) | IVA (2fr) */}
             <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr_2fr] gap-[14px]">
               {/* Estado general */}
               <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_20px] flex flex-col gap-[12px]">
@@ -2253,8 +2271,8 @@ export function RepresentativeDetailPage({
               )}
 
               {/* Notificaciones */}
-              <div className="h-[300px] bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_20px] flex flex-col gap-[14px]">
-                <div className="flex items-center gap-2">
+              <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_20px] flex flex-col gap-[14px] min-h-[260px]">
+                <div className="flex items-center gap-2 shrink-0">
                   <Bell className="h-3.5 w-3.5 shrink-0 text-[var(--arca-ink-3)]" />
                   <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
                     Notificaciones
@@ -2264,13 +2282,14 @@ export function RepresentativeDetailPage({
                     {unreadNotifications?.notifications.length ?? 0}
                   </span>
                 </div>
+                <div className="relative flex-1 min-h-0">
                 {loadingUnreadNotifications ? (
-                  <div className="flex items-center gap-2 text-[var(--arca-ink-4)] text-xs py-4 justify-center">
+                  <div className="absolute inset-0 flex items-center gap-2 text-[var(--arca-ink-4)] text-xs justify-center">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     Cargando...
                   </div>
                 ) : !unreadNotifications?.notifications.length ? (
-                  <div className="flex flex-col items-center justify-center gap-2 py-8">
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
                     <div className="w-9 h-9 rounded-full bg-[var(--arca-surface-2)] border border-[var(--arca-border)] flex items-center justify-center">
                       <Check className="h-4 w-4 text-[var(--arca-ink-4)]" />
                     </div>
@@ -2282,7 +2301,7 @@ export function RepresentativeDetailPage({
                     </p>
                   </div>
                 ) : (
-                  <div className="space-y-1.5 overflow-y-auto pr-1 flex-1 min-h-0">
+                  <div className="absolute inset-0 space-y-1.5 overflow-y-auto pr-1">
                     {unreadNotifications.notifications.map((notif) => (
                       <div
                         key={notif.id}
@@ -2322,6 +2341,7 @@ export function RepresentativeDetailPage({
                     ))}
                   </div>
                 )}
+                </div>
               </div>
             </div>
 
@@ -2521,7 +2541,7 @@ export function RepresentativeDetailPage({
           </Dialog>
 
           {/* Deudas Tab */}
-          <TabsContent value="deudas" className="mt-4 space-y-[14px]">
+          <TabsContent value="deudas" className="space-y-[14px]">
             {/* KPI Cards */}
             {!loadingDebts && debts.length > 0 && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px]">
@@ -2582,84 +2602,138 @@ export function RepresentativeDetailPage({
               </div>
             )}
 
-            {/* Filter Bar */}
-            <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[12px_18px] flex flex-wrap items-center gap-[14px]">
-              <div className="flex flex-col gap-[2px]">
-                <span className="text-[11.5px] text-[var(--arca-ink-4)]">
-                  Últ. actualización{' '}
-                  {lastDeudaJob?.createdAt ? (
-                    <span
-                      className={cn(
-                        'font-mono',
-                        lastDeudaJob.success
-                          ? 'text-[var(--arca-accent-pos-fg)]'
-                          : 'text-destructive'
-                      )}
-                      title={lastDeudaJob.failedReason ?? undefined}
-                    >
-                      {formatLastUpdateAt(lastDeudaJob.createdAt)}
-                    </span>
+            {/* Actualizar deudas (acción) + última actualización */}
+            <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[12px_18px] flex flex-col gap-[12px]">
+              <div className="flex flex-wrap items-center gap-[14px]">
+                <div className="flex flex-col gap-[2px]">
+                  <span className="text-[11.5px] text-[var(--arca-ink-4)]">
+                    Últ. actualización{' '}
+                    {lastDeudaJob?.createdAt ? (
+                      <span
+                        className={cn(
+                          'font-mono',
+                          lastDeudaJob.success
+                            ? 'text-[var(--arca-accent-pos-fg)]'
+                            : 'text-destructive'
+                        )}
+                        title={lastDeudaJob.failedReason ?? undefined}
+                      >
+                        {formatLastUpdateAt(lastDeudaJob.createdAt)}
+                      </span>
+                    ) : (
+                      <span className="font-mono text-[var(--arca-ink-2)]">
+                        —
+                      </span>
+                    )}
+                  </span>
+                  {lastDeudaJob &&
+                    !lastDeudaJob.success &&
+                    lastDeudaJob.failedReason && (
+                      <p className="text-[11px] text-destructive max-w-md">
+                        {lastDeudaJob.failedReason}
+                      </p>
+                    )}
+                </div>
+                <div className="flex-1" />
+                <Button
+                  size="sm"
+                  disabled={!!scrapingSection}
+                  onClick={async () => {
+                    setScrapingSection('deudas');
+                    try {
+                      await scrapSingleJob({
+                        data: { representativeId, jobType: 'deuda' },
+                      });
+                      await Promise.all([
+                        queryClient.invalidateQueries({
+                          queryKey: ['representativeDebts', representativeId],
+                        }),
+                        queryClient.invalidateQueries({
+                          queryKey: ['lastDeudaJob', representativeId],
+                        }),
+                      ]);
+                      toast.success('Deudas actualizadas correctamente');
+                    } catch (err) {
+                      toast.error(
+                        err instanceof Error
+                          ? err.message
+                          : 'Error al actualizar deudas'
+                      );
+                      queryClient.invalidateQueries({
+                        queryKey: ['lastDeudaJob', representativeId],
+                      });
+                    } finally {
+                      setScrapingSection(null);
+                    }
+                  }}
+                  className="bg-[var(--arca-ink)] hover:bg-black text-white text-[12.5px] h-8 px-3 rounded-[var(--arca-r-md)] shrink-0"
+                >
+                  {scrapingSection === 'deudas' ? (
+                    <>
+                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                      Actualizando…
+                    </>
                   ) : (
-                    <span className="font-mono text-[var(--arca-ink-2)]">
-                      —
-                    </span>
+                    'Actualizar deudas'
                   )}
-                </span>
-                {lastDeudaJob &&
-                  !lastDeudaJob.success &&
-                  lastDeudaJob.failedReason && (
-                    <p className="text-[11px] text-destructive max-w-md">
-                      {lastDeudaJob.failedReason}
-                    </p>
-                  )}
+                </Button>
               </div>
-              <div className="flex-1" />
+
+              {/* Filtros de tabla (solo afectan la vista, no la actualización) */}
               {!loadingDebts && debts.length > 0 && (
-                <>
-                  <Select
-                    value={debtFilterImpuesto || 'all'}
-                    onValueChange={(v) => {
-                      setDebtFilterImpuesto(v === 'all' ? '' : v);
-                      setDebtPage(1);
-                    }}
-                  >
-                    <SelectTrigger className="h-8 gap-1.5 px-3 text-[12px] border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] bg-[var(--arca-surface)] min-w-[130px]">
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
-                        Impuesto
-                      </span>
-                      <SelectValue placeholder="Todos" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Todos</SelectItem>
-                      {debtFilterOptions.impuestos.map((v) => (
-                        <SelectItem key={v} value={v}>
-                          {v}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select
-                    value={debtFilterConcepto || 'all'}
-                    onValueChange={(v) => {
-                      setDebtFilterConcepto(v === 'all' ? '' : v);
-                      setDebtPage(1);
-                    }}
-                  >
-                    <SelectTrigger className="h-8 gap-1.5 px-3 text-[12px] border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] bg-[var(--arca-surface)] min-w-[130px]">
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
-                        Concepto
-                      </span>
-                      <SelectValue placeholder="Todos" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Todos</SelectItem>
-                      {debtFilterOptions.conceptos.map((v) => (
-                        <SelectItem key={v} value={v}>
-                          {v}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className="flex flex-wrap items-center gap-x-[16px] gap-y-[8px] pt-[12px] border-t border-[var(--arca-border)]">
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[var(--arca-ink-3)]">
+                    <ListFilter className="h-3.5 w-3.5 text-[var(--arca-ink-4)]" />
+                    Filtrar
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-[var(--arca-ink-4)]">
+                      Impuesto
+                    </span>
+                    <Select
+                      value={debtFilterImpuesto || 'all'}
+                      onValueChange={(v) => {
+                        setDebtFilterImpuesto(v === 'all' ? '' : v);
+                        setDebtPage(1);
+                      }}
+                    >
+                      <SelectTrigger className="h-8 min-w-[140px] text-[12px] border-[var(--arca-border)] rounded-full bg-[var(--arca-surface-2)] hover:bg-[var(--arca-surface)] data-[state=open]:bg-[var(--arca-surface)] data-[state=open]:ring-1 data-[state=open]:ring-[var(--arca-border-strong)] transition-colors">
+                        <SelectValue placeholder="Todos" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos</SelectItem>
+                        {debtFilterOptions.impuestos.map((v) => (
+                          <SelectItem key={v} value={v}>
+                            {v}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-[var(--arca-ink-4)]">
+                      Concepto
+                    </span>
+                    <Select
+                      value={debtFilterConcepto || 'all'}
+                      onValueChange={(v) => {
+                        setDebtFilterConcepto(v === 'all' ? '' : v);
+                        setDebtPage(1);
+                      }}
+                    >
+                      <SelectTrigger className="h-8 min-w-[140px] text-[12px] border-[var(--arca-border)] rounded-full bg-[var(--arca-surface-2)] hover:bg-[var(--arca-surface)] data-[state=open]:bg-[var(--arca-surface)] data-[state=open]:ring-1 data-[state=open]:ring-[var(--arca-border-strong)] transition-colors">
+                        <SelectValue placeholder="Todos" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos</SelectItem>
+                        {debtFilterOptions.conceptos.map((v) => (
+                          <SelectItem key={v} value={v}>
+                            {v}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                   {(debtFilterImpuesto || debtFilterConcepto) && (
                     <button
                       onClick={() => {
@@ -2673,50 +2747,8 @@ export function RepresentativeDetailPage({
                       Limpiar
                     </button>
                   )}
-                </>
+                </div>
               )}
-              <Button
-                size="sm"
-                disabled={!!scrapingSection}
-                onClick={async () => {
-                  setScrapingSection('deudas');
-                  try {
-                    await scrapSingleJob({
-                      data: { representativeId, jobType: 'deuda' },
-                    });
-                    await Promise.all([
-                      queryClient.invalidateQueries({
-                        queryKey: ['representativeDebts', representativeId],
-                      }),
-                      queryClient.invalidateQueries({
-                        queryKey: ['lastDeudaJob', representativeId],
-                      }),
-                    ]);
-                    toast.success('Deudas actualizadas correctamente');
-                  } catch (err) {
-                    toast.error(
-                      err instanceof Error
-                        ? err.message
-                        : 'Error al actualizar deudas'
-                    );
-                    queryClient.invalidateQueries({
-                      queryKey: ['lastDeudaJob', representativeId],
-                    });
-                  } finally {
-                    setScrapingSection(null);
-                  }
-                }}
-                className="bg-[var(--arca-ink)] hover:bg-black text-white text-[12.5px] h-8 px-3 rounded-[var(--arca-r-md)] shrink-0"
-              >
-                {scrapingSection === 'deudas' ? (
-                  <>
-                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                    Actualizando…
-                  </>
-                ) : (
-                  'Actualizar deudas'
-                )}
-              </Button>
             </div>
 
             {/* Table */}
@@ -2758,7 +2790,7 @@ export function RepresentativeDetailPage({
                           { label: 'Concepto', key: 'concept' as const },
                           { label: 'Período', key: 'period' as const },
                           { label: 'Vencimiento', key: 'dueDate' as const },
-                          { label: 'Últ. Actualización', key: 'detectedAt' as const },
+                          { label: 'Actualiz.', key: 'detectedAt' as const },
                         ]).map(({ label, key }) => (
                           <th
                             key={key}
@@ -2836,16 +2868,20 @@ export function RepresentativeDetailPage({
                             style={{ background: rowBg }}
                           >
                             <td
-                              className="px-[14px] py-[10px] whitespace-nowrap text-[var(--arca-ink)] font-medium"
+                              className="px-[14px] py-[10px] text-[var(--arca-ink)] font-medium"
                               title={debt.tax || '-'}
                             >
-                              {debt.tax || '-'}
+                              <span className="block max-w-[150px] truncate">
+                                {debt.tax || '-'}
+                              </span>
                             </td>
                             <td
-                              className="px-[14px] py-[10px] whitespace-nowrap text-[var(--arca-ink-2)]"
+                              className="px-[14px] py-[10px] text-[var(--arca-ink-2)]"
                               title={debt.concept || '-'}
                             >
-                              {debt.concept || '-'}
+                              <span className="block max-w-[170px] truncate">
+                                {debt.concept || '-'}
+                              </span>
                             </td>
                             <td className="px-[14px] py-[10px] whitespace-nowrap font-mono text-[var(--arca-ink-3)]">
                               {debt.period || '-'}
@@ -2855,12 +2891,12 @@ export function RepresentativeDetailPage({
                                 'es-AR'
                               )}
                             </td>
-                            <td className="px-[14px] py-[10px] whitespace-nowrap text-[11px] text-[var(--arca-ink-4)]">
+                            <td className="px-[14px] py-[10px] whitespace-nowrap font-mono text-[10.5px] text-[var(--arca-ink-4)]">
                               {debt.detectedAt
                                 ? new Date(debt.detectedAt).toLocaleDateString('es-AR', {
                                   day: '2-digit',
-                                  month: 'short',
-                                  year: 'numeric',
+                                  month: '2-digit',
+                                  year: '2-digit',
                                 })
                                 : '-'}
                             </td>
@@ -2907,11 +2943,6 @@ export function RepresentativeDetailPage({
                               ) : (
                                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]">
                                   Abierta
-                                </span>
-                              )}
-                              {isIntimated && (
-                                <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9.5px] font-semibold bg-orange-100 text-orange-700">
-                                  Intimada
                                 </span>
                               )}
                             </td>
@@ -3055,7 +3086,7 @@ export function RepresentativeDetailPage({
           </TabsContent>
 
           {/* Vencimientos Tab */}
-          <TabsContent value="vencimientos" className="space-y-6 mt-6">
+          <TabsContent value="vencimientos" className="space-y-6">
             {/* Due Date Summary Cards */}
             {!loadingDueDates && dueDates.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -3438,7 +3469,7 @@ export function RepresentativeDetailPage({
                         data: { representativeId, jobType: 'notificaciones' },
                       });
                       await queryClient.invalidateQueries({
-                        queryKey: ['clientNotifications', representativeId],
+                        queryKey: ['clientNotifications', orgKey, representativeId],
                       });
                       await queryClient.invalidateQueries({
                         queryKey: ['lastNotificacionesJob', representativeId],
@@ -3479,7 +3510,7 @@ export function RepresentativeDetailPage({
           </TabsContent>
 
           {/* Facturas Tab */}
-          <TabsContent value="facturas" className="space-y-6 mt-6">
+          <TabsContent value="facturas" className="space-y-6">
             {/* <div className="flex justify-end">
             <Button
               variant="default"
@@ -4026,7 +4057,7 @@ export function RepresentativeDetailPage({
           </TabsContent>
 
           {/* Convenio Multilateral Tab */}
-          <TabsContent value="convenio-multilateral" className="space-y-6 mt-6">
+          <TabsContent value="convenio-multilateral" className="space-y-6">
             <div className="rounded-lg border bg-card p-4 space-y-4">
               <div className="flex items-center gap-2">
                 <Receipt className="h-5 w-5 shrink-0" />
@@ -4464,7 +4495,7 @@ export function RepresentativeDetailPage({
           </TabsContent>
 
           {/* IVA Tab */}
-          <TabsContent value="iva" className="mt-6">
+          <TabsContent value="iva" className="">
             <div className="rounded-lg border bg-card p-4 space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-col gap-1">
@@ -4699,7 +4730,7 @@ export function RepresentativeDetailPage({
           </TabsContent>
 
           {/* Solicitudes Tab */}
-          <TabsContent value="solicitudes" className="mt-4">
+          <TabsContent value="solicitudes" className="">
             <div className="space-y-4">
               {/* Header row */}
               <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -5028,6 +5059,11 @@ export function RepresentativeDetailPage({
               </DialogContent>
             </Dialog>
           </TabsContent>
+
+          {/* Portal Tab */}
+          <TabsContent value="portal" className="mt-4">
+            <PortalAccessTab representativeId={representativeId} />
+          </TabsContent>
         </div>
         {/* end content area */}
       </Tabs>
@@ -5293,6 +5329,427 @@ export function RepresentativeDetailPage({
               )}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ── Portal Access Tab ────────────────────────────────────────────────────────
+
+type PortalUser = {
+  accessId: string;
+  userId: string;
+  name: string | null;
+  email: string | null;
+  canViewDebts: boolean;
+  canViewIva: boolean;
+  canViewPayroll: boolean;
+  canUploadDocuments: boolean;
+  canChatAi: boolean;
+  createdAt: Date;
+};
+
+type PermissionKey = 'canViewDebts' | 'canViewIva' | 'canViewPayroll' | 'canUploadDocuments' | 'canChatAi';
+
+const PERMISSION_LABELS: Record<PermissionKey, string> = {
+  canViewDebts: 'Deudas',
+  canViewIva: 'IVA',
+  canViewPayroll: 'Sueldos',
+  canUploadDocuments: 'Documentos',
+  canChatAi: 'Chat IA',
+};
+
+function PermissionBadge({ active, label }: { active: boolean; label: string }) {
+  if (!active) return null;
+  return (
+    <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-[var(--arca-accent-primary-bg)] text-[var(--arca-accent-primary)] border border-[var(--arca-accent-primary)]/20">
+      {label}
+    </span>
+  );
+}
+
+function PortalAccessTab({ representativeId }: { representativeId: string }) {
+  const queryClient = useQueryClient();
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<PortalUser | null>(null);
+  const [revokeTarget, setRevokeTarget] = useState<PortalUser | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+
+  // Create form state
+  const [createForm, setCreateForm] = useState({
+    name: '',
+    email: '',
+    password: '',
+    canViewDebts: true,
+    canViewIva: true,
+    canViewPayroll: false,
+    canUploadDocuments: true,
+    canChatAi: true,
+  });
+
+  // Edit form state (permissions only)
+  const [editPerms, setEditPerms] = useState<Record<PermissionKey, boolean>>({
+    canViewDebts: true,
+    canViewIva: true,
+    canViewPayroll: false,
+    canUploadDocuments: true,
+    canChatAi: true,
+  });
+
+  // Reset password state
+  const [newPassword, setNewPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+
+  const { data: users = [], isLoading } = useQuery({
+    queryKey: ['portalUsers', representativeId],
+    queryFn: () => listPortalUsers({ data: { representativeId } }),
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (vars: Parameters<typeof createPortalUser>[0]['data']) =>
+      createPortalUser({ data: vars }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['portalUsers', representativeId] });
+      toast.success('Usuario creado');
+      setCreateOpen(false);
+      setCreateForm({ name: '', email: '', password: '', canViewDebts: true, canViewIva: true, canViewPayroll: false, canUploadDocuments: true, canChatAi: true });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const editMutation = useMutation({
+    mutationFn: (vars: Parameters<typeof updatePortalUserPermissions>[0]['data']) =>
+      updatePortalUserPermissions({ data: vars }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['portalUsers', representativeId] });
+      toast.success('Permisos actualizados');
+      setEditTarget(null);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const resetPasswordMutation = useMutation({
+    mutationFn: (vars: Parameters<typeof resetPortalUserPassword>[0]['data']) =>
+      resetPortalUserPassword({ data: vars }),
+    onSuccess: () => {
+      toast.success('Contraseña actualizada');
+      setNewPassword('');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const revokeMutation = useMutation({
+    mutationFn: (vars: Parameters<typeof revokePortalAccess>[0]['data']) =>
+      revokePortalAccess({ data: vars }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['portalUsers', representativeId] });
+      toast.success('Acceso revocado');
+      setRevokeTarget(null);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  function openEdit(u: PortalUser) {
+    setEditPerms({
+      canViewDebts: u.canViewDebts,
+      canViewIva: u.canViewIva,
+      canViewPayroll: u.canViewPayroll,
+      canUploadDocuments: u.canUploadDocuments,
+      canChatAi: u.canChatAi,
+    });
+    setNewPassword('');
+    setEditTarget(u);
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-[var(--arca-ink)]">Usuarios con acceso al portal</h3>
+          <p className="text-xs text-[var(--arca-ink-3)] mt-0.5">
+            Los usuarios portal pueden consultar la información fiscal del cliente.
+          </p>
+        </div>
+        <Button
+          size="sm"
+          onClick={() => setCreateOpen(true)}
+          className="bg-[var(--arca-ink)] hover:bg-black text-white gap-1.5"
+        >
+          <UserPlus className="h-3.5 w-3.5" />
+          Agregar usuario
+        </Button>
+      </div>
+
+      {/* Table */}
+      {isLoading ? (
+        <div className="flex items-center justify-center h-24 text-sm text-[var(--arca-ink-3)]">
+          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+          Cargando…
+        </div>
+      ) : users.length === 0 ? (
+        <div className="flex flex-col items-center justify-center h-32 gap-2 rounded-lg border border-dashed border-[var(--arca-border)]">
+          <UserCheck className="h-6 w-6 text-[var(--arca-ink-3)]" />
+          <p className="text-sm text-[var(--arca-ink-3)]">No hay usuarios con acceso al portal</p>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-[var(--arca-border)] overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-[var(--arca-surface-2)]">
+                <TableHead className="text-xs">Nombre</TableHead>
+                <TableHead className="text-xs">Email</TableHead>
+                <TableHead className="text-xs">Permisos</TableHead>
+                <TableHead className="text-xs">Alta</TableHead>
+                <TableHead className="text-xs text-right">Acciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(users as PortalUser[]).map((u) => (
+                <TableRow key={u.accessId} className="hover:bg-[var(--arca-surface-2)]/50">
+                  <TableCell className="text-sm font-medium">{u.name ?? '—'}</TableCell>
+                  <TableCell className="text-sm text-[var(--arca-ink-3)]">{u.email ?? '—'}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      {(Object.keys(PERMISSION_LABELS) as PermissionKey[]).map((k) => (
+                        <PermissionBadge key={k} active={u[k]} label={PERMISSION_LABELS[k]} />
+                      ))}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-xs text-[var(--arca-ink-3)]">
+                    {new Date(u.createdAt).toLocaleDateString('es-AR')}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        title="Editar permisos"
+                        onClick={() => openEdit(u)}
+                      >
+                        <Edit className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-[var(--arca-accent-neg)] hover:text-[var(--arca-accent-neg)]"
+                        title="Revocar acceso"
+                        onClick={() => setRevokeTarget(u)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {/* Create Dialog */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Agregar usuario al portal</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[var(--arca-ink)]">Nombre completo</label>
+              <Input
+                value={createForm.name}
+                onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="Ej: Juan García"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[var(--arca-ink)]">Email</label>
+              <Input
+                type="email"
+                value={createForm.email}
+                onChange={(e) => setCreateForm((f) => ({ ...f, email: e.target.value }))}
+                placeholder="juan@empresa.com"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-[var(--arca-ink)]">Contraseña</label>
+              <div className="relative">
+                <Input
+                  type={showPassword ? 'text' : 'password'}
+                  value={createForm.password}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, password: e.target.value }))}
+                  placeholder="Mínimo 8 caracteres"
+                  className="pr-9"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)]"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-[var(--arca-ink)]">Permisos</label>
+              <div className="grid grid-cols-2 gap-2">
+                {(Object.keys(PERMISSION_LABELS) as PermissionKey[]).map((k) => (
+                  <label key={k} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={createForm[k]}
+                      onChange={(e) => setCreateForm((f) => ({ ...f, [k]: e.target.checked }))}
+                      className="rounded border-[var(--arca-border)]"
+                    />
+                    {PERMISSION_LABELS[k]}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              className="bg-[var(--arca-ink)] hover:bg-black text-white"
+              disabled={!createForm.name || !createForm.email || createForm.password.length < 8 || createMutation.isPending}
+              onClick={() =>
+                createMutation.mutate({
+                  representativeId,
+                  name: createForm.name,
+                  email: createForm.email,
+                  password: createForm.password,
+                  permissions: {
+                    canViewDebts: createForm.canViewDebts,
+                    canViewIva: createForm.canViewIva,
+                    canViewPayroll: createForm.canViewPayroll,
+                    canUploadDocuments: createForm.canUploadDocuments,
+                    canChatAi: createForm.canChatAi,
+                  },
+                })
+              }
+            >
+              {createMutation.isPending ? (
+                <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Creando…</>
+              ) : (
+                'Crear usuario'
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Permissions Dialog */}
+      <Dialog open={!!editTarget} onOpenChange={(open) => { if (!open) setEditTarget(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Editar acceso — {editTarget?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-5 py-2">
+            {/* Permissions */}
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-[var(--arca-ink)]">Permisos</label>
+              <div className="grid grid-cols-2 gap-2">
+                {(Object.keys(PERMISSION_LABELS) as PermissionKey[]).map((k) => (
+                  <label key={k} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editPerms[k]}
+                      onChange={(e) => setEditPerms((p) => ({ ...p, [k]: e.target.checked }))}
+                      className="rounded border-[var(--arca-border)]"
+                    />
+                    {PERMISSION_LABELS[k]}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Reset password */}
+            <div className="space-y-2 border-t border-[var(--arca-border)] pt-4">
+              <label className="text-xs font-medium text-[var(--arca-ink)] flex items-center gap-1.5">
+                <KeyRound className="h-3.5 w-3.5" />
+                Cambiar contraseña
+              </label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Input
+                    type={showNewPassword ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Nueva contraseña (mín. 8 caracteres)"
+                    className="pr-9"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword((v) => !v)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)]"
+                  >
+                    {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={newPassword.length < 8 || resetPasswordMutation.isPending}
+                  onClick={() => editTarget && resetPasswordMutation.mutate({ userId: editTarget.userId, newPassword })}
+                >
+                  {resetPasswordMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Guardar'}
+                </Button>
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setEditTarget(null)}>
+              Cancelar
+            </Button>
+            <Button
+              className="bg-[var(--arca-ink)] hover:bg-black text-white"
+              disabled={editMutation.isPending}
+              onClick={() =>
+                editTarget &&
+                editMutation.mutate({ accessId: editTarget.accessId, permissions: editPerms })
+              }
+            >
+              {editMutation.isPending ? (
+                <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Guardando…</>
+              ) : (
+                'Guardar permisos'
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Revoke Confirm Dialog */}
+      <Dialog open={!!revokeTarget} onOpenChange={(open) => { if (!open) setRevokeTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Revocar acceso</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-[var(--arca-ink-3)] py-2">
+            ¿Confirmar revocar el acceso al portal de{' '}
+            <span className="font-medium text-[var(--arca-ink)]">{revokeTarget?.name}</span>?
+            El usuario no podrá ingresar más al portal.
+          </p>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setRevokeTarget(null)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={revokeMutation.isPending}
+              onClick={() => revokeTarget && revokeMutation.mutate({ accessId: revokeTarget.accessId })}
+            >
+              {revokeMutation.isPending ? (
+                <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Revocando…</>
+              ) : (
+                'Revocar acceso'
+              )}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

@@ -12,6 +12,7 @@ import {
   integer,
   pgEnum,
   foreignKey,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { user, organization } from "./auth";
@@ -32,6 +33,7 @@ export const jobTypeEnum = pgEnum("job_type", [
   "notificaciones",
   "deuda",
   "vencimientos",
+  "batch",
 ]);
 
 export const representative = pgTable("representative", {
@@ -86,6 +88,13 @@ export const client = pgTable("client", {
   scrapedAt: timestamp("scraped_at"),
   /** Firma digital del empleador (data URL base64) para impresión de recibos. */
   firmaDigitalEmpleador: text("firma_digital_empleador"),
+  /**
+   * Empleado de referencia para la plantilla base de recibos.
+   * Cuando está seteado, los conceptos de su último recibo (códigos 1-699)
+   * se precargan al generar un nuevo recibo (cantidad y porcentaje).
+   */
+  payrollPlantillaEmpleadoId: uuid("payroll_plantilla_empleado_id")
+    .references((): AnyPgColumn => liquidacionImportEmpleado.id, { onDelete: "set null" }),
   /** Indica si este perfil es administrado por el estudio. */
   managedByStudy: boolean("managed_by_study").notNull().default(true),
   disabledAt: timestamp("disabled_at"),
@@ -93,6 +102,41 @@ export const client = pgTable("client", {
   profileType: text("profile_type").notNull().default("unknown"),
   /** ID de contribuyente en AFIP FES (Mis Comprobantes). Se cachea del discovery. */
   afipContribuyenteId: integer("afip_contribuyente_id"),
+  // --- Configuración de empleador para liquidación de sueldos ---
+  /** Tipo de empresa (Dec. 814/01, etc.) — determina alícuota de contribuciones patronales. */
+  tipoEmpresaId: uuid("tipo_empresa_id")
+    .references((): AnyPgColumn => payrollTipoEmpresa.id, { onDelete: "set null" }),
+  /** Seguro colectivo de vida obligatorio (Decreto 1567/74). */
+  seguroColectivo: boolean("seguro_colectivo").notNull().default(false),
+  /** Certificado MiPyME vigente (exención parcial de contribuciones). */
+  mipyme: boolean("mipyme").notNull().default(false),
+  /**
+   * Orden CLN: cómo se imprimen/agrupan los recibos.
+   * "C" = por CUIL, "L" = por legajo.
+   */
+  ordenCLN: text("orden_cln"),
+  // --- Defaults de "Datos del Empleador" scrapeados de SOS Contador ---
+  /** Situación de revista por defecto para nuevos empleados. */
+  situacionDefaultId: uuid("situacion_default_id")
+    .references((): AnyPgColumn => payrollSituacion.id, { onDelete: "set null" }),
+  /** Condición del trabajador por defecto. */
+  condicionDefaultId: uuid("condicion_default_id")
+    .references((): AnyPgColumn => payrollCondicion.id, { onDelete: "set null" }),
+  /** Actividad SIJP por defecto del empleador. */
+  actividadDefaultId: uuid("actividad_default_id")
+    .references((): AnyPgColumn => payrollActividad.id, { onDelete: "set null" }),
+  /** Modalidad de contratación por defecto para nuevos empleados. */
+  contratacionDefaultId: uuid("contratacion_default_id")
+    .references((): AnyPgColumn => payrollModalidadContratacion.id, { onDelete: "set null" }),
+  /** Tipo de siniestro por defecto. */
+  siniestradoDefaultId: uuid("siniestrado_default_id")
+    .references((): AnyPgColumn => payrollSiniestrado.id, { onDelete: "set null" }),
+  /** Zona geográfica por defecto del empleador. */
+  zonaDefaultId: uuid("zona_default_id")
+    .references((): AnyPgColumn => payrollZona.id, { onDelete: "set null" }),
+  /** Obra social por defecto del empleador. */
+  obraSocialDefaultId: uuid("obra_social_default_id")
+    .references((): AnyPgColumn => obraSocial.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -363,7 +407,7 @@ export const dueDate = pgTable("due_date", {
   subConcept: text("sub_concept").notNull().default(""),
   period: text("period").notNull().default(""),
   quotaNumber: numeric("quota_number").notNull().default("0"),
-  dueDate: timestamp("due_date").notNull().default(new Date()),
+  dueDate: timestamp("due_date").notNull().defaultNow(),
   detail: text("detail").notNull().default(""),
   completedAt: timestamp("completed_at"),
   completedByUserId: text("completed_by_user_id").references(() => user.id, { onDelete: "set null" }),
@@ -387,7 +431,7 @@ export const debt = pgTable("debt", {
   subConcept: text("sub_concept").notNull().default(""),
   period: text("period").notNull().default(""),
   quotaNumber: numeric("quota_number").notNull().default("0"),
-  dueDate: timestamp("due_date").notNull().default(new Date()),
+  dueDate: timestamp("due_date").notNull().defaultNow(),
   balance: numeric("balance").notNull().default("0"),
   compensatoryInterest: numeric("compensatory_interest").notNull().default("0"),
   punitiveInterest: numeric("punitive_interest").notNull().default("0"),
@@ -536,6 +580,8 @@ export const obraSocial = pgTable("obra_social", {
   id: uuid("id").primaryKey().defaultRandom(),
   codigo: text("codigo").notNull().unique(),
   nombre: text("nombre").notNull(),
+  /** ID interno de SOS Contador (cbobrasocial.value). */
+  codigoSos: text("codigo_sos").unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -544,6 +590,8 @@ export const payrollSituacion = pgTable("payroll_situacion", {
   id: uuid("id").primaryKey().defaultRandom(),
   codigo: text("codigo").notNull().unique(),
   nombre: text("nombre").notNull(),
+  /** ID interno de SOS Contador (cbsituacion.value). */
+  codigoSos: text("codigo_sos").unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -552,6 +600,8 @@ export const payrollCondicion = pgTable("payroll_condicion", {
   id: uuid("id").primaryKey().defaultRandom(),
   codigo: text("codigo").notNull().unique(),
   nombre: text("nombre").notNull(),
+  /** ID interno de SOS Contador (cbcondicion.value). */
+  codigoSos: text("codigo_sos").unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -560,6 +610,8 @@ export const payrollActividad = pgTable("payroll_actividad", {
   id: uuid("id").primaryKey().defaultRandom(),
   codigo: text("codigo").notNull().unique(),
   nombre: text("nombre").notNull(),
+  /** ID interno de SOS Contador (cbactividad.value). */
+  codigoSos: text("codigo_sos").unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -568,6 +620,8 @@ export const payrollModalidadContratacion = pgTable("payroll_modalidad_contratac
   id: uuid("id").primaryKey().defaultRandom(),
   codigo: text("codigo").notNull().unique(),
   nombre: text("nombre").notNull(),
+  /** ID interno de SOS Contador (cbcontratacion.value). */
+  codigoSos: text("codigo_sos").unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -576,6 +630,8 @@ export const payrollSiniestrado = pgTable("payroll_siniestrado", {
   id: uuid("id").primaryKey().defaultRandom(),
   codigo: text("codigo").notNull().unique(),
   nombre: text("nombre").notNull(),
+  /** ID interno de SOS Contador (cbsiniestrado.value). */
+  codigoSos: text("codigo_sos").unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -600,6 +656,33 @@ export const payrollZona = pgTable("payroll_zona", {
   id: uuid("id").primaryKey().defaultRandom(),
   codigo: text("codigo").notNull().unique(),
   nombre: text("nombre").notNull(),
+  /**
+   * ID interno de SOS Contador para la opción canónica de esta zona (cbzona.value).
+   * SOS tiene múltiples entradas históricas por zona (una por período); aquí
+   * se guarda el ID de la más reciente/vigente para poder preseleccionarla.
+   */
+  codigoSos: text("codigo_sos").unique(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/** Catálogo de localidades AFIP LSD (ddlLocalidad) — códigos de 2 caracteres (01-E3). */
+export const payrollLocalidad = pgTable("payroll_localidad", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  codigo: text("codigo").notNull().unique(),
+  nombre: text("nombre").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/**
+ * Catálogo de tipos de empresa (cbtipoempresa en SOS Contador).
+ * Determina la alícuota de contribuciones patronales según Dec. 814/01 y normas afines.
+ * Códigos SOS internos (codigoSos) para mapeo con importaciones.
+ */
+export const payrollTipoEmpresa = pgTable("payroll_tipo_empresa", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  /** Código AFIP LSD para el Registro 01 (ej: "1", "4", "7B"). */
+  codigoLsd: text("codigo_lsd").unique().notNull(),
+  nombre: text("nombre").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -609,12 +692,20 @@ export const payrollConvenioTipoJornadaEnum = pgEnum("payroll_tipo_jornada", [
   "reducida",
 ]);
 
-/** Convenios colectivos de trabajo (por representative) */
+/** Convenios colectivos de trabajo (por empresa/client bajo representative) */
 export const payrollConvenio = pgTable("payroll_convenio", {
   id: uuid("id").primaryKey().defaultRandom(),
   representativeId: uuid("representative_id")
     .notNull()
     .references(() => representative.id, { onDelete: "cascade" }),
+  /**
+   * Empresa (client) a la que pertenece el convenio. NOT NULL en la DB.
+   * El scoping de lectura es por `representativeId`; `clientId` asocia el
+   * convenio a la empresa concreta para la que se creó.
+   */
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => client.id, { onDelete: "cascade" }),
   nombre: text("nombre").notNull(),
   cctCodigo: text("cct_codigo"),
   descripcion: text("descripcion"),
@@ -752,33 +843,6 @@ export const payrollBaseColumnaEnum = pgEnum("payroll_base_columna", [
   "ref_concepto",
 ]);
 
-/** Tipo de empleador para LSD */
-export const payrollTipoEmpleadorEnum = pgEnum("payroll_tipo_empleador", [
-  "dec814_inc_a",
-  "dec814_inc_b",
-  "dec814_inc_c",
-]);
-
-/** Situación de revista del empleado en el período */
-export const payrollSituacionRevistaEnum = pgEnum("payroll_situacion_revista", [
-  "activo",
-  "licencia_enfermedad",
-  "licencia_maternidad",
-  "licencia_sin_goce",
-  "suspendido_con_goce",
-  "suspendido_sin_goce",
-  "vacaciones",
-  "accidente_trabajo",
-  "baja_despido",
-  "baja_fallecimiento",
-  "baja_otras",
-  "ilt_primeros_10",
-  "ilt_once_o_mas",
-  "reserva_puesto",
-  "excedencia",
-  "otro",
-]);
-
 /** Conceptos salariales configurables (fórmula, %, monto fijo, base) — por representative */
 export const payrollConcepto = pgTable("payroll_concepto", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -832,6 +896,7 @@ export const liquidacionImportEmpleado = pgTable(
     legajo: text("legajo").notNull(),
     nombre: text("nombre").notNull(),
     fechaAlta: timestamp("fecha_alta", { mode: "date" }),
+    fechaIngreso: timestamp("fecha_ingreso", { mode: "date" }),
     fechaAntiguedadReconocida: timestamp("fecha_antiguedad_reconocida", { mode: "date" }),
     fechaBaja: timestamp("fecha_baja", { mode: "date" }),
     modoContrato: text("modo_contrato"),
@@ -844,7 +909,6 @@ export const liquidacionImportEmpleado = pgTable(
     categoriaId: uuid("categoria_id")
       .references(() => payrollConvenioCategoria.id, { onDelete: "restrict" }),
     tipoJornada: payrollConvenioTipoJornadaEnum("tipo_jornada").default("full_time"),
-    tipoEmpleador: payrollTipoEmpleadorEnum("tipo_empleador"),
     /** Descripción del puesto. Para LSD debe ir sin tildes ni ñ. */
     tarea: text("tarea"),
     /** Horas mensuales normales. Base para cálculo de valor hora. */
@@ -880,6 +944,7 @@ export const liquidacionImportEmpleado = pgTable(
     codigoSituacion: text("codigo_situacion"),
     zonaId: uuid("zona_id").references(() => payrollZona.id, { onDelete: "set null" }),
     codigoZona: text("codigo_zona"),
+    localidadId: uuid("localidad_id").references(() => payrollLocalidad.id, { onDelete: "set null" }),
     condicionId: uuid("condicion_id").references(() => payrollCondicion.id, { onDelete: "set null" }),
     codigoCondicion: text("codigo_condicion"),
     actividadId: uuid("actividad_id").references(() => payrollActividad.id, { onDelete: "set null" }),
@@ -936,7 +1001,21 @@ export const liquidacionImportRecibo = pgTable(
     /** Período de cargas depositado, ej. "2026 / 02". */
     periodoCargas: text("periodo_cargas"),
     fechaDepositoCargas: timestamp("fecha_deposito_cargas", { mode: "date" }),
-    situacionRevista: payrollSituacionRevistaEnum("situacion_revista"),
+    /** Situación de revista 1 (principal, obligatoria si se informa) */
+    situacionRevista1Id: uuid("situacion_revista1_id").references(() => payrollSituacion.id, { onDelete: "set null" }),
+    situacionRevista1DiaInicio: integer("situacion_revista1_dia_inicio"),
+    /** Situación de revista 2 (cuando el empleado tuvo 2 situaciones en el mes) */
+    situacionRevista2Id: uuid("situacion_revista2_id").references(() => payrollSituacion.id, { onDelete: "set null" }),
+    situacionRevista2DiaInicio: integer("situacion_revista2_dia_inicio"),
+    /** Situación de revista 3 (cuando el empleado tuvo 3 situaciones en el mes) */
+    situacionRevista3Id: uuid("situacion_revista3_id").references(() => payrollSituacion.id, { onDelete: "set null" }),
+    situacionRevista3DiaInicio: integer("situacion_revista3_dia_inicio"),
+    /** Días efectivamente trabajados en el período */
+    diasTrabajados: integer("dias_trabajados"),
+    /** Horas trabajadas en el período */
+    horasTrabajadas: integer("horas_trabajadas"),
+    /** Importe maternidad Art. 13 Ley 27.674 */
+    importeMaternidadArt13: numeric("importe_maternidad_art13", { precision: 12, scale: 2 }),
     observacionInterna: text("observacion_interna"),
     observacionRecibo: text("observacion_recibo"),
     /** Override manual de Remuneración 4 y 8 (base OS) para LSD. */
@@ -1921,4 +2000,66 @@ export const organizationModule = pgTable(
   (table) => [
     unique("organization_module_org_id_module_unique").on(table.organizationId, table.module),
   ],
+);
+
+/**
+ * Parámetros laborales por período mensual.
+ * Almacena el tope máximo imponible (basado en RIPTE publicado por ANSES),
+ * el SMVM vigente y otros parámetros que cambian mensualmente.
+ * Se popula automáticamente via cron (día 5 de cada mes) o manualmente.
+ * PK = periodo "YYYY-MM" — una sola fila por mes, historial completo.
+ */
+export const payrollParametrosPeriodo = pgTable("payroll_parametros_periodo", {
+  /** Período en formato "YYYY-MM". Clave primaria — una fila por mes. */
+  periodo: text("periodo").primaryKey(),
+  /**
+   * Tope máximo imponible para aportes y contribuciones previsionales (jubilación, PAMI, OS).
+   * Publicado mensualmente por ANSES. Se aplica como techo de la base imponible en Record 04 del LSD.
+   */
+  topeMaximoImponible: numeric("tope_maximo_imponible", { precision: 14, scale: 2 }).notNull(),
+  /**
+   * Salario Mínimo Vital y Móvil vigente para el período.
+   * Nullable — puede no estar disponible o no ser necesario para todos los cálculos.
+   */
+  salarioMinimo: numeric("salario_minimo", { precision: 14, scale: 2 }),
+  /** Referencia de la norma o URL fuente de donde se extrajeron los valores. */
+  fuente: text("fuente"),
+  /** Indica si el registro fue creado/actualizado por el cron automático (true) o cargado manualmente (false). */
+  actualizadoPorCron: boolean("actualizado_por_cron").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at")
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+});
+
+/**
+ * Registro de cada presentación LSD generada y descargada.
+ * Nro 1 = presentación original; nro 2+ = rectificativas.
+ * El campo `contenido` guarda el archivo completo para auditoría y re-descarga.
+ */
+export const payrollLsdPresentacion = pgTable(
+  "payroll_lsd_presentacion",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** FK a la empresa (client con CUIT propio). */
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => client.id, { onDelete: "cascade" }),
+    /** Período en formato "YYYY-MM". */
+    periodo: text("periodo").notNull(),
+    /** Número secuencial de presentación para el período (1, 2, 3...). */
+    nroPresentacion: integer("nro_presentacion").notNull(),
+    /** Nombre del archivo generado (ej. "30717554864_2026_05_LSD.txt"). */
+    filename: text("filename").notNull(),
+    /** Cantidad de empleados incluidos en la presentación. */
+    empleados: integer("empleados").notNull(),
+    /** Cantidad de líneas de conceptos (R03) en la presentación. */
+    conceptos: integer("conceptos").notNull(),
+    /** Contenido completo del archivo LSD (texto plano). */
+    contenido: text("contenido").notNull(),
+    /** Fecha y hora en que se generó la presentación. */
+    generadoEn: timestamp("generado_en").defaultNow().notNull(),
+  },
+  (t) => [unique("uq_lsd_pres_profile_periodo_nro").on(t.profileId, t.periodo, t.nroPresentacion)]
 );

@@ -1,6 +1,9 @@
 import { createServerFn } from '@tanstack/react-start';
+import { getRequestHeaders } from '@tanstack/react-start/server';
 import z from 'zod';
 import { db } from '@/lib/db';
+import { auth } from '@/lib/auth';
+import { user as userTable } from '@/drizzle/auth';
 import {
   representative,
   representativeUserAccess,
@@ -31,7 +34,7 @@ export const getPortalSession = createServerFn({ method: 'GET' }).handler(
 
     if (!access) throw new Error('Sin acceso al portal del cliente');
 
-    return { userId, clientId: access.clientId, access };
+    return { userId, clientId: access.representativeId, access };
   }
 );
 
@@ -436,7 +439,7 @@ export const createClientRequest = createServerFn({ method: 'POST' })
         id: representativeRequest.id,
         organizationId: representativeRequest.organizationId,
         clientId: representativeRequest.representativeId,
-        profileId: representativeRequest.profileId,
+        profileId: representativeRequest.clientId,
         requestedByUserId: representativeRequest.requestedByUserId,
         title: representativeRequest.title,
         description: representativeRequest.description,
@@ -487,7 +490,7 @@ export const uploadDocumentForRequest = createServerFn({ method: 'POST' })
     const [doc] = await db
       .insert(documentTable)
       .values({
-        representativeId: request.representativeId,
+        representativeId: request.clientId,
         type: 'uploaded',
         name: data.fileName,
         url: dataUrl,
@@ -583,6 +586,208 @@ export const updateClientRequestStatus = createServerFn({ method: 'POST' })
       .update(representativeRequest)
       .set({ status: data.status, completedAt })
       .where(eq(representativeRequest.id, data.requestId));
+
+    return { success: true };
+  });
+
+// ── Portal user management (studio-side) ────────────────────────────────────
+
+/**
+ * Helper: validates that a representative belongs to the calling org.
+ * Returns the representative row or throws.
+ */
+async function assertRepresentativeOwnership(representativeId: string, orgId: string) {
+  const [rep] = await db
+    .select({ id: representative.id })
+    .from(representative)
+    .where(
+      and(eq(representative.id, representativeId), eq(representative.organizationId, orgId))
+    )
+    .limit(1);
+  if (!rep) throw new Error('Cliente no encontrado');
+  return rep;
+}
+
+export const listPortalUsers = createServerFn({ method: 'GET' })
+  .inputValidator(z.object({ representativeId: z.string().uuid() }))
+  .handler(async ({ data }) => {
+    const { orgId } = await getSessionWithOrg();
+    await assertRepresentativeOwnership(data.representativeId, orgId);
+
+    const rows = await db
+      .select({
+        accessId: representativeUserAccess.id,
+        userId: representativeUserAccess.userId,
+        role: representativeUserAccess.role,
+        canViewDebts: representativeUserAccess.canViewDebts,
+        canViewIva: representativeUserAccess.canViewIva,
+        canViewPayroll: representativeUserAccess.canViewPayroll,
+        canUploadDocuments: representativeUserAccess.canUploadDocuments,
+        canChatAi: representativeUserAccess.canChatAi,
+        createdAt: representativeUserAccess.createdAt,
+        name: userTable.name,
+        email: userTable.email,
+      })
+      .from(representativeUserAccess)
+      .innerJoin(userTable, eq(userTable.id, representativeUserAccess.userId))
+      .where(eq(representativeUserAccess.representativeId, data.representativeId));
+
+    return rows;
+  });
+
+const portalPermissionsSchema = z.object({
+  canViewDebts: z.boolean().default(true),
+  canViewIva: z.boolean().default(true),
+  canViewPayroll: z.boolean().default(false),
+  canUploadDocuments: z.boolean().default(true),
+  canChatAi: z.boolean().default(true),
+});
+
+export const createPortalUser = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      representativeId: z.string().uuid(),
+      name: z.string().min(1),
+      email: z.string().email(),
+      password: z.string().min(8),
+      permissions: portalPermissionsSchema,
+    })
+  )
+  .handler(async ({ data }) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await assertRepresentativeOwnership(data.representativeId, orgId);
+
+    // Check email not already in use
+    const [existing] = await db
+      .select({ id: userTable.id })
+      .from(userTable)
+      .where(eq(userTable.email, data.email))
+      .limit(1);
+    if (existing) throw new Error('Ya existe un usuario con ese email');
+
+    const created = await auth.api.createUser({
+      headers: getRequestHeaders(),
+      body: {
+        name: data.name,
+        email: data.email,
+        password: data.password,
+        role: 'user',
+      },
+    });
+
+    const [access] = await db
+      .insert(representativeUserAccess)
+      .values({
+        representativeId: data.representativeId,
+        userId: created.user.id,
+        role: 'client_viewer',
+        canViewDebts: data.permissions.canViewDebts,
+        canViewIva: data.permissions.canViewIva,
+        canViewPayroll: data.permissions.canViewPayroll,
+        canUploadDocuments: data.permissions.canUploadDocuments,
+        canChatAi: data.permissions.canChatAi,
+      })
+      .returning();
+
+    return access;
+  });
+
+export const updatePortalUserPermissions = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      accessId: z.string().uuid(),
+      permissions: portalPermissionsSchema,
+    })
+  )
+  .handler(async ({ data }) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    // Validate that the access row belongs to a representative in this org
+    const [accessRow] = await db
+      .select({ representativeId: representativeUserAccess.representativeId })
+      .from(representativeUserAccess)
+      .where(eq(representativeUserAccess.id, data.accessId))
+      .limit(1);
+    if (!accessRow) throw new Error('Acceso no encontrado');
+    await assertRepresentativeOwnership(accessRow.representativeId, orgId);
+
+    await db
+      .update(representativeUserAccess)
+      .set({
+        canViewDebts: data.permissions.canViewDebts,
+        canViewIva: data.permissions.canViewIva,
+        canViewPayroll: data.permissions.canViewPayroll,
+        canUploadDocuments: data.permissions.canUploadDocuments,
+        canChatAi: data.permissions.canChatAi,
+      })
+      .where(eq(representativeUserAccess.id, data.accessId));
+
+    return { success: true };
+  });
+
+export const resetPortalUserPassword = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      userId: z.string(),
+      newPassword: z.string().min(8),
+    })
+  )
+  .handler(async ({ data }) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    // Validate that this userId has access to a representative belonging to this org
+    const accessRows = await db
+      .select({ representativeId: representativeUserAccess.representativeId })
+      .from(representativeUserAccess)
+      .where(eq(representativeUserAccess.userId, data.userId));
+
+    const repIds = accessRows.map((r) => r.representativeId);
+    if (repIds.length === 0) throw new Error('Usuario no encontrado');
+
+    const [owned] = await db
+      .select({ id: representative.id })
+      .from(representative)
+      .where(
+        and(
+          eq(representative.organizationId, orgId),
+          eq(representative.id, repIds[0])
+        )
+      )
+      .limit(1);
+    if (!owned) throw new Error('Sin permisos para modificar este usuario');
+
+    await auth.api.setUserPassword({
+      headers: getRequestHeaders(),
+      body: { userId: data.userId, newPassword: data.newPassword },
+    });
+
+    return { success: true };
+  });
+
+export const revokePortalAccess = createServerFn({ method: 'POST' })
+  .inputValidator(z.object({ accessId: z.string().uuid() }))
+  .handler(async ({ data }) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const [accessRow] = await db
+      .select({ representativeId: representativeUserAccess.representativeId })
+      .from(representativeUserAccess)
+      .where(eq(representativeUserAccess.id, data.accessId))
+      .limit(1);
+    if (!accessRow) throw new Error('Acceso no encontrado');
+    await assertRepresentativeOwnership(accessRow.representativeId, orgId);
+
+    await db
+      .delete(representativeUserAccess)
+      .where(eq(representativeUserAccess.id, data.accessId));
 
     return { success: true };
   });

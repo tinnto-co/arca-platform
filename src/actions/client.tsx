@@ -19,7 +19,7 @@ import {
   getMemberRole,
 } from '@/actions/helpers';
 import { encrypt, safeDecrypt } from '@/lib/crypto';
-import { eq, and, inArray, desc, asc } from 'drizzle-orm';
+import { eq, and, inArray, desc, asc, or } from 'drizzle-orm';
 const JOBS_API_URL =
   process.env.SCRAPPER_JOBS_URL ||
   process.env.BACKEND_API_URL ||
@@ -278,7 +278,7 @@ export const updateOldRepresentative = createServerFn({
     } catch (error: any) {
       throw new Error(
         error.response?.data?.error ||
-          'Error al iniciar el scraping para el cliente'
+        'Error al iniciar el scraping para el cliente'
       );
     }
   });
@@ -298,6 +298,45 @@ export const getRepresentatives = createServerFn({
     return representatives;
   } catch (error) {
     throw new Error(`Error loading clients: ${getErrorMessage(error)}`);
+  }
+});
+
+/** Clientes con régimen local o convenio multilateral (módulo IIBB). */
+export const getRepresentativesForIIBB = createServerFn({
+  method: 'GET',
+}).handler(async () => {
+  try {
+    const { orgId } = await getSessionWithOrg();
+
+    const rows = await db
+      .select({
+        ...representativeBaseSelect,
+        clientId: client.id,
+        clientName: client.name,
+        clientIdentityNumber: client.identityNumber,
+      })
+      .from(representative)
+      .leftJoin(client, eq(client.representativeId, representative.id))
+      .where(
+        and(
+          eq(representative.organizationId, orgId),
+          or(eq(representative.convenioMultilateral, true), eq(representative.regimenLocal, true))
+        )
+      )
+      .orderBy(asc(representative.name));
+
+    const grouped = Map.groupBy(rows, (r) => r.id);
+    return [...grouped.values()].map((repRows) => {
+      const { clientId, clientName, clientIdentityNumber, ...rep } = repRows[0];
+      return {
+        ...rep,
+        clients: repRows
+          .filter((r) => r.clientId !== null)
+          .map((r) => ({ id: r.clientId!, name: r.clientName, identityNumber: r.clientIdentityNumber })),
+      };
+    });
+  } catch (error) {
+    throw new Error(`Error loading IIBB clients: ${getErrorMessage(error)}`);
   }
 });
 
@@ -328,11 +367,10 @@ export const getRepresentativesForSueldos = createServerFn({
       representativeId: p.representativeId,
       clientId: p.clientId,
       name: p.clientName,
-      label: `${p.clientName}${
-        p.clientIdentityNumber || p.representativeIdentityNumber
-          ? ` (${p.clientIdentityNumber ?? p.representativeIdentityNumber})`
-          : ''
-      }`,
+      label: `${p.clientName}${p.clientIdentityNumber || p.representativeIdentityNumber
+        ? ` (${p.clientIdentityNumber ?? p.representativeIdentityNumber})`
+        : ''
+        }`,
       type: 'client' as const,
     }));
   } catch (error) {
@@ -340,51 +378,55 @@ export const getRepresentativesForSueldos = createServerFn({
   }
 });
 
+export const getClientsWithRepresentative = createServerFn({
+  method: 'GET',
+}).handler(async () => {
+  const { orgId } = await getSessionWithOrg();
+
+  return await db
+    .select({
+      id: client.id,
+      name: client.name,
+      identityNumber: client.identityNumber,
+      status: client.status,
+      representativeId: client.representativeId,
+      representativeName: representative.name,
+      createdAt: client.createdAt,
+    })
+    .from(client)
+    .innerJoin(representative, eq(client.representativeId, representative.id))
+    .where(eq(representative.organizationId, orgId))
+    .orderBy(asc(client.name));
+});
+
 export const getRepresentativesWithClients = createServerFn({
   method: 'GET',
 }).handler(async () => {
-  try {
-    const { orgId } = await getSessionWithOrg();
+  const { orgId } = await getSessionWithOrg();
 
-    const representatives = await db
-      .select(representativeBaseSelect)
-      .from(representative)
-      .where(eq(representative.organizationId, orgId))
-      .orderBy(asc(representative.name));
-    const representativeIds = representatives.map((c) => c.id);
-    if (representativeIds.length === 0) {
-      return representatives.map((c) => ({
-        ...c,
-        clients: [] as { id: string; name: string }[],
-      }));
-    }
+  const rows = await db
+    .select({
+      ...representativeBaseSelect,
+      clientId: client.id,
+      clientName: client.name,
+      clientIdentityNumber: client.identityNumber,
+    })
+    .from(representative)
+    .leftJoin(client, eq(client.representativeId, representative.id))
+    .where(eq(representative.organizationId, orgId))
+    .orderBy(asc(representative.name));
 
-    const clients = await db
-      .select({ representativeId: client.representativeId, id: client.id, name: client.name, identityNumber: client.identityNumber })
-      .from(client)
-      .where(inArray(client.representativeId, representativeIds));
+  const grouped = Map.groupBy(rows, (r) => r.id);
 
-    const clientsByRepresentativeId = new Map<
-      string,
-      { id: string; name: string; identityNumber: string }[]
-    >();
-    for (const p of clients) {
-      if (p.representativeId) {
-        const list = clientsByRepresentativeId.get(p.representativeId) ?? [];
-        list.push({ id: p.id, name: p.name, identityNumber: p.identityNumber });
-        clientsByRepresentativeId.set(p.representativeId, list);
-      }
-    }
-
-    return representatives.map((c) => ({
-      ...c,
-      clients: clientsByRepresentativeId.get(c.id) ?? [],
-    }));
-  } catch (error) {
-    throw new Error(
-      `Error loading clients with profiles: ${getErrorMessage(error)}`
-    );
-  }
+  return [...grouped.values()].map((rows) => {
+    const { clientId, clientName, clientIdentityNumber, ...rep } = rows[0];
+    return {
+      ...rep,
+      clients: rows
+        .filter((r) => r.clientId !== null)
+        .map((r) => ({ id: r.clientId!, name: r.clientName, identityNumber: r.clientIdentityNumber })),
+    };
+  });
 });
 
 export const getClients = createServerFn({
@@ -1097,10 +1139,10 @@ export const getLastJobByType = createServerFn({
       failedReason: lastJob.failedReason ?? undefined,
       ...(jobType === 'notificaciones' &&
         result?.notificationFetchWarning != null && {
-          notificationFetchWarning: result.notificationFetchWarning,
-          notificationFetchWarningCuits:
-            result.notificationFetchWarningCuits ?? [],
-        }),
+        notificationFetchWarning: result.notificationFetchWarning,
+        notificationFetchWarningCuits:
+          result.notificationFetchWarningCuits ?? [],
+      }),
     };
   });
 

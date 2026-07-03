@@ -1,5 +1,6 @@
 import type { WorkSheet } from 'xlsx';
 import * as XLSX from 'xlsx';
+import { normalizeLegajo } from '@/lib/legajo';
 
 /**
  * Normaliza texto de encabezado (minúsculas, sin tildes, espacios).
@@ -95,7 +96,7 @@ export function getCuilFromLegajoRow(row: Record<string, unknown>): string {
 export function getLegajoFromLegajoRow(row: Record<string, unknown>): string {
   for (const k of Object.keys(row)) {
     if (normalizeHeaderKey(k) === 'legajo') {
-      return String(row[k] ?? '').trim();
+      return normalizeLegajo(String(row[k] ?? ''));
     }
   }
   return '';
