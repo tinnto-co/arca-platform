@@ -12,10 +12,13 @@ dist
 .env.production
 .DS_Store
 
+# Local Claude Code settings (may contain credentials in command history)
+.claude/settings.local.json
+
 # Local DB dumps
 *.dump
 *.pgdump
 *.sql.gz
 
-.claude/settings.local.json
+# Claude Code worktrees
 .claude/worktrees/

@@ -15,6 +15,7 @@ import { Route as ClientRouteRouteImport } from './routes/_client/route'
 import { Route as AuthedRouteRouteImport } from './routes/_authed/route'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
 import { Route as InviteInvitationIdRouteImport } from './routes/invite.$invitationId'
+import { Route as ApiCopilotkitRouteImport } from './routes/api/copilotkit'
 import { Route as ApiAgentRouteImport } from './routes/api/agent'
 import { Route as ClientPortalIndexRouteImport } from './routes/_client/portal/index'
 import { Route as AuthedVencimientosIndexRouteImport } from './routes/_authed/vencimientos/index'
@@ -36,6 +37,7 @@ import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AuthedProductsIdRouteImport } from './routes/_authed/products/$id'
 import { Route as AuthedChatIdRouteImport } from './routes/_authed/chat/$id'
 import { Route as ClientPortalSolicitudesIndexRouteImport } from './routes/_client/portal/solicitudes/index'
+import { Route as AuthedSueldosProfileIdIndexRouteImport } from './routes/_authed/sueldos/$profileId/index'
 import { Route as AuthedClientsClientIdIndexRouteImport } from './routes/_authed/clients/$clientId/index'
 import { Route as AuthedClientsClientIdProfileIdIndexRouteImport } from './routes/_authed/clients/$clientId/$profileId/index'
 
@@ -65,6 +67,11 @@ const AuthedIndexRoute = AuthedIndexRouteImport.update({
 const InviteInvitationIdRoute = InviteInvitationIdRouteImport.update({
   id: '/invite/$invitationId',
   path: '/invite/$invitationId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCopilotkitRoute = ApiCopilotkitRouteImport.update({
+  id: '/api/copilotkit',
+  path: '/api/copilotkit',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAgentRoute = ApiAgentRouteImport.update({
@@ -174,6 +181,12 @@ const ClientPortalSolicitudesIndexRoute =
     path: '/portal/solicitudes/',
     getParentRoute: () => ClientRouteRoute,
   } as any)
+const AuthedSueldosProfileIdIndexRoute =
+  AuthedSueldosProfileIdIndexRouteImport.update({
+    id: '/sueldos/$profileId/',
+    path: '/sueldos/$profileId/',
+    getParentRoute: () => AuthedRouteRoute,
+  } as any)
 const AuthedClientsClientIdIndexRoute =
   AuthedClientsClientIdIndexRouteImport.update({
     id: '/clients/$clientId/',
@@ -192,6 +205,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/no-organization': typeof NoOrganizationRoute
   '/api/agent': typeof ApiAgentRoute
+  '/api/copilotkit': typeof ApiCopilotkitRoute
   '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/chat/$id': typeof AuthedChatIdRoute
   '/products/$id': typeof AuthedProductsIdRoute
@@ -213,6 +227,7 @@ export interface FileRoutesByFullPath {
   '/vencimientos/': typeof AuthedVencimientosIndexRoute
   '/portal/': typeof ClientPortalIndexRoute
   '/clients/$clientId/': typeof AuthedClientsClientIdIndexRoute
+  '/sueldos/$profileId/': typeof AuthedSueldosProfileIdIndexRoute
   '/portal/solicitudes/': typeof ClientPortalSolicitudesIndexRoute
   '/clients/$clientId/$profileId/': typeof AuthedClientsClientIdProfileIdIndexRoute
 }
@@ -221,6 +236,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/no-organization': typeof NoOrganizationRoute
   '/api/agent': typeof ApiAgentRoute
+  '/api/copilotkit': typeof ApiCopilotkitRoute
   '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/chat/$id': typeof AuthedChatIdRoute
   '/products/$id': typeof AuthedProductsIdRoute
@@ -242,6 +258,7 @@ export interface FileRoutesByTo {
   '/vencimientos': typeof AuthedVencimientosIndexRoute
   '/portal': typeof ClientPortalIndexRoute
   '/clients/$clientId': typeof AuthedClientsClientIdIndexRoute
+  '/sueldos/$profileId': typeof AuthedSueldosProfileIdIndexRoute
   '/portal/solicitudes': typeof ClientPortalSolicitudesIndexRoute
   '/clients/$clientId/$profileId': typeof AuthedClientsClientIdProfileIdIndexRoute
 }
@@ -252,6 +269,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/no-organization': typeof NoOrganizationRoute
   '/api/agent': typeof ApiAgentRoute
+  '/api/copilotkit': typeof ApiCopilotkitRoute
   '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/chat/$id': typeof AuthedChatIdRoute
@@ -274,6 +292,7 @@ export interface FileRoutesById {
   '/_authed/vencimientos/': typeof AuthedVencimientosIndexRoute
   '/_client/portal/': typeof ClientPortalIndexRoute
   '/_authed/clients/$clientId/': typeof AuthedClientsClientIdIndexRoute
+  '/_authed/sueldos/$profileId/': typeof AuthedSueldosProfileIdIndexRoute
   '/_client/portal/solicitudes/': typeof ClientPortalSolicitudesIndexRoute
   '/_authed/clients/$clientId/$profileId/': typeof AuthedClientsClientIdProfileIdIndexRoute
 }
@@ -284,6 +303,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/no-organization'
     | '/api/agent'
+    | '/api/copilotkit'
     | '/invite/$invitationId'
     | '/chat/$id'
     | '/products/$id'
@@ -305,6 +325,7 @@ export interface FileRouteTypes {
     | '/vencimientos/'
     | '/portal/'
     | '/clients/$clientId/'
+    | '/sueldos/$profileId/'
     | '/portal/solicitudes/'
     | '/clients/$clientId/$profileId/'
   fileRoutesByTo: FileRoutesByTo
@@ -313,6 +334,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/no-organization'
     | '/api/agent'
+    | '/api/copilotkit'
     | '/invite/$invitationId'
     | '/chat/$id'
     | '/products/$id'
@@ -334,6 +356,7 @@ export interface FileRouteTypes {
     | '/vencimientos'
     | '/portal'
     | '/clients/$clientId'
+    | '/sueldos/$profileId'
     | '/portal/solicitudes'
     | '/clients/$clientId/$profileId'
   id:
@@ -343,6 +366,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/no-organization'
     | '/api/agent'
+    | '/api/copilotkit'
     | '/invite/$invitationId'
     | '/_authed/'
     | '/_authed/chat/$id'
@@ -365,6 +389,7 @@ export interface FileRouteTypes {
     | '/_authed/vencimientos/'
     | '/_client/portal/'
     | '/_authed/clients/$clientId/'
+    | '/_authed/sueldos/$profileId/'
     | '/_client/portal/solicitudes/'
     | '/_authed/clients/$clientId/$profileId/'
   fileRoutesById: FileRoutesById
@@ -375,6 +400,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   NoOrganizationRoute: typeof NoOrganizationRoute
   ApiAgentRoute: typeof ApiAgentRoute
+  ApiCopilotkitRoute: typeof ApiCopilotkitRoute
   InviteInvitationIdRoute: typeof InviteInvitationIdRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
@@ -421,6 +447,13 @@ declare module '@tanstack/react-router' {
       path: '/invite/$invitationId'
       fullPath: '/invite/$invitationId'
       preLoaderRoute: typeof InviteInvitationIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/copilotkit': {
+      id: '/api/copilotkit'
+      path: '/api/copilotkit'
+      fullPath: '/api/copilotkit'
+      preLoaderRoute: typeof ApiCopilotkitRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/agent': {
@@ -570,6 +603,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ClientPortalSolicitudesIndexRouteImport
       parentRoute: typeof ClientRouteRoute
     }
+    '/_authed/sueldos/$profileId/': {
+      id: '/_authed/sueldos/$profileId/'
+      path: '/sueldos/$profileId'
+      fullPath: '/sueldos/$profileId/'
+      preLoaderRoute: typeof AuthedSueldosProfileIdIndexRouteImport
+      parentRoute: typeof AuthedRouteRoute
+    }
     '/_authed/clients/$clientId/': {
       id: '/_authed/clients/$clientId/'
       path: '/clients/$clientId'
@@ -607,6 +647,7 @@ interface AuthedRouteRouteChildren {
   AuthedSueldosIndexRoute: typeof AuthedSueldosIndexRoute
   AuthedVencimientosIndexRoute: typeof AuthedVencimientosIndexRoute
   AuthedClientsClientIdIndexRoute: typeof AuthedClientsClientIdIndexRoute
+  AuthedSueldosProfileIdIndexRoute: typeof AuthedSueldosProfileIdIndexRoute
   AuthedClientsClientIdProfileIdIndexRoute: typeof AuthedClientsClientIdProfileIdIndexRoute
 }
 
@@ -630,6 +671,7 @@ const AuthedRouteRouteChildren: AuthedRouteRouteChildren = {
   AuthedSueldosIndexRoute: AuthedSueldosIndexRoute,
   AuthedVencimientosIndexRoute: AuthedVencimientosIndexRoute,
   AuthedClientsClientIdIndexRoute: AuthedClientsClientIdIndexRoute,
+  AuthedSueldosProfileIdIndexRoute: AuthedSueldosProfileIdIndexRoute,
   AuthedClientsClientIdProfileIdIndexRoute:
     AuthedClientsClientIdProfileIdIndexRoute,
 }
@@ -658,6 +700,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   NoOrganizationRoute: NoOrganizationRoute,
   ApiAgentRoute: ApiAgentRoute,
+  ApiCopilotkitRoute: ApiCopilotkitRoute,
   InviteInvitationIdRoute: InviteInvitationIdRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }

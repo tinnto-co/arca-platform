@@ -11,7 +11,7 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { db, dbReadonly } from '@/lib/db';
-import { agentConversation, agentMessage, ivaScrape, client, invoice, representative } from '@/drizzle/schema';
+import { agentConversation, agentMessage, ivaScrape, client, invoice, representative, organization } from '@/drizzle/schema';
 import { eq, and, sql, ilike, gte, lte } from 'drizzle-orm';
 import {
   INVOICE_TYPES_A,
@@ -153,9 +153,9 @@ Facturas emitidas y recibidas, scrapeadas de AFIP ("Mis Comprobantes").
   currency (text) — 'ARS' | 'USD'
   currency_rate (numeric) — tipo de cambio
   amount (numeric) — total del comprobante en la moneda original
-  amount_taxed (numeric), amount_no_taxed (numeric), amount_exempt (numeric)
-  amount_iva0, amount_iva25, amount_iva5, amount_iva105, amount_iva21, amount_iva27 — base imponible por alícuota
-  iva25, iva5, iva105, iva21, iva27 — monto de IVA liquidado por alícuota
+  amount_taxed (numeric), imp_neto_no_gravado (numeric), amount_exempt (numeric)
+  amount_iva_0, amount_iva_25, amount_iva_5, amount_iva_105, amount_iva_21, amount_iva_27 — base imponible por alícuota
+  iva_25, iva_5, iva_105, iva_21, iva_27 — monto de IVA liquidado por alícuota
   total_iva (numeric), other_taxes (numeric)
   ► Convertir a ARS: CASE WHEN UPPER(currency)='USD' THEN amount::numeric * currency_rate::numeric ELSE amount::numeric END
 
@@ -310,6 +310,15 @@ export const Route = createFileRoute('/api/agent')({
           return new Response('No active organization', { status: 403 });
         const userId = session.user.id;
 
+        // Nombre del estudio/organización activa, para que el agente pueda
+        // responder preguntas sobre la propia org sin tener que adivinar.
+        const [orgRow] = await db
+          .select({ name: organization.name })
+          .from(organization)
+          .where(eq(organization.id, orgId))
+          .limit(1);
+        const orgName = orgRow?.name ?? 'el estudio';
+
         const body = (await request.json()) as {
           message: {
             id: string;
@@ -390,6 +399,7 @@ export const Route = createFileRoute('/api/agent')({
           instructions: `Sos Arca, analista financiero virtual del estudio contable. Tenés acceso directo a la base de datos de la organización y podés ejecutar queries SQL para responder preguntas sobre clientes, facturas, deudas, vencimientos, nómina y posición IVA.
 
 IDENTIDAD Y TONO
+- Contexto de sesión: trabajás para el estudio contable "${orgName}". Usá este dato cuando la pregunta se refiera al propio estudio/organización; no hace falta consultarlo en la DB.
 - Respondés siempre en español rioplatense, tono profesional.
 - Sos directo: primero el dato, después el contexto si hace falta.
 - Usás el nombre del cliente en la respuesta, nunca el UUID.
@@ -426,19 +436,20 @@ FORMATO DE SALIDA
 
 SEGURIDAD — CRÍTICO
 - Nunca respondas preguntas sobre contraseñas, credenciales o datos sensibles que no sean contables.
-- Toda query DEBE filtrar por organization_id = '${orgId}' via JOIN con client. Si una query no incluye este filtro, es un error de seguridad — no la ejecutes.
+- Toda query DEBE filtrar por organization_id = '${orgId}' via JOIN con representative. Si una query no incluye este filtro, es un error de seguridad — no la ejecutes.
 - Solo queries SELECT. Nunca INSERT, UPDATE, DELETE, DROP, ni nada que modifique datos.
 
 ${buildSchema(orgId)}
 
 REGLAS AL ESCRIBIR QUERIES
 1. Solo SELECT. Siempre incluí LIMIT (máximo 200).
-2. SIEMPRE filtrá por organization_id = '${orgId}' via JOIN con client — en CADA query, incluso en follow-ups del mismo cliente.
+2. SIEMPRE filtrá por organization_id = '${orgId}' via JOIN con representative — en CADA query, incluso en follow-ups del mismo cliente.
 3. Montos en ARS: CASE WHEN UPPER(currency)='USD' THEN amount::numeric * currency_rate::numeric ELSE amount::numeric END
 4. Facturas — direction: "facturó/vendió" → WHERE LOWER(direction)='outbound' | "gastó/compró" → WHERE LOWER(direction)='inbound'
-5. Notificaciones: siempre WHERE profile_id IS NOT NULL
-6. Búsquedas por nombre de cliente: ILIKE '%texto%'
-7. Si la pregunta no puede responderse con los datos disponibles, respondé: "No tengo información suficiente en la base de datos para responder eso."
+5. Notificaciones: para las atribuibles a una entidad fiscal, WHERE client_id IS NOT NULL
+6. Búsquedas por nombre de cliente: ILIKE '%texto%'. IMPORTANTE: cuando el usuario nombra un "cliente" (ej: "Produsel S.A"), casi siempre se refiere a representative.name (la razón social que gestiona el estudio), NO a client.name. Resolvé el nombre contra representative.name. Para datos de actividad usá la FK directa al representante: invoice, debt, due_date, notification y job tienen representative_id, así que podés filtrar por r.id sin necesidad de pasar por client. Recién filtrá por client.name si el usuario nombra explícitamente una entidad fiscal específica dentro del representante.
+7. No agregues el sufijo societario exacto al ILIKE: para "Produsel S.A" buscá ILIKE '%Produsel%' (sin "S.A."/"S.A"/puntos), porque la razón social guardada puede variar en el sufijo.
+8. Si la pregunta no puede responderse con los datos disponibles, respondé: "No tengo información suficiente en la base de datos para responder eso."
 
 HERRAMIENTAS DISPONIBLES
 - executeQuery: para cualquier consulta SQL general. Usala para clientes, facturas, deudas, vencimientos, notificaciones, convenios, empleados (cantidad, filtros), empresas con sueldos, o cualquier consulta que no tenga tool dedicada.
@@ -458,7 +469,7 @@ HERRAMIENTAS DISPONIBLES
                 query: z
                   .string()
                   .describe(
-                    'Query SQL SELECT. Debe incluir LIMIT y filtrar por organization_id via JOIN con client.'
+                    'Query SQL SELECT. Debe incluir LIMIT y filtrar por organization_id via JOIN con representative.'
                   ),
                 description: z
                   .string()

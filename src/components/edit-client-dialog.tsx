@@ -4,7 +4,7 @@ import { useForm, type Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Edit } from 'lucide-react';
+import { Loader2, Edit, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 
 import {
@@ -42,6 +42,8 @@ const clientSchema = z.object({
   phone: z.string().optional().or(z.literal('')),
   address: z.string().optional().or(z.literal('')),
   image: z.string().optional(),
+  // Contraseña de AFIP: vacío = no se cambia.
+  password: z.string().optional(),
   regimenFiscal: z.enum(['local', 'multilateral', 'sin_definir']),
 });
 
@@ -62,6 +64,7 @@ export function EditRepresentativeDialog({
 }: EditRepresentativeDialogProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const queryClient = useQueryClient();
 
   const isControlled =
@@ -87,6 +90,7 @@ export function EditRepresentativeDialog({
       phone: '',
       address: '',
       image: '',
+      password: '',
       regimenFiscal: 'sin_definir',
     },
   });
@@ -105,6 +109,8 @@ export function EditRepresentativeDialog({
         phone: representative.phone || '',
         address: representative.address || '',
         image: representative.image || '',
+        // Nunca precargamos la contraseña actual (no exponer el secreto).
+        password: '',
         regimenFiscal,
       });
     }
@@ -113,6 +119,7 @@ export function EditRepresentativeDialog({
   React.useEffect(() => {
     if (!open) {
       initializedRef.current = null;
+      setShowPassword(false);
     }
   }, [open]);
 
@@ -121,8 +128,9 @@ export function EditRepresentativeDialog({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['representatives'] });
       queryClient.invalidateQueries({ queryKey: ['representativesWithClients'] });
+      queryClient.invalidateQueries({ queryKey: ['clients'] });
       queryClient.invalidateQueries({ queryKey: ['representative', representativeId] });
-      toast.success('Cliente actualizado exitosamente');
+      toast.success('Representante actualizado exitosamente');
       setOpen(false);
     },
     onError: (error) => {
@@ -155,10 +163,10 @@ export function EditRepresentativeDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Edit className="h-5 w-5" />
-            Editar Cliente
+            Editar representante
           </DialogTitle>
           <DialogDescription>
-            Modifica la información del cliente seleccionado.
+            Modifica los datos y la credencial de AFIP del representante.
           </DialogDescription>
         </DialogHeader>
 
@@ -178,6 +186,49 @@ export function EditRepresentativeDialog({
                     <FormControl>
                       <Input placeholder="Nombre del cliente" {...field} />
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Actualizar contraseña en AFIP</FormLabel>
+                    <FormControl>
+                      <div className="relative">
+                        <Input
+                          type={showPassword ? 'text' : 'password'}
+                          placeholder="Dejar en blanco para no cambiarla"
+                          autoComplete="new-password"
+                          {...field}
+                          value={field.value || ''}
+                          className="pr-9"
+                        />
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          onClick={() => setShowPassword((s) => !s)}
+                          aria-label={
+                            showPassword
+                              ? 'Ocultar contraseña'
+                              : 'Mostrar contraseña'
+                          }
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          {showPassword ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </button>
+                      </div>
+                    </FormControl>
+                    <p className="text-[11px] text-muted-foreground leading-snug">
+                      Dejala en blanco para mantener la actual.
+                    </p>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -303,7 +354,7 @@ export function EditRepresentativeDialog({
                 </Button>
                 <Button type="submit" disabled={loading}>
                   {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Actualizar Cliente
+                  Actualizar representante
                 </Button>
               </DialogFooter>
             </form>

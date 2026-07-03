@@ -3,11 +3,22 @@ import { Clock } from 'lucide-react';
 import { getUpcomingDueDates } from '@/actions/dashboard';
 import { ArcaCard, ArcaCardHead, ArcaCardFoot, Chip } from './shared';
 
-export function VencimientosList() {
-  const { data: dueDates = [], isLoading } = useQuery({
+export type VencimientoItem = Awaited<
+  ReturnType<typeof getUpcomingDueDates>
+>[number];
+
+interface VencimientosListProps {
+  items?: VencimientoItem[];
+}
+
+export function VencimientosList({ items }: VencimientosListProps = {}) {
+  const skipQuery = items !== undefined;
+  const { data: queryDueDates = [], isLoading } = useQuery({
     queryKey: ['upcomingDueDates30'],
     queryFn: () => getUpcomingDueDates({ data: { days: 30, limit: 5 } }),
+    enabled: !skipQuery,
   });
+  const dueDates = items ?? queryDueDates;
 
   // Count urgent (within 3 days)
   const now = new Date();

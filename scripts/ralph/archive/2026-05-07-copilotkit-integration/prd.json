@@ -36,7 +36,7 @@
         "Verify with ai_agent disabled (toggle in /admin or skip this if no UI to toggle): the component does not register suggestions and no console errors"
       ],
       "priority": 1,
-      "passes": true,
+      "passes": false,
       "notes": "Reference: docs.copilotkit.ai/reference/hooks/useCopilotChatSuggestions. The hook is reactive — re-evaluates when its `instructions` prop changes. Existing `useCopilotReadable` registrations on each page (sueldos, clients-table, client-detail-page) provide the actual context that the model reads when generating suggestions; the `instructions` prop tells it WHAT to suggest based on that context. Avoid hardcoding cliente names or IDs in instructions — let the model use the readable context."
     },
     {
@@ -64,7 +64,7 @@
         " - Ask the assistant 'navegáme a una ruta inexistente' → returns 'Ruta no válida' politely"
       ],
       "priority": 2,
-      "passes": true,
+      "passes": false,
       "notes": "useFrontendTool is similar to useCopilotAction but the handler runs in the browser. Same `name`, `description`, `parameters`, `handler`, optional `render` shape. Custom-event pattern for cross-component tab control avoids prop drilling and lets the tool dispatch from anywhere. If a future tool needs to mutate persisted data, use useCopilotAction (server fn) instead — frontend tools are for in-memory state and routing only."
     },
     {
@@ -91,7 +91,7 @@
         " - Go to /clients (lista), ask sobre un cliente por nombre → modelo no inventa UUIDs, busca en el contexto del listado"
       ],
       "priority": 3,
-      "passes": true,
+      "passes": false,
       "notes": "useCopilotAdditionalInstructions takes `{ instructions: string }`. It augments the system prompt while the component is mounted; auto-cleanup on unmount. Avoid contradicting instructions and avoid hardcoding values that change (use the instruction to TELL the model how to use the readable context). Hard limit yourself to at most 6 distinct instructions across the app — too many and the model gets confused."
     },
     {
@@ -106,7 +106,7 @@
         "Read the updated doc end-to-end and confirm it makes sense"
       ],
       "priority": 4,
-      "passes": true,
+      "passes": false,
       "notes": "This is documentation hygiene — keeps the PRD live and trustworthy. Future agents/devs reading docs/copilotkit-prd.md should see what's been done."
     }
   ]

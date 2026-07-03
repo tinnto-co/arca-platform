@@ -1534,11 +1534,9 @@ export function SueldosEmpleados({
                       {formatDate(e.fechaAlta ?? undefined)}
                     </TableCell>
                     <TableCell className="min-w-0 break-words align-top py-2">
-                      {e.categoria
-                        ? formatTitleCaseDisplay(e.categoria)
-                        : r.categoriaNombre
-                          ? <span className="text-muted-foreground text-xs">{formatTitleCaseDisplay(r.categoriaNombre)}</span>
-                          : null}
+                      {r.categoriaNombre
+                        ? formatTitleCaseDisplay(r.categoriaNombre)
+                        : <span className="text-muted-foreground text-xs">{formatTitleCaseDisplay(e.categoria)}</span>}
                     </TableCell>
                     <TableCell className="align-top py-2" onClick={(ev) => ev.stopPropagation()}>
                       {baja ? (
