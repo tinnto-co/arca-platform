@@ -8,7 +8,7 @@ import {
   useEffect,
   useRef,
 } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Pencil, X } from 'lucide-react';
 import {
   Popover,
   PopoverContent,
@@ -54,6 +54,9 @@ export interface ConceptoImportado {
   tieneImporte?: boolean | null;
   tieneImpMin?: boolean | null;
   tieneImpMax?: boolean | null;
+  tieneMemo?: boolean | null;
+  /** Valor del memo (descripción libre) guardado en el recibo. */
+  memo?: string | null;
   /** Porcentaje fijo no editable (ej. 8.33 para Presentismo). */
   pctFijo?: number | null;
 }
@@ -74,29 +77,40 @@ export type EditsMap = Record<
   string,
   {
     monto: string;
+    /** Override directo del resultado final. Cuando está seteado, el cascade no recalcula.
+     *  No se persiste en DB — se pierde al reabrir el recibo. Para override permanente, ajustá % o cant. */
+    montoFijo: string;
     cantidad: string;
     porcentaje: string;
     importeConceptoNumero: string;
     importe: string;
     importeMinimo: string;
     importeMaximo: string;
+    memo: string;
   }
 >;
 
 const EMPTY_EDIT_ROW: EditsMap[string] = {
   monto: '',
+  montoFijo: '',
   cantidad: '',
   porcentaje: '',
   importeConceptoNumero: '',
   importe: '',
   importeMinimo: '',
   importeMaximo: '',
+  memo: '',
 };
 
 /** Bases de cálculo dinámicas (dependen de subtotales acumulados de otras filas). */
 const SUB_BASES = new Set([
   'sub1_9', 'sub1_19', 'sub1_26', 'sub1_39', 'sub1_199', 'sub411_469',
   'sub1_199_plus_411_469',
+  'os_base',            // base OS rem: subtotal 1-99 como si concepto 1 estuviera al 100%
+  'os_norem_base',      // base OS no-rem: subtotal 411-469 como si concepto 411 estuviera al 100%
+  'basico_div25',       // basicoEscala / 25 × cantidad (vacaciones gozadas — concepto 51)
+  'mejor_div25',        // mejorSueldoSemestre / 25 × cantidad (vacaciones no gozadas — concepto 401)
+  'concepto_401_div12', // monto concepto 401 / 12 (SAC sobre vacaciones no gozadas — concepto 402)
 ]);
 
 /**
@@ -157,6 +171,223 @@ function fmtArsSign(n: number): string {
 const DASH = <span className="text-slate-300">—</span>;
 const MAX_PCT_WARN = 500;
 
+// ---------------------------------------------------------------------------
+// Subtotal cascade (standalone — can be called from setField and effects)
+// ---------------------------------------------------------------------------
+
+function applySubtotalCascade(
+  edits: EditsMap,
+  allConcepts: ConceptoImportado[],
+  activeCodigos?: Set<string>,
+  osBase = 0,
+  mejorSueldo = 0,
+): EditsMap {
+  const subTotals: Record<string, number> = {
+    sub1_9: 0, sub1_19: 0, sub1_26: 0,
+    sub1_39: 0, sub1_99: 0, sub1_199: 0, sub411_469: 0, sub411_414: 0,
+    // Subtotales paralelos "OS": se acumulan como si concepto 1 y 411 estuvieran al 100%.
+    // Usados por os_base (concepto 203/204/221/222) y os_norem_base (concepto 502).
+    sub1_9_os: 0, sub1_19_os: 0, sub1_26_os: 0, sub1_39_os: 0,
+    sub1_99_os: 0, sub411_469_os: 0,
+  };
+
+  // Mapa de montos computados por código, para referencias entre conceptos.
+  const conceptMontos: Record<string, number> = {};
+  // Monto del concepto 1 (sueldo básico), base para conceptos con baseColumna='sueldo'.
+  let sueldoBase = 0;
+  // Versión "OS" del sueldo base: usa osBase (básico escala 100%) cuando está disponible.
+  let sueldoBase_os = 0;
+
+  const sorted = [...allConcepts].sort(
+    (a, b) => (parseInt(a.codigo, 10) || 9999) - (parseInt(b.codigo, 10) || 9999)
+  );
+
+  let next = edits;
+
+  for (const c of sorted) {
+    const n = parseInt(c.codigo, 10);
+    if (isNaN(n)) continue;
+
+    // Conceptos inactivos no participan ni en recálculo ni en acumulación de subtotales.
+    if (activeCodigos && !activeCodigos.has(c.codigo)) continue;
+
+    const row = next[c.codigo] ?? EMPTY_EDIT_ROW;
+    let effectiveMonto = toNum(row.monto);
+
+    // Override manual: si el usuario pisó el resultado, respetar sin recalcular.
+    const montoFijo = (row.montoFijo ?? '').trim();
+    if (montoFijo !== '') {
+      effectiveMonto = parseDecimalSos(montoFijo) ?? effectiveMonto;
+      const montoFijoStr = effectiveMonto.toFixed(2);
+      if (row.monto !== montoFijoStr) {
+        next = { ...next, [c.codigo]: { ...row, monto: montoFijoStr } };
+      }
+      // Acumular subtotales con el valor override y continuar al siguiente concepto
+    } else {
+
+    const bc = c.baseColumna;
+    if (bc != null && SUB_BASES.has(bc)) {
+      const hasPct = (row.porcentaje ?? '').trim() !== '';
+      const noUsaPct = c.tienePct === false;
+      const effectivePct = hasPct
+        ? (parseDecimalSos(row.porcentaje) ?? 0)
+        : noUsaPct ? 100 : 0;
+
+      if (hasPct || noUsaPct) {
+        // Para retenciones (200–299) con base 'sub1_199': la base correcta es
+        // haberes (1–99) minus descuentos (100–199), no la suma bruta de ambos.
+        // 'os_base': usa sub1_99_os (haberes al 100% de jornada, independiente del pct del concepto 1).
+        // 'os_norem_base': usa sub411_469_os (no-rem con concepto 411 siempre al 100%).
+        const subBase =
+          bc === 'os_base'
+            ? (subTotals['sub1_99_os'] ?? 0)
+            : bc === 'os_norem_base'
+              ? (subTotals['sub411_469_os'] ?? 0)
+              : bc === 'basico_div25'
+                ? (osBase > 0 ? osBase : sueldoBase) / 25
+                : bc === 'mejor_div25'
+                  ? mejorSueldo / 25
+                  : bc === 'concepto_401_div12'
+                    ? (conceptMontos['401'] ?? 0) / 12
+                    : bc === 'sub1_199_plus_411_469'
+                      ? (subTotals['sub1_199'] ?? 0) + (subTotals['sub411_469'] ?? 0)
+                      : bc === 'sub1_199' && n >= 200 && n <= 299
+                        ? (subTotals['sub1_99'] ?? 0) - ((subTotals['sub1_199'] ?? 0) - (subTotals['sub1_99'] ?? 0))
+                        : (subTotals[bc] ?? 0);
+
+        // Si el concepto tiene campo importe propio (tieneImporte/tieneImpConceptoNro) y el
+        // usuario lo completó, ese valor tiene prioridad como base sobre el subtotal dinámico.
+        const refCodigo = (row.importeConceptoNumero ?? '').trim();
+        const refBase = refCodigo !== '' ? (conceptMontos[refCodigo] ?? 0) : 0;
+        const ownImporte = (c.tieneImporte || c.tieneImpConceptoNro)
+          ? (parseDecimalSos(row.importe) ?? 0)
+          : 0;
+        const explicitBase = refBase > 0 ? refBase : ownImporte;
+        const effectiveBase = explicitBase > 0 ? explicitBase : subBase;
+
+        if (effectiveBase > 0) {
+          const cantNum =
+            !c.tieneCantidad && (row.cantidad ?? '') === ''
+              ? 1
+              : (parseDecimalSos(row.cantidad) ?? 1);
+
+          let raw = effectiveBase * (effectivePct / 100) * cantNum;
+
+          const impMin = parseDecimalSos(row.importeMinimo);
+          const impMax = parseDecimalSos(row.importeMaximo);
+          if (impMin !== null && raw < impMin) raw = impMin;
+          if (impMax !== null && raw > impMax) raw = impMax;
+
+          effectiveMonto = Math.round(raw * 100) / 100;
+          next = { ...next, [c.codigo]: { ...row, monto: effectiveMonto.toFixed(2) } };
+        }
+      }
+    } else if (bc === 'sueldo' && n > 1) {
+      // Base = monto del concepto 1 (sueldo básico).
+      const hasPct = (row.porcentaje ?? '').trim() !== '';
+      if (hasPct && sueldoBase > 0) {
+        const pct = parseDecimalSos(row.porcentaje) ?? 0;
+        const cantNum = !c.tieneCantidad && (row.cantidad ?? '') === ''
+          ? 1
+          : (parseDecimalSos(row.cantidad) ?? 1);
+        effectiveMonto = Math.round(sueldoBase * (pct / 100) * cantNum * 100) / 100;
+        next = { ...next, [c.codigo]: { ...row, monto: effectiveMonto.toFixed(2) } };
+      }
+    } else if (bc === 'importe_fijo') {
+      // Base = importe propio del concepto, o el monto del concepto referenciado via importeConceptoNumero.
+      const hasPct = (row.porcentaje ?? '').trim() !== '';
+      if (hasPct) {
+        const pct = parseDecimalSos(row.porcentaje) ?? 0;
+        const cantNum = !c.tieneCantidad && (row.cantidad ?? '') === ''
+          ? 1
+          : (parseDecimalSos(row.cantidad) ?? 1);
+        const refCodigo = (row.importeConceptoNumero ?? '').trim();
+        const refBase = refCodigo !== '' ? (conceptMontos[refCodigo] ?? 0) : 0;
+        const ownImporte = parseDecimalSos(row.importe) ?? 0;
+        const base = refBase > 0 ? refBase : ownImporte;
+        if (base > 0) {
+          effectiveMonto = Math.round(base * (pct / 100) * cantNum * 100) / 100;
+          next = { ...next, [c.codigo]: { ...row, monto: effectiveMonto.toFixed(2) } };
+        }
+      }
+    } else if (bc === 'sub411_414_qty') {
+      // La cantidad se auto-rellena con la suma de conceptos 411–414.
+      // El resultado es: cantidad × (pct / 100).
+      const sub = subTotals['sub411_414'] ?? 0;
+      const hasPct = (row.porcentaje ?? '').trim() !== '';
+      if (hasPct && sub > 0) {
+        const pct = parseDecimalSos(row.porcentaje) ?? 0;
+        effectiveMonto = Math.round(sub * (pct / 100) * 100) / 100;
+        next = { ...next, [c.codigo]: { ...row, cantidad: sub.toFixed(2), monto: effectiveMonto.toFixed(2) } };
+      } else if (sub > 0) {
+        next = { ...next, [c.codigo]: { ...row, cantidad: sub.toFixed(2) } };
+      }
+    }
+    } // cierre del else (montoFijo no seteado)
+
+    // Registrar monto computado para que conceptos posteriores puedan referenciarlo.
+    conceptMontos[c.codigo] = effectiveMonto;
+    if (n === 1) sueldoBase = effectiveMonto;
+
+    if (n >= 1 && n <= 199) {
+      subTotals['sub1_199'] += effectiveMonto;
+      if (n <= 99) subTotals['sub1_99'] += effectiveMonto;
+      if (n <= 9) subTotals['sub1_9'] += effectiveMonto;
+      if (n <= 19) subTotals['sub1_19'] += effectiveMonto;
+      if (n <= 26) subTotals['sub1_26'] += effectiveMonto;
+      if (n <= 39) subTotals['sub1_39'] += effectiveMonto;
+    } else if (n >= 411 && n <= 469) {
+      subTotals['sub411_469'] += effectiveMonto;
+      if (n <= 414) subTotals['sub411_414'] += effectiveMonto;
+    }
+
+    // Acumulación de subtotales OS paralelos.
+    // Los sub1_X_os replican sub1_X pero con concepto 1 anclado a osBase (básico 100%).
+    // Los conceptos que cascadean desde sub-rangos usan la versión OS del sub-rango,
+    // garantizando que todo el cascade de haberes refleje la jornada completa.
+    if (n >= 1 && n <= 99) {
+      let osContrib = effectiveMonto;
+      if (n === 1) {
+        sueldoBase_os = osBase > 0 ? osBase : effectiveMonto;
+        osContrib = sueldoBase_os;
+      } else if (c.baseColumna === 'sueldo' && sueldoBase_os > 0 && sueldoBase_os !== sueldoBase) {
+        // Cascadea del básico (ej: antigüedad): reescalar con sueldoBase_os.
+        const osPct = (row.porcentaje ?? '').trim() !== '' ? (parseDecimalSos(row.porcentaje) ?? 0) : 0;
+        const osCant = !c.tieneCantidad && (row.cantidad ?? '') === '' ? 1 : (parseDecimalSos(row.cantidad) ?? 1);
+        if (osPct > 0) osContrib = Math.round(sueldoBase_os * (osPct / 100) * osCant * 100) / 100;
+      } else if (c.baseColumna != null && SUB_BASES.has(c.baseColumna)) {
+        // Cascadea desde un sub-rango (ej: presentismo usa sub1_9): usar la versión OS.
+        // Solo si existe el paralelo _os para ese sub-rango (sub1_9_os, sub1_19_os, etc.).
+        const osSubName = c.baseColumna + '_os';
+        const osSubVal = subTotals[osSubName]; // undefined si no tiene versión OS
+        const realSubVal = subTotals[c.baseColumna] ?? 0;
+        if (osSubVal !== undefined && osSubVal !== realSubVal && realSubVal > 0) {
+          const osPct2 = (row.porcentaje ?? '').trim() !== '' ? (parseDecimalSos(row.porcentaje) ?? 0) : (c.tienePct === false ? 100 : 0);
+          const osCant2 = !c.tieneCantidad && (row.cantidad ?? '') === '' ? 1 : (parseDecimalSos(row.cantidad) ?? 1);
+          if (osPct2 > 0) osContrib = Math.round(osSubVal * (osPct2 / 100) * osCant2 * 100) / 100;
+        }
+      }
+      subTotals['sub1_99_os'] += osContrib;
+      if (n <= 9)  subTotals['sub1_9_os']  += osContrib;
+      if (n <= 19) subTotals['sub1_19_os'] += osContrib;
+      if (n <= 26) subTotals['sub1_26_os'] += osContrib;
+      if (n <= 39) subTotals['sub1_39_os'] += osContrib;
+    } else if (n >= 411 && n <= 469) {
+      let noremsOsContrib = effectiveMonto;
+      if (n === 411) {
+        // Concepto 411: back-calcular al 100% del porcentaje efectivo.
+        const pct411 = parseDecimalSos(row.porcentaje);
+        noremsOsContrib = (pct411 !== null && pct411 > 0)
+          ? Math.round((effectiveMonto / (pct411 / 100)) * 100) / 100
+          : effectiveMonto;
+      }
+      subTotals['sub411_469_os'] += noremsOsContrib;
+    }
+  }
+
+  return next;
+}
+
 function isCodeInRange(code: number, min: number, max: number): boolean {
   return code >= min && code <= max;
 }
@@ -164,6 +395,12 @@ function isCodeInRange(code: number, min: number, max: number): boolean {
 // ---------------------------------------------------------------------------
 // Inline editable cell
 // ---------------------------------------------------------------------------
+
+const ALLOWED_KEYS = new Set([
+  'Backspace', 'Delete', 'Tab', 'Enter', 'Escape',
+  'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
+  'Home', 'End',
+]);
 
 function EditableCell({
   value,
@@ -191,10 +428,107 @@ function EditableCell({
         if (e.key === 'Enter') {
           e.preventDefault();
           commit();
+          return;
+        }
+        // Solo permitir números, punto/coma decimal, signo negativo y teclas de control
+        if (
+          !ALLOWED_KEYS.has(e.key) &&
+          !e.ctrlKey &&
+          !e.metaKey &&
+          !/^[0-9.,\-]$/.test(e.key)
+        ) {
+          e.preventDefault();
         }
       }}
       className="w-full bg-white border border-slate-200 rounded px-1 py-1 text-[10px] text-right focus:bg-yellow-50 focus:ring-1 focus:ring-yellow-300 focus:border-yellow-300 outline-none"
     />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Result cell with manual override
+// ---------------------------------------------------------------------------
+
+function ResultOverrideCell({
+  monto,
+  montoFijo,
+  onOverride,
+}: {
+  monto: string;
+  montoFijo: string;
+  onOverride: (v: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [local, setLocal] = useState('');
+
+  const isOverridden = montoFijo.trim() !== '';
+  const num = toNum(isOverridden ? montoFijo : monto);
+
+  const startEdit = () => {
+    setLocal(isOverridden ? montoFijo : monto);
+    setEditing(true);
+  };
+
+  const commit = () => {
+    onOverride(local.trim());
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-0.5">
+        <input
+          autoFocus
+          type="text"
+          value={local}
+          onChange={(e) => setLocal(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); commit(); }
+            if (e.key === 'Escape') { setEditing(false); }
+          }}
+          className="w-full bg-amber-50 border border-amber-300 rounded px-1 py-0.5 text-[10px] text-right focus:ring-1 focus:ring-amber-400 outline-none"
+        />
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setEditing(false)}
+          className="text-slate-400 hover:text-slate-600 shrink-0 p-0.5"
+        >
+          <X className="h-2.5 w-2.5" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-end gap-0.5 group/result">
+      {isOverridden ? (
+        <>
+          <span className="text-amber-700 tabular-nums">{fmtArs(num)}</span>
+          <button
+            type="button"
+            onClick={() => onOverride('')}
+            className="text-amber-400 hover:text-red-500 shrink-0"
+            title="Quitar override"
+          >
+            <X className="h-2.5 w-2.5" />
+          </button>
+        </>
+      ) : (
+        <>
+          <span className="tabular-nums">{num !== 0 ? fmtArsSign(num) : '—'}</span>
+          <button
+            type="button"
+            onClick={startEdit}
+            className="opacity-0 group-hover/result:opacity-100 text-slate-300 hover:text-slate-500 shrink-0 transition-opacity ml-0.5"
+            title="Override manual (solo esta sesión)"
+          >
+            <Pencil className="h-2.5 w-2.5" />
+          </button>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -211,10 +545,11 @@ function AgregarConceptoButton({
   seccion: SeccionSos;
   catalogo: ConceptoImportado[];
   codigosActivos: Set<string>;
-  onAdd: (codigo: string) => void;
+  onAdd: (codigos: string[]) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [busqueda, setBusqueda] = useState('');
+  const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set());
   const cfg = SECCIONES_SOS[seccion];
 
   const disponibles = catalogo.filter((c) => {
@@ -228,24 +563,43 @@ function AgregarConceptoButton({
     return true;
   });
 
+  const toggleSeleccion = (codigo: string) => {
+    setSeleccionados((prev) => {
+      const next = new Set(prev);
+      if (next.has(codigo)) next.delete(codigo);
+      else next.add(codigo);
+      return next;
+    });
+  };
+
+  const confirmar = () => {
+    if (seleccionados.size > 0) {
+      onAdd([...seleccionados]);
+    }
+    setOpen(false);
+    setBusqueda('');
+    setSeleccionados(new Set());
+  };
+
   return (
     <Popover
       open={open}
       onOpenChange={(v) => {
         setOpen(v);
-        if (!v) setBusqueda('');
+        if (!v) { setBusqueda(''); setSeleccionados(new Set()); }
       }}
     >
       <PopoverTrigger asChild>
         <button
           type="button"
+          tabIndex={-1}
           className="flex items-center gap-1 rounded px-2 py-0.5 text-[10px] text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
         >
           <Plus className="h-3 w-3" />
           Agregar concepto
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-72 p-2" align="start">
+      <PopoverContent className="w-80 p-2" align="start">
         <input
           type="text"
           placeholder="Buscar por nombre o número…"
@@ -263,22 +617,37 @@ function AgregarConceptoButton({
             </p>
           ) : (
             disponibles.map((c) => (
-              <button
+              <label
                 key={c.codigo}
-                type="button"
-                className="flex w-full items-start gap-2 rounded px-2 py-1 text-left text-xs hover:bg-slate-100"
-                onClick={() => {
-                  onAdd(c.codigo);
-                  setOpen(false);
-                  setBusqueda('');
-                }}
+                className="flex w-full cursor-pointer items-start gap-2 rounded px-2 py-1 text-left text-xs hover:bg-slate-100"
               >
+                <input
+                  type="checkbox"
+                  className="mt-0.5 shrink-0 accent-slate-600"
+                  checked={seleccionados.has(c.codigo)}
+                  onChange={() => toggleSeleccion(c.codigo)}
+                />
                 <span className="w-6 shrink-0 tabular-nums text-slate-400">{c.codigo}</span>
-                <span>{c.nombre ?? `Concepto ${c.codigo}`}</span>
-              </button>
+                <span className="flex-1">{c.nombre ?? `Concepto ${c.codigo}`}</span>
+              </label>
             ))
           )}
         </div>
+        {disponibles.length > 0 && (
+          <div className="mt-2 flex items-center justify-between gap-2 border-t pt-2">
+            <span className="text-[10px] text-slate-500">
+              {seleccionados.size > 0 ? `${seleccionados.size} seleccionado${seleccionados.size > 1 ? 's' : ''}` : 'Seleccioná uno o más'}
+            </span>
+            <button
+              type="button"
+              disabled={seleccionados.size === 0}
+              onClick={confirmar}
+              className="rounded bg-slate-700 px-3 py-1 text-[10px] font-medium text-white hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Agregar ({seleccionados.size})
+            </button>
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   );
@@ -297,7 +666,7 @@ interface TableSectionProps {
   sectionTotal: (s: SeccionSos) => number;
   catalogoCompleto?: ConceptoImportado[];
   codigosActivos?: Set<string>;
-  onAddConcepto?: (codigo: string) => void;
+  onAddConcepto?: (codigos: string[]) => void;
   onRemoveConcepto?: (codigo: string) => void;
 }
 
@@ -340,15 +709,27 @@ function TableSection({
               <td className="px-2 py-1.5 text-center text-slate-400 tabular-nums">{c.codigo}</td>
               <td className="px-2 py-1.5 font-medium">
                 <div className="flex items-center gap-1 group/row">
-                  <span>
-                    {c.nombre ?? `Concepto ${c.codigo}`}
-                    {c.codigoAfip && c.codigoAfip !== '0' && (
-                      <span className="ml-1 text-slate-400 font-normal">[{c.codigoAfip}]</span>
+                  <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                    <span>
+                      {c.nombre ?? `Concepto ${c.codigo}`}
+                      {c.codigoAfip && c.codigoAfip !== '0' && (
+                        <span className="ml-1 text-slate-400 font-normal">[{c.codigoAfip}]</span>
+                      )}
+                    </span>
+                    {c.tieneMemo && (
+                      <input
+                        type="text"
+                        placeholder="Descripción en recibo..."
+                        value={edit?.memo ?? ''}
+                        onChange={(ev) => setField(c.codigo, 'memo', ev.target.value)}
+                        className="w-full rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] font-normal text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
+                      />
                     )}
-                  </span>
+                  </div>
                   {onRemoveConcepto && (
                     <button
                       type="button"
+                      tabIndex={-1}
                       onClick={() => onRemoveConcepto(c.codigo)}
                       className="ml-1 shrink-0 opacity-0 group-hover/row:opacity-100 text-slate-300 hover:text-red-500 transition-opacity"
                       title="Eliminar concepto"
@@ -364,11 +745,9 @@ function TableSection({
                   : DASH}
               </td>
               <td className="px-1 py-1.5">
-                {c.pctFijo != null
-                  ? <span className="block w-full px-1 text-right tabular-nums text-muted-foreground">{c.pctFijo}</span>
-                  : c.tienePct !== false
-                    ? <EditableCell value={edit?.porcentaje ?? ''} onChange={(v) => setField(c.codigo, 'porcentaje', v)} />
-                    : DASH}
+                {(c.pctFijo != null || c.tienePct !== false)
+                  ? <EditableCell value={edit?.porcentaje ?? ''} onChange={(v) => setField(c.codigo, 'porcentaje', v)} />
+                  : DASH}
               </td>
               <td className="px-1 py-1.5">
                 {c.tieneImpConceptoNro !== false
@@ -376,9 +755,23 @@ function TableSection({
                   : DASH}
               </td>
               <td className="px-1 py-1.5">
-                {c.tieneImporte !== false
-                  ? <EditableCell value={edit?.importe ?? ''} onChange={(v) => setField(c.codigo, 'importe', v)} />
-                  : DASH}
+                {(() => {
+                  const impNroStr = (edit?.importeConceptoNumero ?? '').trim();
+                  if (impNroStr) {
+                    const resolved = parseDecimalSos(edits[impNroStr]?.monto);
+                    return (
+                      <span
+                        className="block w-full px-1 py-0.5 text-right tabular-nums text-[10px] text-sky-600 italic select-none"
+                        title={`Total del concepto ${impNroStr}`}
+                      >
+                        {resolved !== null && resolved !== 0 ? fmtArs(resolved) : '—'}
+                      </span>
+                    );
+                  }
+                  return c.tieneImporte !== false
+                    ? <EditableCell value={edit?.importe ?? ''} onChange={(v) => setField(c.codigo, 'importe', v)} />
+                    : DASH;
+                })()}
               </td>
               <td className="px-1 py-1.5">
                 {c.tieneImpMin !== false
@@ -390,24 +783,24 @@ function TableSection({
                   ? <EditableCell value={edit?.importeMaximo ?? ''} onChange={(v) => setField(c.codigo, 'importeMaximo', v)} />
                   : DASH}
               </td>
-              <td className="px-2 py-1.5 text-right tabular-nums !border-l-2 !border-l-slate-600">
-                {isHaberes && toNum(edit?.monto) !== 0
-                  ? fmtArsSign(toNum(edit?.monto))
+              <td className="px-2 py-1.5 !border-l-2 !border-l-slate-600">
+                {isHaberes
+                  ? <ResultOverrideCell monto={edit?.monto ?? ''} montoFijo={edit?.montoFijo ?? ''} onOverride={(v) => setField(c.codigo, 'montoFijo', v)} />
                   : DASH}
               </td>
-              <td className="px-2 py-1.5 text-right tabular-nums">
-                {isDesc && toNum(edit?.monto) !== 0
-                  ? fmtArsSign(toNum(edit?.monto))
+              <td className="px-2 py-1.5">
+                {isDesc
+                  ? <ResultOverrideCell monto={edit?.monto ?? ''} montoFijo={edit?.montoFijo ?? ''} onOverride={(v) => setField(c.codigo, 'montoFijo', v)} />
                   : DASH}
               </td>
-              <td className="px-2 py-1.5 text-right tabular-nums">
-                {isReten && toNum(edit?.monto) !== 0
-                  ? fmtArsSign(toNum(edit?.monto))
+              <td className="px-2 py-1.5">
+                {isReten
+                  ? <ResultOverrideCell monto={edit?.monto ?? ''} montoFijo={edit?.montoFijo ?? ''} onOverride={(v) => setField(c.codigo, 'montoFijo', v)} />
                   : DASH}
               </td>
-              <td className="px-2 py-1.5 text-right tabular-nums">
-                {isNoRem && toNum(edit?.monto) !== 0
-                  ? fmtArsSign(toNum(edit?.monto))
+              <td className="px-2 py-1.5">
+                {isNoRem
+                  ? <ResultOverrideCell monto={edit?.monto ?? ''} montoFijo={edit?.montoFijo ?? ''} onOverride={(v) => setField(c.codigo, 'montoFijo', v)} />
                   : DASH}
               </td>
             </tr>
@@ -488,9 +881,20 @@ interface TablaReciboSosProps {
    * Si no se define, se muestran todas las filas de `conceptos` (último recibo importado).
    */
   activeCodigos?: Set<string>;
+  /**
+   * Básico de escala a jornada completa (pesos). Solo para empleados `part_time` o `reducida`.
+   * Cuando se provee (> 0), los conceptos con `baseColumna = 'os_base'` (obra social) lo usan
+   * como base en lugar del subtotal real liquidado, que estaría reducido proporcionalmente.
+   */
+  basicoJornadaCompleta?: number;
+  /**
+   * Mejor sueldo del semestre (rem + no-rem) para el empleado.
+   * Usado por los conceptos con `baseColumna = 'mejor_div25'` (vacaciones no gozadas — concepto 401).
+   */
+  mejorSueldoSemestre?: number;
   /** Catálogo para "Agregar concepto" (toda la plantilla). Por defecto coincide con `conceptos`. */
   catalogoCompleto?: ConceptoImportado[];
-  onAddConcepto?: (codigo: string) => void;
+  onAddConcepto?: (codigos: string[]) => void;
   onRemoveConcepto?: (codigo: string) => void;
   /** Recalcula montos desde `basico` cuando el usuario activa escala vigente en modo copia. */
   recalculateWithBasico?: boolean;
@@ -508,6 +912,8 @@ export function TablaReciboSos({
   onAddConcepto,
   onRemoveConcepto,
   recalculateWithBasico = false,
+  basicoJornadaCompleta = 0,
+  mejorSueldoSemestre = 0,
 }: TablaReciboSosProps) {
   const catalogoCompleto = catalogoCompletoProp ?? conceptos;
   const initialEdits = useMemo<EditsMap>(() => {
@@ -515,12 +921,14 @@ export function TablaReciboSos({
     for (const c of conceptos) {
       map[c.codigo] = {
         monto: c.monto ?? '',
+        montoFijo: '',
         cantidad: c.cantidad ?? '',
         porcentaje: c.porcentaje ?? (c.pctFijo != null ? String(c.pctFijo) : ''),
         importeConceptoNumero: c.importeConceptoNumero ?? '',
         importe: c.importe ?? '',
         importeMinimo: c.importeMinimo ?? '',
         importeMaximo: c.importeMaximo ?? '',
+        memo: c.memo ?? '',
       };
     }
     return map;
@@ -552,6 +960,55 @@ export function TablaReciboSos({
   const conceptosRef = useRef(conceptos);
   useEffect(() => { conceptosRef.current = conceptos; }, [conceptos]);
 
+  const codigosActivosSet = useMemo(() => {
+    if (activeCodigosProp) return activeCodigosProp;
+    return new Set(conceptos.map((c) => c.codigo));
+  }, [activeCodigosProp, conceptos]);
+
+  // Ref estable de activeCodigos para acceder dentro del updater de setEdits.
+  const activeCodigosRef = useRef<Set<string>>(new Set());
+  useEffect(() => { activeCodigosRef.current = codigosActivosSet; }, [codigosActivosSet]);
+
+  const osBaseRef = useRef(basicoJornadaCompleta);
+  useEffect(() => { osBaseRef.current = basicoJornadaCompleta; }, [basicoJornadaCompleta]);
+
+  const mejorSueldoRef = useRef(mejorSueldoSemestre);
+  useEffect(() => { mejorSueldoRef.current = mejorSueldoSemestre; }, [mejorSueldoSemestre]);
+
+  // Cuando basicoEscala carga por primera vez (async), calcular montos de conceptos con base
+  // implícita que todavía tienen monto vacío (recibo nuevo desde cero).
+  // Debe correr DESPUÉS del effect que actualiza implicitBaseRef (misma dep `basico`, mismo orden).
+  useEffect(() => {
+    const b = basico ?? 0;
+    if (b <= 0) return;
+    setEdits((prev) => {
+      let next = { ...prev };
+      let changed = false;
+      for (const c of conceptosRef.current) {
+        if (!activeCodigosRef.current.has(c.codigo)) continue;
+        const row = next[c.codigo] ?? EMPTY_EDIT_ROW;
+        const currentMonto = parseDecimalSos(row.monto);
+        if (currentMonto !== null && currentMonto !== 0) continue; // ya tiene valor, no pisar
+        const implicitBase = implicitBaseRef.current[c.codigo];
+        if (implicitBase == null || implicitBase <= 0) continue;
+        const hasPct = (row.porcentaje ?? '').trim() !== '';
+        const noUsaPct = c.tienePct === false;
+        if (!hasPct && !noUsaPct) continue;
+        const rowParaFormula = {
+          ...row,
+          importe: String(implicitBase),
+          ...(noUsaPct && !hasPct ? { porcentaje: '100' } : {}),
+        };
+        if (!canApplyFormula(rowParaFormula)) continue;
+        const m = montoLiquidadoDesdeEditsSos(rowParaFormula, { forceFormula: true }).toFixed(2);
+        next = { ...next, [c.codigo]: { ...row, importe: String(implicitBase), monto: m } };
+        changed = true;
+      }
+      if (!changed) return prev;
+      return applySubtotalCascade(next, conceptosRef.current, activeCodigosRef.current, osBaseRef.current, mejorSueldoRef.current);
+    });
+  }, [basico]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
@@ -567,12 +1024,14 @@ export function TablaReciboSos({
         if (!prev[c.codigo]) {
           newEntries[c.codigo] = {
             monto: c.monto ?? '',
+            montoFijo: '',
             cantidad: c.cantidad ?? '',
             porcentaje: c.porcentaje ?? (c.pctFijo != null ? String(c.pctFijo) : ''),
             importeConceptoNumero: c.importeConceptoNumero ?? '',
             importe: c.importe ?? '',
             importeMinimo: c.importeMinimo ?? '',
             importeMaximo: c.importeMaximo ?? '',
+            memo: c.memo ?? '',
           };
         }
       }
@@ -664,21 +1123,37 @@ export function TablaReciboSos({
           SUB_BASES.has(editedConcepto.baseColumna);
 
         const hasExplicitPorcentaje = (updated.porcentaje ?? '').trim() !== '';
+        // Para conceptos sin campo %, usar pct=100 implícitamente (fórmula: cantidad × importe)
+        const conceptoNoUsaPct = editedConcepto?.tienePct === false;
+        const rowParaCalculo = conceptoNoUsaPct && !hasExplicitPorcentaje
+          ? { ...updated, porcentaje: '100' }
+          : updated;
+        const tieneBaseParaCalcular = hasExplicitPorcentaje || conceptoNoUsaPct;
 
         let newEdits: EditsMap = { ...prev, [editedCodigo]: updated };
 
         if (!isSubBased) {
           // Conceptos con base estática (sueldo, valHora, importe_fijo…)
-          if (!hasExplicitPorcentaje) {
+          if (!tieneBaseParaCalcular) {
             newEdits = { ...newEdits, [editedCodigo]: { ...updated, monto: '' } };
           } else {
             const implicitBase = implicitBaseRef.current[editedCodigo];
-            const rowParaFormula =
+            // Resolver Imp. N → monto del concepto referenciado
+            const impNroStr = (updated.importeConceptoNumero ?? '').trim();
+            const resolvedImpN = impNroStr ? parseDecimalSos(prev[impNroStr]?.monto) : null;
+
+            let rowParaFormula: typeof rowParaCalculo;
+            if (resolvedImpN !== null) {
+              rowParaFormula = { ...rowParaCalculo, importe: String(resolvedImpN), importeConceptoNumero: '' };
+            } else if (
               implicitBase != null &&
-              (updated.importe === '' || updated.importe == null) &&
-              (updated.importeConceptoNumero === '' || updated.importeConceptoNumero == null)
-                ? { ...updated, importe: String(implicitBase) }
-                : updated;
+              (rowParaCalculo.importe === '' || rowParaCalculo.importe == null) &&
+              (rowParaCalculo.importeConceptoNumero === '' || rowParaCalculo.importeConceptoNumero == null)
+            ) {
+              rowParaFormula = { ...rowParaCalculo, importe: String(implicitBase) };
+            } else {
+              rowParaFormula = rowParaCalculo;
+            }
 
             if (canApplyFormula(rowParaFormula)) {
               newEdits = {
@@ -688,7 +1163,7 @@ export function TablaReciboSos({
                   monto: montoLiquidadoDesdeEditsSos(rowParaFormula, { forceFormula: true }).toFixed(2),
                 },
               };
-            } else if (field === 'cantidad' || field === 'porcentaje') {
+            } else if (!conceptoNoUsaPct && (field === 'cantidad' || field === 'porcentaje')) {
               const prevMonto = parseDecimalSos(prevRow.monto);
               if (prevMonto !== null && prevMonto !== 0) {
                 const prevFactor =
@@ -707,87 +1182,45 @@ export function TablaReciboSos({
             }
           }
         } else {
-          // Concepto con base de subtotal: si no tiene %, limpiar monto.
+          // Concepto con base de subtotal: si no tiene % ni es no-pct, limpiar monto.
           // El monto se calcula en la cascada de abajo.
-          if (!hasExplicitPorcentaje) {
+          if (!tieneBaseParaCalcular) {
             newEdits = { ...newEdits, [editedCodigo]: { ...updated, monto: '' } };
           }
         }
 
-        // ── Cascada de subtotales ────────────────────────────────────────────
-        // Para los conceptos cuya base es un subtotal acumulado (sub1_9, sub1_19,
-        // etc.), recalcular en orden ascendente de N° SOS para que cada uno use
-        // el subtotal correcto de los anteriores.
-        const subTotals: Record<string, number> = {
-          sub1_9: 0, sub1_19: 0, sub1_26: 0,
-          sub1_39: 0, sub1_199: 0, sub411_469: 0,
-        };
+        // Propagar cambio de monto a conceptos que referencian editedCodigo vía Imp. N
+        const nuevoMontoRef = parseDecimalSos(newEdits[editedCodigo]?.monto);
+        if (nuevoMontoRef !== null) {
+          for (const dep of conceptosRef.current) {
+            if (dep.codigo === editedCodigo) continue;
+            const depEdit = newEdits[dep.codigo] ?? EMPTY_EDIT_ROW;
+            if ((depEdit.importeConceptoNumero ?? '').trim() !== editedCodigo) continue;
 
-        const sortedConcepts = [...conceptosRef.current].sort(
-          (a, b) => (parseInt(a.codigo, 10) || 9999) - (parseInt(b.codigo, 10) || 9999)
-        );
+            const depNoUsaPct = dep.tienePct === false;
+            const depHasPct = (depEdit.porcentaje ?? '').trim() !== '';
+            if (!depHasPct && !depNoUsaPct) continue;
 
-        for (const c of sortedConcepts) {
-          const n = parseInt(c.codigo, 10);
-          if (isNaN(n)) continue;
+            const depRow = {
+              ...depEdit,
+              importe: String(nuevoMontoRef),
+              importeConceptoNumero: '',
+              ...(depNoUsaPct && !depHasPct ? { porcentaje: '100' } : {}),
+            };
 
-          const row = newEdits[c.codigo] ?? EMPTY_EDIT_ROW;
-          let effectiveMonto = toNum(row.monto);
-
-          const bc = c.baseColumna;
-          if (bc != null && SUB_BASES.has(bc)) {
-            const hasPct = (row.porcentaje ?? '').trim() !== '';
-            if (hasPct) {
-              // Calcular la base según el tipo (normal o combinada H+NR)
-              const subBase =
-                bc === 'sub1_199_plus_411_469'
-                  ? (subTotals['sub1_199'] ?? 0) + (subTotals['sub411_469'] ?? 0)
-                  : (subTotals[bc] ?? 0);
-
-              if (subBase > 0) {
-                const pctVal = parseDecimalSos(row.porcentaje) ?? 0;
-                // Si el concepto no tiene campo cantidad, usar 1 como multiplicador.
-                const cantNum =
-                  !c.tieneCantidad && (row.cantidad ?? '') === ''
-                    ? 1
-                    : (parseDecimalSos(row.cantidad) ?? 1);
-                // SOS triple-campo: importe actúa como multiplicador (bug verificado).
-                // Con importe=1 (workaround) → subBase × pct/100 × 1 = correcto.
-                // Con importe vacío/sin campo → multiplicador implícito = 1.
-                const imp =
-                  c.tieneImporte !== false && (row.importe ?? '').trim() !== ''
-                    ? (parseDecimalSos(row.importe) ?? 1)
-                    : 1;
-
-                let raw = subBase * (pctVal / 100) * imp * cantNum;
-
-                const impMin = parseDecimalSos(row.importeMinimo);
-                const impMax = parseDecimalSos(row.importeMaximo);
-                if (impMin !== null && raw < impMin) raw = impMin;
-                if (impMax !== null && raw > impMax) raw = impMax;
-
-                effectiveMonto = Math.round(raw * 100) / 100;
-                newEdits = {
-                  ...newEdits,
-                  [c.codigo]: { ...row, monto: effectiveMonto.toFixed(2) },
-                };
-              }
+            if (canApplyFormula(depRow)) {
+              newEdits = {
+                ...newEdits,
+                [dep.codigo]: {
+                  ...depEdit,
+                  monto: montoLiquidadoDesdeEditsSos(depRow, { forceFormula: true }).toFixed(2),
+                },
+              };
             }
-          }
-
-          // Acumular subtotales para los conceptos siguientes
-          if (n >= 1 && n <= 199) {
-            subTotals['sub1_199'] += effectiveMonto;
-            if (n <= 9) subTotals['sub1_9'] += effectiveMonto;
-            if (n <= 19) subTotals['sub1_19'] += effectiveMonto;
-            if (n <= 26) subTotals['sub1_26'] += effectiveMonto;
-            if (n <= 39) subTotals['sub1_39'] += effectiveMonto;
-          } else if (n >= 411 && n <= 469) {
-            subTotals['sub411_469'] += effectiveMonto;
           }
         }
 
-        return newEdits;
+        return applySubtotalCascade(newEdits, conceptosRef.current, activeCodigosRef.current, osBaseRef.current);
       });
     },
     []
@@ -806,23 +1239,26 @@ export function TablaReciboSos({
     return groups;
   }, [conceptosVisibles]);
 
-  const codigosActivosSet = useMemo(() => {
-    if (activeCodigosProp) return activeCodigosProp;
-    return new Set(conceptos.map((c) => c.codigo));
-  }, [activeCodigosProp, conceptos]);
+  // Re-ejecutar cascada cuando cambian los conceptos activos (ej: usuario agrega 501/502/503)
+  // para que conceptos subtotal-based con % pre-cargado calculen su monto automáticamente.
+  useEffect(() => {
+    activeCodigosRef.current = codigosActivosSet;
+    setEdits((prev) => applySubtotalCascade(prev, conceptosRef.current, codigosActivosSet, osBaseRef.current, mejorSueldoRef.current));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [codigosActivosSet]);
 
   const sumaRango = useCallback(
     (min: number, max: number): number => {
       let total = 0;
       for (const [cod, vals] of Object.entries(edits)) {
         const n = parseInt(cod, 10);
-        if (!isNaN(n) && n >= min && n <= max) {
+        if (!isNaN(n) && n >= min && n <= max && codigosActivosSet.has(cod)) {
           total += toNum(vals.monto);
         }
       }
       return total;
     },
-    [edits]
+    [edits, codigosActivosSet]
   );
 
   const sectionTotal = useCallback(
@@ -841,7 +1277,9 @@ export function TablaReciboSos({
       sectionTotal('retenciones') + sectionTotal('retenciones_no_rem');
     const noRemunerativo = sectionTotal('no_remunerativo');
     const neto = haberes - descuentos - retenciones + noRemunerativo;
-    return { haberes, descuentos, retenciones, noRemunerativo, neto };
+    const redondeo = neto > 0 && neto % 1 > 0.001 ? Math.ceil(neto) - neto : 0;
+    const netoRedondeado = redondeo > 0 ? Math.ceil(neto) : neto;
+    return { haberes, descuentos, retenciones, noRemunerativo, neto, redondeo, netoRedondeado };
   }, [sectionTotal]);
 
   const guardrails = useMemo(() => {
@@ -1009,11 +1447,26 @@ export function TablaReciboSos({
                 {fmtArsSign(totales.noRemunerativo)}
               </td>
             </tr>
+            {totales.redondeo > 0 && (
+              <tr className="bg-amber-50 border-t border-amber-300 text-[10px]">
+                <td className="px-2 py-1" />
+                <td
+                  colSpan={7}
+                  className="px-2 py-1 text-right text-amber-800 italic"
+                >
+                  Redondeo ↑ entero
+                </td>
+                <td colSpan={3} className="px-2 py-1 !border-l-2 !border-l-slate-600" />
+                <td className="px-2 py-1 text-right text-amber-800 font-medium">
+                  +{fmtArs(totales.redondeo)}
+                </td>
+              </tr>
+            )}
             <tr className="bg-slate-300 font-bold">
               <td colSpan={8} className="px-2 py-1.5" />
               <td colSpan={4} className="px-2 py-1.5 text-right text-sm text-slate-900 border-l-2 border-l-slate-600">
                 Neto a cobrar: ${'\u202f'}
-                {fmtArs(totales.neto)}
+                {fmtArs(totales.netoRedondeado)}
               </td>
             </tr>
           </tfoot>
@@ -1022,23 +1475,20 @@ export function TablaReciboSos({
 
       {/* Sección de firmas */}
       <div className="mt-4 grid grid-cols-2 gap-6 border-t pt-4 text-[11px] text-muted-foreground">
-        <div className="flex flex-col gap-2">
-          {firmaEmpleadorUrl ? (
+        <div className="flex flex-col">
+          {firmaEmpleadorUrl && (
             <img
               src={firmaEmpleadorUrl}
               alt="Firma del empleador"
-              className="h-16 max-w-[200px] object-contain"
+              className="h-16 max-w-[200px] object-contain mb-2"
             />
-          ) : (
-            <div className="h-10" />
           )}
-          <div className="border-t border-slate-400 pt-1 font-medium text-slate-600">
+          <div className="mt-auto border-t border-slate-400 pt-1 font-medium text-slate-600">
             Firma y sello del empleador
           </div>
         </div>
-        <div className="flex flex-col gap-2">
-          <div className="h-10" />
-          <div className="border-t border-slate-400 pt-1 font-medium text-slate-600">
+        <div className="flex flex-col">
+          <div className="mt-auto border-t border-slate-400 pt-1 font-medium text-slate-600">
             Firma del trabajador / Acuse de recibo
           </div>
         </div>

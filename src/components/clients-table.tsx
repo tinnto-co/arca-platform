@@ -39,6 +39,7 @@ import { listOrgModules } from '@/actions/admin';
 import { EditRepresentativeDialog } from '@/components/edit-client-dialog';
 import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
 import { relativeTime } from '@/components/dashboard/shared';
+import { toTitleCase } from '@/lib/format-name';
 
 interface ClientRow {
   id: string;
@@ -112,7 +113,7 @@ export function RepresentativesTable() {
       },
       cell: ({ row }) => (
         <span className="font-medium text-[var(--arca-ink)]">
-          {row.original.name}
+          {toTitleCase(row.original.name)}
         </span>
       ),
     },
@@ -122,9 +123,15 @@ export function RepresentativesTable() {
       cell: ({ row }) => (
         <span
           className="block max-w-[180px] truncate text-[12.5px] text-[var(--arca-ink-3)]"
-          title={row.original.representativeName ?? undefined}
+          title={
+            row.original.representativeName
+              ? toTitleCase(row.original.representativeName)
+              : undefined
+          }
         >
-          {row.original.representativeName ?? '—'}
+          {row.original.representativeName
+            ? toTitleCase(row.original.representativeName)
+            : '—'}
         </span>
       ),
     },

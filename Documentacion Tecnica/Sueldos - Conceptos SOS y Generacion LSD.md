@@ -1,95 +1,199 @@
-# Todos los Conceptos SOS - Mr Factory Couch (CUIT: 30717679136)
+# Sueldos — Conceptos SOS y Generación LSD
 
-## Cómo se obtuvo esta información
-
-Se accedió al sistema SOS Contador (https://soft.sos-contador.com) posicionado en la empresa **Mr Factory Couch SA (CUIT: 30717679136)**.
-
-Desde el menú **Sueldos → Recibos**, se abrió la pestaña de recibos y se ingresó al registro de **GODANO, VERONICA** (el registro sin valores cargados), que contiene la lista completa de todos los conceptos configurados en el sistema para esta empresa.
-
-En la sección **"detalle del recibo"** se encuentran todos los conceptos posibles. Se extrajo la información mediante JavaScript sobre el DOM de la página, capturando para cada fila `<tr>`:
-- **N° SOS**: número interno de concepto en el sistema SOS Contador
-- **Nombre**: descripción del concepto tal como aparece en el recibo
-- **N° AFIP**: código de concepto según la clasificación AFIP/SIJP (usado para el LSD)
-- **Campos de entrada visibles**: detectados por posición X en pantalla (getBoundingClientRect)
-- **Columnas ocultas**: TDs de ancho cero que almacenan la base de cálculo pre-computada
-- **Divisores**: `td12` = Dividido hs. norm.; `td13` = Dividido cantidad
-
-Los números SOS **no son consecutivos** — existen bloques de números reservados sin concepto asignado (ej: 44–50, 52–60, 131–200, 235–400, etc.).
-
-**Total: 231 conceptos** (218 originales + 13 nuevos agregados al sistema).
+**Última actualización:** 2026-06-24
+**Archivos de implementación principales:**
+- `src/components/sueldos/TablaReciboSos.tsx` — motor de cálculo (`applySubtotalCascade`)
+- `src/actions/sueldos.ts` — server functions LSD (`previewLsd`, `generarArchivoLsd`, `validarLsd`)
+- `src/scripts/seed-conceptos-sos-catalog.ts` — catálogo `conceptos_completos_sos`
 
 ---
 
-## Lógica de fórmulas en SOS
+## 1. Siglas y definiciones
 
-### Estructura de columnas ocultas por fila
+| Sigla | Significado |
+|---|---|
+| H | Haberes — conceptos que suman al trabajador |
+| D | Descuentos — descuentos sobre haberes |
+| R | Retenciones — aportes/retenciones que restan al neto |
+| NR | No Remunerativo — suma al neto, no integra base estándar de aportes |
+| CN | Concepto Número — referencia al monto de otro concepto |
+| SAC | Sueldo Anual Complementario (aguinaldo) |
+| HE | Horas Extras (recargo 50/100%) |
+| OS | Obra Social |
+| ART | Aseguradora de Riesgos del Trabajo |
+| LSD | Libro de Sueldos Digital (archivo AFIP) |
+| SOS | SOS Contador — sistema externo de referencia |
+| RIPTE | Remuneración Imponible Promedio de los Trabajadores Estables |
 
-Cada fila de concepto en el recibo contiene exactamente **25 TDs directos**. Los índices 3–14 son columnas ocultas (width=0) que SOS pre-calcula y usa como base:
-
-| TD índice | Nombre en SOS          | Descripción                                                 |
-|-----------|------------------------|-------------------------------------------------------------|
-| td3       | Val. Hora              | Valor hora = sueldo ÷ horasNormalesMes (pre-calculado)      |
-| td4       | Sueldo Legajo          | Sueldo básico del empleado importado desde su legajo        |
-| td5       | Sueldo                 | Sueldo del período (generalmente igual al legajo)           |
-| td6       | Subtot. 1/9            | Acumulado de conceptos 1 al 9 al momento de calcular        |
-| td7       | Subtot. 1/19           | Acumulado de conceptos 1 al 19                              |
-| td8       | Subtot. 1/26           | Acumulado de conceptos 1 al 26                              |
-| td9       | Subtot. 1/39           | Acumulado de conceptos 1 al 39                              |
-| td10      | Subtot. 1/199          | Acumulado de conceptos 1 al 199 (total remunerativo)        |
-| td11      | Subtot. 411/469        | Acumulado de conceptos 411 al 469 (total no remunerativo)   |
-| td12      | Dividido hs. norm.     | Divisor de horas (1 = sin división; 180 = ÷ horasNormales)  |
-| td13      | Dividido cantidad      | Divisor de días (1 = sin división; 25 = ÷días hábiles; 30 = ÷días corridos) |
-| td14      | Subtotal calculado     | Resultado parcial calculado (output)                        |
-
-### Fórmula general de cálculo
-
+**Regla de neto:**
 ```
-monto = base × (cantidad / divCantidad) × (pct / 100)
+Neto = H - D - R + NR
 ```
 
-Donde:
-- **`base`**: el valor de la columna oculta activa (td3–td11), o un importe fijo ingresado
-- **`cantidad`**: campo de entrada "Cantidad" (días, horas, unidades)
-- **`divCantidad`**: td13 (divisor de días, ej: 25 = días hábiles; 30 = días corridos)
-- **`divHsNorm`**: td12 (divisor de horas, ej: 180 = horasNormalesMes); se aplica ANTES de pct
-- **`pct`**: campo de entrada "%" (porcentaje)
+---
 
-Fórmula completa con ambos divisores:
+## 2. Flujo operativo resumido
+
+1. Definir estructura laboral (convenio → categoría → escala salarial).
+2. Asignar empleado a convenio y categoría.
+3. Crear recibo por período y tipo.
+4. Cargar conceptos (plantilla SOS o copia de período previo).
+5. Motor de cálculo recorre conceptos en orden numérico y recalcula automáticos.
+6. Totalizar en H, D, R, NR → Neto.
+7. Confirmar recibo → generar LSD → subir a AFIP.
+
+---
+
+## 3. Motor de cálculo cascada (`applySubtotalCascade`)
+
+### 3.1 Qué hace
+
+Cuando el usuario edita cualquier celda de la tabla de conceptos (%, importe, cantidad), el motor recorre todos los conceptos activos **en orden numérico ascendente** y recalcula los que tienen fórmula automática. Produce un `EditsMap` actualizado que React usa para renderizar la tabla.
+
+Se ejecuta en dos momentos:
+- Cada vez que el usuario modifica un campo (`setField`).
+- Cuando cambia el set de conceptos activos (se agrega o elimina una fila).
+
+### 3.2 Bases de cálculo disponibles (`baseColumna`)
+
+Definidas por concepto en la tabla `conceptos_completos_sos`:
+
+| `baseColumna` | Qué usa como base | Quién la actualiza |
+|---|---|---|
+| `sueldo` | Monto del concepto 1 (Sueldo Básico) | Automático cuando concepto 1 cambia |
+| `importe_fijo` | Campo `importe` propio, o monto del concepto en `importeConceptoNumero` | Manual o referencia automática |
+| `sub1_9` | Suma de montos de conceptos 1–9 | Acumulado durante la pasada |
+| `sub1_19` | Suma de montos de conceptos 1–19 | Acumulado durante la pasada |
+| `sub1_26` | Suma de montos de conceptos 1–26 | Acumulado durante la pasada |
+| `sub1_39` | Suma de montos de conceptos 1–39 | Acumulado durante la pasada |
+| `sub1_199` | Suma de montos de conceptos 1–199 | Acumulado durante la pasada |
+| `sub411_469` | Suma de montos de conceptos 411–469 (no remunerativos) | Acumulado durante la pasada |
+| `sub1_199_plus_411_469` | `sub1_199 + sub411_469` | Calculado al momento de uso |
+| `sub411_414_qty` | Auto-rellena el campo `cantidad` con la suma de 411–414 | Acumulado durante la pasada |
+| `null` / vacío | Sin cálculo automático — monto ingresado manualmente | Manual |
+
+### 3.3 Fórmula general
+
+```
+monto = base × (% / 100) × cantidad
+```
+
+- `base` = valor resuelto según `baseColumna`.
+- `%` = porcentaje ingresado por el usuario (o `pctFijo` del catálogo).
+- `cantidad` = campo cantidad (default 1 si el concepto no usa cantidad).
+
+Restricciones opcionales:
+- `importeMinimo`: `monto = max(monto, importeMinimo)`
+- `importeMaximo`: `monto = min(monto, importeMaximo)`
+
+**Prioridad de campos (comportamiento SOS verificado):**
+
+1. Si `CN > 0`: `raw = importeConcepto[CN] × (%/100) × cantidad` — el campo `importe` se ignora.
+2. Si `CN = 0` y `base = importe_fijo`: `raw = importe × cantidad × (%/100)`.
+3. Si `CN = 0` y base > 1.00:
+   - Si `importe = 0`: `raw = base × cantidad × (%/100)`.
+   - Si `importe > 0`: `raw = base × (%/100) × importe` — **bug triple-campo** (evitar).
+4. Aplicar clamp: `resultado = max(minimo, min(maximo, raw))`.
+
+### 3.4 Caso especial — Retenciones (200–299)
+
+Los conceptos de retenciones usan `baseColumna = 'sub1_199'`, pero la base correcta para aportes del trabajador **no es la suma bruta** — es el total de haberes menos descuentos:
+
+```
+base_retenciones = sub1_99 − (sub1_199 − sub1_99)
+                 = haberes(1–99) − descuentos(100–199)
+```
+
+El motor mantiene un acumulador `sub1_99` separado. Cuando un concepto 200–299 tiene `baseColumna = 'sub1_199'`, la cascada aplica la fórmula de sustitución automáticamente.
+
+**Ejemplo verificado (Flor de Azar, Mayo 2026):**
+
+| Concepto | Tipo | Monto |
+|---|---|---|
+| Haberes 1–99 | Haber | $1.917.164,47 |
+| Descuentos 100–199 | Descuento | $111.035,20 |
+| **Base retenciones** | | **$1.806.129,27** |
+| 201 — Jubilación 11% | Retención | $198.674,22 |
+| 202 — PAMI 3% | Retención | $54.183,88 |
+| 203 — Obra Social 3% | Retención | $54.183,88 |
+
+### 3.5 Regla de conceptos activos
+
+Solo los conceptos **activos** (visibles en la tabla) participan en el cálculo y acumulan subtotales. Los inactivos se ignoran completamente para evitar que distorsionen los cálculos de conceptos dependientes.
+
+### 3.6 Orden de evaluación
+
+El motor evalúa en **orden numérico ascendente**. Cada concepto evaluado registra su monto en `conceptMontos`, permitiendo que conceptos posteriores referencien montos anteriores via `importeConceptoNumero`.
+
+### 3.7 Bug crítico de SOS y workaround
+
+- **Bug**: base subtotal + porcentaje + importe puede multiplicar en forma destructiva.
+- **Casos sensibles**: conceptos 511–520 y 551–562.
+- **Workaround operativo**: usar `importe = 1` cuando corresponda calcular sobre base dinámica.
+
+### 3.8 Un concepto NO se recalcula si
+
+- `baseColumna` es `null` o vacío.
+- `tienePct = false` y no hay base SUB que lo compute.
+- Tiene base automática pero el porcentaje está vacío.
+- Está inactivo (no está en `codigosActivosSet`).
+- Para `sueldo`: el monto del concepto 1 es 0 o no está definido.
+- Para `importe_fijo`: no hay importe propio ni referencia válida.
+
+### 3.9 Troubleshooting de cálculos incorrectos
+
+1. Verificar `baseColumna` en `conceptos_completos_sos` para el concepto.
+2. Verificar que el concepto esté activo (visible en la grilla).
+3. Verificar el orden: si A depende de B, B debe tener número menor que A.
+4. Para `importe_fijo`: revisar si el campo `importe` tiene valor o si `importeConceptoNumero` apunta al correcto.
+5. Para retenciones: verificar que los descuentos (100–199) estén activos; si no, `sub1_199 = sub1_99` y la base sale más alta de lo correcto.
+
+---
+
+## 4. Catálogo de conceptos SOS
+
+### 4.1 Cómo se obtuvo
+
+Se scrapeó el sistema SOS Contador posicionado en **Mr Factory Couch SA (CUIT: 30717679136)**, extrayendo los 25 TDs de cada fila de concepto via JavaScript sobre el DOM.
+
+Los números SOS **no son consecutivos** — existen bloques reservados sin concepto asignado. Total: **231 conceptos** (218 originales + 13 nuevos).
+
+### 4.2 Estructura de columnas ocultas en SOS (TD indices 3–14)
+
+| TD índice | Nombre en SOS | Descripción |
+|---|---|---|
+| td3 | Val. Hora | Sueldo ÷ horasNormalesMes (pre-calculado) |
+| td4 | Sueldo Legajo | Sueldo básico importado desde el legajo |
+| td5 | Sueldo | Sueldo del período |
+| td6 | Subtot. 1/9 | Acumulado conceptos 1–9 |
+| td7 | Subtot. 1/19 | Acumulado conceptos 1–19 |
+| td8 | Subtot. 1/26 | Acumulado conceptos 1–26 |
+| td9 | Subtot. 1/39 | Acumulado conceptos 1–39 |
+| td10 | Subtot. 1/199 | Acumulado conceptos 1–199 |
+| td11 | Subtot. 411/469 | Acumulado conceptos 411–469 |
+| td12 | Dividido hs. norm. | Divisor de horas (1 = sin división; 180 = ÷ horas normales) |
+| td13 | Dividido cantidad | Divisor de días (1 = sin div; 25 = ÷días hábiles; 30 = ÷días corridos) |
+| td14 | Subtotal calculado | Resultado parcial (output) |
+
+**Fórmula completa SOS con divisores:**
 ```
 monto = base × (cantidad / divHsNorm / divCantidad) × (pct / 100)
 ```
 
-### Campos de entrada visibles
+### 4.3 Campos de entrada visibles en SOS
 
-| Campo            | Descripción                                                                          |
-|------------------|--------------------------------------------------------------------------------------|
-| **Cantidad**     | Número de unidades (horas extras, días de falta, etc.)                               |
-| **%**            | Porcentaje a aplicar sobre la base                                                   |
-| **Imp. Conc. N°**| Referencia a otro concepto: toma el monto calculado de ese concepto como base        |
-| **Importe**      | Monto fijo ingresado directamente por el usuario                                     |
-| **Imp. Mínimo**  | Piso del resultado calculado                                                         |
-| **Imp. Máximo**  | Techo del resultado calculado                                                        |
-| **Memo**         | Campo de texto libre para aclarar el concepto (ej: nombre del seguro, rubro, etc.)  |
+| Campo | Descripción |
+|---|---|
+| **Cantidad** | Número de unidades (horas extras, días de falta, etc.) |
+| **%** | Porcentaje a aplicar sobre la base |
+| **Imp. Conc. N°** | Referencia a otro concepto: usa su monto como base |
+| **Importe** | Monto fijo ingresado directamente |
+| **Imp. Mínimo** | Piso del resultado calculado |
+| **Imp. Máximo** | Techo del resultado calculado |
+| **Memo** | Texto libre (ej: nombre del seguro, rubro) |
 
-### Columna "Base Cálculo"
+### 4.4 Tabla completa de conceptos (231 conceptos)
 
-| Código en tabla | Significado                                                      |
-|-----------------|------------------------------------------------------------------|
-| `sueldo`        | Sueldo básico del empleado (desde legajo)                        |
-| `valHora`       | Valor hora = sueldo ÷ horasNormalesMes (pre-calculado en td3)    |
-| `sub1_9`        | Subtotal acumulado de conceptos 1 a 9                           |
-| `sub1_19`       | Subtotal acumulado de conceptos 1 a 19                          |
-| `sub1_26`       | Subtotal acumulado de conceptos 1 a 26                          |
-| `sub1_39`       | Subtotal acumulado de conceptos 1 a 39                          |
-| `sub1_199`      | Subtotal acumulado de conceptos 1 a 199 (total remunerativo)    |
-| `sub411_469`    | Subtotal acumulado de conceptos 411 a 469 (total no remunerativo)|
-| `importe_fijo`  | Monto ingresado directamente o referenciando otro concepto       |
-
----
-
-## Tabla de Conceptos
-
-> **Columnas de campos de entrada**: ✓ = campo visible y editable; vacío = campo no presente.
 > **DivHs**: Divisor de horas normales (td12). **DivDías**: Divisor de días (td13).
 
 | N° SOS | Nombre del Concepto | N° AFIP | Memo | Cantidad | % | Imp. Conc. N° | Importe | Imp. Mín | Imp. Máx | Base Cálculo | DivHs | DivDías |
@@ -221,7 +325,7 @@ monto = base × (cantidad / divHsNorm / divCantidad) × (pct / 100)
 | 412 | Otros Conceptos no Remunerativos c/Ap y Cont. OS | 541000 | SI | ✓ | ✓ | ✓ | ✓ |  |  | importe_fijo | 1 | 1 |
 | 413 | Otros Conceptos no Remunerativos c/Ap y Cont. OS | 540000 | SI | ✓ | ✓ | ✓ | ✓ |  |  | importe_fijo | 1 | 1 |
 | 414 | Otros Conceptos no Remunerativos c/Ap y Cont. OS | 541000 | SI | ✓ | ✓ | ✓ | ✓ |  |  | importe_fijo | 1 | 1 |
-| 415 | Otros Conceptos no Rem. sin Retenciones | 551000 | SI | ✓ | ✓ | ✓ | ✓ |  |  | importe_fijo | 1 | 1 |
+| 415 | Asig. Complementaria no Rem. (s/conc. 411 a 414) | 551000 | SI | ✓ | ✓ | ✓ | ✓ |  |  | sub411_414_qty | 1 | 1 |
 | 416 | Otros Conceptos no Rem. sin Retenciones | 551000 | SI | ✓ | ✓ | ✓ | ✓ |  |  | importe_fijo | 1 | 1 |
 | 417 | Otros Conceptos no Rem. sin Retenciones | 551000 | SI | ✓ | ✓ | ✓ | ✓ |  |  | importe_fijo | 1 | 1 |
 | 418 | Otros Conceptos no Rem. sin Retenciones | 551000 | SI | ✓ | ✓ | ✓ | ✓ |  |  | importe_fijo | 1 | 1 |
@@ -326,53 +430,286 @@ monto = base × (cantidad / divHsNorm / divCantidad) × (pct / 100)
 | 618 | Becas | 520008 | NO |  |  |  | ✓ |  |  | importe_fijo | 1 | 1 |
 | 620 | ASIGNACIÓN POR HIJO/HIJO CON DISCAPACIDAD | 510002 | SI | ✓ | ✓ |  | ✓ |  |  | importe_fijo | 1 | 1 |
 
----
-
-## Notas sobre los bloques de N° SOS sin asignar
-
-Los siguientes rangos de números SOS no tienen concepto asignado:
+### 4.5 Rangos de N° SOS sin concepto asignado
 
 | Rango sin asignar |
-|-------------------|
+|---|
 | 2 |
-| 44 – 50 |
-| 52 – 60 |
-| 66 – 70 |
-| 73 – 80 |
-| 83 – 89 |
-| 91 – 100 |
-| 131 – 200 |
-| 224 – 225 |
-| 235 – 400 |
-| 409 – 410 |
-| 441 – 450 |
+| 44–50 |
+| 52–60 |
+| 66–70 |
+| 73–80 |
+| 83–89 |
+| 91–100 |
+| 131–200 |
+| 224–225 |
+| 235–400 |
+| 409–410 |
+| 441–450 |
 | 459 |
-| 485 – 490 |
-| 505 – 510 |
-| 518 – 519 |
-| 521 – 550 |
-| 563 – 600 |
-| 606 – 609 |
+| 485–490 |
+| 505–510 |
+| 518–519 |
+| 521–550 |
+| 563–600 |
+| 606–609 |
 | 619 |
 
 ---
 
-## Conceptos nuevos detectados (no estaban en el relevamiento original)
+## 5. LSD — Libro de Sueldos Digital
 
-Se detectaron **13 conceptos nuevos** que no estaban en el primer relevamiento:
+### 5.1 Qué es
 
-| N° SOS | Nombre | N° AFIP |
-|--------|--------|---------|
-| 430 | SAC No Remunerativo (Rem 4 y 8) | 560001B |
-| 431 | SAC No Remunerativo Prop. (Rem 4 y 8) | 560002B |
-| 432 | Vacaciones No Remunerativo (Rem 4 y 8) | 560003B |
-| 433 | SAC No Remunerativo (Rem 1, 4, 5, 8, 9) | 560001C |
-| 434 | SAC No Remunerativo Prop. (Rem 1, 4, 5, 8 y 9) | 560002C |
-| 435 | Vacaciones No Remunerativo (Rem 1, 4, 5, 8 y 9) | 560003C |
-| 436 | SAC No Remunerativo (Rem 4, 8 y 9) | 560001D |
-| 437 | SAC No Remunerativo Prop. (Rem 4, 8 y 9) | 560002D |
-| 438 | Vacaciones No Remunerativo (Rem 4, 8 y 9) | 560003D |
-| 601 | Asign. no remunerativa Dec 841/2022 | 560005A |
-| 602 | Asign. no remunerativa Dec 841/2022 (con ART) | 560005B |
-| 604 | Asignacion no Remunerativa Dcto 438/2023 | 560006A |
-| 605 | Asignacion no Remunerativa Dcto 438/2023 (con ART) | 560006B |
+Archivo de texto plano (`.txt`), una línea por registro, con campos de ancho fijo. Reemplaza el libro de sueldos en papel y el formulario 931. Se sube mensualmente a **Simplificación Registral** de ARCA.
+
+Nombre de ejemplo: `30-71755486-4_2026-5_0__LSD.txt`
+- CUIT `30717554864` → `30-71755486-4`
+- Año `2026`, Mes `5`, Quincena `0` (mes completo)
+
+### 5.2 Estructura del archivo (Records 01–04)
+
+| Record | Cantidad | Descripción |
+|--------|----------|-------------|
+| **01** | 1 por archivo | Encabezado: CUIT empleador, período AAAAMM, cantidad de empleados |
+| **02** | 1 por empleado | Datos del trabajador: CUIL, legajo, situación de revista, fecha |
+| **03** | N por empleado | Conceptos del recibo: SOS code, cantidad, importe, crédito/débito |
+| **04** | 1 por empleado | Bases imponibles: jubilación, PAMI, OS, ART aplicando tope RIPTE |
+
+**Indicador C/D en Record 03:**
+- **C** (crédito): remunerativos y no remunerativos — suman al trabajador
+- **D** (débito): descuentos/retenciones — aportes personales
+
+Para registros `origen = 'import'` sin FK de tipo, se deriva del SOS code:
+- SOS 200–399: D
+- SOS >= 500: D
+- Resto: C
+
+### 5.3 Formato Record 03
+
+**Format A** (SOS < 400):
+```
+03 + CUIL(11) + 0000000(7) + SOS(3) + qty(5) + $ + centavos(15) + C/D
+```
+
+**Format B** (SOS >= 400):
+```
+03 + CUIL(11) + 000000000(9) + SOS(3) + qty(6) + $ + centavos(15) + C/D
+```
+
+- `qty` = `Math.round(cantidad * 100)` padded
+- `centavos` = `Math.round(importe * 100)` padded a 15 dígitos
+
+### 5.4 Formato Record 04 (370 caracteres)
+
+Fuente oficial: `LSDiseInterfazLiquidacion.pdf` (AFIP — RG 3396/2012).
+
+#### Header (70 chars, posiciones 0-indexed)
+
+| Pos | Largo | Campo | Valor / Fuente |
+|-----|-------|-------|----------------|
+| 0–1 | 2 | Tipo registro | `'04'` |
+| 2–12 | 11 | CUIL | `empleado.cuil` sin guiones |
+| 13 | 1 | Marca cónyuge | `'1'` si `empleado.conyuge > 0`, sino `'0'` |
+| 14–15 | 2 | Cantidad hijos | `empleado.hijos` padStart 2 |
+| 16 | 1 | Marca CCT | `'1'` si tiene `convenioId`, sino `'0'` |
+| 17 | 1 | Marca seguro colectivo | `client.seguroColectivo` |
+| 18 | 1 | Marca reducción alícuota | `client.mipyme` |
+| 19 | 1 | Tipo empleador | Primer char de `payrollTipoEmpresa.codigoLsd` |
+| 20 | 1 | Tipo operación | `'0'` (alta/modificación normal) |
+| 21–22 | 2 | Situación revista general | `situacionRevista1.codigo` |
+| 23–24 | 2 | Condición | `payrollCondicion.codigo` |
+| 25–27 | 3 | Actividad | `payrollActividad.codigo` |
+| 28–30 | 3 | Modalidad contratación | `payrollModalidadContratacion.codigo` |
+| 31–32 | 2 | Siniestrado | `payrollSiniestrado.codigo` (default `'00'`) |
+| 33–34 | 2 | Localidad | `payrollLocalidad.codigo` (default `'00'`) |
+| 35–36 | 2 | Situación revista 1 | `recibo.situacionRevista1.codigo` |
+| 37–38 | 2 | Día inicio situación 1 | `recibo.situacionRevista1DiaInicio` |
+| 39–40 | 2 | Situación revista 2 | `recibo.situacionRevista2.codigo` o `'00'` |
+| 41–42 | 2 | Día inicio situación 2 | `recibo.situacionRevista2DiaInicio` o `'00'` |
+| 43–44 | 2 | Situación revista 3 | `recibo.situacionRevista3.codigo` o `'00'` |
+| 45–46 | 2 | Día inicio situación 3 | `recibo.situacionRevista3DiaInicio` o `'00'` |
+| 47–48 | 2 | Días trabajados | `recibo.diasTrabajados` (default `30`) |
+| 49–51 | 3 | % aporte adicional SS | `'000'` |
+| 52–56 | 5 | % contrib tarea diferencial | `'00000'` |
+| 57–61 | 5 | Campo reservado | `'00000'` |
+| 62–67 | 6 | Código obra social AFIP | `obraSocial.codigo` padEnd 6 |
+| 68–69 | 2 | Adherentes | `empleado.adherentes` padStart 2 |
+
+#### Sección monetaria R04 (300 chars = 20 campos × 15 chars en centavos)
+
+**Definiciones de bases:**
+- `total_rem` = suma de montos con SOS 001–399 e indicador C
+- `total_nonrem` = suma de montos con SOS 400–499 e indicador C
+- `bruta` = `total_rem + total_nonrem`
+- `tope` = `payroll_parametros_periodo.topeMaximoImponible` para el período
+- `rem4y8` = `recibo.rem4y8Override` si existe, sino `bruta`
+- `rem9` = `recibo.rem9Override` si existe, sino `bruta`
+
+| Pos (0-indexed) | Campo | Fórmula |
+|---|---|---|
+| 70–84 | Aporte adicional OS | `0` |
+| 85–99 | Contrib adicional OS | `recibo.contribucionAdicionalOS` |
+| 100–114 | Base dif aporte OS | `max(0, min(rem4y8, tope) - bruta)` |
+| 115–129 | Base dif contrib OS | `max(0, rem4y8 - bruta)` |
+| 130–144 | Base dif LRT | `max(0, bruta - min(total_rem, tope))` |
+| 145–159 | Remuneración maternidad | `recibo.importeMaternidadArt13` |
+| **160–174** | **Remuneración bruta** | `bruta` |
+| **175–189** | **Base 1** — jubilación aporte | `min(total_rem, tope)` |
+| **190–204** | **Base 2** — jubilación contrib | `total_rem` (sin tope) |
+| **205–219** | **Base 3** — PAMI | `total_rem` (sin tope) |
+| **220–234** | **Base 4** — OS aportes | `min(rem4y8, tope)` |
+| **235–249** | **Base 5** — FNE / AAFF | `min(total_rem, tope)` |
+| 250–264 | Base 6 — regímenes especiales | `0` |
+| 265–279 | Base 7 — regímenes especiales | `0` |
+| **280–294** | **Base 8** — OS contrib | `rem4y8` (sin tope) |
+| **295–309** | **Base 9** — ART / LRT | `rem9` (sin tope) |
+| 310–324 | Base dif SS aportes | `0` |
+| 325–339 | Base dif SS contrib | `0` |
+| 340–354 | Base 10 | `0` |
+| 355–369 | Importe a detraer (Ley 27430) | `recibo.importeADetraerLey27430` |
+
+> **Nota padding R04:** los campos alfanuméricos (situación, condición, modalidad, siniestrado, sit rev 1/2/3) van con `lsdAlpha(code, len)` — sin cero a la izquierda, space-padded a derecha.
+
+### 5.5 Tope máximo imponible (RIPTE)
+
+El tope es el techo sobre el cual se calculan aportes/contribuciones previsionales. **No aparece en el archivo LSD** — condiciona el cálculo de las bases del R04 (bases 1, 4 y 5 quedan capadas).
+
+Se almacena en `payroll_parametros_periodo`. El cron (`payroll-cron.ts`) lo actualiza el día 20 de cada mes desde `ignacioonline.com.ar` (ANSES directo está bloqueado por Incapsula WAF).
+
+**Topes cargados para 2026** (via `seed-topes-2026.ts`, ejecutado 2026-06-08):
+
+| Período | Tope Máximo Imponible | Resolución |
+|---|---|---|
+| 2026-01 | $3.823.373 | Res. ANSES 381/2025 |
+| 2026-02 | $3.932.339 | Res. ANSES (BO 06-02-2026) |
+| 2026-03 | $4.045.590 | Res. ANSES (BO mar-2026) |
+| 2026-04 | $4.162.913 | Res. ANSES (BO abr-2026) |
+| 2026-05 | $4.303.619 | Res. ANSES 110/2026 |
+| 2026-06 | $4.414.652 | Res. ANSES 139/2026 |
+
+Para meses futuros: agregar la entrada en `TOPES_2026` del script y volver a correr.
+
+### 5.6 Formato `conceptosLSD.txt` (catálogo de conceptos)
+
+Archivo secundario que lista los conceptos configurados de la empresa con sus flags de cargas.
+
+```
+[NRO 6 chars]→[CODIGO_AFIP 16 chars][DESCRIPCION padded ~150 chars][FLAGS ~20 chars]
+```
+
+**Código AFIP (16 chars):**
+- Posiciones 1–2: tipo de concepto
+
+| Código | Tipo |
+|---|---|
+| `11` | Haber remunerativo habitual |
+| `15` | Vacaciones |
+| `16` | Antigüedad |
+| `17` | Presentismo / otros rem |
+| `54` | No remunerativo |
+| `81` | Descuento del trabajador (aportes empleado) |
+| `82` | Retención / descuento de terceros |
+
+- Posiciones 3–12: código interno (índice de orden dentro del tipo).
+- Posiciones 13–16: código SOS zero-padded a 4 dígitos.
+
+**Flags de cargas sociales (bloque final):**
+
+| Posición | Flag |
+|---|---|
+| 1 | Aportes SIPA |
+| 2 | Contribuciones SIPA |
+| 3 | Aportes INSSJyP |
+| 4 | Contribuciones INSSJyP |
+| 5 | Aportes Obra Social |
+| 6 | Contribuciones Obra Social |
+| 7 | Aportes FSR |
+| 8 | Contribuciones FSR |
+| 9 | Aportes RENATEA |
+| 10 | Contribuciones RENATEA |
+| 11 | Contribuciones AAFF |
+| 13 | Contribuciones FNE |
+| 15 | Contribuciones LRT |
+| 17 | Aportes Diferenciales |
+| 18 | Aportes Especiales |
+| 20 | Marca Repetible |
+
+> El archivo `conceptosLSD.txt` **no está implementado aún** en Arca — es de menor urgencia. El LSD de liquidación (`generarArchivoLsd`) está implementado y validado.
+
+### 5.7 Validaciones pre-descarga (`validarLsd`)
+
+Server function que retorna `{ puedeDescargar: boolean, issues: LsdIssue[] }`.
+
+| Código | Tipo | Condición |
+|---|---|---|
+| `SIN_TIPO_EMPLEADOR` | error | `client.tipoEmpresaId` null |
+| `SIN_TOPE_IMPONIBLE` | error | No hay fila en `payroll_parametros_periodo` para el período |
+| `SIN_RECIBOS` | error | No hay ningún recibo para el período y empresa |
+| `SIN_SITUACION_REVISTA` | error | `recibo.situacionRevista1Id` es null (por empleado) |
+| `SIN_MODALIDAD_CONTRATACION` | error | `empleado.modalidadContratacionId` es null (por empleado) |
+| `SIN_OBRA_SOCIAL` | warning | `empleado.obraSocialId` es null (por empleado) |
+
+`puedeDescargar = true` solo si no hay issues de tipo `'error'`.
+
+### 5.8 Tablas involucradas
+
+| Tabla | Propósito en LSD |
+|---|---|
+| `liquidacion_import_recibo` | Recibos del período |
+| `liquidacion_import_empleado` | Datos del trabajador |
+| `liquidacion_import_concepto_valor` | Conceptos del recibo con SOS code e importe |
+| `payroll_situacion` | Catálogo situaciones de revista AFIP |
+| `payroll_modalidad_contratacion` | Catálogo modalidades AFIP |
+| `payroll_parametros_periodo` | Tope imponible y SMVM por período |
+| `payroll_tipo_empresa` | Tipo de empleador Dec. 814/01 |
+
+### 5.9 Server functions LSD
+
+```
+previewLsd({ clientId, profileId, periodo })
+  → employer: { nombre, cuit, codigoLsd, tipoEmpresaNombre }
+  → empleados: [{ reciboId, cuil, legajo, nombre, situación, modalidad, diasTrabajados, cantidadConceptos, origen }]
+
+generarArchivoLsd({ clientId, profileId, periodo })
+  → { filename, contenido, empleados, conceptos }
+
+validarLsd({ clientId, profileId, periodo })
+  → { puedeDescargar, issues[] }
+
+getParametrosPeriodo({ periodo })
+  → fila de payroll_parametros_periodo o null
+
+upsertParametrosPeriodo({ periodo, topeMaximoImponible, salarioMinimo?, fuente? })
+  → crea o reemplaza los parámetros del período (marca actualizadoPorCron = false)
+```
+
+### 5.10 Estado de implementación y pendientes
+
+**Implementado y validado (E-presis Mayo 2026):**
+- [x] Records 01, 02, 03, 04 en formato fijo AFIP
+- [x] Descarga de archivo `.txt` desde el browser
+- [x] Validaciones pre-descarga con panel en UI
+- [x] Widget de tope imponible con edición inline
+- [x] Topes 2026 cargados via script backfill
+- [x] Cron mensual para sincronizar tope imponible
+
+**Pendientes:**
+- [ ] Enviar LSD a AFIP y verificar aceptación en Simplificación Registral
+- [ ] R01 pos 26-27: campo desconocido que vale `13` en referencia y `00` en generado (no bloqueante)
+- [ ] `conceptosLSD.txt` (catálogo de conceptos) — no implementado, baja urgencia
+- [ ] Múltiples situaciones de revista por período: campos existen en schema, faltan en UI del recibo
+- [ ] Situación de revista null en empleados importados: flujo de completado desde UI
+
+### 5.11 Estado de convenios por empresa (junio 2026)
+
+| Empresa | CCT | Estado en DB |
+|---|---|---|
+| **E-presis** | Comercio 130/75 | Completo — convenio, categorías, escalas y empleados asignados |
+| **Brique** | Construcción 76/75 | Convenio existe pero sin escalas |
+| **Sabenumitubeja** | Pasteleros 272/96 | Configurado en sesión 2026-06-16 |
+| **Admip SRL** | Sanidad 459/06 | Configurado en sesión 2026-06-16 |
+| **Besorot Tovot** | Desconocido | Credenciales AFIP vencidas — no se puede scrapear |
+| **PNR Trade** | Desconocido | Credenciales AFIP vencidas — no se puede scrapear |
+
+Para confirmar CCT manualmente: AFIP > Clave Fiscal > Simplificación Registral - Empleadores > Convenios.

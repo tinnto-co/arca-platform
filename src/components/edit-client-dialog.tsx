@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { getRepresentative, updateRepresentative } from '@/actions/client';
 
 const clientSchema = z.object({
@@ -43,6 +44,7 @@ const clientSchema = z.object({
   image: z.string().optional(),
   // Contraseña de AFIP: vacío = no se cambia.
   password: z.string().optional(),
+  regimenFiscal: z.enum(['local', 'multilateral', 'sin_definir']),
 });
 
 type ClientFormValues = z.infer<typeof clientSchema>;
@@ -89,20 +91,27 @@ export function EditRepresentativeDialog({
       address: '',
       image: '',
       password: '',
+      regimenFiscal: 'sin_definir',
     },
   });
 
   React.useEffect(() => {
     if (representative && initializedRef.current !== representativeId) {
       initializedRef.current = representativeId;
+      const regimenFiscal = representative.convenioMultilateral
+        ? 'multilateral'
+        : representative.regimenLocal
+          ? 'local'
+          : 'sin_definir';
       form.reset({
-        name: representative.name || '',
+        name: representative.name ?? '',
         email: representative.email || '',
         phone: representative.phone || '',
         address: representative.address || '',
         image: representative.image || '',
         // Nunca precargamos la contraseña actual (no exponer el secreto).
         password: '',
+        regimenFiscal,
       });
     }
   }, [representative, representativeId, form]);
@@ -133,9 +142,12 @@ export function EditRepresentativeDialog({
   const onSubmit = async (values: ClientFormValues) => {
     setLoading(true);
     try {
+      const { regimenFiscal, ...rest } = values;
       await updateMutation.mutateAsync({
         id: representativeId,
-        ...values,
+        ...rest,
+        convenioMultilateral: regimenFiscal === 'multilateral',
+        regimenLocal: regimenFiscal === 'local',
       });
     } finally {
       setLoading(false);
@@ -289,6 +301,42 @@ export function EditRepresentativeDialog({
                         placeholder="https://ejemplo.com/imagen.jpg"
                         {...field}
                       />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="regimenFiscal"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Régimen IIBB provincial</FormLabel>
+                    <FormControl>
+                      <RadioGroup
+                        value={field.value}
+                        onValueChange={field.onChange}
+                        className="grid grid-cols-3 gap-2 mt-1"
+                      >
+                        {[
+                          { value: 'local', label: 'Régimen local' },
+                          { value: 'multilateral', label: 'Multilateral' },
+                          { value: 'sin_definir', label: 'Sin definir' },
+                        ].map(({ value, label }) => (
+                          <label
+                            key={value}
+                            className={`flex items-center gap-2 rounded-md border px-3 py-2 cursor-pointer text-sm transition-colors ${
+                              field.value === value
+                                ? 'border-primary bg-primary/5 text-primary font-medium'
+                                : 'border-border hover:bg-muted/50 text-muted-foreground'
+                            }`}
+                          >
+                            <RadioGroupItem value={value} />
+                            {label}
+                          </label>
+                        ))}
+                      </RadioGroup>
                     </FormControl>
                     <FormMessage />
                   </FormItem>

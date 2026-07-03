@@ -45,6 +45,7 @@ import {
 import { alias } from 'drizzle-orm/pg-core';
 import {
   CUSTOM_CODE_PREFIX,
+  CUSTOM_SEGMENT_START,
   PENDING_REVIEW_CODE,
   EXPENSE_ACCOUNT_GROUPS,
   RESULT_ACCOUNT_GROUPS,
@@ -169,6 +170,42 @@ async function countMovements(
     )
     .where(and(...conditions));
   return row?.count ?? 0;
+}
+
+/** Último segmento numérico de un código ("2.1.05.901" → 901), o -1 si no aplica. */
+function lastCodeSegment(code: string): number {
+  const seg = code.slice(code.lastIndexOf('.') + 1);
+  const n = parseInt(seg, 10);
+  return Number.isNaN(n) ? -1 : n;
+}
+
+/**
+ * Genera el próximo código libre para una cuenta propia bajo `parent`, dentro
+ * del rango reservado (último segmento ≥ CUSTOM_SEGMENT_START). Considera los
+ * hijos base del estudio y los custom de la empresa para no repetir código.
+ */
+async function generateCustomChildCode(
+  orgId: string,
+  clientId: string,
+  parent: AccountRow
+): Promise<string> {
+  const siblings = await db
+    .select({ code: account.code })
+    .from(account)
+    .where(
+      and(
+        eq(account.organizationId, orgId),
+        eq(account.parentId, parent.id),
+        sql`(${account.scope} = 'base' OR ${account.clientId} = ${clientId})`
+      )
+    );
+  let max = CUSTOM_SEGMENT_START - 1;
+  for (const s of siblings) {
+    const seg = lastCodeSegment(s.code);
+    if (seg > max) max = seg;
+  }
+  const next = max + 1;
+  return `${parent.code}.${String(next).padStart(3, '0')}`;
 }
 
 /* ───────────────────────────── Queries ───────────────────────────── */
@@ -391,14 +428,15 @@ export const setAccountActive = createServerFn({ method: 'POST' })
 
 /**
  * Crea una cuenta custom propia de la empresa.  (US 1.1.3)
- * - Código en rango reservado (empieza con "9.").
- * - No puede colisionar con un código del plan base ni de otra custom de la empresa.
+ * - Se cuelga de un agrupador (cuenta padre) del plan visible para la empresa.
+ * - El código se autogenera dentro del rubro del padre, en el rango reservado
+ *   para cuentas propias (`.900+`), así queda ordenada junto a sus hermanas sin
+ *   colisionar con cuentas base.
  */
 export const createCustomAccount = createServerFn({ method: 'POST' })
   .inputValidator(
     z.object({
       clientId: z.string().uuid(),
-      code: z.string().min(1),
       name: z.string().min(1),
       type: z.enum(['imputable', 'group']),
       accountGroup: z.string().optional(),
@@ -407,7 +445,7 @@ export const createCustomAccount = createServerFn({ method: 'POST' })
         .enum(['administration', 'sales', 'financial', 'other'])
         .optional(),
       description: z.string().optional(),
-      parentId: z.string().uuid().optional(),
+      parentId: z.string().uuid(),
     })
   )
   .handler(async (ctx) => {
@@ -418,26 +456,24 @@ export const createCustomAccount = createServerFn({ method: 'POST' })
     const d = ctx.data;
     await ensureClientBelongsToOrg(d.clientId, orgId);
 
-    const code = d.code.trim();
-    if (!/^[0-9]+(\.[0-9]+)*$/.test(code)) {
-      throw new Error(
-        'El código solo admite números separados por puntos (ej. "9.1.01")'
-      );
-    }
-    if (!code.startsWith(CUSTOM_CODE_PREFIX)) {
-      throw new Error(
-        'Las cuentas propias deben usar el rango reservado (código que empieza con "9.")'
-      );
-    }
     if (d.type === 'imputable' && (!d.accountGroup || !d.expectedBalance)) {
       throw new Error(
         'Las cuentas imputables requieren rubro de exposición y saldo esperado'
       );
     }
 
-    // No colisión con el plan base del estudio ni con otra custom de la empresa.
+    // La cuenta propia se cuelga de un agrupador del plan visible para la empresa.
+    const parent = await loadAccountForClient(d.parentId, orgId, d.clientId);
+    if (parent.type !== 'group') {
+      throw new Error('La cuenta padre debe ser una agrupación');
+    }
+
+    // Código autogenerado en el rango reservado, ordenado junto a sus hermanas.
+    const code = await generateCustomChildCode(orgId, d.clientId, parent);
+
+    // Chequeo de colisión defensivo (por si dos altas simultáneas).
     const [collision] = await db
-      .select({ id: account.id, scope: account.scope })
+      .select({ id: account.id })
       .from(account)
       .where(
         and(
@@ -448,14 +484,8 @@ export const createCustomAccount = createServerFn({ method: 'POST' })
       )
       .limit(1);
     if (collision) {
-      throw new Error(
-        collision.scope === 'base'
-          ? 'Ese código ya existe en el plan base del estudio'
-          : 'Ya existe una cuenta con ese código en esta empresa'
-      );
+      throw new Error('No se pudo asignar un código libre. Reintentá');
     }
-
-    if (d.parentId) await loadAccountForClient(d.parentId, orgId, d.clientId);
 
     const [created] = await db
       .insert(account)
@@ -467,7 +497,7 @@ export const createCustomAccount = createServerFn({ method: 'POST' })
         name: d.name.trim(),
         description: d.description?.trim() ? d.description.trim() : null,
         type: d.type,
-        parentId: d.parentId ?? null,
+        parentId: parent.id,
         accountGroup: (d.accountGroup ?? null) as never,
         expectedBalance: (d.expectedBalance ?? null) as never,
         expenseFunction: (d.expenseFunction ?? null) as never,
@@ -598,6 +628,11 @@ export const createBaseAccount = createServerFn({ method: 'POST' })
         'El rango "9.x" está reservado para cuentas propias de cada empresa'
       );
     }
+    if (lastCodeSegment(code) >= CUSTOM_SEGMENT_START) {
+      throw new Error(
+        'El rango ".900" en adelante está reservado para cuentas propias de cada empresa'
+      );
+    }
     if (d.type === 'imputable' && (!d.accountGroup || !d.expectedBalance)) {
       throw new Error(
         'Las cuentas imputables requieren rubro de exposición y saldo esperado'
@@ -617,7 +652,19 @@ export const createBaseAccount = createServerFn({ method: 'POST' })
       .limit(1);
     if (collision) throw new Error('Ese código ya existe en el plan base');
 
-    if (d.parentId) await loadBaseAccount(d.parentId, orgId);
+    // Si se cuelga de un padre: debe ser agrupación y el código tiene que
+    // empezar con el del padre (evita jerarquías código↔padre inconsistentes).
+    if (d.parentId) {
+      const parent = await loadBaseAccount(d.parentId, orgId);
+      if (parent.type !== 'group') {
+        throw new Error('La cuenta padre debe ser una agrupación');
+      }
+      if (!code.startsWith(`${parent.code}.`)) {
+        throw new Error(
+          `El código debe empezar con el de la cuenta padre ("${parent.code}.")`
+        );
+      }
+    }
 
     const [created] = await db
       .insert(account)
@@ -743,6 +790,48 @@ export const deleteBaseAccount = createServerFn({ method: 'POST' })
     }
 
     await db.delete(account).where(eq(account.id, acc.id));
+    return { ok: true };
+  });
+
+/**
+ * Borra una cuenta custom propia de la empresa.  (US 1.1.3)
+ * No permitido si tiene movimientos en la empresa o si tiene subcuentas.
+ */
+export const deleteCustomAccount = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({ clientId: z.string().uuid(), id: z.string().uuid() })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertOwner(role);
+
+    const { clientId, id } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    const acc = await loadAccountForClient(id, orgId, clientId);
+    if (acc.scope !== 'custom') {
+      throw new Error('La cuenta no es una cuenta propia de la empresa');
+    }
+
+    const currentCount = await countMovements(clientId, id, null);
+    if (currentCount > 0) {
+      throw new Error(
+        'No se puede borrar: la cuenta tiene movimientos en esta empresa'
+      );
+    }
+
+    const [child] = await db
+      .select({ id: account.id })
+      .from(account)
+      .where(eq(account.parentId, id))
+      .limit(1);
+    if (child) {
+      throw new Error(
+        'No se puede borrar: la cuenta tiene subcuentas. Borrá o reasigná las hijas primero'
+      );
+    }
+
+    await db.delete(account).where(eq(account.id, id));
     return { ok: true };
   });
 
@@ -1891,6 +1980,55 @@ export const getJournalEntry = createServerFn({ method: 'GET' })
       )
       .orderBy(desc(accountingLog.createdAt));
 
+    // Comprobante origen (si el asiento vino de una factura) y regla aplicada. (US 1.3.5)
+    let source: {
+      kind: 'invoice';
+      id: string;
+      label: string;
+      counterparty: string;
+      amount: number;
+    } | null = null;
+    if (entry.sourceType === 'invoice' && entry.sourceId) {
+      const [inv] = await db
+        .select({
+          id: invoice.id,
+          type: invoice.type,
+          salePoint: invoice.salePoint,
+          idFrom: invoice.idFrom,
+          direction: invoice.direction,
+          emitterName: invoice.emitterName,
+          recipientName: invoice.recipientName,
+          amount: invoice.amount,
+        })
+        .from(invoice)
+        .where(eq(invoice.id, entry.sourceId))
+        .limit(1);
+      if (inv) {
+        const pv = String(inv.salePoint).padStart(5, '0');
+        const nro = String(inv.idFrom).padStart(8, '0');
+        source = {
+          kind: 'invoice',
+          id: inv.id,
+          label: `Factura ${inv.type} ${pv}-${nro}`,
+          counterparty:
+            normalizeDirection(inv.direction) === 'purchase'
+              ? inv.emitterName
+              : inv.recipientName,
+          amount: parseFloat(inv.amount),
+        };
+      }
+    }
+
+    let rule: { id: string; name: string } | null = null;
+    if (entry.mappingRuleId) {
+      const [r] = await db
+        .select({ id: ledgerMappingRule.id, name: ledgerMappingRule.name })
+        .from(ledgerMappingRule)
+        .where(eq(ledgerMappingRule.id, entry.mappingRuleId))
+        .limit(1);
+      if (r) rule = r;
+    }
+
     return {
       entry: {
         ...entry,
@@ -1906,6 +2044,8 @@ export const getJournalEntry = createServerFn({ method: 'GET' })
         credit: parseFloat(l.credit),
       })),
       log: logRows,
+      source,
+      rule,
     };
   });
 

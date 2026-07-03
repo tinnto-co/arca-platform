@@ -27,8 +27,6 @@ CREATE TABLE "ledger_mapping_rule_line" (
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "debt" ALTER COLUMN "due_date" SET DEFAULT '2026-06-08 09:26:12.273';--> statement-breakpoint
-ALTER TABLE "due_date" ALTER COLUMN "due_date" SET DEFAULT '2026-06-08 09:26:12.273';--> statement-breakpoint
 ALTER TABLE "ledger_mapping_rule" ADD CONSTRAINT "ledger_mapping_rule_client_id_client_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."client"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "ledger_mapping_rule_line" ADD CONSTRAINT "ledger_mapping_rule_line_rule_id_ledger_mapping_rule_id_fk" FOREIGN KEY ("rule_id") REFERENCES "public"."ledger_mapping_rule"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "ledger_mapping_rule_line" ADD CONSTRAINT "ledger_mapping_rule_line_account_id_accounting_account_id_fk" FOREIGN KEY ("account_id") REFERENCES "public"."accounting_account"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
