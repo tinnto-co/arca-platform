@@ -181,6 +181,7 @@ function applySubtotalCascade(
   activeCodigos?: Set<string>,
   osBase = 0,
   mejorSueldo = 0,
+  diasSemestre = 0,
 ): EditsMap {
   const subTotals: Record<string, number> = {
     sub1_9: 0, sub1_19: 0, sub1_26: 0,
@@ -321,6 +322,28 @@ function applySubtotalCascade(
         next = { ...next, [c.codigo]: { ...row, cantidad: sub.toFixed(2), monto: effectiveMonto.toFixed(2) } };
       } else if (sub > 0) {
         next = { ...next, [c.codigo]: { ...row, cantidad: sub.toFixed(2) } };
+      }
+    } else if (bc === 'sac_normal') {
+      // Concepto 41: cantidad = mejor sueldo semestre (auto-fill si vacío); total = cantidad / 2.
+      if (mejorSueldo > 0) {
+        const cantStr = (row.cantidad ?? '').trim();
+        const cant = cantStr !== '' ? (parseDecimalSos(cantStr) ?? mejorSueldo) : mejorSueldo;
+        effectiveMonto = Math.round((cant / 2) * 100) / 100;
+        const nextRow = cantStr !== ''
+          ? { ...row, monto: effectiveMonto.toFixed(2) }
+          : { ...row, cantidad: mejorSueldo.toFixed(2), monto: effectiveMonto.toFixed(2) };
+        next = { ...next, [c.codigo]: nextRow };
+      }
+    } else if (bc === 'sac_proporcional') {
+      // Concepto 42: cantidad = mejor sueldo semestre (auto-fill si vacío); total = cantidad / 360 × días.
+      if (mejorSueldo > 0 && diasSemestre > 0) {
+        const cantStr = (row.cantidad ?? '').trim();
+        const cant = cantStr !== '' ? (parseDecimalSos(cantStr) ?? mejorSueldo) : mejorSueldo;
+        effectiveMonto = Math.round((cant / 360) * diasSemestre * 100) / 100;
+        const nextRow = cantStr !== ''
+          ? { ...row, monto: effectiveMonto.toFixed(2) }
+          : { ...row, cantidad: mejorSueldo.toFixed(2), monto: effectiveMonto.toFixed(2) };
+        next = { ...next, [c.codigo]: nextRow };
       }
     }
     } // cierre del else (montoFijo no seteado)
@@ -540,11 +563,14 @@ function AgregarConceptoButton({
   seccion,
   catalogo,
   codigosActivos,
+  codigosExcluidos = new Set(),
   onAdd,
 }: {
   seccion: SeccionSos;
   catalogo: ConceptoImportado[];
   codigosActivos: Set<string>;
+  /** Conceptos que se muestran deshabilitados (excluyentes con uno ya activo). */
+  codigosExcluidos?: Set<string>;
   onAdd: (codigos: string[]) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -556,6 +582,7 @@ function AgregarConceptoButton({
     const num = parseInt(c.codigo, 10);
     if (isNaN(num) || num < cfg.rangoMin || num > cfg.rangoMax) return false;
     if (codigosActivos.has(c.codigo)) return false;
+    // codigosExcluidos permanecen visibles pero deshabilitados (exclusividad mutua)
     if (busqueda) {
       const q = busqueda.toLowerCase();
       return c.codigo.includes(q) || (c.nombre ?? '').toLowerCase().includes(q);
@@ -616,21 +643,26 @@ function AgregarConceptoButton({
                 : 'Todos los conceptos de esta sección ya están agregados.'}
             </p>
           ) : (
-            disponibles.map((c) => (
-              <label
-                key={c.codigo}
-                className="flex w-full cursor-pointer items-start gap-2 rounded px-2 py-1 text-left text-xs hover:bg-slate-100"
-              >
-                <input
-                  type="checkbox"
-                  className="mt-0.5 shrink-0 accent-slate-600"
-                  checked={seleccionados.has(c.codigo)}
-                  onChange={() => toggleSeleccion(c.codigo)}
-                />
-                <span className="w-6 shrink-0 tabular-nums text-slate-400">{c.codigo}</span>
-                <span className="flex-1">{c.nombre ?? `Concepto ${c.codigo}`}</span>
-              </label>
-            ))
+            disponibles.map((c) => {
+              const excluido = codigosExcluidos.has(c.codigo);
+              return (
+                <label
+                  key={c.codigo}
+                  className={`flex w-full items-start gap-2 rounded px-2 py-1 text-left text-xs ${excluido ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:bg-slate-100'}`}
+                  title={excluido ? 'Excluyente con un concepto ya agregado' : undefined}
+                >
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 shrink-0 accent-slate-600"
+                    disabled={excluido}
+                    checked={seleccionados.has(c.codigo)}
+                    onChange={() => !excluido && toggleSeleccion(c.codigo)}
+                  />
+                  <span className="w-6 shrink-0 tabular-nums text-slate-400">{c.codigo}</span>
+                  <span className="flex-1">{c.nombre ?? `Concepto ${c.codigo}`}</span>
+                </label>
+              );
+            })
           )}
         </div>
         {disponibles.length > 0 && (
@@ -818,6 +850,11 @@ function TableSection({
               seccion={seccion}
               catalogo={catalogoCompleto}
               codigosActivos={codigosActivos}
+              codigosExcluidos={
+                codigosActivos.has('41') ? new Set(['42']) :
+                codigosActivos.has('42') ? new Set(['41']) :
+                undefined
+              }
               onAdd={onAddConcepto}
             />
           </td>
@@ -889,9 +926,15 @@ interface TablaReciboSosProps {
   basicoJornadaCompleta?: number;
   /**
    * Mejor sueldo del semestre (rem + no-rem) para el empleado.
-   * Usado por los conceptos con `baseColumna = 'mejor_div25'` (vacaciones no gozadas — concepto 401).
+   * Usado por los conceptos con `baseColumna = 'mejor_div25'` (vacaciones no gozadas — concepto 401)
+   * y `baseColumna = 'sac_normal'` / `'sac_proporcional'` (SAC conceptos 41/42).
    */
   mejorSueldoSemestre?: number;
+  /**
+   * Días trabajados en el semestre (calculados desde fechaIngreso).
+   * 180 = semestre completo. Usado por concepto 42 (SAC proporcional, base 'sac_proporcional').
+   */
+  diasSemestre?: number;
   /** Catálogo para "Agregar concepto" (toda la plantilla). Por defecto coincide con `conceptos`. */
   catalogoCompleto?: ConceptoImportado[];
   onAddConcepto?: (codigos: string[]) => void;
@@ -914,6 +957,7 @@ export function TablaReciboSos({
   recalculateWithBasico = false,
   basicoJornadaCompleta = 0,
   mejorSueldoSemestre = 0,
+  diasSemestre = 180,
 }: TablaReciboSosProps) {
   const catalogoCompleto = catalogoCompletoProp ?? conceptos;
   const initialEdits = useMemo<EditsMap>(() => {
@@ -975,9 +1019,16 @@ export function TablaReciboSos({
   const mejorSueldoRef = useRef(mejorSueldoSemestre);
   useEffect(() => { mejorSueldoRef.current = mejorSueldoSemestre; }, [mejorSueldoSemestre]);
 
+  const diasSemestreRef = useRef(diasSemestre);
+  useEffect(() => { diasSemestreRef.current = diasSemestre; }, [diasSemestre]);
+
   // Cuando basicoEscala carga por primera vez (async), calcular montos de conceptos con base
   // implícita que todavía tienen monto vacío (recibo nuevo desde cero).
-  // Debe correr DESPUÉS del effect que actualiza implicitBaseRef (misma dep `basico`, mismo orden).
+  // También re-ejecuta cuando activeCodigosProp cambia: puede ocurrir que basico llegue antes
+  // de que la plantilla cargue y los conceptos activos estén vacíos, en cuyo caso la primera
+  // ejecución no hace nada; cuando los códigos activos se populan hay que recalcular.
+  // Debe correr DESPUÉS de los effects que actualizan implicitBaseRef y activeCodigosRef
+  // (declarados antes de este effect, mismo orden de declaración garantiza el orden).
   useEffect(() => {
     const b = basico ?? 0;
     if (b <= 0) return;
@@ -1005,9 +1056,12 @@ export function TablaReciboSos({
         changed = true;
       }
       if (!changed) return prev;
-      return applySubtotalCascade(next, conceptosRef.current, activeCodigosRef.current, osBaseRef.current, mejorSueldoRef.current);
+      return applySubtotalCascade(next, conceptosRef.current, activeCodigosRef.current, osBaseRef.current, mejorSueldoRef.current, diasSemestreRef.current);
     });
-  }, [basico]); // eslint-disable-line react-hooks/exhaustive-deps
+  // activeCodigosProp como dep: si basico llegó antes de que los conceptos estén activos,
+  // este effect vuelve a ejecutarse cuando la plantilla carga y los códigos se populan.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [basico, activeCodigosProp]);
 
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -1220,7 +1274,7 @@ export function TablaReciboSos({
           }
         }
 
-        return applySubtotalCascade(newEdits, conceptosRef.current, activeCodigosRef.current, osBaseRef.current);
+        return applySubtotalCascade(newEdits, conceptosRef.current, activeCodigosRef.current, osBaseRef.current, mejorSueldoRef.current, diasSemestreRef.current);
       });
     },
     []
@@ -1243,7 +1297,7 @@ export function TablaReciboSos({
   // para que conceptos subtotal-based con % pre-cargado calculen su monto automáticamente.
   useEffect(() => {
     activeCodigosRef.current = codigosActivosSet;
-    setEdits((prev) => applySubtotalCascade(prev, conceptosRef.current, codigosActivosSet, osBaseRef.current, mejorSueldoRef.current));
+    setEdits((prev) => applySubtotalCascade(prev, conceptosRef.current, codigosActivosSet, osBaseRef.current, mejorSueldoRef.current, diasSemestreRef.current));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [codigosActivosSet]);
 

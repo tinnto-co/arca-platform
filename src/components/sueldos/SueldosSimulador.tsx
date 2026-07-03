@@ -2,7 +2,7 @@
 // Simulador de sueldos
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Save, FilePlus2 } from 'lucide-react';
+import { Loader2, Save, FilePlus2, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,14 +14,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
 import {
   getUltimoReciboImportado,
   listConceptosPlantillaManualSos,
   guardarReciboDesdeTabla,
   getBasicoParaEmpleadoPeriodo,
   getPayrollEmployerConfig,
+  updateEmpleado,
 } from '@/actions/sueldos';
-import { puedeLiquidarPeriodo } from '@/lib/payroll-period-rules';
+import { puedeLiquidarPeriodo, calcularDiasSemestre } from '@/lib/payroll-period-rules';
 import { ReciboFormulario, type ReciboFormValues } from '@/components/sueldos/ReciboFormulario';
 import {
   TablaReciboSos,
@@ -189,6 +191,7 @@ export function SueldosSimulador({
     useState(false);
   const [initialFormValues, setInitialFormValues] =
     useState<Partial<ReciboFormValues> | null>(null);
+  const [basicoOverrideInput, setBasicoOverrideInput] = useState('');
 
   const periodo = flowHeader?.periodo ?? '';
   const permiteLiquidar =
@@ -246,6 +249,7 @@ export function SueldosSimulador({
   // No se inyecta en la columna Importe — el cálculo ocurre internamente en la grilla.
   const basicoEscala = basicoData?.basico ?? 0;
   const tipoJornada = basicoData?.tipoJornada ?? 'full_time';
+  const esExcluidoConvenio = basicoData?.esExcluidoConvenio ?? false;
   // La base OS (conceptos 203, 502, etc.) siempre calcula sobre el básico de escala al 100%,
   // independientemente del porcentaje que tenga seteado el concepto 1 o el 411.
   const basicoJornadaCompleta = basicoEscala;
@@ -256,6 +260,14 @@ export function SueldosSimulador({
   // Fechas del empleado: primero desde el form (flujo nuevo recibo), luego desde basicoData (flujo editar)
   const fechaAltaDisplay = flowHeader?.fechaAlta ?? basicoData?.fechaAlta ?? null;
   const fechaIngresoDisplay = flowHeader?.fechaIngreso ?? basicoData?.fechaIngreso ?? null;
+
+  // Días trabajados en el semestre (para SAC proporcional — concepto 42)
+  const diasSemestre = useMemo(() => {
+    const periodo = flowHeader?.periodo ?? '';
+    const mesStr = periodo.split('-')[1] ?? '';
+    if (mesStr !== '06' && mesStr !== '12') return 180;
+    return calcularDiasSemestre(fechaIngresoDisplay, periodo);
+  }, [fechaIngresoDisplay, flowHeader?.periodo]);
 
   const { data: employerConfig } = useQuery({
     queryKey: ['payroll-employer-config', clientId, profileId],
@@ -395,11 +407,16 @@ export function SueldosSimulador({
   // Resetear códigos activos cuando cambia empleado/período/modo/plantilla.
   // En modo manual (no copiar) se pre-activan los conceptos de la plantilla base
   // (si el profile tiene referencia configurada) o los 5 básicos por defecto.
+  // Excepción: empleados del convenio 9999/99 (excluidos de convenio) — solo concepto 1.
   // En modo copia el effect posterior los reemplaza con los del último recibo.
   useEffect(() => {
     const copiar = !!flowHeader?.copiarUltimoRecibo;
     if (copiar) {
       setActiveCodigos(new Set());
+      return;
+    }
+    if (esExcluidoConvenio) {
+      setActiveCodigos(new Set(['1']));
       return;
     }
     const plantillaBaseCodes = plantillaManual
@@ -414,6 +431,7 @@ export function SueldosSimulador({
     flowHeader?.periodo,
     flowHeader?.copiarUltimoRecibo,
     plantillaKey,
+    esExcluidoConvenio,
   ]);
 
   // En modo copia: pre-cargar los códigos activos del último recibo.
@@ -490,9 +508,40 @@ export function SueldosSimulador({
       queryClient.invalidateQueries({
         queryKey: ['ultimo-recibo-importado', clientId],
       });
+      queryClient.invalidateQueries({
+        queryKey: ['liquidaciones-filtros', clientId],
+      });
       onConfirmRecibo?.(data.periodo, data.reciboId);
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Error'),
+  });
+
+  const guardarBasicoOverride = useMutation({
+    mutationFn: async () => {
+      if (!flowHeader) throw new Error('Sin empleado seleccionado');
+      const valor = parseFloat(basicoOverrideInput.replace(',', '.'));
+      if (isNaN(valor) || valor <= 0) throw new Error('Ingresá un monto válido mayor a 0');
+      return updateEmpleado({
+        data: {
+          id: flowHeader.importEmpleadoId,
+          clientId,
+          valorSueldo: String(valor),
+        },
+      });
+    },
+    onSuccess: () => {
+      toast.success('Sueldo básico guardado');
+      setBasicoOverrideInput('');
+      queryClient.invalidateQueries({
+        queryKey: [
+          'basico-empleado-periodo',
+          clientId,
+          flowHeader?.importEmpleadoId,
+          flowHeader?.periodo,
+        ],
+      });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Error al guardar'),
   });
 
   const handleTablaChange = useCallback((edits: EditsMap) => {
@@ -510,6 +559,26 @@ export function SueldosSimulador({
       return next;
     });
   }, []);
+
+  // Auto-agregar concepto SAC (41 ó 42) cuando el período es mes 06 ó 12
+  // y aún no hay ninguno de los dos en la tabla de conceptos.
+  useEffect(() => {
+    const periodo = flowHeader?.periodo ?? '';
+    const mesStr = periodo.split('-')[1] ?? '';
+    if (mesStr !== '06' && mesStr !== '12') return;
+    const mejorSueldo = ultimoRecibo?.mejorSueldoSemestre ?? 0;
+    if (mejorSueldo <= 0) return;
+    const codigoSac = diasSemestre >= 180 ? '41' : '42';
+    const otroSac = codigoSac === '41' ? '42' : '41';
+    setActiveCodigos((prev) => {
+      if (prev.has('41') || prev.has('42')) return prev; // ya tiene uno, no tocar
+      const next = new Set(prev);
+      next.add(codigoSac);
+      next.delete(otroSac);
+      return next;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flowHeader?.periodo, ultimoRecibo?.mejorSueldoSemestre, diasSemestre]);
 
   // Cuando llega initialData (desde "Editar" en la solapa Recibo), pre-carga el simulador.
   // No usamos guard de referencia: el prop solo cambia cuando el usuario hace click en "Editar"
@@ -797,6 +866,7 @@ export function SueldosSimulador({
               basico={basicoEscala}
               basicoJornadaCompleta={basicoJornadaCompleta}
               mejorSueldoSemestre={ultimoRecibo.mejorSueldoSemestre ?? 0}
+              diasSemestre={diasSemestre}
               activeCodigos={activeCodigos}
               catalogoCompleto={conceptosFilas}
               onAddConcepto={handleAddConcepto}
@@ -889,6 +959,38 @@ export function SueldosSimulador({
                     </>
                   )}
                 </div>
+                {basicoEscala === 0 && (
+                  <div className="flex flex-wrap items-center gap-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
+                    <span className="flex-1">
+                      El sueldo básico de este empleado es <strong>$0</strong>. Los cálculos no se realizarán correctamente.
+                      Ingresá el monto manualmente:
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        className="h-8 w-36 text-sm"
+                        placeholder="Ej: 850000"
+                        value={basicoOverrideInput}
+                        onChange={(e) => setBasicoOverrideInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') guardarBasicoOverride.mutate();
+                        }}
+                      />
+                      <Button
+                        size="sm"
+                        onClick={() => guardarBasicoOverride.mutate()}
+                        disabled={guardarBasicoOverride.isPending || !basicoOverrideInput}
+                      >
+                        {guardarBasicoOverride.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Save className="h-4 w-4" />
+                        )}
+                        Guardar sueldo
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 <div className="rounded-lg border bg-background p-3">
                 <TablaReciboSos
                   key={plantillaKey}
@@ -898,6 +1000,7 @@ export function SueldosSimulador({
                   basico={basicoEscala}
                   basicoJornadaCompleta={basicoJornadaCompleta}
                   mejorSueldoSemestre={ultimoRecibo?.mejorSueldoSemestre ?? 0}
+                  diasSemestre={diasSemestre}
                   activeCodigos={activeCodigos}
                   catalogoCompleto={conceptosFilas}
                   onAddConcepto={handleAddConcepto}

@@ -44,6 +44,8 @@ interface ConceptoSos {
     | 'basico_div25'       // basicoEscala / 25 × cantidad (vacaciones gozadas)
     | 'mejor_div25'        // mejorSueldoSemestre / 25 × cantidad (vacaciones no gozadas)
     | 'concepto_401_div12' // monto concepto 401 / 12 (SAC sobre vacaciones no gozadas)
+    | 'sac_normal'         // SAC completo: cantidad (=mejorSueldo) / 2 (concepto 41)
+    | 'sac_proporcional'   // SAC proporcional: cantidad (=mejorSueldo) / 360 × días (concepto 42)
     ;
   divHsNorm: number;
   divCantidad: number;
@@ -90,8 +92,8 @@ const CONCEPTOS: ConceptoSos[] = [
   { numeroSos: 38,  codigoAfip: '110011', nombre: 'Incremento Solidario Dec.14/2020',                        tieneMemo: true,  tieneCantidad: false, tienePct: false, tieneImpConceptoNro: false, tieneImporte: true,  tieneImpMin: true,  tieneImpMax: false, baseColumna: 'importe_fijo', divHsNorm: 1,   divCantidad: 1  },
   { numeroSos: 39,  codigoAfip: '110011', nombre: 'Incr.Salarial Dto 14/2020 Rectif',                        tieneMemo: true,  tieneCantidad: false, tienePct: false, tieneImpConceptoNro: false, tieneImporte: true,  tieneImpMin: true,  tieneImpMax: false, baseColumna: 'importe_fijo', divHsNorm: 1,   divCantidad: 1  },
   { numeroSos: 40,  codigoAfip: '170000', nombre: 'Premio',                                                  tieneMemo: true,  tieneCantidad: true,  tienePct: true,  tieneImpConceptoNro: false, tieneImporte: true,  tieneImpMin: true,  tieneImpMax: false, baseColumna: 'importe_fijo', divHsNorm: 1,   divCantidad: 1  },
-  { numeroSos: 41,  codigoAfip: '120000', nombre: 'Sueldo Anual Complementario',                             tieneMemo: false, tieneCantidad: false, tienePct: false, tieneImpConceptoNro: false, tieneImporte: true,  tieneImpMin: false, tieneImpMax: false, baseColumna: 'sueldo',      divHsNorm: 1,   divCantidad: 1  },
-  { numeroSos: 42,  codigoAfip: '120003', nombre: 'Sueldo Anual Complementario Proporcional',                tieneMemo: false, tieneCantidad: true,  tienePct: false, tieneImpConceptoNro: false, tieneImporte: false, tieneImpMin: true,  tieneImpMax: false, baseColumna: 'sueldo',      divHsNorm: 1,   divCantidad: 1  },
+  { numeroSos: 41,  codigoAfip: '120000', nombre: 'Sueldo Anual Complementario',                             tieneMemo: false, tieneCantidad: true,  tienePct: false, tieneImpConceptoNro: false, tieneImporte: false, tieneImpMin: false, tieneImpMax: false, baseColumna: 'sac_normal',       divHsNorm: 1,   divCantidad: 1  },
+  { numeroSos: 42,  codigoAfip: '120003', nombre: 'Sueldo Anual Complementario Proporcional',                tieneMemo: false, tieneCantidad: true,  tienePct: false, tieneImpConceptoNro: false, tieneImporte: false, tieneImpMin: false, tieneImpMax: false, baseColumna: 'sac_proporcional', divHsNorm: 1,   divCantidad: 1  },
   { numeroSos: 43,  codigoAfip: '170000', nombre: 'Asignacion Complementaria (s/conc. 1 a 39)',              tieneMemo: true,  tieneCantidad: true,  tienePct: true,  tieneImpConceptoNro: false, tieneImporte: false, tieneImpMin: false, tieneImpMax: false, baseColumna: 'sub1_39',     divHsNorm: 1,   divCantidad: 1  },
   { numeroSos: 51,  codigoAfip: '151000', nombre: 'Vacaciones Gozadas',                                      tieneMemo: true,  tieneCantidad: true,  tienePct: false, tieneImpConceptoNro: false, tieneImporte: false, tieneImpMin: false, tieneImpMax: false, baseColumna: 'basico_div25', divHsNorm: 1,   divCantidad: 1  },
   { numeroSos: 61,  codigoAfip: '170003', nombre: 'Comisiones',                                              tieneMemo: true,  tieneCantidad: true,  tienePct: true,  tieneImpConceptoNro: true,  tieneImporte: true,  tieneImpMin: false, tieneImpMax: false, baseColumna: 'importe_fijo', divHsNorm: 1,   divCantidad: 1  },
