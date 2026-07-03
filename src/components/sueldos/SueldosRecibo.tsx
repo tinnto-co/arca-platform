@@ -1236,6 +1236,7 @@ function ReciboDocumento({
         <table className="w-full border-collapse">
           <thead>
             <tr className="border-b border-border bg-muted/40 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <th className="w-[70px] px-2 py-2 text-left">Código</th>
               <th className="px-2 py-2 text-left">Descripción del concepto</th>
               <th className="w-[70px] px-2 py-2 text-right">Cant.</th>
               <th className="w-[140px] border-l border-border px-2 py-2 text-right">
@@ -1256,48 +1257,52 @@ function ReciboDocumento({
             {filas.length === 0 ? (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={8}
                   className="px-2 py-4 text-center text-sm text-muted-foreground"
                 >
                   Sin conceptos cargados
                 </td>
               </tr>
             ) : (
-              <>
-                {filas.map(({ detalle: det, concepto, conceptoAfip, conceptoSos, col }) => (
-                  <tr key={det.id} className="hover:bg-muted/20">
-                    <td className="px-2 py-1">
-                      {(det.memo && !det.memo.startsWith('source=') && !det.memo.includes('calc_error='))
-                        ? det.memo
-                        : (concepto?.nombre ??
-                            conceptoAfip?.descripcion ??
-                            conceptoSos?.nombre ??
-                            det.codigo)}
-                    </td>
-                    <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">
-                      {det.cantidad ? moneyFmt(det.cantidad) : '—'}
-                    </td>
-                    <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
-                      {col === 'hab' ? moneyFmt(det.monto) : ''}
-                    </td>
-                    <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
-                      {col === 'desc' ? moneyFmt(det.monto) : ''}
-                    </td>
-                    <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
-                      {col === 'ret' ? moneyFmt(det.monto) : ''}
-                    </td>
-                    <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
-                      {col === 'noRem' ? moneyFmt(det.monto) : ''}
-                    </td>
-                  </tr>
-                ))}
-              </>
+              filas.map(({ detalle: det, concepto, conceptoAfip, conceptoSos, col }) => (
+                <tr key={det.id} className="hover:bg-muted/20">
+                  <td className="px-2 py-1 font-mono text-xs text-muted-foreground">
+                    {det.codigo}
+                  </td>
+                  <td className="px-2 py-1">
+                    {(det.memo && !det.memo.startsWith('source=') && !det.memo.includes('calc_error='))
+                      ? det.memo
+                      : (concepto?.nombre ??
+                          conceptoAfip?.descripcion ??
+                          conceptoSos?.nombre ??
+                          det.codigo)}
+                  </td>
+                  <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">
+                    {det.cantidad ? moneyFmt(det.cantidad) : '—'}
+                  </td>
+                  <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">
+                    {det.porcentaje ? moneyFmt(det.porcentaje) : '—'}
+                  </td>
+                  <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                    {col === 'hab' ? moneyFmt(det.monto) : ''}
+                  </td>
+                  <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                    {col === 'desc' ? moneyFmt(det.monto) : ''}
+                  </td>
+                  <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                    {col === 'ret' ? moneyFmt(det.monto) : ''}
+                  </td>
+                  <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                    {col === 'noRem' ? moneyFmt(det.monto) : ''}
+                  </td>
+                </tr>
+              ))
             )}
           </tbody>
           {/* ── Fila de totales ─────────────────────────────────────────── */}
           <tfoot>
             <tr className="border-t-2 border-border bg-muted/30 font-semibold">
-              <td colSpan={2} className="px-2 py-2 uppercase tracking-wide text-xs">
+              <td colSpan={4} className="px-2 py-2 uppercase tracking-wide text-xs">
                 Totales
               </td>
               <td className="border-l border-border px-2 py-2 text-right tabular-nums">
@@ -1316,19 +1321,19 @@ function ReciboDocumento({
             {redondeo > 0 && (
               <>
                 <tr className="border-t border-border text-xs text-muted-foreground">
-                  <td colSpan={5} className="px-2 py-1.5 text-right">Neto sin redondeo</td>
+                  <td colSpan={7} className="px-2 py-1.5 text-right">Neto sin redondeo</td>
                   <td className="border-l border-border px-2 py-1.5 text-right tabular-nums font-medium">
                     {moneyFmt(netoRaw)}
                   </td>
                 </tr>
                 <tr className="border-t border-border text-xs italic text-muted-foreground">
-                  <td colSpan={5} className="px-2 py-1.5 text-right">Redondeo</td>
+                  <td colSpan={7} className="px-2 py-1.5 text-right">Redondeo</td>
                   <td className="border-l border-border px-2 py-1.5 text-right tabular-nums font-medium">
                     +{moneyFmt(redondeo)}
                   </td>
                 </tr>
                 <tr className="border-t-2 border-border bg-muted/30 text-sm font-bold">
-                  <td colSpan={5} className="px-2 py-2 text-right uppercase tracking-wide text-xs">
+                  <td colSpan={7} className="px-2 py-2 text-right uppercase tracking-wide text-xs">
                     Total neto
                   </td>
                   <td className="border-l border-border px-2 py-2 text-right tabular-nums">

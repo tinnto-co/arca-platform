@@ -5,7 +5,6 @@ import {
   CalendarIcon,
   Edit,
   FileText,
-  User,
   MapPin,
   Check,
   DollarSign,
@@ -24,6 +23,7 @@ import {
   Paperclip,
   FileDown,
   RefreshCw,
+  ListFilter,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -77,7 +77,6 @@ import {
   getNotifications,
   markNotificationOpened,
 } from '@/actions/notification';
-import { updateClientManagement } from '@/actions/profile';
 import {
   scrapSingleJob,
   updateDebtStatus,
@@ -100,13 +99,14 @@ import {
   CalendarCheck,
   CalendarX,
   Loader2,
-  EyeOff,
-  Eye,
   Play,
+  Activity,
   UserCheck,
   UserPlus,
   Trash2,
   KeyRound,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import {
   Table,
@@ -153,11 +153,18 @@ import {
   Tooltip,
 } from 'recharts';
 import { userQuery } from '@/lib/user-query';
+import { listOrgModules } from '@/actions/admin';
+import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
 import { toTitleCase } from '@/lib/format-name';
 
 interface RepresentativeDetailPageProps {
   representativeId: string;
-  initialClientId?: string;
+  activeTab: string;
+  onTabChange: (tab: string) => void;
+  /** Empresa (cliente) seleccionada globalmente, desde el search param `empresa`. */
+  selectedClientId?: string;
+  /** Cambia la empresa seleccionada (actualiza el search param `empresa`). */
+  onClientChange: (empresaId: string) => void;
 }
 
 const INVOICE_TYPE_MAP = new Map(
@@ -237,10 +244,10 @@ const MetricDelta = ({
   return (
     <p
       className={`text-xs mt-1 ${diff > 0
-        ? 'text-[var(--arca-accent-pos-fg)]'
-        : diff < 0
-          ? 'text-[var(--arca-accent-neg-fg)]'
-          : 'text-muted-foreground'
+          ? 'text-[var(--arca-accent-pos-fg)]'
+          : diff < 0
+            ? 'text-[var(--arca-accent-neg-fg)]'
+            : 'text-muted-foreground'
         }`}
     >
       {label}: {formattedPct}
@@ -301,7 +308,13 @@ function findBestMatchingProfileId(
   return profiles[0].id;
 }
 
-export function RepresentativeDetailPage({ representativeId, initialClientId }: RepresentativeDetailPageProps) {
+export function RepresentativeDetailPage({
+  representativeId,
+  activeTab,
+  onTabChange,
+  selectedClientId: selectedClientIdProp,
+  onClientChange,
+}: RepresentativeDetailPageProps) {
   const navigate = useNavigate();
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [editRepresentativeDialogOpen, setEditRepresentativeDialogOpen] = useState(false);
@@ -310,19 +323,6 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
     now.getFullYear(),
     now.getMonth()
   );
-  const [selectedHeaderProfileId, setSelectedHeaderProfileId] = useState<string | undefined>(initialClientId);
-  const [ivaProfileId, setIvaProfileId] = useState<string | undefined>(
-    undefined
-  );
-  const [multilateralProfileId, setMultilateralProfileId] = useState<
-    string | undefined
-  >(undefined);
-  const [resumenProfileId, setResumenProfileId] = useState<string | undefined>(
-    undefined
-  );
-  const [resumenNotifProfileId, setResumenNotifProfileId] = useState<
-    string | 'all'
-  >('all');
   const [resumenNotifSelected, setResumenNotifSelected] = useState<{
     id: string;
     message: string;
@@ -369,11 +369,10 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
   >(null);
   const [scrapingAll, setScrapingAll] = useState(false);
   /** Filtros del módulo de deudas (vacío = todos). */
-  const [debtFilterProfileId, setDebtFilterProfileId] = useState<string>('');
   const [debtFilterImpuesto, setDebtFilterImpuesto] = useState<string>('');
   const [debtFilterConcepto, setDebtFilterConcepto] = useState<string>('');
   const [debtPage, setDebtPage] = useState(1);
-  const [debtSortKey, setDebtSortKey] = useState<'profileName' | 'tax' | 'concept' | 'period' | 'dueDate' | 'detectedAt'>('detectedAt');
+  const [debtSortKey, setDebtSortKey] = useState<'tax' | 'concept' | 'period' | 'dueDate' | 'detectedAt'>('detectedAt');
   const [debtSortDir, setDebtSortDir] = useState<'asc' | 'desc'>('desc');
   const [dueDatePage, setDueDatePage] = useState(1);
 
@@ -388,15 +387,13 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
   >(undefined);
   const [facturasPeriodPickerOpen, setFacturasPeriodPickerOpen] =
     useState(false);
-  /** Filtros de la tabla de facturas (perfil, tipo, dirección) para que los totales Ventas/Compras los respeten. */
-  const [facturasProfileFilter, setFacturasProfileFilter] =
-    useState<string>('all');
+  /** Filtros de la tabla de facturas (tipo, dirección) para que los totales Ventas/Compras los respeten.
+   *  El filtro de empresa lo maneja el selector global (`selectedClientId`). */
   const [facturasTypeFilter, setFacturasTypeFilter] = useState<string>('all');
   const [facturasDirectionFilter, setFacturasDirectionFilter] =
     useState<string>('all');
   const facturasOnFiltersChange = useCallback(
     ({
-      profileFilter,
       typeFilter,
       directionFilter,
     }: {
@@ -404,7 +401,6 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
       typeFilter: string;
       directionFilter: string;
     }) => {
-      setFacturasProfileFilter(profileFilter);
       setFacturasTypeFilter(typeFilter);
       setFacturasDirectionFilter(directionFilter);
     },
@@ -434,17 +430,6 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
     },
   });
 
-  const toggleClientManagementMutation = useMutation({
-    mutationFn: (vars: { clientId: string; managedByStudy: boolean }) =>
-      updateClientManagement({ data: vars }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['representativeClients', representativeId] });
-      toast.success('Perfil actualizado');
-    },
-    onError: () => {
-      toast.error('Error al actualizar el perfil');
-    },
-  });
   const updateDebtStatusMutation = useMutation({
     mutationFn: (vars: {
       id: string;
@@ -492,14 +477,74 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
     metadata?: { documentId?: string; documentName?: string } | null;
     createdAt: Date;
   }
+
+  const { data: client, isLoading: loadingClient } = useQuery({
+    queryKey: ['representative', representativeId],
+    queryFn: async () => {
+      const result = await getRepresentative({ data: { id: representativeId } });
+      return result;
+    },
+  });
+
+  const { data: orgModules = [] } = useQuery({
+    queryKey: ['orgModules'],
+    queryFn: () => listOrgModules(),
+  });
+  const aiAgentEnabled =
+    orgModules.find((m) => m.module === 'ai_agent')?.enabled ?? false;
+
+  const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
+    queryKey: ['representativeClients', representativeId],
+    queryFn: () => getRepresentativeClients({ data: { representativeId } }),
+  });
+
+  /** Perfil IVA por defecto (según nombre del cliente). Se calcula cuando hay client + profiles. */
+  const defaultIvaProfileId = useMemo(() => {
+    if (!client || profiles.length === 0) return undefined;
+    return findBestMatchingProfileId(client.name, profiles) ?? profiles[0].id;
+  }, [client, profiles]);
+
+  /**
+   * Empresa (cliente) seleccionada globalmente. Viene del search param `empresa`
+   * (prop `selectedClientIdProp`); si no es válida, cae al mejor match por nombre y
+   * finalmente a la primera empresa. Siempre hay exactamente una empresa seleccionada.
+   */
+  const selectedClientId = useMemo(() => {
+    if (profiles.length === 0) return undefined;
+    if (
+      selectedClientIdProp &&
+      profiles.some((p) => p.id === selectedClientIdProp)
+    ) {
+      return selectedClientIdProp;
+    }
+    return defaultIvaProfileId ?? profiles[0]?.id;
+  }, [selectedClientIdProp, profiles, defaultIvaProfileId]);
+
+  const selectedProfile = profiles.find((p) => p.id === selectedClientId);
+
+  /** Aliases: todas las secciones usan la empresa global seleccionada. */
+  const effectiveIvaProfileId = selectedClientId;
+  const effectiveMultilateralProfileId = selectedClientId;
+  const effectiveResumenProfileId = selectedClientId;
+  const selectedResumenProfile = selectedProfile;
+
   const {
     data: clientRequestsData = [] as RequestRow[],
     refetch: refetchRequests,
   } = useQuery({
-    queryKey: ['clientRequests', representativeId, solicitudesStatusFilter],
+    queryKey: [
+      'clientRequests',
+      representativeId,
+      solicitudesStatusFilter,
+      selectedClientId,
+    ],
     queryFn: () =>
       listClientRequests({
-        data: { clientId: representativeId, status: solicitudesStatusFilter || undefined },
+        data: {
+          clientId: representativeId,
+          status: solicitudesStatusFilter || undefined,
+          profileId: selectedClientId || undefined,
+        },
       }),
     enabled: !!representativeId,
   });
@@ -615,47 +660,6 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
     [ivaResumenDateRange.from]
   );
 
-  const { data: client, isLoading: loadingClient } = useQuery({
-    queryKey: ['representative', representativeId],
-    queryFn: async () => {
-      const result = await getRepresentative({ data: { id: representativeId } });
-      return result;
-    },
-  });
-
-  const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
-    queryKey: ['representativeClients', representativeId],
-    queryFn: () => getRepresentativeClients({ data: { representativeId } }),
-  });
-
-  /** Perfil IVA por defecto (según nombre del cliente). Se calcula cuando hay client + profiles. */
-  const defaultIvaProfileId = useMemo(() => {
-    if (!client || profiles.length === 0) return undefined;
-    return findBestMatchingProfileId(client.name, profiles) ?? profiles[0].id;
-  }, [client, profiles]);
-
-  /** Perfil efectivo: selección del usuario o el default. Solo hay valor cuando hay perfiles. */
-  const effectiveIvaProfileId =
-    ivaProfileId ?? defaultIvaProfileId ?? profiles[0]?.id;
-
-  /** Perfil efectivo para Convenio Multilateral (usa mismo default). */
-  const effectiveMultilateralProfileId =
-    multilateralProfileId ?? defaultIvaProfileId ?? profiles[0]?.id;
-
-  /** Perfil efectivo para el cuadro de Resumen (sigue al header select). */
-  const effectiveResumenProfileId =
-    selectedHeaderProfileId ?? resumenProfileId ?? defaultIvaProfileId ?? profiles[0]?.id;
-  const selectedResumenProfile = profiles.find(
-    (p) => p.id === effectiveResumenProfileId
-  );
-
-  /** Perfil seleccionado en el header (por query param o primer perfil). */
-  const effectiveHeaderProfileId =
-    selectedHeaderProfileId ?? defaultIvaProfileId ?? profiles[0]?.id;
-  const selectedHeaderProfile = profiles.find(
-    (p) => p.id === effectiveHeaderProfileId
-  );
-
   const periodoFiscalResumen = getResumenPeriodMMYYYY(ivaResumenDateRange.from);
 
   const {
@@ -707,10 +711,6 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
     });
 
   useEffect(() => {
-    setIvaProfileId(undefined);
-    setMultilateralProfileId(undefined);
-    setResumenProfileId(undefined);
-    setResumenNotifProfileId('all');
     const range = getMonthBounds(now.getFullYear(), now.getMonth());
     setMultilateralPeriod(range);
     setMultilateralDateFrom(range.from.toISOString().slice(0, 10));
@@ -733,13 +733,13 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
   }, []);
 
   const { data: debts = [], isLoading: loadingDebts } = useQuery({
-    queryKey: ['representativeDebts', representativeId, debtFilterProfileId],
-    queryFn: () => getRepresentativeDebts({ data: { representativeId, clientId: debtFilterProfileId || undefined } }),
+    queryKey: ['representativeDebts', representativeId, selectedClientId],
+    queryFn: () => getRepresentativeDebts({ data: { representativeId, clientId: selectedClientId || undefined } }),
   });
 
   const { data: dueDates = [], isLoading: loadingDueDates } = useQuery({
-    queryKey: ['representativeDueDates', representativeId],
-    queryFn: () => getRepresentativeDueDates({ data: { representativeId } }),
+    queryKey: ['representativeDueDates', representativeId, selectedClientId],
+    queryFn: () => getRepresentativeDueDates({ data: { representativeId, clientId: selectedClientId || undefined } }),
   });
 
   // Últimos jobs por tipo para mostrar errores en Resumen
@@ -791,13 +791,13 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
         'unreadNotifications',
         orgKey,
         representativeId,
-        effectiveHeaderProfileId,
+        selectedClientId,
       ],
       queryFn: () =>
         getNotifications({
           data: {
             representativeFilter: representativeId,
-            clientId: effectiveHeaderProfileId ?? undefined,
+            clientId: selectedClientId || undefined,
             opened: false,
             limit: 50,
             page: 1,
@@ -1206,9 +1206,8 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
 
   /** True si la factura pasa los filtros de perfil, tipo y dirección (para totales Ventas/Compras). */
   const invoicePassesFacturasFilters = (inv: any): boolean => {
-    if (facturasProfileFilter && facturasProfileFilter !== 'all') {
-      if ((inv.profileId ?? inv.profile) !== facturasProfileFilter)
-        return false;
+    if (selectedClientId) {
+      if ((inv.profileId ?? inv.profile) !== selectedClientId) return false;
     }
     if (facturasTypeFilter && facturasTypeFilter !== 'all') {
       if (!matchInvoiceType(inv.type, facturasTypeFilter)) return false;
@@ -1290,7 +1289,7 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
     allInvoicesData,
     facturasBounds,
     facturasPeriodType,
-    facturasProfileFilter,
+    selectedClientId,
     facturasTypeFilter,
     facturasDirectionFilter,
   ]);
@@ -1351,7 +1350,7 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
     facturasPeriodType,
     facturasYear,
     facturasMonth,
-    facturasProfileFilter,
+    selectedClientId,
     facturasTypeFilter,
     facturasDirectionFilter,
   ]);
@@ -1515,7 +1514,7 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
     facturasYear,
     facturasMonth,
     facturasDateRange,
-    facturasProfileFilter,
+    selectedClientId,
     facturasTypeFilter,
     facturasDirectionFilter,
   ]);
@@ -1685,7 +1684,7 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
   }
 
   // Compute avatar initials from selected profile or representative name
-  const headerDisplayName = selectedHeaderProfile?.name ?? client.name ?? '?';
+  const headerDisplayName = selectedProfile?.name ?? client.name ?? '?';
   const clientInitials = headerDisplayName
     .split(/[\s\-]+/)
     .filter(Boolean)
@@ -1707,7 +1706,25 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
 
   return (
     <div>
-      <Tabs defaultValue="resumen" className="flex flex-col">
+      {aiAgentEnabled && client && (
+        <CopilotReadableEntity
+          description="Cliente actualmente visible en pantalla y la sección que está mirando el usuario. Usá tabActiva para entender el foco actual: resumen=overview, deudas=AFIP debts, vencimientos=próximos, notificaciones=AFIP, facturas=invoices, iva=IVA scrape, convenio-multilateral=Multilateral, solicitudes=requests."
+          value={{
+            modulo: 'cliente-detalle',
+            tabActiva: activeTab,
+            id: client.id,
+            name: client.name,
+            cuit: client.cuit,
+            fiscalCondition: client.fiscalCondition,
+            status: client.status,
+          }}
+        />
+      )}
+      <Tabs
+        value={activeTab}
+        onValueChange={onTabChange}
+        className="flex flex-col"
+      >
         {/* ── Sticky client header ── */}
         <div className="sticky top-0 z-10 bg-[var(--arca-bg)] border-b border-[var(--arca-border)] overflow-hidden">
           <div className="px-4 md:px-[28px] pt-[18px]">
@@ -1727,37 +1744,57 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
               </div>
               {/* Name + meta */}
               <div className="flex flex-col min-w-0 flex-1">
-                <div className="flex items-center gap-[10px] flex-wrap">
+                <div className="flex items-center gap-[10px] min-w-0">
                   {profiles.length > 1 ? (
                     <Select
-                      value={effectiveHeaderProfileId}
-                      onValueChange={setSelectedHeaderProfileId}
+                      value={selectedClientId}
+                      onValueChange={(v) => onClientChange(v)}
+                      disabled={loadingProfiles}
                     >
-                      <SelectTrigger className="h-auto border-none shadow-none p-0 font-display text-[24px] font-semibold tracking-tight bg-transparent  text-[var(--arca-ink)] leading-none gap-2 w-auto max-w-full [&>svg]:h-5 [&>svg]:w-5">
-                        <SelectValue />
+                      <SelectTrigger
+                        title="Cambiar empresa"
+                        className="group h-auto w-fit max-w-full gap-2 border-0 bg-transparent p-0 shadow-none rounded-md hover:opacity-70 focus-visible:ring-0 transition-opacity [&>svg]:!size-[18px] [&>svg]:!opacity-40 [&>svg]:text-[var(--arca-ink-3)] group-hover:[&>svg]:!opacity-70"
+                      >
+                        <span className="font-display text-[24px] font-semibold tracking-tight text-[var(--arca-ink)] leading-none truncate">
+                          {toTitleCase(selectedProfile?.name ?? client.name)}
+                        </span>
                       </SelectTrigger>
                       <SelectContent>
                         {profiles.map((p) => (
                           <SelectItem key={p.id} value={p.id}>
-                            {toTitleCase(p.name)}
+                            {toTitleCase(p.name) || p.identityNumber || p.id}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   ) : (
                     <h1 className="font-display text-[24px] font-semibold tracking-tight text-[var(--arca-ink)] leading-none truncate">
-                      {toTitleCase(selectedHeaderProfile?.name ?? client.name)}
+                      {toTitleCase(selectedProfile?.name ?? client.name)}
                     </h1>
                   )}
                 </div>
                 <div className="mt-[4px] flex flex-wrap items-center gap-x-[10px] gap-y-[2px] text-[11.5px] text-[var(--arca-ink-3)]">
-                  {selectedHeaderProfile?.identityNumber && (
+                  {selectedProfile?.identityNumber && (
                     <span className="font-mono">
-                      CUIT {selectedHeaderProfile.identityNumber}
+                      CUIT {selectedProfile.identityNumber}
                     </span>
                   )}
                   <span className="w-[3px] h-[3px] rounded-full bg-[var(--arca-ink-4)] shrink-0" />
-                  <span>Repr: {toTitleCase(client.name)}</span>
+                  <span className="truncate max-w-[220px]">
+                    Representante: {toTitleCase(client.name)}
+                  </span>
+                  {client.fiscalCondition && (
+                    <>
+                      <span className="w-[3px] h-[3px] rounded-full bg-[var(--arca-ink-4)] shrink-0" />
+                      <span>{client.fiscalCondition}</span>
+                    </>
+                  )}
+                  {client.regimenLocal && (
+                    <>
+                      <span className="w-[3px] h-[3px] rounded-full bg-[var(--arca-ink-4)] shrink-0" />
+                      <span>{client.regimenLocal}</span>
+                    </>
+                  )}
                   {client.registeredAt && (
                     <>
                       <span className="w-[3px] h-[3px] rounded-full bg-[var(--arca-ink-4)] shrink-0" />
@@ -1816,7 +1853,7 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
                 <button
                   onClick={() => setEditRepresentativeDialogOpen(true)}
                   className="w-[24px] h-[24px] shrink-0 rounded-[var(--arca-r-sm)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-3)] inline-flex items-center justify-center hover:bg-[var(--arca-surface-2)] transition-colors"
-                  title="Editar cliente"
+                  title="Editar representante"
                 >
                   <Edit className="h-3 w-3" />
                 </button>
@@ -1895,11 +1932,90 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
         </div>
 
         {/* ── Content area ── */}
-        <div className="px-4 md:px-[28px] pt-5 pb-[60px]">
+        <div className="px-4 md:px-[28px] pt-3 pb-[60px]">
           {/* Resumen Tab */}
           <TabsContent value="resumen" className="mt-4 space-y-[14px]">
-            {/* Row 1: Facturación | IVA */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-[14px]">
+            {/* Row 1: Estado general (3fr) | Facturación (2fr) | IVA (2fr) */}
+            <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr_2fr] gap-[14px]">
+              {/* Estado general */}
+              <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_20px] flex flex-col gap-[12px]">
+                <div className="flex items-center gap-2">
+                  <Activity className="h-3.5 w-3.5 shrink-0 text-[var(--arca-ink-3)]" />
+                  <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+                    Estado general
+                  </span>
+                </div>
+                <div className="flex flex-col gap-[12px]">
+                  {/* Deuda total */}
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] min-w-[120px]">
+                      Deuda total
+                    </span>
+                    <div className="flex-1 flex flex-col items-end">
+                      <span className="font-display font-semibold text-[18px] leading-none tracking-tight tabular-nums text-[var(--arca-ink)]">
+                        {new Intl.NumberFormat('es-AR', {
+                          style: 'currency',
+                          currency: 'ARS',
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 0,
+                        }).format(debtStats.totalBalance)}
+                      </span>
+                      <span className="text-[10.5px] text-[var(--arca-ink-4)] mt-1">
+                        {debtStats.totalDebts === 0
+                          ? 'Sin deudas'
+                          : `${debtStats.totalDebts} ${debtStats.totalDebts === 1 ? 'deuda' : 'deudas'}${
+                              debtStats.overdueCount > 0
+                                ? ` · ${debtStats.overdueCount} vencida${debtStats.overdueCount === 1 ? '' : 's'}`
+                                : ''
+                            }`}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="h-px bg-[var(--arca-border)]" />
+                  {/* Próximo vencimiento */}
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] min-w-[120px]">
+                      Próx. vencimiento
+                    </span>
+                    <span className="flex-1 font-display font-semibold text-[14px] leading-none tracking-tight tabular-nums text-right text-[var(--arca-ink)]">
+                      {dueDateStats.nextDueDate
+                        ? new Date(
+                            dueDateStats.nextDueDate.dueDate
+                          ).toLocaleDateString('es-AR', {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric',
+                          })
+                        : '—'}
+                    </span>
+                  </div>
+                  <div className="h-px bg-[var(--arca-border)]" />
+                  {/* Notificaciones pendientes */}
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)] min-w-[120px]">
+                      Notif. pendientes
+                    </span>
+                    <span className="flex-1 font-display font-semibold text-[14px] leading-none tracking-tight tabular-nums text-right text-[var(--arca-ink)]">
+                      {unreadNotifications?.notifications.length ?? 0}
+                    </span>
+                  </div>
+                </div>
+                {selectedResumenProfile && (
+                  <div className="pt-[8px] mt-auto border-t border-[var(--arca-border)]">
+                    <Link
+                      to="/clients/$clientId/$profileId"
+                      params={{
+                        clientId: representativeId,
+                        profileId: selectedResumenProfile.id,
+                      }}
+                      className="text-[12px] font-medium text-[var(--arca-navy-700)] hover:underline"
+                    >
+                      Ver perfil completo →
+                    </Link>
+                  </div>
+                )}
+              </div>
+
               {/* Facturación */}
               <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_20px] flex flex-col gap-[12px]">
                 <div className="flex items-center gap-2">
@@ -2056,12 +2172,12 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
             {/* Row 2: Chart (1.7fr) | Notificaciones (1fr) */}
             <div
               className={cn(
-                'grid grid-cols-1 gap-[14px] items-start',
+                'grid grid-cols-1 gap-[14px] items-stretch',
                 resumenChartData.length > 0 ? 'md:grid-cols-[17fr_10fr]' : ''
               )}
             >
               {resumenChartData.length > 0 && (
-                <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_20px_14px] flex flex-col gap-[12px]">
+                <div className="h-[300px] bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_20px_14px] flex flex-col gap-[12px]">
                   <div className="flex items-center gap-[10px]">
                     <div className="flex-1">
                       <div className="text-[13px] font-semibold text-[var(--arca-ink)]">
@@ -2082,7 +2198,7 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
                   </div>
                   <ChartContainer
                     config={facturasChartConfig}
-                    className="h-[200px] w-full"
+                    className="flex-1 w-full min-h-0"
                   >
                     <BarChart
                       data={resumenChartData}
@@ -2155,8 +2271,8 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
               )}
 
               {/* Notificaciones */}
-              <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_20px] flex flex-col gap-[14px]">
-                <div className="flex items-center gap-2">
+              <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_20px] flex flex-col gap-[14px] min-h-[260px]">
+                <div className="flex items-center gap-2 shrink-0">
                   <Bell className="h-3.5 w-3.5 shrink-0 text-[var(--arca-ink-3)]" />
                   <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
                     Notificaciones
@@ -2166,13 +2282,14 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
                     {unreadNotifications?.notifications.length ?? 0}
                   </span>
                 </div>
+                <div className="relative flex-1 min-h-0">
                 {loadingUnreadNotifications ? (
-                  <div className="flex items-center gap-2 text-[var(--arca-ink-4)] text-xs py-4 justify-center">
+                  <div className="absolute inset-0 flex items-center gap-2 text-[var(--arca-ink-4)] text-xs justify-center">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     Cargando...
                   </div>
                 ) : !unreadNotifications?.notifications.length ? (
-                  <div className="flex flex-col items-center justify-center gap-2 py-8">
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
                     <div className="w-9 h-9 rounded-full bg-[var(--arca-surface-2)] border border-[var(--arca-border)] flex items-center justify-center">
                       <Check className="h-4 w-4 text-[var(--arca-ink-4)]" />
                     </div>
@@ -2184,7 +2301,7 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
                     </p>
                   </div>
                 ) : (
-                  <div className="space-y-1.5 overflow-y-auto pr-1 max-h-[280px]">
+                  <div className="absolute inset-0 space-y-1.5 overflow-y-auto pr-1">
                     {unreadNotifications.notifications.map((notif) => (
                       <div
                         key={notif.id}
@@ -2224,6 +2341,7 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
                     ))}
                   </div>
                 )}
+                </div>
               </div>
             </div>
 
@@ -2423,7 +2541,7 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
           </Dialog>
 
           {/* Deudas Tab */}
-          <TabsContent value="deudas" className="mt-4 space-y-[14px]">
+          <TabsContent value="deudas" className="space-y-[14px]">
             {/* KPI Cards */}
             {!loadingDebts && debts.length > 0 && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px]">
@@ -2484,114 +2602,141 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
               </div>
             )}
 
-            {/* Filter Bar */}
-            <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[12px_18px] flex flex-wrap items-center gap-[14px]">
-              <div className="flex flex-col gap-[2px]">
-                <span className="text-[11.5px] text-[var(--arca-ink-4)]">
-                  Últ. actualización{' '}
-                  {lastDeudaJob?.createdAt ? (
-                    <span
-                      className={cn(
-                        'font-mono',
-                        lastDeudaJob.success
-                          ? 'text-[var(--arca-accent-pos-fg)]'
-                          : 'text-destructive'
-                      )}
-                      title={lastDeudaJob.failedReason ?? undefined}
-                    >
-                      {formatLastUpdateAt(lastDeudaJob.createdAt)}
-                    </span>
-                  ) : (
-                    <span className="font-mono text-[var(--arca-ink-2)]">
-                      —
-                    </span>
-                  )}
-                </span>
-                {lastDeudaJob &&
-                  !lastDeudaJob.success &&
-                  lastDeudaJob.failedReason && (
-                    <p className="text-[11px] text-destructive max-w-md">
-                      {lastDeudaJob.failedReason}
-                    </p>
-                  )}
-              </div>
-              <div className="flex-1" />
-              {profiles.length > 1 && (
-                <Select
-                  value={debtFilterProfileId || 'all'}
-                  onValueChange={(v) => {
-                    setDebtFilterProfileId(v === 'all' ? '' : v);
-                    setDebtFilterImpuesto('');
-                    setDebtFilterConcepto('');
-                    setDebtPage(1);
+            {/* Actualizar deudas (acción) + última actualización */}
+            <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[12px_18px] flex flex-col gap-[12px]">
+              <div className="flex flex-wrap items-center gap-[14px]">
+                <div className="flex flex-col gap-[2px]">
+                  <span className="text-[11.5px] text-[var(--arca-ink-4)]">
+                    Últ. actualización{' '}
+                    {lastDeudaJob?.createdAt ? (
+                      <span
+                        className={cn(
+                          'font-mono',
+                          lastDeudaJob.success
+                            ? 'text-[var(--arca-accent-pos-fg)]'
+                            : 'text-destructive'
+                        )}
+                        title={lastDeudaJob.failedReason ?? undefined}
+                      >
+                        {formatLastUpdateAt(lastDeudaJob.createdAt)}
+                      </span>
+                    ) : (
+                      <span className="font-mono text-[var(--arca-ink-2)]">
+                        —
+                      </span>
+                    )}
+                  </span>
+                  {lastDeudaJob &&
+                    !lastDeudaJob.success &&
+                    lastDeudaJob.failedReason && (
+                      <p className="text-[11px] text-destructive max-w-md">
+                        {lastDeudaJob.failedReason}
+                      </p>
+                    )}
+                </div>
+                <div className="flex-1" />
+                <Button
+                  size="sm"
+                  disabled={!!scrapingSection}
+                  onClick={async () => {
+                    setScrapingSection('deudas');
+                    try {
+                      await scrapSingleJob({
+                        data: { representativeId, jobType: 'deuda' },
+                      });
+                      await Promise.all([
+                        queryClient.invalidateQueries({
+                          queryKey: ['representativeDebts', representativeId],
+                        }),
+                        queryClient.invalidateQueries({
+                          queryKey: ['lastDeudaJob', representativeId],
+                        }),
+                      ]);
+                      toast.success('Deudas actualizadas correctamente');
+                    } catch (err) {
+                      toast.error(
+                        err instanceof Error
+                          ? err.message
+                          : 'Error al actualizar deudas'
+                      );
+                      queryClient.invalidateQueries({
+                        queryKey: ['lastDeudaJob', representativeId],
+                      });
+                    } finally {
+                      setScrapingSection(null);
+                    }
                   }}
+                  className="bg-[var(--arca-ink)] hover:bg-black text-white text-[12.5px] h-8 px-3 rounded-[var(--arca-r-md)] shrink-0"
                 >
-                  <SelectTrigger className="h-8 gap-1.5 px-3 text-[12px] border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] bg-[var(--arca-surface)] min-w-[150px]">
-                    <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
-                      Empresa
-                    </span>
-                    <SelectValue placeholder="Todas" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todas</SelectItem>
-                    {profiles.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {toTitleCase(p.name)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
+                  {scrapingSection === 'deudas' ? (
+                    <>
+                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                      Actualizando…
+                    </>
+                  ) : (
+                    'Actualizar deudas'
+                  )}
+                </Button>
+              </div>
+
+              {/* Filtros de tabla (solo afectan la vista, no la actualización) */}
               {!loadingDebts && debts.length > 0 && (
-                <>
-                  <Select
-                    value={debtFilterImpuesto || 'all'}
-                    onValueChange={(v) => {
-                      setDebtFilterImpuesto(v === 'all' ? '' : v);
-                      setDebtPage(1);
-                    }}
-                  >
-                    <SelectTrigger className="h-8 gap-1.5 px-3 text-[12px] border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] bg-[var(--arca-surface)] min-w-[130px]">
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
-                        Impuesto
-                      </span>
-                      <SelectValue placeholder="Todos" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Todos</SelectItem>
-                      {debtFilterOptions.impuestos.map((v) => (
-                        <SelectItem key={v} value={v}>
-                          {v}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select
-                    value={debtFilterConcepto || 'all'}
-                    onValueChange={(v) => {
-                      setDebtFilterConcepto(v === 'all' ? '' : v);
-                      setDebtPage(1);
-                    }}
-                  >
-                    <SelectTrigger className="h-8 gap-1.5 px-3 text-[12px] border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] bg-[var(--arca-surface)] min-w-[130px]">
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
-                        Concepto
-                      </span>
-                      <SelectValue placeholder="Todos" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Todos</SelectItem>
-                      {debtFilterOptions.conceptos.map((v) => (
-                        <SelectItem key={v} value={v}>
-                          {v}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {(debtFilterImpuesto || debtFilterConcepto || debtFilterProfileId) && (
+                <div className="flex flex-wrap items-center gap-x-[16px] gap-y-[8px] pt-[12px] border-t border-[var(--arca-border)]">
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[var(--arca-ink-3)]">
+                    <ListFilter className="h-3.5 w-3.5 text-[var(--arca-ink-4)]" />
+                    Filtrar
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-[var(--arca-ink-4)]">
+                      Impuesto
+                    </span>
+                    <Select
+                      value={debtFilterImpuesto || 'all'}
+                      onValueChange={(v) => {
+                        setDebtFilterImpuesto(v === 'all' ? '' : v);
+                        setDebtPage(1);
+                      }}
+                    >
+                      <SelectTrigger className="h-8 min-w-[140px] text-[12px] border-[var(--arca-border)] rounded-full bg-[var(--arca-surface-2)] hover:bg-[var(--arca-surface)] data-[state=open]:bg-[var(--arca-surface)] data-[state=open]:ring-1 data-[state=open]:ring-[var(--arca-border-strong)] transition-colors">
+                        <SelectValue placeholder="Todos" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos</SelectItem>
+                        {debtFilterOptions.impuestos.map((v) => (
+                          <SelectItem key={v} value={v}>
+                            {v}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-[var(--arca-ink-4)]">
+                      Concepto
+                    </span>
+                    <Select
+                      value={debtFilterConcepto || 'all'}
+                      onValueChange={(v) => {
+                        setDebtFilterConcepto(v === 'all' ? '' : v);
+                        setDebtPage(1);
+                      }}
+                    >
+                      <SelectTrigger className="h-8 min-w-[140px] text-[12px] border-[var(--arca-border)] rounded-full bg-[var(--arca-surface-2)] hover:bg-[var(--arca-surface)] data-[state=open]:bg-[var(--arca-surface)] data-[state=open]:ring-1 data-[state=open]:ring-[var(--arca-border-strong)] transition-colors">
+                        <SelectValue placeholder="Todos" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos</SelectItem>
+                        {debtFilterOptions.conceptos.map((v) => (
+                          <SelectItem key={v} value={v}>
+                            {v}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {(debtFilterImpuesto || debtFilterConcepto) && (
                     <button
                       onClick={() => {
-                        setDebtFilterProfileId('');
                         setDebtFilterImpuesto('');
                         setDebtFilterConcepto('');
                         setDebtPage(1);
@@ -2602,50 +2747,8 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
                       Limpiar
                     </button>
                   )}
-                </>
+                </div>
               )}
-              <Button
-                size="sm"
-                disabled={!!scrapingSection}
-                onClick={async () => {
-                  setScrapingSection('deudas');
-                  try {
-                    await scrapSingleJob({
-                      data: { representativeId, jobType: 'deuda' },
-                    });
-                    await Promise.all([
-                      queryClient.invalidateQueries({
-                        queryKey: ['representativeDebts', representativeId],
-                      }),
-                      queryClient.invalidateQueries({
-                        queryKey: ['lastDeudaJob', representativeId],
-                      }),
-                    ]);
-                    toast.success('Deudas actualizadas correctamente');
-                  } catch (err) {
-                    toast.error(
-                      err instanceof Error
-                        ? err.message
-                        : 'Error al actualizar deudas'
-                    );
-                    queryClient.invalidateQueries({
-                      queryKey: ['lastDeudaJob', representativeId],
-                    });
-                  } finally {
-                    setScrapingSection(null);
-                  }
-                }}
-                className="bg-[var(--arca-ink)] hover:bg-black text-white text-[12.5px] h-8 px-3 rounded-[var(--arca-r-md)] shrink-0"
-              >
-                {scrapingSection === 'deudas' ? (
-                  <>
-                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                    Actualizando…
-                  </>
-                ) : (
-                  'Actualizar deudas'
-                )}
-              </Button>
             </div>
 
             {/* Table */}
@@ -2677,18 +2780,17 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
               ) : (
                 <div className="overflow-x-auto">
                   <table
-                    className="w-full border-collapse text-[12.5px]"
-                    style={{ minWidth: 960 }}
+                    className="w-full border-collapse text-[12.5px] [&_th]:!px-[10px] [&_td]:!px-[10px]"
+                    style={{ minWidth: 880 }}
                   >
                     <thead>
                       <tr className="bg-[var(--arca-surface-2)]">
                         {([
-                          ...(profiles.length > 1 ? [{ label: 'Perfil', key: 'profileName' as const }] : []),
                           { label: 'Impuesto', key: 'tax' as const },
                           { label: 'Concepto', key: 'concept' as const },
                           { label: 'Período', key: 'period' as const },
                           { label: 'Vencimiento', key: 'dueDate' as const },
-                          { label: 'Últ. Actualización', key: 'detectedAt' as const },
+                          { label: 'Actualiz.', key: 'detectedAt' as const },
                         ]).map(({ label, key }) => (
                           <th
                             key={key}
@@ -2765,22 +2867,21 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
                             className="border-b border-[var(--arca-border)] hover:brightness-95 transition-colors cursor-default"
                             style={{ background: rowBg }}
                           >
-                            {profiles.length > 1 && (
-                              <td className="px-[14px] py-[10px] whitespace-nowrap text-[var(--arca-ink-2)] text-[11.5px]">
-                                {debt.profileName || '-'}
-                              </td>
-                            )}
                             <td
-                              className="px-[14px] py-[10px] whitespace-nowrap text-[var(--arca-ink)] font-medium"
+                              className="px-[14px] py-[10px] text-[var(--arca-ink)] font-medium"
                               title={debt.tax || '-'}
                             >
-                              {debt.tax || '-'}
+                              <span className="block max-w-[150px] truncate">
+                                {debt.tax || '-'}
+                              </span>
                             </td>
                             <td
-                              className="px-[14px] py-[10px] whitespace-nowrap text-[var(--arca-ink-2)]"
+                              className="px-[14px] py-[10px] text-[var(--arca-ink-2)]"
                               title={debt.concept || '-'}
                             >
-                              {debt.concept || '-'}
+                              <span className="block max-w-[170px] truncate">
+                                {debt.concept || '-'}
+                              </span>
                             </td>
                             <td className="px-[14px] py-[10px] whitespace-nowrap font-mono text-[var(--arca-ink-3)]">
                               {debt.period || '-'}
@@ -2790,12 +2891,12 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
                                 'es-AR'
                               )}
                             </td>
-                            <td className="px-[14px] py-[10px] whitespace-nowrap text-[11px] text-[var(--arca-ink-4)]">
+                            <td className="px-[14px] py-[10px] whitespace-nowrap font-mono text-[10.5px] text-[var(--arca-ink-4)]">
                               {debt.detectedAt
                                 ? new Date(debt.detectedAt).toLocaleDateString('es-AR', {
                                   day: '2-digit',
-                                  month: 'short',
-                                  year: 'numeric',
+                                  month: '2-digit',
+                                  year: '2-digit',
                                 })
                                 : '-'}
                             </td>
@@ -2842,11 +2943,6 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
                               ) : (
                                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]">
                                   Abierta
-                                </span>
-                              )}
-                              {isIntimated && (
-                                <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9.5px] font-semibold bg-orange-100 text-orange-700">
-                                  Intimada
                                 </span>
                               )}
                             </td>
@@ -2990,7 +3086,7 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
           </TabsContent>
 
           {/* Vencimientos Tab */}
-          <TabsContent value="vencimientos" className="space-y-6 mt-6">
+          <TabsContent value="vencimientos" className="space-y-6">
             {/* Due Date Summary Cards */}
             {!loadingDueDates && dueDates.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -3328,10 +3424,10 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
           </TabsContent>
 
           {/* Notificaciones Tab - mismo formato que la vista del navbar */}
-          <TabsContent value="notificaciones" className="space-y-6 mt-6">
-            <div className="rounded-lg border bg-card p-4">
+          <TabsContent value="notificaciones" className="space-y-3 mt-4">
+            <div className="rounded-lg border bg-card px-4 py-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-col gap-1">
+                <div className="flex flex-col gap-0.5">
                   <p className="text-xs text-muted-foreground">
                     Ult. actualización{' '}
                     {lastNotificacionesJob?.createdAt ? (
@@ -3373,7 +3469,7 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
                         data: { representativeId, jobType: 'notificaciones' },
                       });
                       await queryClient.invalidateQueries({
-                        queryKey: ['clientNotifications', representativeId],
+                        queryKey: ['clientNotifications', orgKey, representativeId],
                       });
                       await queryClient.invalidateQueries({
                         queryKey: ['lastNotificacionesJob', representativeId],
@@ -3406,11 +3502,15 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
                 </Button>
               </div>
             </div>
-            <NotificationsView representativeId={representativeId} className="min-h-[500px]" />
+            <NotificationsView
+              clientId={representativeId}
+              profileId={selectedClientId}
+              className="min-h-[500px]"
+            />
           </TabsContent>
 
           {/* Facturas Tab */}
-          <TabsContent value="facturas" className="space-y-6 mt-6">
+          <TabsContent value="facturas" className="space-y-6">
             {/* <div className="flex justify-end">
             <Button
               variant="default"
@@ -3674,32 +3774,6 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
                     </PopoverContent>
                   </Popover>
                 )}
-
-                <span className="text-sm text-muted-foreground shrink-0 ml-1">
-                  Perfil:
-                </span>
-                <Select
-                  value={facturasProfileFilter}
-                  onValueChange={setFacturasProfileFilter}
-                >
-                  <SelectTrigger className="w-[160px] h-9">
-                    <SelectValue placeholder="Perfil" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos los perfiles</SelectItem>
-                    {(
-                      profiles as {
-                        id: string;
-                        name?: string;
-                        identityNumber?: string;
-                      }[]
-                    ).map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {toTitleCase(p.name) || p.identityNumber || p.id}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
 
                 <span className="text-sm text-muted-foreground shrink-0">
                   Tipo:
@@ -3970,10 +4044,11 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
 
             <InvoicesTable
               ref={invoicesTableRef}
-              representativeId={representativeId}
+              clientId={representativeId}
+              profileId={selectedClientId}
               controlledDateFrom={facturasBounds.dateFrom}
               controlledDateTo={facturasBounds.dateTo}
-              controlledProfileFilter={facturasProfileFilter}
+              controlledProfileFilter={selectedClientId ?? 'all'}
               controlledTypeFilter={facturasTypeFilter}
               controlledDirectionFilter={facturasDirectionFilter}
               controlledSearchTerm={facturasDebouncedSearchTerm}
@@ -3982,7 +4057,7 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
           </TabsContent>
 
           {/* Convenio Multilateral Tab */}
-          <TabsContent value="convenio-multilateral" className="space-y-6 mt-6">
+          <TabsContent value="convenio-multilateral" className="space-y-6">
             <div className="rounded-lg border bg-card p-4 space-y-4">
               <div className="flex items-center gap-2">
                 <Receipt className="h-5 w-5 shrink-0" />
@@ -3991,48 +4066,6 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
                 </h3>
               </div>
               <div className="flex flex-wrap items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground shrink-0">
-                    Perfil:
-                  </span>
-                  {effectiveMultilateralProfileId ? (
-                    <Select
-                      key={`multilateral-${representativeId}`}
-                      defaultValue={effectiveMultilateralProfileId}
-                      onValueChange={(value) =>
-                        setMultilateralProfileId(value || undefined)
-                      }
-                      disabled={loadingProfiles || profiles.length <= 1}
-                    >
-                      <SelectTrigger className="h-9 min-w-[220px] w-auto">
-                        <SelectValue placeholder="Seleccionar perfil" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {profiles.map(
-                          (profile: {
-                            id: string;
-                            name?: string;
-                            identityNumber?: string;
-                          }) => (
-                            <SelectItem key={profile.id} value={profile.id}>
-                              {toTitleCase(profile.name) ||
-                                profile.identityNumber ||
-                                profile.id}
-                            </SelectItem>
-                          )
-                        )}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <span className="min-w-[220px] text-sm text-muted-foreground">
-                      {loadingProfiles
-                        ? 'Cargando perfiles...'
-                        : profiles.length === 0
-                          ? 'Sin perfiles'
-                          : 'Seleccionar perfil'}
-                    </span>
-                  )}
-                </div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-muted-foreground shrink-0">
                     Período:
@@ -4462,7 +4495,7 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
           </TabsContent>
 
           {/* IVA Tab */}
-          <TabsContent value="iva" className="mt-6">
+          <TabsContent value="iva" className="">
             <div className="rounded-lg border bg-card p-4 space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-col gap-1">
@@ -4607,46 +4640,6 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm text-muted-foreground shrink-0">
-                  Perfil para IVA:
-                </span>
-                {effectiveIvaProfileId ? (
-                  <Select
-                    key={`iva-${representativeId}`}
-                    defaultValue={effectiveIvaProfileId}
-                    onValueChange={(value) =>
-                      setIvaProfileId(value || undefined)
-                    }
-                    disabled={loadingProfiles || profiles.length <= 1}
-                  >
-                    <SelectTrigger className="h-9 min-w-[200px] w-auto">
-                      <SelectValue placeholder="Seleccionar perfil" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {profiles.map(
-                        (profile: {
-                          id: string;
-                          name?: string;
-                          identityNumber?: string;
-                        }) => (
-                          <SelectItem key={profile.id} value={profile.id}>
-                            {profile.name ||
-                              profile.identityNumber ||
-                              profile.id}
-                          </SelectItem>
-                        )
-                      )}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <span className="min-w-[200px] text-sm text-muted-foreground">
-                    {loadingProfiles
-                      ? 'Cargando perfiles...'
-                      : profiles.length === 0
-                        ? 'Sin perfiles'
-                        : 'Seleccionar perfil'}
-                  </span>
-                )}
                 <Popover
                   open={ivaPeriodPickerOpen}
                   onOpenChange={setIvaPeriodPickerOpen}
@@ -4737,7 +4730,7 @@ export function RepresentativeDetailPage({ representativeId, initialClientId }: 
           </TabsContent>
 
           {/* Solicitudes Tab */}
-          <TabsContent value="solicitudes" className="mt-4">
+          <TabsContent value="solicitudes" className="">
             <div className="space-y-4">
               {/* Header row */}
               <div className="flex items-center justify-between gap-3 flex-wrap">
