@@ -1196,13 +1196,19 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
       empleado.categoriaId ?? (await resolveCategoriaIdParaBasico(empleado));
 
     let categoriaNombre: string | null = null;
+    let esExcluidoConvenio = false;
     if (categoriaId) {
       const [catRow] = await db
-        .select({ nombre: payrollConvenioCategoria.nombre })
+        .select({
+          nombre: payrollConvenioCategoria.nombre,
+          cctCodigo: payrollConvenio.cctCodigo,
+        })
         .from(payrollConvenioCategoria)
+        .leftJoin(payrollConvenio, eq(payrollConvenio.id, payrollConvenioCategoria.convenioId))
         .where(eq(payrollConvenioCategoria.id, categoriaId))
         .limit(1);
       categoriaNombre = catRow?.nombre ?? null;
+      esExcluidoConvenio = catRow?.cctCodigo === '9999/99';
     }
 
     const periodoNorm = normalizarPeriodoYYYYMM(ctx.data.periodo);
@@ -1212,7 +1218,7 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
     if (!Number.isNaN(override) && override > 0) {
       const fechaAltaStr = empleado.fechaAlta ? empleado.fechaAlta.toISOString().slice(0, 10) : null;
       const fechaIngresoStr = empleado.fechaIngreso ? empleado.fechaIngreso.toISOString().slice(0, 10) : null;
-      return { basico: override, categoriaNombre, tipoJornada: empleado.tipoJornada ?? 'full_time', sinEscalaParaPeriodo: false, fallbackPeriodoLabel: null, periodoEscalaLabel: null, fechaAlta: fechaAltaStr, fechaIngreso: fechaIngresoStr };
+      return { basico: override, categoriaNombre, esExcluidoConvenio, tipoJornada: empleado.tipoJornada ?? 'full_time', sinEscalaParaPeriodo: false, fallbackPeriodoLabel: null, periodoEscalaLabel: null, fechaAlta: fechaAltaStr, fechaIngreso: fechaIngresoStr };
     }
 
     // 2° prioridad: escala configurada para el período exacto
@@ -1245,6 +1251,7 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
       return {
         basico: Number(escalaPeriodo.monto),
         categoriaNombre,
+        esExcluidoConvenio,
         tipoJornada,
         sinEscalaParaPeriodo: false,
         fallbackPeriodoLabel: null,
@@ -1256,7 +1263,7 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
 
     const fechaAltaStr2 = empleado.fechaAlta ? empleado.fechaAlta.toISOString().slice(0, 10) : null;
     const fechaIngresoStr2 = empleado.fechaIngreso ? empleado.fechaIngreso.toISOString().slice(0, 10) : null;
-    if (!categoriaId) return { basico: 0, categoriaNombre: null, tipoJornada, fechaAlta: fechaAltaStr2, fechaIngreso: fechaIngresoStr2 };
+    if (!categoriaId) return { basico: 0, categoriaNombre: null, esExcluidoConvenio: false, tipoJornada, fechaAlta: fechaAltaStr2, fechaIngreso: fechaIngresoStr2 };
 
     // 3° prioridad: escala más reciente anterior al período (fallback)
     let basico = 0;
@@ -1285,6 +1292,7 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
     return {
       basico: Number.isNaN(basico) ? 0 : basico,
       categoriaNombre,
+      esExcluidoConvenio,
       tipoJornada,
       sinEscalaParaPeriodo,
       fallbackPeriodoLabel,
@@ -1830,6 +1838,12 @@ export const getUltimoReciboImportado = createServerFn({ method: 'GET' })
       clientId: z.string().uuid(),
       /** Cuando se provee, carga ese recibo específico en lugar del último. */
       liquidacionId: z.string().uuid().optional(),
+      /**
+       * Período destino (YYYY-MM) para calcular el mejor sueldo del semestre.
+       * Si no se provee, se usa el período del último recibo encontrado.
+       * Necesario en modo "nuevo recibo" donde el recibo aún no existe.
+       */
+      periodoSemestre: z.string().regex(/^\d{4}-\d{2}$/).optional(),
     })
   )
   .handler(async (ctx) => {
@@ -1895,8 +1909,10 @@ export const getUltimoReciboImportado = createServerFn({ method: 'GET' })
       .where(eq(liquidacionImportConceptoValor.reciboId, row.recibo.id))
       .orderBy(sql`${liquidacionImportConceptoValor.codigo}::int`);
 
-    // Mejor sueldo del semestre para concepto 401 (vacaciones no gozadas) — TIN-950
-    const [rYear, rMonthStr] = row.recibo.periodo.split('-');
+    // Mejor sueldo del semestre — usado por concepto 401 (vacaciones no gozadas) y conceptos 41/42 (SAC).
+    // Usa periodoSemestre cuando se provee (modo nuevo recibo) o el período del recibo cargado.
+    const periodoParaSemestre = ctx.data.periodoSemestre ?? row.recibo.periodo;
+    const [rYear, rMonthStr] = periodoParaSemestre.split('-');
     const rMonth = parseInt(rMonthStr, 10);
     const rSemesterStart = rMonth <= 6 ? 1 : 7;
     const rSemesterMonths: string[] = [];
@@ -5518,17 +5534,35 @@ export const getSacPreview = createServerFn({ method: 'GET' })
     await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
 
     const { periodo } = ctx.data;
-    const [year, monthStr] = periodo.split('-') as [string, string];
-    const month = parseInt(monthStr, 10);
 
-    // Meses del semestre hasta el período indicado (inclusive)
-    const semesterStart = month <= 6 ? 1 : 7;
-    const semesterMonths: string[] = [];
-    for (let m = semesterStart; m <= month; m++) {
-      semesterMonths.push(`${year}-${String(m).padStart(2, '0')}`);
-    }
+    // Solo empleados que tienen un recibo de sueldo en el período SAC exacto (06 ó 12)
+    // Empleados que egresaron antes del mes SAC ya liquidaron su SAC proporcional
+    // en la liquidación final, por lo que no deben aparecer aquí.
+    const recibosDelPeriodo = await db
+      .select({
+        empleadoId: liquidacionImportRecibo.empleadoId,
+        haberes: liquidacionImportRecibo.haberes,
+        noRemunerativo: liquidacionImportRecibo.noRemunerativo,
+      })
+      .from(liquidacionImportRecibo)
+      .innerJoin(
+        liquidacionImportEmpleado,
+        eq(liquidacionImportEmpleado.id, liquidacionImportRecibo.empleadoId)
+      )
+      .where(
+        and(
+          eq(liquidacionImportEmpleado.clientId, ctx.data.profileId),
+          eq(liquidacionImportEmpleado.activo, true),
+          eq(liquidacionImportRecibo.periodo, periodo),
+          eq(liquidacionImportRecibo.tipo, 'sueldo')
+        )
+      );
 
-    // Empleados activos
+    if (recibosDelPeriodo.length === 0) return [];
+
+    const empIdsConRecibo = [...new Set(recibosDelPeriodo.map((r) => r.empleadoId))];
+
+    // Datos del empleado para los que tienen recibo en el período SAC
     const empleados = await db
       .select({
         id: liquidacionImportEmpleado.id,
@@ -5537,33 +5571,7 @@ export const getSacPreview = createServerFn({ method: 'GET' })
         fechaIngreso: liquidacionImportEmpleado.fechaIngreso,
       })
       .from(liquidacionImportEmpleado)
-      .where(
-        and(
-          eq(liquidacionImportEmpleado.clientId, ctx.data.profileId),
-          eq(liquidacionImportEmpleado.activo, true)
-        )
-      );
-
-    if (empleados.length === 0) return [];
-
-    const empIds = empleados.map((e) => e.id);
-
-    // Recibos de sueldo del semestre
-    const recibos = await db
-      .select({
-        empleadoId: liquidacionImportRecibo.empleadoId,
-        periodo: liquidacionImportRecibo.periodo,
-        haberes: liquidacionImportRecibo.haberes,
-        noRemunerativo: liquidacionImportRecibo.noRemunerativo,
-      })
-      .from(liquidacionImportRecibo)
-      .where(
-        and(
-          inArray(liquidacionImportRecibo.empleadoId, empIds),
-          inArray(liquidacionImportRecibo.periodo, semesterMonths),
-          eq(liquidacionImportRecibo.tipo, 'sueldo')
-        )
-      );
+      .where(inArray(liquidacionImportEmpleado.id, empIdsConRecibo));
 
     // SAC existentes en este período
     const sacExistentes = await db
@@ -5571,34 +5579,32 @@ export const getSacPreview = createServerFn({ method: 'GET' })
       .from(liquidacionImportRecibo)
       .where(
         and(
-          inArray(liquidacionImportRecibo.empleadoId, empIds),
+          inArray(liquidacionImportRecibo.empleadoId, empIdsConRecibo),
           eq(liquidacionImportRecibo.periodo, periodo),
           eq(liquidacionImportRecibo.tipo, 'SAC')
         )
       );
     const sacExistenteIds = new Set(sacExistentes.map((s) => s.empleadoId));
 
-    // Mejor mes por empleado
-    const bestByEmp = new Map<string, { periodo: string; total: number }>();
-    for (const r of recibos) {
+    // Total haberes + no remunerativo por empleado en el período SAC
+    // (suma quincenas si las hay)
+    const totalByEmp = new Map<string, number>();
+    for (const r of recibosDelPeriodo) {
       const total = Number(r.haberes) + Number(r.noRemunerativo);
-      const prev = bestByEmp.get(r.empleadoId);
-      if (!prev || total > prev.total) {
-        bestByEmp.set(r.empleadoId, { periodo: r.periodo, total });
-      }
+      totalByEmp.set(r.empleadoId, (totalByEmp.get(r.empleadoId) ?? 0) + total);
     }
 
     return empleados
       .map((emp) => {
-        const best = bestByEmp.get(emp.id);
+        const total = totalByEmp.get(emp.id) ?? 0;
         return {
           empleadoId: emp.id,
           nombre: emp.nombre ?? '—',
           legajo: emp.legajo ?? '',
           fechaIngreso: emp.fechaIngreso ?? null,
-          mejorPeriodo: best?.periodo ?? null,
-          mejorMonto: best?.total ?? 0,
-          sacBase: best ? best.total / 2 : 0,
+          mejorPeriodo: total > 0 ? periodo : null,
+          mejorMonto: total,
+          sacBase: total / 2,
           yaTieneSac: sacExistenteIds.has(emp.id),
         };
       })

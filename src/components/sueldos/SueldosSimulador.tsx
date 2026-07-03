@@ -198,13 +198,16 @@ export function SueldosSimulador({
     periodo.length === 7 && puedeLiquidarPeriodo(periodo);
 
   const { data: ultimoRecibo, isLoading: loadingUltimo } = useQuery({
-    queryKey: ['ultimo-recibo-importado', clientId, sosEmpleadoId, reciboIdToLoad],
+    queryKey: ['ultimo-recibo-importado', clientId, sosEmpleadoId, reciboIdToLoad, flowHeader?.periodo],
     queryFn: () =>
       getUltimoReciboImportado({
         data: {
           clientId,
           importEmpleadoId: sosEmpleadoId!,
           ...(reciboIdToLoad ? { liquidacionId: reciboIdToLoad } : {}),
+          // En modo nuevo recibo (sin reciboIdToLoad), pasar el período destino para el
+          // cálculo correcto del mejor sueldo del semestre (ej: Jan–Jun para SAC de junio).
+          ...(!reciboIdToLoad && flowHeader?.periodo ? { periodoSemestre: flowHeader.periodo } : {}),
         },
       }),
     enabled: !!sosEmpleadoId,
@@ -689,9 +692,9 @@ export function SueldosSimulador({
           payload.periodo,
         ],
       });
-      setSosEmpleadoId(
-        payload.copiarUltimoRecibo ? payload.importEmpleadoId : null
-      );
+      // Siempre setear sosEmpleadoId para que getUltimoReciboImportado cargue
+      // mejorSueldoSemestre (necesario para conceptos 41/42 en meses 06/12).
+      setSosEmpleadoId(payload.importEmpleadoId);
       setReciboIdToLoad(null);
       setTablaEdits({});
       setActiveCodigos(new Set());
@@ -783,7 +786,7 @@ export function SueldosSimulador({
                 setFlowHeader((prev) =>
                   prev ? { ...prev, copiarUltimoRecibo: copiar } : null
                 );
-                setSosEmpleadoId(copiar ? flowHeader.importEmpleadoId : null);
+                setSosEmpleadoId(flowHeader.importEmpleadoId);
                 setTablaEdits({});
                 setRecalcularConEscalaVigente(copiar);
               }}
