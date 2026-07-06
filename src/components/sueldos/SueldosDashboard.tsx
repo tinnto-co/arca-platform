@@ -12,11 +12,12 @@ import {
   Loader2,
   Calendar,
   Trash2,
+  Zap,
+  Upload,
+  FileCheck,
 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { toast } from 'sonner';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -352,9 +353,9 @@ export function SueldosDashboard({
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-0">
       {sueldosQueryError ? (
-        <Alert variant="destructive">
+        <Alert variant="destructive" className="mb-6">
           <AlertTitle>No se pudieron cargar los datos de sueldos</AlertTitle>
           <AlertDescription className="space-y-2">
             <p>{sueldosErrorMessage}</p>
@@ -373,12 +374,13 @@ export function SueldosDashboard({
           </AlertDescription>
         </Alert>
       ) : null}
-      <div className="flex flex-wrap items-center justify-between gap-4">
+
+      {/* Control row */}
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-2">
-          <Calendar className="h-5 w-5 text-muted-foreground" />
-          <span className="text-sm font-medium">Año:</span>
+          <Calendar style={{ width: 15, height: 15, color: '#9B9CA3' }} />
           <Select value={ano} onValueChange={setAno}>
-            <SelectTrigger className="w-[100px]">
+            <SelectTrigger className="bg-white border border-[#DFDCD3] rounded-[10px] px-[13px] py-[8px] text-[13.5px] h-auto w-[100px] shadow-none focus:ring-0 focus:ring-offset-0">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -389,9 +391,8 @@ export function SueldosDashboard({
               ))}
             </SelectContent>
           </Select>
-          <span className="text-sm font-medium">Mes:</span>
           <Select value={mes} onValueChange={setMes}>
-            <SelectTrigger className="w-[140px]">
+            <SelectTrigger className="bg-white border border-[#DFDCD3] rounded-[10px] px-[13px] py-[8px] text-[13.5px] h-auto w-[140px] shadow-none focus:ring-0 focus:ring-offset-0">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -405,11 +406,12 @@ export function SueldosDashboard({
         </div>
         <div className="flex flex-col items-end gap-1">
           {!permiteLiquidar && (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs" style={{ color: '#9B9CA3' }}>
               No se puede liquidar meses futuros.
             </span>
           )}
-          <Button
+          <button
+            type="button"
             onClick={abrirConfirmacionMasiva}
             disabled={
               liquidacionMasiva.isPending ||
@@ -417,129 +419,160 @@ export function SueldosDashboard({
               empleados.length === 0 ||
               !permiteLiquidar
             }
+            className="inline-flex items-center gap-2 bg-[#12131A] text-white rounded-[10px] px-[17px] py-[10px] text-[13.5px] font-semibold hover:bg-black transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {liquidacionMasiva.isPending ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : null}
+              <Loader2 style={{ width: 15, height: 15 }} className="animate-spin" />
+            ) : (
+              <Zap style={{ width: 15, height: 15 }} />
+            )}
             Liquidación masiva
-          </Button>
+          </button>
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Empleados activos
-            </CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{importEmpleados.filter((e) => e.empleado.activo).length}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Liquidaciones (período)
-            </CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {loadingLiq ? '—' : liquidaciones.length}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total bruto
-            </CardTitle>
-            <Calculator className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {loadingLiq
-                ? '—'
-                : `$${Math.ceil(totalBruto).toLocaleString('es-AR')}`}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total neto
-            </CardTitle>
-            <LayoutDashboard className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {loadingLiq
-                ? '—'
-                : `$${Math.ceil(totalNeto).toLocaleString('es-AR')}`}
-            </div>
-          </CardContent>
-        </Card>
+      {/* KPI band */}
+      <div className="grid grid-cols-4 border-t border-b border-[#ECEAE3] py-6 mb-[44px]">
+        {/* Col 1 */}
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-1.5">
+            <Users style={{ width: 15, height: 15, color: '#9B9CA3' }} />
+            <span style={{ fontSize: '12.5px', color: '#6E7079', fontWeight: 500 }}>Empleados activos</span>
+          </div>
+          <div
+            className="font-[family-name:var(--ff-display)] font-semibold tabular-nums"
+            style={{ fontSize: 30, letterSpacing: '-0.025em', color: '#12131A', lineHeight: 1.1, marginTop: 4 }}
+          >
+            {importEmpleados.filter((e) => e.empleado.activo).length}
+          </div>
+        </div>
+        {/* Col 2 */}
+        <div className="flex flex-col gap-1 border-l border-[#ECEAE3] pl-7">
+          <div className="flex items-center gap-1.5">
+            <FileText style={{ width: 15, height: 15, color: '#9B9CA3' }} />
+            <span style={{ fontSize: '12.5px', color: '#6E7079', fontWeight: 500 }}>Liquidaciones (período)</span>
+          </div>
+          <div
+            className="font-[family-name:var(--ff-display)] font-semibold tabular-nums"
+            style={{ fontSize: 30, letterSpacing: '-0.025em', color: '#12131A', lineHeight: 1.1, marginTop: 4 }}
+          >
+            {loadingLiq ? '—' : liquidaciones.length}
+          </div>
+        </div>
+        {/* Col 3 */}
+        <div className="flex flex-col gap-1 border-l border-[#ECEAE3] pl-7">
+          <div className="flex items-center gap-1.5">
+            <Calculator style={{ width: 15, height: 15, color: '#9B9CA3' }} />
+            <span style={{ fontSize: '12.5px', color: '#6E7079', fontWeight: 500 }}>Total bruto</span>
+          </div>
+          <div
+            className="font-[family-name:var(--ff-display)] font-semibold tabular-nums"
+            style={{ fontSize: 30, letterSpacing: '-0.025em', color: '#12131A', lineHeight: 1.1, marginTop: 4 }}
+          >
+            {loadingLiq ? '—' : `$${Math.ceil(totalBruto).toLocaleString('es-AR')}`}
+          </div>
+        </div>
+        {/* Col 4 */}
+        <div className="flex flex-col gap-1 border-l border-[#ECEAE3] pl-7">
+          <div className="flex items-center gap-1.5">
+            <LayoutDashboard style={{ width: 15, height: 15, color: '#9B9CA3' }} />
+            <span style={{ fontSize: '12.5px', color: '#6E7079', fontWeight: 500 }}>Total neto</span>
+          </div>
+          <div
+            className="font-[family-name:var(--ff-display)] font-semibold tabular-nums"
+            style={{ fontSize: 30, letterSpacing: '-0.025em', color: '#12131A', lineHeight: 1.1, marginTop: 4 }}
+          >
+            {loadingLiq ? '—' : `$${Math.ceil(totalNeto).toLocaleString('es-AR')}`}
+          </div>
+        </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-      <Card>
-        <CardHeader>
-          <div className="flex flex-wrap items-start justify-between gap-2">
+      {/* Two-column body */}
+      <div className="grid grid-cols-[1.15fr_1fr] gap-[44px]">
+        {/* Left column: Recibos generados */}
+        <div>
+          <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
             <div>
-              <CardTitle>Recibos generados del período</CardTitle>
-              <p className="text-sm text-muted-foreground">
+              <h2
+                className="font-[family-name:var(--ff-display)] font-semibold"
+                style={{ fontSize: 16, color: '#12131A' }}
+              >
+                Recibos generados del período
+              </h2>
+              <p style={{ fontSize: 13, color: '#9B9CA3', marginTop: 2 }}>
                 Período {periodo}. Estos son los recibos calculados en ARCA.
               </p>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+            <button
+              type="button"
               onClick={() => setDeleteLiquidacionesOpen(true)}
               disabled={loadingLiq || liquidacionesGeneradas.length === 0}
+              className="inline-flex items-center gap-2 bg-white border border-[#DFDCD3] rounded-[10px] px-[13px] py-[8px] text-[13.5px] font-semibold hover:bg-[#FBFAF6] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{ color: '#c0392b' }}
             >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Eliminar liquidaciones del período
-            </Button>
+              <Trash2 style={{ width: 14, height: 14 }} />
+              Eliminar liquidaciones
+            </button>
           </div>
-        </CardHeader>
-        <CardContent>
+
+          {/* List header */}
+          <div
+            className="grid gap-4 border-b border-[#ECEAE3] py-2"
+            style={{ gridTemplateColumns: '1fr auto auto' }}
+          >
+            <span style={{ fontSize: '10.5px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#9B9CA3' }}>Empleado</span>
+            <span style={{ fontSize: '10.5px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#9B9CA3' }}>Estado</span>
+            <span style={{ fontSize: '10.5px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#9B9CA3' }}>Neto</span>
+          </div>
+
           {loadingLiq ? (
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Cargando…
+            <div className="flex items-center gap-2 py-4" style={{ color: '#9B9CA3' }}>
+              <Loader2 style={{ width: 14, height: 14 }} className="animate-spin" />
+              <span style={{ fontSize: 13 }}>Cargando…</span>
             </div>
           ) : liquidacionesGeneradas.length === 0 ? (
-            <p className="text-muted-foreground">
+            <p className="py-4" style={{ fontSize: 13, color: '#9B9CA3' }}>
               No hay recibos generados para este período.
             </p>
           ) : (
-            <ul className="space-y-2">
+            <div>
               {liquidacionesGeneradas.slice(0, 10).map((l) => (
-                <li
+                <div
                   key={l.liquidacion.id}
-                  className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm"
+                  className="grid gap-4 py-3 px-[2px] border-b border-[#F1EFE8] hover:bg-[#FBFAF6] transition-[background] duration-[120ms] items-center"
+                  style={{ gridTemplateColumns: '1fr auto auto' }}
                 >
-                  <span className="flex items-center gap-2">
-                    <span>
+                  <div>
+                    <span style={{ fontSize: '13.5px', fontWeight: 600, color: '#12131A' }}>
                       {toTitleCase(l.empleado.nombre)}
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        Legajo: {legajoParaMostrar(l.empleado.legajo ?? null)}
-                      </span>
                     </span>
-                    <Badge variant="outline" className="text-xs">Generado</Badge>
+                    <span style={{ fontSize: '11.5px', color: '#9B9CA3' }}>
+                      {' · Legajo '}
+                      {legajoParaMostrar(l.empleado.legajo ?? null)}
+                    </span>
+                  </div>
+                  <span
+                    style={{
+                      color: 'oklch(0.42 0.13 160)',
+                      backgroundColor: 'oklch(0.94 0.04 160)',
+                      borderRadius: 9999,
+                      padding: '3px 9px',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Generado
                   </span>
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">
-                      $
-                      {Math.ceil(Number(l.liquidacion.neto)).toLocaleString('es-AR')}
+                  <div className="flex items-center gap-2 justify-end" style={{ minWidth: 104 }}>
+                    <span
+                      className="tabular-nums"
+                      style={{ fontSize: '13.5px', fontWeight: 600, color: '#12131A' }}
+                    >
+                      ${Math.ceil(Number(l.liquidacion.neto)).toLocaleString('es-AR')}
                     </span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    <button
+                      type="button"
                       onClick={() =>
                         setLiquidacionToDelete({
                           id: l.liquidacion.id,
@@ -551,63 +584,107 @@ export function SueldosDashboard({
                         eliminarLiquidaciones.isPending
                       }
                       aria-label={`Eliminar liquidación de ${l.empleado.nombre}`}
+                      className="flex items-center justify-center rounded-md transition-colors disabled:opacity-40"
+                      style={{ width: 28, height: 28, color: '#c0392b' }}
                     >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                      <Trash2 style={{ width: 14, height: 14 }} />
+                    </button>
                   </div>
-                </li>
+                </div>
               ))}
-            </ul>
+            </div>
           )}
-        </CardContent>
-      </Card>
-      {usaLsdReferencia ? (
-      <Card>
-        <CardHeader>
-          <CardTitle>Recibos importados (LSD) de referencia</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Período {periodo}. Se conservan para comparar contra los generados.
-          </p>
-        </CardHeader>
-        <CardContent>
+        </div>
+
+        {/* Right column: Recibos importados LSD */}
+        <div className="border-l border-[#ECEAE3] pl-[44px]">
+          <div className="mb-4">
+            <h2
+              className="font-[family-name:var(--ff-display)] font-semibold"
+              style={{ fontSize: 16, color: '#12131A' }}
+            >
+              Recibos importados LSD
+            </h2>
+            <p style={{ fontSize: 13, color: '#9B9CA3', marginTop: 2 }}>
+              Período {periodo}.{usaLsdReferencia ? ' Se conservan para comparar contra los generados.' : ''}
+            </p>
+          </div>
+
           {loadingLiq ? (
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Cargando…
+            <div className="flex items-center gap-2 py-4" style={{ color: '#9B9CA3' }}>
+              <Loader2 style={{ width: 14, height: 14 }} className="animate-spin" />
+              <span style={{ fontSize: 13 }}>Cargando…</span>
             </div>
           ) : liquidacionesImportadasLsd.length === 0 ? (
-            <p className="text-muted-foreground">
-              No hay recibos LSD importados para este período.
-            </p>
+            <div className="flex flex-col items-center justify-center py-10 gap-4">
+              <div
+                className="flex items-center justify-center rounded-[10px]"
+                style={{ width: 42, height: 42, backgroundColor: '#F1EFE8' }}
+              >
+                <FileCheck style={{ width: 20, height: 20, color: '#9B9CA3' }} />
+              </div>
+              <p style={{ fontSize: '13.5px', color: '#6E7079', textAlign: 'center' }}>
+                No hay recibos LSD importados para este período.
+              </p>
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 bg-white border border-[#DFDCD3] rounded-[10px] px-[13px] py-[8px] text-[13.5px] font-semibold hover:bg-[#FBFAF6] transition-colors"
+                style={{ color: '#3E404A' }}
+              >
+                <Upload style={{ width: 14, height: 14 }} />
+                Importar LSD
+              </button>
+            </div>
           ) : (
-            <ul className="space-y-2">
+            <div>
+              {/* List header */}
+              <div
+                className="grid gap-4 border-b border-[#ECEAE3] py-2"
+                style={{ gridTemplateColumns: '1fr auto auto' }}
+              >
+                <span style={{ fontSize: '10.5px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#9B9CA3' }}>Empleado</span>
+                <span style={{ fontSize: '10.5px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#9B9CA3' }}>Tipo</span>
+                <span style={{ fontSize: '10.5px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#9B9CA3' }}>Neto</span>
+              </div>
               {liquidacionesImportadasLsd.slice(0, 10).map((l) => (
-                <li
+                <div
                   key={l.liquidacion.id}
-                  className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm"
+                  className="grid gap-4 py-3 px-[2px] border-b border-[#F1EFE8] hover:bg-[#FBFAF6] transition-[background] duration-[120ms] items-center"
+                  style={{ gridTemplateColumns: '1fr auto auto' }}
                 >
-                  <span className="flex items-center gap-2">
-                    <span>
+                  <div>
+                    <span style={{ fontSize: '13.5px', fontWeight: 600, color: '#12131A' }}>
                       {toTitleCase(l.empleado.nombre)}
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        Legajo: {legajoParaMostrar(l.empleado.legajo ?? null)}
-                      </span>
                     </span>
-                    <Badge variant="secondary" className="text-xs">LSD</Badge>
+                    <span style={{ fontSize: '11.5px', color: '#9B9CA3' }}>
+                      {' · Legajo '}
+                      {legajoParaMostrar(l.empleado.legajo ?? null)}
+                    </span>
+                  </div>
+                  <span
+                    style={{
+                      color: '#6E7079',
+                      backgroundColor: '#F1EFE8',
+                      borderRadius: 9999,
+                      padding: '3px 9px',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    LSD
                   </span>
-                  <span className="font-medium">
-                    $
-                    {Number(l.liquidacion.neto).toLocaleString('es-AR', {
-                      minimumFractionDigits: 2,
-                    })}
+                  <span
+                    className="tabular-nums"
+                    style={{ fontSize: '13.5px', fontWeight: 600, color: '#12131A', minWidth: 104, textAlign: 'right' }}
+                  >
+                    ${Number(l.liquidacion.neto).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                   </span>
-                </li>
+                </div>
               ))}
-            </ul>
+            </div>
           )}
-        </CardContent>
-      </Card>
-      ) : null}
+        </div>
       </div>
 
       <AlertDialog
@@ -650,7 +727,9 @@ export function SueldosDashboard({
                     </div>
                   </div>
                   {e.empleado.convenioId ? (
-                    <Badge variant="secondary">{e.convenioNombre ?? 'Convenio asignado'}</Badge>
+                    <span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold">
+                      {e.convenioNombre ?? 'Convenio asignado'}
+                    </span>
                   ) : (
                     <div className="w-full md:w-[260px]">
                       <Select

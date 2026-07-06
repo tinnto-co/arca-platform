@@ -235,7 +235,6 @@ function RouteComponent() {
   return (
     <div className="p-6 max-w-[1200px] mx-auto">
       <PageHeader
-        icon={Globe}
         title="IIBB / Convenio Multilateral"
         subtitle="Ingresos brutos por régimen local y convenio multilateral"
       />

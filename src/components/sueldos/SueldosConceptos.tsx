@@ -4,16 +4,6 @@ import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Info, ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -51,9 +41,12 @@ function ConceptoDialog({ row }: { row: ConceptoRow }) {
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-7 w-7">
-          <Info className="h-4 w-4" />
-        </Button>
+        <button
+          type="button"
+          className="flex h-7 w-7 items-center justify-center rounded-[8px] hover:bg-[#F1EFE8] transition-colors"
+        >
+          <Info style={{ width: 15, height: 15, color: '#B7B8BD' }} />
+        </button>
       </DialogTrigger>
       <DialogContent className="w-[95vw] sm:max-w-2xl">
         <DialogHeader>
@@ -135,96 +128,122 @@ export function SueldosConceptos({
   };
 
   return (
-    <div className="w-full min-w-0 max-w-full space-y-3">
-      <p className="text-sm text-muted-foreground">
+    <div className="w-full min-w-0 max-w-full space-y-4">
+      {/* Intro text */}
+      <p className="text-[13.5px] max-w-[760px]" style={{ color: '#6E7079' }}>
         Catálogo completo de conceptos SOS (códigos 1–699). Todos los conceptos están disponibles
         para usar en cualquier recibo.
       </p>
 
-      <div className="relative max-w-sm">
-        <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
+      {/* Search pill */}
+      <div
+        className="flex items-center gap-[9px] w-[380px] bg-white rounded-[10px] px-[13px] py-[8px]"
+        style={{ border: '1px solid #DFDCD3' }}
+      >
+        <Search style={{ width: 15, height: 15, color: '#9B9CA3', flexShrink: 0 }} />
+        <input
+          type="text"
           placeholder="Buscar por nombre o código AFIP…"
           value={busqueda}
           onChange={(e) => handleBusqueda(e.target.value)}
-          className="pl-8"
+          className="flex-1 bg-transparent outline-none text-[13.5px] placeholder:text-[#9B9CA3]"
+          style={{ color: '#12131A' }}
         />
       </div>
 
-      <div className="rounded-md border overflow-hidden">
-        <Table className="w-full text-sm">
-          <colgroup>
-            <col className="w-16" />
-            <col className="w-24" />
-            <col />
-            <col className="w-10" />
-          </colgroup>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Cód. SOS</TableHead>
-              <TableHead>Cód. AFIP</TableHead>
-              <TableHead>Nombre</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={4} className="text-center text-muted-foreground">
-                  Cargando...
-                </TableCell>
-              </TableRow>
-            ) : filtrados.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={4} className="text-center text-muted-foreground">
-                  {busqueda ? 'Sin resultados para la búsqueda.' : 'No hay conceptos en el catálogo.'}
-                </TableCell>
-              </TableRow>
-            ) : (
-              pagina_rows.map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell className="font-mono">{row.numeroSos}</TableCell>
-                  <TableCell className="font-mono text-muted-foreground">
-                    {row.codigoAfip ?? '—'}
-                  </TableCell>
-                  <TableCell className="min-w-0 break-words">{row.nombre}</TableCell>
-                  <TableCell className="text-center">
-                    <ConceptoDialog row={row} />
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+      {/* Table */}
+      <div className="w-full overflow-hidden rounded-[10px]" style={{ border: '1px solid #ECEAE3' }}>
+        {/* Navy header */}
+        <div
+          className="grid h-[44px] items-center px-5 rounded-t-[10px] text-[10.5px] font-semibold tracking-[0.06em] uppercase"
+          style={{
+            background: '#0B1730',
+            color: '#E7EAF2',
+            gridTemplateColumns: '120px 140px 1fr 60px',
+          }}
+        >
+          <span>Cód. SOS</span>
+          <span>Cód. AFIP</span>
+          <span>Nombre</span>
+          <span />
+        </div>
+
+        {/* Rows */}
+        {isLoading ? (
+          <div className="px-5 py-[14px] text-[13.5px] text-center" style={{ color: '#9B9CA3' }}>
+            Cargando...
+          </div>
+        ) : filtrados.length === 0 ? (
+          <div className="px-5 py-[14px] text-[13.5px] text-center" style={{ color: '#9B9CA3' }}>
+            {busqueda ? 'Sin resultados para la búsqueda.' : 'No hay conceptos en el catálogo.'}
+          </div>
+        ) : (
+          pagina_rows.map((row) => (
+            <div
+              key={row.id}
+              className="grid items-center px-5 py-[14px] transition-[background] duration-[120ms] hover:bg-[#FBFAF6]"
+              style={{
+                gridTemplateColumns: '120px 140px 1fr 60px',
+                borderBottom: '1px solid #ECEAE3',
+              }}
+            >
+              {/* CÓD. SOS */}
+              <span
+                className="text-[13.5px] font-semibold tabular-nums"
+                style={{ color: '#12131A' }}
+              >
+                {row.numeroSos}
+              </span>
+              {/* CÓD. AFIP */}
+              <span
+                className="font-[family-name:var(--ff-mono)] text-[12.5px]"
+                style={{ color: '#9B9CA3' }}
+              >
+                {row.codigoAfip ?? '—'}
+              </span>
+              {/* NOMBRE */}
+              <span className="text-[13.5px] min-w-0 break-words" style={{ color: '#3E404A' }}>
+                {row.nombre}
+              </span>
+              {/* INFO */}
+              <div className="flex justify-end">
+                <ConceptoDialog row={row} />
+              </div>
+            </div>
+          ))
+        )}
       </div>
 
+      {/* Pagination */}
       {!isLoading && filtrados.length > 0 && (
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">
+        <div className="flex items-center justify-between py-4 px-[2px]">
+          <span className="text-[12.5px]" style={{ color: '#9B9CA3' }}>
             {filtrados.length === conceptos.length
-              ? `${conceptos.length} conceptos`
+              ? `${conceptos.length} de ${conceptos.length} conceptos`
               : `${filtrados.length} de ${conceptos.length} conceptos`}
             {' · '}página {paginaActual} de {totalPaginas}
           </span>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-8 w-8"
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
               onClick={() => setPagina((p) => Math.max(1, p - 1))}
               disabled={paginaActual === 1}
+              className="bg-white border border-[#DFDCD3] rounded-[10px] text-[13.5px] font-semibold px-[17px] py-[10px] hover:bg-[#FBFAF6] disabled:opacity-40 transition-colors flex items-center gap-1"
+              style={{ color: '#3E404A' }}
             >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-8 w-8"
+              <ChevronLeft style={{ width: 14, height: 14 }} />
+              Anterior
+            </button>
+            <button
+              type="button"
               onClick={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
               disabled={paginaActual === totalPaginas}
+              className="bg-white border border-[#DFDCD3] rounded-[10px] text-[13.5px] font-semibold px-[17px] py-[10px] hover:bg-[#FBFAF6] disabled:opacity-40 transition-colors flex items-center gap-1"
+              style={{ color: '#3E404A' }}
             >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
+              Siguiente
+              <ChevronRight style={{ width: 14, height: 14 }} />
+            </button>
           </div>
         </div>
       )}

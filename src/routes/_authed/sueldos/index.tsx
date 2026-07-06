@@ -118,6 +118,7 @@ function RouteComponent() {
           data={clients}
           searchKey="name"
           searchPlaceholder="Buscar cliente..."
+          showSelection={false}
           onRowClick={(row) =>
             void navigate({
               to: '/sueldos/$profileId',

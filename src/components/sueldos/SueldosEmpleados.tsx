@@ -2,18 +2,9 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { format, parseISO } from 'date-fns';
-import { Plus, Trash2, RefreshCw, Pencil, Save, Search, ChevronLeft, ChevronRight, FileText, Bookmark, BookmarkCheck, UserX, UserCheck } from 'lucide-react';
+import { format } from 'date-fns';
+import { Plus, Trash2, RefreshCw, Pencil, Save, Search, ChevronLeft, ChevronRight, FileText, Bookmark, BookmarkCheck, UserX } from 'lucide-react';
 import { toast } from 'sonner';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -1425,224 +1416,321 @@ export function SueldosEmpleados({
           </AlertDescription>
         </Alert>
       ) : null}
+
+      {/* Top action row */}
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground break-words">
-          Empleados del perfil fiscal (importados desde LSD o creados
-          manualmente).
+        <p className="break-words" style={{ fontSize: '13.5px', color: '#9B9CA3' }}>
+          Empleados del perfil fiscal (importados desde LSD o creados manualmente).
         </p>
         <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            className="gap-2"
+          <button
+            type="button"
             onClick={() => sincronizar.mutate()}
             disabled={sincronizar.isPending}
+            className="inline-flex items-center gap-2 bg-white border border-[#DFDCD3] rounded-[10px] px-[13px] py-[8px] text-[13.5px] font-semibold hover:bg-[#FBFAF6] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ color: '#3E404A' }}
           >
-            <RefreshCw className={`h-4 w-4 ${sincronizar.isPending ? 'animate-spin' : ''}`} />
+            <RefreshCw style={{ width: 14, height: 14 }} className={sincronizar.isPending ? 'animate-spin' : ''} />
             Sincronizar convenios
-          </Button>
-          <Button size="sm" className="gap-2" onClick={() => setOpen(true)}>
-            <Plus className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="inline-flex items-center gap-2 bg-[#12131A] text-white rounded-[10px] px-[17px] py-[10px] text-[13.5px] font-semibold hover:bg-black transition-colors"
+          >
+            <Plus style={{ width: 14, height: 14 }} />
             Nuevo empleado
-          </Button>
+          </button>
         </div>
       </div>
 
+      {/* Search + filter row */}
       <div className="flex items-center gap-3">
-        <div className="relative max-w-sm">
-          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <div className="relative" style={{ width: 320 }}>
+          <Search
+            className="absolute top-1/2 -translate-y-1/2"
+            style={{ left: 13, width: 14, height: 14, color: '#9B9CA3' }}
+          />
           <Input
             placeholder="Buscar por nombre, CUIL o legajo…"
             value={busqueda}
             onChange={(e) => handleBusqueda(e.target.value)}
-            className="pl-8"
+            className="bg-white border border-[#DFDCD3] rounded-[10px] text-[13.5px] h-auto py-[8px] pr-[13px] shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+            style={{ paddingLeft: 36 }}
           />
         </div>
-        <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground select-none">
-          <input
-            type="checkbox"
-            checked={ocultarBajas}
-            onChange={(e) => { setOcultarBajas(e.target.checked); setPagina(1); }}
-            className="h-4 w-4 accent-primary"
-          />
+        <label className="flex cursor-pointer items-center gap-2 select-none" style={{ fontSize: '13.5px', color: '#6E7079' }}>
+          <span
+            className="relative flex items-center justify-center shrink-0"
+            style={{ width: 19, height: 19 }}
+          >
+            <input
+              type="checkbox"
+              checked={ocultarBajas}
+              onChange={(e) => { setOcultarBajas(e.target.checked); setPagina(1); }}
+              className="peer absolute opacity-0 inset-0 w-full h-full cursor-pointer"
+            />
+            <span
+              className="pointer-events-none flex items-center justify-center rounded-[4px] transition-colors"
+              style={{
+                width: 19,
+                height: 19,
+                backgroundColor: ocultarBajas ? '#12131A' : '#FFFFFF',
+                border: ocultarBajas ? 'none' : '1px solid #DFDCD3',
+              }}
+            >
+              {ocultarBajas && (
+                <svg width="11" height="8" viewBox="0 0 11 8" fill="none">
+                  <path d="M1 3.5L4 6.5L10 1" stroke="white" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              )}
+            </span>
+          </span>
           Ocultar bajas
         </label>
       </div>
 
-      <div className="w-full min-w-0 max-w-full overflow-x-auto rounded-md border">
-        <Table className="w-full min-w-0 table-fixed text-sm">
-          <colgroup>
-            <col className="w-[21%]" />
-            <col className="w-[14%]" />
-            <col className="w-[8%]" />
-            <col className="w-[9%]" />
-            <col className="w-[22%]" />
-            <col className="w-[10%]" />
-            <col className="w-[9%]" />
-            <col className="w-[7%]" />
-          </colgroup>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="whitespace-normal">Nombre</TableHead>
-              <TableHead>CUIL</TableHead>
-              <TableHead>Legajo</TableHead>
-              <TableHead className="whitespace-normal">Fecha alta</TableHead>
-              <TableHead className="whitespace-normal">Categoría</TableHead>
-              <TableHead>Estado</TableHead>
-              <TableHead>Recibos</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground">
-                  Cargando…
-                </TableCell>
-              </TableRow>
-            ) : filtrados.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground">
-                  {busqueda
-                    ? 'Sin resultados para la búsqueda.'
-                    : ocultarBajas
-                      ? 'No hay empleados activos. Desactivá "Ocultar bajas" para ver todos.'
-                      : 'No hay empleados para este perfil. Ejecutá el import de Excel en el scrapper o creá uno manualmente.'}
-                </TableCell>
-              </TableRow>
-            ) : (
-              paginaRows.map((r) => {
-                const e = r.empleado;
-                const baja = e.fechaBaja != null;
-                const esManual = e.origen === 'manual';
-                return (
-                  <TableRow
-                    key={e.id}
-                    className="cursor-pointer hover:bg-muted/50"
-                    onClick={() => setDetalleRow(r)}
+      {/* Navy-header grid table */}
+      <div className="w-full min-w-0 max-w-full overflow-x-auto">
+        {/* Header */}
+        <div
+          className="grid items-center bg-[#0B1730] text-[#E7EAF2] rounded-t-[10px] px-5"
+          style={{
+            height: 44,
+            gridTemplateColumns: '1.7fr 1.2fr 0.6fr 1fr 1.6fr 0.9fr 0.9fr auto',
+            fontSize: '10.5px',
+            fontWeight: 600,
+            letterSpacing: '0.06em',
+            textTransform: 'uppercase',
+          }}
+        >
+          <span>Nombre</span>
+          <span>CUIL</span>
+          <span>Legajo</span>
+          <span>Fecha alta</span>
+          <span>Categoría</span>
+          <span>Estado</span>
+          <span>Recibos</span>
+          <span />
+        </div>
+
+        {/* Body */}
+        <div className="border border-t-0 border-[#ECEAE3] rounded-b-[10px] overflow-hidden">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8" style={{ color: '#9B9CA3', fontSize: 13 }}>
+              Cargando…
+            </div>
+          ) : filtrados.length === 0 ? (
+            <div className="flex items-center justify-center py-8 px-5 text-center" style={{ color: '#9B9CA3', fontSize: 13 }}>
+              {busqueda
+                ? 'Sin resultados para la búsqueda.'
+                : ocultarBajas
+                  ? 'No hay empleados activos. Desactivá "Ocultar bajas" para ver todos.'
+                  : 'No hay empleados para este perfil. Ejecutá el import de Excel en el scrapper o creá uno manualmente.'}
+            </div>
+          ) : (
+            paginaRows.map((r) => {
+              const e = r.empleado;
+              const baja = e.fechaBaja != null;
+              const esManual = e.origen === 'manual';
+              return (
+                <div
+                  key={e.id}
+                  className="grid items-center px-5 border-b border-[#ECEAE3] hover:bg-[#FBFAF6] transition-[background] duration-[120ms] cursor-pointer last:border-b-0"
+                  style={{
+                    gridTemplateColumns: '1.7fr 1.2fr 0.6fr 1fr 1.6fr 0.9fr 0.9fr auto',
+                    paddingTop: 14,
+                    paddingBottom: 14,
+                  }}
+                  onClick={() => setDetalleRow(r)}
+                >
+                  {/* Nombre */}
+                  <span
+                    className="min-w-0 break-words pr-3"
+                    style={{ fontSize: '13.5px', fontWeight: 600, color: '#12131A' }}
                   >
-                    <TableCell className="min-w-0 break-words font-medium align-top py-2">
-                      {formatTitleCaseDisplay(e.nombre)}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap align-top py-2 tabular-nums">
-                      {e.cuil}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap align-top py-2 tabular-nums">
-                      {legajoParaMostrar(e.legajo)}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap align-top py-2">
-                      {formatDate(e.fechaAlta ?? undefined)}
-                    </TableCell>
-                    <TableCell className="min-w-0 break-words align-top py-2">
-                      {r.categoriaNombre
-                        ? formatTitleCaseDisplay(r.categoriaNombre)
-                        : <span className="text-muted-foreground text-xs">{formatTitleCaseDisplay(e.categoria)}</span>}
-                    </TableCell>
-                    <TableCell className="align-top py-2" onClick={(ev) => ev.stopPropagation()}>
-                      {baja ? (
-                        <button
-                          type="button"
-                          className="focus:outline-none"
-                          disabled={reactivar.isPending}
-                          title="Reactivar empleado"
-                          onClick={() => reactivar.mutate(e.id)}
-                        >
-                          <Badge variant="secondary" className="whitespace-nowrap cursor-pointer hover:opacity-75 transition-opacity">
-                            Baja {e.fechaBaja ? formatDate(e.fechaBaja) : ''}
-                          </Badge>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="focus:outline-none"
-                          title="Dar de baja"
-                          onClick={() => {
-                            setFechaBajaInput(format(new Date(), 'yyyy-MM-dd'));
-                            setDialogBaja({ id: e.id, nombre: e.nombre });
-                          }}
-                        >
-                          <Badge variant="default" className="whitespace-nowrap cursor-pointer hover:opacity-75 transition-opacity">
-                            Activo
-                          </Badge>
-                        </button>
-                      )}
-                    </TableCell>
-                    <TableCell className="align-top py-2" onClick={(ev) => ev.stopPropagation()}>
-                      <div className="flex items-center gap-0.5">
-                        {onVerRecibos && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                            title="Ver recibos del empleado"
-                            onClick={() => onVerRecibos(e.id)}
-                          >
-                            <FileText className="h-4 w-4" />
-                          </Button>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className={`h-7 w-7 ${plantillaEmpleadoId === e.id ? 'text-amber-500 hover:text-amber-600' : 'text-muted-foreground hover:text-amber-500'}`}
-                          title={plantillaEmpleadoId === e.id ? 'Quitar como plantilla base' : 'Usar como plantilla base para nuevos recibos'}
-                          disabled={setPlantilla.isPending}
-                          onClick={() => setPlantilla.mutate(plantillaEmpleadoId === e.id ? null : e.id)}
-                        >
-                          {plantillaEmpleadoId === e.id
-                            ? <BookmarkCheck className="h-4 w-4" />
-                            : <Bookmark className="h-4 w-4" />
-                          }
-                        </Button>
-                      </div>
-                    </TableCell>
-                    <TableCell className="align-top py-2" onClick={(ev) => ev.stopPropagation()}>
-                      {esManual && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-destructive hover:text-destructive"
-                          disabled={eliminar.isPending}
-                          onClick={() => eliminar.mutate(e.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
+                    {formatTitleCaseDisplay(e.nombre)}
+                  </span>
+
+                  {/* CUIL */}
+                  <span
+                    className="font-[family-name:var(--ff-mono)] whitespace-nowrap"
+                    style={{ fontSize: '12.5px', color: '#3E404A' }}
+                  >
+                    {e.cuil}
+                  </span>
+
+                  {/* Legajo */}
+                  <span
+                    className="tabular-nums whitespace-nowrap"
+                    style={{ fontSize: 13, color: '#3E404A' }}
+                  >
+                    {legajoParaMostrar(e.legajo)}
+                  </span>
+
+                  {/* Fecha alta */}
+                  <span
+                    className="tabular-nums whitespace-nowrap"
+                    style={{ fontSize: 13, color: '#3E404A' }}
+                  >
+                    {formatDate(e.fechaAlta ?? undefined)}
+                  </span>
+
+                  {/* Categoría */}
+                  <span
+                    className="min-w-0 break-words pr-3"
+                    style={{ fontSize: 13, color: '#3E404A' }}
+                  >
+                    {r.categoriaNombre
+                      ? formatTitleCaseDisplay(r.categoriaNombre)
+                      : formatTitleCaseDisplay(e.categoria)}
+                  </span>
+
+                  {/* Estado */}
+                  <div onClick={(ev) => ev.stopPropagation()}>
+                    {baja ? (
+                      <button
+                        type="button"
+                        disabled={reactivar.isPending}
+                        title="Reactivar empleado"
+                        onClick={() => reactivar.mutate(e.id)}
+                        className="inline-flex items-center gap-1 rounded-full cursor-pointer hover:opacity-75 transition-opacity"
+                        style={{
+                          color: 'oklch(0.45 0.13 20)',
+                          backgroundColor: 'oklch(0.94 0.04 20)',
+                          padding: '2px 9px',
+                          fontSize: 11,
+                          fontWeight: 600,
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        <span
+                          className="rounded-full shrink-0"
+                          style={{ width: 5, height: 5, backgroundColor: 'oklch(0.55 0.18 20)' }}
+                        />
+                        Baja {e.fechaBaja ? formatDate(e.fechaBaja) : ''}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        title="Dar de baja"
+                        onClick={() => {
+                          setFechaBajaInput(format(new Date(), 'yyyy-MM-dd'));
+                          setDialogBaja({ id: e.id, nombre: e.nombre });
+                        }}
+                        className="inline-flex items-center gap-1 rounded-full cursor-pointer hover:opacity-75 transition-opacity"
+                        style={{
+                          color: 'oklch(0.45 0.13 160)',
+                          backgroundColor: 'oklch(0.94 0.04 160)',
+                          padding: '2px 9px',
+                          fontSize: 11,
+                          fontWeight: 600,
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        <span
+                          className="rounded-full shrink-0"
+                          style={{ width: 5, height: 5, backgroundColor: 'oklch(0.55 0.18 160)' }}
+                        />
+                        Activo
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Recibos */}
+                  <div
+                    className="flex items-center justify-end gap-0.5"
+                    onClick={(ev) => ev.stopPropagation()}
+                  >
+                    {onVerRecibos && (
+                      <button
+                        type="button"
+                        title="Ver recibos del empleado"
+                        onClick={() => onVerRecibos(e.id)}
+                        className="flex items-center justify-center rounded-md hover:bg-[#F1EFE8] transition-colors"
+                        style={{ width: 28, height: 28, color: '#9B9CA3' }}
+                      >
+                        <FileText style={{ width: 15, height: 15 }} />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      title={plantillaEmpleadoId === e.id ? 'Quitar como plantilla base' : 'Usar como plantilla base para nuevos recibos'}
+                      disabled={setPlantilla.isPending}
+                      onClick={() => setPlantilla.mutate(plantillaEmpleadoId === e.id ? null : e.id)}
+                      className="flex items-center justify-center rounded-md hover:bg-[#F1EFE8] transition-colors disabled:opacity-40"
+                      style={{
+                        width: 28,
+                        height: 28,
+                        color: plantillaEmpleadoId === e.id ? '#d97706' : '#9B9CA3',
+                      }}
+                    >
+                      {plantillaEmpleadoId === e.id
+                        ? <BookmarkCheck style={{ width: 15, height: 15 }} />
+                        : <Bookmark style={{ width: 15, height: 15 }} />
+                      }
+                    </button>
+                  </div>
+
+                  {/* Delete (manual only) */}
+                  <div onClick={(ev) => ev.stopPropagation()}>
+                    {esManual && (
+                      <button
+                        type="button"
+                        disabled={eliminar.isPending}
+                        onClick={() => eliminar.mutate(e.id)}
+                        className="flex items-center justify-center rounded-md hover:bg-[#FEF2F2] transition-colors disabled:opacity-40"
+                        style={{ width: 28, height: 28, color: '#c0392b' }}
+                      >
+                        <Trash2 style={{ width: 14, height: 14 }} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
       </div>
 
+      {/* Pagination */}
       {!isLoading && filtrados.length > 0 && (
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">
+        <div className="flex items-center justify-between py-4 px-[2px]">
+          <span style={{ fontSize: '12.5px', color: '#9B9CA3' }}>
             {filtrados.length === rows.length
               ? `${rows.length} empleados`
               : `${filtrados.length} de ${rows.length} empleados`}
             {' · '}página {paginaActual} de {totalPaginas}
           </span>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-8 w-8"
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
               onClick={() => setPagina((p) => Math.max(1, p - 1))}
               disabled={paginaActual === 1}
+              className="inline-flex items-center gap-1.5 bg-white border border-[#DFDCD3] rounded-[10px] px-[13px] py-[7px] text-[13px] font-semibold hover:bg-[#FBFAF6] transition-colors"
+              style={{
+                color: paginaActual === 1 ? '#9B9CA3' : '#3E404A',
+                opacity: paginaActual === 1 ? 0.6 : 1,
+                cursor: paginaActual === 1 ? 'default' : 'pointer',
+              }}
             >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-8 w-8"
+              <ChevronLeft style={{ width: 14, height: 14 }} />
+              Anterior
+            </button>
+            <button
+              type="button"
               onClick={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
               disabled={paginaActual === totalPaginas}
+              className="inline-flex items-center gap-1.5 bg-white border border-[#DFDCD3] rounded-[10px] px-[13px] py-[7px] text-[13px] font-semibold hover:bg-[#FBFAF6] transition-colors"
+              style={{
+                color: paginaActual === totalPaginas ? '#9B9CA3' : '#3E404A',
+                opacity: paginaActual === totalPaginas ? 0.6 : 1,
+                cursor: paginaActual === totalPaginas ? 'default' : 'pointer',
+              }}
             >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
+              Siguiente
+              <ChevronRight style={{ width: 14, height: 14 }} />
+            </button>
           </div>
         </div>
       )}
