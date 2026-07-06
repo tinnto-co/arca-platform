@@ -13,6 +13,13 @@ import {
   Upload,
   ChevronLeft,
 } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
@@ -171,16 +178,39 @@ function RouteComponent() {
         />
       )}
       <PageHeader
-        title={selectedOption?.label ?? 'Cargando…'}
-        subtitle="Sueldos del cliente"
+        title="Liquidación de sueldos"
+        subtitle="Seleccioná una empresa para gestionar sus sueldos"
         actions={
-          <Link
-            to="/sueldos"
-            className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Volver al listado
-          </Link>
+          <div className="flex items-center gap-3">
+            <Select
+              value={profileId}
+              onValueChange={(id) =>
+                void navigate({
+                  to: '/sueldos/$profileId',
+                  params: { profileId: id },
+                  search: { tab: undefined },
+                })
+              }
+            >
+              <SelectTrigger className="w-[260px] h-9 text-[13px]">
+                <SelectValue placeholder="Seleccionar empresa…" />
+              </SelectTrigger>
+              <SelectContent>
+                {clients.map((c) => (
+                  <SelectItem key={c.clientId} value={c.clientId} className="text-[13px]">
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Link
+              to="/sueldos"
+              className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Ver listado
+            </Link>
+          </div>
         }
       />
 

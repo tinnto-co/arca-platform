@@ -42,6 +42,9 @@ export default defineConfig({
       "ai",
       "@ai-sdk/google",
       "@ai-sdk/react",
+      "@copilotkit/react-core",
+      "@copilotkit/react-ui",
+      "@copilotkit/runtime-client-gql",
     ],
   },
   plugins: [
