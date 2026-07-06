@@ -31,11 +31,13 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import {
-  getClientsWithRepresentative,
+  getClients,
   deleteRepresentative,
   scrapSingleJob,
 } from '@/actions/client';
+import { listOrgModules } from '@/actions/admin';
 import { EditRepresentativeDialog } from '@/components/edit-client-dialog';
+import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
 import { relativeTime } from '@/components/dashboard/shared';
 import { toTitleCase } from '@/lib/format-name';
 
@@ -43,10 +45,11 @@ interface ClientRow {
   id: string;
   name: string;
   identityNumber: string;
-  status: string;
-  representativeId: string | null;
-  representativeName: string | null;
+  status?: string;
   createdAt: string | Date;
+  representativeId: string;
+  representativeName: string | null;
+  representativeCuit: string | null;
 }
 
 export function RepresentativesTable() {
@@ -55,33 +58,35 @@ export function RepresentativesTable() {
   const [representativeToDelete, setRepresentativeToDelete] = useState<string | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [representativeToEditId, setRepresentativeToEditId] = useState<string | null>(null);
-  const [selectedRepresentatives, setSelectedRepresentatives] = useState<ClientRow[]>([]);
+  const [selectedClients, setSelectedClients] = useState<ClientRow[]>([]);
   const [isScraping, setIsScraping] = useState(false);
-  const [search, setSearch] = useState('');
   const queryClient = useQueryClient();
 
-  const { data: allClients = [], isLoading } = useQuery({
-    queryKey: ['clientsWithRepresentative'],
-    queryFn: () => getClientsWithRepresentative(),
+  const { data: clients = [], isLoading } = useQuery({
+    queryKey: ['clients'],
+    queryFn: () => getClients(),
     retry: 1,
   });
 
-  const clients = search
-    ? allClients.filter((c) => {
-        const q = search.toLowerCase();
-        return (
-          c.name?.toLowerCase().includes(q) ||
-          c.representativeName?.toLowerCase().includes(q) ||
-          c.identityNumber?.includes(q)
-        );
-      })
-    : allClients;
+  const { data: orgModules = [] } = useQuery({
+    queryKey: ['orgModules'],
+    queryFn: () => listOrgModules(),
+  });
+  const aiAgentEnabled =
+    orgModules.find((m) => m.module === 'ai_agent')?.enabled ?? false;
 
+  const clientsTyped = clients as ClientRow[];
+  const clientesResumen = clientsTyped.slice(0, 30).map((c) => ({
+    id: c.id,
+    name: c.name,
+    cuit: c.identityNumber,
+    representante: c.representativeName,
+  }));
 
   const deleteMutation = useMutation({
     mutationFn: (data: { id: string }) => deleteRepresentative({ data }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['clientsWithRepresentative'] });
+      queryClient.invalidateQueries({ queryKey: ['clients'] });
       toast.success('Cliente eliminado exitosamente');
       setDeleteDialogOpen(false);
       setRepresentativeToDelete(null);
@@ -95,17 +100,39 @@ export function RepresentativesTable() {
     {
       accessorKey: 'name',
       header: 'Cliente',
+      filterFn: (row, _columnId, filterValue) => {
+        const term = String(filterValue).toLowerCase().trim();
+        if (!term) return true;
+        const r = row.original;
+        return (
+          r.name.toLowerCase().includes(term) ||
+          r.identityNumber.toLowerCase().includes(term) ||
+          (r.representativeName?.toLowerCase().includes(term) ?? false) ||
+          (r.representativeCuit?.toLowerCase().includes(term) ?? false)
+        );
+      },
       cell: ({ row }) => (
-        <div>
-          <div className="font-medium text-[var(--arca-ink)]">
-            {toTitleCase(row.original.name)}
-          </div>
-          {row.original.representativeName && (
-            <div className="text-[11px] text-[var(--arca-ink-4)] mt-0.5">
-              Repr: {toTitleCase(row.original.representativeName)}
-            </div>
-          )}
-        </div>
+        <span className="font-medium text-[var(--arca-ink)]">
+          {toTitleCase(row.original.name)}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'representativeName',
+      header: 'Representante',
+      cell: ({ row }) => (
+        <span
+          className="block max-w-[180px] truncate text-[12.5px] text-[var(--arca-ink-3)]"
+          title={
+            row.original.representativeName
+              ? toTitleCase(row.original.representativeName)
+              : undefined
+          }
+        >
+          {row.original.representativeName
+            ? toTitleCase(row.original.representativeName)
+            : '—'}
+        </span>
       ),
     },
     {
@@ -142,14 +169,20 @@ export function RepresentativesTable() {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
             <DropdownMenuItem
-              onSelect={() => navigate({ to: `/clients/${row.original.id}` })}
+              onSelect={() =>
+                navigate({
+                  to: '/clients/$clientId',
+                  params: { clientId: row.original.representativeId },
+                  search: { empresa: row.original.id },
+                })
+              }
             >
               <Eye className="mr-2 h-3.5 w-3.5" />
               Ver
             </DropdownMenuItem>
             <DropdownMenuItem
               onSelect={() => {
-                setRepresentativeToEditId(row.original.id);
+                setRepresentativeToEditId(row.original.representativeId);
                 setEditDialogOpen(true);
               }}
             >
@@ -158,7 +191,7 @@ export function RepresentativesTable() {
             </DropdownMenuItem>
             <DropdownMenuItem
               onSelect={() => {
-                setRepresentativeToDelete(row.original.id);
+                setRepresentativeToDelete(row.original.representativeId);
                 setDeleteDialogOpen(true);
               }}
               className="text-destructive"
@@ -173,16 +206,19 @@ export function RepresentativesTable() {
   ];
 
   const handleScrapSelected = async () => {
-    if (selectedRepresentatives.length === 0) return;
+    if (selectedClients.length === 0) return;
     setIsScraping(true);
     try {
       const modules = ['deuda', 'vencimientos', 'iva', 'notificaciones', 'comprobantes'] as const;
+      const representativeIds = [
+        ...new Set(selectedClients.map((c) => c.representativeId)),
+      ];
       let created = 0;
       let errors = 0;
-      for (const rep of selectedRepresentatives) {
+      for (const representativeId of representativeIds) {
         for (const jobType of modules) {
           try {
-            await scrapSingleJob({ data: { representativeId: rep.id, jobType } });
+            await scrapSingleJob({ data: { representativeId, jobType } });
             created++;
           } catch {
             errors++;
@@ -205,18 +241,34 @@ export function RepresentativesTable() {
 
   return (
     <>
+      {aiAgentEnabled && (
+        <CopilotReadableEntity
+          description="Listado de empresas (clientes) visible en pantalla. clientesResumen incluye los primeros 30 con id/CUIT/representante — usá el id para referenciar una empresa al invocar acciones."
+          value={{
+            modulo: 'clientes',
+            vista: 'lista',
+            totalClientes: clientsTyped.length,
+            clientesResumen,
+          }}
+        />
+      )}
       <DataTable
         columns={columns}
-        data={clients as ClientRow[]}
+        data={clientsTyped}
         isLoading={isLoading}
-        searchValue={search}
-        onSearchChange={setSearch}
-        searchPlaceholder="Buscar por nombre, CUIT, representante..."
+        searchKey="name"
+        searchPlaceholder="Buscar por CUIT, cliente o representante..."
         filters={[]}
-        onRowClick={(row) => navigate({ to: `/clients/${row.representativeId}`, search: { client: row.id } })}
-        onSelectionChange={(rows) => setSelectedRepresentatives(rows as ClientRow[])}
+        onRowClick={(row) =>
+          navigate({
+            to: '/clients/$clientId',
+            params: { clientId: (row as ClientRow).representativeId },
+            search: { empresa: (row as ClientRow).id },
+          })
+        }
+        onSelectionChange={(rows) => setSelectedClients(rows as ClientRow[])}
         toolbar={
-          selectedRepresentatives.length > 0 ? (
+          selectedClients.length > 0 ? (
             <Button
               size="sm"
               onClick={handleScrapSelected}
@@ -227,7 +279,7 @@ export function RepresentativesTable() {
               ) : (
                 <Play className="h-3.5 w-3.5" />
               )}
-              Scrapear {selectedRepresentatives.length} cliente{selectedRepresentatives.length > 1 ? 's' : ''}
+              Scrapear {selectedClients.length} cliente{selectedClients.length > 1 ? 's' : ''}
             </Button>
           ) : null
         }

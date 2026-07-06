@@ -8,6 +8,8 @@ import {
 import { ProgressBar, formatArs } from './shared';
 import type { ReactNode } from 'react';
 
+export type DashboardStats = Awaited<ReturnType<typeof getDashboardStats>>;
+
 interface MiniKpiData {
   label: string;
   icon: ReactNode;
@@ -53,16 +55,24 @@ function MiniKpiCard({ data }: { data: MiniKpiData }) {
 interface MiniKpiCardsRowProps {
   from: Date;
   to: Date;
+  stats?: DashboardStats;
 }
 
-export function MiniKpiCardsRow({ from, to }: MiniKpiCardsRowProps) {
+export function MiniKpiCardsRow({
+  from,
+  to,
+  stats: statsProp,
+}: MiniKpiCardsRowProps) {
   const fromStr = from.toISOString();
   const toStr = to.toISOString();
 
-  const { data: stats } = useQuery({
+  const skipStatsQuery = statsProp !== undefined;
+  const { data: queryStats } = useQuery({
     queryKey: ['dashboardStats', fromStr, toStr],
     queryFn: () => getDashboardStats({ data: { from: fromStr, to: toStr } }),
+    enabled: !skipStatsQuery,
   });
+  const stats = statsProp ?? queryStats;
 
   const { data: overdueDebts = [] } = useQuery({
     queryKey: ['overdueDebts'],

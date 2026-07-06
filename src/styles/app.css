@@ -236,3 +236,143 @@
     max-width: 100%;
   }
 }
+
+/* CopilotKit chat (now embedded in CopilotBottomPanel — no sidebar/window
+   chrome). The .copilotKitChat root takes the full panel area. */
+.copilot-bottom-panel .copilotKitChat {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.copilot-bottom-panel .copilotKitMessages {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Messages + generative UI: wider (1100px) so cards and tables breathe. */
+.copilot-bottom-panel .copilotKitMessages {
+  max-width: 1100px;
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+}
+
+/* Input: kept narrower (768px) so the typing area stays compact and easy
+   to scan. The textarea inside grows vertically as the user types. */
+.copilot-bottom-panel .copilotKitInput {
+  max-width: 768px;
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+}
+
+/* Generative-UI components inside the chat: never let tables explode the panel */
+.copilot-bottom-panel table,
+.copilot-bottom-panel .arca-table {
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+/* Compact chat typography — defaults are too large for our context */
+.copilot-bottom-panel .copilotKitMessage {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  padding: 6px 10px 6px 0;
+}
+
+/* User bubble: brand navy, balanced padding, tighter line-height.
+   CopilotKit's stylesheet is imported after this file, so we use
+   !important to win the cascade. */
+.copilot-bottom-panel .copilotKitUserMessage {
+  font-size: 0.8125rem !important;
+  line-height: 1.55 !important;
+  padding: 8px 12px !important;
+  background-color: var(--primary) !important;
+  color: var(--primary-foreground) !important;
+  border-radius: 14px !important;
+  margin-top: 16px !important;
+  margin-bottom: 4px !important;
+}
+
+.copilot-bottom-panel .copilotKitMarkdown,
+.copilot-bottom-panel .copilotKitParagraph {
+  font-size: 0.8125rem;
+  line-height: 1.55;
+}
+
+.copilot-bottom-panel .copilotKitMarkdown p {
+  margin: 0 0 0.5rem 0;
+}
+
+.copilot-bottom-panel .copilotKitMarkdown p:last-child {
+  margin-bottom: 0;
+}
+
+/* Input textarea: smaller, matches body */
+.copilot-bottom-panel .copilotKitInput textarea {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+/* The "initial" greeting is rendered as an assistant message but it's not a
+   real model response — hide regenerate/copy/thumb feedback buttons until
+   there's an actual conversation. */
+.copilotKitMessages .copilotKitAssistantMessage:first-child:last-child
+  button[aria-label="Regenerate response"],
+.copilotKitMessages .copilotKitAssistantMessage:first-child:last-child
+  button[aria-label="Copy to clipboard"],
+.copilotKitMessages .copilotKitAssistantMessage:first-child:last-child
+  button[aria-label="Thumbs up"],
+.copilotKitMessages .copilotKitAssistantMessage:first-child:last-child
+  button[aria-label="Thumbs down"] {
+  display: none !important;
+}
+
+/* Attachment area: invisible wrapper that mirrors the input's centered
+   width (768px, narrower than messages) so the paperclip and pill align
+   with the input's send button regardless of panel width. */
+.copilot-attachment-area {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-width: 768px;
+  margin: 0 auto;
+  height: 0;
+  pointer-events: none;
+  z-index: 60;
+}
+
+.copilot-attachment-area > * {
+  pointer-events: auto;
+}
+
+/* Attach button: anchored next to the send button inside the input area,
+   vertically centered on the same line. */
+.copilot-attach-btn {
+  position: absolute;
+  bottom: 2.25rem;
+  right: 3rem;
+}
+
+/* Attachment pill: sits just above the input area when a file is selected. */
+.copilot-attachment-pill {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 5.5rem;
+}
+
+/* CopilotKit dev tools (cpk-web-inspector / cpk-debug) inyectan un botón flotante
+   con preview de anuncios que se solapa con el header de la CopilotSidebar.
+   Es un Custom Element con Shadow DOM, así que escondemos el host directamente.
+   Solo aparece en dev — en prod no se inyecta. */
+cpk-web-inspector,
+cpk-debug-menu,
+[id^="cpk-"] {
+  display: none !important;
+}
