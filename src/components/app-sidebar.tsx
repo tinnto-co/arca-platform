@@ -324,17 +324,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             label="Notificaciones"
             urgentCount={notifCount}
           />
-          <NavItem to="/jobs" icon={Clock} label="Jobs" />
           <NavItem to="/invoices" icon={FileText} label="Facturas" />
           <NavItem to="/sueldos" icon={DollarSign} label="Sueldos" />
           <NavItem to="/iibb" icon={Globe} label="IIBB" />
           <NavItem to="/vencimientos" icon={Calendar} label="Vencimientos" />
-          <NavItem
-            to="/alerts"
-            icon={AlertTriangle}
-            label="Alertas"
-            urgentCount={openAlertsCount}
-          />
           {isEnabled('banco') && (
             <NavItem to="/bank" icon={Landmark} label="Banco" />
           )}
@@ -348,10 +341,18 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <NavItem to="/chat" icon={Bot} label="Chats" />
           )}
 
-          <NavGroupLabel>Cuenta</NavGroupLabel>
-
           {isOwner && (
-            <NavItem to="/admin" icon={Settings} label="Administración" />
+            <>
+              <NavGroupLabel>Operaciones</NavGroupLabel>
+              <NavItem to="/jobs" icon={Clock} label="Jobs" />
+              <NavItem
+                to="/alerts"
+                icon={AlertTriangle}
+                label="Alertas"
+                urgentCount={openAlertsCount}
+              />
+              <NavItem to="/admin" icon={Settings} label="Administración" />
+            </>
           )}
         </nav>
 

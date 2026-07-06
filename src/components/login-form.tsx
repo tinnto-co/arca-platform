@@ -1,15 +1,9 @@
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useState } from 'react';
-// import { authClient } from '@/lib/auth-client'
-import { Loader2, AlertCircle } from 'lucide-react';
-// import { IconBrandGoogle } from '@tabler/icons-react'
-import { Label } from '@/components/ui/label';
+import { Mail, Lock, Eye, EyeOff, Check, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { authClient } from '@/lib/auth-client';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { getPortalSession } from '@/actions/client-portal';
 
 export function LoginForm({ className }: React.ComponentProps<'div'>) {
@@ -17,95 +11,52 @@ export function LoginForm({ className }: React.ComponentProps<'div'>) {
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPw, setShowPw] = useState(false);
+  const [remember, setRemember] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [emailError, setEmailError] = useState<string | null>(null);
   const navigate = useNavigate();
 
-  // Validation functions
-  const validateEmail = (email: string): boolean => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
-  };
+  const canSubmit = email.trim() !== '' && password.trim() !== '' && !loading;
 
-  const isFormValid = (): boolean => {
-    return (
-      email.trim() !== '' && password.trim() !== '' && validateEmail(email)
-    );
-  };
-
-  const handleEmailChange = (value: string) => {
-    setEmail(value);
-    setError(null); // Clear general error when user starts typing
-    // if (value.trim() !== "" && !validateEmail(value)) {
-    //   setEmailError("Por favor ingresa un email válido");
-    // } else {
-    //   setEmailError(null);
-    // }
-  };
-
-  const handlePasswordChange = (value: string) => {
-    setPassword(value);
-    setError(null); // Clear general error when user starts typing
-  };
-
-  const onSubmit = async () => {
-    // Clear previous errors
+  const onSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!canSubmit) return;
     setError(null);
-    setEmailError(null);
-
-    // Validate form before submission
-    if (!email.trim()) {
-      setError('El email es requerido');
-      return;
-    }
-    if (!password.trim()) {
-      setError('La contraseña es requerida');
-      return;
-    }
-    if (!validateEmail(email)) {
-      setEmailError('Por favor ingresa un email válido');
-      return;
-    }
     setLoading(true);
     try {
       const result = await authClient.signIn.email({
         email,
         password,
-        callbackURL: searchParams.redirect || '/',
+        rememberMe: remember,
+        callbackURL: searchParams.redirect ?? '/',
       });
       if (result.error) {
         throw new Error(
-          result.error.message || 'Hubo un error al iniciar sesion'
+          result.error.message ?? 'Hubo un error al iniciar sesión'
         );
       }
 
       // Detect portal users (no org membership) and redirect to their portal
       const portalSession = await getPortalSession().catch(() => null);
       if (portalSession) {
-        navigate({ to: '/portal' });
+        void navigate({ to: '/portal' });
         return;
       }
 
-      navigate({
-        to: searchParams.redirect || '/',
+      void navigate({
+        to: searchParams.redirect ?? '/',
       });
     } catch (err) {
-      console.log(err);
       const errorMessage =
         (err as Error).message || 'Hubo un error al iniciar sesión';
 
-      // Set specific error messages based on the error
       if (
-        errorMessage.includes('Invalid credentials') ||
-        errorMessage.includes('invalid') ||
-        errorMessage.includes('incorrect')
+        errorMessage.toLowerCase().includes('invalid') ||
+        errorMessage.toLowerCase().includes('incorrect')
       ) {
-        setError('Email o contraseña incorrectos');
-      } else if (
-        errorMessage.includes('user not found') ||
-        errorMessage.includes('not found')
-      ) {
-        setError('No se encontró una cuenta con este email');
+        setError('El email o la contraseña no son correctos.');
+      } else if (errorMessage.toLowerCase().includes('not found')) {
+        setError('No se encontró una cuenta con este email.');
       } else {
         setError(errorMessage);
       }
@@ -117,71 +68,155 @@ export function LoginForm({ className }: React.ComponentProps<'div'>) {
       setLoading(false);
     }
   };
+
+  const inputClasses =
+    'h-[46px] w-full rounded-[10px] border border-[var(--arca-border-strong)] bg-white pr-3.5 pl-10 font-sans text-sm text-[var(--arca-ink)] outline-none transition-[border-color,box-shadow] duration-150 ease-linear placeholder:text-[var(--arca-ink-4)] focus:border-[var(--arca-navy-600)] focus:shadow-[0_0_0_3px_rgba(42,70,128,0.14)]';
+
   return (
-    <div className={cn('flex flex-col gap-6', className)}>
-      <div className="flex flex-col items-center gap-2 text-center">
-        <h1 className="font-display text-[22px] font-semibold tracking-[-0.01em] text-[var(--arca-ink)]">
-          Iniciar sesion en tu cuenta
-        </h1>
-        <p className="text-muted-foreground text-sm text-balance">
-          Ingresa tu email para ingresar a tu cuenta
-        </p>
-      </div>
+    <div className={cn('w-full max-w-[380px]', className)}>
+      <h1 className="mb-2 text-[27px] leading-[1.15] font-semibold tracking-[-0.025em] text-[var(--arca-ink)] [font-family:var(--ff-display)]">
+        Iniciar sesión en tu cuenta
+      </h1>
+      <p className="mb-[30px] text-sm leading-normal text-[var(--arca-ink-3)]">
+        Ingresá tu email y contraseña para acceder al panel de tu estudio.
+      </p>
 
-      <div className="grid gap-6">
-        {/* Error Alert */}
-
-        <div className="flex flex-col gap-2">
-          <Label>Email</Label>
-          <Input
-            value={email}
-            onChange={(e) => handleEmailChange(e.target.value)}
+      <form onSubmit={onSubmit}>
+        {/* Email */}
+        <label
+          htmlFor="login-email"
+          className="mb-[7px] block text-[13px] font-medium text-[var(--arca-ink)]"
+        >
+          Email
+        </label>
+        <div className="group relative mb-[18px]">
+          <Mail
+            className="pointer-events-none absolute top-1/2 left-[13px] size-4 -translate-y-1/2 text-[var(--arca-ink-4)] transition-colors duration-150 group-focus-within:text-[var(--arca-navy-600)]"
+            aria-hidden="true"
+          />
+          <input
+            id="login-email"
             type="email"
-            placeholder="john@example.com"
-            required
-            className={emailError ? 'border-[var(--arca-accent-neg)]' : ''}
-          />
-          {emailError && (
-            <p className="text-sm text-[var(--arca-accent-neg)]">
-              {emailError}
-            </p>
-          )}
-        </div>
-        <div className="flex flex-col gap-2">
-          <Label>Contraseña</Label>
-          <Input
-            value={password}
-            onChange={(e) => handlePasswordChange(e.target.value)}
-            type="password"
-            placeholder="••••••••"
-            required
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              setError(null);
+            }}
+            placeholder="nombre@estudio.com"
+            autoComplete="email"
+            className={inputClasses}
           />
         </div>
-        <a
-          href="#"
-          className="ml-auto text-sm underline-offset-4 hover:underline"
-        >
-          Olvidaste tu contraseña?
-        </a>
 
-        <Button
-          onClick={onSubmit}
-          className="w-full"
-          disabled={loading || !isFormValid()}
-        >
-          {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Iniciar sesion
-        </Button>
-        {error && (
-          <Alert
-            variant="destructive"
-            className="flex items-center justify-center"
+        {/* Password */}
+        <div className="mb-[7px] flex items-center justify-between">
+          <label
+            htmlFor="login-password"
+            className="text-[13px] font-medium text-[var(--arca-ink)]"
           >
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
+            Contraseña
+          </label>
+          <a
+            href="#"
+            className="text-[12.5px] font-medium text-[var(--arca-navy-600)] hover:text-[var(--arca-navy-800)]"
+          >
+            ¿Olvidaste tu contraseña?
+          </a>
+        </div>
+        <div className="group relative mb-[18px]">
+          <Lock
+            className="pointer-events-none absolute top-1/2 left-[13px] size-4 -translate-y-1/2 text-[var(--arca-ink-4)] transition-colors duration-150 group-focus-within:text-[var(--arca-navy-600)]"
+            aria-hidden="true"
+          />
+          <input
+            id="login-password"
+            type={showPw ? 'text' : 'password'}
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              setError(null);
+            }}
+            placeholder="••••••••"
+            autoComplete="current-password"
+            className={cn(inputClasses, 'pr-11')}
+          />
+          <button
+            type="button"
+            onClick={() => setShowPw((v) => !v)}
+            aria-label={showPw ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+            className="absolute top-1/2 right-2 flex size-[30px] -translate-y-1/2 cursor-pointer items-center justify-center rounded-[7px] text-[var(--arca-ink-4)] transition-colors duration-150 hover:bg-[var(--arca-surface-2)] hover:text-[var(--arca-ink-2)]"
+          >
+            {showPw ? (
+              <EyeOff className="size-4" />
+            ) : (
+              <Eye className="size-4" />
+            )}
+          </button>
+        </div>
+
+        {/* Remember */}
+        <label className="mb-[22px] flex cursor-pointer items-center gap-[9px] select-none">
+          <input
+            type="checkbox"
+            checked={remember}
+            onChange={(e) => setRemember(e.target.checked)}
+            className="sr-only"
+          />
+          <span
+            aria-hidden="true"
+            className={cn(
+              'flex size-[18px] flex-none items-center justify-center rounded-[5px] border transition-all duration-[120ms] ease-linear',
+              remember
+                ? 'border-[var(--arca-ink)] bg-[var(--arca-ink)]'
+                : 'border-[var(--arca-border-strong)] bg-white'
+            )}
+          >
+            {remember && (
+              <Check className="size-3 text-white" strokeWidth={3.2} />
+            )}
+          </span>
+          <span className="text-[13px] text-[var(--arca-ink-2)]">
+            Mantener sesión iniciada
+          </span>
+        </label>
+
+        {/* Error banner */}
+        {error && (
+          <div
+            role="alert"
+            className="mb-4 flex items-center gap-2 rounded-[10px] bg-[var(--arca-accent-neg-bg)] px-3 py-[9px] text-[12.5px] font-medium text-[var(--arca-accent-neg-fg)] motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-200"
+          >
+            <AlertTriangle className="size-[15px] flex-none" />
+            <span>{error}</span>
+          </div>
         )}
-      </div>
+
+        {/* Submit */}
+        <button
+          type="submit"
+          disabled={!canSubmit}
+          className="flex h-[46px] w-full items-center justify-center gap-[9px] rounded-[10px] bg-[var(--arca-ink)] text-sm font-semibold text-white transition-[background,opacity] duration-150 hover:bg-black disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-[var(--arca-ink)]"
+        >
+          {loading && (
+            <span
+              aria-hidden="true"
+              className="size-[15px] rounded-full border-2 border-white/35 border-t-white motion-safe:animate-spin"
+            />
+          )}
+          {loading ? 'Ingresando…' : 'Iniciar sesión'}
+        </button>
+
+        {/* Secondary */}
+        <p className="mt-[22px] text-center text-[13px] text-[var(--arca-ink-3)]">
+          ¿No tenés acceso?{' '}
+          <a
+            href="#"
+            className="font-medium text-[var(--arca-navy-600)] hover:text-[var(--arca-navy-800)]"
+          >
+            Contactá a tu estudio
+          </a>
+        </p>
+      </form>
     </div>
   );
 }

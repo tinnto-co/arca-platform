@@ -436,21 +436,43 @@ export const getClients = createServerFn({
   try {
     const { orgId } = await getSessionWithOrg();
 
-    return await db
-      .select({
-        id: client.id,
-        name: client.name,
-        identityNumber: client.identityNumber,
-        status: client.status,
-        createdAt: client.createdAt,
-        representativeId: client.representativeId,
-        representativeName: representative.name,
-        representativeCuit: representative.cuit,
-      })
-      .from(client)
-      .innerJoin(representative, eq(client.representativeId, representative.id))
-      .where(eq(representative.organizationId, orgId))
-      .orderBy(asc(client.name));
+    const [rows, credAlerts] = await Promise.all([
+      db
+        .select({
+          id: client.id,
+          name: client.name,
+          identityNumber: client.identityNumber,
+          status: client.status,
+          createdAt: client.createdAt,
+          representativeId: client.representativeId,
+          representativeName: representative.name,
+          representativeCuit: representative.cuit,
+        })
+        .from(client)
+        .innerJoin(representative, eq(client.representativeId, representative.id))
+        .where(eq(representative.organizationId, orgId))
+        .orderBy(asc(client.name)),
+      db
+        .select({ representativeId: alert.representativeId })
+        .from(alert)
+        .where(
+          and(
+            eq(alert.organizationId, orgId),
+            eq(alert.type, 'scraper_error'),
+            eq(alert.status, 'open'),
+            sql`${alert.metadata}->>'errorCategory' = 'credentials'`
+          )
+        ),
+    ]);
+
+    const credentialErrorReps = new Set(
+      credAlerts.map((a) => a.representativeId).filter(Boolean)
+    );
+
+    return rows.map((row) => ({
+      ...row,
+      credentialError: credentialErrorReps.has(row.representativeId),
+    }));
   } catch (error) {
     throw new Error(`Error loading clients: ${getErrorMessage(error)}`);
   }

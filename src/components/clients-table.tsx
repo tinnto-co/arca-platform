@@ -50,7 +50,33 @@ interface ClientRow {
   representativeId: string;
   representativeName: string | null;
   representativeCuit: string | null;
+  credentialError?: boolean;
 }
+
+type EstadoValue = 'error' | 'active' | 'inactive';
+
+function getEstado(row: ClientRow): EstadoValue {
+  if (row.credentialError) return 'error';
+  return row.status === 'active' ? 'active' : 'inactive';
+}
+
+const ESTADO_META: Record<EstadoValue, { label: string; className: string }> = {
+  error: {
+    label: 'Credenciales inválidas',
+    className:
+      'bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg)] border-[var(--arca-accent-neg)]',
+  },
+  active: {
+    label: 'Activo',
+    className:
+      'bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos)] border-[var(--arca-accent-pos)]',
+  },
+  inactive: {
+    label: 'Inactivo',
+    className:
+      'bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)] border-[var(--arca-border-strong)]',
+  },
+};
 
 export function RepresentativesTable() {
   const navigate = useNavigate();
@@ -152,6 +178,23 @@ export function RepresentativesTable() {
           {relativeTime(new Date(getValue() as string))}
         </span>
       ),
+    },
+    {
+      id: 'estado',
+      header: 'Estado',
+      accessorFn: (row) => getEstado(row),
+      filterFn: (row, _columnId, filterValue) =>
+        !filterValue || getEstado(row.original) === filterValue,
+      cell: ({ row }) => {
+        const meta = ESTADO_META[getEstado(row.original)];
+        return (
+          <span
+            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10.5px] font-medium ${meta.className}`}
+          >
+            {meta.label}
+          </span>
+        );
+      },
     },
     {
       id: 'actions',
@@ -258,7 +301,17 @@ export function RepresentativesTable() {
         isLoading={isLoading}
         searchKey="name"
         searchPlaceholder="Buscar por CUIT, cliente o representante..."
-        filters={[]}
+        filters={[
+          {
+            columnId: 'estado',
+            label: 'Estado',
+            options: [
+              { value: 'active', label: 'Activos' },
+              { value: 'inactive', label: 'Inactivos' },
+              { value: 'error', label: 'Credenciales inválidas' },
+            ],
+          },
+        ]}
         onRowClick={(row) =>
           navigate({
             to: '/clients/$clientId',
