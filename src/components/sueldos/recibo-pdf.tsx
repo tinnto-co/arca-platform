@@ -586,13 +586,13 @@ function ReciboPdfPage({
   const redondeo = netoRaw > 0 && netoRaw % 1 > 0.001 ? Math.ceil(netoRaw) - netoRaw : 0;
   const neto = redondeo > 0 ? Math.ceil(netoRaw) : netoRaw;
 
-  // Filas de la tabla en orden (igual que el HTML)
+  // Filas de la tabla ordenadas globalmente por código ascendente
   const filas = [
     ...haberesCon.map((d)  => ({ ...d, col: 'hab'   as const })),
     ...descuentos.map((d)  => ({ ...d, col: 'desc'  as const })),
     ...retenciones.map((d) => ({ ...d, col: 'ret'   as const })),
     ...haberesSin.map((d)  => ({ ...d, col: 'noRem' as const })),
-  ];
+  ].sort((a, b) => Number(a.detalle.codigo) - Number(b.detalle.codigo));
 
   // Datos de cabecera de pago
   const cab       = pickCabecera(liquidacion);

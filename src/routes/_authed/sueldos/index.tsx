@@ -1,37 +1,79 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { createFileRoute } from '@tanstack/react-router';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { ColumnDef } from '@tanstack/react-table';
-import { ChevronRight, UserCircle } from 'lucide-react';
-import { DataTable } from '@/components/ui/data-table';
-import { Card, CardContent } from '@/components/ui/card';
+import {
+  LayoutDashboard,
+  Users,
+  Building2,
+  Calculator,
+  Sliders,
+  FileText,
+  UserCircle,
+  PenLine,
+  Upload,
+} from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { PageHeader } from '@/components/shared/page-header';
+import { SearchableSelect } from '@/components/ui/searchable-select';
+import { SueldosDashboard } from '@/components/sueldos/SueldosDashboard';
+import { SueldosEmpleados } from '@/components/sueldos/SueldosEmpleados';
+import { SueldosConvenios } from '@/components/sueldos/SueldosConvenios';
+import { SueldosConceptos } from '@/components/sueldos/SueldosConceptos';
+import { SueldosSimulador } from '@/components/sueldos/SueldosSimulador';
+import { SueldosRecibo } from '@/components/sueldos/SueldosRecibo';
+import { SueldosFirmaDigital } from '@/components/sueldos/SueldosFirmaDigital';
+import { SueldosCargas } from '@/components/sueldos/SueldosCargas';
 import { getRepresentativesForSueldos } from '@/actions/client';
 import { listOrgModules } from '@/actions/admin';
-import { PageHeader } from '@/components/shared/page-header';
 import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
+import { cn } from '@/lib/utils';
 import {
   getPeriodoMesActual,
   getPeriodoMesAnterior,
 } from '@/lib/payroll-period-rules';
 
-interface SueldosClientRow {
-  id: string;
-  // En el nuevo modelo de main: representativeId = agrupador (ex client),
-  // clientId = entidad fiscal con CUIT (ex profile).
-  representativeId: string;
-  clientId: string;
-  name: string;
-  label: string;
-  type: 'client';
-}
-
 export const Route = createFileRoute('/_authed/sueldos/')({
   component: RouteComponent,
 });
 
-function RouteComponent() {
-  const navigate = useNavigate();
+interface EditReciboData {
+  importEmpleadoId: string;
+  empleadoNombre: string;
+  periodo: string;
+  tipoRecibo: string;
+  quincena?: string | null;
+  fechaLiquidacion?: string | null;
+  fechaPago?: string | null;
+  obraSocialId?: string | null;
+  periodoCargas?: string | null;
+  fechaDepositoCargas?: string | null;
+  observacionInterna?: string | null;
+  observacionRecibo?: string | null;
+  situacionRevista1Id?: string | null;
+  situacionRevista1DiaInicio?: number | null;
+  situacionRevista2Id?: string | null;
+  situacionRevista2DiaInicio?: number | null;
+  situacionRevista3Id?: string | null;
+  situacionRevista3DiaInicio?: number | null;
+  diasTrabajados?: number | null;
+  horasTrabajadas?: number | null;
+  importeMaternidadArt13?: string | null;
+}
 
-  const { data: clients = [], isLoading } = useQuery({
+const tabTriggerCls = () =>
+  cn(
+    'relative h-auto flex-none px-[14px] py-[10px] text-[13px] font-medium rounded-[8px_8px_0_0] border whitespace-nowrap gap-[7px] cursor-pointer',
+    'border-transparent text-[var(--arca-ink-3)] hover:bg-transparent hover:text-[var(--arca-ink)]',
+    'data-[state=active]:bg-[var(--arca-surface)] data-[state=active]:border-[var(--arca-border)] data-[state=active]:[border-bottom-color:var(--arca-bg)] data-[state=active]:text-[var(--arca-ink)] data-[state=active]:font-semibold data-[state=active]:shadow-none data-[state=active]:top-px'
+  );
+
+function RouteComponent() {
+  const [selectedOptionId, setSelectedOptionId] = useState<string>('');
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [editReciboData, setEditReciboData] = useState<EditReciboData | undefined>(undefined);
+  const [reciboFiltroEmpleadoId, setReciboFiltroEmpleadoId] = useState('');
+
+  const { data: clients = [] } = useQuery({
     queryKey: ['clients', 'sueldos'],
     queryFn: () => getRepresentativesForSueldos(),
   });
@@ -43,88 +85,192 @@ function RouteComponent() {
   const aiAgentEnabled =
     orgModules.find((m) => m.module === 'ai_agent')?.enabled ?? false;
 
-  const columns: ColumnDef<SueldosClientRow>[] = [
-    {
-      accessorKey: 'name',
-      header: 'Cliente',
-      cell: ({ row }) => (
-        <span className="font-medium text-foreground">{row.original.name}</span>
-      ),
-    },
-    {
-      accessorKey: 'label',
-      header: 'Identificación',
-      cell: ({ row }) => {
-        const label = row.original.label;
-        const match = /\(([^)]+)\)$/.exec(label);
-        return (
-          <span className="text-muted-foreground tabular-nums">
-            {match?.[1] ?? '—'}
-          </span>
-        );
-      },
-    },
-    {
-      id: 'open',
-      header: '',
-      cell: () => (
-        <div className="flex justify-end pr-2">
-          <ChevronRight className="h-4 w-4 text-muted-foreground" />
-        </div>
-      ),
-    },
-  ];
+  const selectedOption = clients.find((c) => c.id === selectedOptionId);
+  // representativeId = agrupador (clientId que esperan los componentes de payroll)
+  // clientId = entidad fiscal (profileId que esperan los componentes de payroll)
+  const clientId = selectedOption?.representativeId ?? '';
+  const profileId = selectedOption?.clientId ?? '';
 
-  const isEmpty = !isLoading && clients.length === 0;
+  const clientOptions = clients.map((c) => ({
+    value: c.id,
+    label: c.label,
+  }));
+
+  const setTab = (next: string) => {
+    if (next !== 'simulador') setEditReciboData(undefined);
+    if (next !== 'recibo') setReciboFiltroEmpleadoId('');
+    setActiveTab(next);
+  };
 
   return (
-    <div className="p-[28px_36px_60px] max-w-[1440px]">
-      {aiAgentEnabled && (
-        <CopilotReadableEntity
-          description="Listado de clientes habilitados para liquidación de sueldos. Usá profileId para abrir el detalle vía abrirSueldosCliente. mesLiquidable es el único período sobre el que se pueden calcular liquidaciones."
-          value={{
-            modulo: 'sueldos-listado',
-            totalClientesDisponibles: clients.length,
-            mesActual: getPeriodoMesActual(),
-            mesLiquidable: getPeriodoMesAnterior(),
-            clientes: clients.map((c) => ({
-              clientId: c.representativeId,
-              profileId: c.clientId,
-              nombre: c.name,
-              label: c.label,
-            })),
-          }}
-        />
-      )}
-      <PageHeader
-        title="Liquidación de sueldos"
-        subtitle="Clientes habilitados para gestionar sueldos"
-      />
-      {isEmpty ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-            <UserCircle className="h-16 w-16 text-muted-foreground mb-4" />
-            <h2 className="text-lg font-semibold mb-2">Sin clientes</h2>
-            <p className="text-muted-foreground max-w-md">
-              No hay clientes con liquidación de sueldos habilitada en esta
-              organización. Habilitá el flag <code>liquidaSueldos</code> en
-              algún perfil para empezar.
-            </p>
-          </CardContent>
-        </Card>
-      ) : (
-        <DataTable
-          columns={columns}
-          data={clients}
-          searchKey="name"
-          searchPlaceholder="Buscar cliente..."
-          onRowClick={(row) =>
-            void navigate({
-              to: '/sueldos/$profileId',
-              params: { profileId: row.clientId },
-            })
+    <div className="space-y-0 overflow-x-hidden">
+      {/* Header */}
+      <div className="px-4 md:px-[3rem] pt-4 md:pt-[3rem] pb-0">
+        {aiAgentEnabled && selectedOption && (
+          <CopilotReadableEntity
+            description="Estado actual del módulo Sueldos visible en pantalla. Usá clientId/profileId al invocar acciones de payroll. mesLiquidable es el único período sobre el que se pueden calcular liquidaciones."
+            value={{
+              modulo: 'sueldos',
+              tabActiva: activeTab,
+              cliente: {
+                optionId: selectedOption.id,
+                clientId,
+                profileId,
+                label: selectedOption.label,
+              },
+              mesActual: getPeriodoMesActual(),
+              mesLiquidable: getPeriodoMesAnterior(),
+            }}
+          />
+        )}
+        <PageHeader
+          title="Liquidación de sueldos"
+          subtitle="Gestión de convenios, empleados, conceptos y liquidaciones"
+          actions={
+            <SearchableSelect
+              options={clientOptions}
+              value={selectedOptionId}
+              onValueChange={(val) => {
+                setSelectedOptionId(val);
+                setActiveTab('dashboard');
+                setEditReciboData(undefined);
+                setReciboFiltroEmpleadoId('');
+              }}
+              placeholder="Seleccioná una empresa"
+              searchPlaceholder="Buscar empresa..."
+              emptyMessage="Sin empresas con sueldos habilitados"
+              width={320}
+            />
           }
         />
+      </div>
+
+      {!clientId ? (
+        <div className="px-4 md:px-[3rem] pt-6">
+          <div
+            className="flex flex-col items-center justify-center py-16 text-center rounded-[var(--arca-r-lg)]"
+            style={{
+              background: 'var(--arca-surface)',
+              border: '1px solid var(--arca-border)',
+            }}
+          >
+            <div
+              className="w-14 h-14 rounded-[12px] flex items-center justify-center mb-4"
+              style={{
+                background: 'var(--arca-surface-2)',
+                border: '1px solid var(--arca-border)',
+              }}
+            >
+              <UserCircle
+                className="h-7 w-7 text-[var(--arca-ink-3)]"
+                strokeWidth={1.5}
+              />
+            </div>
+            <h2 className="font-display text-[17px] font-semibold text-[var(--arca-ink)] mb-1.5">
+              Seleccioná una empresa
+            </h2>
+            <p className="text-[13px] text-[var(--arca-ink-3)] max-w-md leading-relaxed">
+              Elegí una empresa en el selector superior para gestionar convenios,
+              empleados, conceptos y liquidaciones de sueldos.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <Tabs
+          value={activeTab}
+          onValueChange={setTab}
+          className="flex flex-col"
+        >
+          {/* Tab bar */}
+          <div className="sticky top-0 z-10 bg-[var(--arca-bg)] border-b border-[var(--arca-border)]">
+            <div className="px-4 md:px-[3rem]">
+              <TabsList className="flex h-auto w-full bg-transparent p-0 rounded-none gap-0 overflow-x-auto overflow-y-hidden justify-start">
+                <TabsTrigger value="dashboard" className={tabTriggerCls()}>
+                  <LayoutDashboard className="h-[14px] w-[14px]" />
+                  Dashboard
+                </TabsTrigger>
+                <TabsTrigger value="empleados" className={tabTriggerCls()}>
+                  <Users className="h-[14px] w-[14px]" />
+                  Empleados
+                </TabsTrigger>
+                <TabsTrigger value="convenios" className={tabTriggerCls()}>
+                  <Building2 className="h-[14px] w-[14px]" />
+                  Convenios
+                </TabsTrigger>
+                <TabsTrigger value="conceptos" className={tabTriggerCls()}>
+                  <Calculator className="h-[14px] w-[14px]" />
+                  Conceptos
+                </TabsTrigger>
+                <TabsTrigger value="simulador" className={tabTriggerCls()}>
+                  <Sliders className="h-[14px] w-[14px]" />
+                  Nuevo recibo
+                </TabsTrigger>
+                <TabsTrigger value="recibo" className={tabTriggerCls()}>
+                  <FileText className="h-[14px] w-[14px]" />
+                  Recibo
+                </TabsTrigger>
+                <TabsTrigger value="firma-digital" className={tabTriggerCls()}>
+                  <PenLine className="h-[14px] w-[14px]" />
+                  Firma Digital
+                </TabsTrigger>
+                <TabsTrigger value="cargas" className={tabTriggerCls()}>
+                  <Upload className="h-[14px] w-[14px]" />
+                  Cargas Sociales
+                </TabsTrigger>
+              </TabsList>
+            </div>
+          </div>
+
+          {/* Content */}
+          <div className="px-4 md:px-[3rem] pt-5 pb-6">
+            <TabsContent value="dashboard" className="mt-0">
+              <SueldosDashboard clientId={clientId} profileId={profileId} />
+            </TabsContent>
+            <TabsContent value="empleados" className="mt-0">
+              <SueldosEmpleados
+                clientId={clientId}
+                profileId={profileId}
+                onVerRecibos={(empleadoId) => {
+                  setReciboFiltroEmpleadoId(empleadoId);
+                  setTab('recibo');
+                }}
+              />
+            </TabsContent>
+            <TabsContent value="convenios" className="mt-0">
+              <SueldosConvenios clientId={clientId} profileId={profileId} />
+            </TabsContent>
+            <TabsContent value="conceptos" className="mt-0">
+              <SueldosConceptos clientId={clientId} profileId={profileId} />
+            </TabsContent>
+            <TabsContent value="simulador" className="mt-0">
+              <SueldosSimulador
+                clientId={clientId}
+                profileId={profileId}
+                onConfirmRecibo={() => setTab('recibo')}
+                initialData={editReciboData}
+                onReset={() => setEditReciboData(undefined)}
+              />
+            </TabsContent>
+            <TabsContent value="recibo" className="mt-0">
+              <SueldosRecibo
+                key={reciboFiltroEmpleadoId}
+                clientId={clientId}
+                profileId={profileId}
+                initialEmpleadoId={reciboFiltroEmpleadoId || undefined}
+                onEditRecibo={(data) => {
+                  setEditReciboData(data);
+                  setTab('simulador');
+                }}
+              />
+            </TabsContent>
+            <TabsContent value="firma-digital" className="mt-0">
+              <SueldosFirmaDigital clientId={clientId} profileId={profileId} />
+            </TabsContent>
+            <TabsContent value="cargas" className="mt-0">
+              <SueldosCargas clientId={clientId} profileId={profileId} />
+            </TabsContent>
+          </div>
+        </Tabs>
       )}
     </div>
   );
