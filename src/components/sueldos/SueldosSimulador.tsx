@@ -264,6 +264,13 @@ export function SueldosSimulador({
   const fechaAltaDisplay = flowHeader?.fechaAlta ?? basicoData?.fechaAlta ?? null;
   const fechaIngresoDisplay = flowHeader?.fechaIngreso ?? basicoData?.fechaIngreso ?? null;
 
+  // Bruto del período anterior (haberes + no remunerativo del último recibo cargado).
+  // En modo "nuevo recibo" ultimoRecibo es el último recibo existente (= mes anterior).
+  // En modo copia es el recibo fuente (también mes anterior). En modo edición es el recibo actual.
+  const brutoMesAnterior =
+    Number(ultimoRecibo?.recibo?.haberes ?? 0) +
+    Number(ultimoRecibo?.recibo?.noRemunerativo ?? 0);
+
   // Días trabajados en el semestre (para SAC proporcional — concepto 42)
   const diasSemestre = useMemo(() => {
     const periodo = flowHeader?.periodo ?? '';
@@ -845,6 +852,12 @@ export function SueldosSimulador({
             <span className="font-medium text-foreground">Fecha de ingreso:</span>{' '}
             {fmtDate(fechaIngresoDisplay)}
           </span>
+          {flowHeader?.antiguedadAnios != null && (
+            <span>
+              <span className="font-medium text-foreground">Antigüedad:</span>{' '}
+              {flowHeader.antiguedadAnios} {flowHeader.antiguedadAnios === 1 ? 'año' : 'años'}
+            </span>
+          )}
         </div>
       )}
 
@@ -870,6 +883,7 @@ export function SueldosSimulador({
               basicoJornadaCompleta={basicoJornadaCompleta}
               mejorSueldoSemestre={ultimoRecibo.mejorSueldoSemestre ?? 0}
               diasSemestre={diasSemestre}
+              brutoMesAnterior={brutoMesAnterior}
               activeCodigos={activeCodigos}
               catalogoCompleto={conceptosFilas}
               onAddConcepto={handleAddConcepto}
@@ -1004,6 +1018,7 @@ export function SueldosSimulador({
                   basicoJornadaCompleta={basicoJornadaCompleta}
                   mejorSueldoSemestre={ultimoRecibo?.mejorSueldoSemestre ?? 0}
                   diasSemestre={diasSemestre}
+                  brutoMesAnterior={brutoMesAnterior}
                   activeCodigos={activeCodigos}
                   catalogoCompleto={conceptosFilas}
                   onAddConcepto={handleAddConcepto}

@@ -108,9 +108,10 @@ const SUB_BASES = new Set([
   'sub1_199_plus_411_469',
   'os_base',            // base OS rem: subtotal 1-99 como si concepto 1 estuviera al 100%
   'os_norem_base',      // base OS no-rem: subtotal 411-469 como si concepto 411 estuviera al 100%
-  'basico_div25',       // basicoEscala / 25 × cantidad (vacaciones gozadas — concepto 51)
-  'mejor_div25',        // mejorSueldoSemestre / 25 × cantidad (vacaciones no gozadas — concepto 401)
-  'concepto_401_div12', // monto concepto 401 / 12 (SAC sobre vacaciones no gozadas — concepto 402)
+  'basico_div25',          // basicoEscala / 25 × cantidad (legado)
+  'mejor_div25',           // mejorSueldoSemestre / 25 × cantidad (legado)
+  'bruto_anterior_div25',  // brutoMesAnterior / 25 × cantidad (vacaciones gozadas/no gozadas — conceptos 51 y 401)
+  'concepto_401_div12',    // monto concepto 401 / 12 (SAC sobre vacaciones no gozadas — concepto 402)
 ]);
 
 /**
@@ -182,6 +183,7 @@ function applySubtotalCascade(
   osBase = 0,
   mejorSueldo = 0,
   diasSemestre = 0,
+  brutoMesAnterior = 0,
 ): EditsMap {
   const subTotals: Record<string, number> = {
     sub1_9: 0, sub1_19: 0, sub1_26: 0,
@@ -248,8 +250,10 @@ function applySubtotalCascade(
                 ? (osBase > 0 ? osBase : sueldoBase) / 25
                 : bc === 'mejor_div25'
                   ? mejorSueldo / 25
-                  : bc === 'concepto_401_div12'
-                    ? (conceptMontos['401'] ?? 0) / 12
+                  : bc === 'bruto_anterior_div25'
+                    ? brutoMesAnterior / 25
+                    : bc === 'concepto_401_div12'
+                      ? (conceptMontos['401'] ?? 0) / 12
                     : bc === 'sub1_199_plus_411_469'
                       ? (subTotals['sub1_199'] ?? 0) + (subTotals['sub411_469'] ?? 0)
                       : bc === 'sub1_199' && n >= 200 && n <= 299
@@ -324,26 +328,20 @@ function applySubtotalCascade(
         next = { ...next, [c.codigo]: { ...row, cantidad: sub.toFixed(2) } };
       }
     } else if (bc === 'sac_normal') {
-      // Concepto 41: cantidad = mejor sueldo semestre (auto-fill si vacío); total = cantidad / 2.
+      // Concepto 41: importe = SAC (mejor sueldo / 2). La cantidad manual sobreescribe la base si está seteada.
       if (mejorSueldo > 0) {
         const cantStr = (row.cantidad ?? '').trim();
-        const cant = cantStr !== '' ? (parseDecimalSos(cantStr) ?? mejorSueldo) : mejorSueldo;
-        effectiveMonto = Math.round((cant / 2) * 100) / 100;
-        const nextRow = cantStr !== ''
-          ? { ...row, monto: effectiveMonto.toFixed(2) }
-          : { ...row, cantidad: mejorSueldo.toFixed(2), monto: effectiveMonto.toFixed(2) };
-        next = { ...next, [c.codigo]: nextRow };
+        const base = cantStr !== '' ? (parseDecimalSos(cantStr) ?? mejorSueldo) : mejorSueldo;
+        effectiveMonto = Math.round((base / 2) * 100) / 100;
+        next = { ...next, [c.codigo]: { ...row, importe: effectiveMonto.toFixed(2), monto: effectiveMonto.toFixed(2) } };
       }
     } else if (bc === 'sac_proporcional') {
-      // Concepto 42: cantidad = mejor sueldo semestre (auto-fill si vacío); total = cantidad / 360 × días.
+      // Concepto 42: importe = SAC proporcional (mejor sueldo / 360 × días). La cantidad manual sobreescribe la base.
       if (mejorSueldo > 0 && diasSemestre > 0) {
         const cantStr = (row.cantidad ?? '').trim();
-        const cant = cantStr !== '' ? (parseDecimalSos(cantStr) ?? mejorSueldo) : mejorSueldo;
-        effectiveMonto = Math.round((cant / 360) * diasSemestre * 100) / 100;
-        const nextRow = cantStr !== ''
-          ? { ...row, monto: effectiveMonto.toFixed(2) }
-          : { ...row, cantidad: mejorSueldo.toFixed(2), monto: effectiveMonto.toFixed(2) };
-        next = { ...next, [c.codigo]: nextRow };
+        const base = cantStr !== '' ? (parseDecimalSos(cantStr) ?? mejorSueldo) : mejorSueldo;
+        effectiveMonto = Math.round((base / 360) * diasSemestre * 100) / 100;
+        next = { ...next, [c.codigo]: { ...row, importe: effectiveMonto.toFixed(2), monto: effectiveMonto.toFixed(2) } };
       }
     }
     } // cierre del else (montoFijo no seteado)
@@ -425,6 +423,9 @@ const ALLOWED_KEYS = new Set([
   'Home', 'End',
 ]);
 
+/** Solo dígitos, punto y coma decimal. Sin negativos, sin letras, sin símbolos. */
+const sanitizeNumeric = (v: string) => v.replace(/[^0-9.,]/g, '');
+
 function EditableCell({
   value,
   onChange,
@@ -445,7 +446,7 @@ function EditableCell({
     <input
       type="text"
       value={local}
-      onChange={(e) => setLocal(e.target.value)}
+      onChange={(e) => setLocal(sanitizeNumeric(e.target.value))}
       onBlur={commit}
       onKeyDown={(e) => {
         if (e.key === 'Enter') {
@@ -453,12 +454,12 @@ function EditableCell({
           commit();
           return;
         }
-        // Solo permitir números, punto/coma decimal, signo negativo y teclas de control
+        // Solo permitir números, punto/coma decimal y teclas de control
         if (
           !ALLOWED_KEYS.has(e.key) &&
           !e.ctrlKey &&
           !e.metaKey &&
-          !/^[0-9.,\-]$/.test(e.key)
+          !/^[0-9.,]$/.test(e.key)
         ) {
           e.preventDefault();
         }
@@ -504,11 +505,19 @@ function ResultOverrideCell({
           autoFocus
           type="text"
           value={local}
-          onChange={(e) => setLocal(e.target.value)}
+          onChange={(e) => setLocal(sanitizeNumeric(e.target.value))}
           onBlur={commit}
           onKeyDown={(e) => {
             if (e.key === 'Enter') { e.preventDefault(); commit(); }
             if (e.key === 'Escape') { setEditing(false); }
+            if (
+              !ALLOWED_KEYS.has(e.key) &&
+              !e.ctrlKey &&
+              !e.metaKey &&
+              !/^[0-9.,]$/.test(e.key)
+            ) {
+              e.preventDefault();
+            }
           }}
           className="w-full bg-amber-50 border border-amber-300 rounded px-1 py-0.5 text-[10px] text-right focus:ring-1 focus:ring-amber-400 outline-none"
         />
@@ -700,6 +709,7 @@ interface TableSectionProps {
   codigosActivos?: Set<string>;
   onAddConcepto?: (codigos: string[]) => void;
   onRemoveConcepto?: (codigo: string) => void;
+  brutoMesAnterior?: number;
 }
 
 function TableSection({
@@ -713,6 +723,7 @@ function TableSection({
   codigosActivos,
   onAddConcepto,
   onRemoveConcepto,
+  brutoMesAnterior = 0,
 }: TableSectionProps) {
   const isHaberes = cfg.columna === 'haberes';
   const isDesc = cfg.columna === 'descuentos';
@@ -757,6 +768,11 @@ function TableSection({
                         className="w-full rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] font-normal text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
                       />
                     )}
+                    {(c.codigo === '51' || c.codigo === '401') && brutoMesAnterior === 0 && (
+                      <span className="text-amber-700 text-[10px] italic leading-tight">
+                        No se ha cargado el recibo del período anterior para calcular automáticamente este concepto
+                      </span>
+                    )}
                   </div>
                   {onRemoveConcepto && (
                     <button
@@ -772,6 +788,7 @@ function TableSection({
                 </div>
               </td>
               <td className="px-1 py-1.5 !border-l-2 !border-l-slate-400">
+                {/* Para SAC (41/42): Cantidad = base manual opcional (no se auto-rellena) */}
                 {c.tieneCantidad !== false
                   ? <EditableCell value={edit?.cantidad ?? ''} onChange={(v) => setField(c.codigo, 'cantidad', v)} />
                   : DASH}
@@ -800,7 +817,9 @@ function TableSection({
                       </span>
                     );
                   }
-                  return c.tieneImporte !== false
+                  // Para SAC (41/42): siempre mostrar Importe (contiene el monto calculado)
+                  const esSac = c.baseColumna === 'sac_normal' || c.baseColumna === 'sac_proporcional';
+                  return (c.tieneImporte !== false || esSac)
                     ? <EditableCell value={edit?.importe ?? ''} onChange={(v) => setField(c.codigo, 'importe', v)} />
                     : DASH;
                 })()}
@@ -935,6 +954,12 @@ interface TablaReciboSosProps {
    * 180 = semestre completo. Usado por concepto 42 (SAC proporcional, base 'sac_proporcional').
    */
   diasSemestre?: number;
+  /**
+   * Bruto del período anterior (haberes + no remunerativo del último recibo del empleado).
+   * Usado por conceptos con baseColumna = 'bruto_anterior_div25' (vacaciones — conceptos 51 y 401).
+   * Si es 0, se muestra un aviso en la fila del concepto.
+   */
+  brutoMesAnterior?: number;
   /** Catálogo para "Agregar concepto" (toda la plantilla). Por defecto coincide con `conceptos`. */
   catalogoCompleto?: ConceptoImportado[];
   onAddConcepto?: (codigos: string[]) => void;
@@ -958,6 +983,7 @@ export function TablaReciboSos({
   basicoJornadaCompleta = 0,
   mejorSueldoSemestre = 0,
   diasSemestre = 180,
+  brutoMesAnterior = 0,
 }: TablaReciboSosProps) {
   const catalogoCompleto = catalogoCompletoProp ?? conceptos;
   const initialEdits = useMemo<EditsMap>(() => {
@@ -1022,6 +1048,9 @@ export function TablaReciboSos({
   const diasSemestreRef = useRef(diasSemestre);
   useEffect(() => { diasSemestreRef.current = diasSemestre; }, [diasSemestre]);
 
+  const brutoMesAnteriorRef = useRef(brutoMesAnterior);
+  useEffect(() => { brutoMesAnteriorRef.current = brutoMesAnterior; }, [brutoMesAnterior]);
+
   // Cuando basicoEscala carga por primera vez (async), calcular montos de conceptos con base
   // implícita que todavía tienen monto vacío (recibo nuevo desde cero).
   // También re-ejecuta cuando activeCodigosProp cambia: puede ocurrir que basico llegue antes
@@ -1056,7 +1085,7 @@ export function TablaReciboSos({
         changed = true;
       }
       if (!changed) return prev;
-      return applySubtotalCascade(next, conceptosRef.current, activeCodigosRef.current, osBaseRef.current, mejorSueldoRef.current, diasSemestreRef.current);
+      return applySubtotalCascade(next, conceptosRef.current, activeCodigosRef.current, osBaseRef.current, mejorSueldoRef.current, diasSemestreRef.current, brutoMesAnteriorRef.current);
     });
   // activeCodigosProp como dep: si basico llegó antes de que los conceptos estén activos,
   // este effect vuelve a ejecutarse cuando la plantilla carga y los códigos se populan.
@@ -1274,7 +1303,7 @@ export function TablaReciboSos({
           }
         }
 
-        return applySubtotalCascade(newEdits, conceptosRef.current, activeCodigosRef.current, osBaseRef.current, mejorSueldoRef.current, diasSemestreRef.current);
+        return applySubtotalCascade(newEdits, conceptosRef.current, activeCodigosRef.current, osBaseRef.current, mejorSueldoRef.current, diasSemestreRef.current, brutoMesAnteriorRef.current);
       });
     },
     []
@@ -1297,7 +1326,7 @@ export function TablaReciboSos({
   // para que conceptos subtotal-based con % pre-cargado calculen su monto automáticamente.
   useEffect(() => {
     activeCodigosRef.current = codigosActivosSet;
-    setEdits((prev) => applySubtotalCascade(prev, conceptosRef.current, codigosActivosSet, osBaseRef.current, mejorSueldoRef.current, diasSemestreRef.current));
+    setEdits((prev) => applySubtotalCascade(prev, conceptosRef.current, codigosActivosSet, osBaseRef.current, mejorSueldoRef.current, diasSemestreRef.current, brutoMesAnteriorRef.current));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [codigosActivosSet]);
 
@@ -1475,6 +1504,7 @@ export function TablaReciboSos({
                 codigosActivos={codigosActivosSet}
                 onAddConcepto={onAddConcepto}
                 onRemoveConcepto={onRemoveConcepto}
+                brutoMesAnterior={brutoMesAnterior}
               />
             ))}
           </tbody>
