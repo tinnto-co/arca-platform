@@ -11,34 +11,39 @@ export const Route = createFileRoute('/login')({
 
 export default function LoginPage() {
   return (
-    <div className="grid min-h-svh lg:grid-cols-2">
-      <div className="flex flex-col gap-4 p-6 md:p-10">
-        <div className="flex justify-center gap-2 md:justify-start">
-          <a href="#" className="flex items-center gap-2 font-medium"></a>
+    <div className="flex min-h-svh w-full bg-[var(--arca-bg)] font-sans text-[var(--arca-ink)]">
+      {/* Left — form */}
+      <div className="flex min-w-0 flex-1 flex-col px-6 py-8 md:px-12 md:py-10 lg:basis-1/2">
+        {/* Brand */}
+        <div className="flex items-center">
+          <img
+            src="/inline-logo.svg"
+            alt="tinnto"
+            className="block h-[30px] w-auto"
+          />
         </div>
-        <div className="flex flex-1 items-center justify-center">
-          <div className="w-full max-w-xs">
-            <LoginForm />
-          </div>
+
+        {/* Centered form block */}
+        <div className="flex flex-1 flex-col items-center justify-center">
+          <LoginForm />
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between text-[11.5px] text-[var(--arca-ink-4)]">
+          <span>© 2026 Arca · Control contable integrado</span>
+          <span className="text-[11px] [font-family:var(--ff-mono)]">
+            contable.tinnto.co
+          </span>
         </div>
       </div>
-      <div
-        className="relative hidden lg:flex lg:items-center lg:justify-center"
-        style={{
-          background:
-            'linear-gradient(145deg, var(--arca-navy-900) 0%, var(--arca-navy-800) 60%, var(--arca-navy-700) 100%)',
-        }}
-      >
-        <div className="text-center px-8">
-          <p className="text-[var(--arca-surface-2)] text-[11px] font-semibold uppercase tracking-[0.12em] mb-3">
-            Bienvenido a
-          </p>
-          <h2 className="font-display text-[28px] font-semibold text-white tracking-[-0.02em]">
-            Control Integrado
-            <br />
-            <span style={{ color: '#C2A878' }}>de Arca</span>
-          </h2>
-        </div>
+
+      {/* Right — full-bleed image */}
+      <div className="relative hidden min-w-0 flex-1 overflow-hidden bg-[var(--arca-navy-900)] lg:block lg:basis-1/2">
+        <img
+          src="/login-hero.png"
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover"
+        />
       </div>
     </div>
   );

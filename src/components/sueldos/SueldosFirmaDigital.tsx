@@ -3,8 +3,6 @@
 import { useState, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Upload, X, Loader2, PenLine } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import {
   getPayrollEmployerConfig,
@@ -84,76 +82,105 @@ export function SueldosFirmaDigital({
   }
 
   return (
-    <div className="w-full max-w-xl space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <PenLine className="h-5 w-5" />
-            Firma digital del empleador
-          </CardTitle>
-          <p className="text-sm text-[var(--arca-ink-3)]">
-            La imagen se imprimirá sobre la línea &quot;Firma y sello del
-            empleador&quot; en todos los recibos de esta empresa.
-          </p>
-        </CardHeader>
-        <CardContent className="flex items-center gap-6">
-          {firmaUrl ? (
-            <>
-              <div className="flex h-24 w-56 items-center justify-center rounded border border-border bg-[var(--arca-surface-2)] p-2">
-                <img
-                  src={firmaUrl}
-                  alt="Firma del empleador"
-                  className="max-h-full max-w-full object-contain"
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={saving}
-                >
-                  <Upload className="mr-2 h-4 w-4" />
-                  Cambiar imagen
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleRemove}
-                  disabled={saving}
-                >
-                  {saving ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <X className="mr-2 h-4 w-4" />
-                  )}
-                  Eliminar firma
-                </Button>
-              </div>
-            </>
-          ) : (
-            <Button
-              variant="outline"
+    <div className="max-w-[560px] mx-auto mt-[36px]">
+      {/* Heading row */}
+      <div className="flex items-center gap-[10px] mb-[6px]">
+        <h2
+          className="font-[family-name:var(--ff-display)] font-semibold text-[17px] leading-tight"
+          style={{ color: '#12131A' }}
+        >
+          Firma digital del empleador
+        </h2>
+      </div>
+
+      {/* Description */}
+      <p className="text-[13.5px] mb-[22px]" style={{ color: '#6E7079' }}>
+        La imagen se imprimirá sobre la línea &quot;Firma y sello del
+        empleador&quot; en todos los recibos de esta empresa.
+      </p>
+
+      {firmaUrl ? (
+        /* Signature preview */
+        <div className="flex items-center gap-5">
+          <div
+            className="flex h-24 w-56 items-center justify-center rounded-[10px] p-2"
+            style={{ border: '1px solid #ECEAE3', background: '#FBFAF6' }}
+          >
+            <img
+              src={firmaUrl}
+              alt="Firma del empleador"
+              className="max-h-full max-w-full object-contain"
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={saving}
+              className="bg-white border border-[#DFDCD3] rounded-[10px] text-[13.5px] font-semibold px-[17px] py-[10px] hover:bg-[#FBFAF6] disabled:opacity-50 flex items-center gap-2 transition-colors"
+              style={{ color: '#3E404A' }}
+            >
+              <Upload style={{ width: 14, height: 14 }} />
+              Cambiar
+            </button>
+            <button
+              type="button"
+              onClick={handleRemove}
+              disabled={saving}
+              className="bg-white border border-[#DFDCD3] rounded-[10px] text-[13.5px] font-semibold px-[17px] py-[10px] hover:bg-[#FBFAF6] disabled:opacity-50 flex items-center gap-2 transition-colors"
+              style={{ color: '#c0392b' }}
             >
               {saving ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 style={{ width: 14, height: 14 }} className="animate-spin" />
               ) : (
-                <Upload className="mr-2 h-4 w-4" />
+                <X style={{ width: 14, height: 14 }} />
               )}
-              Adjuntar imagen de firma
-            </Button>
-          )}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleFileChange}
-          />
-        </CardContent>
-      </Card>
+              Eliminar
+            </button>
+          </div>
+        </div>
+      ) : (
+        /* Dropzone */
+        <div
+          className="flex flex-col items-center justify-center text-center px-6 py-[38px] rounded-[12px]"
+          style={{
+            border: '1.5px dashed #DFDCD3',
+            background: '#FBFAF6',
+          }}
+        >
+          {/* Upload icon tile */}
+          <div
+            className="w-11 h-11 rounded-[10px] bg-white flex items-center justify-center mb-[14px]"
+            style={{ border: '1px solid #ECEAE3' }}
+          >
+            <Upload style={{ width: 18, height: 18, color: '#9B9CA3' }} />
+          </div>
+          <p className="text-[13px] mb-[18px] max-w-[320px]" style={{ color: '#9B9CA3' }}>
+            Arrastrá una imagen (PNG con fondo transparente) o subila desde tu equipo.
+          </p>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={saving}
+            className="bg-[#12131A] text-white rounded-[10px] px-[17px] py-[10px] text-[13.5px] font-semibold hover:bg-black disabled:opacity-50 flex items-center gap-2 transition-colors"
+          >
+            {saving ? (
+              <Loader2 style={{ width: 14, height: 14 }} className="animate-spin" />
+            ) : (
+              <Upload style={{ width: 14, height: 14 }} />
+            )}
+            Adjuntar imagen de firma
+          </button>
+        </div>
+      )}
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleFileChange}
+      />
     </div>
   );
 }

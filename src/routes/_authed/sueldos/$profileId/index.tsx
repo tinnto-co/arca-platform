@@ -13,16 +13,8 @@ import {
   Upload,
   ChevronLeft,
 } from 'lucide-react';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
-import { Card, CardContent } from '@/components/ui/card';
 import { SueldosDashboard } from '@/components/sueldos/SueldosDashboard';
 import { SueldosEmpleados } from '@/components/sueldos/SueldosEmpleados';
 import { SueldosConvenios } from '@/components/sueldos/SueldosConvenios';
@@ -33,7 +25,6 @@ import { SueldosFirmaDigital } from '@/components/sueldos/SueldosFirmaDigital';
 import { SueldosCargas } from '@/components/sueldos/SueldosCargas';
 import { getRepresentativesForSueldos } from '@/actions/client';
 import { listOrgModules } from '@/actions/admin';
-import { PageHeader } from '@/components/shared/page-header';
 import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
 import {
   getPeriodoMesActual,
@@ -137,28 +128,26 @@ function RouteComponent() {
 
   if (!isLoading && !selectedOption) {
     return (
-      <div className="space-y-4 overflow-x-hidden p-4 md:space-y-6 md:px-[3rem] md:pt-[3rem] md:pb-6">
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-            <h2 className="text-lg font-semibold mb-2">Perfil no encontrado</h2>
-            <p className="text-muted-foreground max-w-md">
-              No encontramos un perfil con ese identificador habilitado para
-              sueldos.
-            </p>
-            <Link
-              to="/sueldos"
-              className="mt-4 text-sm font-medium text-[#139ed9] hover:underline"
-            >
-              Volver al listado
-            </Link>
-          </CardContent>
-        </Card>
+      <div className="overflow-x-hidden bg-[#F7F6F2] min-h-screen max-w-[1380px] mx-auto px-[44px] pt-[34px] pb-[72px]">
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <h2 className="text-lg font-semibold mb-2 text-[#12131A]">Perfil no encontrado</h2>
+          <p className="text-[#9B9CA3] max-w-md">
+            No encontramos un perfil con ese identificador habilitado para
+            sueldos.
+          </p>
+          <Link
+            to="/sueldos"
+            className="mt-4 text-[13.5px] font-medium text-[#2A4680] hover:underline"
+          >
+            Volver al listado
+          </Link>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4 overflow-x-hidden p-4 md:space-y-6 md:px-[3rem] md:pt-[3rem] md:pb-6">
+    <div className="overflow-x-hidden bg-[#F7F6F2] min-h-screen max-w-[1380px] mx-auto px-[44px] pt-[34px] pb-[72px] space-y-6">
       {aiAgentEnabled && selectedOption && (
         <CopilotReadableEntity
           description="Estado actual del módulo Sueldos visible en pantalla. Usá clientId/profileId al invocar acciones de payroll. mesLiquidable es el único período sobre el que se pueden calcular liquidaciones."
@@ -177,42 +166,38 @@ function RouteComponent() {
           }}
         />
       )}
-      <PageHeader
-        title="Liquidación de sueldos"
-        subtitle="Seleccioná una empresa para gestionar sus sueldos"
-        actions={
-          <div className="flex items-center gap-3">
-            <Select
-              value={profileId}
-              onValueChange={(id) =>
-                void navigate({
-                  to: '/sueldos/$profileId',
-                  params: { profileId: id },
-                  search: { tab: undefined },
-                })
-              }
-            >
-              <SelectTrigger className="w-[260px] h-9 text-[13px]">
-                <SelectValue placeholder="Seleccionar empresa…" />
-              </SelectTrigger>
-              <SelectContent>
-                {clients.map((c) => (
-                  <SelectItem key={c.clientId} value={c.clientId} className="text-[13px]">
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+      <div className="flex items-start gap-6">
+        {/* Left — identity */}
+        <div className="min-w-0">
+          <div className="flex items-center gap-[10px]">
             <Link
               to="/sueldos"
-              className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+              className="w-[30px] h-[30px] shrink-0 rounded-[10px] border border-[#DFDCD3] bg-white text-[#6E7079] inline-flex items-center justify-center hover:bg-[#FBFAF6] transition-[background] duration-[120ms]"
+              title="Volver al listado"
             >
-              <ChevronLeft className="h-4 w-4" />
-              Ver listado
+              <ChevronLeft className="h-[15px] w-[15px]" />
             </Link>
+            <h1 className="font-[family-name:var(--ff-display)] text-[29px] font-bold tracking-[-0.025em] leading-[1.1] text-[#12131A] truncate">
+              {selectedOption?.name ?? 'Cargando…'}
+            </h1>
           </div>
-        }
-      />
+          {/* Meta line */}
+          <div className="mt-2 ml-[40px] flex flex-wrap items-center gap-x-[9px] gap-y-[2px] text-[13px] text-[#9B9CA3]">
+            {selectedOption?.label && (
+              <>
+                <span>
+                  CUIT{' '}
+                  <span className="font-[family-name:var(--ff-mono)] text-[12px] text-[#6E7079] tabular-nums">
+                    {selectedOption.label.match(/\((\d+)\)/)?.[1] ?? ''}
+                  </span>
+                </span>
+                <span>·</span>
+              </>
+            )}
+            <span className="text-[#9B9CA3]">Sueldos del cliente</span>
+          </div>
+        </div>
+      </div>
 
       {clientId && (
         <Tabs
@@ -220,8 +205,8 @@ function RouteComponent() {
           onValueChange={(v) => setTab(v as SueldosTab)}
           className="w-full min-w-0 max-w-full"
         >
-          <div className="-mx-4 md:-mx-[3rem] border-b border-[var(--arca-border)] px-4 md:px-[3rem]">
-            <TabsList className="flex h-auto w-full bg-transparent p-0 rounded-none gap-0 overflow-x-auto justify-start">
+          <div className="border-b border-[#ECEAE3] mb-[30px]">
+            <TabsList className="flex h-auto w-full bg-transparent p-0 rounded-none gap-0 overflow-x-auto justify-start [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
               {(
                 [
                   {
@@ -270,9 +255,9 @@ function RouteComponent() {
                   key={tab.value}
                   value={tab.value}
                   className={cn(
-                    'relative h-auto flex-none px-[14px] py-[10px] text-[13px] font-medium rounded-[8px_8px_0_0] border whitespace-nowrap gap-[7px] cursor-pointer',
-                    'border-transparent text-[var(--arca-ink-3)] hover:bg-transparent hover:text-[var(--arca-ink)]',
-                    'data-[state=active]:bg-[var(--arca-surface)] data-[state=active]:border-[var(--arca-border)] data-[state=active]:[border-bottom-color:var(--arca-bg)] data-[state=active]:text-[var(--arca-ink)] data-[state=active]:font-semibold data-[state=active]:shadow-none data-[state=active]:top-px'
+                    'relative h-auto flex-none px-[14px] py-[10px] text-[13.5px] font-medium rounded-[10px_10px_0_0] border whitespace-nowrap gap-[7px] cursor-pointer',
+                    'border-transparent text-[#6E7079] font-medium hover:bg-transparent hover:text-[#12131A]',
+                    'data-[state=active]:bg-white data-[state=active]:border-[#ECEAE3] data-[state=active]:[border-bottom-color:#F7F6F2] data-[state=active]:text-[#12131A] data-[state=active]:font-semibold data-[state=active]:shadow-none data-[state=active]:top-px'
                   )}
                 >
                   {tab.icon}
@@ -281,7 +266,7 @@ function RouteComponent() {
               ))}
             </TabsList>
           </div>
-          <div className="mt-4 min-w-0 max-w-full">
+          <div className="min-w-0 max-w-full">
             <TabsContent value="dashboard">
               <SueldosDashboard clientId={clientId} profileId={profileId} />
             </TabsContent>

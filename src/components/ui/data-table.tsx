@@ -55,6 +55,7 @@ interface DataTableProps<TData, TValue> {
   pageSize?: number;
   onRowClick?: (row: TData) => void;
   onSelectionChange?: (selectedRows: TData[]) => void;
+  showSelection?: boolean;
   isLoading?: boolean;
   toolbar?: React.ReactNode;
   emptyMessage?: string;
@@ -72,6 +73,7 @@ export function DataTable<TData, TValue>({
   pageSize = 20,
   onRowClick,
   onSelectionChange,
+  showSelection = true,
   isLoading = false,
   toolbar,
   emptyMessage = 'Sin resultados.',
@@ -110,7 +112,7 @@ export function DataTable<TData, TValue>({
     ),
   };
 
-  const allColumns = [selectColumn, ...columns] as ColumnDef<TData, TData>[];
+  const allColumns = (showSelection ? [selectColumn, ...columns] : columns) as ColumnDef<TData, TData>[];
 
   const table = useReactTable({
     data,
