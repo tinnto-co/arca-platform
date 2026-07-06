@@ -22,3 +22,8 @@ dist
 
 # Claude Code worktrees
 .claude/worktrees/
+
+# Documentación interna (no versionar)
+Actualizaciones/
+docs/
+Documentacion Tecnica/

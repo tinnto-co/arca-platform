@@ -49,7 +49,7 @@ import {
   eliminarLiquidacionesDelPeriodo,
 } from '@/actions/sueldos';
 import {
-  getPeriodoMesActual,
+  getPeriodoMaxLiquidable,
   puedeLiquidarPeriodo,
 } from '@/lib/payroll-period-rules';
 import { legajoParaMostrar } from '@/lib/legajo';
@@ -57,7 +57,7 @@ import { toTitleCase } from '@/lib/format-name';
 
 const now = new Date();
 const [PERIODO_INICIAL_ANO, PERIODO_INICIAL_MES] =
-  getPeriodoMesActual().split('-');
+  getPeriodoMaxLiquidable().split('-');
 const ANOS = Array.from({ length: 6 }, (_, i) => now.getFullYear() - i);
 const MESES = Array.from({ length: 12 }, (_, i) => ({
   value: String(i + 1).padStart(2, '0'),
@@ -102,6 +102,9 @@ export function SueldosDashboard({
   const [mes, setMes] = useState(PERIODO_INICIAL_MES);
   const periodo = useMemo(() => `${ano}-${mes}`, [ano, mes]);
   const permiteLiquidar = puedeLiquidarPeriodo(periodo);
+  const mesesDisponibles = ano === PERIODO_INICIAL_ANO
+    ? MESES.filter((m) => m.value <= PERIODO_INICIAL_MES)
+    : MESES;
 
   const liquidacionesQuery = useQuery({
     queryKey: ['liquidaciones', clientId, profileId, periodo],
@@ -396,7 +399,7 @@ export function SueldosDashboard({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {MESES.map((m) => (
+              {mesesDisponibles.map((m) => (
                 <SelectItem key={m.value} value={m.value}>
                   {m.label}
                 </SelectItem>
