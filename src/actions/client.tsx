@@ -1062,6 +1062,90 @@ export const updateRepresentativeModules = createServerFn({
     }
   });
 
+/**
+ * Encola en batch (fire-and-forget) los módulos seleccionados para varios
+ * representantes. No espera la finalización de los jobs.
+ */
+export const scrapBatchJobs = createServerFn({
+  method: 'POST',
+})
+  .inputValidator(
+    z.object({
+      representativeIds: z.array(z.string()).min(1),
+      jobTypes: z
+        .array(
+          z.enum([
+            'deuda',
+            'vencimientos',
+            'notificaciones',
+            'comprobantes',
+            'iva',
+          ])
+        )
+        .min(1),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const { representativeIds, jobTypes } = ctx.data;
+
+    const owned = await db
+      .select({ id: representative.id })
+      .from(representative)
+      .where(
+        and(
+          inArray(representative.id, representativeIds),
+          eq(representative.organizationId, orgId)
+        )
+      );
+
+    if (owned.length === 0) {
+      throw new Error('Clientes no encontrados o no autorizados');
+    }
+
+    // Si se piden comprobantes e IVA juntos, encolar comprobantes primero
+    // (misma semántica que el flujo "Comprobantes + IVA" del detalle).
+    const orderedTypes = (
+      [
+        'deuda',
+        'vencimientos',
+        'notificaciones',
+        'comprobantes',
+        'iva',
+      ] as const
+    ).filter((t) => jobTypes.includes(t));
+
+    const jobs = owned.flatMap(({ id }) =>
+      orderedTypes.map((type) => ({ type, representativeId: id }))
+    );
+
+    try {
+      const { data } = await axios.post<{ created?: number; errors?: number }>(
+        `${JOBS_API_URL}/api/jobs/batch`,
+        { jobs }
+      );
+      return {
+        success: true,
+        created: data?.created ?? jobs.length,
+        errors: data?.errors ?? 0,
+      };
+    } catch (error) {
+      const axiosError = error as {
+        response?: { data?: { error?: string } };
+        message?: string;
+      };
+      console.error('[scrapBatchJobs]', axiosError.response?.data ?? error);
+      const msg =
+        axiosError.response?.data?.error ??
+        axiosError.message ??
+        'Error al encolar la actualización masiva';
+      throw new Error(msg);
+    }
+  });
+
 /** [DEBUG] Ejecuta un solo job por tipo - temporal para debugear */
 export const scrapSingleJob = createServerFn({
   method: 'POST',
