@@ -31,9 +31,20 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import {
   getClients,
   deleteRepresentative,
-  scrapSingleJob,
+  scrapBatchJobs,
 } from '@/actions/client';
 import { listOrgModules } from '@/actions/admin';
 import { EditRepresentativeDialog } from '@/components/edit-client-dialog';
@@ -54,6 +65,33 @@ interface ClientRow {
 }
 
 type EstadoValue = 'error' | 'active' | 'inactive';
+
+const BULK_JOB_TYPES = [
+  { value: 'deuda', label: 'Deuda', description: 'Deudas impositivas en AFIP' },
+  {
+    value: 'vencimientos',
+    label: 'Vencimientos',
+    description: 'Próximos vencimientos fiscales',
+  },
+  {
+    value: 'notificaciones',
+    label: 'Notificaciones',
+    description: 'Notificaciones del domicilio fiscal electrónico',
+  },
+  {
+    value: 'comprobantes',
+    label: 'Comprobantes',
+    description: 'Facturas emitidas y recibidas recientes',
+  },
+  {
+    value: 'iva',
+    label: 'IVA',
+    description:
+      'DDJJ de IVA recientes. Si marcás Comprobantes también, se actualizan primero (Comprobantes + IVA).',
+  },
+] as const;
+
+type BulkJobType = (typeof BULK_JOB_TYPES)[number]['value'];
 
 function getEstado(row: ClientRow): EstadoValue {
   if (row.credentialError) return 'error';
@@ -86,6 +124,10 @@ export function RepresentativesTable() {
   const [representativeToEditId, setRepresentativeToEditId] = useState<string | null>(null);
   const [selectedClients, setSelectedClients] = useState<ClientRow[]>([]);
   const [isScraping, setIsScraping] = useState(false);
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [selectedJobTypes, setSelectedJobTypes] = useState<Set<BulkJobType>>(
+    () => new Set(BULK_JOB_TYPES.map((t) => t.value))
+  );
   const queryClient = useQueryClient();
 
   const { data: clients = [], isLoading } = useQuery({
@@ -248,34 +290,44 @@ export function RepresentativesTable() {
     },
   ];
 
-  const handleScrapSelected = async () => {
-    if (selectedClients.length === 0) return;
+  const selectedRepresentativeIds = [
+    ...new Set(selectedClients.map((c) => c.representativeId)),
+  ];
+
+  const toggleJobType = (jobType: BulkJobType) => {
+    setSelectedJobTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(jobType)) {
+        next.delete(jobType);
+      } else {
+        next.add(jobType);
+      }
+      return next;
+    });
+  };
+
+  const handleBulkUpdate = async () => {
+    if (selectedRepresentativeIds.length === 0 || selectedJobTypes.size === 0)
+      return;
     setIsScraping(true);
     try {
-      const modules = ['deuda', 'vencimientos', 'iva', 'notificaciones', 'comprobantes'] as const;
-      const representativeIds = [
-        ...new Set(selectedClients.map((c) => c.representativeId)),
-      ];
-      let created = 0;
-      let errors = 0;
-      for (const representativeId of representativeIds) {
-        for (const jobType of modules) {
-          try {
-            await scrapSingleJob({ data: { representativeId, jobType } });
-            created++;
-          } catch {
-            errors++;
-          }
-        }
-      }
-      if (errors > 0) {
-        toast.warning(`${created} módulos completados, ${errors} errores`);
+      const result = await scrapBatchJobs({
+        data: {
+          representativeIds: selectedRepresentativeIds,
+          jobTypes: [...selectedJobTypes],
+        },
+      });
+      if (result.errors > 0) {
+        toast.warning(
+          `${result.created} jobs encolados, ${result.errors} con error`
+        );
       } else {
-        toast.success(`${created} módulos de scraping completados`);
+        toast.success(`${result.created} jobs encolados`);
       }
+      setBulkDialogOpen(false);
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : 'Error al encolar scraping'
+        err instanceof Error ? err.message : 'Error al encolar la actualización'
       );
     } finally {
       setIsScraping(false);
@@ -322,18 +374,72 @@ export function RepresentativesTable() {
         onSelectionChange={(rows) => setSelectedClients(rows as ClientRow[])}
         toolbar={
           selectedClients.length > 0 ? (
-            <Button
-              size="sm"
-              onClick={handleScrapSelected}
-              disabled={isScraping}
-            >
-              {isScraping ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Play className="h-3.5 w-3.5" />
-              )}
-              Scrapear {selectedClients.length} cliente{selectedClients.length > 1 ? 's' : ''}
-            </Button>
+            <Dialog open={bulkDialogOpen} onOpenChange={setBulkDialogOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" disabled={isScraping}>
+                  {isScraping ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Play className="h-3.5 w-3.5" />
+                  )}
+                  Actualizar todos ({selectedRepresentativeIds.length})
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[420px]">
+                <DialogHeader>
+                  <DialogTitle>Actualizar todos</DialogTitle>
+                  <DialogDescription>
+                    Se van a encolar los módulos seleccionados para{' '}
+                    {selectedRepresentativeIds.length} cliente
+                    {selectedRepresentativeIds.length > 1 ? 's' : ''}. El
+                    scraping corre en segundo plano.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-3 py-1">
+                  {BULK_JOB_TYPES.map((jobType) => (
+                    <div key={jobType.value} className="flex items-start gap-3">
+                      <Checkbox
+                        id={`bulk-job-${jobType.value}`}
+                        checked={selectedJobTypes.has(jobType.value)}
+                        onCheckedChange={() => toggleJobType(jobType.value)}
+                        className="mt-0.5"
+                      />
+                      <Label
+                        htmlFor={`bulk-job-${jobType.value}`}
+                        className="flex flex-col items-start gap-0.5 font-normal cursor-pointer"
+                      >
+                        <span className="text-sm font-medium">
+                          {jobType.label}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {jobType.description}
+                        </span>
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setBulkDialogOpen(false)}
+                    disabled={isScraping}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleBulkUpdate}
+                    disabled={isScraping || selectedJobTypes.size === 0}
+                  >
+                    {isScraping && (
+                      <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                    )}
+                    Actualizar
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           ) : null
         }
         emptyMessage="No hay clientes registrados."
