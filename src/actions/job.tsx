@@ -2,7 +2,7 @@ import { createServerFn } from '@tanstack/react-start';
 import z from 'zod';
 import axios from 'axios';
 import { db } from '@/lib/db';
-import { job, representative, jobLog } from '@/drizzle/schema';
+import { job, representative, jobLog, client } from '@/drizzle/schema';
 import { getSessionWithOrg, getMemberRole, assertCanWrite } from '@/actions/helpers';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 
@@ -30,6 +30,8 @@ export interface JobRow {
   type: JobType;
   representativeId: string;
   representativeName: string | null;
+  /** Empresas (clientes) del representante. */
+  clients: { id: string; name: string }[];
   params: Record<string, {}> | null;
   result: Record<string, {}> | null;
   failedReason: string | null;
@@ -148,8 +150,34 @@ export const getJobs = createServerFn({
       .limit(limit)
       .offset(offset);
 
+    // Empresas (clientes) de cada representante para mostrar debajo.
+    const repIds = [...new Set(rawJobs.map((j) => j.representativeId))];
+    const clientRows =
+      repIds.length > 0
+        ? await db
+            .select({
+              id: client.id,
+              name: client.name,
+              representativeId: client.representativeId,
+            })
+            .from(client)
+            .where(inArray(client.representativeId, repIds))
+            .orderBy(asc(client.name))
+        : [];
+    const clientsByRep = new Map<string, { id: string; name: string }[]>();
+    for (const c of clientRows) {
+      if (!c.representativeId) continue;
+      const list = clientsByRep.get(c.representativeId);
+      const entry = { id: c.id, name: c.name };
+      if (list) list.push(entry);
+      else clientsByRep.set(c.representativeId, [entry]);
+    }
+
     const jobs: JobRow[] = rawJobs.map((j) => ({
       ...j,
+      // El enum de la DB incluye 'batch' pero la UI solo maneja JobType.
+      type: j.type as JobType,
+      clients: clientsByRep.get(j.representativeId) ?? [],
       params: (j.params ?? null) as Record<string, {}> | null,
       result: (j.result ?? null) as Record<string, {}> | null,
     }));
@@ -214,6 +242,94 @@ export const getJobLogs = createServerFn({
 
     return logs as JobLogRow[];
   });
+
+export interface ActiveJobRow {
+  id: string;
+  type: JobType;
+  status: 'pending' | 'running';
+  representativeId: string;
+  representativeName: string | null;
+  progress: number | null;
+  createdAt: Date;
+}
+
+export interface FinishedJobRow {
+  id: string;
+  type: JobType;
+  status: 'finished' | 'failed';
+  representativeId: string;
+  representativeName: string | null;
+  failedReason: string | null;
+  finishedAt: Date | null;
+}
+
+export interface ActiveJobsSummary {
+  active: ActiveJobRow[];
+  recentlyFinished: FinishedJobRow[];
+}
+
+export const getActiveJobsSummary = createServerFn({ method: 'GET' }).handler(
+  async (): Promise<ActiveJobsSummary> => {
+    const { orgId } = await getSessionWithOrg();
+
+    const userClients = await db
+      .select({ id: representative.id })
+      .from(representative)
+      .where(eq(representative.organizationId, orgId));
+
+    const clientIds = userClients.map((c) => c.id);
+    if (clientIds.length === 0) {
+      return { active: [], recentlyFinished: [] };
+    }
+
+    const active = await db
+      .select({
+        id: job.id,
+        type: job.type,
+        status: job.status,
+        representativeId: job.representativeId,
+        representativeName: representative.name,
+        progress: job.progress,
+        createdAt: job.createdAt,
+      })
+      .from(job)
+      .leftJoin(representative, eq(job.representativeId, representative.id))
+      .where(
+        and(
+          inArray(job.representativeId, clientIds),
+          inArray(job.status, ['pending', 'running'])
+        )
+      )
+      .orderBy(asc(job.createdAt));
+
+    const recentlyFinished = await db
+      .select({
+        id: job.id,
+        type: job.type,
+        status: job.status,
+        representativeId: job.representativeId,
+        representativeName: representative.name,
+        failedReason: job.failedReason,
+        finishedAt: sql<Date | null>`COALESCE(${job.finishedAt}, ${job.failedAt}, ${job.updatedAt})`,
+      })
+      .from(job)
+      .leftJoin(representative, eq(job.representativeId, representative.id))
+      .where(
+        and(
+          inArray(job.representativeId, clientIds),
+          inArray(job.status, ['finished', 'failed']),
+          sql`COALESCE(${job.finishedAt}, ${job.failedAt}, ${job.updatedAt}) > now() - interval '10 minutes'`
+        )
+      )
+      .orderBy(desc(sql`COALESCE(${job.finishedAt}, ${job.failedAt}, ${job.updatedAt})`))
+      .limit(100);
+
+    return {
+      active: active as ActiveJobRow[],
+      recentlyFinished: recentlyFinished as FinishedJobRow[],
+    };
+  }
+);
 
 export const dispatchAllJobs = createServerFn({ method: 'POST' })
   .inputValidator(z.object({ limit: z.number().int().positive().optional() }))

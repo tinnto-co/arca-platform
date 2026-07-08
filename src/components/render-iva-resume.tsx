@@ -42,7 +42,7 @@ import {
   getInvoicesByProfileInRange,
   getInvoiceStatsByProfile,
 } from '@/actions/invoice';
-import { getLastComprobantesFullJob } from '@/actions/client';
+import { getLastJobByType } from '@/actions/client';
 
 const currencyFormatter = new Intl.NumberFormat('es-AR', {
   style: 'currency',
@@ -569,10 +569,10 @@ export const RenderIvaResume = React.forwardRef<
   });
 
   const { data: lastScrapeJob } = useQuery({
-    queryKey: ['lastComprobantesFullJob', representativeId],
+    queryKey: ['lastIvaJob', representativeId],
     queryFn: () =>
-      getLastComprobantesFullJob({
-        data: { representativeId },
+      getLastJobByType({
+        data: { representativeId, jobType: 'iva' },
       }),
     enabled: !!representativeId,
   });

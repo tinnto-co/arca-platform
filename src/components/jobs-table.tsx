@@ -145,7 +145,7 @@ export function JobsTable() {
         data: {
           page: currentPage,
           limit: pageSize,
-          clientId: clientFilter === 'all' ? undefined : clientFilter,
+          representativeId: clientFilter === 'all' ? undefined : clientFilter,
           status: statusFilter === 'all' ? undefined : statusFilter,
           type: typeFilter === 'all' ? undefined : typeFilter,
           date,
@@ -166,7 +166,8 @@ export function JobsTable() {
       const term = searchTerm.toLowerCase();
       return (
         job.id.toLowerCase().includes(term) ||
-        (job.clientName ?? '').toLowerCase().includes(term) ||
+        (job.representativeName ?? '').toLowerCase().includes(term) ||
+        job.clients.some((c) => c.name.toLowerCase().includes(term)) ||
         job.type.toLowerCase().includes(term)
       );
     })
@@ -327,9 +328,9 @@ export function JobsTable() {
   };
 
   const handleGoToClient = (job: JobRow) => {
-    navigate({
+    void navigate({
       to: '/clients/$clientId',
-      params: { clientId: job.clientId },
+      params: { clientId: job.representativeId },
     });
   };
 
@@ -391,7 +392,7 @@ export function JobsTable() {
           <div className="relative flex-[2] min-w-[200px]">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-[var(--arca-ink-3)]" />
             <Input
-              placeholder="Buscar por ID, cliente o tipo..."
+              placeholder="Buscar por ID, representante, empresa o tipo..."
               value={searchTerm}
               onChange={(e) => setFilter({ search: e.target.value })}
               className="pl-8 w-full"
@@ -416,13 +417,16 @@ export function JobsTable() {
           <div className="flex-[2] min-w-[180px]">
             <SearchableSelect
               options={[
-                { value: 'all', label: 'Todos los clientes' },
-                ...representatives.map((c) => ({ value: c.id, label: c.name })),
+                { value: 'all', label: 'Todos los representantes' },
+                ...representatives.map((c) => ({
+                  value: c.id,
+                  label: c.name ?? 'Sin nombre',
+                })),
               ]}
               value={clientFilter}
               onValueChange={(value) => setFilter({ clientId: value })}
-              placeholder="Filtrar por cliente"
-              searchPlaceholder="Buscar cliente..."
+              placeholder="Filtrar por representante"
+              searchPlaceholder="Buscar representante..."
               width="100%"
             />
           </div>
@@ -519,7 +523,7 @@ export function JobsTable() {
                 />
               </TableHead>
               <TableHead className="w-[90px]">ID</TableHead>
-              <TableHead>Cliente</TableHead>
+              <TableHead>Representante</TableHead>
               <TableHead>Tipo</TableHead>
               <TableHead>Estado</TableHead>
               <TableHead>Creado</TableHead>
@@ -560,16 +564,23 @@ export function JobsTable() {
                     </code>
                   </TableCell>
                   <TableCell>
-                    {job.clientName ? (
+                    {job.representativeName ? (
                       <div className="flex flex-col">
-                        <span className="font-medium">{job.clientName}</span>
-                        <span className="text-xs text-[var(--arca-ink-3)]">
-                          {job.clientId.slice(0, 8)}
+                        <span className="font-medium">
+                          {job.representativeName}
                         </span>
+                        {job.clients.length > 0 && (
+                          <span
+                            className="max-w-[260px] truncate text-xs text-[var(--arca-ink-3)]"
+                            title={job.clients.map((c) => c.name).join(', ')}
+                          >
+                            {job.clients.map((c) => c.name).join(', ')}
+                          </span>
+                        )}
                       </div>
                     ) : (
                       <span className="text-[var(--arca-ink-3)] text-sm">
-                        Cliente desconocido
+                        Representante desconocido
                       </span>
                     )}
                   </TableCell>
@@ -717,14 +728,20 @@ export function JobsTable() {
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div className="space-y-1.5">
                   <p className="text-xs font-medium text-[var(--arca-ink-3)]">
-                    Cliente
+                    Representante
                   </p>
                   <p className="text-sm font-semibold">
-                    {selectedJob.clientName ?? 'Cliente desconocido'}
+                    {selectedJob.representativeName ??
+                      'Representante desconocido'}
                   </p>
                   <p className="text-xs text-[var(--arca-ink-3)] font-mono">
-                    {selectedJob.clientId}
+                    {selectedJob.representativeId}
                   </p>
+                  {selectedJob.clients.length > 0 && (
+                    <p className="text-xs text-[var(--arca-ink-3)]">
+                      {selectedJob.clients.map((c) => c.name).join(', ')}
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-1.5">
