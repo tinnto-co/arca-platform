@@ -4,6 +4,7 @@ import { CreateRepresentativeDialog } from '@/components/create-client-dialog';
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
+import { ActiveJobsIndicator } from '@/components/active-jobs-indicator';
 
 export const Route = createFileRoute('/_authed/clients/')({
   component: RouteComponent,
@@ -16,12 +17,15 @@ function RouteComponent() {
         title="Clientes"
         subtitle="Gestión de clientes y sus perfiles"
         actions={
-          <CreateRepresentativeDialog>
-            <Button>
-              <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
-              Nuevo cliente
-            </Button>
-          </CreateRepresentativeDialog>
+          <>
+            <ActiveJobsIndicator />
+            <CreateRepresentativeDialog>
+              <Button>
+                <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
+                Nuevo cliente
+              </Button>
+            </CreateRepresentativeDialog>
+          </>
         }
       />
       <RepresentativesTable />
