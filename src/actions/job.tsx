@@ -5,6 +5,13 @@ import { db } from '@/lib/db';
 import { job, representative, jobLog, client } from '@/drizzle/schema';
 import { getSessionWithOrg, getMemberRole, assertCanWrite } from '@/actions/helpers';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import {
+  classifyStoredFailedReason,
+  CATEGORY_LABELS,
+  type ErrorCategory,
+  type ErrorSeverity,
+  type ErrorClassification,
+} from '@/lib/job-error-classifier';
 
 const JOBS_API_URL =
   process.env.SCRAPPER_JOBS_URL ||
@@ -380,4 +387,162 @@ export const dispatchAllJobs = createServerFn({ method: 'POST' })
 
     await axios.post(`${JOBS_API_URL}/api/jobs/batch`, { jobs });
     return { success: true, dispatched: jobs.length };
+  });
+
+export interface ErrorGroup {
+  category: ErrorCategory;
+  label: string;
+  severity: ErrorSeverity;
+  retryable: boolean;
+  count: number;
+  /** Hasta 3 failedReason distintos de ejemplo. */
+  sampleReasons: string[];
+  representatives: {
+    id: string;
+    name: string | null;
+    count: number;
+    clients: { id: string; name: string }[];
+  }[];
+}
+
+export interface JobErrorSummary {
+  totalFailed: number;
+  totalJobs: number;
+  affectedRepresentatives: number;
+  topCategory: { label: string; count: number } | null;
+  groups: ErrorGroup[];
+}
+
+export const getJobErrorSummary = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      representativeId: z.string().optional(),
+      type: jobTypeEnum.optional(),
+      date: z.string().optional(), // YYYY-MM-DD
+      fromTime: z.string().optional(), // HH:mm
+    })
+  )
+  .handler(async (ctx): Promise<JobErrorSummary> => {
+    const { orgId } = await getSessionWithOrg();
+    const { representativeId, type, date, fromTime } = ctx.data;
+
+    const emptySummary: JobErrorSummary = {
+      totalFailed: 0,
+      totalJobs: 0,
+      affectedRepresentatives: 0,
+      topCategory: null,
+      groups: [],
+    };
+
+    const orgReps = await db
+      .select({ id: representative.id })
+      .from(representative)
+      .where(eq(representative.organizationId, orgId));
+    const orgRepIds = orgReps.map((r) => r.id);
+    if (orgRepIds.length === 0) return emptySummary;
+
+    const baseConditions = [inArray(job.representativeId, orgRepIds)];
+    if (representativeId) baseConditions.push(eq(job.representativeId, representativeId));
+    if (type) baseConditions.push(eq(job.type, type));
+    if (date && fromTime) {
+      baseConditions.push(
+        sql`${job.createdAt} >= (${`${date} ${fromTime}`}::timestamp AT TIME ZONE 'America/Argentina/Buenos_Aires')`
+      );
+    } else if (date) {
+      baseConditions.push(
+        sql`(${job.createdAt} AT TIME ZONE 'America/Argentina/Buenos_Aires')::date = ${date}::date`
+      );
+    }
+
+    const [{ count: totalJobs }] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(job)
+      .where(and(...baseConditions));
+
+    const failedRows = await db
+      .select({
+        id: job.id,
+        failedReason: job.failedReason,
+        representativeId: job.representativeId,
+        representativeName: representative.name,
+      })
+      .from(job)
+      .leftJoin(representative, eq(job.representativeId, representative.id))
+      .where(and(...baseConditions, eq(job.status, 'failed')))
+      .limit(2000);
+
+    if (failedRows.length === 0) return { ...emptySummary, totalJobs };
+
+    // Agrupar por categoría normalizada.
+    type GroupAcc = {
+      classification: ErrorClassification;
+      count: number;
+      reasons: Map<string, number>;
+      reps: Map<string, { name: string | null; count: number }>;
+    };
+    const groupsByCategory = new Map<ErrorCategory, GroupAcc>();
+    for (const row of failedRows) {
+      const classification = classifyStoredFailedReason(row.failedReason);
+      let acc = groupsByCategory.get(classification.category);
+      if (!acc) {
+        acc = { classification, count: 0, reasons: new Map(), reps: new Map() };
+        groupsByCategory.set(classification.category, acc);
+      }
+      acc.count++;
+      const reason = row.failedReason ?? 'Sin motivo registrado';
+      acc.reasons.set(reason, (acc.reasons.get(reason) ?? 0) + 1);
+      const rep = acc.reps.get(row.representativeId);
+      if (rep) rep.count++;
+      else acc.reps.set(row.representativeId, { name: row.representativeName, count: 1 });
+    }
+
+    // Clientes por representante afectado (mismo patrón que getJobs).
+    const affectedRepIds = [...new Set(failedRows.map((r) => r.representativeId))];
+    const clientRows = await db
+      .select({
+        id: client.id,
+        name: client.name,
+        representativeId: client.representativeId,
+      })
+      .from(client)
+      .where(inArray(client.representativeId, affectedRepIds))
+      .orderBy(asc(client.name));
+    const clientsByRep = new Map<string, { id: string; name: string }[]>();
+    for (const c of clientRows) {
+      if (!c.representativeId) continue;
+      const list = clientsByRep.get(c.representativeId);
+      const entry = { id: c.id, name: c.name };
+      if (list) list.push(entry);
+      else clientsByRep.set(c.representativeId, [entry]);
+    }
+
+    const groups: ErrorGroup[] = [...groupsByCategory.entries()]
+      .map(([category, acc]) => ({
+        category,
+        label: CATEGORY_LABELS[category],
+        severity: acc.classification.severity,
+        retryable: acc.classification.retryable,
+        count: acc.count,
+        sampleReasons: [...acc.reasons.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
+          .map(([reason]) => reason),
+        representatives: [...acc.reps.entries()]
+          .map(([id, rep]) => ({
+            id,
+            name: rep.name,
+            count: rep.count,
+            clients: clientsByRep.get(id) ?? [],
+          }))
+          .sort((a, b) => b.count - a.count),
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    return {
+      totalFailed: failedRows.length,
+      totalJobs,
+      affectedRepresentatives: affectedRepIds.length,
+      topCategory: groups[0] ? { label: groups[0].label, count: groups[0].count } : null,
+      groups,
+    };
   });

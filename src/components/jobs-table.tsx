@@ -73,6 +73,7 @@ import {
   type JobLogRow,
 } from '@/actions/job';
 import { getRepresentatives } from '@/actions/client';
+import { JobsErrorSummary } from '@/components/jobs-error-summary';
 
 export function JobsTable() {
   const routerNavigate = useNavigate();
@@ -111,6 +112,7 @@ export function JobsTable() {
     onSuccess: (data) => {
       toast.success(`${data.dispatched} jobs encolados correctamente`);
       void queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      void queryClient.invalidateQueries({ queryKey: ['job-error-summary'] });
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Error al disparar los jobs');
@@ -500,6 +502,13 @@ export function JobsTable() {
           </Button>
         </div>
       </div>
+
+      <JobsErrorSummary
+        representativeId={clientFilter === 'all' ? undefined : clientFilter}
+        type={typeFilter === 'all' ? undefined : (typeFilter as JobType)}
+        date={date || undefined}
+        fromTime={fromTime || undefined}
+      />
 
       <div className="overflow-auto flex-1 min-h-0">
         <Table>
