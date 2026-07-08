@@ -1,7 +1,14 @@
 'use client';
 
 import * as React from 'react';
-import { ChevronDown, ChevronUp, Pencil, Plus, X } from 'lucide-react';
+import {
+  ChevronDown,
+  Plus,
+  X,
+  Pencil,
+  FileText,
+  RefreshCw,
+} from 'lucide-react';
 import ExcelJSRaw from 'exceljs';
 const ExcelJS = ExcelJSRaw as unknown as {
   Workbook: new () => {
@@ -23,7 +30,6 @@ const ExcelJS = ExcelJSRaw as unknown as {
   };
 };
 
-import { Card, CardContent } from '@/components/ui/card';
 import {
   Collapsible,
   CollapsibleContent,
@@ -36,7 +42,7 @@ import {
   getInvoicesByProfileInRange,
   getInvoiceStatsByProfile,
 } from '@/actions/invoice';
-import { getLastComprobantesFullJob } from '@/actions/client';
+import { getLastJobByType } from '@/actions/client';
 
 const currencyFormatter = new Intl.NumberFormat('es-AR', {
   style: 'currency',
@@ -87,189 +93,152 @@ const mockData = {
   },
 };
 
-function sumValues(record: Record<string, number>) {
-  return Object.values(record).reduce((acc, value) => acc + value, 0);
-}
-
-function formatCurrency(value: number) {
-  return currencyFormatter.format(value);
-}
-
 function formatIvaValue(value: string | number | null | undefined): string {
   if (value == null || value === '') return '—';
   const n = Number(value);
   return Number.isNaN(n) ? '—' : currencyFormatter.format(n);
 }
 
-function SectionRow({
+/** Formato es-AR con glifo de menos "−" para negativos. */
+function fmtCurrency(value: number): string {
+  const s = currencyFormatter.format(Math.abs(value));
+  return value < 0 ? `− ${s}` : s;
+}
+
+/** Divide el monto en parte entera y decimales (para el número hero). */
+function splitHero(value: number): { int: string; dec: string } {
+  const s = currencyFormatter.format(Math.abs(value));
+  const idx = s.lastIndexOf(',');
+  if (idx === -1) return { int: s, dec: '' };
+  return { int: s.slice(0, idx), dec: s.slice(idx) };
+}
+
+function MicroLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="text-[11.5px] font-bold uppercase tracking-[0.08em] text-[var(--arca-ink-4)]">
+      {children}
+    </div>
+  );
+}
+
+/** Fila de la banda libro mayor (Ventas / Compras). */
+function BandRow({
   label,
   value,
-  emphasize = false,
-  valueClassName = '',
+  loading = false,
+  border = false,
 }: {
   label: string;
   value: number;
-  emphasize?: boolean;
-  valueClassName?: string;
+  loading?: boolean;
+  border?: boolean;
 }) {
   return (
     <div
-      className={`flex items-center justify-between py-1.5 text-sm ${
-        emphasize ? 'font-semibold' : ''
+      className={`flex items-baseline justify-between py-2.5 ${
+        border ? 'border-b border-[var(--arca-border)]' : ''
       }`}
     >
-      <span className="text-muted-foreground">{label}</span>
+      <span className="text-[14px] text-[var(--arca-ink-3)]">{label}</span>
+      {loading ? (
+        <span className="inline-flex h-5 w-24 animate-pulse rounded bg-[var(--arca-border)]" />
+      ) : (
+        <span className="tnum font-display text-[17px] font-semibold text-[var(--arca-ink)]">
+          {fmtCurrency(value)}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Fila de desglose por alícuota (read-only). */
+function DesgloseRow({
+  label,
+  value,
+  negative = false,
+  last = false,
+}: {
+  label: string;
+  value: number;
+  negative?: boolean;
+  last?: boolean;
+}) {
+  const shown = negative ? -Math.abs(value) : value;
+  return (
+    <div
+      className={`flex items-baseline justify-between py-2 text-[14px] ${
+        last ? '' : 'border-b border-[var(--arca-border)]'
+      }`}
+    >
+      <span className="text-[var(--arca-ink-2)]">{label}</span>
       <span
-        className={`tabular-nums text-right ${
-          emphasize ? 'text-foreground' : ''
-        } ${valueClassName}`}
+        className={`tnum font-medium ${
+          shown < 0
+            ? 'text-[var(--arca-accent-neg-fg)]'
+            : 'text-[var(--arca-ink)]'
+        }`}
       >
-        {formatCurrency(value)}
+        {fmtCurrency(shown)}
       </span>
     </div>
   );
 }
 
-function AjusteRow({
+/** Fila read-only de la sección Saldos. */
+function SaldoRow({
+  label,
   value,
-  onChange,
-  isNegative = false,
+  negative = false,
+  last = false,
 }: {
+  label: string;
   value: number;
-  onChange: (value: number) => void;
-  isNegative?: boolean;
+  negative?: boolean;
+  last?: boolean;
 }) {
-  const [isEditing, setIsEditing] = React.useState(false);
-  const [inputValue, setInputValue] = React.useState('');
-  const isActive = value !== 0;
-
-  const handleAdd = () => {
-    setInputValue('');
-    setIsEditing(true);
-  };
-
-  const handleConfirm = () => {
-    const parsed = parseFloat(inputValue);
-    if (!isNaN(parsed) && parsed !== 0) {
-      onChange(Math.abs(parsed));
-      setIsEditing(false);
-    }
-  };
-
-  const handleRemove = () => {
-    onChange(0);
-    setIsEditing(false);
-    setInputValue('');
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleConfirm();
-    } else if (e.key === 'Escape') {
-      setIsEditing(false);
-      setInputValue('');
-    }
-  };
-
-  // Estado: No activo y no editando -> mostrar botón "Agregar ajuste"
-  if (!isActive && !isEditing) {
-    return (
-      <div className="flex items-center justify-end py-1.5">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 text-xs text-muted-foreground hover:text-foreground"
-          onClick={handleAdd}
-        >
-          <Plus className="h-3 w-3 mr-1" />
-          Agregar ajuste
-        </Button>
-      </div>
-    );
-  }
-
-  // Estado: Editando -> mostrar input + botón "+"
-  if (isEditing) {
-    return (
-      <div className="flex items-center justify-between py-1.5 text-sm">
-        <span className="text-muted-foreground">Ajuste</span>
-        <div className="flex items-center gap-1">
-          <Input
-            type="number"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="0"
-            autoFocus
-            className={`w-28 h-7 text-right tabular-nums text-sm ${isNegative ? 'text-destructive' : ''}`}
-          />
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-[var(--arca-accent-pos-fg)] hover:text-[var(--arca-accent-pos-fg)] hover:bg-[var(--arca-accent-pos-bg)]"
-            onClick={handleConfirm}
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-            onClick={() => {
-              setIsEditing(false);
-              setInputValue('');
-            }}
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  // Estado: Activo -> mostrar valor + botón eliminar
-  const displayValue = isNegative ? -Math.abs(value) : value;
+  const shown = negative ? -Math.abs(value) : value;
   return (
-    <div className="flex items-center justify-between py-1.5 text-sm">
-      <span className="text-muted-foreground">Ajuste</span>
-      <div className="flex items-center gap-1">
-        <span
-          className={`tabular-nums text-right ${isNegative ? 'text-destructive' : ''}`}
-        >
-          {formatCurrency(displayValue)}
-        </span>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-          onClick={handleRemove}
-        >
-          <X className="h-4 w-4" />
-        </Button>
-      </div>
+    <div
+      className={`flex items-baseline justify-between py-2.5 text-[14px] ${
+        last ? '' : 'border-b border-[var(--arca-border)]'
+      }`}
+    >
+      <span className="text-[var(--arca-ink-3)]">{label}</span>
+      <span
+        className={`tnum font-semibold ${
+          shown < 0
+            ? 'text-[var(--arca-accent-neg-fg)]'
+            : 'text-[var(--arca-ink)]'
+        }`}
+      >
+        {fmtCurrency(shown)}
+      </span>
     </div>
   );
 }
 
-/** Fila siempre visible con valor editable (ej. Retenciones, Percepciones). Sin agregar/quitar, mínimo 0. */
+/** Fila editable inline con subrayado punteado (Retenciones, Percepciones, etc.). */
 function EditableSaldoRow({
   label,
   value,
   onChange,
   isNegative = false,
+  last = false,
 }: {
   label: string;
   value: number;
   onChange: (value: number) => void;
   isNegative?: boolean;
+  last?: boolean;
 }) {
   const [isEditing, setIsEditing] = React.useState(false);
   const [inputValue, setInputValue] = React.useState('');
 
   const displayValue = isNegative ? -Math.abs(value) : value;
+  const isNeg = displayValue < 0;
 
   const startEditing = () => {
-    setInputValue(String(value === 0 ? '' : value));
+    setInputValue(String(value === 0 ? '' : Math.abs(value)));
     setIsEditing(true);
   };
 
@@ -293,50 +262,134 @@ function EditableSaldoRow({
     }
   };
 
+  return (
+    <div
+      className={`flex items-baseline justify-between py-2.5 text-[14px] ${
+        last ? '' : 'border-b border-[var(--arca-border)]'
+      }`}
+    >
+      <span className="text-[var(--arca-ink-3)]">{label}</span>
+      {isEditing ? (
+        <Input
+          type="number"
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onBlur={handleConfirm}
+          placeholder="0"
+          autoFocus
+          className="w-24 h-7 text-right tnum text-[13px]"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={startEditing}
+          className={`tnum cursor-text border-b border-dashed pb-px font-semibold ${
+            isNeg
+              ? 'text-[var(--arca-accent-neg-fg)] border-[#DDBBB4]'
+              : 'text-[var(--arca-ink)] border-[#C9C6BC]'
+          }`}
+        >
+          {fmtCurrency(displayValue)}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Control de ajuste para el footer de "Saldos y retenciones". */
+function AdjustControl({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  const [isEditing, setIsEditing] = React.useState(false);
+  const [inputValue, setInputValue] = React.useState('');
+
+  const handleConfirm = () => {
+    const parsed = parseFloat(inputValue);
+    if (!Number.isNaN(parsed) && parsed !== 0) {
+      onChange(parsed);
+      setIsEditing(false);
+      setInputValue('');
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') handleConfirm();
+    if (e.key === 'Escape') {
+      setIsEditing(false);
+      setInputValue('');
+    }
+  };
+
   if (isEditing) {
     return (
-      <div className="flex items-center justify-between py-1.5 text-sm">
-        <span className="text-muted-foreground">{label}</span>
-        <div className="flex items-center gap-1">
-          <Input
-            type="number"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onBlur={handleConfirm}
-            placeholder="0"
-            autoFocus
-            className={`w-28 h-7 text-right tabular-nums text-sm ${isNegative ? 'text-destructive' : ''}`}
-          />
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-[var(--arca-accent-pos-fg)] hover:text-[var(--arca-accent-pos-fg)] hover:bg-[var(--arca-accent-pos-bg)]"
-            onClick={handleConfirm}
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
-        </div>
+      <div className="flex items-center gap-1">
+        <Input
+          type="number"
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="0"
+          autoFocus
+          className="w-24 h-7 text-right tnum text-[13px]"
+        />
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-[var(--arca-accent-pos-fg)] hover:bg-[var(--arca-accent-pos-bg)]"
+          onClick={handleConfirm}
+        >
+          <Plus className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-[var(--arca-ink-4)] hover:text-[var(--arca-accent-neg)]"
+          onClick={() => {
+            setIsEditing(false);
+            setInputValue('');
+          }}
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+    );
+  }
+
+  if (value !== 0) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <span className="tnum text-[13.5px] font-semibold text-[var(--arca-ink)]">
+          {fmtCurrency(value)}
+        </span>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-[var(--arca-ink-4)] hover:text-[var(--arca-accent-neg)]"
+          onClick={() => onChange(0)}
+        >
+          <X className="h-4 w-4" />
+        </Button>
       </div>
     );
   }
 
   return (
-    <div className="flex items-center justify-between py-1.5 text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      <button
-        type="button"
-        onClick={startEditing}
-        className="flex items-center gap-1 rounded px-1 py-0.5 tabular-nums text-right hover:bg-muted"
-      >
-        <span
-          className={displayValue < 0 ? 'text-destructive' : 'text-foreground'}
-        >
-          {formatCurrency(displayValue)}
-        </span>
-        <Pencil className="h-3 w-3 text-muted-foreground" />
-      </button>
-    </div>
+    <button
+      type="button"
+      onClick={() => {
+        setInputValue('');
+        setIsEditing(true);
+      }}
+      className="inline-flex items-center gap-1.5 text-[13.5px] font-semibold text-[var(--arca-ink-2)] transition-colors hover:text-[var(--arca-ink)]"
+    >
+      <Plus className="h-3.5 w-3.5" />
+      Agregar ajuste
+    </button>
   );
 }
 
@@ -409,7 +462,7 @@ export interface RenderIvaResumeRef {
 }
 
 interface RenderIvaResumeProps {
-  clientId: string;
+  representativeId: string;
   /** Nombre del cliente para el nombre del archivo Excel. */
   clientName?: string | null;
   /** Datos de IVA crédito fiscal del cliente (período anterior). Opcional mientras carga o si no hay datos. */
@@ -446,7 +499,7 @@ export const RenderIvaResume = React.forwardRef<
   RenderIvaResumeProps
 >(function RenderIvaResume(
   {
-    clientId,
+    representativeId,
     clientName,
     clientIva: clientIvaCredit,
     selectedProfileId,
@@ -457,12 +510,10 @@ export const RenderIvaResume = React.forwardRef<
   },
   ref
 ) {
-  const [openDebito, setOpenDebito] = React.useState(false);
-  const [openCredito, setOpenCredito] = React.useState(false);
-  const [openSaldos, setOpenSaldos] = React.useState(false);
-  const [openIvaArca, setOpenIvaArca] = React.useState(false);
-  const [ajusteVentas, setAjusteVentas] = React.useState(0);
-  const [ajusteCompras, setAjusteCompras] = React.useState(0);
+  const [openSaldos, setOpenSaldos] = React.useState(true);
+  const [openIvaArca, setOpenIvaArca] = React.useState(true);
+  const [ajusteVentas] = React.useState(0);
+  const [ajusteCompras] = React.useState(0);
   const [ajusteSaldos, setAjusteSaldos] = React.useState(0);
   const [retenciones, setRetenciones] = React.useState(
     mockData.saldosYRetenciones.Retenciones
@@ -518,12 +569,12 @@ export const RenderIvaResume = React.forwardRef<
   });
 
   const { data: lastScrapeJob } = useQuery({
-    queryKey: ['lastComprobantesFullJob', clientId],
+    queryKey: ['lastIvaJob', representativeId],
     queryFn: () =>
-      getLastComprobantesFullJob({
-        data: { clientId },
+      getLastJobByType({
+        data: { representativeId, jobType: 'iva' },
       }),
-    enabled: !!clientId,
+    enabled: !!representativeId,
   });
 
   React.useEffect(() => {
@@ -654,7 +705,6 @@ export const RenderIvaResume = React.forwardRef<
     invoiceStats?.totalAmountNoTaxed,
   ]);
 
-  const totalDebito = sumValues(debitoRows);
   // Neto Gravado Ventas = (B6+B7) + (B8/1.105) + (B9/1.21) + (B10/1.27) + B11
   const netoGravadoVentas = React.useMemo(() => {
     const B6 = debitoRows['Neto A 21%'];
@@ -665,7 +715,6 @@ export const RenderIvaResume = React.forwardRef<
     const B11 = ajusteVentas;
     return B6 + B7 + B8 / 1.105 + B9 / 1.21 + B10 / 1.27 + B11;
   }, [debitoRows, ajusteVentas]);
-  const totalCredito = sumValues(creditoRows) - Math.abs(ajusteCompras);
   // Saldos mostrados: base + valores editables (Retenciones, Percepciones, Percepciones Aduaneras)
   const saldosParaTotal = React.useMemo(
     () => ({
@@ -702,10 +751,18 @@ export const RenderIvaResume = React.forwardRef<
         mockData.resumenCredito['Neto Gravado Compras'])
       : mockData.resumenCredito['Neto Gravado Compras'];
 
-  const SaldoIconDebito = openDebito ? ChevronUp : ChevronDown;
-  const SaldoIconCredito = openCredito ? ChevronUp : ChevronDown;
-  const SaldoIconSaldos = openSaldos ? ChevronUp : ChevronDown;
-  const SaldoIconIvaArca = openIvaArca ? ChevronUp : ChevronDown;
+  // Neto de ajustes aplicados al saldo (retenciones/percepciones ya son negativas en el estado).
+  const netoAjustes =
+    compensaciones +
+    retenciones +
+    percepciones +
+    percepcionesAduaneras +
+    ajusteSaldos;
+
+  // Estado del saldo final: > 0 a pagar, < 0 a favor, = 0 neutro.
+  const saldoEstado =
+    saldoFinal > 0 ? 'a_pagar' : saldoFinal < 0 ? 'a_favor' : 'neutro';
+  const saldoHero = splitHero(saldoFinal);
 
   const handleDownloadExcel = React.useCallback(async () => {
     const fromStr =
@@ -827,107 +884,117 @@ export const RenderIvaResume = React.forwardRef<
 
   if (!selectedProfileId) {
     return (
-      <Card className="space-y-4">
-        <CardContent className="flex items-center justify-center py-10">
-          <p className="text-sm text-muted-foreground text-center">
-            Seleccioná un perfil en la sección IVA para ver el resumen.
-          </p>
-        </CardContent>
-      </Card>
+      <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-7 py-14 text-center">
+        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--arca-surface-2)]">
+          <FileText className="h-5 w-5 text-[var(--arca-ink-4)]" />
+        </div>
+        <p className="max-w-sm text-sm text-[var(--arca-ink-3)]">
+          Este representante no tiene ninguna empresa cargada. Agregá una empresa
+          (perfil fiscal) para ver el resumen de IVA.
+        </p>
+      </div>
     );
   }
 
+  const saldoPillMeta =
+    saldoEstado === 'a_pagar'
+      ? {
+          label: 'A pagar',
+          className:
+            'bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]',
+        }
+      : saldoEstado === 'a_favor'
+        ? {
+            label: 'Saldo a favor',
+            className:
+              'bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)]',
+          }
+        : {
+            label: 'Neutro',
+            className: 'bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]',
+          };
+
+  const arcaMatches =
+    !!clientIvaCredit?.data &&
+    !!periodUsedForResumen &&
+    clientIvaCredit.data.periodoFiscal === periodUsedForResumen;
+
   return (
-    <div className="space-y-4">
-      {/* Resumen en cajas: Ventas, Compras, Saldo Final */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-4">
-        <div className="min-w-0 rounded-lg border-2 border-border bg-card p-5 shadow-sm">
-          <div className="text-sm font-bold uppercase tracking-wide text-foreground mb-3">
-            Ventas
-          </div>
-          <div className="space-y-2.5 text-base">
-            <div className="flex justify-between items-baseline gap-2">
-              <span className="text-muted-foreground font-medium shrink-0">
-                Neto Gravado
-              </span>
-              {isStatsLoading ? (
-                <span className="inline-flex h-5 w-24 animate-pulse rounded bg-muted" />
-              ) : (
-                <span className="tabular-nums font-bold text-foreground truncate">
-                  {formatCurrency(netoGravadoTotal)}
-                </span>
-              )}
-            </div>
-            <div className="flex justify-between items-baseline gap-2">
-              <span className="text-muted-foreground font-medium shrink-0">
-                Débito Fiscal
-              </span>
-              {isStatsLoading ? (
-                <span className="inline-flex h-5 w-24 animate-pulse rounded bg-muted" />
-              ) : (
-                <span className="tabular-nums font-bold text-foreground truncate">
-                  {formatCurrency(debitoFiscalTotal)}
-                </span>
-              )}
-            </div>
+    <div className="overflow-hidden rounded-xl border border-[var(--arca-border-strong)] bg-[var(--arca-surface)]">
+      {/* Banda libro mayor: Ventas · Compras · Saldo Final (hero) */}
+      <div className="grid grid-cols-1 gap-px bg-[var(--arca-border)] lg:grid-cols-[1fr_1fr_1.15fr]">
+        {/* Ventas */}
+        <div className="bg-[var(--arca-surface)] px-7 py-6">
+          <MicroLabel>Ventas</MicroLabel>
+          <div className="mt-3">
+            <BandRow
+              label="Neto gravado"
+              value={netoGravadoTotal}
+              loading={isStatsLoading}
+              border
+            />
+            <BandRow
+              label="Débito fiscal"
+              value={debitoFiscalTotal}
+              loading={isStatsLoading}
+            />
           </div>
         </div>
-        <div className="min-w-0 rounded-lg border-2 border-border bg-card p-5 shadow-sm">
-          <div className="text-sm font-bold uppercase tracking-wide text-foreground mb-3">
-            Compras
-          </div>
-          <div className="space-y-2.5 text-base">
-            <div className="flex justify-between items-baseline gap-2">
-              <span className="text-muted-foreground font-medium shrink-0">
-                Neto Gravado
-              </span>
-              {isStatsLoading ? (
-                <span className="inline-flex h-5 w-24 animate-pulse rounded bg-muted" />
-              ) : (
-                <span className="tabular-nums font-bold text-foreground truncate">
-                  {formatCurrency(netoGravadoComprasTotal)}
-                </span>
-              )}
-            </div>
-            <div className="flex justify-between items-baseline gap-2">
-              <span className="text-muted-foreground font-medium shrink-0">
-                Crédito Fiscal
-              </span>
-              {isStatsLoading ? (
-                <span className="inline-flex h-5 w-24 animate-pulse rounded bg-muted" />
-              ) : (
-                <span className="tabular-nums font-bold text-foreground truncate">
-                  {formatCurrency(creditoFiscalTotal)}
-                </span>
-              )}
-            </div>
+
+        {/* Compras */}
+        <div className="bg-[var(--arca-surface)] px-7 py-6">
+          <MicroLabel>Compras</MicroLabel>
+          <div className="mt-3">
+            <BandRow
+              label="Neto gravado"
+              value={netoGravadoComprasTotal}
+              loading={isStatsLoading}
+              border
+            />
+            <BandRow
+              label="Crédito fiscal"
+              value={creditoFiscalTotal}
+              loading={isStatsLoading}
+            />
           </div>
         </div>
-        <div className="min-w-0 rounded-lg border-2 border-border bg-card p-5 shadow-sm">
-          <div className="text-sm font-bold uppercase tracking-wide text-foreground mb-3">
-            Saldo Final
+
+        {/* Saldo final (hero) */}
+        <div className="bg-[var(--arca-surface-2)] px-7 py-6">
+          <div className="flex items-center justify-between">
+            <MicroLabel>Saldo del período</MicroLabel>
+            <span
+              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${saldoPillMeta.className}`}
+            >
+              {saldoPillMeta.label}
+            </span>
           </div>
           {isStatsLoading ? (
-            <div className="h-7 w-32 animate-pulse rounded bg-muted" />
+            <div className="mt-4 h-10 w-40 animate-pulse rounded bg-[var(--arca-border)]" />
           ) : (
             <div
-              className={`text-2xl font-bold tabular-nums truncate ${
-                saldoFinal < 0
-                  ? 'text-[var(--arca-accent-neg)]'
-                  : 'text-[var(--arca-accent-pos-fg)]'
+              className={`mt-3 font-display tnum text-[38px] leading-none font-semibold ${
+                saldoEstado === 'a_pagar'
+                  ? 'text-[var(--arca-accent-neg-fg)]'
+                  : saldoEstado === 'a_favor'
+                    ? 'text-[var(--arca-accent-pos-fg)]'
+                    : 'text-[var(--arca-ink)]'
               }`}
             >
-              {formatCurrency(saldoFinal)}
+              {saldoHero.int}
+              <span className="text-[24px] text-[var(--arca-ink-4)]">
+                {saldoHero.dec}
+              </span>
             </div>
           )}
-          <div className="mt-3 pt-3 border-t border-border text-xs text-muted-foreground truncate">
-            Ult. actualización{' '}
+          <div className="mt-4 text-[12px] text-[var(--arca-ink-3)]">
+            Última actualización{' '}
             {lastScrapeJob?.createdAt ? (
               <span
                 className={
                   lastScrapeJob.success
-                    ? 'text-[var(--arca-accent-pos-fg)] font-medium'
-                    : 'text-destructive'
+                    ? 'font-medium text-[var(--arca-accent-pos-fg)]'
+                    : 'font-medium text-[var(--arca-accent-neg-fg)]'
                 }
                 title={lastScrapeJob.failedReason ?? undefined}
               >
@@ -944,236 +1011,260 @@ export const RenderIvaResume = React.forwardRef<
         </div>
       </div>
 
-      {/* Desglose desplegable: Ventas */}
-      <Collapsible open={openDebito} onOpenChange={setOpenDebito}>
-        <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border bg-muted/60 px-5 py-4 text-base hover:bg-muted/80 transition-colors">
-          <span className="font-medium">Ventas — desglose</span>
-          <SaldoIconDebito className="h-5 w-5 text-muted-foreground shrink-0" />
-        </CollapsibleTrigger>
-        <CollapsibleContent className="mt-2 rounded-lg border bg-muted/30 px-5 py-4">
-          {Object.entries(debitoRows).map(([label, value]) => (
-            <SectionRow key={label} label={label} value={value} />
-          ))}
-          <AjusteRow value={ajusteVentas} onChange={setAjusteVentas} />
-        </CollapsibleContent>
-      </Collapsible>
-
-      {/* Desglose desplegable: Compras */}
-      <Collapsible open={openCredito} onOpenChange={setOpenCredito}>
-        <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border bg-muted/60 px-5 py-4 text-base hover:bg-muted/80 transition-colors">
-          <span className="font-medium">Compras — desglose</span>
-          <SaldoIconCredito className="h-5 w-5 text-muted-foreground shrink-0" />
-        </CollapsibleTrigger>
-        <CollapsibleContent className="mt-2 rounded-lg border bg-muted/30 px-5 py-4">
-          {Object.entries(creditoRows).map(([label, value]) => (
-            <SectionRow
-              key={label}
-              label={label}
-              value={-Math.abs(value)}
-              valueClassName="text-destructive"
-            />
-          ))}
-          <AjusteRow
-            value={ajusteCompras}
-            onChange={setAjusteCompras}
-            isNegative
-          />
-        </CollapsibleContent>
-      </Collapsible>
-
-      {/* Desglose desplegable: Saldos y retenciones */}
-      <Collapsible open={openSaldos} onOpenChange={setOpenSaldos}>
-        <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border bg-muted/60 px-5 py-4 text-base hover:bg-muted/80 transition-colors">
-          <span className="font-medium">Saldos y retenciones</span>
-          <SaldoIconSaldos className="h-5 w-5 text-muted-foreground shrink-0" />
-        </CollapsibleTrigger>
-        <CollapsibleContent className="mt-2 rounded-lg border bg-muted/30 px-5 py-4 space-y-2">
-          {Object.entries(saldosParaTotal)
-            .filter(([label]) => label !== 'Ajuste')
-            .map(([label, value]) =>
-              label === 'Compensaciones' ? (
-                <EditableSaldoRow
-                  key={label}
-                  label={label}
-                  value={compensaciones}
-                  onChange={setCompensaciones}
-                />
-              ) : label === 'Retenciones' ? (
-                <EditableSaldoRow
-                  key={label}
-                  label={label}
-                  value={retenciones}
-                  onChange={setRetenciones}
-                  isNegative
-                />
-              ) : label === 'Percepciones' ? (
-                <EditableSaldoRow
-                  key={label}
-                  label={label}
-                  value={percepciones}
-                  onChange={setPercepciones}
-                  isNegative
-                />
-              ) : label === 'Percepciones Aduaneras' ? (
-                <EditableSaldoRow
-                  key={label}
-                  label={label}
-                  value={percepcionesAduaneras}
-                  onChange={setPercepcionesAduaneras}
-                  isNegative
-                />
-              ) : (
-                <SectionRow
+      {/* Desglose por alícuota: Ventas · Compras */}
+      <div className="grid grid-cols-1 gap-px border-t border-[var(--arca-border)] bg-[var(--arca-border)] md:grid-cols-2">
+        <div className="bg-[var(--arca-surface)] px-7 py-6">
+          <MicroLabel>Ventas — desglose</MicroLabel>
+          <div className="mt-2">
+            {(() => {
+              const entries = Object.entries(debitoRows);
+              return entries.map(([label, value], i) => (
+                <DesgloseRow
                   key={label}
                   label={label}
                   value={value}
-                  valueClassName={
-                    value < 0 ? 'text-destructive' : 'text-foreground'
-                  }
+                  last={i === entries.length - 1}
                 />
-              )
-            )}
-          <AjusteRow value={ajusteSaldos} onChange={setAjusteSaldos} />
+              ));
+            })()}
+          </div>
+        </div>
+        <div className="bg-[var(--arca-surface)] px-7 py-6">
+          <MicroLabel>Compras — desglose</MicroLabel>
+          <div className="mt-2">
+            {(() => {
+              const entries = Object.entries(creditoRows);
+              return entries.map(([label, value], i) => (
+                <DesgloseRow
+                  key={label}
+                  label={label}
+                  value={value}
+                  negative
+                  last={i === entries.length - 1}
+                />
+              ));
+            })()}
+          </div>
+        </div>
+      </div>
+
+      {/* Saldos y retenciones (colapsable, 3 columnas) */}
+      <Collapsible open={openSaldos} onOpenChange={setOpenSaldos}>
+        <CollapsibleTrigger className="flex w-full items-center justify-between border-t border-[var(--arca-border)] px-7 py-4 text-left transition-colors hover:bg-[var(--arca-surface-2)]">
+          <MicroLabel>Saldos y retenciones</MicroLabel>
+          <ChevronDown
+            className={`h-4 w-4 text-[var(--arca-ink-4)] transition-transform ${
+              openSaldos ? 'rotate-180' : ''
+            }`}
+          />
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="grid grid-cols-1 gap-px border-t border-[var(--arca-border)] bg-[var(--arca-border)] lg:grid-cols-3">
+            {/* Saldos del período (read-only) */}
+            <div className="bg-[var(--arca-surface)] px-7 py-6">
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+                Saldos del período
+              </div>
+              <SaldoRow
+                label="Saldo a favor per. ant."
+                value={saldosParaTotal['Saldo a Favor Per. Ant.']}
+              />
+              <SaldoRow
+                label="Saldo técnico"
+                value={saldosParaTotal['Saldo Técnico']}
+              />
+              <SaldoRow
+                label="Saldo libre disp."
+                value={saldosParaTotal['Saldo Libre Disp.']}
+              />
+              <SaldoRow
+                label="Saldo 2° párrafo"
+                value={saldosParaTotal['Saldo 2° Párrafo']}
+                last
+              />
+            </div>
+
+            {/* Retenciones y percepciones (editable) */}
+            <div className="bg-[var(--arca-surface)] px-7 py-6">
+              <div className="mb-2 flex items-center justify-between">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+                  Retenciones y percepciones
+                </div>
+                <span className="inline-flex items-center gap-1 rounded-full bg-[var(--arca-surface-2)] px-2 py-0.5 text-[10px] font-medium text-[var(--arca-ink-3)]">
+                  <Pencil className="h-3 w-3" />
+                  Editable
+                </span>
+              </div>
+              <EditableSaldoRow
+                label="Compensaciones"
+                value={compensaciones}
+                onChange={setCompensaciones}
+              />
+              <EditableSaldoRow
+                label="Retenciones"
+                value={retenciones}
+                onChange={setRetenciones}
+                isNegative
+              />
+              <EditableSaldoRow
+                label="Percepciones"
+                value={percepciones}
+                onChange={setPercepciones}
+                isNegative
+              />
+              <EditableSaldoRow
+                label="Percepciones aduaneras"
+                value={percepcionesAduaneras}
+                onChange={setPercepcionesAduaneras}
+                isNegative
+                last
+              />
+            </div>
+
+            {/* Otros conceptos (read-only) */}
+            <div className="bg-[var(--arca-surface)] px-7 py-6">
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+                Otros conceptos
+              </div>
+              <SaldoRow label="Exento" value={saldosParaTotal.Exento} />
+              <SaldoRow label="IVA 0%" value={saldosParaTotal['IVA 0%']} />
+              <SaldoRow
+                label="No gravado"
+                value={saldosParaTotal['No gravado']}
+                last
+              />
+            </div>
+          </div>
+
+          {/* Footer: neto de ajustes + agregar ajuste manual */}
+          <div className="flex items-center justify-between border-t border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-7 py-4">
+            <div className="flex items-baseline gap-2">
+              <span className="text-[13px] text-[var(--arca-ink-3)]">
+                Neto de ajustes
+              </span>
+              <span
+                className={`tnum text-[15px] font-semibold ${
+                  netoAjustes < 0
+                    ? 'text-[var(--arca-accent-neg-fg)]'
+                    : 'text-[var(--arca-ink)]'
+                }`}
+              >
+                {fmtCurrency(netoAjustes)}
+              </span>
+            </div>
+            <AdjustControl value={ajusteSaldos} onChange={setAjusteSaldos} />
+          </div>
         </CollapsibleContent>
       </Collapsible>
 
-      {/* Info IVA ARCA (compacta) - se muestra si hay perfil (loading, error o data) */}
+      {/* Información IVA ARCA (colapsable) */}
       {selectedProfileId && (
         <Collapsible open={openIvaArca} onOpenChange={setOpenIvaArca}>
-          <CollapsibleTrigger
-            className={`flex w-full items-center justify-between rounded-lg border px-5 py-4 text-base hover:bg-muted/80 transition-colors ${
-              clientIvaCredit?.data &&
-              periodUsedForResumen &&
-              clientIvaCredit.data.periodoFiscal === periodUsedForResumen
-                ? 'bg-[var(--arca-accent-pos-bg)] border-[var(--arca-accent-pos)]'
-                : 'bg-muted/60'
-            }`}
-          >
-            <span className="font-medium">
-              Información IVA ARCA
-              {clientIvaCredit?.cuit ? ` — ${clientIvaCredit.cuit}` : ''}
-              {clientIvaLoading ? ' (cargando…)' : ''}
-            </span>
-            <SaldoIconIvaArca className="h-5 w-5 text-muted-foreground shrink-0" />
+          <CollapsibleTrigger className="flex w-full items-center justify-between border-t border-[var(--arca-border)] px-7 py-4 text-left transition-colors hover:bg-[var(--arca-surface-2)]">
+            <div className="flex items-center gap-2.5">
+              <MicroLabel>Información IVA ARCA</MicroLabel>
+              {clientIvaCredit?.cuit && (
+                <span className="inline-flex items-center rounded-md bg-[var(--arca-surface-2)] px-2 py-0.5 font-mono text-[11px] text-[var(--arca-ink-2)]">
+                  {clientIvaCredit.cuit}
+                </span>
+              )}
+              {arcaMatches && (
+                <span className="inline-flex items-center rounded-full bg-[var(--arca-accent-pos-bg)] px-2 py-0.5 text-[10px] font-semibold text-[var(--arca-accent-pos-fg)]">
+                  Coincide período
+                </span>
+              )}
+              {clientIvaLoading && (
+                <span className="text-[11px] text-[var(--arca-ink-4)]">
+                  cargando…
+                </span>
+              )}
+            </div>
+            <ChevronDown
+              className={`h-4 w-4 text-[var(--arca-ink-4)] transition-transform ${
+                openIvaArca ? 'rotate-180' : ''
+              }`}
+            />
           </CollapsibleTrigger>
-          <CollapsibleContent className="mt-2 rounded-lg border bg-muted/30 px-5 py-4">
-            {clientIvaLoading ? (
-              <p className="text-sm text-muted-foreground py-4">
-                Calculando IVA del cliente…
-              </p>
-            ) : clientIvaError ? (
-              <p className="text-sm text-destructive py-4">
-                No se pudo obtener la información de IVA. Verificá las
-                credenciales o intentá más tarde.
-              </p>
-            ) : !clientIvaCredit?.data ? (
-              <p className="text-sm text-muted-foreground py-4">
-                No hay información de IVA para este perfil.
-              </p>
-            ) : (
-              <>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-x-6 gap-y-3 text-sm">
-                  <div>
-                    <div className="text-xs text-muted-foreground">
-                      Período fiscal
-                    </div>
-                    <div className="font-medium">
-                      {clientIvaCredit.data.periodoFiscal ?? '—'}
-                    </div>
+          <CollapsibleContent>
+            <div className="border-t border-[var(--arca-border)] px-7 py-6">
+              {clientIvaLoading ? (
+                <p className="text-[13px] text-[var(--arca-ink-3)]">
+                  Calculando IVA del cliente…
+                </p>
+              ) : clientIvaError ? (
+                <p className="text-[13px] text-[var(--arca-accent-neg-fg)]">
+                  No se pudo obtener la información de IVA. Verificá las
+                  credenciales o intentá más tarde.
+                </p>
+              ) : !clientIvaCredit?.data ? (
+                <div className="flex flex-col items-center justify-center py-8 text-center">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--arca-surface-2)]">
+                    <FileText className="h-5 w-5 text-[var(--arca-ink-4)]" />
                   </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">
-                      Débito Fiscal
-                    </div>
-                    <div className="font-medium">
-                      {formatIvaValue(clientIvaCredit.data.debitoFiscal)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">
-                      Crédito Fiscal
-                    </div>
-                    <div className="font-medium">
-                      {formatIvaValue(clientIvaCredit.data.creditoFiscal)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">
-                      Saldo mes pasado
-                    </div>
-                    <div className="font-medium">
-                      {formatIvaValue(clientIvaCredit.data.saldoMesPasado)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">
-                      Saldo ARCA mes
-                    </div>
-                    <div className="font-medium">
-                      {formatIvaValue(clientIvaCredit.data.saldoArcaMes)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">
-                      Saldo técnico favor contrib.
-                    </div>
-                    <div className="font-medium">
-                      {formatIvaValue(
-                        clientIvaCredit.data.saldoTecnicoFavorContribuyente
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">
-                      Saldo técnico (pos. mensual)
-                    </div>
-                    <div className="font-medium">
-                      {formatIvaValue(
-                        clientIvaCredit.data
-                          .saldoTecnicoFavorContribuyentePosicionMensual
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">
-                      Saldo libre disp. ant. (neto)
-                    </div>
-                    <div className="font-medium">
-                      {formatIvaValue(
-                        clientIvaCredit.data
-                          .saldoLibreDisponibilidadPeriodoAnteriorNeto
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">
-                      Total ret. y perc. período
-                    </div>
-                    <div className="font-medium">
-                      {formatIvaValue(
-                        clientIvaCredit.data.totalRetencionesPercepcionesPeriodo
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">
-                      Saldo libre disp. (período)
-                    </div>
-                    <div className="font-medium">
-                      {formatIvaValue(
-                        clientIvaCredit.data
-                          .saldoLibreDisponibilidadFavorContribuyentePeriodo
-                      )}
-                    </div>
-                  </div>
+                  <p className="mt-3 text-[13px] text-[var(--arca-ink-3)]">
+                    No hay información de IVA para este perfil.
+                  </p>
+                  <span className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-[var(--arca-surface-2)] px-3 py-1.5 text-[12.5px] font-medium text-[var(--arca-ink-3)]">
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    Sincronizá con ARCA para traer los datos
+                  </span>
                 </div>
-                {clientIvaCredit.data.fechaPresentacion && (
-                  <div className="mt-2 text-xs text-muted-foreground">
-                    Presentado {clientIvaCredit.data.fechaPresentacion}
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-x-8 gap-y-4 sm:grid-cols-3 lg:grid-cols-5">
+                    {(
+                      [
+                        ['Período fiscal', clientIvaCredit.data.periodoFiscal],
+                        ['Débito fiscal', clientIvaCredit.data.debitoFiscal],
+                        ['Crédito fiscal', clientIvaCredit.data.creditoFiscal],
+                        ['Saldo mes pasado', clientIvaCredit.data.saldoMesPasado],
+                        ['Saldo ARCA mes', clientIvaCredit.data.saldoArcaMes],
+                        [
+                          'Saldo técnico favor contrib.',
+                          clientIvaCredit.data.saldoTecnicoFavorContribuyente,
+                        ],
+                        [
+                          'Saldo técnico (pos. mensual)',
+                          clientIvaCredit.data
+                            .saldoTecnicoFavorContribuyentePosicionMensual,
+                        ],
+                        [
+                          'Saldo libre disp. ant. (neto)',
+                          clientIvaCredit.data
+                            .saldoLibreDisponibilidadPeriodoAnteriorNeto,
+                        ],
+                        [
+                          'Total ret. y perc. período',
+                          clientIvaCredit.data
+                            .totalRetencionesPercepcionesPeriodo,
+                        ],
+                        [
+                          'Saldo libre disp. (período)',
+                          clientIvaCredit.data
+                            .saldoLibreDisponibilidadFavorContribuyentePeriodo,
+                        ],
+                      ] as const
+                    ).map(([label, value], i) => (
+                      <div key={i}>
+                        <div className="text-[11px] text-[var(--arca-ink-4)]">
+                          {label}
+                        </div>
+                        <div className="mt-0.5 tnum text-[13.5px] font-medium text-[var(--arca-ink)]">
+                          {i === 0
+                            ? (value ?? '—')
+                            : formatIvaValue(value)}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                )}
-              </>
-            )}
+                  {clientIvaCredit.data.fechaPresentacion && (
+                    <div className="mt-4 text-[11.5px] text-[var(--arca-ink-4)]">
+                      Presentado {clientIvaCredit.data.fechaPresentacion}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           </CollapsibleContent>
         </Collapsible>
       )}

@@ -9,6 +9,7 @@ import { format, differenceInYears, endOfMonth, addMonths } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { FilePlus2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { legajoParaMostrar } from '@/lib/legajo';
+import { getPeriodoMaxLiquidable } from '@/lib/payroll-period-rules';
 import { listImportEmpleadosConConfig, listSituaciones } from '@/actions/sueldos';
 import { Button } from '@/components/ui/button';
 import {
@@ -78,15 +79,33 @@ const formSchema = z.object({
   copiarUltimoRecibo: z.enum(['no', 'si']),
   // Situaciones de revista LSD
   situacionRevista1Id: z.string().optional(),
-  situacionRevista1DiaInicio: z.string().optional(),
+  situacionRevista1DiaInicio: z.string().optional().refine(
+    (v) => !v || (Number.isInteger(Number(v)) && Number(v) >= 1 && Number(v) <= 31),
+    { message: 'Debe ser un día entre 1 y 31' }
+  ),
   situacionRevista2Id: z.string().optional(),
-  situacionRevista2DiaInicio: z.string().optional(),
+  situacionRevista2DiaInicio: z.string().optional().refine(
+    (v) => !v || (Number.isInteger(Number(v)) && Number(v) >= 1 && Number(v) <= 31),
+    { message: 'Debe ser un día entre 1 y 31' }
+  ),
   situacionRevista3Id: z.string().optional(),
-  situacionRevista3DiaInicio: z.string().optional(),
+  situacionRevista3DiaInicio: z.string().optional().refine(
+    (v) => !v || (Number.isInteger(Number(v)) && Number(v) >= 1 && Number(v) <= 31),
+    { message: 'Debe ser un día entre 1 y 31' }
+  ),
   // Datos complementarios LSD
-  diasTrabajados: z.string().optional(),
-  horasTrabajadas: z.string().optional(),
-  importeMaternidadArt13: z.string().optional(),
+  diasTrabajados: z.string().optional().refine(
+    (v) => !v || (Number.isInteger(Number(v)) && Number(v) >= 0 && Number(v) <= 31),
+    { message: 'Debe ser un número entre 0 y 31' }
+  ),
+  horasTrabajadas: z.string().optional().refine(
+    (v) => !v || (Number(v) >= 0 && !isNaN(Number(v))),
+    { message: 'Debe ser un número mayor o igual a 0' }
+  ),
+  importeMaternidadArt13: z.string().optional().refine(
+    (v) => !v || (Number(v) >= 0 && !isNaN(Number(v))),
+    { message: 'El importe no puede ser negativo' }
+  ),
 });
 
 export type ReciboFormValues = z.infer<typeof formSchema>;
@@ -170,8 +189,7 @@ export function ReciboFormulario({
     staleTime: 30 * 60 * 1000,
   });
 
-  const defaultAno = String(now.getFullYear());
-  const defaultMes = String(now.getMonth() + 1).padStart(2, '0');
+  const [defaultAno, defaultMes] = getPeriodoMaxLiquidable().split('-');
 
   const form = useForm<ReciboFormValues>({
     resolver: zodResolver(formSchema),
@@ -217,6 +235,10 @@ export function ReciboFormulario({
   // Actualizar fechaLiquidacion y fechaDepositoCargas al cambiar año/mes
   const ano = form.watch('ano');
   const mes = form.watch('mes');
+  const [maxAno, maxMes] = getPeriodoMaxLiquidable().split('-');
+  const mesesDisponibles = ano === maxAno
+    ? MESES.filter((m) => m.value <= maxMes)
+    : MESES;
   useEffect(() => {
     if (!ano || !mes) return;
     const periodoDate = new Date(Number(ano), Number(mes) - 1, 1);
@@ -441,7 +463,7 @@ export function ReciboFormulario({
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {MESES.map((m) => (
+                            {mesesDisponibles.map((m) => (
                               <SelectItem key={m.value} value={m.value}>
                                 {m.label}
                               </SelectItem>
@@ -457,7 +479,7 @@ export function ReciboFormulario({
                     name="quincena"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Quincena</FormLabel>
+                        <FormLabel>Periodo</FormLabel>
                         <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
                             <SelectTrigger className="w-[190px]">
@@ -660,6 +682,7 @@ export function ReciboFormulario({
                                     type="number"
                                     min={1}
                                     max={31}
+                                    step={1}
                                     placeholder="1"
                                     {...field}
                                     disabled={n > 1 && !form.watch((`situacionRevista${n}Id`) as keyof ReciboFormValues)}
@@ -682,7 +705,7 @@ export function ReciboFormulario({
                       <FormItem>
                         <FormLabel>Días trabajados</FormLabel>
                         <FormControl>
-                          <Input type="number" min={0} max={31} placeholder="30" {...field} />
+                          <Input type="number" min={0} max={31} step={1} placeholder="30" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -695,7 +718,7 @@ export function ReciboFormulario({
                       <FormItem>
                         <FormLabel>Horas trabajadas</FormLabel>
                         <FormControl>
-                          <Input type="number" min={0} placeholder="200" {...field} />
+                          <Input type="number" min={0} step={1} placeholder="200" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>

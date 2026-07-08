@@ -15,7 +15,6 @@ import {
   Pencil,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { Card, CardContent, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -126,17 +125,22 @@ export function SueldosConvenios({ clientId, profileId }: SueldosConveniosProps)
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap justify-end gap-2">
-        <Button
-          variant="default"
+        <button
+          type="button"
           onClick={() => setSeleccionarConvenioOpen(true)}
+          className="bg-[#12131A] text-white rounded-[10px] px-[17px] py-[10px] text-[13.5px] font-semibold hover:bg-black flex items-center gap-2"
         >
-          <CheckCircle2 className="mr-2 h-4 w-4" />
+          <CheckCircle2 className="h-[15px] w-[15px]" />
           Seleccionar convenio
-        </Button>
-        <Button variant="outline" onClick={() => setNewConvenioOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => setNewConvenioOpen(true)}
+          className="bg-white border border-[#DFDCD3] rounded-[10px] text-[#3E404A] text-[13.5px] font-semibold hover:bg-[#FBFAF6] px-[17px] py-[10px] flex items-center gap-2"
+        >
+          <Plus className="h-[15px] w-[15px]" />
           Nuevo convenio
-        </Button>
+        </button>
       </div>
 
       <Dialog
@@ -233,7 +237,7 @@ export function SueldosConvenios({ clientId, profileId }: SueldosConveniosProps)
         </DialogContent>
       </Dialog>
 
-      <div className="space-y-4">
+      <div className="border-t border-[#ECEAE3]">
         {convenios.map((conv) => (
           <ConvenioCard
             key={conv.id}
@@ -334,46 +338,45 @@ function ConvenioCard({
   });
 
   return (
-    <Card>
+    <div className="border-b border-[#ECEAE3]">
       <Collapsible open={open} onOpenChange={setOpen}>
         <CollapsibleTrigger asChild>
-          <button className="flex w-full items-center justify-between px-6 py-4 text-left">
-            <div className="flex items-center gap-2">
-              <Building2 className="h-5 w-5 text-muted-foreground" />
-              <div>
-                <CardTitle className="text-lg">
-                  {convenio.nombre}
-                </CardTitle>
-                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
-                  {convenio.cctCodigo ? (
-                    <span className="rounded border px-2 py-0.5 text-muted-foreground">
-                      CCT: {convenio.cctCodigo}
-                    </span>
-                  ) : null}
-                  <span className="rounded border px-2 py-0.5 text-muted-foreground">
-                    Fuentes:{' '}
-                    {convenio.fuentes && convenio.fuentes.length > 0
-                      ? convenio.fuentes.join(', ')
-                      : 'Sin fuente identificada'}
+          <button className="flex w-full items-center justify-between py-5 px-1 text-left">
+            <div className="min-w-0 flex-1">
+              <span className="font-[family-name:var(--ff-display)] font-bold text-[18px] text-[#12131A] leading-tight">
+                {convenio.nombre}
+              </span>
+              <div className="mt-1 flex flex-wrap items-center gap-3">
+                <Building2 className="shrink-0" style={{ width: 15, height: 15, color: '#9B9CA3' }} />
+                {convenio.cctCodigo ? (
+                  <span className="font-[family-name:var(--ff-mono)] text-[12px] text-[#3E404A] bg-white border border-[#DFDCD3] rounded-[6px] px-2 py-[3px]">
+                    CCT: {convenio.cctCodigo}
                   </span>
-                  {convenio.afipUpdatedAt ? (
-                    <span className="rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-emerald-700">
-                      AFIP actualizado:{' '}
-                      {format(new Date(convenio.afipUpdatedAt), 'dd/MM/yyyy')}
-                    </span>
-                  ) : null}
-                </div>
+                ) : null}
+                <span className="text-[12px] text-[#9B9CA3] max-w-[540px] truncate">
+                  {convenio.fuentes && convenio.fuentes.length > 0
+                    ? convenio.fuentes.join(', ')
+                    : 'Sin fuente identificada'}
+                </span>
+                {convenio.afipUpdatedAt ? (
+                  <span className="text-[oklch(0.42_0.13_160)] bg-[oklch(0.94_0.04_160)] rounded-full px-[9px] py-[3px] text-[11px] font-semibold shrink-0">
+                    AFIP actualizado: {format(new Date(convenio.afipUpdatedAt), 'dd/MM/yyyy')}
+                  </span>
+                ) : (
+                  <span className="text-[oklch(0.48_0.13_75)] bg-[oklch(0.95_0.04_75)] rounded-full px-[9px] py-[3px] text-[11px] font-semibold shrink-0">
+                    AFIP pendiente
+                  </span>
+                )}
+                <span className="flex-1" />
               </div>
             </div>
             <div
-              className="flex items-center gap-1"
+              className="flex items-center gap-1 shrink-0 ml-4"
               onClick={(e) => e.stopPropagation()}
             >
-              <Button
+              <button
                 type="button"
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                className="h-8 w-8 flex items-center justify-center rounded hover:bg-[#F2F1EB] transition-colors"
                 onClick={(e) => {
                   e.preventDefault();
                   setEditNombre(convenio.nombre);
@@ -382,23 +385,21 @@ function ConvenioCard({
                 }}
                 title="Editar convenio"
               >
-                <Pencil className="h-4 w-4" />
-              </Button>
-              <Button
+                <Pencil style={{ width: 15, height: 15, color: '#9B9CA3' }} />
+              </button>
+              <button
                 type="button"
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                className="h-8 w-8 flex items-center justify-center rounded hover:bg-red-50 transition-colors"
                 onClick={(e) => {
                   e.preventDefault();
                   setDeleteOpen(true);
                 }}
                 title="Eliminar convenio"
               >
-                <Trash2 className="h-4 w-4" />
-              </Button>
+                <Trash2 style={{ width: 15, height: 15, color: '#c0392b' }} />
+              </button>
               <ChevronDown
-                className={`h-5 w-5 transition ${open ? 'rotate-180' : ''}`}
+                className={`h-5 w-5 transition-transform duration-150 text-[#9B9CA3] ${open ? 'rotate-180' : ''}`}
               />
             </div>
           </button>
@@ -460,22 +461,22 @@ function ConvenioCard({
         </Dialog>
 
         <CollapsibleContent>
-          <CardContent className="pt-0">
-            <p className="mb-4 text-sm text-muted-foreground">
+          <div className="px-1 pb-[26px]">
+            <div className="py-[14px] px-4 bg-[#FBFAF6] border-l-2 border-[#DFDCD3] text-[13px] text-[#6E7079] mb-4">
               {convenio.signatarios || 'Sin signatarios registrados.'}
-            </p>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                size="sm"
+            </div>
+            <div className="flex justify-end mb-4">
+              <button
+                type="button"
                 onClick={() => setAddCategoria(true)}
+                className="bg-white border border-[#DFDCD3] rounded-[10px] text-[#3E404A] text-[13.5px] font-semibold hover:bg-[#FBFAF6] px-[17px] py-[10px] flex items-center gap-2"
               >
-                <Plus className="mr-2 h-4 w-4" />
+                <Plus className="h-[15px] w-[15px]" />
                 Nueva categoría
-              </Button>
+              </button>
             </div>
             {addCategoria && (
-              <div className="mb-4 flex gap-2 rounded-lg border p-4">
+              <div className="mb-4 flex gap-2 rounded-lg border border-[#ECEAE3] p-4">
                 <Input
                   placeholder="Código"
                   value={codigo}
@@ -504,7 +505,7 @@ function ConvenioCard({
                 </Button>
               </div>
             )}
-            <ul className="space-y-4">
+            <ul className="space-y-0">
               {categorias.map((cat) => (
                 <CategoriaRow
                   key={cat.id}
@@ -514,10 +515,10 @@ function ConvenioCard({
                 />
               ))}
             </ul>
-          </CardContent>
+          </div>
         </CollapsibleContent>
       </Collapsible>
-    </Card>
+    </div>
   );
 }
 
@@ -591,31 +592,32 @@ function CategoriaRow({
       toast.error(e instanceof Error ? e.message : 'Error al eliminar'),
   });
 
+  const hoy = new Date();
+
   return (
-    <li className="rounded-lg border p-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Layers className="h-4 w-4 text-muted-foreground" />
-          <div className="min-w-0">
-            <span className="font-medium">{categoriaDisplay.titulo}</span>
-            {categoriaDisplay.subtitulo ? (
-              <p className="text-xs text-muted-foreground break-words">
-                {categoriaDisplay.subtitulo}
-              </p>
-            ) : null}
-          </div>
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
+    <li className="border-b border-[#ECEAE3] pb-[10px]">
+      <div className="flex items-center gap-2 py-2">
+        <Layers style={{ width: 15, height: 15, color: '#9B9CA3', flexShrink: 0 }} />
+        <span className="text-[14px] font-semibold text-[#12131A] flex-1 min-w-0">
+          {categoriaDisplay.titulo}
+          {categoriaDisplay.subtitulo ? (
+            <span className="text-[#6E7079] font-normal ml-1">— {categoriaDisplay.subtitulo}</span>
+          ) : null}
+        </span>
+        <span className="text-[11px] text-[#3E404A] bg-[#F2F1EB] rounded-full px-2 py-[2px] shrink-0">
+          {escalas.length} escala{escalas.length !== 1 ? 's' : ''}
+        </span>
+        <button
+          type="button"
           onClick={() => setShowEscala(!showEscala)}
+          className="text-[13px] text-[#2A4680] underline-offset-2 hover:underline shrink-0 flex items-center gap-1"
         >
-          <DollarSign className="mr-2 h-4 w-4" />
-          {showEscala ? 'Ocultar' : 'Agregar'} escala
-        </Button>
+          <DollarSign className="h-3.5 w-3.5" />
+          {showEscala ? 'Ocultar' : '$ Agregar'} escala
+        </button>
       </div>
       {showEscala && (
-        <div className="mt-4 flex gap-2">
+        <div className="mt-2 mb-2 flex gap-2">
           <Input
             type="date"
             value={vigenciaDesde}
@@ -636,35 +638,52 @@ function CategoriaRow({
           </Button>
         </div>
       )}
-      <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
-        {escalas.map((e) => (
-          <li
-            key={e.id}
-            className="flex items-center justify-between gap-2 rounded border px-2 py-1.5"
-          >
-            <span>
-              Vigencia {format(e.vigenciaDesde, 'dd/MM/yyyy')}
-              {e.vigenciaHasta
-                ? ` – ${format(e.vigenciaHasta, 'dd/MM/yyyy')}`
-                : ''}
-              : $ {Number(e.montoBasico).toLocaleString('es-AR')}
-            </span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
-              onClick={() =>
-                setEscalaToDelete({
-                  id: e.id,
-                  label: `Vigencia ${format(e.vigenciaDesde, 'dd/MM/yyyy')}: $ ${Number(e.montoBasico).toLocaleString('es-AR')}`,
-                })
-              }
-              disabled={deleteEscalaMutation.isPending}
+      <ul className="mt-1">
+        {escalas.map((e) => {
+          const vigente =
+            new Date(e.vigenciaDesde) <= hoy &&
+            (!e.vigenciaHasta || new Date(e.vigenciaHasta) >= hoy);
+          return (
+            <li
+              key={e.id}
+              className={`py-[11px] px-[14px] border-b border-[#F1EFE8] hover:bg-[#FBFAF6] transition-[background] duration-[120ms] flex items-center justify-between gap-2 border-l-[3px] ${
+                vigente
+                  ? 'border-l-[#C2A878] bg-[#FFFDF8]'
+                  : 'border-l-[#ECEAE3] bg-transparent'
+              }`}
             >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </li>
-        ))}
+              <span className="text-[13px] text-[#3E404A] font-medium">
+                Vigencia {format(e.vigenciaDesde, 'dd/MM/yyyy')}
+                {e.vigenciaHasta
+                  ? ` – ${format(e.vigenciaHasta, 'dd/MM/yyyy')}`
+                  : ''}
+              </span>
+              <span className="flex items-center gap-3">
+                <span className="font-[family-name:var(--ff-display)] font-bold text-[13.5px] tabular-nums text-[#12131A]">
+                  $ {Number(e.montoBasico).toLocaleString('es-AR')}
+                </span>
+                {vigente && (
+                  <span className="text-[oklch(0.42_0.13_160)] bg-[oklch(0.94_0.04_160)] rounded-full px-[9px] py-[3px] text-[11px] font-semibold">
+                    vigente
+                  </span>
+                )}
+                <button
+                  type="button"
+                  className="h-7 w-7 flex items-center justify-center rounded hover:bg-red-50 transition-colors shrink-0"
+                  onClick={() =>
+                    setEscalaToDelete({
+                      id: e.id,
+                      label: `Vigencia ${format(e.vigenciaDesde, 'dd/MM/yyyy')}: $ ${Number(e.montoBasico).toLocaleString('es-AR')}`,
+                    })
+                  }
+                  disabled={deleteEscalaMutation.isPending}
+                >
+                  <Trash2 style={{ width: 14, height: 14, color: '#c0392b' }} />
+                </button>
+              </span>
+            </li>
+          );
+        })}
       </ul>
 
       <AlertDialog

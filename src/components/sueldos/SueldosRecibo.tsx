@@ -4,9 +4,9 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { FileText, ChevronRight, Pencil, Printer, Loader2, Sparkles, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { FileText, ChevronRight, Pencil, Printer, Loader2, Sparkles, AlertCircle, CheckCircle2, Receipt } from 'lucide-react';
 import { toast } from 'sonner';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { getPeriodoMaxLiquidable } from '@/lib/payroll-period-rules';
 import {
   Select,
   SelectContent,
@@ -28,6 +28,8 @@ import {
   getPayrollEmployerConfig,
   getSacPreview,
   generarSacsMasivo,
+  getLiqFinalPreview,
+  generarLiqFinalMasivo,
 } from '@/actions/sueldos';
 import { getClient } from '@/actions/profile';
 import { legajoParaMostrar } from '@/lib/legajo';
@@ -46,6 +48,8 @@ interface SueldosReciboProps {
   clientId: string;
   profileId: string;
   initialEmpleadoId?: string;
+  /** Período en formato YYYY-MM para pre-setear los filtros al navegar desde "Nuevo recibo" */
+  initialPeriodo?: string;
   onEditRecibo?: (data: {
     reciboId: string;
     importEmpleadoId: string;
@@ -366,16 +370,28 @@ function DocCell({
   );
 }
 
-export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, onEditRecibo }: SueldosReciboProps) {
-  const [ano, setAno] = useState('');
+export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialPeriodo, onEditRecibo }: SueldosReciboProps) {
+  const [maxAno, maxMes] = getPeriodoMaxLiquidable().split('-');
+  const [ano, setAno] = useState(() => {
+    const p = initialPeriodo ?? getPeriodoMaxLiquidable();
+    return p.split('-')[0] ?? '';
+  });
   // '' | '01'..'12' | 'sem1' | 'sem2'
-  const [periodoSeleccion, setPeriodoSeleccion] = useState('');
+  const [periodoSeleccion, setPeriodoSeleccion] = useState(() => {
+    const p = initialPeriodo ?? getPeriodoMaxLiquidable();
+    return p.split('-')[1] ?? '';
+  });
+  const mesesDisponibles = ano === maxAno
+    ? MESES.filter((m) => m.value <= maxMes)
+    : MESES;
+  const mostrarSem2 = ano !== maxAno || maxMes >= '07';
   const [quincenaFiltro, setQuincenaFiltro] = useState('');
   const [tipoFiltro, setTipoFiltro] = useState('');
   const [empleadoId, setEmpleadoId] = useState(initialEmpleadoId ?? '');
   const [reciboId, setReciboId] = useState('');
   const [showImprimir, setShowImprimir] = useState(false);
   const [showSacDialog, setShowSacDialog] = useState(false);
+  const [showLiqFinalDialog, setShowLiqFinalDialog] = useState(false);
 
   // Derivar mes y semestre de periodoSeleccion
   const mes = /^\d{2}$/.test(periodoSeleccion) ? periodoSeleccion : '';
@@ -441,6 +457,7 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, onEditRe
         },
       }),
     enabled: !!clientId && !!profileId && hayFiltro,
+    refetchOnMount: 'always',
   });
 
   // Filtros client-side: quincena y tipo de recibo
@@ -468,46 +485,59 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, onEditRe
   return (
     <div className="w-full min-w-0 max-w-full space-y-6">
       {/* ── Filtros ───────────────────────────────────────────────────────── */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5" />
-                Recibos liquidados
-              </CardTitle>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Filtrá por año, período y/o empleado. Podés combinar filtros o usar solo empleado para ver todos sus recibos.
-              </p>
-            </div>
+      <div className="bg-white border border-[#ECEAE3] rounded-[12px] px-6 pt-5 pb-6">
+        {/* Filter header */}
+        <div className="flex items-start justify-between gap-4 mb-5">
+          <div>
             <div className="flex items-center gap-2">
-              {esMesSAC && ano && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0 gap-1.5"
-                  onClick={() => setShowSacDialog(true)}
-                >
-                  <Sparkles className="h-4 w-4" />
-                  Generar SAC
-                </Button>
-              )}
+              <FileText style={{ width: 15, height: 15, color: '#3E404A' }} />
+              <span className="font-[family-name:var(--ff-display)] font-semibold text-[16px] text-[#12131A]">
+                Recibos liquidados
+              </span>
+            </div>
+            <p className="mt-1 text-[13px] text-[#9B9CA3]">
+              Filtrá por año, período y/o empleado...
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {esMesSAC && ano && (
               <Button
                 variant="outline"
                 size="sm"
                 className="shrink-0 gap-1.5"
-                onClick={() => setShowImprimir(true)}
+                onClick={() => setShowSacDialog(true)}
               >
-                <Printer className="h-4 w-4" />
-                Imprimir PDF
+                <Sparkles className="h-4 w-4" />
+                Generar SAC
               </Button>
-            </div>
+            )}
+            {ano && mes && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0 gap-1.5"
+                onClick={() => setShowLiqFinalDialog(true)}
+              >
+                <Receipt className="h-4 w-4" />
+                Generar Liq. Final
+              </Button>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowImprimir(true)}
+              className="bg-white border border-[#DFDCD3] rounded-[10px] text-[#3E404A] text-[13.5px] font-semibold hover:bg-[#FBFAF6] px-[17px] py-[10px] flex items-center gap-2 shrink-0"
+            >
+              <Printer style={{ width: 15, height: 15 }} />
+              Imprimir PDF
+            </button>
           </div>
-        </CardHeader>
-        <CardContent className="flex flex-wrap items-end gap-4">
+        </div>
+
+        {/* Filter grid */}
+        <div className="grid grid-cols-5 gap-[14px] border-b border-[#ECEAE3] pb-5 mb-[26px]">
           {/* Año */}
           <div>
-            <label className="mb-2 block text-sm font-medium">Año</label>
+            <label className="mb-1.5 block text-[12px] font-medium text-[#6E7079]">Año</label>
             <Select
               value={ano || '__all'}
               onValueChange={(v) => {
@@ -516,7 +546,7 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, onEditRe
                 setReciboId('');
               }}
             >
-              <SelectTrigger className="w-[130px]">
+              <SelectTrigger className="w-full bg-white border border-[#DFDCD3] rounded-[10px] px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -530,9 +560,9 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, onEditRe
             </Select>
           </div>
 
-          {/* Período: semestres + meses (solo relevante si hay año) */}
+          {/* Período */}
           <div>
-            <label className="mb-2 block text-sm font-medium">Período</label>
+            <label className="mb-1.5 block text-[12px] font-medium text-[#6E7079]">Período</label>
             <Select
               value={periodoSeleccion || '__all'}
               onValueChange={(v) => {
@@ -541,7 +571,7 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, onEditRe
               }}
               disabled={!ano}
             >
-              <SelectTrigger className="w-[210px]">
+              <SelectTrigger className="w-full bg-white border border-[#DFDCD3] rounded-[10px] px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -549,8 +579,10 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, onEditRe
                   {ano ? 'Todos los períodos' : '—'}
                 </SelectItem>
                 <SelectItem value="sem1">1er semestre (Ene–Jun)</SelectItem>
-                <SelectItem value="sem2">2do semestre (Jul–Dic)</SelectItem>
-                {MESES.map((m) => (
+                {mostrarSem2 && (
+                  <SelectItem value="sem2">2do semestre (Jul–Dic)</SelectItem>
+                )}
+                {mesesDisponibles.map((m) => (
                   <SelectItem key={m.value} value={m.value}>
                     {m.label}
                   </SelectItem>
@@ -559,9 +591,9 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, onEditRe
             </Select>
           </div>
 
-          {/* Quincena (filtro client-side) */}
+          {/* Quincena */}
           <div>
-            <label className="mb-2 block text-sm font-medium">Quincena</label>
+            <label className="mb-1.5 block text-[12px] font-medium text-[#6E7079]">Quincena</label>
             <Select
               value={quincenaFiltro || '__all'}
               onValueChange={(v) => {
@@ -569,7 +601,7 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, onEditRe
                 setReciboId('');
               }}
             >
-              <SelectTrigger className="w-[160px]">
+              <SelectTrigger className="w-full bg-white border border-[#DFDCD3] rounded-[10px] px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -580,9 +612,9 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, onEditRe
             </Select>
           </div>
 
-          {/* Tipo de recibo (filtro client-side) */}
+          {/* Tipo */}
           <div>
-            <label className="mb-2 block text-sm font-medium">Tipo</label>
+            <label className="mb-1.5 block text-[12px] font-medium text-[#6E7079]">Tipo</label>
             <Select
               value={tipoFiltro || '__all'}
               onValueChange={(v) => {
@@ -590,7 +622,7 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, onEditRe
                 setReciboId('');
               }}
             >
-              <SelectTrigger className="w-[190px]">
+              <SelectTrigger className="w-full bg-white border border-[#DFDCD3] rounded-[10px] px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -609,7 +641,7 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, onEditRe
 
           {/* Empleado */}
           <div>
-            <label className="mb-2 block text-sm font-medium">Empleado</label>
+            <label className="mb-1.5 block text-[12px] font-medium text-[#6E7079]">Empleado</label>
             <Select
               value={empleadoId || '__all'}
               onValueChange={(v) => {
@@ -617,7 +649,7 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, onEditRe
                 setReciboId('');
               }}
             >
-              <SelectTrigger className="w-[260px]">
+              <SelectTrigger className="w-full bg-white border border-[#DFDCD3] rounded-[10px] px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -633,137 +665,162 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, onEditRe
               </SelectContent>
             </Select>
           </div>
+        </div>
 
-          {/* Limpiar */}
-          {(ano || empleadoId || quincenaFiltro || tipoFiltro) && (
-            <button
-              type="button"
-              onClick={resetFiltros}
-              className="mb-0.5 text-xs text-muted-foreground underline hover:text-foreground"
-            >
-              Limpiar filtros
-            </button>
-          )}
-        </CardContent>
-      </Card>
+        {/* Limpiar filtros */}
+        {(ano || periodoSeleccion || empleadoId || quincenaFiltro || tipoFiltro) && (
+          <button
+            type="button"
+            onClick={resetFiltros}
+            className="text-[13px] text-[#6E7079] underline underline-offset-2 hover:text-[#3E404A]"
+          >
+            Limpiar filtros
+          </button>
+        )}
+      </div>
 
       {/* ── Lista de resultados ───────────────────────────────────────────── */}
       {hayFiltro && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
+        <div>
+          {/* Results heading */}
+          <div className="mb-4">
+            <span className="font-[family-name:var(--ff-display)] font-semibold text-[16px] text-[#12131A]">
               {loadingList
                 ? 'Buscando…'
                 : recibos.length === 0
                   ? 'Sin resultados'
                   : `${recibos.length} recibo${recibos.length !== 1 ? 's' : ''} encontrado${recibos.length !== 1 ? 's' : ''}`}
-            </CardTitle>
-          </CardHeader>
+            </span>
+            {!loadingList && recibos.length > 0 && periodo && (
+              <p className="mt-0.5 text-[12.5px] text-[#9B9CA3]">Período: {periodo}</p>
+            )}
+          </div>
+
           {!loadingList && recibos.length > 0 && (
-            <CardContent className="p-0 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/30 text-xs text-muted-foreground">
-                    <th className="px-4 py-2 text-left font-medium whitespace-nowrap">Empleado</th>
-                    <th className="px-3 py-2 text-left font-medium whitespace-nowrap">Período</th>
-                    <th className="px-3 py-2 text-right font-medium whitespace-nowrap">Haberes</th>
-                    <th className="px-3 py-2 text-right font-medium whitespace-nowrap">Descuentos</th>
-                    <th className="px-3 py-2 text-right font-medium whitespace-nowrap">Retenciones</th>
-                    <th className="px-3 py-2 text-right font-medium whitespace-nowrap">No Rem.</th>
-                    <th className="px-3 py-2 text-right font-medium whitespace-nowrap">Neto</th>
-                    <th className="px-3 py-2 text-right font-medium whitespace-nowrap">Redondeado</th>
-                    <th className="px-3 py-2 text-right font-medium whitespace-nowrap">Rem + No Rem</th>
-                    <th className="px-3 py-2"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recibos.map((r) => {
-                    const isSelected = r.liquidacion.id === reciboId;
-                    const haberes = Number(r.liquidacion.haberes ?? 0);
-                    const descuentos = Number(r.liquidacion.descuentos ?? 0);
-                    const retenciones = Number(r.liquidacion.retenciones ?? 0);
-                    const noRem = Number(r.liquidacion.noRemunerativo ?? 0);
-                    const neto = Number(r.liquidacion.neto ?? 0);
-                    const redondeado = Math.ceil(neto);
-                    const remPlusNoRem = haberes + noRem;
-                    return (
-                      <tr
-                        key={r.liquidacion.id}
-                        onClick={() => setReciboId(isSelected ? '' : r.liquidacion.id)}
-                        className={`cursor-pointer border-b transition-colors hover:bg-muted/50 ${isSelected ? 'bg-muted/60' : ''}`}
-                      >
-                        <td className="px-4 py-3">
-                          <span className={`whitespace-nowrap${isSelected ? ' font-semibold' : ' font-medium'}`}>
-                            {toTitleCase(r.empleado.nombre)}
-                            {r.empleado.legajo && (
-                              <span className="ml-2 text-xs font-normal text-muted-foreground">
-                                Leg. {legajoParaMostrar(r.empleado.legajo)}
-                              </span>
-                            )}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3 whitespace-nowrap text-xs text-muted-foreground">
-                          {r.liquidacion.periodo} · {tipoReciboLabel(r.liquidacion.tipo)}
-                          {r.liquidacion.quincena ? ` · ${quincenaLabel(r.liquidacion.quincena)}` : ''}
-                        </td>
-                        <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap">{moneyFmt(haberes)}</td>
-                        <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap">{moneyFmt(descuentos)}</td>
-                        <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap">{moneyFmt(retenciones)}</td>
-                        <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap">{moneyFmt(noRem)}</td>
-                        <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap">{moneyFmt(neto)}</td>
-                        <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap font-medium">{moneyFmt(redondeado)}</td>
-                        <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap">{moneyFmt(remPlusNoRem)}</td>
-                        <td className="px-3 py-3">
-                          <div className="flex items-center gap-2 justify-end">
-                            {onEditRecibo && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onEditRecibo({
-                                    reciboId: r.liquidacion.id,
-                                    importEmpleadoId: r.empleado.id,
-                                    empleadoNombre: r.empleado.nombre,
-                                    periodo: r.liquidacion.periodo,
-                                    tipoRecibo: r.liquidacion.tipo ?? 'sueldo',
-                                    quincena: r.liquidacion.quincena,
-                                    fechaLiquidacion: r.liquidacion.fecha ? (r.liquidacion.fecha instanceof Date ? r.liquidacion.fecha.toISOString().slice(0, 10) : String(r.liquidacion.fecha).slice(0, 10)) : null,
-                                    fechaPago: r.liquidacion.fechaPago ? (r.liquidacion.fechaPago instanceof Date ? r.liquidacion.fechaPago.toISOString().slice(0, 10) : String(r.liquidacion.fechaPago).slice(0, 10)) : null,
-                                    obraSocialId: r.liquidacion.obraSocialId,
-                                    periodoCargas: r.liquidacion.periodoCargas,
-                                    fechaDepositoCargas: r.liquidacion.fechaDepositoCargas ? (r.liquidacion.fechaDepositoCargas instanceof Date ? r.liquidacion.fechaDepositoCargas.toISOString().slice(0, 10) : String(r.liquidacion.fechaDepositoCargas).slice(0, 10)) : null,
-                                    observacionInterna: r.liquidacion.observacionInterna,
-                                    observacionRecibo: r.liquidacion.observacionRecibo,
-                                    situacionRevista1Id: r.liquidacion.situacionRevista1Id,
-                                    situacionRevista1DiaInicio: r.liquidacion.situacionRevista1DiaInicio,
-                                    situacionRevista2Id: r.liquidacion.situacionRevista2Id,
-                                    situacionRevista2DiaInicio: r.liquidacion.situacionRevista2DiaInicio,
-                                    situacionRevista3Id: r.liquidacion.situacionRevista3Id,
-                                    situacionRevista3DiaInicio: r.liquidacion.situacionRevista3DiaInicio,
-                                    diasTrabajados: r.liquidacion.diasTrabajados,
-                                    horasTrabajadas: r.liquidacion.horasTrabajadas,
-                                    importeMaternidadArt13: r.liquidacion.importeMaternidadArt13,
-                                  });
-                                }}
-                                className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                                title="Editar recibo"
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </button>
-                            )}
-                            <ChevronRight
-                              className={`h-4 w-4 text-muted-foreground transition-transform ${isSelected ? 'rotate-90' : ''}`}
-                            />
+            <div className="overflow-x-auto rounded-[10px]">
+              {/* Navy header */}
+              <div
+                className="bg-[#0B1730] text-[#E7EAF2] h-[44px] px-5 rounded-t-[10px] text-[10.5px] font-semibold tracking-[0.06em] uppercase grid items-center"
+                style={{
+                  gridTemplateColumns: 'minmax(140px,1.2fr) 104px 122px 84px 122px 116px 122px 124px 48px',
+                  columnGap: 16,
+                }}
+              >
+                <span>Empleado</span>
+                <span>Período</span>
+                <span className="text-right">Haberes</span>
+                <span className="text-right">Desc.</span>
+                <span className="text-right">Retenc.</span>
+                <span className="text-right">No Rem.</span>
+                <span className="text-right">Neto</span>
+                <span className="text-right">Redond.</span>
+                <span></span>
+              </div>
+              {/* Data rows */}
+              <div className="border border-t-0 border-[#ECEAE3] rounded-b-[10px]">
+                {recibos.map((r) => {
+                  const isSelected = r.liquidacion.id === reciboId;
+                  const haberes = Number(r.liquidacion.haberes ?? 0);
+                  const descuentos = Number(r.liquidacion.descuentos ?? 0);
+                  const retenciones = Number(r.liquidacion.retenciones ?? 0);
+                  const noRem = Number(r.liquidacion.noRemunerativo ?? 0);
+                  const neto = Number(r.liquidacion.neto ?? 0);
+                  const redondeado = Math.ceil(neto);
+                  return (
+                    <div
+                      key={r.liquidacion.id}
+                      onClick={() => setReciboId(isSelected ? '' : r.liquidacion.id)}
+                      className={`cursor-pointer border-b border-[#ECEAE3] last:border-b-0 hover:bg-[#FBFAF6] transition-colors grid items-center px-5 py-[13px] ${isSelected ? 'bg-[#FBFAF6]' : ''}`}
+                      style={{
+                        gridTemplateColumns: 'minmax(140px,1.2fr) 104px 122px 84px 122px 116px 122px 124px 48px',
+                        columnGap: 16,
+                      }}
+                    >
+                      <div className="min-w-0">
+                        <span className={`text-[13px] text-[#12131A] whitespace-nowrap${isSelected ? ' font-semibold' : ' font-semibold'}`}>
+                          {toTitleCase(r.empleado.nombre)}
+                        </span>
+                        {r.empleado.legajo && (
+                          <div className="text-[11.5px] text-[#9B9CA3]">
+                            Leg. {legajoParaMostrar(r.empleado.legajo)}
                           </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </CardContent>
+                        )}
+                      </div>
+                      <div className="font-[family-name:var(--ff-mono)] text-[12px] text-[#9B9CA3] whitespace-nowrap">
+                        {r.liquidacion.periodo}
+                        {r.liquidacion.tipo && r.liquidacion.tipo !== 'sueldo' ? (
+                          <div className="text-[11px]">{tipoReciboLabel(r.liquidacion.tipo)}</div>
+                        ) : null}
+                        {r.liquidacion.quincena ? (
+                          <div className="text-[11px]">{quincenaLabel(r.liquidacion.quincena)}</div>
+                        ) : null}
+                      </div>
+                      <div className="text-right tabular-nums text-[13px] text-[#3E404A] whitespace-nowrap">
+                        {haberes === 0 ? <span className="text-[#B7B8BD]">—</span> : moneyFmt(haberes)}
+                      </div>
+                      <div className="text-right tabular-nums text-[13px] text-[#B7B8BD] whitespace-nowrap">
+                        {descuentos === 0 ? '—' : moneyFmt(descuentos)}
+                      </div>
+                      <div className="text-right tabular-nums text-[13px] text-[#3E404A] whitespace-nowrap">
+                        {retenciones === 0 ? <span className="text-[#B7B8BD]">—</span> : moneyFmt(retenciones)}
+                      </div>
+                      <div className="text-right tabular-nums text-[13px] text-[#3E404A] whitespace-nowrap">
+                        {noRem === 0 ? <span className="text-[#B7B8BD]">—</span> : moneyFmt(noRem)}
+                      </div>
+                      <div className="text-right tabular-nums text-[13px] text-[#3E404A] whitespace-nowrap">
+                        {neto === 0 ? <span className="text-[#B7B8BD]">—</span> : moneyFmt(neto)}
+                      </div>
+                      <div className="text-right tabular-nums text-[13px] font-bold text-[#12131A] whitespace-nowrap">
+                        {moneyFmt(redondeado)}
+                      </div>
+                      <div className="flex items-center gap-2 justify-end">
+                        {onEditRecibo && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onEditRecibo({
+                                reciboId: r.liquidacion.id,
+                                importEmpleadoId: r.empleado.id,
+                                empleadoNombre: r.empleado.nombre,
+                                periodo: r.liquidacion.periodo,
+                                tipoRecibo: r.liquidacion.tipo ?? 'sueldo',
+                                quincena: r.liquidacion.quincena,
+                                fechaLiquidacion: r.liquidacion.fecha ? (r.liquidacion.fecha instanceof Date ? r.liquidacion.fecha.toISOString().slice(0, 10) : String(r.liquidacion.fecha).slice(0, 10)) : null,
+                                fechaPago: r.liquidacion.fechaPago ? (r.liquidacion.fechaPago instanceof Date ? r.liquidacion.fechaPago.toISOString().slice(0, 10) : String(r.liquidacion.fechaPago).slice(0, 10)) : null,
+                                obraSocialId: r.liquidacion.obraSocialId,
+                                periodoCargas: r.liquidacion.periodoCargas,
+                                fechaDepositoCargas: r.liquidacion.fechaDepositoCargas ? (r.liquidacion.fechaDepositoCargas instanceof Date ? r.liquidacion.fechaDepositoCargas.toISOString().slice(0, 10) : String(r.liquidacion.fechaDepositoCargas).slice(0, 10)) : null,
+                                observacionInterna: r.liquidacion.observacionInterna,
+                                observacionRecibo: r.liquidacion.observacionRecibo,
+                                situacionRevista1Id: r.liquidacion.situacionRevista1Id,
+                                situacionRevista1DiaInicio: r.liquidacion.situacionRevista1DiaInicio,
+                                situacionRevista2Id: r.liquidacion.situacionRevista2Id,
+                                situacionRevista2DiaInicio: r.liquidacion.situacionRevista2DiaInicio,
+                                situacionRevista3Id: r.liquidacion.situacionRevista3Id,
+                                situacionRevista3DiaInicio: r.liquidacion.situacionRevista3DiaInicio,
+                                diasTrabajados: r.liquidacion.diasTrabajados,
+                                horasTrabajadas: r.liquidacion.horasTrabajadas,
+                                importeMaternidadArt13: r.liquidacion.importeMaternidadArt13,
+                              });
+                            }}
+                            className="rounded p-1 text-[#9B9CA3] hover:bg-[#F2F1EB] hover:text-[#3E404A] transition-colors"
+                            title="Editar recibo"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        <ChevronRight
+                          className={`h-4 w-4 text-[#9B9CA3] transition-transform ${isSelected ? 'rotate-90' : ''}`}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           )}
-        </Card>
+        </div>
       )}
 
       {/* ── Dialog: generar SAC masivo ───────────────────────────────────── */}
@@ -773,6 +830,16 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, onEditRe
           profileId={profileId}
           periodo={`${ano}-${mes}`}
           onClose={() => setShowSacDialog(false)}
+        />
+      )}
+
+      {/* ── Dialog: generar Liq. Final masivo ────────────────────────────── */}
+      {showLiqFinalDialog && ano && mes && (
+        <GenerarLiqFinalDialog
+          clientId={clientId}
+          profileId={profileId}
+          periodo={`${ano}-${mes}`}
+          onClose={() => setShowLiqFinalDialog(false)}
         />
       )}
 
@@ -791,19 +858,15 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, onEditRe
       {reciboId && (
         <>
           {loadingDetalle ? (
-            <Card>
-              <CardContent className="py-8">
-                <p className="text-muted-foreground">Cargando…</p>
-              </CardContent>
-            </Card>
+            <div className="bg-white border border-[#ECEAE3] rounded-[12px] px-6 py-8">
+              <p className="text-[#9B9CA3] text-[13px]">Cargando…</p>
+            </div>
           ) : !detalle ? (
-            <Card>
-              <CardContent className="py-8">
-                <p className="text-muted-foreground">
-                  No se encontró el recibo.
-                </p>
-              </CardContent>
-            </Card>
+            <div className="bg-white border border-[#ECEAE3] rounded-[12px] px-6 py-8">
+              <p className="text-[#9B9CA3] text-[13px]">
+                No se encontró el recibo.
+              </p>
+            </div>
           ) : (
             <ReciboDocumento detalle={detalle} clientData={clientData ?? null} firmaEmpleadorUrl={firmaEmpleadorUrl} />
           )}
@@ -908,7 +971,7 @@ function GenerarSacDialog({
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+      <DialogContent className="sm:max-w-[90vw] max-h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="text-[15px]">
             Generar SAC — {semestre} {periodo.split('-')[0]}
@@ -926,8 +989,22 @@ function GenerarSacDialog({
             <table className="w-full text-[13px]">
               <thead>
                 <tr className="border-b text-left text-[11px] text-muted-foreground uppercase tracking-wide">
-                  <th className="pb-2 pr-2 w-6"></th>
+                  <th className="pb-2 pr-2 w-6">
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5"
+                      checked={pendientes.length > 0 && pendientes.every((p) => selected.has(p.empleadoId))}
+                      onChange={(e) => {
+                        setSelected(
+                          e.target.checked
+                            ? new Set(pendientes.map((p) => p.empleadoId))
+                            : new Set()
+                        );
+                      }}
+                    />
+                  </th>
                   <th className="pb-2 pr-3">Empleado</th>
+                  <th className="pb-2 pr-3 text-center">Antigüedad</th>
                   <th className="pb-2 pr-3">Mejor mes</th>
                   <th className="pb-2 pr-3 text-right">Mejor rem+no rem</th>
                   <th className="pb-2 px-2 text-center w-20">Días</th>
@@ -963,6 +1040,11 @@ function GenerarSacDialog({
                       <td className="py-2 pr-3 font-medium">
                         {p.nombre}
                         {p.yaTieneSac && <span className="ml-2 text-green-600 text-[11px]">Ya tiene SAC</span>}
+                      </td>
+                      <td className="py-2 pr-3 text-center tabular-nums">
+                        {p.antiguedadAnios != null
+                          ? <span>{p.antiguedadAnios} {p.antiguedadAnios === 1 ? 'año' : 'años'}</span>
+                          : <span className="text-muted-foreground">—</span>}
                       </td>
                       <td className="py-2 pr-3 text-muted-foreground">{p.mejorPeriodo ?? '—'}</td>
                       <td className="py-2 pr-3 text-right font-mono">{p.mejorMonto > 0 ? moneyFmtSac(p.mejorMonto) : '—'}</td>
@@ -1023,6 +1105,201 @@ function GenerarSacDialog({
           >
             {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
             Generar {seleccionados.length > 0 ? `${seleccionados.length} SAC` : 'SAC'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Diálogo: Generar Liq. Final masivo ──────────────────────────────────────
+
+/** Último día del mes de un período YYYY-MM. */
+function lastDayOfPeriodo(periodo: string): string {
+  const [y, m] = periodo.split('-');
+  const d = new Date(parseInt(y!), parseInt(m!), 0).getDate();
+  return `${y}-${m}-${String(d).padStart(2, '0')}`;
+}
+
+/** Días trabajados = día del mes de la fecha de baja. */
+function diasDesdefechaBaja(fecha: string): number {
+  const day = parseInt(fecha.split('-')[2] ?? '0', 10);
+  return isNaN(day) || day < 1 ? 1 : day;
+}
+
+function GenerarLiqFinalDialog({
+  clientId,
+  profileId,
+  periodo,
+  onClose,
+}: {
+  clientId: string;
+  profileId: string;
+  periodo: string;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const defaultFecha = lastDayOfPeriodo(periodo);
+  const [fechaBajaMap, setFechaBajaMap] = useState<Record<string, string>>({});
+
+  const { data: preview = [], isLoading } = useQuery({
+    queryKey: ['liq-final-preview', clientId, profileId, periodo],
+    queryFn: () => getLiqFinalPreview({ data: { clientId, profileId, periodo } }),
+  });
+
+  // Pre-seleccionar empleados sin liq. final y asignar fecha de baja por defecto
+  useEffect(() => {
+    if (preview.length === 0) return;
+    const pendientes = preview.filter((p) => !p.yaTiene);
+    setSelected(new Set(pendientes.map((p) => p.empleadoId)));
+    setFechaBajaMap(Object.fromEntries(pendientes.map((p) => [p.empleadoId, defaultFecha])));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preview]);
+
+  const pendientes = preview.filter((p) => !p.yaTiene);
+  const seleccionados = preview.filter((p) => selected.has(p.empleadoId) && !p.yaTiene);
+
+  const { mutate: generar, isPending } = useMutation({
+    mutationFn: () =>
+      generarLiqFinalMasivo({
+        data: {
+          clientId,
+          profileId,
+          periodo,
+          items: seleccionados.map((p) => {
+            const fecha = fechaBajaMap[p.empleadoId] ?? defaultFecha;
+            return {
+              empleadoId: p.empleadoId,
+              fechaBaja: fecha,
+              diasTrabajados: diasDesdefechaBaja(fecha),
+            };
+          }),
+        },
+      }),
+    onSuccess: (result) => {
+      toast.success(`${result.generados} recibos de Liquidación Final generados.`);
+      queryClient.invalidateQueries({ queryKey: ['liquidaciones-filtros'] });
+      queryClient.invalidateQueries({ queryKey: ['import-recibos'] });
+      onClose();
+    },
+    onError: (err) => toast.error((err as Error).message ?? 'Error al generar las liquidaciones finales.'),
+  });
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-[90vw] max-h-[85vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="text-[15px]">
+            Generar Liq. Final — {periodo}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="flex-1 overflow-y-auto">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-10">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : preview.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">No hay empleados activos.</p>
+          ) : (
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="border-b text-left text-[11px] text-muted-foreground uppercase tracking-wide">
+                  <th className="pb-2 pr-2 w-6">
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5"
+                      checked={pendientes.length > 0 && pendientes.every((p) => selected.has(p.empleadoId))}
+                      onChange={(e) => {
+                        setSelected(
+                          e.target.checked
+                            ? new Set(pendientes.map((p) => p.empleadoId))
+                            : new Set()
+                        );
+                      }}
+                    />
+                  </th>
+                  <th className="pb-2 pr-3">Empleado</th>
+                  <th className="pb-2 pr-3">Legajo</th>
+                  <th className="pb-2 pr-3">Fecha de baja</th>
+                  <th className="pb-2 text-center">Días trab.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {preview.map((p) => {
+                  const fecha = fechaBajaMap[p.empleadoId] ?? defaultFecha;
+                  const dias = diasDesdefechaBaja(fecha);
+                  return (
+                    <tr key={p.empleadoId} className={`border-b last:border-0 ${p.yaTiene ? 'opacity-50' : ''}`}>
+                      <td className="py-2 pr-2">
+                        {p.yaTiene ? (
+                          <span title="Ya tiene Liq. Final"><CheckCircle2 className="h-4 w-4 text-green-500" /></span>
+                        ) : (
+                          <input
+                            type="checkbox"
+                            checked={selected.has(p.empleadoId)}
+                            onChange={(e) => {
+                              const next = new Set(selected);
+                              if (e.target.checked) next.add(p.empleadoId);
+                              else next.delete(p.empleadoId);
+                              setSelected(next);
+                            }}
+                            className="h-3.5 w-3.5"
+                          />
+                        )}
+                      </td>
+                      <td className="py-2 pr-3 font-medium">
+                        {p.nombre}
+                        {p.yaTiene && <span className="ml-2 text-green-600 text-[11px]">Ya tiene</span>}
+                      </td>
+                      <td className="py-2 pr-3 text-muted-foreground">{p.legajo || '—'}</td>
+                      <td className="py-2 pr-3">
+                        {!p.yaTiene ? (
+                          <input
+                            type="date"
+                            value={fecha}
+                            max={defaultFecha}
+                            onChange={(e) =>
+                              setFechaBajaMap((prev) => ({ ...prev, [p.empleadoId]: e.target.value }))
+                            }
+                            className="h-7 w-36 rounded border border-input bg-background px-2 text-[12px] font-mono"
+                          />
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="py-2 text-center font-mono font-semibold">
+                        {!p.yaTiene ? dias : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {!isLoading && pendientes.length > 0 && (
+          <p className="text-[12px] text-muted-foreground pt-2">
+            {seleccionados.length} de {pendientes.length} empleados seleccionados.
+            Los días trabajados se calculan del día de la fecha de baja.
+            Completá los importes en el simulador tras generar.
+          </p>
+        )}
+
+        <DialogFooter className="pt-3 border-t">
+          <Button variant="outline" size="sm" onClick={onClose} disabled={isPending}>
+            Cancelar
+          </Button>
+          <Button
+            size="sm"
+            disabled={isPending || seleccionados.length === 0}
+            onClick={() => generar()}
+            className="gap-1.5"
+          >
+            {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Receipt className="h-3.5 w-3.5" />}
+            Generar {seleccionados.length > 0 ? `${seleccionados.length} Liq. Final` : 'Liq. Final'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1093,13 +1370,13 @@ function ReciboDocumento({
     (d) => columnaConcepto(d) === 'retencion'
   );
 
-  // Filas de la tabla: unimos los 4 grupos en orden
+  // Filas de la tabla: unimos los 4 grupos y ordenamos globalmente por código ascendente
   const filas = [
     ...haberesCon.map((d) => ({ ...d, col: 'hab' as const })),
     ...descuentos.map((d) => ({ ...d, col: 'desc' as const })),
     ...retenciones.map((d) => ({ ...d, col: 'ret' as const })),
     ...haberesSin.map((d) => ({ ...d, col: 'noRem' as const })),
-  ];
+  ].sort((a, b) => Number(a.detalle.codigo) - Number(b.detalle.codigo));
 
   /**
    * Totales por columna = suma de las filas visibles (reglas SOS / tipoColumna).

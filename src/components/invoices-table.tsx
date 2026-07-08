@@ -1128,36 +1128,25 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                     <div className="truncate">{getTypeBadge(invoice.type)}</div>
                   </TableCell>
                   <TableCell className="w-[15%] px-2 py-2 align-top">
-                    {invoice.clientName || invoice.profileName ? (
-                      <div className="space-y-0.5">
-                        <div
-                          className="font-medium truncate text-xs"
-                          title={invoice.clientName ?? undefined}
-                        >
-                          {invoice.clientName ?? '—'}
+                    {(() => {
+                      const name = invoice.profileName || (invoice.clientName && invoice.clientName !== '—' ? invoice.clientName : null);
+                      return name ? (
+                        <div className="space-y-0.5">
+                          <div className="font-medium truncate text-xs" title={name}>
+                            {name}
+                          </div>
+                          {invoice.clientEmail && (
+                            <div className="text-xs text-[var(--arca-ink-3)] truncate" title={invoice.clientEmail}>
+                              {invoice.clientEmail}
+                            </div>
+                          )}
                         </div>
-                        {invoice.profileName && (
-                          <div
-                            className="text-xs text-[var(--arca-ink-3)] truncate"
-                            title={invoice.profileName}
-                          >
-                            {invoice.profileName}
-                          </div>
-                        )}
-                        {invoice.clientEmail && (
-                          <div
-                            className="text-xs text-[var(--arca-ink-3)] truncate"
-                            title={invoice.clientEmail}
-                          >
-                            {invoice.clientEmail}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-[var(--arca-ink-3)] text-xs">
-                        Sin cliente
-                      </span>
-                    )}
+                      ) : (
+                        <span className="text-[var(--arca-ink-3)] text-xs">
+                          Sin cliente
+                        </span>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell className="w-[18%] px-2 py-2 align-top">
                     <div className="space-y-0.5">
