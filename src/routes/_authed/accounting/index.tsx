@@ -291,30 +291,31 @@ function TabBar({
       {tabs
         .filter((tab) => !tab.ownerOnly || isOwner)
         .map((tab) => (
-        <button
-          key={tab.id}
-          onClick={() => onChange(tab.id)}
-          className="flex items-center gap-1.5 px-3 py-2 text-[12.5px] font-medium transition-colors duration-[120ms] border-b-2 -mb-px"
-          style={{
-            color: active === tab.id ? 'var(--arca-ink)' : 'var(--arca-ink-3)',
-            borderBottomColor:
-              active === tab.id ? 'var(--arca-ink)' : 'transparent',
-          }}
-        >
-          <tab.icon className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
-          {tab.label}
-          {tab.id === 'pendientes' && pendingCount > 0 && (
-            <span className="text-[9px] font-semibold px-1.5 py-px rounded-full bg-amber-100 text-amber-700">
-              {pendingCount}
-            </span>
-          )}
-          {!tab.ready && (
-            <span className="text-[9px] px-1 py-px rounded-full bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
-              pronto
-            </span>
-          )}
-        </button>
-      ))}
+          <button
+            key={tab.id}
+            onClick={() => onChange(tab.id)}
+            className="flex items-center gap-1.5 px-3 py-2 text-[12.5px] font-medium transition-colors duration-[120ms] border-b-2 -mb-px"
+            style={{
+              color:
+                active === tab.id ? 'var(--arca-ink)' : 'var(--arca-ink-3)',
+              borderBottomColor:
+                active === tab.id ? 'var(--arca-ink)' : 'transparent',
+            }}
+          >
+            <tab.icon className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
+            {tab.label}
+            {tab.id === 'pendientes' && pendingCount > 0 && (
+              <span className="text-[9px] font-semibold px-1.5 py-px rounded-full bg-amber-100 text-amber-700">
+                {pendingCount}
+              </span>
+            )}
+            {!tab.ready && (
+              <span className="text-[9px] px-1 py-px rounded-full bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
+                pronto
+              </span>
+            )}
+          </button>
+        ))}
     </div>
   );
 }
@@ -447,7 +448,8 @@ function AccountingPage() {
             clients.find((c) => c.id === effectiveClientId)?.name ?? ''
           }
           clientCuit={
-            clients.find((c) => c.id === effectiveClientId)?.identityNumber ?? ''
+            clients.find((c) => c.id === effectiveClientId)?.identityNumber ??
+            ''
           }
         />
       ) : tab === 'auditoria' && isOwner ? (
@@ -4594,6 +4596,18 @@ const AMOUNT_BASES = [
   'fixed',
 ];
 
+/** Letras de comprobante soportadas por la condición (clave "type"). */
+const INVOICE_TYPE_OPTIONS = ['A', 'B', 'C', 'M', 'E'];
+
+/** Normaliza el valor de dirección leído de una condición guardada. */
+function normalizeCondDirection(raw: unknown): '' | 'sale' | 'purchase' {
+  const v = typeof raw === 'string' ? raw.toLowerCase().trim() : '';
+  if (['sale', 'venta', 'outbound', 'emitida'].includes(v)) return 'sale';
+  if (['purchase', 'compra', 'inbound', 'recibida'].includes(v))
+    return 'purchase';
+  return '';
+}
+
 function emptyRuleLine(side: 'debit' | 'credit'): RuleLineDraft {
   return {
     accountId: '',
@@ -4838,7 +4852,10 @@ function RuleEditorDialog({
   const [ruleType, setRuleType] = useState<'default' | 'conditional'>(
     'default'
   );
-  const [conditionText, setConditionText] = useState('');
+  const [condDirection, setCondDirection] = useState<'' | 'sale' | 'purchase'>(
+    ''
+  );
+  const [condTypes, setCondTypes] = useState<string[]>([]);
   const [priority, setPriority] = useState('100');
   const [lines, setLines] = useState<RuleLineDraft[]>([
     emptyRuleLine('debit'),
@@ -4850,11 +4867,19 @@ function RuleEditorDialog({
     setName(existing.rule.name);
     setSourceModule(existing.rule.sourceModule);
     setRuleType(existing.rule.ruleType);
-    setConditionText(
-      existing.rule.condition
-        ? JSON.stringify(existing.rule.condition, null, 2)
-        : ''
-    );
+    {
+      const cond = (existing.rule.condition ?? {}) as Record<string, unknown>;
+      setCondDirection(normalizeCondDirection(cond.direction));
+      const rawType = cond.type ?? cond.invoiceType;
+      const typeArr = Array.isArray(rawType)
+        ? rawType
+        : rawType != null
+          ? [rawType]
+          : [];
+      setCondTypes(
+        typeArr.map((t) => String(t).trim().toUpperCase()).filter(Boolean)
+      );
+    }
     setPriority(String(existing.rule.priority));
     setLines(
       existing.lines.map((l) => ({
@@ -4888,12 +4913,11 @@ function RuleEditorDialog({
   const mut = useMutation({
     mutationFn: async () => {
       let condition: unknown = undefined;
-      if (ruleType === 'conditional' && conditionText.trim()) {
-        try {
-          condition = JSON.parse(conditionText) as unknown;
-        } catch {
-          throw new Error('La condición no es un JSON válido');
-        }
+      if (ruleType === 'conditional' && sourceModule === 'invoice') {
+        const c: Record<string, unknown> = {};
+        if (condDirection) c.direction = condDirection;
+        if (condTypes.length) c.type = condTypes;
+        condition = Object.keys(c).length ? c : undefined;
       }
       const payloadLines = lines.map((l) => ({
         accountId: l.accountId,
@@ -5041,28 +5065,85 @@ function RuleEditorDialog({
               <option value="conditional">Condicional</option>
             </select>
           </Field>
-          {ruleType === 'conditional' && (
-            <Field
-              label={
-                <>
-                  Condición (JSON)
-                  <HelpTip text='Claves soportadas para facturas: "direction" ("sale" venta / "purchase" compra) y "type" (letra del comprobante, ej. "A" o ["A","M"]). La regla aplica solo si el comprobante cumple TODAS las claves.' />
-                </>
-              }
-              full
-            >
-              <textarea
-                value={conditionText}
-                onChange={(e) => setConditionText(e.target.value)}
-                rows={3}
-                placeholder='Ej: {"direction":"sale","type":"A"}'
-                className="w-full px-2.5 py-2 text-[12px] font-mono border border-[var(--arca-border)] rounded-[8px] bg-[var(--arca-surface)] text-[var(--arca-ink)] focus:outline-none resize-none"
-              />
-              <p className="mt-1 text-[11px] text-[var(--arca-ink-3)]">
-                Venta = <code>{'{"direction":"sale"}'}</code> · Compra ={' '}
-                <code>{'{"direction":"purchase"}'}</code>
-              </p>
-            </Field>
+          {ruleType === 'conditional' && sourceModule === 'invoice' && (
+            <>
+              <Field
+                label={
+                  <>
+                    Dirección
+                    <HelpTip text="La regla aplica solo a comprobantes de esta dirección. 'Cualquiera' = no filtra por dirección." />
+                  </>
+                }
+              >
+                <select
+                  value={condDirection}
+                  onChange={(e) =>
+                    setCondDirection(e.target.value as '' | 'sale' | 'purchase')
+                  }
+                  className={`${SELECT_CLASS} w-full h-9`}
+                >
+                  <option value="">Cualquiera</option>
+                  <option value="sale">Venta (emitida)</option>
+                  <option value="purchase">Compra (recibida)</option>
+                </select>
+              </Field>
+              <Field
+                label={
+                  <>
+                    Tipo de comprobante
+                    <HelpTip text="Marcá las letras a las que aplica la regla. Si no marcás ninguna, aplica a cualquier letra. La regla aplica solo si el comprobante cumple dirección Y tipo." />
+                  </>
+                }
+                full
+              >
+                <div className="flex flex-wrap gap-1.5">
+                  {INVOICE_TYPE_OPTIONS.map((t) => {
+                    const on = condTypes.includes(t);
+                    return (
+                      <button
+                        type="button"
+                        key={t}
+                        onClick={() =>
+                          setCondTypes((prev) =>
+                            prev.includes(t)
+                              ? prev.filter((x) => x !== t)
+                              : [...prev, t]
+                          )
+                        }
+                        className={`h-8 min-w-[2.5rem] px-2.5 text-[12.5px] font-medium rounded-[8px] border transition-colors ${
+                          on
+                            ? 'bg-[var(--arca-navy-900)] text-white border-[var(--arca-navy-900)]'
+                            : 'border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]'
+                        }`}
+                      >
+                        {t}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-1 text-[11px] text-[var(--arca-ink-3)]">
+                  {condDirection || condTypes.length ? (
+                    <>
+                      Aplica a{' '}
+                      {condDirection === 'sale'
+                        ? 'ventas'
+                        : condDirection === 'purchase'
+                          ? 'compras'
+                          : 'comprobantes'}
+                      {condTypes.length ? ` tipo ${condTypes.join(', ')}` : ''}.
+                    </>
+                  ) : (
+                    'Sin filtros: esta regla condicional aplicaría a cualquier comprobante.'
+                  )}
+                </p>
+              </Field>
+            </>
+          )}
+          {ruleType === 'conditional' && sourceModule === 'payroll' && (
+            <div className="col-span-2 text-[11.5px] text-[var(--arca-ink-3)] rounded-[8px] border border-dashed border-[var(--arca-border)] px-3 py-2">
+              Las condiciones por dirección y tipo aplican solo a facturas. El
+              mapeo automático de sueldos aún no está disponible.
+            </div>
           )}
         </div>
 
@@ -6895,9 +6976,9 @@ function EstadosContables({
   isOwner: boolean;
 }) {
   const qc = useQueryClient();
-  const [view, setView] = useState<
-    'esp' | 'er' | 'anexo' | 'notas' | 'export'
-  >('esp');
+  const [view, setView] = useState<'esp' | 'er' | 'anexo' | 'notas' | 'export'>(
+    'esp'
+  );
   const [selectedFyId, setSelectedFyId] = useState('');
 
   const { data: fiscalYears = [] } = useQuery({
@@ -6975,7 +7056,9 @@ function EstadosContables({
       {/* Barra: ejercicio + estado de aprobación del paquete */}
       <ArcaCard>
         <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-          <span className="text-[12px] text-[var(--arca-ink-3)]">Ejercicio</span>
+          <span className="text-[12px] text-[var(--arca-ink-3)]">
+            Ejercicio
+          </span>
           <select
             value={effectiveFyId}
             onChange={(e) => setSelectedFyId(e.target.value)}
@@ -7440,9 +7523,7 @@ function ErView({
                             : 'border-t border-[var(--arca-ink-3)] font-semibold'
                         }
                       >
-                        <td
-                          className={isFinal ? 'py-2 pl-3' : 'py-1.5 pl-3'}
-                        >
+                        <td className={isFinal ? 'py-2 pl-3' : 'py-1.5 pl-3'}>
                           {line.label}
                         </td>
                         <td
@@ -7468,9 +7549,7 @@ function ErView({
                             ? 'hover:bg-[var(--arca-surface-2)] cursor-pointer'
                             : ''
                         }
-                        onClick={
-                          canExpand ? () => toggle(line.key) : undefined
-                        }
+                        onClick={canExpand ? () => toggle(line.key) : undefined}
                       >
                         <td className="py-1.5 pl-5 text-[var(--arca-ink)]">
                           {canExpand && (
@@ -8082,10 +8161,7 @@ function ExportView({
       </div>
       <div className="divide-y divide-[var(--arca-border)]">
         {items.map((it) => (
-          <div
-            key={it.key}
-            className="flex items-center gap-4 px-5 py-4"
-          >
+          <div key={it.key} className="flex items-center gap-4 px-5 py-4">
             <div className="flex-1 min-w-0">
               <div className="text-[13px] font-medium text-[var(--arca-ink)]">
                 {it.title}
@@ -8135,7 +8211,8 @@ function describeAuditEvent(e: AuditLogEntry): string {
     parts.push(`${MONTH_NAMES[Number(d.month)]} ${String(d.year)}`);
   if (d.fiscalYearNumber != null)
     parts.push(`Ejercicio N°${String(d.fiscalYearNumber)}`);
-  if (d.code) parts.push(`${String(d.code)}${d.name ? ` ${String(d.name)}` : ''}`);
+  if (d.code)
+    parts.push(`${String(d.code)}${d.name ? ` ${String(d.name)}` : ''}`);
   if (d.source) parts.push(String(d.source));
   if (d.pendingReview) parts.push('pendiente de revisión');
   if (d.reason) parts.push(`Motivo: ${String(d.reason)}`);
