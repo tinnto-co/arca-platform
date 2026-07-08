@@ -137,6 +137,17 @@ import {
   type AnexoIExportData,
 } from '@/lib/mayor-export';
 import {
+  downloadChartTemplate,
+  type ChartTemplateAccount,
+} from '@/lib/accounting-chart-template';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
+import { ImportarPlanDialog } from '@/components/accounting/ImportarPlanDialog';
+import {
   ACCOUNT_GROUP_LABELS,
   ACCOUNT_GROUP_SECTIONS,
   ACCOUNT_TYPE_LABELS,
@@ -471,6 +482,28 @@ type FormMode =
   | { kind: 'base-create' }
   | { kind: 'base-edit'; account: ChartAccount };
 
+/**
+ * Mapea el plan efectivo al formato de la plantilla Excel (para "Plan actual").
+ * Exporta solo el plan base del estudio: excluye la clase de sistema "0" y las
+ * cuentas propias (scope custom, rango 9.x), que se gestionan por empresa y no
+ * se pueden reimportar al plan base.
+ */
+function accountsToTemplate(accounts: ChartAccount[]): ChartTemplateAccount[] {
+  return accounts
+    .filter(
+      (a) => a.scope !== 'custom' && a.code !== '0' && !a.code.startsWith('0.')
+    )
+    .map((a) => ({
+      code: a.code,
+      name: a.name,
+      type: a.type,
+      accountGroup: a.accountGroup,
+      expectedBalance: a.expectedBalance as 'debit' | 'credit' | 'both' | null,
+      expenseFunction: a.expenseFunction,
+      description: a.description,
+    }));
+}
+
 function PlanDeCuentas({
   clientId,
   isOwner,
@@ -491,6 +524,7 @@ function PlanDeCuentas({
     null
   );
   const [deleteTarget, setDeleteTarget] = useState<ChartAccount | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   const queryKey = ['accounting', 'chart', clientId];
   const { data, isLoading } = useQuery({
@@ -820,6 +854,56 @@ function PlanDeCuentas({
             </button>
             {isOwner && (
               <>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className="flex items-center gap-1.5 h-7 px-2.5 text-[11.5px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] transition-colors">
+                      <Download className="w-3 h-3" strokeWidth={2} />
+                      Plantilla
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-64">
+                    <DropdownMenuItem
+                      onClick={() =>
+                        void downloadChartTemplate({
+                          mode: 'blank',
+                          label: 'estudio',
+                        })
+                      }
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5" />
+                      <div className="flex flex-col">
+                        <span>Plantilla vacía</span>
+                        <span className="text-[11px] text-[var(--arca-ink-3)]">
+                          Esqueleto de rubros para armar desde cero
+                        </span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={accounts.length === 0}
+                      onClick={() =>
+                        void downloadChartTemplate({
+                          mode: 'current',
+                          accounts: accountsToTemplate(accounts),
+                        })
+                      }
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <div className="flex flex-col">
+                        <span>Plan actual</span>
+                        <span className="text-[11px] text-[var(--arca-ink-3)]">
+                          El plan de hoy, para editar y reimportar
+                        </span>
+                      </div>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <button
+                  onClick={() => setImportOpen(true)}
+                  className="flex items-center gap-1.5 h-7 px-2.5 text-[11.5px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] transition-colors"
+                >
+                  <Upload className="w-3 h-3" strokeWidth={2} />
+                  Importar
+                </button>
                 <button
                   onClick={() => setFormMode({ kind: 'base-create' })}
                   className="flex items-center gap-1.5 h-7 px-2.5 text-[11.5px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] transition-colors"
@@ -852,6 +936,14 @@ function PlanDeCuentas({
           <div>{roots.map((r) => renderNode(r, 0))}</div>
         )}
       </ArcaCard>
+
+      {/* Importar plan de cuentas desde Excel */}
+      <ImportarPlanDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        clientId={clientId}
+        onImported={invalidate}
+      />
 
       {/* Crear/editar cuenta */}
       {formMode && (

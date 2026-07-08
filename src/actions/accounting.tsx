@@ -68,6 +68,12 @@ import {
   depreciationSnapshot,
   accumulatedDepreciation,
 } from '@/lib/accounting-depreciation';
+import { parentCodeOf } from '@/lib/accounting-base-chart';
+import {
+  planChartImport,
+  type ExistingAccount,
+  type PlannedAccount,
+} from '@/lib/accounting-chart-import';
 
 /* ───────────────────────────── Helpers ───────────────────────────── */
 
@@ -840,6 +846,306 @@ export const deleteCustomAccount = createServerFn({ method: 'POST' })
     return { ok: true };
   });
 
+/* ═══════════════ IMPORTAR PLAN DE CUENTAS DESDE EXCEL ═══════════════ */
+
+/** ¿Es una cuenta de sistema por su código? (clase "0" y sus hijas) */
+function isSystemCode(code: string): boolean {
+  return code === '0' || code.startsWith('0.');
+}
+
+/**
+ * Devuelve el motivo por el que el plan "ya se usó" (bloquea el reemplazo), o
+ * null si está limpio. base: sin movimientos, sin cuentas propias, sin
+ * overrides en toda la organización. custom: sin movimientos en la empresa.
+ */
+async function chartUsageBlocker(
+  orgId: string,
+  clientId: string,
+  target: 'base' | 'custom'
+): Promise<string | null> {
+  if (target === 'base') {
+    const [mov] = await db
+      .select({ id: journalEntryLine.id })
+      .from(journalEntryLine)
+      .innerJoin(account, eq(account.id, journalEntryLine.accountId))
+      .where(and(eq(account.organizationId, orgId), eq(account.scope, 'base')))
+      .limit(1);
+    if (mov) return 'ya hay asientos registrados sobre el plan base';
+
+    const [custom] = await db
+      .select({ id: account.id })
+      .from(account)
+      .where(
+        and(eq(account.organizationId, orgId), eq(account.scope, 'custom'))
+      )
+      .limit(1);
+    if (custom) return 'existen cuentas propias de empresas colgadas del plan';
+
+    const [ov] = await db
+      .select({ id: accountOverride.id })
+      .from(accountOverride)
+      .innerJoin(account, eq(account.id, accountOverride.accountId))
+      .where(and(eq(account.organizationId, orgId), eq(account.scope, 'base')))
+      .limit(1);
+    if (ov) return 'hay cuentas base activadas o renombradas en alguna empresa';
+    return null;
+  }
+
+  // custom
+  const [mov] = await db
+    .select({ id: journalEntryLine.id })
+    .from(journalEntryLine)
+    .innerJoin(account, eq(account.id, journalEntryLine.accountId))
+    .where(and(eq(account.clientId, clientId), eq(account.scope, 'custom')))
+    .limit(1);
+  if (mov) return 'ya hay asientos sobre cuentas propias de esta empresa';
+  return null;
+}
+
+type AccountWithId = ExistingAccount & { id: string };
+
+const VALID_GROUPS = new Set(Object.keys(ACCOUNT_GROUP_LABELS));
+
+/**
+ * Importa un plan de cuentas desde Excel (filas ya parseadas en el cliente).
+ * `confirm=false` devuelve solo el preview (diff) sin escribir; `confirm=true`
+ * aplica. Import parcial tolerante: las filas con error se reportan y no frenan
+ * al resto. Ver `planChartImport` para las reglas.
+ */
+export const importChartOfAccounts = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      target: z.enum(['base', 'custom']),
+      mode: z.enum(['complementar', 'reemplazar']),
+      confirm: z.boolean(),
+      /** Códigos de filas modificadas a aplicar (el resto se ignora). */
+      applyUpdateCodes: z.array(z.string()).default([]),
+      rows: z.array(
+        z.object({
+          row: z.number(),
+          code: z.string(),
+          name: z.string(),
+          type: z.enum(['group', 'imputable']),
+          accountGroup: z.string().nullish(),
+          expectedBalance: z.enum(['debit', 'credit', 'both']).nullish(),
+          expenseFunction: z
+            .enum(['administration', 'sales', 'financial', 'other'])
+            .nullish(),
+          description: z.string().nullish(),
+        })
+      ),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertOwner(role);
+    const { clientId, target, mode, confirm, applyUpdateCodes, rows } =
+      ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+
+    const cols = {
+      id: account.id,
+      code: account.code,
+      name: account.name,
+      type: account.type,
+      accountGroup: account.accountGroup,
+      expectedBalance: account.expectedBalance,
+      expenseFunction: account.expenseFunction,
+      description: account.description,
+    };
+    const baseAccounts = (await db
+      .select(cols)
+      .from(account)
+      .where(
+        and(eq(account.organizationId, orgId), eq(account.scope, 'base'))
+      )) as AccountWithId[];
+    const customAccounts =
+      target === 'custom'
+        ? ((await db
+            .select(cols)
+            .from(account)
+            .where(
+              and(eq(account.clientId, clientId), eq(account.scope, 'custom'))
+            )) as AccountWithId[])
+        : [];
+
+    const strip = (a: AccountWithId): ExistingAccount => ({
+      code: a.code,
+      name: a.name,
+      type: a.type,
+      accountGroup: a.accountGroup,
+      expectedBalance: a.expectedBalance,
+      expenseFunction: a.expenseFunction,
+      description: a.description,
+    });
+
+    const scopeAccounts = target === 'base' ? baseAccounts : customAccounts;
+    const codeToId = new Map(
+      [...baseAccounts, ...customAccounts].map((a) => [a.code, a.id])
+    );
+
+    const diff = planChartImport({
+      rows,
+      target,
+      validGroups: VALID_GROUPS,
+      // En reemplazar los padres deben venir en el archivo (se vacía el scope).
+      existingForParents:
+        mode === 'reemplazar'
+          ? []
+          : (target === 'base'
+              ? baseAccounts
+              : [...baseAccounts, ...customAccounts]
+            ).map(strip),
+      destination: mode === 'reemplazar' ? [] : scopeAccounts.map(strip),
+    });
+
+    // Preview: no escribe.
+    const blocker =
+      mode === 'reemplazar'
+        ? await chartUsageBlocker(orgId, clientId, target)
+        : null;
+
+    if (!confirm) {
+      return {
+        preview: true as const,
+        blocker,
+        create: diff.create,
+        unchanged: diff.unchanged,
+        modified: diff.modified,
+        errors: diff.errors,
+        applied: null,
+      };
+    }
+
+    if (blocker) {
+      throw new Error(
+        `No se puede reemplazar: ${blocker}. Usá el modo "Complementar".`
+      );
+    }
+
+    // ── Aplicar ──
+    // 1) Reemplazar: vaciar el scope (preservando cuentas de sistema en base).
+    if (mode === 'reemplazar') {
+      if (target === 'base') {
+        await db
+          .delete(account)
+          .where(
+            and(
+              eq(account.organizationId, orgId),
+              eq(account.scope, 'base'),
+              eq(account.isSystemAccount, false),
+              sql`${account.code} <> '0' AND ${account.code} NOT LIKE '0.%'`
+            )
+          );
+      } else {
+        await db
+          .delete(account)
+          .where(
+            and(eq(account.clientId, clientId), eq(account.scope, 'custom'))
+          );
+      }
+    }
+
+    // 2) Insertar las cuentas nuevas (1ra pasada, sin parentId).
+    let created = 0;
+    if (diff.create.length > 0) {
+      const values = diff.create.map((a: PlannedAccount) => ({
+        scope: target,
+        organizationId: orgId,
+        clientId: target === 'custom' ? clientId : null,
+        code: a.code,
+        name: a.name,
+        description: a.description,
+        type: a.type,
+        parentId: null,
+        accountGroup: (a.accountGroup ?? null) as never,
+        expectedBalance: (a.expectedBalance ?? null) as never,
+        expenseFunction: (a.expenseFunction ?? null) as never,
+        isSystemAccount: false,
+        isActive: target === 'custom',
+      }));
+      const ins = await db
+        .insert(account)
+        .values(values)
+        .returning({ id: account.id, code: account.code });
+      for (const r of ins) codeToId.set(r.code, r.id);
+      created = ins.length;
+    }
+
+    // 3) Aplicar modificaciones tildadas (solo si no tienen movimientos).
+    let updated = 0;
+    const updateErrors: { row: number; code: string; message: string }[] = [];
+    const applySet = new Set(applyUpdateCodes);
+    for (const m of diff.modified) {
+      if (!applySet.has(m.code)) continue;
+      const accId = codeToId.get(m.code);
+      if (!accId) continue;
+      const [mov] = await db
+        .select({ id: journalEntryLine.id })
+        .from(journalEntryLine)
+        .where(eq(journalEntryLine.accountId, accId))
+        .limit(1);
+      if (mov) {
+        updateErrors.push({
+          row: m.row,
+          code: m.code,
+          message: 'No se actualizó: la cuenta tiene movimientos',
+        });
+        continue;
+      }
+      await db
+        .update(account)
+        .set({
+          name: m.planned.name,
+          description: m.planned.description,
+          type: m.planned.type,
+          accountGroup: (m.planned.accountGroup ?? null) as never,
+          expectedBalance: m.planned.expectedBalance ?? null,
+          expenseFunction: m.planned.expenseFunction ?? null,
+        })
+        .where(eq(account.id, accId));
+      updated++;
+    }
+
+    // 4) 2da pasada: resolver parentId por código.
+    const universe = (await db
+      .select({ id: account.id, code: account.code })
+      .from(account)
+      .where(
+        target === 'base'
+          ? and(eq(account.organizationId, orgId), eq(account.scope, 'base'))
+          : or(
+              and(eq(account.organizationId, orgId), eq(account.scope, 'base')),
+              and(eq(account.clientId, clientId), eq(account.scope, 'custom'))
+            )
+      )) as { id: string; code: string }[];
+    const uCodeToId = new Map(universe.map((a) => [a.code, a.id]));
+    const createdCodes = new Set(diff.create.map((a) => a.code));
+    for (const a of universe) {
+      // Relink de las creadas; en reemplazar, también las de sistema
+      // preservadas (su padre pudo haber sido borrado y recreado).
+      const needsRelink =
+        createdCodes.has(a.code) ||
+        (mode === 'reemplazar' && target === 'base' && isSystemCode(a.code));
+      if (!needsRelink) continue;
+      const pc = parentCodeOf(a.code);
+      const parentId = pc ? (uCodeToId.get(pc) ?? null) : null;
+      await db.update(account).set({ parentId }).where(eq(account.id, a.id));
+    }
+
+    return {
+      preview: false as const,
+      blocker: null,
+      create: diff.create,
+      unchanged: diff.unchanged,
+      modified: diff.modified,
+      errors: [...diff.errors, ...updateErrors],
+      applied: { created, updated },
+    };
+  });
+
 /* ═══════════════ EJERCICIOS Y PERÍODOS (US 1.2.x) ═══════════════ */
 
 type FiscalYearRow = typeof fiscalYear.$inferSelect;
@@ -1451,7 +1757,7 @@ export const getAuditLog = createServerFn({ method: 'GET' })
 
     return rows.map((r) => ({
       id: r.id,
-      eventType: r.eventType as AuditEventType,
+      eventType: r.eventType,
       eventData: (r.eventData as AuditEventData) ?? null,
       createdAt: r.createdAt.toISOString(),
       userName: r.userName ?? null,
@@ -3205,13 +3511,13 @@ async function loadActiveInvoiceRules(clientId: string): Promise<RuleLike[]> {
     (r): RuleLike => ({
       id: r.id,
       name: r.name,
-      ruleType: r.ruleType as 'default' | 'conditional',
+      ruleType: r.ruleType,
       condition: (r.condition ?? null) as Record<string, unknown> | null,
       priority: r.priority,
       lines: (byRule.get(r.id) ?? []).map((l) => ({
         accountId: l.accountId,
-        side: l.side as 'debit' | 'credit',
-        amountBasis: l.amountBasis as RuleLike['lines'][number]['amountBasis'],
+        side: l.side,
+        amountBasis: l.amountBasis,
         fixedAmount: l.fixedAmount,
         description: l.description,
       })),
@@ -5269,7 +5575,7 @@ export const getESP = createServerFn({ method: 'GET' })
         accounts.sort((a, b) => a.code.localeCompare(b.code));
         rubros.push({
           group,
-          label: ACCOUNT_GROUP_LABELS[group as AccountGroup] ?? group,
+          label: ACCOUNT_GROUP_LABELS[group] ?? group,
           current: curTotal,
           prior: priTotal,
           accounts,
@@ -5454,10 +5760,7 @@ export const getER = createServerFn({ method: 'GET' })
     };
 
     const comp = new Map(
-      ER_COMPONENTS.map((c) => [
-        c.key,
-        { ...c, ...buildComponent(c.groups) },
-      ])
+      ER_COMPONENTS.map((c) => [c.key, { ...c, ...buildComponent(c.groups) }])
     );
     const compLine = (key: string): ErLine => {
       const c = comp.get(key)!;
@@ -5490,11 +5793,7 @@ export const getER = createServerFn({ method: 'GET' })
           otros.current
       ),
       prior: r2(
-        resBruto.prior +
-          admin.prior +
-          comerc.prior +
-          fin.prior +
-          otros.prior
+        resBruto.prior + admin.prior + comerc.prior + fin.prior + otros.prior
       ),
     };
     const impuesto = comp.get('impuesto_ganancias')!;
@@ -5526,11 +5825,7 @@ export const getER = createServerFn({ method: 'GET' })
       compLine('otros_resultados'),
       subtotal('resultado_operativo', 'Resultado operativo', resOperativo),
       compLine('impuesto_ganancias'),
-      subtotal(
-        'resultado_ejercicio',
-        'Resultado del ejercicio',
-        resEjercicio
-      ),
+      subtotal('resultado_ejercicio', 'Resultado del ejercicio', resEjercicio),
     ];
 
     // US 6.2.2 — consistencia ESP↔ER: el resultado del ER debe coincidir con el
@@ -5656,9 +5951,8 @@ async function computeExpenseBalances(orgId: string, fyId: string) {
     accountId: r.accountId,
     code: r.code,
     name: r.name,
-    fn: (r.expenseFunction ??
-      EXPENSE_GROUP_TO_FUNCTION[r.group ?? ''] ??
-      'other') as ExpenseFunction,
+    fn:
+      r.expenseFunction ?? EXPENSE_GROUP_TO_FUNCTION[r.group ?? ''] ?? 'other',
     saldo: r2(parseFloat(r.debit) - parseFloat(r.credit)),
   }));
 }
