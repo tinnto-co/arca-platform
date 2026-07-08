@@ -1042,15 +1042,42 @@ export const updateRepresentativeModules = createServerFn({
       'comprobantes_full',
       'iva',
     ] as const;
-    const jobs = types.map((type) => ({ type, representativeId }));
+    // Evitar duplicados: omitir tipos que ya tienen un job pending/running.
+    const activeJobs = await db
+      .select({ type: job.type })
+      .from(job)
+      .where(
+        and(
+          eq(job.representativeId, representativeId),
+          inArray(job.type, [...types]),
+          inArray(job.status, ['pending', 'running'])
+        )
+      );
+    const activeTypes = new Set(activeJobs.map((j) => j.type));
+    const skipped = types.filter((t) => activeTypes.has(t));
+    const pendingTypes = types.filter((t) => !activeTypes.has(t));
+
+    if (pendingTypes.length === 0) {
+      return {
+        success: true,
+        message: 'Todos los módulos ya tienen actualizaciones en curso',
+        representativeId,
+        skipped,
+      };
+    }
+
+    const jobs = pendingTypes.map((type) => ({ type, representativeId }));
 
     try {
       await axios.post(`${baseUrl}/api/jobs/batch`, { jobs });
       return {
         success: true,
         message:
-          'Actualizacion encolada: deudas, vencimientos, novedades, facturas e IVA',
+          skipped.length > 0
+            ? `Actualización encolada (${pendingTypes.length} módulos; ${skipped.length} ya en ejecución)`
+            : 'Actualizacion encolada: deudas, vencimientos, novedades, facturas e IVA',
         representativeId,
+        skipped,
       };
     } catch (error: any) {
       console.error('[updateRepresentativeModules]', error?.response?.data ?? error);
@@ -1118,9 +1145,36 @@ export const scrapBatchJobs = createServerFn({
       ] as const
     ).filter((t) => jobTypes.includes(t));
 
-    const jobs = owned.flatMap(({ id }) =>
+    // Evitar duplicados: omitir pares (representante, tipo) que ya tienen
+    // un job pending/running.
+    const activeJobs = await db
+      .select({ representativeId: job.representativeId, type: job.type })
+      .from(job)
+      .where(
+        and(
+          inArray(
+            job.representativeId,
+            owned.map((o) => o.id)
+          ),
+          inArray(job.type, [...orderedTypes]),
+          inArray(job.status, ['pending', 'running'])
+        )
+      );
+    const activeSet = new Set(
+      activeJobs.map((j) => `${j.representativeId}:${j.type}`)
+    );
+
+    const allPairs = owned.flatMap(({ id }) =>
       orderedTypes.map((type) => ({ type, representativeId: id }))
     );
+    const jobs = allPairs.filter(
+      (j) => !activeSet.has(`${j.representativeId}:${j.type}`)
+    );
+    const skipped = allPairs.length - jobs.length;
+
+    if (jobs.length === 0) {
+      return { success: true, created: 0, errors: 0, skipped };
+    }
 
     try {
       const { data } = await axios.post<{ created?: number; errors?: number }>(
@@ -1131,6 +1185,7 @@ export const scrapBatchJobs = createServerFn({
         success: true,
         created: data?.created ?? jobs.length,
         errors: data?.errors ?? 0,
+        skipped,
       };
     } catch (error) {
       const axiosError = error as {
@@ -1174,15 +1229,38 @@ export const scrapSingleJob = createServerFn({
 
     const baseUrl = JOBS_API_URL;
     const { representativeId, jobType } = ctx.data;
-    console.log('[scrapSingleJob] posting to', `${baseUrl}/api/jobs`);
+
+    // Si ya hay un job pending/running para este representante+tipo (p. ej.
+    // otro cliente que comparte representante), reusarlo en vez de encolar
+    // un scrape duplicado: cada job IVA scrapea todas las relaciones del
+    // representante igual.
+    const [existing] = await db
+      .select({ id: job.id })
+      .from(job)
+      .where(
+        and(
+          eq(job.representativeId, representativeId),
+          eq(job.type, jobType),
+          inArray(job.status, ['pending', 'running'])
+        )
+      )
+      .limit(1);
 
     try {
-      const { data: job } = await axios.post(`${baseUrl}/api/jobs`, {
-        type: jobType,
-        representativeId,
-      });
+      let jobId: string;
+      if (existing) {
+        console.log('[scrapSingleJob] reusing active job', existing.id);
+        jobId = existing.id;
+      } else {
+        console.log('[scrapSingleJob] posting to', `${baseUrl}/api/jobs`);
+        const { data: created } = await axios.post(`${baseUrl}/api/jobs`, {
+          type: jobType,
+          representativeId,
+        });
+        jobId = created.id;
+      }
 
-      const result = await waitForJob(baseUrl, job.id);
+      const result = await waitForJob(baseUrl, jobId);
       if (result.status === 'failed') {
         throw new Error(
           result.failedReason || `Error en el scrape de ${jobType}`
@@ -1205,43 +1283,6 @@ export const scrapSingleJob = createServerFn({
     }
   });
 
-
-/** Ultimo job comprobantes_full para un representante (por created_at), con estado success/error. */
-export const getLastComprobantesFullJob = createServerFn({
-  method: 'GET',
-})
-  .inputValidator(z.object({ representativeId: z.string() }))
-  .handler(async (ctx) => {
-    const { orgId } = await getSessionWithOrg();
-
-    const { representativeId } = ctx.data;
-
-    const orgRepresentatives = await db
-      .select({ id: representative.id })
-      .from(representative)
-      .where(eq(representative.organizationId, orgId));
-    const canAccess = orgRepresentatives.some((c) => c.id === representativeId);
-    if (!canAccess) return null;
-
-    const [lastJob] = await db
-      .select({
-        createdAt: job.createdAt,
-        failedReason: job.failedReason,
-        status: job.status,
-      })
-      .from(job)
-      .where(and(eq(job.representativeId, representativeId), eq(job.type, 'comprobantes')))
-      .orderBy(desc(job.createdAt))
-      .limit(1);
-
-    if (!lastJob?.createdAt) return null;
-    const success = lastJob.status !== 'failed' && lastJob.failedReason == null;
-    return {
-      createdAt: lastJob.createdAt.toISOString(),
-      success,
-      failedReason: lastJob.failedReason ?? undefined,
-    };
-  });
 
 /** Ultimo job de un tipo dado para un representante (por created_at), con estado success/error. */
 export const getLastJobByType = createServerFn({

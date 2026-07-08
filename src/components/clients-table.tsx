@@ -48,6 +48,7 @@ import {
 } from '@/actions/client';
 import { listOrgModules } from '@/actions/admin';
 import { EditRepresentativeDialog } from '@/components/edit-client-dialog';
+import { useActiveJobs } from '@/hooks/use-active-jobs';
 import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
 import { relativeTime } from '@/components/dashboard/shared';
 import { toTitleCase } from '@/lib/format-name';
@@ -129,6 +130,7 @@ export function RepresentativesTable() {
     () => new Set(BULK_JOB_TYPES.map((t) => t.value))
   );
   const queryClient = useQueryClient();
+  const { activeByRepresentative } = useActiveJobs();
 
   const { data: clients = [], isLoading } = useQuery({
     queryKey: ['clients'],
@@ -229,11 +231,25 @@ export function RepresentativesTable() {
         !filterValue || getEstado(row.original) === filterValue,
       cell: ({ row }) => {
         const meta = ESTADO_META[getEstado(row.original)];
+        const activeJobs = activeByRepresentative.get(
+          row.original.representativeId
+        );
         return (
-          <span
-            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10.5px] font-medium ${meta.className}`}
-          >
-            {meta.label}
+          <span className="inline-flex items-center gap-1.5">
+            {activeJobs && activeJobs.length > 0 && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full border border-[var(--arca-border-strong)] bg-[var(--arca-surface-2)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--arca-ink-2)]"
+                title={`Actualizando: ${activeJobs.map((j) => j.type).join(', ')}`}
+              >
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Actualizando ({activeJobs.length})
+              </span>
+            )}
+            <span
+              className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10.5px] font-medium ${meta.className}`}
+            >
+              {meta.label}
+            </span>
           </span>
         );
       },
@@ -293,6 +309,12 @@ export function RepresentativesTable() {
   const selectedRepresentativeIds = [
     ...new Set(selectedClients.map((c) => c.representativeId)),
   ];
+  const runningSelected = selectedRepresentativeIds.filter((id) =>
+    activeByRepresentative.has(id)
+  );
+  const allSelectedRunning =
+    selectedRepresentativeIds.length > 0 &&
+    runningSelected.length === selectedRepresentativeIds.length;
 
   const toggleJobType = (jobType: BulkJobType) => {
     setSelectedJobTypes((prev) => {
@@ -317,13 +339,21 @@ export function RepresentativesTable() {
           jobTypes: [...selectedJobTypes],
         },
       });
+      const skippedMsg =
+        result.skipped > 0 ? `, ${result.skipped} ya en ejecución` : '';
       if (result.errors > 0) {
         toast.warning(
-          `${result.created} jobs encolados, ${result.errors} con error`
+          `${result.created} jobs encolados, ${result.errors} con error${skippedMsg}`
+        );
+      } else if (result.created === 0 && result.skipped > 0) {
+        toast.info(
+          `No se encoló nada: ${result.skipped} jobs ya estaban en ejecución`
         );
       } else {
-        toast.success(`${result.created} jobs encolados`);
+        toast.success(`${result.created} jobs encolados${skippedMsg}`);
       }
+      // Refrescar indicadores de jobs activos sin esperar el próximo poll.
+      void queryClient.invalidateQueries({ queryKey: ['activeJobsSummary'] });
       setBulkDialogOpen(false);
     } catch (err) {
       toast.error(
@@ -376,7 +406,15 @@ export function RepresentativesTable() {
           selectedClients.length > 0 ? (
             <Dialog open={bulkDialogOpen} onOpenChange={setBulkDialogOpen}>
               <DialogTrigger asChild>
-                <Button size="sm" disabled={isScraping}>
+                <Button
+                  size="sm"
+                  disabled={isScraping || allSelectedRunning}
+                  title={
+                    allSelectedRunning
+                      ? 'Todos los clientes seleccionados ya se están actualizando'
+                      : undefined
+                  }
+                >
                   {isScraping ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
@@ -395,6 +433,13 @@ export function RepresentativesTable() {
                     scraping corre en segundo plano.
                   </DialogDescription>
                 </DialogHeader>
+                {runningSelected.length > 0 && (
+                  <p className="rounded-md border border-[var(--arca-border-strong)] bg-[var(--arca-surface-2)] px-3 py-2 text-xs text-[var(--arca-ink-2)]">
+                    {runningSelected.length} de los clientes seleccionados ya
+                    tienen actualizaciones en curso; los módulos duplicados se
+                    van a omitir.
+                  </p>
+                )}
                 <div className="space-y-3 py-1">
                   {BULK_JOB_TYPES.map((jobType) => (
                     <div key={jobType.value} className="flex items-start gap-3">
