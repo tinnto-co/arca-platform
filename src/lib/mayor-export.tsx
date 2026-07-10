@@ -1520,25 +1520,46 @@ export async function exportAnexoIPdf(data: AnexoIExportData): Promise<void> {
 /* ═══════════════ Anexo Costo de Mercadería Vendida — standalone ═══════════════ */
 
 const cmvx = StyleSheet.create({
-  title: { fontSize: 11, fontFamily: 'Helvetica-Bold', marginTop: 16 },
-  importe: {
-    fontSize: 9,
-    fontFamily: 'Helvetica-Bold',
-    textAlign: 'right',
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  row: { flexDirection: 'row', paddingVertical: 4, fontSize: 10 },
-  label: { flexGrow: 1 },
-  num: { width: '28%', textAlign: 'right' },
-  totalRow: {
+  headerRow: {
     flexDirection: 'row',
-    paddingTop: 5,
-    marginTop: 4,
-    borderTop: '1pt solid #333',
+    justifyContent: 'space-between',
+    marginTop: 24,
+  },
+  title: { fontSize: 11, fontFamily: 'Helvetica-Bold' },
+  anexoLbl: { fontSize: 11, fontFamily: 'Helvetica-Bold' },
+  importe: {
     fontSize: 10,
     fontFamily: 'Helvetica-Bold',
+    textAlign: 'right',
+    marginTop: 18,
   },
+  // Ítem de dos renglones (asterisco arriba, sub-línea con importe).
+  block: { marginTop: 16 },
+  star: { fontSize: 10 },
+  subRow: { flexDirection: 'row', marginTop: 2 },
+  subLabel: { flexGrow: 1, fontSize: 10, paddingLeft: 12 },
+  // Ítem de un renglón.
+  oneRow: { flexDirection: 'row', marginTop: 16 },
+  oneLabel: { flexGrow: 1, fontSize: 10 },
+  num: { width: '32%', textAlign: 'right', fontSize: 10 },
+  // Total con línea arriba y doble subrayado abajo.
+  totalRow: { flexDirection: 'row', marginTop: 26, alignItems: 'flex-start' },
+  totalLabel: {
+    flexGrow: 1,
+    fontSize: 10,
+    fontFamily: 'Helvetica-Bold',
+    paddingTop: 4,
+  },
+  totalBox: { width: '32%' },
+  totalNum: {
+    textAlign: 'right',
+    fontSize: 10,
+    fontFamily: 'Helvetica-Bold',
+    paddingVertical: 3,
+    borderTop: '1pt solid #000',
+  },
+  dblLine1: { borderTop: '1pt solid #000' },
+  dblLine2: { borderTop: '1pt solid #000', marginTop: 1.5 },
 });
 
 /** Bloque de membrete reutilizable (empresa + datos fiscales + ejercicio). */
@@ -1624,28 +1645,44 @@ function AnexoCMVDoc({ data }: { data: CmvExportData }) {
           periodLabel={data.periodLabel}
           m={m}
         />
-        <Text style={cmvx.title}>COSTO DE LA MERCADERÍA VENDIDA</Text>
+        <View style={cmvx.headerRow}>
+          <Text style={cmvx.title}>COSTO DE LA MERCADERÍA VENDIDA</Text>
+          <Text style={cmvx.anexoLbl}>{data.anexoLabel || 'ANEXO'}</Text>
+        </View>
         <Text style={cmvx.importe}>IMPORTE $</Text>
 
-        <View style={cmvx.row}>
-          <Text style={cmvx.label}>
-            * Existencia de mercaderías al inicio del ejercicio
-          </Text>
-          <Text style={cmvx.num}>{fmtMoney(data.existenciaInicial)}</Text>
+        {/* Existencia al inicio (dos renglones) */}
+        <View style={cmvx.block}>
+          <Text style={cmvx.star}>* EXISTENCIA DE MERCADERÍAS</Text>
+          <View style={cmvx.subRow}>
+            <Text style={cmvx.subLabel}>AL INICIO DEL EJERCICIO</Text>
+            <Text style={cmvx.num}>{fmtMoney(data.existenciaInicial)}</Text>
+          </View>
         </View>
-        <View style={cmvx.row}>
-          <Text style={cmvx.label}>* Compras / gastos del ejercicio</Text>
+
+        {/* Compras/gastos (un renglón) */}
+        <View style={cmvx.oneRow}>
+          <Text style={cmvx.oneLabel}>* COMPRAS/GASTOS DEL EJERCICIO</Text>
           <Text style={cmvx.num}>{fmtMoney(data.comprasGastos)}</Text>
         </View>
-        <View style={cmvx.row}>
-          <Text style={cmvx.label}>
-            * Existencia de mercaderías al cierre del ejercicio
-          </Text>
-          <Text style={cmvx.num}>{fmtMoney(data.existenciaFinal)}</Text>
+
+        {/* Existencia al cierre (dos renglones) */}
+        <View style={cmvx.block}>
+          <Text style={cmvx.star}>* EXISTENCIA DE MERCADERÍAS</Text>
+          <View style={cmvx.subRow}>
+            <Text style={cmvx.subLabel}>AL CIERRE DEL EJERCICIO</Text>
+            <Text style={cmvx.num}>{fmtMoney(data.existenciaFinal)}</Text>
+          </View>
         </View>
+
+        {/* Total con línea arriba y doble subrayado abajo */}
         <View style={cmvx.totalRow}>
-          <Text style={cmvx.label}>TOTAL COSTO DE VENTAS</Text>
-          <Text style={cmvx.num}>{fmtMoney(data.total)}</Text>
+          <Text style={cmvx.totalLabel}>TOTAL COSTO DE VENTAS</Text>
+          <View style={cmvx.totalBox}>
+            <Text style={cmvx.totalNum}>{fmtMoney(data.total)}</Text>
+            <View style={cmvx.dblLine1} />
+            <View style={cmvx.dblLine2} />
+          </View>
         </View>
 
         {data.priorTotal != null && (
@@ -1654,9 +1691,14 @@ function AnexoCMVDoc({ data }: { data: CmvExportData }) {
             {fmtMoney(data.priorTotal)}
           </Text>
         )}
-        <Text style={ax.note}>
-          Las Notas y Anexos forman parte integrante de este Estado.
-        </Text>
+        <View style={{ marginTop: 20 }}>
+          <Text style={ax.note}>
+            Las Notas y Anexos forman parte integrante de este Estado.
+          </Text>
+          <Text style={[ax.note, { marginTop: 2 }] as never}>
+            El informe del auditor se extiende en documento aparte.
+          </Text>
+        </View>
         <SignatureBlock ac={m?.accountant} />
       </Page>
     </Document>
@@ -1811,6 +1853,8 @@ export interface CmvExportData {
   total: number;
   priorTotal?: number | null;
   priorNumber?: number | null;
+  /** Etiqueta a la derecha del título (ej. "ANEXO I"). Default "ANEXO". */
+  anexoLabel?: string;
   membrete?: AnexoIMembrete | null;
 }
 
