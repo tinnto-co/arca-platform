@@ -13,6 +13,7 @@ import {
   accountOverride,
   accountingLog,
   accountingPeriod,
+  accountantSignature,
   client,
   financialStatement,
   fiscalYear,
@@ -4399,24 +4400,204 @@ export const disposeFixedAsset = createServerFn({ method: 'POST' })
     return { ok: true };
   });
 
+/* ═══════════════ Membrete EECC · datos fiscales + firma contador ═══════════════ */
+
+export interface AccountantSignatureData {
+  nombre: string;
+  titulo: string;
+  universidad: string;
+  consejo: string;
+  tomo: string;
+  folio: string;
+  firmaImagen: string | null;
+}
+
+export interface MembreteData {
+  empresaName: string;
+  cuit: string;
+  domicilio: string;
+  actividadPrincipal: string;
+  fechaInscripcion: Date | null;
+  numeroInscripcion: string;
+  accountant: AccountantSignatureData | null;
+}
+
+/** Datos de la empresa + firma del contador para el membrete de los EECC. */
+export const getMembreteData = createServerFn({ method: 'GET' })
+  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .handler(async (ctx): Promise<MembreteData> => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+
+    const [c] = await db
+      .select({
+        name: client.name,
+        identityNumber: client.identityNumber,
+        address: client.address,
+        actividadPrincipal: client.actividadPrincipal,
+        fechaInscripcion: client.fechaInscripcion,
+        numeroInscripcion: client.numeroInscripcion,
+      })
+      .from(client)
+      .where(eq(client.id, ctx.data.clientId))
+      .limit(1);
+
+    const [sig] = await db
+      .select()
+      .from(accountantSignature)
+      .where(eq(accountantSignature.organizationId, orgId))
+      .limit(1);
+
+    return {
+      empresaName: c?.name ?? '',
+      cuit: c?.identityNumber ?? '',
+      domicilio: c?.address ?? '',
+      actividadPrincipal: c?.actividadPrincipal ?? '',
+      fechaInscripcion: c?.fechaInscripcion ?? null,
+      numeroInscripcion: c?.numeroInscripcion ?? '',
+      accountant: sig
+        ? {
+            nombre: sig.nombre ?? '',
+            titulo: sig.titulo ?? 'Contador Público',
+            universidad: sig.universidad ?? '',
+            consejo: sig.consejo ?? '',
+            tomo: sig.tomo ?? '',
+            folio: sig.folio ?? '',
+            firmaImagen: sig.firmaImagen ?? null,
+          }
+        : null,
+    };
+  });
+
+/** Firma del contador del estudio (nivel organización). */
+export const getAccountantSignature = createServerFn({ method: 'GET' }).handler(
+  async (): Promise<AccountantSignatureData | null> => {
+    const { orgId } = await getSessionWithOrg();
+    const [sig] = await db
+      .select()
+      .from(accountantSignature)
+      .where(eq(accountantSignature.organizationId, orgId))
+      .limit(1);
+    if (!sig) return null;
+    return {
+      nombre: sig.nombre ?? '',
+      titulo: sig.titulo ?? 'Contador Público',
+      universidad: sig.universidad ?? '',
+      consejo: sig.consejo ?? '',
+      tomo: sig.tomo ?? '',
+      folio: sig.folio ?? '',
+      firmaImagen: sig.firmaImagen ?? null,
+    };
+  }
+);
+
+export const saveAccountantSignature = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      nombre: z.string().max(200).optional().default(''),
+      titulo: z.string().max(120).optional().default('Contador Público'),
+      universidad: z.string().max(120).optional().default(''),
+      consejo: z.string().max(120).optional().default(''),
+      tomo: z.string().max(40).optional().default(''),
+      folio: z.string().max(40).optional().default(''),
+      firmaImagen: z.string().nullable().optional(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertOwner(role);
+    const values = {
+      organizationId: orgId,
+      nombre: ctx.data.nombre || null,
+      titulo: ctx.data.titulo || 'Contador Público',
+      universidad: ctx.data.universidad || null,
+      consejo: ctx.data.consejo || null,
+      tomo: ctx.data.tomo || null,
+      folio: ctx.data.folio || null,
+      firmaImagen: ctx.data.firmaImagen ?? null,
+      updatedAt: new Date(),
+    };
+    await db
+      .insert(accountantSignature)
+      .values(values)
+      .onConflictDoUpdate({
+        target: accountantSignature.organizationId,
+        set: {
+          nombre: values.nombre,
+          titulo: values.titulo,
+          universidad: values.universidad,
+          consejo: values.consejo,
+          tomo: values.tomo,
+          folio: values.folio,
+          firmaImagen: values.firmaImagen,
+          updatedAt: values.updatedAt,
+        },
+      });
+    return { ok: true };
+  });
+
+/** Actualiza los datos fiscales de la empresa usados en el membrete de los EECC. */
+export const updateClientFiscalData = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      address: z.string().max(300).optional(),
+      actividadPrincipal: z.string().max(300).nullable().optional(),
+      fechaInscripcion: z.string().nullable().optional(), // YYYY-MM-DD
+      numeroInscripcion: z.string().max(60).nullable().optional(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertOwner(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+
+    const set: Record<string, unknown> = { updatedAt: new Date() };
+    if (ctx.data.address !== undefined) set.address = ctx.data.address;
+    if (ctx.data.actividadPrincipal !== undefined)
+      set.actividadPrincipal = ctx.data.actividadPrincipal || null;
+    if (ctx.data.numeroInscripcion !== undefined)
+      set.numeroInscripcion = ctx.data.numeroInscripcion || null;
+    if (ctx.data.fechaInscripcion !== undefined)
+      set.fechaInscripcion = ctx.data.fechaInscripcion
+        ? new Date(`${ctx.data.fechaInscripcion}T00:00:00Z`)
+        : null;
+
+    await db.update(client).set(set).where(eq(client.id, ctx.data.clientId));
+    return { ok: true };
+  });
+
 /* ════════════════════════ Anexo I (US 4.2.x) ════════════════════════ */
 
 export interface AnexoIAssetRow {
   id: string;
   name: string;
-  originalValue: number;
-  accumStart: number;
-  amortYear: number;
-  accumEnd: number;
-  residualEnd: number;
+  // Movimiento de valores de origen
+  valorInicio: number; // valor al inicio del ejercicio
+  altas: number; // altas del ejercicio
+  bajas: number; // bajas del ejercicio (a valor de origen)
+  valorCierre: number; // valor al cierre = inicio + altas − bajas
+  // Amortizaciones
+  accumStart: number; // acumuladas al inicio
+  amortBajas: number; // amortización acumulada dada de baja en el ejercicio
+  rate: number; // % de amortización del ejercicio (100 / vida útil)
+  amortYear: number; // amortización del ejercicio (monto)
+  accumEnd: number; // acumuladas al cierre = inicio − bajas + del ejercicio
+  residualEnd: number; // neto al cierre = valor cierre − acumuladas al cierre
   disposed: boolean;
 }
 export interface AnexoICategory {
   category: string;
   assets: AnexoIAssetRow[];
   totals: {
-    originalValue: number;
+    valorInicio: number;
+    altas: number;
+    bajas: number;
+    valorCierre: number;
     accumStart: number;
+    amortBajas: number;
     amortYear: number;
     accumEnd: number;
     residualEnd: number;
@@ -4493,18 +4674,60 @@ async function computeAnexoIRows(
       disposalDate: r.fa.disposalDate,
     };
     const accumStart = accumulatedDepreciation(a, startRef);
-    const accumEnd = accumulatedDepreciation(a, fy.endDate);
+    // Amortización acumulada devengada hasta el cierre (tope en la baja, si aplica).
+    const accumEndRaw = accumulatedDepreciation(a, fy.endDate);
     const originalValue = parseFloat(r.fa.originalValue);
+    const disposed = r.fa.status !== 'active';
+
+    // Altas: bien incorporado dentro del ejercicio (el query ya garantiza
+    // acquisitionDate <= fy.endDate).
+    const acqDate =
+      r.fa.acquisitionDate instanceof Date
+        ? r.fa.acquisitionDate
+        : new Date(r.fa.acquisitionDate);
+    const isAlta = acqDate.getTime() >= fy.startDate.getTime();
+    // Bajas: bien dado de baja dentro del ejercicio.
+    const dispDate = r.fa.disposalDate
+      ? r.fa.disposalDate instanceof Date
+        ? r.fa.disposalDate
+        : new Date(r.fa.disposalDate)
+      : null;
+    const isBaja =
+      disposed &&
+      dispDate != null &&
+      dispDate.getTime() >= fy.startDate.getTime() &&
+      dispDate.getTime() <= fy.endDate.getTime();
+
+    const valorInicio = isAlta ? 0 : originalValue;
+    const altas = isAlta ? originalValue : 0;
+    const bajas = isBaja ? originalValue : 0;
+    const valorCierre = r2(valorInicio + altas - bajas);
+
+    // Amortización del ejercicio = devengado del período (hasta el cierre o la baja).
+    const amortYear = r2(accumEndRaw - accumStart);
+    // Amortización acumulada que se da de baja junto con el bien.
+    const amortBajas = isBaja ? accumEndRaw : 0;
+    // Acumulada al cierre: inicio + del ejercicio − dada de baja.
+    const accumEnd = r2(accumStart + amortYear - amortBajas);
+    const residualEnd = r2(valorCierre - accumEnd);
+    const rate =
+      r.fa.usefulLifeYears > 0 ? r2(100 / r.fa.usefulLifeYears) : 0;
+
     return {
       id: r.fa.id,
       name: r.fa.name,
       category: r.fa.category,
-      originalValue,
+      valorInicio,
+      altas,
+      bajas,
+      valorCierre,
       accumStart,
-      amortYear: r2(accumEnd - accumStart),
+      amortBajas,
+      rate,
+      amortYear,
       accumEnd,
-      residualEnd: r2(originalValue - accumEnd),
-      disposed: r.fa.status !== 'active',
+      residualEnd,
+      disposed,
       assetAccountId: r.fa.assetAccountId,
       assetAccountLabel: `${r.assetCode} · ${r.assetName}`,
       accumAccountId: r.fa.accumDeprAccountId,
@@ -4516,8 +4739,12 @@ async function computeAnexoIRows(
 }
 
 const emptyTotals = () => ({
-  originalValue: 0,
+  valorInicio: 0,
+  altas: 0,
+  bajas: 0,
+  valorCierre: 0,
   accumStart: 0,
+  amortBajas: 0,
   amortYear: 0,
   accumEnd: 0,
   residualEnd: 0,
@@ -4539,8 +4766,13 @@ function groupAnexoI(rows: AnexoIAssetFull[]): {
     cat.assets.push({
       id: row.id,
       name: row.name,
-      originalValue: row.originalValue,
+      valorInicio: row.valorInicio,
+      altas: row.altas,
+      bajas: row.bajas,
+      valorCierre: row.valorCierre,
       accumStart: row.accumStart,
+      amortBajas: row.amortBajas,
+      rate: row.rate,
       amortYear: row.amortYear,
       accumEnd: row.accumEnd,
       residualEnd: row.residualEnd,

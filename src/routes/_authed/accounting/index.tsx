@@ -91,6 +91,7 @@ import {
   listFixedAssets,
   disposeFixedAsset,
   getAnexoI,
+  getMembreteData,
   getYearEndChecklist,
   getClosingWizard,
   approveClosingStage,
@@ -1574,6 +1575,27 @@ function fmtFecha(d: string | Date) {
     year: 'numeric',
     timeZone: 'UTC',
   });
+}
+
+const MESES_ES = [
+  'ENERO',
+  'FEBRERO',
+  'MARZO',
+  'ABRIL',
+  'MAYO',
+  'JUNIO',
+  'JULIO',
+  'AGOSTO',
+  'SEPTIEMBRE',
+  'OCTUBRE',
+  'NOVIEMBRE',
+  'DICIEMBRE',
+];
+/** Fecha larga en español para el membrete: "01 DE ENERO DE 2025". */
+function fmtFechaLarga(d: string | Date) {
+  const dt = new Date(d);
+  const dd = String(dt.getUTCDate()).padStart(2, '0');
+  return `${dd} DE ${MESES_ES[dt.getUTCMonth()]} DE ${dt.getUTCFullYear()}`;
 }
 
 function fmtMoney(n: number) {
@@ -6744,6 +6766,10 @@ function DisposeAssetDialog({
 
 /* ════════════════════════ Anexo I (US 4.2.x) ════════════════════════ */
 
+// Clases compartidas por la tabla del Anexo I (vista web).
+const ANEXO_NUM_TD = 'px-3 py-2 text-right tabular-nums whitespace-nowrap';
+const ANEXO_GROUP_BORDER = 'border-l border-[var(--arca-border)]';
+
 function AnexoIView({
   clientId,
   canWrite,
@@ -6778,6 +6804,11 @@ function AnexoIView({
     queryFn: () => getPostableAccounts({ data: { clientId } }),
   });
 
+  const { data: membrete } = useQuery({
+    queryKey: ['accounting', 'membrete', clientId],
+    queryFn: () => getMembreteData({ data: { clientId } }),
+  });
+
   if (fiscalYears.length === 0) {
     return (
       <ArcaCard>
@@ -6801,8 +6832,13 @@ function AnexoIView({
       category: FIXED_ASSET_CATEGORY_LABELS[c.category] ?? c.category,
       assets: c.assets.map((a) => ({
         name: a.name,
-        originalValue: a.originalValue,
+        valorInicio: a.valorInicio,
+        altas: a.altas,
+        bajas: a.bajas,
+        valorCierre: a.valorCierre,
         accumStart: a.accumStart,
+        amortBajas: a.amortBajas,
+        rate: a.rate,
         amortYear: a.amortYear,
         accumEnd: a.accumEnd,
         residualEnd: a.residualEnd,
@@ -6812,6 +6848,20 @@ function AnexoIView({
     grandTotals: data!.grandTotals,
     priorResidualEnd: data!.prior?.grandTotals.residualEnd ?? null,
     priorNumber: data!.prior?.number ?? null,
+    membrete: membrete
+      ? {
+          cuit: membrete.cuit,
+          domicilio: membrete.domicilio,
+          actividadPrincipal: membrete.actividadPrincipal,
+          fechaInscripcion: membrete.fechaInscripcion
+            ? fmtFecha(membrete.fechaInscripcion)
+            : '',
+          numeroInscripcion: membrete.numeroInscripcion,
+          inicioLabel: fmtFechaLarga(data!.fiscalYear.startDate),
+          cierreLabel: fmtFechaLarga(data!.fiscalYear.endDate),
+          accountant: membrete.accountant,
+        }
+      : null,
   });
 
   const copyToEditor = () => {
@@ -6878,52 +6928,137 @@ function AnexoIView({
             No hay bienes de uso en este ejercicio.
           </div>
         ) : (
-          <table className="w-full text-[12px]">
-            <thead>
-              <tr className="text-left text-[10.5px] uppercase tracking-wide text-[var(--arca-ink-3)] border-b border-[var(--arca-border)]">
-                <th className="py-2 pl-4">Bien</th>
-                <th className="py-2 text-right">Valor origen</th>
-                <th className="py-2 text-right">Am. acum. inicio</th>
-                <th className="py-2 text-right">Am. ejercicio</th>
-                <th className="py-2 text-right">Am. acum. cierre</th>
-                <th className="py-2 pr-4 text-right">Valor resid. cierre</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.categories.map((cat) => (
-                <AnexoICategoryRows key={cat.category} cat={cat} />
-              ))}
-              <tr className="border-t-2 border-[var(--arca-ink-2)] font-semibold">
-                <td className="py-2 pl-4">TOTAL GENERAL</td>
-                <td className="py-2 text-right tabular-nums">
-                  $ {fmtMoney(data.grandTotals.originalValue)}
-                </td>
-                <td className="py-2 text-right tabular-nums">
-                  $ {fmtMoney(data.grandTotals.accumStart)}
-                </td>
-                <td className="py-2 text-right tabular-nums">
-                  $ {fmtMoney(data.grandTotals.amortYear)}
-                </td>
-                <td className="py-2 text-right tabular-nums">
-                  $ {fmtMoney(data.grandTotals.accumEnd)}
-                </td>
-                <td className="py-2 pr-4 text-right tabular-nums">
-                  $ {fmtMoney(data.grandTotals.residualEnd)}
-                </td>
-              </tr>
-              {data.prior && (
-                <tr className="text-[var(--arca-ink-3)] text-[11.5px]">
-                  <td className="py-1.5 pl-4 italic" colSpan={5}>
-                    Valor residual al cierre · Ejercicio anterior (N°
-                    {data.prior.number})
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1000px] text-[11.5px]">
+              <thead>
+                <tr className="text-[9.5px] uppercase tracking-wide text-[var(--arca-ink-3)]">
+                  <th
+                    className="py-2 pl-4 text-left align-bottom border-b border-[var(--arca-border)]"
+                    rowSpan={3}
+                  >
+                    Cuenta principal
+                  </th>
+                  <th
+                    className="px-3 py-2 text-right align-bottom border-b border-[var(--arca-border)]"
+                    rowSpan={3}
+                  >
+                    Valor al inicio
+                  </th>
+                  <th
+                    className="px-3 py-2 text-right align-bottom border-b border-[var(--arca-border)]"
+                    rowSpan={3}
+                  >
+                    Altas
+                  </th>
+                  <th
+                    className="px-3 py-2 text-right align-bottom border-b border-[var(--arca-border)]"
+                    rowSpan={3}
+                  >
+                    Bajas
+                  </th>
+                  <th
+                    className="px-3 py-2 text-right align-bottom border-b border-[var(--arca-border)]"
+                    rowSpan={3}
+                  >
+                    Valor al cierre
+                  </th>
+                  <th
+                    className="px-3 py-1.5 text-center bg-[var(--arca-surface-2)] border-l border-b border-[var(--arca-border)]"
+                    colSpan={4}
+                  >
+                    Amortizaciones
+                  </th>
+                  <th
+                    className="px-3 py-2 text-right align-bottom border-l border-b border-[var(--arca-border)]"
+                    rowSpan={3}
+                  >
+                    Acum. al cierre
+                  </th>
+                  <th
+                    className="px-3 py-2 pr-4 text-right align-bottom border-b border-[var(--arca-border)]"
+                    rowSpan={3}
+                  >
+                    Neto al cierre
+                  </th>
+                </tr>
+                <tr className="text-[9.5px] uppercase tracking-wide text-[var(--arca-ink-3)] bg-[var(--arca-surface-2)]">
+                  <th
+                    className="px-3 py-1.5 text-right align-bottom border-l border-b border-[var(--arca-border)]"
+                    rowSpan={2}
+                  >
+                    Acum. inicio
+                  </th>
+                  <th
+                    className="px-3 py-1.5 text-right align-bottom border-b border-[var(--arca-border)]"
+                    rowSpan={2}
+                  >
+                    Bajas
+                  </th>
+                  <th
+                    className="px-3 py-1.5 text-center border-b border-[var(--arca-border)]"
+                    colSpan={2}
+                  >
+                    Del ejercicio
+                  </th>
+                </tr>
+                <tr className="text-[9.5px] uppercase tracking-wide text-[var(--arca-ink-3)] bg-[var(--arca-surface-2)] border-b border-[var(--arca-border)]">
+                  <th className="px-3 py-1.5 text-right">%</th>
+                  <th className="px-3 py-1.5 text-right">Monto</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.categories.map((cat) => (
+                  <AnexoICategoryRows key={cat.category} cat={cat} />
+                ))}
+                <tr className="border-t-2 border-[var(--arca-ink-2)] font-semibold">
+                  <td className="py-2.5 pl-4 whitespace-nowrap">
+                    TOTAL GENERAL
                   </td>
-                  <td className="py-1.5 pr-4 text-right tabular-nums italic">
-                    $ {fmtMoney(data.prior.grandTotals.residualEnd)}
+                  <td className={ANEXO_NUM_TD}>
+                    {fmtMoney(data.grandTotals.valorInicio)}
+                  </td>
+                  <td className={ANEXO_NUM_TD}>
+                    {fmtMoney(data.grandTotals.altas)}
+                  </td>
+                  <td className={ANEXO_NUM_TD}>
+                    {fmtMoney(data.grandTotals.bajas)}
+                  </td>
+                  <td className={ANEXO_NUM_TD}>
+                    {fmtMoney(data.grandTotals.valorCierre)}
+                  </td>
+                  <td className={`${ANEXO_NUM_TD} ${ANEXO_GROUP_BORDER}`}>
+                    {fmtMoney(data.grandTotals.accumStart)}
+                  </td>
+                  <td className={ANEXO_NUM_TD}>
+                    {fmtMoney(data.grandTotals.amortBajas)}
+                  </td>
+                  <td className={`${ANEXO_NUM_TD} text-[var(--arca-ink-3)]`}>
+                    —
+                  </td>
+                  <td className={ANEXO_NUM_TD}>
+                    {fmtMoney(data.grandTotals.amortYear)}
+                  </td>
+                  <td className={`${ANEXO_NUM_TD} ${ANEXO_GROUP_BORDER}`}>
+                    {fmtMoney(data.grandTotals.accumEnd)}
+                  </td>
+                  <td className={`${ANEXO_NUM_TD} pr-4`}>
+                    {fmtMoney(data.grandTotals.residualEnd)}
                   </td>
                 </tr>
-              )}
-            </tbody>
-          </table>
+                {data.prior && (
+                  <tr className="text-[var(--arca-ink-3)] text-[11px]">
+                    <td className="py-1.5 pl-4 italic" colSpan={10}>
+                      Neto al cierre · Ejercicio anterior (N°
+                      {data.prior.number})
+                    </td>
+                    <td className={`${ANEXO_NUM_TD} pr-4 italic`}>
+                      {fmtMoney(data.prior.grandTotals.residualEnd)}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         )}
       </ArcaCard>
 
@@ -7016,8 +7151,8 @@ function AnexoICategoryRows({
     <>
       <tr className="bg-[var(--arca-surface-2)]">
         <td
-          className="py-1.5 pl-4 text-[11px] font-semibold uppercase tracking-wide text-[var(--arca-ink-2)]"
-          colSpan={6}
+          className="py-1.5 pl-4 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--arca-ink-2)]"
+          colSpan={11}
         >
           {FIXED_ASSET_CATEGORY_LABELS[cat.category] ?? cat.category}
         </td>
@@ -7025,9 +7160,9 @@ function AnexoICategoryRows({
       {cat.assets.map((a) => (
         <tr
           key={a.id}
-          className="border-b border-[var(--arca-border)] last:border-0"
+          className="border-b border-[var(--arca-border)] last:border-0 hover:bg-[var(--arca-surface-2)]/50"
         >
-          <td className="py-2 pl-4">
+          <td className="py-2 pl-4 pr-3">
             {a.name}
             {a.disposed && (
               <span className="ml-1 text-[10px] text-[var(--arca-ink-3)]">
@@ -7035,41 +7170,53 @@ function AnexoICategoryRows({
               </span>
             )}
           </td>
-          <td className="py-2 text-right tabular-nums">
-            $ {fmtMoney(a.originalValue)}
+          <td className={ANEXO_NUM_TD}>{fmtMoney(a.valorInicio)}</td>
+          <td className={ANEXO_NUM_TD}>{fmtMoney(a.altas)}</td>
+          <td className={ANEXO_NUM_TD}>{fmtMoney(a.bajas)}</td>
+          <td className={`${ANEXO_NUM_TD} font-medium`}>
+            {fmtMoney(a.valorCierre)}
           </td>
-          <td className="py-2 text-right tabular-nums text-[var(--arca-ink-3)]">
-            $ {fmtMoney(a.accumStart)}
+          <td
+            className={`${ANEXO_NUM_TD} text-[var(--arca-ink-3)] ${ANEXO_GROUP_BORDER}`}
+          >
+            {fmtMoney(a.accumStart)}
           </td>
-          <td className="py-2 text-right tabular-nums">
-            $ {fmtMoney(a.amortYear)}
+          <td className={`${ANEXO_NUM_TD} text-[var(--arca-ink-3)]`}>
+            {fmtMoney(a.amortBajas)}
           </td>
-          <td className="py-2 text-right tabular-nums text-[var(--arca-ink-3)]">
-            $ {fmtMoney(a.accumEnd)}
+          <td className={`${ANEXO_NUM_TD} text-[var(--arca-ink-3)]`}>
+            {a.rate ? `${fmtMoney(a.rate)}%` : '—'}
           </td>
-          <td className="py-2 pr-4 text-right tabular-nums font-medium">
-            $ {fmtMoney(a.residualEnd)}
+          <td className={ANEXO_NUM_TD}>{fmtMoney(a.amortYear)}</td>
+          <td
+            className={`${ANEXO_NUM_TD} text-[var(--arca-ink-3)] ${ANEXO_GROUP_BORDER}`}
+          >
+            {fmtMoney(a.accumEnd)}
+          </td>
+          <td className={`${ANEXO_NUM_TD} pr-4 font-medium`}>
+            {fmtMoney(a.residualEnd)}
           </td>
         </tr>
       ))}
-      <tr className="border-b border-[var(--arca-border)] text-[12px] font-medium">
-        <td className="py-1.5 pl-4 text-[var(--arca-ink-2)]">
+      <tr className="border-b border-[var(--arca-border)] font-medium bg-[var(--arca-surface-2)]/40">
+        <td className="py-2 pl-4 pr-3 text-[var(--arca-ink-2)] whitespace-nowrap">
           Subtotal {FIXED_ASSET_CATEGORY_LABELS[cat.category] ?? cat.category}
         </td>
-        <td className="py-1.5 text-right tabular-nums">
-          $ {fmtMoney(cat.totals.originalValue)}
+        <td className={ANEXO_NUM_TD}>{fmtMoney(cat.totals.valorInicio)}</td>
+        <td className={ANEXO_NUM_TD}>{fmtMoney(cat.totals.altas)}</td>
+        <td className={ANEXO_NUM_TD}>{fmtMoney(cat.totals.bajas)}</td>
+        <td className={ANEXO_NUM_TD}>{fmtMoney(cat.totals.valorCierre)}</td>
+        <td className={`${ANEXO_NUM_TD} ${ANEXO_GROUP_BORDER}`}>
+          {fmtMoney(cat.totals.accumStart)}
         </td>
-        <td className="py-1.5 text-right tabular-nums">
-          $ {fmtMoney(cat.totals.accumStart)}
+        <td className={ANEXO_NUM_TD}>{fmtMoney(cat.totals.amortBajas)}</td>
+        <td className={`${ANEXO_NUM_TD} text-[var(--arca-ink-3)]`}>—</td>
+        <td className={ANEXO_NUM_TD}>{fmtMoney(cat.totals.amortYear)}</td>
+        <td className={`${ANEXO_NUM_TD} ${ANEXO_GROUP_BORDER}`}>
+          {fmtMoney(cat.totals.accumEnd)}
         </td>
-        <td className="py-1.5 text-right tabular-nums">
-          $ {fmtMoney(cat.totals.amortYear)}
-        </td>
-        <td className="py-1.5 text-right tabular-nums">
-          $ {fmtMoney(cat.totals.accumEnd)}
-        </td>
-        <td className="py-1.5 pr-4 text-right tabular-nums">
-          $ {fmtMoney(cat.totals.residualEnd)}
+        <td className={`${ANEXO_NUM_TD} pr-4`}>
+          {fmtMoney(cat.totals.residualEnd)}
         </td>
       </tr>
     </>

@@ -8,6 +8,7 @@ import {
   Page,
   View,
   Text,
+  Image,
   StyleSheet,
   pdf,
 } from '@react-pdf/renderer';
@@ -34,9 +35,18 @@ interface XLCell {
     color?: { argb: string };
   };
   numFmt?: string;
-  alignment?: { horizontal?: 'left' | 'right' | 'center'; vertical?: string };
+  alignment?: {
+    horizontal?: 'left' | 'right' | 'center';
+    vertical?: string;
+    wrapText?: boolean;
+  };
   fill?: { type: 'pattern'; pattern: 'solid'; fgColor: { argb: string } };
-  border?: { top?: XLBorderLine; bottom?: XLBorderLine };
+  border?: {
+    top?: XLBorderLine;
+    bottom?: XLBorderLine;
+    left?: XLBorderLine;
+    right?: XLBorderLine;
+  };
 }
 interface XLRow {
   number: number;
@@ -823,8 +833,13 @@ export async function exportLibroDiarioPdf(
 
 export interface AnexoIExportAsset {
   name: string;
-  originalValue: number;
+  valorInicio: number;
+  altas: number;
+  bajas: number;
+  valorCierre: number;
   accumStart: number;
+  amortBajas: number;
+  rate: number;
   amortYear: number;
   accumEnd: number;
   residualEnd: number;
@@ -833,12 +848,38 @@ export interface AnexoIExportCategory {
   category: string;
   assets: AnexoIExportAsset[];
   totals: {
-    originalValue: number;
+    valorInicio: number;
+    altas: number;
+    bajas: number;
+    valorCierre: number;
     accumStart: number;
+    amortBajas: number;
     amortYear: number;
     accumEnd: number;
     residualEnd: number;
   };
+}
+export interface AnexoIAccountantData {
+  nombre: string;
+  titulo: string;
+  universidad: string;
+  consejo: string;
+  tomo: string;
+  folio: string;
+  firmaImagen: string | null;
+}
+export interface AnexoIMembrete {
+  cuit: string;
+  domicilio: string;
+  actividadPrincipal: string;
+  /** Fecha de inscripción Registro Público, ya formateada (dd/mm/aaaa) o ''. */
+  fechaInscripcion: string;
+  numeroInscripcion: string;
+  /** Fecha inicio del ejercicio, formateada. */
+  inicioLabel: string;
+  /** Fecha cierre del ejercicio, formateada. */
+  cierreLabel: string;
+  accountant: AnexoIAccountantData | null;
 }
 export interface AnexoIExportData {
   empresaName: string;
@@ -848,223 +889,624 @@ export interface AnexoIExportData {
   grandTotals: AnexoIExportCategory['totals'];
   priorResidualEnd?: number | null;
   priorNumber?: number | null;
+  /** Datos para el membrete formal. Opcional: si falta, se omite el bloque. */
+  membrete?: AnexoIMembrete | null;
 }
 
 const ANEXO_HEADERS = [
-  'Bien',
-  'Valor origen',
+  'Cuenta Principal',
+  'Valor al inicio',
+  'Altas del ejercicio',
+  'Bajas del ejercicio',
+  'Valor al cierre',
   'Amort. acum. inicio',
-  'Amort. ejercicio',
+  'Amort. bajas ejercicio',
+  'Amort. % ejercicio',
+  'Amort. del ejercicio',
   'Amort. acum. cierre',
-  'Valor residual cierre',
+  'Neto al cierre',
 ];
+const ANEXO_COLS = ANEXO_HEADERS.length; // 11
 
-export async function exportAnexoIExcel(data: AnexoIExportData): Promise<void> {
+async function anexoIWorkbookBuffer(
+  data: AnexoIExportData
+): Promise<ArrayBuffer | Buffer> {
   const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet('Anexo I', { views: [{ showGridLines: false }] });
+  const ws = wb.addWorksheet('Anexo Bienes de Uso', {
+    views: [{ showGridLines: false }],
+  });
+  const m = data.membrete;
+  const NC = ANEXO_COLS; // 11
+  const RATE_COL = 8;
+  const thin = { style: 'thin' as const, color: { argb: 'FF999999' } };
+  const box = { top: thin, left: thin, bottom: thin, right: thin };
+  const greyFill = {
+    type: 'pattern' as const,
+    pattern: 'solid' as const,
+    fgColor: { argb: GREY },
+  };
+  const COL = (n: number) => String.fromCharCode(64 + n); // 1→A … 11→K
+  const mergeRange = (row: number, c1: number, c2: number) =>
+    ws.mergeCells(`${COL(c1)}${row}:${COL(c2)}${row}`);
+  const mergeBlock = (r1: number, c1: number, r2: number, c2: number) =>
+    ws.mergeCells(`${COL(c1)}${r1}:${COL(c2)}${r2}`);
 
-  const t1 = ws.addRow([data.empresaName]);
-  t1.getCell(1).font = { bold: true, size: 14 };
-  const t2 = ws.addRow([
-    `Anexo I · Bienes de uso · Ejercicio N°${data.fiscalYearNumber} · ${data.periodLabel}`,
-  ]);
-  t2.getCell(1).font = { color: { argb: 'FF555555' } };
-  const t3 = ws.addRow([DISCLAIMER]);
-  t3.getCell(1).font = { italic: true, size: 8, color: { argb: 'FF999999' } };
-  ws.addRow([]);
-
-  const head = ws.addRow(ANEXO_HEADERS);
-  for (let c = 1; c <= 6; c++) {
-    head.getCell(c).font = { bold: true };
-    head.getCell(c).fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: GREY },
-    };
-    head.getCell(c).border = {
-      bottom: { style: 'thin', color: { argb: BORDER_GREY } },
-    };
-    if (c >= 2) head.getCell(c).alignment = { horizontal: 'right' };
-  }
-
-  const numRow = (
-    label: string,
-    t: AnexoIExportCategory['totals'],
-    opts?: { bold?: boolean; fill?: boolean }
-  ) => {
-    const row = ws.addRow([
-      label,
-      t.originalValue,
-      t.accumStart,
-      t.amortYear,
-      t.accumEnd,
-      t.residualEnd,
-    ]);
-    for (let c = 1; c <= 6; c++) {
-      if (opts?.bold) row.getCell(c).font = { bold: true };
-      if (opts?.fill)
-        row.getCell(c).fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: GREY },
-        };
-      if (c >= 2) {
-        row.getCell(c).numFmt = MONEY_FMT;
-        row.getCell(c).alignment = { horizontal: 'right' };
-      }
-    }
-    return row;
+  // ── Membrete ──
+  const bannerRow = (text: string, font: XLCell['font']) => {
+    const r = ws.addRow([text]);
+    mergeRange(r.number, 1, NC);
+    const cell = r.getCell(1);
+    cell.font = font;
+    cell.alignment = { horizontal: 'center' };
+    return r;
+  };
+  const leftRow = (text: string) => {
+    const r = ws.addRow([text]);
+    mergeRange(r.number, 1, NC);
+    r.getCell(1).font = { size: 10 };
+    r.getCell(1).alignment = { horizontal: 'left' };
+    return r;
   };
 
+  bannerRow(data.empresaName, { bold: true, size: 14 });
+  if (m?.domicilio) leftRow(m.domicilio);
+  if (m?.actividadPrincipal)
+    leftRow(`Actividad Principal: ${m.actividadPrincipal}`);
+  if (m?.fechaInscripcion)
+    leftRow(
+      `Fecha de Inscripción en el Registro Público de Comercio: ${m.fechaInscripcion}`
+    );
+  if (m?.numeroInscripcion)
+    leftRow(
+      `Número de Inscripción en la Inspección General de Justicia: ${m.numeroInscripcion}`
+    );
+  if (m?.cuit) leftRow(`CUIT: ${m.cuit}`);
+  ws.addRow([]);
+  bannerRow(
+    m && (m.inicioLabel || m.cierreLabel)
+      ? `EJERCICIO ECONÓMICO N°${data.fiscalYearNumber} INICIADO EL ${m.inicioLabel} FINALIZADO EL ${m.cierreLabel}`
+      : `Ejercicio N°${data.fiscalYearNumber} · ${data.periodLabel}`,
+    { bold: true, size: 11 }
+  );
+  ws.addRow([]);
+  bannerRow('ANEXO DE BIENES DE USO', { bold: true, size: 12 });
+  ws.addRow([]);
+
+  // ── Encabezado de 3 niveles ──
+  const hr1 = ws.addRow([]);
+  const hr2 = ws.addRow([]);
+  const hr3 = ws.addRow([]);
+  const R1 = hr1.number;
+  const R2 = hr2.number;
+  const R3 = hr3.number;
+  const headRows: Record<number, XLRow> = { [R1]: hr1, [R2]: hr2, [R3]: hr3 };
+  const setHead = (row: number, col: number, value: string) => {
+    headRows[row].getCell(col).value = value;
+  };
+  // Columnas simples (merge vertical R1:R3)
+  const singles: [number, string][] = [
+    [1, 'Cuenta Principal'],
+    [2, 'Valor al inicio'],
+    [3, 'Altas del ejercicio'],
+    [4, 'Bajas del ejercicio'],
+    [5, 'Valor al cierre'],
+    [10, 'Neto acum. al cierre'],
+    [11, 'Neto al cierre'],
+  ];
+  for (const [col, label] of singles) {
+    mergeBlock(R1, col, R3, col);
+    setHead(R1, col, label);
+  }
+  // AMORTIZACIONES (merge horizontal 6-9 en R1)
+  mergeBlock(R1, 6, R1, 9);
+  setHead(R1, 6, 'AMORTIZACIONES');
+  // R2: Acum inicio (6) y Bajas (7) merge vertical R2:R3; Del ejercicio (8-9) horizontal
+  mergeBlock(R2, 6, R3, 6);
+  setHead(R2, 6, 'Acumuladas al inicio');
+  mergeBlock(R2, 7, R3, 7);
+  setHead(R2, 7, 'Bajas del ejercicio');
+  mergeBlock(R2, 8, R2, 9);
+  setHead(R2, 8, 'Del ejercicio');
+  // R3: % y Monto
+  setHead(R3, 8, '%');
+  setHead(R3, 9, 'Monto');
+  // Estilo de todas las celdas del encabezado
+  for (const R of [R1, R2, R3]) {
+    for (let c = 1; c <= NC; c++) {
+      const cell = headRows[R].getCell(c);
+      cell.font = { bold: true, size: 9 };
+      cell.alignment = {
+        horizontal: 'center',
+        vertical: 'middle',
+        wrapText: true,
+      };
+      cell.fill = greyFill;
+      cell.border = box;
+    }
+  }
+
+  // ── Cuerpo ──
+  const styleDataRow = (
+    row: XLRow,
+    opts?: { bold?: boolean; fill?: boolean }
+  ) => {
+    for (let c = 1; c <= NC; c++) {
+      const cell = row.getCell(c);
+      cell.border = box;
+      if (opts?.bold) cell.font = { bold: true };
+      if (opts?.fill) cell.fill = greyFill;
+      if (c === 1) {
+        cell.alignment = { horizontal: 'left' };
+      } else {
+        cell.alignment = { horizontal: 'right' };
+        if (c !== RATE_COL) cell.numFmt = MONEY_FMT;
+      }
+    }
+  };
+  const totalsCells = (label: string, t: AnexoIExportCategory['totals']) => [
+    label,
+    t.valorInicio,
+    t.altas,
+    t.bajas,
+    t.valorCierre,
+    t.accumStart,
+    t.amortBajas,
+    '—',
+    t.amortYear,
+    t.accumEnd,
+    t.residualEnd,
+  ];
+
   for (const cat of data.categories) {
+    // Banda de rubro
     const ch = ws.addRow([cat.category]);
+    mergeRange(ch.number, 1, NC);
     ch.getCell(1).font = { bold: true };
+    ch.getCell(1).fill = greyFill;
+    for (let c = 1; c <= NC; c++) ch.getCell(c).border = box;
+
     for (const a of cat.assets) {
       const row = ws.addRow([
-        `   ${a.name}`,
-        a.originalValue,
+        a.name,
+        a.valorInicio,
+        a.altas,
+        a.bajas,
+        a.valorCierre,
         a.accumStart,
+        a.amortBajas,
+        a.rate ? `${a.rate}%` : '—',
         a.amortYear,
         a.accumEnd,
         a.residualEnd,
       ]);
-      for (let c = 2; c <= 6; c++) {
-        row.getCell(c).numFmt = MONEY_FMT;
-        row.getCell(c).alignment = { horizontal: 'right' };
-      }
+      styleDataRow(row);
     }
-    numRow(`   Subtotal ${cat.category}`, cat.totals, { bold: true });
+    styleDataRow(ws.addRow(totalsCells(`Subtotal ${cat.category}`, cat.totals)), {
+      bold: true,
+    });
   }
 
-  ws.addRow([]);
-  numRow('TOTAL GENERAL', data.grandTotals, { bold: true, fill: true });
+  styleDataRow(ws.addRow(totalsCells('TOTALES $', data.grandTotals)), {
+    bold: true,
+    fill: true,
+  });
+
   if (data.priorResidualEnd != null) {
     const pr = ws.addRow([
-      `Valor residual al cierre · Ejercicio anterior (N°${data.priorNumber})`,
-      '',
-      '',
-      '',
-      '',
+      `Neto al cierre · Ejercicio anterior (N°${data.priorNumber})`,
+      ...Array(NC - 2).fill(''),
       data.priorResidualEnd,
     ]);
-    pr.getCell(6).numFmt = MONEY_FMT;
-    pr.getCell(6).alignment = { horizontal: 'right' };
+    mergeRange(pr.number, 1, NC - 1);
+    pr.getCell(NC).numFmt = MONEY_FMT;
+    pr.getCell(NC).alignment = { horizontal: 'right' };
     pr.getCell(1).font = { italic: true, color: { argb: 'FF555555' } };
   }
 
-  [40, 16, 18, 16, 18, 18].forEach((w, i) => {
+  ws.addRow([]);
+  const note = ws.addRow([
+    'Las Notas y Anexos forman parte integrante de este Estado.',
+  ]);
+  mergeRange(note.number, 1, NC);
+  note.getCell(1).font = { bold: true, size: 9 };
+
+  // ── Firma del contador ──
+  const ac = m?.accountant;
+  if (ac && (ac.nombre || ac.tomo || ac.consejo)) {
+    ws.addRow([]);
+    ws.addRow([]);
+    const signLines = [
+      ac.nombre,
+      `${ac.titulo}${ac.universidad ? ` (${ac.universidad})` : ''}`,
+      [
+        ac.tomo ? `Tomo ${ac.tomo}` : '',
+        ac.folio ? `Folio ${ac.folio}` : '',
+        ac.consejo,
+      ]
+        .filter(Boolean)
+        .join(' '),
+    ].filter(Boolean);
+    for (const line of signLines) {
+      const r = ws.addRow(['']);
+      mergeRange(r.number, 8, NC);
+      const cell = r.getCell(8);
+      cell.value = line as string;
+      cell.alignment = { horizontal: 'center' };
+      cell.font = { size: 9 };
+    }
+  }
+
+  [30, 14, 13, 13, 14, 14, 13, 8, 14, 14, 14].forEach((w, i) => {
     if (ws.columns[i]) ws.columns[i].width = w;
   });
 
-  const buffer = await wb.xlsx.writeBuffer();
+  return await wb.xlsx.writeBuffer();
+}
+
+export async function exportAnexoIExcel(data: AnexoIExportData): Promise<void> {
+  const buffer = await anexoIWorkbookBuffer(data);
   triggerDownload(
     new Blob([buffer as ArrayBuffer], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     }),
-    `anexo_i_bienes_uso_${Date.now()}.xlsx`
+    `anexo_bienes_uso_${Date.now()}.xlsx`
   );
 }
 
+const AXB = '0.5pt solid #888';
+// Anchos de columna como % de la tabla (suman 100).
+const AXW = {
+  name: '16%',
+  vInicio: '8%',
+  altas: '7%',
+  bajas: '7%',
+  vCierre: '9%',
+  acumInicio: '8%',
+  amortBajas: '7%',
+  rate: '7%',
+  amortYear: '12%',
+  acumCierre: '9%',
+  neto: '10%',
+};
 const ax = StyleSheet.create({
-  th: {
+  table: { borderTop: AXB, borderLeft: AXB, marginTop: 8, fontSize: 6.8 },
+  // Encabezado (3 niveles)
+  headRow: {
     flexDirection: 'row',
-    borderBottom: '1pt solid #999',
-    paddingVertical: 3,
+    backgroundColor: '#f2f2ef',
     fontFamily: 'Helvetica-Bold',
-    marginTop: 8,
+    fontSize: 6.2,
   },
+  hCell: {
+    borderRight: AXB,
+    borderBottom: AXB,
+    paddingVertical: 2,
+    paddingHorizontal: 2,
+    justifyContent: 'center',
+    textAlign: 'center',
+  },
+  hGroupTop: {
+    borderRight: AXB,
+    borderBottom: AXB,
+    paddingVertical: 2,
+    textAlign: 'center',
+  },
+  hBand: { flexDirection: 'row' },
+  hCellB: {
+    borderRight: AXB,
+    borderBottom: AXB,
+    paddingVertical: 2,
+    paddingHorizontal: 2,
+    justifyContent: 'center',
+    textAlign: 'center',
+  },
+  // Cuerpo
   catRow: {
     flexDirection: 'row',
-    paddingVertical: 3,
+    backgroundColor: '#e8e8e4',
     fontFamily: 'Helvetica-Bold',
-    marginTop: 4,
   },
-  row: {
-    flexDirection: 'row',
-    borderBottom: '0.5pt solid #e5e5e5',
-    paddingVertical: 2.5,
+  catCell: {
+    width: '100%',
+    borderRight: AXB,
+    borderBottom: AXB,
+    paddingVertical: 2,
+    paddingHorizontal: 3,
   },
+  row: { flexDirection: 'row' },
   subRow: {
     flexDirection: 'row',
-    borderTop: '0.5pt solid #999',
-    paddingVertical: 2.5,
     fontFamily: 'Helvetica-Bold',
+    backgroundColor: '#fafaf8',
   },
   totalRow: {
     flexDirection: 'row',
-    borderTop: '1pt solid #333',
-    borderBottom: '1pt solid #333',
-    paddingVertical: 3,
     fontFamily: 'Helvetica-Bold',
-    marginTop: 6,
+    backgroundColor: '#eeeee9',
   },
-  cName: { width: '34%' },
-  cNum: { width: '13.2%', textAlign: 'right' },
+  cName: {
+    width: AXW.name,
+    borderRight: AXB,
+    borderBottom: AXB,
+    paddingVertical: 2,
+    paddingHorizontal: 3,
+    textAlign: 'left',
+  },
+  c: {
+    borderRight: AXB,
+    borderBottom: AXB,
+    paddingVertical: 2,
+    paddingHorizontal: 3,
+    textAlign: 'right',
+  },
+  // Membrete
+  mbEmpresa: { fontSize: 12, fontFamily: 'Helvetica-Bold', textAlign: 'center' },
+  mbLine: { fontSize: 8.5, marginTop: 1 },
+  mbEjercicio: {
+    fontSize: 9,
+    fontFamily: 'Helvetica-Bold',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  mbTitle: {
+    fontSize: 10,
+    fontFamily: 'Helvetica-Bold',
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 2,
+  },
   prior: { marginTop: 8, fontSize: 8, color: '#555', fontStyle: 'italic' },
+  note: { marginTop: 10, fontSize: 8, fontFamily: 'Helvetica-Bold' },
+  sign: { marginTop: 34, alignItems: 'center', alignSelf: 'flex-end', width: 200 },
+  signImg: { width: 110, height: 44, objectFit: 'contain' },
+  signLine: { width: 160, borderTop: '0.5pt solid #333', marginTop: 24 },
+  signName: { fontSize: 8.5, fontFamily: 'Helvetica-Bold', marginTop: 2 },
+  signMeta: { fontSize: 8, color: '#333' },
 });
 
 function AnexoIDoc({ data }: { data: AnexoIExportData }) {
   const t = data.grandTotals;
+  const m = data.membrete;
+  const num = (v: number) => fmtMoney(v);
   return (
     <Document>
       <Page size="A4" orientation="landscape" style={s.page} wrap>
-        <Text style={s.empresa}>{data.empresaName}</Text>
-        <Text style={s.sub}>
-          Anexo I · Bienes de uso · Ejercicio N°{data.fiscalYearNumber} ·{' '}
-          {data.periodLabel}
-        </Text>
-        <Text style={s.disclaimer}>{DISCLAIMER}</Text>
+        {/* ── Membrete ── */}
+        <Text style={ax.mbEmpresa}>{data.empresaName}</Text>
+        {m?.domicilio ? <Text style={ax.mbLine}>{m.domicilio}</Text> : null}
+        {m?.actividadPrincipal ? (
+          <Text style={ax.mbLine}>
+            Actividad Principal: {m.actividadPrincipal}
+          </Text>
+        ) : null}
+        {m?.fechaInscripcion ? (
+          <Text style={ax.mbLine}>
+            Fecha de Inscripción en el Registro Público de Comercio:{' '}
+            {m.fechaInscripcion}
+          </Text>
+        ) : null}
+        {m?.numeroInscripcion ? (
+          <Text style={ax.mbLine}>
+            Número de Inscripción en la Inspección General de Justicia:{' '}
+            {m.numeroInscripcion}
+          </Text>
+        ) : null}
+        {m?.cuit ? <Text style={ax.mbLine}>CUIT: {m.cuit}</Text> : null}
 
-        <View style={ax.th}>
-          <Text style={ax.cName}>Bien</Text>
-          <Text style={ax.cNum}>Valor origen</Text>
-          <Text style={ax.cNum}>Am. ac. inicio</Text>
-          <Text style={ax.cNum}>Am. ejercicio</Text>
-          <Text style={ax.cNum}>Am. ac. cierre</Text>
-          <Text style={ax.cNum}>V. resid. cierre</Text>
-        </View>
+        {m && (m.inicioLabel || m.cierreLabel) ? (
+          <Text style={ax.mbEjercicio}>
+            EJERCICIO ECONÓMICO N°{data.fiscalYearNumber} INICIADO EL{' '}
+            {m.inicioLabel} FINALIZADO EL {m.cierreLabel}
+          </Text>
+        ) : (
+          <Text style={ax.mbEjercicio}>
+            Ejercicio N°{data.fiscalYearNumber} · {data.periodLabel}
+          </Text>
+        )}
+        <Text style={ax.mbTitle}>ANEXO DE BIENES DE USO</Text>
 
-        {data.categories.map((cat) => (
-          <View key={cat.category} wrap={false}>
-            <View style={ax.catRow}>
-              <Text>{cat.category}</Text>
+        {/* ── Tabla con grilla ── */}
+        <View style={ax.table}>
+          {/* Encabezado de 3 niveles */}
+          <View style={ax.headRow}>
+            <View style={[ax.hCell, { width: AXW.name }]}>
+              <Text>Cuenta Principal</Text>
             </View>
-            {cat.assets.map((a, i) => (
-              <View key={i} style={ax.row}>
-                <Text style={ax.cName}>{a.name}</Text>
-                <Text style={ax.cNum}>{fmtMoney(a.originalValue)}</Text>
-                <Text style={ax.cNum}>{fmtMoney(a.accumStart)}</Text>
-                <Text style={ax.cNum}>{fmtMoney(a.amortYear)}</Text>
-                <Text style={ax.cNum}>{fmtMoney(a.accumEnd)}</Text>
-                <Text style={ax.cNum}>{fmtMoney(a.residualEnd)}</Text>
+            <View style={[ax.hCell, { width: AXW.vInicio }]}>
+              <Text>Valor al inicio</Text>
+            </View>
+            <View style={[ax.hCell, { width: AXW.altas }]}>
+              <Text>Altas del ejercicio</Text>
+            </View>
+            <View style={[ax.hCell, { width: AXW.bajas }]}>
+              <Text>Bajas del ejercicio</Text>
+            </View>
+            <View style={[ax.hCell, { width: AXW.vCierre }]}>
+              <Text>Valor al cierre</Text>
+            </View>
+            {/* Grupo AMORTIZACIONES (34%) */}
+            <View style={{ width: '34%' }}>
+              <View style={ax.hGroupTop}>
+                <Text>AMORTIZACIONES</Text>
               </View>
-            ))}
-            <View style={ax.subRow}>
-              <Text style={ax.cName}>Subtotal {cat.category}</Text>
-              <Text style={ax.cNum}>{fmtMoney(cat.totals.originalValue)}</Text>
-              <Text style={ax.cNum}>{fmtMoney(cat.totals.accumStart)}</Text>
-              <Text style={ax.cNum}>{fmtMoney(cat.totals.amortYear)}</Text>
-              <Text style={ax.cNum}>{fmtMoney(cat.totals.accumEnd)}</Text>
-              <Text style={ax.cNum}>{fmtMoney(cat.totals.residualEnd)}</Text>
+              <View style={ax.hBand}>
+                <View style={[ax.hCellB, { width: '23.53%' }]}>
+                  <Text>Acumuladas al inicio</Text>
+                </View>
+                <View style={[ax.hCellB, { width: '20.59%' }]}>
+                  <Text>Bajas del ejercicio</Text>
+                </View>
+                {/* Sub-grupo Del ejercicio (19% de tabla = 55.88% del grupo) */}
+                <View style={{ width: '55.88%' }}>
+                  <View style={ax.hGroupTop}>
+                    <Text>Del ejercicio</Text>
+                  </View>
+                  <View style={ax.hBand}>
+                    <View style={[ax.hCellB, { width: '36.84%' }]}>
+                      <Text>%</Text>
+                    </View>
+                    <View style={[ax.hCellB, { width: '63.16%' }]}>
+                      <Text>Monto</Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+            </View>
+            <View style={[ax.hCell, { width: AXW.acumCierre }]}>
+              <Text>Neto acum. al cierre</Text>
+            </View>
+            <View style={[ax.hCell, { width: AXW.neto }]}>
+              <Text>Neto al cierre</Text>
             </View>
           </View>
-        ))}
 
-        <View style={ax.totalRow}>
-          <Text style={ax.cName}>TOTAL GENERAL</Text>
-          <Text style={ax.cNum}>{fmtMoney(t.originalValue)}</Text>
-          <Text style={ax.cNum}>{fmtMoney(t.accumStart)}</Text>
-          <Text style={ax.cNum}>{fmtMoney(t.amortYear)}</Text>
-          <Text style={ax.cNum}>{fmtMoney(t.accumEnd)}</Text>
-          <Text style={ax.cNum}>{fmtMoney(t.residualEnd)}</Text>
+          {/* Filas por rubro */}
+          {data.categories.map((cat) => (
+            <View key={cat.category} wrap={false}>
+              <View style={ax.catRow}>
+                <View style={ax.catCell}>
+                  <Text>{cat.category}</Text>
+                </View>
+              </View>
+              {cat.assets.map((a, i) => (
+                <View key={i} style={ax.row}>
+                  <Text style={ax.cName}>{a.name}</Text>
+                  <Text style={[ax.c, { width: AXW.vInicio }]}>
+                    {num(a.valorInicio)}
+                  </Text>
+                  <Text style={[ax.c, { width: AXW.altas }]}>
+                    {num(a.altas)}
+                  </Text>
+                  <Text style={[ax.c, { width: AXW.bajas }]}>
+                    {num(a.bajas)}
+                  </Text>
+                  <Text style={[ax.c, { width: AXW.vCierre }]}>
+                    {num(a.valorCierre)}
+                  </Text>
+                  <Text style={[ax.c, { width: AXW.acumInicio }]}>
+                    {num(a.accumStart)}
+                  </Text>
+                  <Text style={[ax.c, { width: AXW.amortBajas }]}>
+                    {num(a.amortBajas)}
+                  </Text>
+                  <Text style={[ax.c, { width: AXW.rate }]}>
+                    {a.rate ? `${a.rate}%` : '—'}
+                  </Text>
+                  <Text style={[ax.c, { width: AXW.amortYear }]}>
+                    {num(a.amortYear)}
+                  </Text>
+                  <Text style={[ax.c, { width: AXW.acumCierre }]}>
+                    {num(a.accumEnd)}
+                  </Text>
+                  <Text style={[ax.c, { width: AXW.neto }]}>
+                    {num(a.residualEnd)}
+                  </Text>
+                </View>
+              ))}
+              <View style={ax.subRow}>
+                <Text style={ax.cName}>Subtotal {cat.category}</Text>
+                <Text style={[ax.c, { width: AXW.vInicio }]}>
+                  {num(cat.totals.valorInicio)}
+                </Text>
+                <Text style={[ax.c, { width: AXW.altas }]}>
+                  {num(cat.totals.altas)}
+                </Text>
+                <Text style={[ax.c, { width: AXW.bajas }]}>
+                  {num(cat.totals.bajas)}
+                </Text>
+                <Text style={[ax.c, { width: AXW.vCierre }]}>
+                  {num(cat.totals.valorCierre)}
+                </Text>
+                <Text style={[ax.c, { width: AXW.acumInicio }]}>
+                  {num(cat.totals.accumStart)}
+                </Text>
+                <Text style={[ax.c, { width: AXW.amortBajas }]}>
+                  {num(cat.totals.amortBajas)}
+                </Text>
+                <Text style={[ax.c, { width: AXW.rate }]}>—</Text>
+                <Text style={[ax.c, { width: AXW.amortYear }]}>
+                  {num(cat.totals.amortYear)}
+                </Text>
+                <Text style={[ax.c, { width: AXW.acumCierre }]}>
+                  {num(cat.totals.accumEnd)}
+                </Text>
+                <Text style={[ax.c, { width: AXW.neto }]}>
+                  {num(cat.totals.residualEnd)}
+                </Text>
+              </View>
+            </View>
+          ))}
+
+          {/* TOTALES */}
+          <View style={ax.totalRow}>
+            <Text style={ax.cName}>TOTALES $</Text>
+            <Text style={[ax.c, { width: AXW.vInicio }]}>
+              {num(t.valorInicio)}
+            </Text>
+            <Text style={[ax.c, { width: AXW.altas }]}>{num(t.altas)}</Text>
+            <Text style={[ax.c, { width: AXW.bajas }]}>{num(t.bajas)}</Text>
+            <Text style={[ax.c, { width: AXW.vCierre }]}>
+              {num(t.valorCierre)}
+            </Text>
+            <Text style={[ax.c, { width: AXW.acumInicio }]}>
+              {num(t.accumStart)}
+            </Text>
+            <Text style={[ax.c, { width: AXW.amortBajas }]}>
+              {num(t.amortBajas)}
+            </Text>
+            <Text style={[ax.c, { width: AXW.rate }]}>—</Text>
+            <Text style={[ax.c, { width: AXW.amortYear }]}>
+              {num(t.amortYear)}
+            </Text>
+            <Text style={[ax.c, { width: AXW.acumCierre }]}>
+              {num(t.accumEnd)}
+            </Text>
+            <Text style={[ax.c, { width: AXW.neto }]}>
+              {num(t.residualEnd)}
+            </Text>
+          </View>
         </View>
 
         {data.priorResidualEnd != null && (
           <Text style={ax.prior}>
-            Valor residual al cierre · Ejercicio anterior (N°{data.priorNumber}
-            ): {fmtMoney(data.priorResidualEnd)}
+            Neto al cierre · Ejercicio anterior (N°{data.priorNumber}):{' '}
+            {fmtMoney(data.priorResidualEnd)}
           </Text>
         )}
+
+        <Text style={ax.note}>
+          Las Notas y Anexos forman parte integrante de este Estado.
+        </Text>
+
+        {/* ── Firma del contador ── */}
+        {m?.accountant &&
+          (m.accountant.nombre ||
+            m.accountant.tomo ||
+            m.accountant.firmaImagen) && (
+            <View style={ax.sign}>
+              {m.accountant.firmaImagen ? (
+                <Image style={ax.signImg} src={m.accountant.firmaImagen} />
+              ) : (
+                <View style={ax.signLine} />
+              )}
+              {m.accountant.nombre ? (
+                <Text style={ax.signName}>{m.accountant.nombre}</Text>
+              ) : null}
+              <Text style={ax.signMeta}>
+                {m.accountant.titulo}
+                {m.accountant.universidad
+                  ? ` (${m.accountant.universidad})`
+                  : ''}
+              </Text>
+              {m.accountant.tomo || m.accountant.folio || m.accountant.consejo ? (
+                <Text style={ax.signMeta}>
+                  {m.accountant.tomo ? `Tomo ${m.accountant.tomo} ` : ''}
+                  {m.accountant.folio ? `Folio ${m.accountant.folio} ` : ''}
+                  {m.accountant.consejo}
+                </Text>
+              ) : null}
+            </View>
+          )}
       </Page>
     </Document>
   );
@@ -1240,8 +1682,8 @@ const ax6 = StyleSheet.create({
     fontSize: 7.5,
     marginTop: 2,
   },
-  cName: { width: '34%' },
-  cNum: { width: '13.2%', textAlign: 'right' },
+  cName: { width: '18%' },
+  cNum: { width: '8.2%', textAlign: 'right' },
   cat: { fontSize: 8, fontFamily: 'Helvetica-Bold', marginTop: 5 },
 });
 
@@ -1460,12 +1902,17 @@ function AnexoIBlock({
       ) : (
         <>
           <View style={ax6.th}>
-            <Text style={ax6.cName}>Bien</Text>
-            <Text style={ax6.cNum}>Valor origen</Text>
-            <Text style={ax6.cNum}>Am.ac.inicio</Text>
-            <Text style={ax6.cNum}>Am.ejercicio</Text>
-            <Text style={ax6.cNum}>Am.ac.cierre</Text>
-            <Text style={ax6.cNum}>V.resid.cierre</Text>
+            <Text style={ax6.cName}>Cuenta Principal</Text>
+            <Text style={ax6.cNum}>V.inicio</Text>
+            <Text style={ax6.cNum}>Altas</Text>
+            <Text style={ax6.cNum}>Bajas</Text>
+            <Text style={ax6.cNum}>V.cierre</Text>
+            <Text style={ax6.cNum}>Am.ac.ini</Text>
+            <Text style={ax6.cNum}>Am.bajas</Text>
+            <Text style={ax6.cNum}>%</Text>
+            <Text style={ax6.cNum}>Am.ejerc</Text>
+            <Text style={ax6.cNum}>Am.ac.cie</Text>
+            <Text style={ax6.cNum}>Neto cierre</Text>
           </View>
           {anexoI.categories.map((cat) => (
             <View key={cat.category} wrap={false}>
@@ -1473,8 +1920,13 @@ function AnexoIBlock({
               {cat.assets.map((a) => (
                 <View key={a.id} style={ax6.row}>
                   <Text style={ax6.cName}>{a.name}</Text>
-                  <Text style={ax6.cNum}>{fmtMoney(a.originalValue)}</Text>
+                  <Text style={ax6.cNum}>{fmtMoney(a.valorInicio)}</Text>
+                  <Text style={ax6.cNum}>{fmtMoney(a.altas)}</Text>
+                  <Text style={ax6.cNum}>{fmtMoney(a.bajas)}</Text>
+                  <Text style={ax6.cNum}>{fmtMoney(a.valorCierre)}</Text>
                   <Text style={ax6.cNum}>{fmtMoney(a.accumStart)}</Text>
+                  <Text style={ax6.cNum}>{fmtMoney(a.amortBajas)}</Text>
+                  <Text style={ax6.cNum}>{a.rate ? `${a.rate}%` : '—'}</Text>
                   <Text style={ax6.cNum}>{fmtMoney(a.amortYear)}</Text>
                   <Text style={ax6.cNum}>{fmtMoney(a.accumEnd)}</Text>
                   <Text style={ax6.cNum}>{fmtMoney(a.residualEnd)}</Text>
@@ -1482,8 +1934,13 @@ function AnexoIBlock({
               ))}
               <View style={ax6.sub}>
                 <Text style={ax6.cName}>Subtotal {cat.category}</Text>
-                <Text style={ax6.cNum}>{fmtMoney(cat.totals.originalValue)}</Text>
+                <Text style={ax6.cNum}>{fmtMoney(cat.totals.valorInicio)}</Text>
+                <Text style={ax6.cNum}>{fmtMoney(cat.totals.altas)}</Text>
+                <Text style={ax6.cNum}>{fmtMoney(cat.totals.bajas)}</Text>
+                <Text style={ax6.cNum}>{fmtMoney(cat.totals.valorCierre)}</Text>
                 <Text style={ax6.cNum}>{fmtMoney(cat.totals.accumStart)}</Text>
+                <Text style={ax6.cNum}>{fmtMoney(cat.totals.amortBajas)}</Text>
+                <Text style={ax6.cNum}>—</Text>
                 <Text style={ax6.cNum}>{fmtMoney(cat.totals.amortYear)}</Text>
                 <Text style={ax6.cNum}>{fmtMoney(cat.totals.accumEnd)}</Text>
                 <Text style={ax6.cNum}>{fmtMoney(cat.totals.residualEnd)}</Text>
@@ -1493,9 +1950,16 @@ function AnexoIBlock({
           <View style={ax6.total}>
             <Text style={ax6.cName}>TOTAL GENERAL</Text>
             <Text style={ax6.cNum}>
-              {fmtMoney(anexoI.grandTotals.originalValue)}
+              {fmtMoney(anexoI.grandTotals.valorInicio)}
+            </Text>
+            <Text style={ax6.cNum}>{fmtMoney(anexoI.grandTotals.altas)}</Text>
+            <Text style={ax6.cNum}>{fmtMoney(anexoI.grandTotals.bajas)}</Text>
+            <Text style={ax6.cNum}>
+              {fmtMoney(anexoI.grandTotals.valorCierre)}
             </Text>
             <Text style={ax6.cNum}>{fmtMoney(anexoI.grandTotals.accumStart)}</Text>
+            <Text style={ax6.cNum}>{fmtMoney(anexoI.grandTotals.amortBajas)}</Text>
+            <Text style={ax6.cNum}>—</Text>
             <Text style={ax6.cNum}>{fmtMoney(anexoI.grandTotals.amortYear)}</Text>
             <Text style={ax6.cNum}>{fmtMoney(anexoI.grandTotals.accumEnd)}</Text>
             <Text style={ax6.cNum}>

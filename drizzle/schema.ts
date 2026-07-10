@@ -137,6 +137,13 @@ export const client = pgTable("client", {
   /** Obra social por defecto del empleador. */
   obraSocialDefaultId: uuid("obra_social_default_id")
     .references((): AnyPgColumn => obraSocial.id, { onDelete: "set null" }),
+  // --- Datos fiscales para el membrete de los Estados Contables (EECC) ---
+  /** Actividad principal (ej. "Prestación de servicios de internación domiciliaria"). */
+  actividadPrincipal: text("actividad_principal"),
+  /** Fecha de inscripción en el Registro Público de Comercio. */
+  fechaInscripcion: timestamp("fecha_inscripcion", { mode: "date" }),
+  /** Número de inscripción en la Inspección General de Justicia (IGJ). */
+  numeroInscripcion: text("numero_inscripcion"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -2115,3 +2122,31 @@ export const payrollLsdPresentacion = pgTable(
   },
   (t) => [unique("uq_lsd_pres_profile_periodo_nro").on(t.profileId, t.periodo, t.nroPresentacion)]
 );
+
+/**
+ * Datos del contador firmante del estudio, para el bloque de firma de los
+ * Estados Contables (EECC). Uno por organización.
+ */
+export const accountantSignature = pgTable("accountant_signature", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: text("organization_id")
+    .notNull()
+    .unique()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  /** Nombre y apellido del contador. */
+  nombre: text("nombre"),
+  /** Título profesional (ej. "Contador Público"). */
+  titulo: text("titulo").notNull().default("Contador Público"),
+  /** Universidad (ej. "U.B.A."). */
+  universidad: text("universidad"),
+  /** Consejo profesional (ej. "C.P.C.E.C.A.B.A."). */
+  consejo: text("consejo"),
+  /** Tomo de la matrícula. */
+  tomo: text("tomo"),
+  /** Folio de la matrícula. */
+  folio: text("folio"),
+  /** Imagen de la firma (data URL base64), opcional. */
+  firmaImagen: text("firma_imagen"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
