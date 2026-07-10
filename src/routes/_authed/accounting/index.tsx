@@ -1589,13 +1589,15 @@ function firstOfMonth(dateStr: string): string {
   return `${dateStr.slice(0, 7)}-01`;
 }
 
-/** Último día del mes 12 del ejercicio que empieza en startStr (día 1). */
-function computeEnd(startStr: string): string {
+/** Último día del último mes de un ejercicio de `months` meses que empieza en startStr (día 1). */
+function computeEnd(startStr: string, months: number): string {
   const first = firstOfMonth(startStr);
   if (!first) return '';
   const d = new Date(`${first}T00:00:00Z`);
   if (isNaN(d.getTime())) return '';
-  const end = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 12, 0));
+  const end = new Date(
+    Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + months, 0)
+  );
   return end.toISOString().slice(0, 10);
 }
 
@@ -2733,8 +2735,9 @@ function CreateFiscalYearDialog({
   onSaved: () => void;
 }) {
   const [start, setStart] = useState('');
+  const [months, setMonths] = useState(12);
   const startFirst = firstOfMonth(start);
-  const end = computeEnd(start);
+  const end = computeEnd(start, months);
 
   const mut = useMutation({
     mutationFn: () =>
@@ -2742,11 +2745,13 @@ function CreateFiscalYearDialog({
         data: { clientId, startDate: startFirst, endDate: end },
       }),
     onSuccess: () => {
-      toast.success('Ejercicio creado con sus 12 períodos');
+      toast.success(`Ejercicio creado con sus ${months} períodos`);
       onSaved();
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  const monthsValid = Number.isInteger(months) && months >= 1 && months <= 12;
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -2754,32 +2759,51 @@ function CreateFiscalYearDialog({
         <DialogHeader>
           <DialogTitle>Nuevo ejercicio</DialogTitle>
           <DialogDescription>
-            Elegí el mes de inicio. El ejercicio dura exactamente 12 meses
-            calendario y se crean automáticamente los 12 períodos mensuales.
+            Elegí el mes de inicio y la duración. Por defecto son 12 meses, pero
+            podés crear ejercicios irregulares (3, 6, 8 meses, etc.). Se crean
+            automáticamente los períodos mensuales correspondientes.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3 py-1">
-          <div className="flex flex-col gap-1">
-            <label className="text-[11px] text-[var(--arca-ink-3)]">
-              Mes de inicio *
-            </label>
-            <input
-              type="date"
-              value={start}
-              onChange={(e) => setStart(e.target.value)}
-              className={`${INPUT_CLASS} w-full h-9`}
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] text-[var(--arca-ink-3)]">
+                Mes de inicio *
+              </label>
+              <input
+                type="date"
+                value={start}
+                onChange={(e) => setStart(e.target.value)}
+                className={`${INPUT_CLASS} w-full h-9`}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] text-[var(--arca-ink-3)]">
+                Duración (meses) *
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={12}
+                value={months}
+                onChange={(e) => setMonths(Number(e.target.value))}
+                className={`${INPUT_CLASS} w-full h-9`}
+              />
+            </div>
           </div>
 
-          {startFirst && end && (
+          {startFirst && end && monthsValid && (
             <div className="rounded-[8px] bg-[var(--arca-surface-2)] border border-[var(--arca-border)] px-3 py-2.5 text-[12.5px]">
               <span className="text-[var(--arca-ink-3)]">Ejercicio: </span>
               <span className="font-medium text-[var(--arca-ink)]">
                 {fmtFecha(`${startFirst}T00:00:00Z`)} →{' '}
                 {fmtFecha(`${end}T00:00:00Z`)}
               </span>
-              <span className="text-[var(--arca-ink-3)]"> (12 meses)</span>
+              <span className="text-[var(--arca-ink-3)]">
+                {' '}
+                ({months} {months === 1 ? 'mes' : 'meses'})
+              </span>
             </div>
           )}
         </div>
@@ -2793,7 +2817,7 @@ function CreateFiscalYearDialog({
           </button>
           <button
             onClick={() => mut.mutate()}
-            disabled={!startFirst || !end || mut.isPending}
+            disabled={!startFirst || !end || !monthsValid || mut.isPending}
             className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
           >
             {mut.isPending ? 'Creando…' : 'Crear ejercicio'}

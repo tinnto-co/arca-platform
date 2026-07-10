@@ -1247,12 +1247,19 @@ export const createFiscalYear = createServerFn({ method: 'POST' })
     if (start.getUTCDate() !== 1) {
       throw new Error('El ejercicio debe empezar el día 1 de un mes');
     }
-    // Fin esperado: último día del mes 12 del ejercicio.
-    const expectedEnd = new Date(Date.UTC(sY, sM + 12, 0));
-    if (end.getTime() !== expectedEnd.getTime()) {
-      const eStr = expectedEnd.toISOString().slice(0, 10);
+    // El fin debe ser el último día de algún mes calendario.
+    const eY = end.getUTCFullYear();
+    const eM = end.getUTCMonth();
+    const lastDayOfEndMonth = new Date(Date.UTC(eY, eM + 1, 0));
+    if (end.getTime() !== lastDayOfEndMonth.getTime()) {
+      throw new Error('El ejercicio debe terminar el último día de un mes');
+    }
+    // Cantidad de meses calendario que abarca el ejercicio (permite
+    // ejercicios irregulares: 3, 5, 6, 8, 10, etc., pero nunca más de 12).
+    const months = (eY - sY) * 12 + (eM - sM) + 1;
+    if (months < 1 || months > 12) {
       throw new Error(
-        `El ejercicio debe durar exactamente 12 meses calendario. Para ese inicio, el fin debe ser ${eStr}`
+        'El ejercicio debe durar entre 1 y 12 meses calendario'
       );
     }
 
@@ -1292,7 +1299,7 @@ export const createFiscalYear = createServerFn({ method: 'POST' })
       })
       .returning();
 
-    const periods = Array.from({ length: 12 }, (_, i) => {
+    const periods = Array.from({ length: months }, (_, i) => {
       const d = new Date(Date.UTC(sY, sM + i, 1));
       return {
         fiscalYearId: fy.id,
