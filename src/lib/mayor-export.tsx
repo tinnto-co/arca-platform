@@ -1517,6 +1517,259 @@ export async function exportAnexoIPdf(data: AnexoIExportData): Promise<void> {
   triggerDownload(blob, `anexo_i_bienes_uso_${Date.now()}.pdf`);
 }
 
+/* ═══════════════ Anexo Costo de Mercadería Vendida — standalone ═══════════════ */
+
+const cmvx = StyleSheet.create({
+  title: { fontSize: 11, fontFamily: 'Helvetica-Bold', marginTop: 16 },
+  importe: {
+    fontSize: 9,
+    fontFamily: 'Helvetica-Bold',
+    textAlign: 'right',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  row: { flexDirection: 'row', paddingVertical: 4, fontSize: 10 },
+  label: { flexGrow: 1 },
+  num: { width: '28%', textAlign: 'right' },
+  totalRow: {
+    flexDirection: 'row',
+    paddingTop: 5,
+    marginTop: 4,
+    borderTop: '1pt solid #333',
+    fontSize: 10,
+    fontFamily: 'Helvetica-Bold',
+  },
+});
+
+/** Bloque de membrete reutilizable (empresa + datos fiscales + ejercicio). */
+function MembreteHeader({
+  empresaName,
+  fiscalYearNumber,
+  periodLabel,
+  m,
+}: {
+  empresaName: string;
+  fiscalYearNumber: number;
+  periodLabel: string;
+  m?: AnexoIMembrete | null;
+}) {
+  return (
+    <>
+      <Text style={ax.mbEmpresa}>{empresaName}</Text>
+      {m?.domicilio ? <Text style={ax.mbLine}>{m.domicilio}</Text> : null}
+      {m?.actividadPrincipal ? (
+        <Text style={ax.mbLine}>Actividad Principal: {m.actividadPrincipal}</Text>
+      ) : null}
+      {m?.fechaInscripcion ? (
+        <Text style={ax.mbLine}>
+          Fecha de Inscripción en el Registro Público de Comercio:{' '}
+          {m.fechaInscripcion}
+        </Text>
+      ) : null}
+      {m?.numeroInscripcion ? (
+        <Text style={ax.mbLine}>
+          Número de Inscripción en la Inspección General de Justicia:{' '}
+          {m.numeroInscripcion}
+        </Text>
+      ) : null}
+      {m?.cuit ? <Text style={ax.mbLine}>CUIT: {m.cuit}</Text> : null}
+      {m && (m.inicioLabel || m.cierreLabel) ? (
+        <Text style={ax.mbEjercicio}>
+          EJERCICIO ECONÓMICO N°{fiscalYearNumber} INICIADO EL {m.inicioLabel}{' '}
+          FINALIZADO EL {m.cierreLabel}
+        </Text>
+      ) : (
+        <Text style={ax.mbEjercicio}>
+          Ejercicio N°{fiscalYearNumber} · {periodLabel}
+        </Text>
+      )}
+    </>
+  );
+}
+
+/** Bloque de firma del contador reutilizable. */
+function SignatureBlock({ ac }: { ac: AnexoIAccountantData | null | undefined }) {
+  if (!ac || !(ac.nombre || ac.tomo || ac.firmaImagen)) return null;
+  return (
+    <View style={ax.sign}>
+      {ac.firmaImagen ? (
+        <Image style={ax.signImg} src={ac.firmaImagen} />
+      ) : (
+        <View style={ax.signLine} />
+      )}
+      {ac.nombre ? <Text style={ax.signName}>{ac.nombre}</Text> : null}
+      <Text style={ax.signMeta}>
+        {ac.titulo}
+        {ac.universidad ? ` (${ac.universidad})` : ''}
+      </Text>
+      {ac.tomo || ac.folio || ac.consejo ? (
+        <Text style={ax.signMeta}>
+          {ac.tomo ? `Tomo ${ac.tomo} ` : ''}
+          {ac.folio ? `Folio ${ac.folio} ` : ''}
+          {ac.consejo}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+function AnexoCMVDoc({ data }: { data: CmvExportData }) {
+  const m = data.membrete;
+  return (
+    <Document>
+      <Page size="A4" style={s.page} wrap>
+        <MembreteHeader
+          empresaName={data.empresaName}
+          fiscalYearNumber={data.fiscalYearNumber}
+          periodLabel={data.periodLabel}
+          m={m}
+        />
+        <Text style={cmvx.title}>COSTO DE LA MERCADERÍA VENDIDA</Text>
+        <Text style={cmvx.importe}>IMPORTE $</Text>
+
+        <View style={cmvx.row}>
+          <Text style={cmvx.label}>
+            * Existencia de mercaderías al inicio del ejercicio
+          </Text>
+          <Text style={cmvx.num}>{fmtMoney(data.existenciaInicial)}</Text>
+        </View>
+        <View style={cmvx.row}>
+          <Text style={cmvx.label}>* Compras / gastos del ejercicio</Text>
+          <Text style={cmvx.num}>{fmtMoney(data.comprasGastos)}</Text>
+        </View>
+        <View style={cmvx.row}>
+          <Text style={cmvx.label}>
+            * Existencia de mercaderías al cierre del ejercicio
+          </Text>
+          <Text style={cmvx.num}>{fmtMoney(data.existenciaFinal)}</Text>
+        </View>
+        <View style={cmvx.totalRow}>
+          <Text style={cmvx.label}>TOTAL COSTO DE VENTAS</Text>
+          <Text style={cmvx.num}>{fmtMoney(data.total)}</Text>
+        </View>
+
+        {data.priorTotal != null && (
+          <Text style={ax.prior}>
+            Total · Ejercicio anterior (N°{data.priorNumber}):{' '}
+            {fmtMoney(data.priorTotal)}
+          </Text>
+        )}
+        <Text style={ax.note}>
+          Las Notas y Anexos forman parte integrante de este Estado.
+        </Text>
+        <SignatureBlock ac={m?.accountant} />
+      </Page>
+    </Document>
+  );
+}
+
+export async function exportCmvPdf(data: CmvExportData): Promise<void> {
+  const blob = await pdf(<AnexoCMVDoc data={data} />).toBlob();
+  triggerDownload(blob, `anexo_cmv_${Date.now()}.pdf`);
+}
+
+export async function exportCmvExcel(data: CmvExportData): Promise<void> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('CMV', { views: [{ showGridLines: false }] });
+  const m = data.membrete;
+  const merge = (row: number) => ws.mergeCells(`A${row}:B${row}`);
+  const banner = (text: string, font: XLCell['font'], center = true) => {
+    const r = ws.addRow([text]);
+    merge(r.number);
+    r.getCell(1).font = font;
+    r.getCell(1).alignment = { horizontal: center ? 'center' : 'left' };
+  };
+  banner(data.empresaName, { bold: true, size: 14 });
+  if (m?.domicilio) banner(m.domicilio, { size: 10 }, false);
+  if (m?.actividadPrincipal)
+    banner(`Actividad Principal: ${m.actividadPrincipal}`, { size: 10 }, false);
+  if (m?.fechaInscripcion)
+    banner(
+      `Fecha de Inscripción en el Registro Público de Comercio: ${m.fechaInscripcion}`,
+      { size: 10 },
+      false
+    );
+  if (m?.numeroInscripcion)
+    banner(
+      `Número de Inscripción en la Inspección General de Justicia: ${m.numeroInscripcion}`,
+      { size: 10 },
+      false
+    );
+  if (m?.cuit) banner(`CUIT: ${m.cuit}`, { size: 10 }, false);
+  ws.addRow([]);
+  banner(
+    m && (m.inicioLabel || m.cierreLabel)
+      ? `EJERCICIO ECONÓMICO N°${data.fiscalYearNumber} INICIADO EL ${m.inicioLabel} FINALIZADO EL ${m.cierreLabel}`
+      : `Ejercicio N°${data.fiscalYearNumber} · ${data.periodLabel}`,
+    { bold: true, size: 11 }
+  );
+  ws.addRow([]);
+  banner('COSTO DE LA MERCADERÍA VENDIDA', { bold: true, size: 12 }, false);
+
+  const imp = ws.addRow(['', 'IMPORTE $']);
+  imp.getCell(2).font = { bold: true };
+  imp.getCell(2).alignment = { horizontal: 'right' };
+
+  const line = (label: string, value: number, bold = false) => {
+    const r = ws.addRow([label, value]);
+    r.getCell(1).font = { bold, size: 11 };
+    r.getCell(2).numFmt = MONEY_FMT;
+    r.getCell(2).alignment = { horizontal: 'right' };
+    if (bold) {
+      r.getCell(2).font = { bold: true };
+      r.getCell(2).border = { top: { style: 'thin', color: { argb: 'FF333333' } } };
+      r.getCell(1).border = { top: { style: 'thin', color: { argb: 'FF333333' } } };
+    }
+    return r;
+  };
+  line('Existencia de mercaderías al inicio del ejercicio', data.existenciaInicial);
+  line('Compras / gastos del ejercicio', data.comprasGastos);
+  line('Existencia de mercaderías al cierre del ejercicio', data.existenciaFinal);
+  line('TOTAL COSTO DE VENTAS', data.total, true);
+
+  if (data.priorTotal != null) {
+    const pr = ws.addRow([
+      `Total · Ejercicio anterior (N°${data.priorNumber})`,
+      data.priorTotal,
+    ]);
+    pr.getCell(1).font = { italic: true, color: { argb: 'FF555555' } };
+    pr.getCell(2).numFmt = MONEY_FMT;
+    pr.getCell(2).alignment = { horizontal: 'right' };
+  }
+  ws.addRow([]);
+  banner('Las Notas y Anexos forman parte integrante de este Estado.', {
+    bold: true,
+    size: 9,
+  }, false);
+
+  const ac = m?.accountant;
+  if (ac && (ac.nombre || ac.tomo || ac.consejo)) {
+    ws.addRow([]);
+    ws.addRow([]);
+    for (const l of [
+      ac.nombre,
+      `${ac.titulo}${ac.universidad ? ` (${ac.universidad})` : ''}`,
+      [ac.tomo ? `Tomo ${ac.tomo}` : '', ac.folio ? `Folio ${ac.folio}` : '', ac.consejo]
+        .filter(Boolean)
+        .join(' '),
+    ].filter(Boolean)) {
+      banner(l as string, { size: 9 });
+    }
+  }
+
+  [58, 22].forEach((w, i) => {
+    if (ws.columns[i]) ws.columns[i].width = w;
+  });
+
+  const buffer = await wb.xlsx.writeBuffer();
+  triggerDownload(
+    new Blob([buffer as ArrayBuffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    }),
+    `anexo_cmv_${Date.now()}.xlsx`
+  );
+}
+
 /* ═══════════════ Paquete EECC + Libros legales — PDF (Fase 7) ═══════════════ */
 
 const EECC_DISCLAIMER =
@@ -1535,7 +1788,30 @@ export interface EeccPackageData {
     grandTotals: AnexoICategory['totals'];
   } | null;
   anexoII: AnexoIIResult;
+  cmv: CmvBlockData | null;
   notes: FsNote[];
+}
+
+/** Valores del Anexo CMV para el bloque embebido en el paquete EECC. */
+export interface CmvBlockData {
+  existenciaInicial: number;
+  comprasGastos: number;
+  existenciaFinal: number;
+  total: number;
+}
+
+/** Datos para el export standalone del Anexo CMV (PDF/Excel). */
+export interface CmvExportData {
+  empresaName: string;
+  fiscalYearNumber: number;
+  periodLabel: string;
+  existenciaInicial: number;
+  comprasGastos: number;
+  existenciaFinal: number;
+  total: number;
+  priorTotal?: number | null;
+  priorNumber?: number | null;
+  membrete?: AnexoIMembrete | null;
 }
 
 const pk = StyleSheet.create({
@@ -1889,6 +2165,46 @@ function AnexoIIBlock({ a2 }: { a2: AnexoIIResult }) {
   );
 }
 
+function AnexoCMVBlock({ cmv }: { cmv: CmvBlockData | null }) {
+  return (
+    <View>
+      <Text style={pk.sectionTitle}>Costo de la mercadería vendida</Text>
+      {!cmv ? (
+        <Text style={pk.empty}>Sin datos cargados para el ejercicio.</Text>
+      ) : (
+        <>
+          <View style={pk.colHead}>
+            <Text style={{ flexGrow: 1 }} />
+            <Text style={pk.cNum}>Importe $</Text>
+          </View>
+          <View style={pk.row}>
+            <Text style={{ flexGrow: 1 }}>
+              Existencia de mercaderías al inicio del ejercicio
+            </Text>
+            <Text style={pk.cNum}>{fmtMoney(cmv.existenciaInicial)}</Text>
+          </View>
+          <View style={pk.row}>
+            <Text style={{ flexGrow: 1 }}>Compras / gastos del ejercicio</Text>
+            <Text style={pk.cNum}>{fmtMoney(cmv.comprasGastos)}</Text>
+          </View>
+          <View style={pk.row}>
+            <Text style={{ flexGrow: 1 }}>
+              Existencia de mercaderías al cierre del ejercicio
+            </Text>
+            <Text style={pk.cNum}>{fmtMoney(cmv.existenciaFinal)}</Text>
+          </View>
+          <View style={pk.grandRow}>
+            <Text style={{ flexGrow: 1, fontFamily: 'Helvetica-Bold' }}>
+              TOTAL COSTO DE VENTAS
+            </Text>
+            <Text style={pk.cNum}>{fmtMoney(cmv.total)}</Text>
+          </View>
+        </>
+      )}
+    </View>
+  );
+}
+
 function AnexoIBlock({
   anexoI,
 }: {
@@ -2041,6 +2357,7 @@ function EeccPackageDoc({ data }: { data: EeccPackageData }) {
         <ErBlock er={data.er} />
         <AnexoIIBlock a2={data.anexoII} />
         <AnexoIBlock anexoI={data.anexoI} />
+        <AnexoCMVBlock cmv={data.cmv} />
         <NotesBlock notes={data.notes} />
         <Signatures />
         <PageFooter data={data} />

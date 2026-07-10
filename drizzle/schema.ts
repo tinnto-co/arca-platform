@@ -1860,6 +1860,49 @@ export const financialStatement = pgTable(
   ],
 );
 
+/**
+ * Anexo de Costo de Mercadería Vendida (CMV) por ejercicio. Carga MANUAL por ahora
+ * (método diferencia de inventario): CMV = existencia inicial + compras/gastos − existencia final.
+ * Es un anexo explicativo; no alimenta automáticamente el "Costo de ventas" del ER
+ * (ese sale de los asientos). Uno por ejercicio.
+ */
+export const cmvAnnex = pgTable(
+  "cmv_annex",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => client.id, { onDelete: "cascade" }),
+    fiscalYearId: uuid("fiscal_year_id")
+      .notNull()
+      .references(() => fiscalYear.id, { onDelete: "cascade" }),
+    /** Existencia de mercaderías al inicio del ejercicio. */
+    existenciaInicial: numeric("existencia_inicial", { precision: 18, scale: 2 })
+      .notNull()
+      .default("0"),
+    /** Compras / gastos del ejercicio. */
+    comprasGastos: numeric("compras_gastos", { precision: 18, scale: 2 })
+      .notNull()
+      .default("0"),
+    /** Existencia de mercaderías al cierre del ejercicio. */
+    existenciaFinal: numeric("existencia_final", { precision: 18, scale: 2 })
+      .notNull()
+      .default("0"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    unique("cmv_annex_fy_unique").on(table.fiscalYearId),
+    index("idx_cmv_annex_client").on(table.clientId),
+  ],
+);
+
 /* ───────── Reglas de mapeo (asientos automáticos, Fase 3) ───────── */
 
 /** Módulo origen del comprobante que dispara la regla. */

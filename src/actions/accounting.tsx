@@ -15,6 +15,7 @@ import {
   accountingPeriod,
   accountantSignature,
   client,
+  cmvAnnex,
   financialStatement,
   fiscalYear,
   fixedAsset,
@@ -6275,6 +6276,142 @@ export const getAnexoII = createServerFn({ method: 'GET' })
       totalPrior: r2(functions.reduce((s, f) => s + f.prior, 0)),
       hasPrior: !!priorFy,
     };
+  });
+
+/* ══════════ Anexo Costo de Mercadería Vendida (CMV) — carga manual ══════════ */
+
+export interface CmvResult {
+  fiscalYearNumber: number;
+  periodLabel: string;
+  existenciaInicial: number;
+  comprasGastos: number;
+  existenciaFinal: number;
+  /** CMV = existencia inicial + compras/gastos − existencia final. */
+  total: number;
+  priorFiscalYearNumber: number | null;
+  priorTotal: number | null;
+  hasData: boolean;
+}
+
+const fmtDateDMY = (d: Date) =>
+  `${d.getUTCDate().toString().padStart(2, '0')}/${(d.getUTCMonth() + 1)
+    .toString()
+    .padStart(2, '0')}/${d.getUTCFullYear()}`;
+
+const cmvTotal = (
+  ini: string | number,
+  compras: string | number,
+  fin: string | number
+) =>
+  r2(
+    (typeof ini === 'number' ? ini : parseFloat(ini || '0')) +
+      (typeof compras === 'number' ? compras : parseFloat(compras || '0')) -
+      (typeof fin === 'number' ? fin : parseFloat(fin || '0'))
+  );
+
+/** Anexo de Costo de Mercadería Vendida del ejercicio (valores de carga manual). */
+export const getCMV = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid(),
+    })
+  )
+  .handler(async (ctx): Promise<CmvResult> => {
+    const { orgId } = await getSessionWithOrg();
+    const { clientId } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
+
+    const [row] = await db
+      .select()
+      .from(cmvAnnex)
+      .where(eq(cmvAnnex.fiscalYearId, fy.id))
+      .limit(1);
+
+    const ini = row ? parseFloat(row.existenciaInicial) : 0;
+    const compras = row ? parseFloat(row.comprasGastos) : 0;
+    const fin = row ? parseFloat(row.existenciaFinal) : 0;
+
+    // Comparativo con el ejercicio anterior (número − 1), si tiene CMV cargado.
+    let priorFiscalYearNumber: number | null = null;
+    let priorTotal: number | null = null;
+    const [priorFy] = await db
+      .select()
+      .from(fiscalYear)
+      .where(
+        and(
+          eq(fiscalYear.clientId, clientId),
+          eq(fiscalYear.number, fy.number - 1)
+        )
+      )
+      .limit(1);
+    if (priorFy) {
+      priorFiscalYearNumber = priorFy.number;
+      const [pr] = await db
+        .select()
+        .from(cmvAnnex)
+        .where(eq(cmvAnnex.fiscalYearId, priorFy.id))
+        .limit(1);
+      if (pr)
+        priorTotal = cmvTotal(
+          pr.existenciaInicial,
+          pr.comprasGastos,
+          pr.existenciaFinal
+        );
+    }
+
+    return {
+      fiscalYearNumber: fy.number,
+      periodLabel: `${fmtDateDMY(fy.startDate)} – ${fmtDateDMY(fy.endDate)}`,
+      existenciaInicial: ini,
+      comprasGastos: compras,
+      existenciaFinal: fin,
+      total: cmvTotal(ini, compras, fin),
+      priorFiscalYearNumber,
+      priorTotal,
+      hasData: !!row,
+    };
+  });
+
+/** Guarda (upsert) los valores manuales del Anexo CMV del ejercicio. */
+export const saveCMV = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid(),
+      existenciaInicial: z.number(),
+      comprasGastos: z.number(),
+      existenciaFinal: z.number(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    const { clientId } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
+
+    const vals = {
+      existenciaInicial: ctx.data.existenciaInicial.toFixed(2),
+      comprasGastos: ctx.data.comprasGastos.toFixed(2),
+      existenciaFinal: ctx.data.existenciaFinal.toFixed(2),
+      updatedAt: new Date(),
+    };
+    await db
+      .insert(cmvAnnex)
+      .values({
+        organizationId: orgId,
+        clientId,
+        fiscalYearId: fy.id,
+        ...vals,
+      })
+      .onConflictDoUpdate({
+        target: cmvAnnex.fiscalYearId,
+        set: vals,
+      });
+    return { ok: true };
   });
 
 /* ── Notas y aprobación del paquete EECC (US 6.3.1 / 6.3.3) ── */

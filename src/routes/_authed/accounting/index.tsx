@@ -1,6 +1,6 @@
 import { createFileRoute, redirect, Link } from '@tanstack/react-router';
 import { listOrgModules } from '@/actions/admin';
-import { useMemo, useState, Fragment } from 'react';
+import { useMemo, useState, useEffect, Fragment } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -92,6 +92,8 @@ import {
   disposeFixedAsset,
   getAnexoI,
   getMembreteData,
+  getCMV,
+  saveCMV,
   getYearEndChecklist,
   getClosingWizard,
   approveClosingStage,
@@ -130,12 +132,15 @@ import {
   exportLibroDiarioPdf,
   exportAnexoIPdf,
   exportAnexoIExcel,
+  exportCmvPdf,
+  exportCmvExcel,
   exportEeccPackagePdf,
   exportLibroMayorPdf,
   exportLibroInventariosPdf,
   type MayorExportData,
   type MayorSection,
   type AnexoIExportData,
+  type CmvExportData,
 } from '@/lib/mayor-export';
 import {
   downloadChartTemplate,
@@ -7239,9 +7244,9 @@ function EstadosContables({
   isOwner: boolean;
 }) {
   const qc = useQueryClient();
-  const [view, setView] = useState<'esp' | 'er' | 'anexo' | 'notas' | 'export'>(
-    'esp'
-  );
+  const [view, setView] = useState<
+    'esp' | 'er' | 'cmv' | 'anexo' | 'notas' | 'export'
+  >('esp');
   const [selectedFyId, setSelectedFyId] = useState('');
 
   const { data: fiscalYears = [] } = useQuery({
@@ -7309,6 +7314,7 @@ function EstadosContables({
   const tabs: { k: typeof view; label: string }[] = [
     { k: 'esp', label: 'Estado de Situación Patrimonial' },
     { k: 'er', label: 'Estado de Resultados' },
+    { k: 'cmv', label: 'Costo de mercadería (CMV)' },
     { k: 'anexo', label: 'Anexo II' },
     { k: 'notas', label: 'Notas' },
     { k: 'export', label: 'Exportar' },
@@ -7405,6 +7411,14 @@ function EstadosContables({
           clientId={clientId}
           clientName={clientName}
           selectedFy={selectedFy}
+        />
+      )}
+      {view === 'cmv' && (
+        <AnexoCMVView
+          clientId={clientId}
+          clientName={clientName}
+          selectedFy={selectedFy}
+          canEdit={isOwner && !approved}
         />
       )}
       {view === 'anexo' && (
@@ -7889,6 +7903,222 @@ function ErView({
   );
 }
 
+function AnexoCMVView({
+  clientId,
+  clientName,
+  selectedFy,
+  canEdit,
+}: {
+  clientId: string;
+  clientName: string;
+  selectedFy: FyOption | undefined;
+  canEdit: boolean;
+}) {
+  const qc = useQueryClient();
+  const effectiveFyId = selectedFy?.id ?? '';
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['accounting', 'cmv', clientId, effectiveFyId],
+    queryFn: () => getCMV({ data: { clientId, fiscalYearId: effectiveFyId } }),
+    enabled: !!effectiveFyId,
+  });
+
+  const { data: membrete } = useQuery({
+    queryKey: ['accounting', 'membrete', clientId],
+    queryFn: () => getMembreteData({ data: { clientId } }),
+  });
+
+  const [form, setForm] = useState({ ini: '', compras: '', fin: '' });
+  useEffect(() => {
+    if (data) {
+      setForm({
+        ini: String(data.existenciaInicial ?? 0),
+        compras: String(data.comprasGastos ?? 0),
+        fin: String(data.existenciaFinal ?? 0),
+      });
+    }
+  }, [data]);
+
+  const n = (s: string) => {
+    const x = parseFloat(s);
+    return isNaN(x) ? 0 : x;
+  };
+  const total =
+    Math.round((n(form.ini) + n(form.compras) - n(form.fin)) * 100) / 100;
+
+  const mut = useMutation({
+    mutationFn: () =>
+      saveCMV({
+        data: {
+          clientId,
+          fiscalYearId: effectiveFyId,
+          existenciaInicial: n(form.ini),
+          comprasGastos: n(form.compras),
+          existenciaFinal: n(form.fin),
+        },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({
+        queryKey: ['accounting', 'cmv', clientId, effectiveFyId],
+      });
+      toast.success('Costo de mercadería vendida guardado');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const upd = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const buildCmvExport = (): CmvExportData => ({
+    empresaName: clientName,
+    fiscalYearNumber: data!.fiscalYearNumber,
+    periodLabel: data!.periodLabel,
+    existenciaInicial: n(form.ini),
+    comprasGastos: n(form.compras),
+    existenciaFinal: n(form.fin),
+    total,
+    priorTotal: data!.priorTotal,
+    priorNumber: data!.priorFiscalYearNumber,
+    membrete:
+      membrete && selectedFy
+        ? {
+            cuit: membrete.cuit,
+            domicilio: membrete.domicilio,
+            actividadPrincipal: membrete.actividadPrincipal,
+            fechaInscripcion: membrete.fechaInscripcion
+              ? fmtFecha(membrete.fechaInscripcion)
+              : '',
+            numeroInscripcion: membrete.numeroInscripcion,
+            inicioLabel: fmtFechaLarga(selectedFy.startDate),
+            cierreLabel: fmtFechaLarga(selectedFy.endDate),
+            accountant: membrete.accountant,
+          }
+        : null,
+  });
+
+  const amount = (k: keyof typeof form) =>
+    canEdit ? (
+      <input
+        type="number"
+        step="0.01"
+        value={form[k]}
+        onChange={upd(k)}
+        className={`${INPUT_CLASS} h-8 w-44 text-right tabular-nums`}
+      />
+    ) : (
+      <span className="tabular-nums">$ {fmtMoney(n(form[k]))}</span>
+    );
+
+  if (!effectiveFyId) {
+    return (
+      <ArcaCard>
+        <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+          Seleccioná un ejercicio.
+        </div>
+      </ArcaCard>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <ArcaCard>
+        {/* Carátula */}
+        <div className="px-5 pt-4 flex items-start justify-between gap-4">
+          <div>
+            <div className="text-[15px] font-semibold text-[var(--arca-ink)]">
+              {clientName}
+            </div>
+            <div className="text-[12.5px] text-[var(--arca-ink-2)]">
+              Costo de la mercadería vendida
+              {data
+                ? ` · Ejercicio N°${data.fiscalYearNumber} · ${data.periodLabel}`
+                : ''}
+            </div>
+            <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
+              Carga manual (método diferencia de inventario). Es un anexo
+              explicativo; no modifica el “Costo de ventas” del Estado de
+              Resultados.
+            </div>
+          </div>
+          {data && (
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => void exportCmvExcel(buildCmvExport())}
+                className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] inline-flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5" strokeWidth={2} /> Excel
+              </button>
+              <button
+                onClick={() => void exportCmvPdf(buildCmvExport())}
+                className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] inline-flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5" strokeWidth={2} /> PDF
+              </button>
+            </div>
+          )}
+        </div>
+
+        {isLoading || !data ? (
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            Calculando…
+          </div>
+        ) : (
+          <div className="px-5 py-5">
+            <div className="max-w-[560px] space-y-3 text-[13px]">
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-[var(--arca-ink-2)]">
+                  Existencia de mercaderías al inicio del ejercicio
+                </span>
+                {amount('ini')}
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-[var(--arca-ink-2)]">
+                  Compras / gastos del ejercicio
+                </span>
+                {amount('compras')}
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-[var(--arca-ink-2)]">
+                  Existencia de mercaderías al cierre del ejercicio
+                  <span className="text-[var(--arca-ink-3)]"> (se resta)</span>
+                </span>
+                {amount('fin')}
+              </div>
+              <div className="flex items-center justify-between gap-4 border-t-2 border-[var(--arca-ink-2)] pt-2 font-semibold">
+                <span>TOTAL COSTO DE VENTAS</span>
+                <span className="tabular-nums">$ {fmtMoney(total)}</span>
+              </div>
+
+              {data.priorTotal != null && (
+                <div className="flex items-center justify-between gap-4 text-[11.5px] text-[var(--arca-ink-3)] italic">
+                  <span>
+                    Total · Ejercicio anterior (N°{data.priorFiscalYearNumber})
+                  </span>
+                  <span className="tabular-nums">
+                    $ {fmtMoney(data.priorTotal)}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {canEdit && (
+              <div className="mt-5">
+                <button
+                  onClick={() => mut.mutate()}
+                  disabled={mut.isPending}
+                  className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+                >
+                  {mut.isPending ? 'Guardando…' : 'Guardar'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </ArcaCard>
+    </div>
+  );
+}
+
 function AnexoIIView({
   clientId,
   clientName,
@@ -8272,6 +8502,11 @@ function ExportView({
     queryFn: () => getAnexoII({ data: { clientId, fiscalYearId: fyId } }),
     enabled: !!fyId,
   });
+  const { data: cmv } = useQuery({
+    queryKey: ['accounting', 'cmv', clientId, fyId],
+    queryFn: () => getCMV({ data: { clientId, fiscalYearId: fyId } }),
+    enabled: !!fyId,
+  });
   const { data: consol } = useQuery({
     queryKey: ['accounting', 'consolidated-export', clientId, fyId],
     queryFn: () =>
@@ -8299,6 +8534,14 @@ function ExportView({
         anexoII,
         anexoI: anexoI
           ? { categories: anexoI.categories, grandTotals: anexoI.grandTotals }
+          : null,
+        cmv: cmv?.hasData
+          ? {
+              existenciaInicial: cmv.existenciaInicial,
+              comprasGastos: cmv.comprasGastos,
+              existenciaFinal: cmv.existenciaFinal,
+              total: cmv.total,
+            }
           : null,
         notes,
       });
