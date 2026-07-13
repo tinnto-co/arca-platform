@@ -4960,21 +4960,6 @@ export const validarLsd = createServerFn({ method: 'GET' })
       });
     }
 
-    // 2. Tope máximo imponible del período
-    const [params] = await db
-      .select({ topeMaximoImponible: payrollParametrosPeriodo.topeMaximoImponible })
-      .from(payrollParametrosPeriodo)
-      .where(eq(payrollParametrosPeriodo.periodo, periodo))
-      .limit(1);
-
-    if (!params) {
-      issues.push({
-        tipo: 'error',
-        codigo: 'SIN_TOPE_IMPONIBLE',
-        mensaje: `No hay tope máximo imponible cargado para ${periodo}. Sin este dato las bases imponibles del Record 04 se calculan incorrectamente.`,
-      });
-    }
-
     // 3. Recibos del período
     // La situación de revista se toma del recibo (situacionRevista1Id) con fallback al empleado
     // (situacionId) — misma lógica que previewLsd para recibos importados desde SOS.
