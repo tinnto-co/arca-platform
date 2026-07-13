@@ -31,12 +31,24 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import {
   getClients,
   deleteRepresentative,
-  scrapSingleJob,
+  scrapBatchJobs,
 } from '@/actions/client';
 import { listOrgModules } from '@/actions/admin';
 import { EditRepresentativeDialog } from '@/components/edit-client-dialog';
+import { useActiveJobs } from '@/hooks/use-active-jobs';
 import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
 import { relativeTime } from '@/components/dashboard/shared';
 import { toTitleCase } from '@/lib/format-name';
@@ -50,7 +62,60 @@ interface ClientRow {
   representativeId: string;
   representativeName: string | null;
   representativeCuit: string | null;
+  credentialError?: boolean;
 }
+
+type EstadoValue = 'error' | 'active' | 'inactive';
+
+const BULK_JOB_TYPES = [
+  { value: 'deuda', label: 'Deuda', description: 'Deudas impositivas en AFIP' },
+  {
+    value: 'vencimientos',
+    label: 'Vencimientos',
+    description: 'Próximos vencimientos fiscales',
+  },
+  {
+    value: 'notificaciones',
+    label: 'Notificaciones',
+    description: 'Notificaciones del domicilio fiscal electrónico',
+  },
+  {
+    value: 'comprobantes',
+    label: 'Comprobantes',
+    description: 'Facturas emitidas y recibidas recientes',
+  },
+  {
+    value: 'iva',
+    label: 'IVA',
+    description:
+      'DDJJ de IVA recientes. Si marcás Comprobantes también, se actualizan primero (Comprobantes + IVA).',
+  },
+] as const;
+
+type BulkJobType = (typeof BULK_JOB_TYPES)[number]['value'];
+
+function getEstado(row: ClientRow): EstadoValue {
+  if (row.credentialError) return 'error';
+  return row.status === 'active' ? 'active' : 'inactive';
+}
+
+const ESTADO_META: Record<EstadoValue, { label: string; className: string }> = {
+  error: {
+    label: 'Credenciales inválidas',
+    className:
+      'bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg)] border-[var(--arca-accent-neg)]',
+  },
+  active: {
+    label: 'Activo',
+    className:
+      'bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos)] border-[var(--arca-accent-pos)]',
+  },
+  inactive: {
+    label: 'Inactivo',
+    className:
+      'bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)] border-[var(--arca-border-strong)]',
+  },
+};
 
 export function RepresentativesTable() {
   const navigate = useNavigate();
@@ -60,7 +125,12 @@ export function RepresentativesTable() {
   const [representativeToEditId, setRepresentativeToEditId] = useState<string | null>(null);
   const [selectedClients, setSelectedClients] = useState<ClientRow[]>([]);
   const [isScraping, setIsScraping] = useState(false);
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [selectedJobTypes, setSelectedJobTypes] = useState<Set<BulkJobType>>(
+    () => new Set(BULK_JOB_TYPES.map((t) => t.value))
+  );
   const queryClient = useQueryClient();
+  const { activeByRepresentative } = useActiveJobs();
 
   const { data: clients = [], isLoading } = useQuery({
     queryKey: ['clients'],
@@ -154,6 +224,37 @@ export function RepresentativesTable() {
       ),
     },
     {
+      id: 'estado',
+      header: 'Estado',
+      accessorFn: (row) => getEstado(row),
+      filterFn: (row, _columnId, filterValue) =>
+        !filterValue || getEstado(row.original) === filterValue,
+      cell: ({ row }) => {
+        const meta = ESTADO_META[getEstado(row.original)];
+        const activeJobs = activeByRepresentative.get(
+          row.original.representativeId
+        );
+        return (
+          <span className="inline-flex items-center gap-1.5">
+            {activeJobs && activeJobs.length > 0 && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full border border-[var(--arca-border-strong)] bg-[var(--arca-surface-2)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--arca-ink-2)]"
+                title={`Actualizando: ${activeJobs.map((j) => j.type).join(', ')}`}
+              >
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Actualizando ({activeJobs.length})
+              </span>
+            )}
+            <span
+              className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10.5px] font-medium ${meta.className}`}
+            >
+              {meta.label}
+            </span>
+          </span>
+        );
+      },
+    },
+    {
       id: 'actions',
       enableSorting: false,
       cell: ({ row }) => (
@@ -205,34 +306,58 @@ export function RepresentativesTable() {
     },
   ];
 
-  const handleScrapSelected = async () => {
-    if (selectedClients.length === 0) return;
+  const selectedRepresentativeIds = [
+    ...new Set(selectedClients.map((c) => c.representativeId)),
+  ];
+  const runningSelected = selectedRepresentativeIds.filter((id) =>
+    activeByRepresentative.has(id)
+  );
+  const allSelectedRunning =
+    selectedRepresentativeIds.length > 0 &&
+    runningSelected.length === selectedRepresentativeIds.length;
+
+  const toggleJobType = (jobType: BulkJobType) => {
+    setSelectedJobTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(jobType)) {
+        next.delete(jobType);
+      } else {
+        next.add(jobType);
+      }
+      return next;
+    });
+  };
+
+  const handleBulkUpdate = async () => {
+    if (selectedRepresentativeIds.length === 0 || selectedJobTypes.size === 0)
+      return;
     setIsScraping(true);
     try {
-      const modules = ['deuda', 'vencimientos', 'iva', 'notificaciones', 'comprobantes'] as const;
-      const representativeIds = [
-        ...new Set(selectedClients.map((c) => c.representativeId)),
-      ];
-      let created = 0;
-      let errors = 0;
-      for (const representativeId of representativeIds) {
-        for (const jobType of modules) {
-          try {
-            await scrapSingleJob({ data: { representativeId, jobType } });
-            created++;
-          } catch {
-            errors++;
-          }
-        }
-      }
-      if (errors > 0) {
-        toast.warning(`${created} módulos completados, ${errors} errores`);
+      const result = await scrapBatchJobs({
+        data: {
+          representativeIds: selectedRepresentativeIds,
+          jobTypes: [...selectedJobTypes],
+        },
+      });
+      const skippedMsg =
+        result.skipped > 0 ? `, ${result.skipped} ya en ejecución` : '';
+      if (result.errors > 0) {
+        toast.warning(
+          `${result.created} jobs encolados, ${result.errors} con error${skippedMsg}`
+        );
+      } else if (result.created === 0 && result.skipped > 0) {
+        toast.info(
+          `No se encoló nada: ${result.skipped} jobs ya estaban en ejecución`
+        );
       } else {
-        toast.success(`${created} módulos de scraping completados`);
+        toast.success(`${result.created} jobs encolados${skippedMsg}`);
       }
+      // Refrescar indicadores de jobs activos sin esperar el próximo poll.
+      void queryClient.invalidateQueries({ queryKey: ['activeJobsSummary'] });
+      setBulkDialogOpen(false);
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : 'Error al encolar scraping'
+        err instanceof Error ? err.message : 'Error al encolar la actualización'
       );
     } finally {
       setIsScraping(false);
@@ -258,7 +383,17 @@ export function RepresentativesTable() {
         isLoading={isLoading}
         searchKey="name"
         searchPlaceholder="Buscar por CUIT, cliente o representante..."
-        filters={[]}
+        filters={[
+          {
+            columnId: 'estado',
+            label: 'Estado',
+            options: [
+              { value: 'active', label: 'Activos' },
+              { value: 'inactive', label: 'Inactivos' },
+              { value: 'error', label: 'Credenciales inválidas' },
+            ],
+          },
+        ]}
         onRowClick={(row) =>
           navigate({
             to: '/clients/$clientId',
@@ -269,18 +404,87 @@ export function RepresentativesTable() {
         onSelectionChange={(rows) => setSelectedClients(rows as ClientRow[])}
         toolbar={
           selectedClients.length > 0 ? (
-            <Button
-              size="sm"
-              onClick={handleScrapSelected}
-              disabled={isScraping}
-            >
-              {isScraping ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Play className="h-3.5 w-3.5" />
-              )}
-              Scrapear {selectedClients.length} cliente{selectedClients.length > 1 ? 's' : ''}
-            </Button>
+            <Dialog open={bulkDialogOpen} onOpenChange={setBulkDialogOpen}>
+              <DialogTrigger asChild>
+                <Button
+                  size="sm"
+                  disabled={isScraping || allSelectedRunning}
+                  title={
+                    allSelectedRunning
+                      ? 'Todos los clientes seleccionados ya se están actualizando'
+                      : undefined
+                  }
+                >
+                  {isScraping ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Play className="h-3.5 w-3.5" />
+                  )}
+                  Actualizar todos ({selectedRepresentativeIds.length})
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[420px]">
+                <DialogHeader>
+                  <DialogTitle>Actualizar todos</DialogTitle>
+                  <DialogDescription>
+                    Se van a encolar los módulos seleccionados para{' '}
+                    {selectedRepresentativeIds.length} cliente
+                    {selectedRepresentativeIds.length > 1 ? 's' : ''}. El
+                    scraping corre en segundo plano.
+                  </DialogDescription>
+                </DialogHeader>
+                {runningSelected.length > 0 && (
+                  <p className="rounded-md border border-[var(--arca-border-strong)] bg-[var(--arca-surface-2)] px-3 py-2 text-xs text-[var(--arca-ink-2)]">
+                    {runningSelected.length} de los clientes seleccionados ya
+                    tienen actualizaciones en curso; los módulos duplicados se
+                    van a omitir.
+                  </p>
+                )}
+                <div className="space-y-3 py-1">
+                  {BULK_JOB_TYPES.map((jobType) => (
+                    <div key={jobType.value} className="flex items-start gap-3">
+                      <Checkbox
+                        id={`bulk-job-${jobType.value}`}
+                        checked={selectedJobTypes.has(jobType.value)}
+                        onCheckedChange={() => toggleJobType(jobType.value)}
+                        className="mt-0.5"
+                      />
+                      <Label
+                        htmlFor={`bulk-job-${jobType.value}`}
+                        className="flex flex-col items-start gap-0.5 font-normal cursor-pointer"
+                      >
+                        <span className="text-sm font-medium">
+                          {jobType.label}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {jobType.description}
+                        </span>
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setBulkDialogOpen(false)}
+                    disabled={isScraping}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleBulkUpdate}
+                    disabled={isScraping || selectedJobTypes.size === 0}
+                  >
+                    {isScraping && (
+                      <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                    )}
+                    Actualizar
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           ) : null
         }
         emptyMessage="No hay clientes registrados."

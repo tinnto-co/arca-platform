@@ -436,21 +436,43 @@ export const getClients = createServerFn({
   try {
     const { orgId } = await getSessionWithOrg();
 
-    return await db
-      .select({
-        id: client.id,
-        name: client.name,
-        identityNumber: client.identityNumber,
-        status: client.status,
-        createdAt: client.createdAt,
-        representativeId: client.representativeId,
-        representativeName: representative.name,
-        representativeCuit: representative.cuit,
-      })
-      .from(client)
-      .innerJoin(representative, eq(client.representativeId, representative.id))
-      .where(eq(representative.organizationId, orgId))
-      .orderBy(asc(client.name));
+    const [rows, credAlerts] = await Promise.all([
+      db
+        .select({
+          id: client.id,
+          name: client.name,
+          identityNumber: client.identityNumber,
+          status: client.status,
+          createdAt: client.createdAt,
+          representativeId: client.representativeId,
+          representativeName: representative.name,
+          representativeCuit: representative.cuit,
+        })
+        .from(client)
+        .innerJoin(representative, eq(client.representativeId, representative.id))
+        .where(eq(representative.organizationId, orgId))
+        .orderBy(asc(client.name)),
+      db
+        .select({ representativeId: alert.representativeId })
+        .from(alert)
+        .where(
+          and(
+            eq(alert.organizationId, orgId),
+            eq(alert.type, 'scraper_error'),
+            eq(alert.status, 'open'),
+            sql`${alert.metadata}->>'errorCategory' = 'credentials'`
+          )
+        ),
+    ]);
+
+    const credentialErrorReps = new Set(
+      credAlerts.map((a) => a.representativeId).filter(Boolean)
+    );
+
+    return rows.map((row) => ({
+      ...row,
+      credentialError: credentialErrorReps.has(row.representativeId),
+    }));
   } catch (error) {
     throw new Error(`Error loading clients: ${getErrorMessage(error)}`);
   }
@@ -1020,15 +1042,42 @@ export const updateRepresentativeModules = createServerFn({
       'comprobantes_full',
       'iva',
     ] as const;
-    const jobs = types.map((type) => ({ type, representativeId }));
+    // Evitar duplicados: omitir tipos que ya tienen un job pending/running.
+    const activeJobs = await db
+      .select({ type: job.type })
+      .from(job)
+      .where(
+        and(
+          eq(job.representativeId, representativeId),
+          inArray(job.type, [...types]),
+          inArray(job.status, ['pending', 'running'])
+        )
+      );
+    const activeTypes = new Set(activeJobs.map((j) => j.type));
+    const skipped = types.filter((t) => activeTypes.has(t));
+    const pendingTypes = types.filter((t) => !activeTypes.has(t));
+
+    if (pendingTypes.length === 0) {
+      return {
+        success: true,
+        message: 'Todos los módulos ya tienen actualizaciones en curso',
+        representativeId,
+        skipped,
+      };
+    }
+
+    const jobs = pendingTypes.map((type) => ({ type, representativeId }));
 
     try {
       await axios.post(`${baseUrl}/api/jobs/batch`, { jobs });
       return {
         success: true,
         message:
-          'Actualizacion encolada: deudas, vencimientos, novedades, facturas e IVA',
+          skipped.length > 0
+            ? `Actualización encolada (${pendingTypes.length} módulos; ${skipped.length} ya en ejecución)`
+            : 'Actualizacion encolada: deudas, vencimientos, novedades, facturas e IVA',
         representativeId,
+        skipped,
       };
     } catch (error: any) {
       console.error('[updateRepresentativeModules]', error?.response?.data ?? error);
@@ -1036,6 +1085,118 @@ export const updateRepresentativeModules = createServerFn({
         error.response?.data?.error ||
         error.message ||
         'Error al encolar la actualizacion';
+      throw new Error(msg);
+    }
+  });
+
+/**
+ * Encola en batch (fire-and-forget) los módulos seleccionados para varios
+ * representantes. No espera la finalización de los jobs.
+ */
+export const scrapBatchJobs = createServerFn({
+  method: 'POST',
+})
+  .inputValidator(
+    z.object({
+      representativeIds: z.array(z.string()).min(1),
+      jobTypes: z
+        .array(
+          z.enum([
+            'deuda',
+            'vencimientos',
+            'notificaciones',
+            'comprobantes',
+            'iva',
+          ])
+        )
+        .min(1),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const { representativeIds, jobTypes } = ctx.data;
+
+    const owned = await db
+      .select({ id: representative.id })
+      .from(representative)
+      .where(
+        and(
+          inArray(representative.id, representativeIds),
+          eq(representative.organizationId, orgId)
+        )
+      );
+
+    if (owned.length === 0) {
+      throw new Error('Clientes no encontrados o no autorizados');
+    }
+
+    // Si se piden comprobantes e IVA juntos, encolar comprobantes primero
+    // (misma semántica que el flujo "Comprobantes + IVA" del detalle).
+    const orderedTypes = (
+      [
+        'deuda',
+        'vencimientos',
+        'notificaciones',
+        'comprobantes',
+        'iva',
+      ] as const
+    ).filter((t) => jobTypes.includes(t));
+
+    // Evitar duplicados: omitir pares (representante, tipo) que ya tienen
+    // un job pending/running.
+    const activeJobs = await db
+      .select({ representativeId: job.representativeId, type: job.type })
+      .from(job)
+      .where(
+        and(
+          inArray(
+            job.representativeId,
+            owned.map((o) => o.id)
+          ),
+          inArray(job.type, [...orderedTypes]),
+          inArray(job.status, ['pending', 'running'])
+        )
+      );
+    const activeSet = new Set(
+      activeJobs.map((j) => `${j.representativeId}:${j.type}`)
+    );
+
+    const allPairs = owned.flatMap(({ id }) =>
+      orderedTypes.map((type) => ({ type, representativeId: id }))
+    );
+    const jobs = allPairs.filter(
+      (j) => !activeSet.has(`${j.representativeId}:${j.type}`)
+    );
+    const skipped = allPairs.length - jobs.length;
+
+    if (jobs.length === 0) {
+      return { success: true, created: 0, errors: 0, skipped };
+    }
+
+    try {
+      const { data } = await axios.post<{ created?: number; errors?: number }>(
+        `${JOBS_API_URL}/api/jobs/batch`,
+        { jobs }
+      );
+      return {
+        success: true,
+        created: data?.created ?? jobs.length,
+        errors: data?.errors ?? 0,
+        skipped,
+      };
+    } catch (error) {
+      const axiosError = error as {
+        response?: { data?: { error?: string } };
+        message?: string;
+      };
+      console.error('[scrapBatchJobs]', axiosError.response?.data ?? error);
+      const msg =
+        axiosError.response?.data?.error ??
+        axiosError.message ??
+        'Error al encolar la actualización masiva';
       throw new Error(msg);
     }
   });
@@ -1068,15 +1229,38 @@ export const scrapSingleJob = createServerFn({
 
     const baseUrl = JOBS_API_URL;
     const { representativeId, jobType } = ctx.data;
-    console.log('[scrapSingleJob] posting to', `${baseUrl}/api/jobs`);
+
+    // Si ya hay un job pending/running para este representante+tipo (p. ej.
+    // otro cliente que comparte representante), reusarlo en vez de encolar
+    // un scrape duplicado: cada job IVA scrapea todas las relaciones del
+    // representante igual.
+    const [existing] = await db
+      .select({ id: job.id })
+      .from(job)
+      .where(
+        and(
+          eq(job.representativeId, representativeId),
+          eq(job.type, jobType),
+          inArray(job.status, ['pending', 'running'])
+        )
+      )
+      .limit(1);
 
     try {
-      const { data: job } = await axios.post(`${baseUrl}/api/jobs`, {
-        type: jobType,
-        representativeId,
-      });
+      let jobId: string;
+      if (existing) {
+        console.log('[scrapSingleJob] reusing active job', existing.id);
+        jobId = existing.id;
+      } else {
+        console.log('[scrapSingleJob] posting to', `${baseUrl}/api/jobs`);
+        const { data: created } = await axios.post(`${baseUrl}/api/jobs`, {
+          type: jobType,
+          representativeId,
+        });
+        jobId = created.id;
+      }
 
-      const result = await waitForJob(baseUrl, job.id);
+      const result = await waitForJob(baseUrl, jobId);
       if (result.status === 'failed') {
         throw new Error(
           result.failedReason || `Error en el scrape de ${jobType}`
@@ -1099,43 +1283,6 @@ export const scrapSingleJob = createServerFn({
     }
   });
 
-
-/** Ultimo job comprobantes_full para un representante (por created_at), con estado success/error. */
-export const getLastComprobantesFullJob = createServerFn({
-  method: 'GET',
-})
-  .inputValidator(z.object({ representativeId: z.string() }))
-  .handler(async (ctx) => {
-    const { orgId } = await getSessionWithOrg();
-
-    const { representativeId } = ctx.data;
-
-    const orgRepresentatives = await db
-      .select({ id: representative.id })
-      .from(representative)
-      .where(eq(representative.organizationId, orgId));
-    const canAccess = orgRepresentatives.some((c) => c.id === representativeId);
-    if (!canAccess) return null;
-
-    const [lastJob] = await db
-      .select({
-        createdAt: job.createdAt,
-        failedReason: job.failedReason,
-        status: job.status,
-      })
-      .from(job)
-      .where(and(eq(job.representativeId, representativeId), eq(job.type, 'comprobantes')))
-      .orderBy(desc(job.createdAt))
-      .limit(1);
-
-    if (!lastJob?.createdAt) return null;
-    const success = lastJob.status !== 'failed' && lastJob.failedReason == null;
-    return {
-      createdAt: lastJob.createdAt.toISOString(),
-      success,
-      failedReason: lastJob.failedReason ?? undefined,
-    };
-  });
 
 /** Ultimo job de un tipo dado para un representante (por created_at), con estado success/error. */
 export const getLastJobByType = createServerFn({
