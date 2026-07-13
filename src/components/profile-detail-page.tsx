@@ -1,10 +1,19 @@
-import { useQuery } from '@tanstack/react-query';
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
+import { useState, useEffect } from 'react';
 import { ArrowLeft } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { getClient } from '@/actions/profile';
+import { updateClientFiscalData } from '@/actions/accounting';
 import { toTitleCase } from '@/lib/format-name';
 import { getInvoiceStatsByProfile } from '@/actions/invoice';
 import { listOrgModules } from '@/actions/admin';
@@ -54,6 +63,131 @@ const COLORS = [
   '#1F2937', // gray-800 (repeat for more items)
   '#374151', // gray-700 (repeat for more items)
 ];
+
+function FiscalDataCard({
+  clientId,
+  client,
+}: {
+  clientId: string;
+  client: {
+    address?: string | null;
+    actividadPrincipal?: string | null;
+    fechaInscripcion?: string | Date | null;
+    numeroInscripcion?: string | null;
+  };
+}) {
+  const qc = useQueryClient();
+  const toDateInput = (v: string | Date | null | undefined): string => {
+    if (!v) return '';
+    const d = v instanceof Date ? v : new Date(v);
+    return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
+  };
+  const initial = () => ({
+    address: client.address ?? '',
+    actividadPrincipal: client.actividadPrincipal ?? '',
+    fechaInscripcion: toDateInput(client.fechaInscripcion),
+    numeroInscripcion: client.numeroInscripcion ?? '',
+  });
+  const [form, setForm] = useState(initial);
+  useEffect(() => {
+    setForm(initial());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    client.address,
+    client.actividadPrincipal,
+    client.fechaInscripcion,
+    client.numeroInscripcion,
+  ]);
+
+  const mut = useMutation({
+    mutationFn: () =>
+      updateClientFiscalData({
+        data: {
+          clientId,
+          address: form.address,
+          actividadPrincipal: form.actividadPrincipal,
+          fechaInscripcion: form.fechaInscripcion || null,
+          numeroInscripcion: form.numeroInscripcion,
+        },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['client', clientId] });
+      toast.success('Datos fiscales guardados');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const upd =
+    (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+      setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base font-semibold">
+          Datos para Estados Contables
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            mut.mutate();
+          }}
+          className="space-y-3"
+        >
+          <div className="space-y-1.5">
+            <Label htmlFor="fd-actividad" className="text-xs">
+              Actividad principal
+            </Label>
+            <Input
+              id="fd-actividad"
+              value={form.actividadPrincipal}
+              onChange={upd('actividadPrincipal')}
+              placeholder="Prestación de servicios de…"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="fd-domicilio" className="text-xs">
+              Domicilio
+            </Label>
+            <Input
+              id="fd-domicilio"
+              value={form.address}
+              onChange={upd('address')}
+              placeholder="Av. Ejemplo 123, CABA"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="fd-inscripcion" className="text-xs">
+              Fecha de inscripción (Registro Público)
+            </Label>
+            <Input
+              id="fd-inscripcion"
+              type="date"
+              value={form.fechaInscripcion}
+              onChange={upd('fechaInscripcion')}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="fd-igj" className="text-xs">
+              N° de inscripción IGJ
+            </Label>
+            <Input
+              id="fd-igj"
+              value={form.numeroInscripcion}
+              onChange={upd('numeroInscripcion')}
+              placeholder="1.704.378"
+            />
+          </div>
+          <Button type="submit" size="sm" disabled={mut.isPending}>
+            {mut.isPending ? 'Guardando…' : 'Guardar'}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
 
 export function ClientDetailView({
   clientId,
@@ -238,6 +372,8 @@ export function ClientDetailView({
             </div>
           </CardContent>
         </Card>
+
+        <FiscalDataCard clientId={clientId} client={client} />
 
         {/* Estadísticas Resumen */}
         <Card>

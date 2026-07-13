@@ -2,7 +2,11 @@ import { auth } from '@/lib/auth';
 import { getRequestHeaders } from '@tanstack/react-start/server';
 import { db } from '@/lib/db';
 import { member } from '@/drizzle/auth';
-import { representative, representativeUserAccess, organizationModule } from '@/drizzle/schema';
+import {
+  representative,
+  representativeUserAccess,
+  organizationModule,
+} from '@/drizzle/schema';
 import { and, eq } from 'drizzle-orm';
 
 export async function getAuthSession() {
@@ -13,21 +17,24 @@ export async function getAuthSession() {
 
 export async function getActiveOrganizationId(): Promise<string> {
   const session = await getAuthSession();
-  const orgId = (session.session as any).activeOrganizationId;
+  const orgId = (session.session as { activeOrganizationId?: string })
+    .activeOrganizationId;
   if (!orgId) throw new Error('No active organization');
   return orgId;
 }
 
 export async function getSessionWithOrg() {
   const session = await getAuthSession();
-  const orgId = (session.session as any).activeOrganizationId;
+  const orgId = (session.session as { activeOrganizationId?: string })
+    .activeOrganizationId;
   if (!orgId) throw new Error('No active organization');
   return { session, orgId, userId: session.user.id };
 }
 
 export async function getMemberRole(): Promise<string> {
   const session = await getAuthSession();
-  const orgId = (session.session as any).activeOrganizationId;
+  const orgId = (session.session as { activeOrganizationId?: string })
+    .activeOrganizationId;
   if (!orgId) return 'viewer';
 
   const [m] = await db
@@ -47,7 +54,9 @@ export function assertCanWrite(role: string) {
   }
 }
 
-export async function getOrgRepresentativeIds(orgId: string): Promise<string[]> {
+export async function getOrgRepresentativeIds(
+  orgId: string
+): Promise<string[]> {
   const representatives = await db
     .select({ id: representative.id })
     .from(representative)
@@ -81,14 +90,17 @@ export async function getRepresentativePortalSession() {
  * Returns true if the given module is enabled for the organization.
  * Modules: sueldos, banco, contabilidad, analytics, portal_cliente, ai_agent
  */
-export async function isModuleEnabled(orgId: string, module: string): Promise<boolean> {
+export async function isModuleEnabled(
+  orgId: string,
+  module: string
+): Promise<boolean> {
   const [row] = await db
     .select({ enabled: organizationModule.enabled })
     .from(organizationModule)
     .where(
       and(
         eq(organizationModule.organizationId, orgId),
-        eq(organizationModule.module, module),
+        eq(organizationModule.module, module)
       )
     )
     .limit(1);

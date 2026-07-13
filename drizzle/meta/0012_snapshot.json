@@ -1,6 +1,6 @@
 {
-  "id": "33f6df84-c4be-49ba-9837-3aefeb17f8ef",
-  "prevId": "3c5e76d8-ec71-4a9c-8add-3890202c17e9",
+  "id": "0c283d8d-daa9-475b-aff7-6ecb105e1b21",
+  "prevId": "96079e2c-c8e0-4e0a-a084-565f215fe54c",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -345,6 +345,111 @@
           "columns": [
             "client_id",
             "account_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.accountant_signature": {
+      "name": "accountant_signature",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nombre": {
+          "name": "nombre",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "titulo": {
+          "name": "titulo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'Contador P\u00fablico'"
+        },
+        "universidad": {
+          "name": "universidad",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "consejo": {
+          "name": "consejo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tomo": {
+          "name": "tomo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "folio": {
+          "name": "folio",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "firma_imagen": {
+          "name": "firma_imagen",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "accountant_signature_organization_id_organization_id_fk": {
+          "name": "accountant_signature_organization_id_organization_id_fk",
+          "tableFrom": "accountant_signature",
+          "tableTo": "organization",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "accountant_signature_organization_id_unique": {
+          "name": "accountant_signature_organization_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "organization_id"
           ]
         }
       },
@@ -743,7 +848,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'Nueva conversación'"
+          "default": "'Nueva conversaci\u00f3n'"
         },
         "created_at": {
           "name": "created_at",
@@ -1750,6 +1855,24 @@
           "primaryKey": false,
           "notNull": false
         },
+        "actividad_principal": {
+          "name": "actividad_principal",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fecha_inscripcion": {
+          "name": "fecha_inscripcion",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "numero_inscripcion": {
+          "name": "numero_inscripcion",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -1977,6 +2100,143 @@
           "columns": [
             "client_id",
             "period"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.cmv_annex": {
+      "name": "cmv_annex",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fiscal_year_id": {
+          "name": "fiscal_year_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "existencia_inicial": {
+          "name": "existencia_inicial",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "compras_gastos": {
+          "name": "compras_gastos",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "existencia_final": {
+          "name": "existencia_final",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_cmv_annex_client": {
+          "name": "idx_cmv_annex_client",
+          "columns": [
+            {
+              "expression": "client_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "cmv_annex_organization_id_organization_id_fk": {
+          "name": "cmv_annex_organization_id_organization_id_fk",
+          "tableFrom": "cmv_annex",
+          "tableTo": "organization",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "cmv_annex_client_id_client_id_fk": {
+          "name": "cmv_annex_client_id_client_id_fk",
+          "tableFrom": "cmv_annex",
+          "tableTo": "client",
+          "columnsFrom": [
+            "client_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "cmv_annex_fiscal_year_id_fiscal_year_id_fk": {
+          "name": "cmv_annex_fiscal_year_id_fiscal_year_id_fk",
+          "tableFrom": "cmv_annex",
+          "tableTo": "fiscal_year",
+          "columnsFrom": [
+            "fiscal_year_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "cmv_annex_fy_unique": {
+          "name": "cmv_annex_fy_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "fiscal_year_id"
           ]
         }
       },
@@ -3166,6 +3426,199 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.financial_statement": {
+      "name": "financial_statement",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fiscal_year_id": {
+          "name": "fiscal_year_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "financial_statement_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'draft'"
+        },
+        "notes": {
+          "name": "notes",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "approved_at": {
+          "name": "approved_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approved_by": {
+          "name": "approved_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pdf_url": {
+          "name": "pdf_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pdf_size_bytes": {
+          "name": "pdf_size_bytes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pdf_generated_at": {
+          "name": "pdf_generated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pdf_generated_by": {
+          "name": "pdf_generated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_financial_statement_client": {
+          "name": "idx_financial_statement_client",
+          "columns": [
+            {
+              "expression": "client_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "financial_statement_organization_id_organization_id_fk": {
+          "name": "financial_statement_organization_id_organization_id_fk",
+          "tableFrom": "financial_statement",
+          "tableTo": "organization",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "financial_statement_client_id_client_id_fk": {
+          "name": "financial_statement_client_id_client_id_fk",
+          "tableFrom": "financial_statement",
+          "tableTo": "client",
+          "columnsFrom": [
+            "client_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "financial_statement_fiscal_year_id_fiscal_year_id_fk": {
+          "name": "financial_statement_fiscal_year_id_fiscal_year_id_fk",
+          "tableFrom": "financial_statement",
+          "tableTo": "fiscal_year",
+          "columnsFrom": [
+            "fiscal_year_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "financial_statement_approved_by_user_id_fk": {
+          "name": "financial_statement_approved_by_user_id_fk",
+          "tableFrom": "financial_statement",
+          "tableTo": "user",
+          "columnsFrom": [
+            "approved_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "financial_statement_pdf_generated_by_user_id_fk": {
+          "name": "financial_statement_pdf_generated_by_user_id_fk",
+          "tableFrom": "financial_statement",
+          "tableTo": "user",
+          "columnsFrom": [
+            "pdf_generated_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "financial_statement_fy_unique": {
+          "name": "financial_statement_fy_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "fiscal_year_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.fiscal_entity": {
       "name": "fiscal_entity",
       "schema": "",
@@ -3376,6 +3829,225 @@
           ]
         }
       },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.fixed_asset": {
+      "name": "fixed_asset",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "category": {
+          "name": "category",
+          "type": "fixed_asset_category",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "asset_account_id": {
+          "name": "asset_account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "accum_depr_account_id": {
+          "name": "accum_depr_account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "depr_expense_account_id": {
+          "name": "depr_expense_account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "acquisition_date": {
+          "name": "acquisition_date",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_value": {
+          "name": "original_value",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "useful_life_years": {
+          "name": "useful_life_years",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "residual_value": {
+          "name": "residual_value",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "method": {
+          "name": "method",
+          "type": "fixed_asset_method",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'linear'"
+        },
+        "status": {
+          "name": "status",
+          "type": "fixed_asset_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "disposal_date": {
+          "name": "disposal_date",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "disposal_reason": {
+          "name": "disposal_reason",
+          "type": "fixed_asset_disposal_reason",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_fixed_asset_client_status": {
+          "name": "idx_fixed_asset_client_status",
+          "columns": [
+            {
+              "expression": "client_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "fixed_asset_client_id_client_id_fk": {
+          "name": "fixed_asset_client_id_client_id_fk",
+          "tableFrom": "fixed_asset",
+          "tableTo": "client",
+          "columnsFrom": [
+            "client_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "fixed_asset_asset_account_id_accounting_account_id_fk": {
+          "name": "fixed_asset_asset_account_id_accounting_account_id_fk",
+          "tableFrom": "fixed_asset",
+          "tableTo": "accounting_account",
+          "columnsFrom": [
+            "asset_account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "fixed_asset_accum_depr_account_id_accounting_account_id_fk": {
+          "name": "fixed_asset_accum_depr_account_id_accounting_account_id_fk",
+          "tableFrom": "fixed_asset",
+          "tableTo": "accounting_account",
+          "columnsFrom": [
+            "accum_depr_account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "fixed_asset_depr_expense_account_id_accounting_account_id_fk": {
+          "name": "fixed_asset_depr_expense_account_id_accounting_account_id_fk",
+          "tableFrom": "fixed_asset",
+          "tableTo": "accounting_account",
+          "columnsFrom": [
+            "depr_expense_account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "fixed_asset_created_by_user_id_fk": {
+          "name": "fixed_asset_created_by_user_id_fk",
+          "tableFrom": "fixed_asset",
+          "tableTo": "user",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -4334,6 +5006,19 @@
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
+        "journal_entry_mapping_rule_id_ledger_mapping_rule_id_fk": {
+          "name": "journal_entry_mapping_rule_id_ledger_mapping_rule_id_fk",
+          "tableFrom": "journal_entry",
+          "tableTo": "ledger_mapping_rule",
+          "columnsFrom": [
+            "mapping_rule_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
         "journal_entry_voided_by_user_id_fk": {
           "name": "journal_entry_voided_by_user_id_fk",
           "tableFrom": "journal_entry",
@@ -4537,6 +5222,238 @@
           "tableTo": "accounting_period",
           "columnsFrom": [
             "period_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.ledger_mapping_rule": {
+      "name": "ledger_mapping_rule",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_module": {
+          "name": "source_module",
+          "type": "ledger_mapping_source_module",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rule_type": {
+          "name": "rule_type",
+          "type": "ledger_mapping_rule_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'default'"
+        },
+        "condition": {
+          "name": "condition",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "priority": {
+          "name": "priority",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 100
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_ledger_mapping_rule_client": {
+          "name": "idx_ledger_mapping_rule_client",
+          "columns": [
+            {
+              "expression": "client_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "source_module",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "ledger_mapping_rule_client_id_client_id_fk": {
+          "name": "ledger_mapping_rule_client_id_client_id_fk",
+          "tableFrom": "ledger_mapping_rule",
+          "tableTo": "client",
+          "columnsFrom": [
+            "client_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.ledger_mapping_rule_line": {
+      "name": "ledger_mapping_rule_line",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "rule_id": {
+          "name": "rule_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "side": {
+          "name": "side",
+          "type": "ledger_mapping_line_side",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount_basis": {
+          "name": "amount_basis",
+          "type": "ledger_mapping_amount_basis",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fixed_amount": {
+          "name": "fixed_amount",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "line_order": {
+          "name": "line_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_ledger_mapping_rule_line_rule": {
+          "name": "idx_ledger_mapping_rule_line_rule",
+          "columns": [
+            {
+              "expression": "rule_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "ledger_mapping_rule_line_rule_id_ledger_mapping_rule_id_fk": {
+          "name": "ledger_mapping_rule_line_rule_id_ledger_mapping_rule_id_fk",
+          "tableFrom": "ledger_mapping_rule_line",
+          "tableTo": "ledger_mapping_rule",
+          "columnsFrom": [
+            "rule_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "ledger_mapping_rule_line_account_id_accounting_account_id_fk": {
+          "name": "ledger_mapping_rule_line_account_id_accounting_account_id_fk",
+          "tableFrom": "ledger_mapping_rule_line",
+          "tableTo": "accounting_account",
+          "columnsFrom": [
+            "account_id"
           ],
           "columnsTo": [
             "id"
@@ -8869,6 +9786,151 @@
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
+    },
+    "public.iibb_liquidacion": {
+      "name": "iibb_liquidacion",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "representative_id": {
+          "name": "representative_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "profile_id": {
+          "name": "profile_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "periodo": {
+          "name": "periodo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provincia": {
+          "name": "provincia",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "alicuota": {
+          "name": "alicuota",
+          "type": "numeric(7, 6)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0.01'"
+        },
+        "saldo_a_favor": {
+          "name": "saldo_a_favor",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "percepciones_agentes": {
+          "name": "percepciones_agentes",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "percepciones_aduaneras": {
+          "name": "percepciones_aduaneras",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "retenciones_agentes": {
+          "name": "retenciones_agentes",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "retenciones_bancarias": {
+          "name": "retenciones_bancarias",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "iibb_liquidacion_representative_id_representative_id_fk": {
+          "name": "iibb_liquidacion_representative_id_representative_id_fk",
+          "tableFrom": "iibb_liquidacion",
+          "tableTo": "representative",
+          "columnsFrom": [
+            "representative_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "iibb_liquidacion_profile_id_client_id_fk": {
+          "name": "iibb_liquidacion_profile_id_client_id_fk",
+          "tableFrom": "iibb_liquidacion",
+          "tableTo": "client",
+          "columnsFrom": [
+            "profile_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "iibb_liquidacion_unique": {
+          "name": "iibb_liquidacion_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "org_id",
+            "representative_id",
+            "profile_id",
+            "periodo",
+            "provincia"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
     }
   },
   "enums": {
@@ -8986,6 +10048,14 @@
         "closed"
       ]
     },
+    "public.financial_statement_status": {
+      "name": "financial_statement_status",
+      "schema": "public",
+      "values": [
+        "draft",
+        "approved"
+      ]
+    },
     "public.fiscal_year_status": {
       "name": "fiscal_year_status",
       "schema": "public",
@@ -8993,6 +10063,44 @@
         "open",
         "closing",
         "closed"
+      ]
+    },
+    "public.fixed_asset_category": {
+      "name": "fixed_asset_category",
+      "schema": "public",
+      "values": [
+        "rodados",
+        "muebles_utiles",
+        "equipos_computacion",
+        "instalaciones",
+        "inmuebles",
+        "maquinarias",
+        "otros"
+      ]
+    },
+    "public.fixed_asset_disposal_reason": {
+      "name": "fixed_asset_disposal_reason",
+      "schema": "public",
+      "values": [
+        "sale",
+        "disuse",
+        "destruction"
+      ]
+    },
+    "public.fixed_asset_method": {
+      "name": "fixed_asset_method",
+      "schema": "public",
+      "values": [
+        "linear"
+      ]
+    },
+    "public.fixed_asset_status": {
+      "name": "fixed_asset_status",
+      "schema": "public",
+      "values": [
+        "active",
+        "sold",
+        "discarded"
       ]
     },
     "public.job_status": {
@@ -9037,6 +10145,42 @@
         "invoice",
         "payroll",
         "closing"
+      ]
+    },
+    "public.ledger_mapping_amount_basis": {
+      "name": "ledger_mapping_amount_basis",
+      "schema": "public",
+      "values": [
+        "total",
+        "net",
+        "vat",
+        "other_taxes",
+        "concept_value",
+        "fixed"
+      ]
+    },
+    "public.ledger_mapping_line_side": {
+      "name": "ledger_mapping_line_side",
+      "schema": "public",
+      "values": [
+        "debit",
+        "credit"
+      ]
+    },
+    "public.ledger_mapping_rule_type": {
+      "name": "ledger_mapping_rule_type",
+      "schema": "public",
+      "values": [
+        "default",
+        "conditional"
+      ]
+    },
+    "public.ledger_mapping_source_module": {
+      "name": "ledger_mapping_source_module",
+      "schema": "public",
+      "values": [
+        "invoice",
+        "payroll"
       ]
     },
     "public.payroll_base_columna": {

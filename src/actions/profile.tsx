@@ -28,6 +28,9 @@ export const getClient = createServerFn({
         phone: client.phone,
         email: client.email,
         status: client.status,
+        actividadPrincipal: client.actividadPrincipal,
+        fechaInscripcion: client.fechaInscripcion,
+        numeroInscripcion: client.numeroInscripcion,
         createdAt: client.createdAt,
         updatedAt: client.updatedAt,
       })

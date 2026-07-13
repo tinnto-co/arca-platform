@@ -7,6 +7,7 @@ import { member, organization, user } from '@/drizzle/auth';
 import { organizationModule } from '@/drizzle/schema';
 import { eq, and } from 'drizzle-orm';
 import { getSessionWithOrg } from './helpers';
+import { seedBaseChartForOrg } from '@/lib/accounting-seed';
 
 async function requireOwner() {
   const session = await auth.api.getSession({ headers: getRequestHeaders() });
@@ -241,6 +242,12 @@ export const setModuleEnabled = createServerFn({
           enabledAt: ctx.data.enabled ? new Date() : null,
         },
       });
+
+    // Al activar Contabilidad, sembrar el plan de cuentas base del estudio.
+    // Idempotente: solo inserta las cuentas base que falten.
+    if (ctx.data.module === 'contabilidad' && ctx.data.enabled) {
+      await seedBaseChartForOrg(orgId);
+    }
 
     return { success: true };
   });
