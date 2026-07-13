@@ -7,6 +7,7 @@ import {
   invoiceAttachment,
   document,
   client,
+  iibbLiquidacion,
 } from '@/drizzle/schema';
 import {
   getSessionWithOrg,
@@ -255,7 +256,7 @@ export const getClientMultilateralSummary = createServerFn({
 
     const conditions = [
       eq(invoice.representativeId, clientId),
-      eq(invoice.direction, 'Outbound'),
+      sql`LOWER(${invoice.direction}) = 'outbound'`,
       profileFilter ? eq(invoice.clientId, profileFilter) : sql`true`,
     ];
     if (dateFrom) {
@@ -334,7 +335,7 @@ export const getClientMultilateralInvoices = createServerFn({
 
     const conditions = [
       eq(invoice.representativeId, clientId),
-      eq(invoice.direction, 'Outbound'),
+      sql`LOWER(${invoice.direction}) = 'outbound'`,
       profileFilter ? eq(invoice.clientId, profileFilter) : sql`true`,
     ];
 
@@ -1313,4 +1314,167 @@ export const getInvoiceStatsByProfile = createServerFn({
       totalAmountIVA0,
       totalAmountNoTaxed,
     };
+  });
+
+// ---------------------------------------------------------------------------
+// IIBB Liquidación
+// ---------------------------------------------------------------------------
+
+/**
+ * Devuelve las filas guardadas de liquidación IIBB para un período dado.
+ * Para provincias sin fila, calcula si hay saldo a favor arrastrado del período anterior.
+ */
+export const getIibbLiquidacion = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      representativeId: z.string(),
+      profileId: z.string().optional(),
+      periodo: z.string(), // "YYYY-MM"
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const { representativeId, profileId, periodo } = ctx.data;
+
+    // Verificar que el representative pertenece a la org
+    const [rep] = await db
+      .select({ id: representative.id })
+      .from(representative)
+      .where(and(eq(representative.id, representativeId), eq(representative.organizationId, orgId)))
+      .limit(1);
+    if (!rep) throw new Error('Representative no encontrado o no autorizado');
+
+    const profileFilter = profileId
+      ? eq(iibbLiquidacion.profileId, profileId)
+      : isNull(iibbLiquidacion.profileId);
+
+    // Período actual
+    const rows = await db
+      .select()
+      .from(iibbLiquidacion)
+      .where(
+        and(
+          eq(iibbLiquidacion.orgId, orgId),
+          eq(iibbLiquidacion.representativeId, representativeId),
+          profileFilter,
+          eq(iibbLiquidacion.periodo, periodo)
+        )
+      );
+
+    // Período anterior para arrastre de saldo a favor
+    const [year, month] = periodo.split('-').map(Number);
+    const prevDate = new Date(year, month - 2, 1); // month-2 porque month es 1-indexed
+    const prevPeriodo = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
+
+    const prevRows = await db
+      .select()
+      .from(iibbLiquidacion)
+      .where(
+        and(
+          eq(iibbLiquidacion.orgId, orgId),
+          eq(iibbLiquidacion.representativeId, representativeId),
+          profileFilter,
+          eq(iibbLiquidacion.periodo, prevPeriodo)
+        )
+      );
+
+    const mapRow = (r: typeof rows[0]) => ({
+      id: r.id,
+      provincia: r.provincia,
+      alicuota: Number(r.alicuota),
+      saldoAFavor: Number(r.saldoAFavor),
+      percepcionesAgentes: Number(r.percepcionesAgentes),
+      percepcionesAduaneras: Number(r.percepcionesAduaneras),
+      retencionesAgentes: Number(r.retencionesAgentes),
+      retencionesBancarias: Number(r.retencionesBancarias),
+    });
+
+    // carryOver: saldo a favor guardado en el período anterior, por provincia
+    // El frontend lo usa como valor inicial para provincias sin fila en el período actual
+    const carryOver: Record<string, number> = {};
+    for (const prev of prevRows) {
+      const sf = Number(prev.saldoAFavor ?? 0);
+      if (sf > 0) carryOver[prev.provincia] = sf;
+    }
+
+    return {
+      rows: rows.map(mapRow),
+      carryOver,
+    };
+  });
+
+/** Guarda (upsert) una fila de liquidación IIBB para un período y provincia. */
+export const saveIibbLiquidacion = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      representativeId: z.string(),
+      profileId: z.string().optional(),
+      periodo: z.string(), // "YYYY-MM"
+      provincia: z.string(),
+      alicuota: z.number().min(0).max(1),
+      saldoAFavor: z.number().min(0),
+      percepcionesAgentes: z.number().min(0),
+      percepcionesAduaneras: z.number().min(0),
+      retencionesAgentes: z.number().min(0),
+      retencionesBancarias: z.number().min(0),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const {
+      representativeId,
+      profileId,
+      periodo,
+      provincia,
+      alicuota,
+      saldoAFavor,
+      percepcionesAgentes,
+      percepcionesAduaneras,
+      retencionesAgentes,
+      retencionesBancarias,
+    } = ctx.data;
+
+    // Verificar que el representative pertenece a la org
+    const [rep] = await db
+      .select({ id: representative.id })
+      .from(representative)
+      .where(and(eq(representative.id, representativeId), eq(representative.organizationId, orgId)))
+      .limit(1);
+    if (!rep) throw new Error('Representative no encontrado o no autorizado');
+
+    await db
+      .insert(iibbLiquidacion)
+      .values({
+        orgId,
+        representativeId,
+        profileId: profileId ?? null,
+        periodo,
+        provincia,
+        alicuota: String(alicuota),
+        saldoAFavor: String(saldoAFavor),
+        percepcionesAgentes: String(percepcionesAgentes),
+        percepcionesAduaneras: String(percepcionesAduaneras),
+        retencionesAgentes: String(retencionesAgentes),
+        retencionesBancarias: String(retencionesBancarias),
+      })
+      .onConflictDoUpdate({
+        target: [
+          iibbLiquidacion.orgId,
+          iibbLiquidacion.representativeId,
+          iibbLiquidacion.profileId,
+          iibbLiquidacion.periodo,
+          iibbLiquidacion.provincia,
+        ],
+        set: {
+          alicuota: String(alicuota),
+          saldoAFavor: String(saldoAFavor),
+          percepcionesAgentes: String(percepcionesAgentes),
+          percepcionesAduaneras: String(percepcionesAduaneras),
+          retencionesAgentes: String(retencionesAgentes),
+          retencionesBancarias: String(retencionesBancarias),
+          updatedAt: new Date(),
+        },
+      });
+
+    return { ok: true };
   });

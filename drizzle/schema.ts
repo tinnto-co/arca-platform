@@ -512,6 +512,51 @@ export const ivaScrape = pgTable(
   ]
 );
 
+/** Liquidación de IIBB por período y provincia — datos editables por el usuario */
+export const iibbLiquidacion = pgTable(
+  "iibb_liquidacion",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id").notNull(),
+    /** FK al representative (agrupador de empresa) */
+    representativeId: uuid("representative_id")
+      .notNull()
+      .references(() => representative.id, { onDelete: "cascade" }),
+    /** FK al profile (entidad fiscal con CUIT). Nullable: si null aplica a todos los profiles del representative. */
+    profileId: uuid("profile_id").references(() => client.id, { onDelete: "cascade" }),
+    /** Período en formato "YYYY-MM" (ej. "2026-07") */
+    periodo: text("periodo").notNull(),
+    /** Nombre/código de la provincia tal como viene de los comprobantes */
+    provincia: text("provincia").notNull(),
+    /** Alícuota IIBB (ej. 0.01 = 1%). Default 1% */
+    alicuota: numeric("alicuota", { precision: 7, scale: 6 }).notNull().default("0.01"),
+    /** Saldo a favor del período anterior (arrastrado o ingresado manualmente) */
+    saldoAFavor: numeric("saldo_a_favor", { precision: 18, scale: 2 }).notNull().default("0"),
+    /** Percepciones de agentes de recaudación */
+    percepcionesAgentes: numeric("percepciones_agentes", { precision: 18, scale: 2 }).notNull().default("0"),
+    /** Percepciones aduaneras */
+    percepcionesAduaneras: numeric("percepciones_aduaneras", { precision: 18, scale: 2 }).notNull().default("0"),
+    /** Retenciones de agentes de retención */
+    retencionesAgentes: numeric("retenciones_agentes", { precision: 18, scale: 2 }).notNull().default("0"),
+    /** Retenciones bancarias */
+    retencionesBancarias: numeric("retenciones_bancarias", { precision: 18, scale: 2 }).notNull().default("0"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    unique("iibb_liquidacion_unique").on(
+      table.orgId,
+      table.representativeId,
+      table.profileId,
+      table.periodo,
+      table.provincia
+    ),
+  ]
+);
+
 // Job table for tracking scraping tasks
 export const job = pgTable("job", {
   id: uuid("id").primaryKey().defaultRandom(),
