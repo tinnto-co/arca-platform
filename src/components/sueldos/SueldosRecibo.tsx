@@ -6,7 +6,7 @@ import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { FileText, ChevronRight, Pencil, Printer, Loader2, Sparkles, AlertCircle, CheckCircle2, Receipt } from 'lucide-react';
 import { toast } from 'sonner';
-import { getPeriodoMaxLiquidable } from '@/lib/payroll-period-rules';
+import { getPeriodoMaxLiquidable, getPeriodoMesAnterior } from '@/lib/payroll-period-rules';
 import {
   Select,
   SelectContent,
@@ -373,12 +373,12 @@ function DocCell({
 export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialPeriodo, onEditRecibo }: SueldosReciboProps) {
   const [maxAno, maxMes] = getPeriodoMaxLiquidable().split('-');
   const [ano, setAno] = useState(() => {
-    const p = initialPeriodo ?? getPeriodoMaxLiquidable();
+    const p = initialPeriodo ?? getPeriodoMesAnterior();
     return p.split('-')[0] ?? '';
   });
   // '' | '01'..'12' | 'sem1' | 'sem2'
   const [periodoSeleccion, setPeriodoSeleccion] = useState(() => {
-    const p = initialPeriodo ?? getPeriodoMaxLiquidable();
+    const p = initialPeriodo ?? getPeriodoMesAnterior();
     return p.split('-')[1] ?? '';
   });
   const mesesDisponibles = ano === maxAno

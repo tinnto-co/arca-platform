@@ -1,12 +1,7 @@
 /**
  * Reglas de negocio para períodos en el módulo Sueldos:
  *
- * El período máximo liquidable se habilita el día 25 de cada mes:
- * - Antes del día 25: solo se puede liquidar hasta el mes anterior.
- * - A partir del día 25: se habilita el mes actual para liquidar.
- *
- * Ejemplo: el 25 de junio se habilita el período "Junio" (2025-06).
- *          Hasta el 24 de junio, el máximo es "Mayo" (2025-05).
+ * Se pueden generar y consultar recibos de cualquier mes del año en curso.
  */
 
 /** Período en curso (YYYY-MM) según el calendario. */
@@ -16,32 +11,28 @@ export function getPeriodoMesActual(): string {
 }
 
 /**
- * Período máximo que puede liquidarse en este momento.
- * - día >= 25 → mes actual
- * - día < 25  → mes anterior
+ * Período máximo que puede liquidarse: diciembre del año en curso.
+ * Todos los meses del año actual están habilitados.
  */
 export function getPeriodoMaxLiquidable(): string {
+  const year = new Date().getFullYear();
+  return `${year}-12`;
+}
+
+/** Período por defecto para el dashboard: mes anterior al actual. */
+export function getPeriodoMesAnterior(): string {
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth(); // 0-indexed
-  if (now.getDate() >= 25) {
-    // Se habilita el mes actual
-    return `${year}-${String(month + 1).padStart(2, '0')}`;
-  }
-  // Solo hasta el mes anterior
   if (month === 0) {
     return `${year - 1}-12`;
   }
   return `${year}-${String(month).padStart(2, '0')}`;
 }
 
-/** Período por defecto para el dashboard: el máximo liquidable. */
-export function getPeriodoMesAnterior(): string {
-  return getPeriodoMaxLiquidable();
-}
-
 /**
- * Indica si el período puede liquidarse según la regla del día 25.
+ * Indica si el período puede liquidarse.
+ * Permite cualquier período dentro del año en curso.
  */
 export function puedeLiquidarPeriodo(periodo: string): boolean {
   return periodo <= getPeriodoMaxLiquidable();
@@ -49,7 +40,6 @@ export function puedeLiquidarPeriodo(periodo: string): boolean {
 
 /**
  * Indica si el período permite cargar novedades y ver recibos.
- * Solo períodos hasta el máximo liquidable (inclusive).
  */
 export function puedeIngresarDatosPeriodo(periodo: string): boolean {
   return periodo <= getPeriodoMaxLiquidable();
