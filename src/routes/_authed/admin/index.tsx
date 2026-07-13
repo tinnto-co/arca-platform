@@ -16,6 +16,10 @@ import {
 } from '@/actions/admin';
 import { getUser } from '@/actions/user';
 import {
+  getAccountantSignature,
+  saveAccountantSignature,
+} from '@/actions/accounting';
+import {
   Card,
   CardContent,
   CardDescription,
@@ -503,6 +507,7 @@ function SettingsTab() {
   if (isLoading) return <p className="text-[var(--arca-ink-3)]">Cargando...</p>;
 
   return (
+    <div className="space-y-6">
     <Card>
       <CardHeader>
         <CardTitle>Configuración de la organización</CardTitle>
@@ -563,6 +568,133 @@ function SettingsTab() {
             {updateMutation.isPending ? 'Guardando...' : 'Guardar cambios'}
           </Button>
         </form>
+      </CardContent>
+    </Card>
+    <AccountantSignatureCard />
+    </div>
+  );
+}
+
+function AccountantSignatureCard() {
+  const { data: sig, isLoading } = useQuery({
+    queryKey: ['admin', 'accountant-signature'],
+    queryFn: () => getAccountantSignature(),
+  });
+
+  const [form, setForm] = useState({
+    nombre: '',
+    titulo: 'Contador Público',
+    universidad: '',
+    consejo: '',
+    tomo: '',
+    folio: '',
+  });
+
+  useEffect(() => {
+    if (sig) {
+      setForm({
+        nombre: sig.nombre ?? '',
+        titulo: sig.titulo || 'Contador Público',
+        universidad: sig.universidad ?? '',
+        consejo: sig.consejo ?? '',
+        tomo: sig.tomo ?? '',
+        folio: sig.folio ?? '',
+      });
+    }
+  }, [sig]);
+
+  const mut = useMutation({
+    mutationFn: () => saveAccountantSignature({ data: form }),
+    onSuccess: () => toast.success('Datos del contador guardados'),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const upd = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Firma del contador (Estados Contables)</CardTitle>
+        <CardDescription>
+          Datos del contador firmante que aparecen en el pie de los Estados
+          Contables y anexos. Se usan para todos los clientes del estudio.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <p className="text-[var(--arca-ink-3)]">Cargando...</p>
+        ) : (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              mut.mutate();
+            }}
+            className="space-y-4 max-w-md"
+          >
+            <div className="space-y-2">
+              <Label htmlFor="ac-nombre">Nombre y apellido</Label>
+              <Input
+                id="ac-nombre"
+                value={form.nombre}
+                onChange={upd('nombre')}
+                placeholder="Dr. Juan Pérez"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="ac-titulo">Título</Label>
+                <Input
+                  id="ac-titulo"
+                  value={form.titulo}
+                  onChange={upd('titulo')}
+                  placeholder="Contador Público"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ac-univ">Universidad</Label>
+                <Input
+                  id="ac-univ"
+                  value={form.universidad}
+                  onChange={upd('universidad')}
+                  placeholder="U.B.A."
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ac-consejo">Consejo profesional</Label>
+              <Input
+                id="ac-consejo"
+                value={form.consejo}
+                onChange={upd('consejo')}
+                placeholder="C.P.C.E.C.A.B.A."
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="ac-tomo">Tomo</Label>
+                <Input
+                  id="ac-tomo"
+                  value={form.tomo}
+                  onChange={upd('tomo')}
+                  placeholder="193"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ac-folio">Folio</Label>
+                <Input
+                  id="ac-folio"
+                  value={form.folio}
+                  onChange={upd('folio')}
+                  placeholder="084"
+                />
+              </div>
+            </div>
+            <Button type="submit" disabled={mut.isPending}>
+              {mut.isPending ? 'Guardando...' : 'Guardar datos del contador'}
+            </Button>
+          </form>
+        )}
       </CardContent>
     </Card>
   );

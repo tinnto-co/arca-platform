@@ -47,8 +47,50 @@
     {
       "idx": 6,
       "version": "7",
+      "when": 1783009304726,
+      "tag": "0006_balances_module",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783045376189,
+      "tag": "0007_balances_02_features",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1783052369039,
+      "tag": "0008_fixed_assets_closing",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1783089856393,
+      "tag": "0009_feat05_audit_batch_eecc",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1783710350554,
+      "tag": "0010_eecc_membrete",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1783715328262,
+      "tag": "0011_cmv_annex",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
       "when": 1783531739694,
-      "tag": "0006_stiff_gwen_stacy",
+      "tag": "0012_stiff_gwen_stacy",
       "breakpoints": true
     }
   ]

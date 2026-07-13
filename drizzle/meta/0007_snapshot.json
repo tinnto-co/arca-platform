@@ -1,6 +1,6 @@
 {
-  "id": "33f6df84-c4be-49ba-9837-3aefeb17f8ef",
-  "prevId": "3c5e76d8-ec71-4a9c-8add-3890202c17e9",
+  "id": "165e4124-c77a-40c5-8e53-f888498beed5",
+  "prevId": "33f6df84-c4be-49ba-9837-3aefeb17f8ef",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4334,6 +4334,19 @@
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
+        "journal_entry_mapping_rule_id_ledger_mapping_rule_id_fk": {
+          "name": "journal_entry_mapping_rule_id_ledger_mapping_rule_id_fk",
+          "tableFrom": "journal_entry",
+          "tableTo": "ledger_mapping_rule",
+          "columnsFrom": [
+            "mapping_rule_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
         "journal_entry_voided_by_user_id_fk": {
           "name": "journal_entry_voided_by_user_id_fk",
           "tableFrom": "journal_entry",
@@ -4537,6 +4550,238 @@
           "tableTo": "accounting_period",
           "columnsFrom": [
             "period_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.ledger_mapping_rule": {
+      "name": "ledger_mapping_rule",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_module": {
+          "name": "source_module",
+          "type": "ledger_mapping_source_module",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rule_type": {
+          "name": "rule_type",
+          "type": "ledger_mapping_rule_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'default'"
+        },
+        "condition": {
+          "name": "condition",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "priority": {
+          "name": "priority",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 100
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_ledger_mapping_rule_client": {
+          "name": "idx_ledger_mapping_rule_client",
+          "columns": [
+            {
+              "expression": "client_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "source_module",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "ledger_mapping_rule_client_id_client_id_fk": {
+          "name": "ledger_mapping_rule_client_id_client_id_fk",
+          "tableFrom": "ledger_mapping_rule",
+          "tableTo": "client",
+          "columnsFrom": [
+            "client_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.ledger_mapping_rule_line": {
+      "name": "ledger_mapping_rule_line",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "rule_id": {
+          "name": "rule_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "side": {
+          "name": "side",
+          "type": "ledger_mapping_line_side",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount_basis": {
+          "name": "amount_basis",
+          "type": "ledger_mapping_amount_basis",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fixed_amount": {
+          "name": "fixed_amount",
+          "type": "numeric(18, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "line_order": {
+          "name": "line_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_ledger_mapping_rule_line_rule": {
+          "name": "idx_ledger_mapping_rule_line_rule",
+          "columns": [
+            {
+              "expression": "rule_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "ledger_mapping_rule_line_rule_id_ledger_mapping_rule_id_fk": {
+          "name": "ledger_mapping_rule_line_rule_id_ledger_mapping_rule_id_fk",
+          "tableFrom": "ledger_mapping_rule_line",
+          "tableTo": "ledger_mapping_rule",
+          "columnsFrom": [
+            "rule_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "ledger_mapping_rule_line_account_id_accounting_account_id_fk": {
+          "name": "ledger_mapping_rule_line_account_id_accounting_account_id_fk",
+          "tableFrom": "ledger_mapping_rule_line",
+          "tableTo": "accounting_account",
+          "columnsFrom": [
+            "account_id"
           ],
           "columnsTo": [
             "id"
@@ -9037,6 +9282,42 @@
         "invoice",
         "payroll",
         "closing"
+      ]
+    },
+    "public.ledger_mapping_amount_basis": {
+      "name": "ledger_mapping_amount_basis",
+      "schema": "public",
+      "values": [
+        "total",
+        "net",
+        "vat",
+        "other_taxes",
+        "concept_value",
+        "fixed"
+      ]
+    },
+    "public.ledger_mapping_line_side": {
+      "name": "ledger_mapping_line_side",
+      "schema": "public",
+      "values": [
+        "debit",
+        "credit"
+      ]
+    },
+    "public.ledger_mapping_rule_type": {
+      "name": "ledger_mapping_rule_type",
+      "schema": "public",
+      "values": [
+        "default",
+        "conditional"
+      ]
+    },
+    "public.ledger_mapping_source_module": {
+      "name": "ledger_mapping_source_module",
+      "schema": "public",
+      "values": [
+        "invoice",
+        "payroll"
       ]
     },
     "public.payroll_base_columna": {
