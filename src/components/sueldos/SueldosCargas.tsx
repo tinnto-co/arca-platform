@@ -13,7 +13,6 @@ import {
   TriangleAlert,
   Pencil,
   ShieldAlert,
-  TrendingUp,
   Upload,
   Filter,
   Settings,
@@ -50,8 +49,6 @@ import {
   previewLsd,
   generarArchivoLsd,
   validarLsd,
-  getParametrosPeriodo,
-  upsertParametrosPeriodo,
   updateReciboLsdOverrides,
   listLsdPresentaciones,
   getLsdPresentacionContenido,
@@ -122,168 +119,6 @@ function triggerDownload(contenido: string, filename: string) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
-}
-
-// ─── Widget: Tope imponible ──────────────────────────────────────────────────
-
-function TopeImponibleWidget({
-  clientId,
-  profileId,
-  periodo,
-}: {
-  clientId: string;
-  profileId: string;
-  periodo: string;
-}) {
-  const queryClient = useQueryClient();
-  const [editando, setEditando] = useState(false);
-  const [topeInput, setTopeInput] = useState('');
-
-  const { data: params, isLoading } = useQuery({
-    queryKey: ['parametros-periodo', periodo],
-    queryFn: () => getParametrosPeriodo({ data: { periodo } }),
-    enabled: !!(clientId && profileId),
-  });
-
-  const { mutate: guardarTope, isPending: guardando } = useMutation({
-    mutationFn: () =>
-      upsertParametrosPeriodo({
-        data: { periodo, topeMaximoImponible: topeInput },
-      }),
-    onSuccess: () => {
-      toast.success('Tope imponible guardado');
-      setEditando(false);
-      setTopeInput('');
-      queryClient.invalidateQueries({ queryKey: ['parametros-periodo', periodo] });
-      queryClient.invalidateQueries({ queryKey: ['lsd-validacion', profileId, periodo] });
-    },
-    onError: (err) => {
-      toast.error(`Error al guardar: ${(err as Error).message}`);
-    },
-  });
-
-  const iniciarEdicion = () => {
-    setTopeInput(params?.topeMaximoImponible ?? '');
-    setEditando(true);
-  };
-
-  const cancelar = () => {
-    setEditando(false);
-    setTopeInput('');
-  };
-
-  const confirmar = () => {
-    const val = parseFloat(topeInput.replace(/[.,\s]/g, (c) => (c === ',' ? '.' : '')));
-    if (isNaN(val) || val <= 0) {
-      toast.error('Ingresá un monto válido mayor a cero');
-      return;
-    }
-    guardarTope();
-  };
-
-  if (isLoading) return null;
-
-  if (params && !editando) {
-    return (
-      <div
-        className="flex flex-col sm:flex-row sm:items-center gap-3 p-3.5 rounded-[var(--arca-r-md)] text-[13px]"
-        style={{
-          background: 'var(--arca-surface)',
-          border: '1px solid var(--arca-border)',
-        }}
-      >
-        <TrendingUp className="h-4 w-4 text-[var(--arca-ink-3)] shrink-0" />
-        <div className="flex-1">
-          <span className="text-[var(--arca-ink-2)]">Tope máximo imponible</span>
-          <span className="ml-2 font-semibold font-mono text-[var(--arca-ink)]">
-            {formatPesos(params.topeMaximoImponible)}
-          </span>
-          <span className="ml-2 text-[11px] text-[var(--arca-ink-3)]">
-            {params.actualizadoPorCron ? '(actualizado automáticamente)' : '(cargado manualmente)'}
-          </span>
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 gap-1.5 text-[12px] text-[var(--arca-ink-2)]"
-          onClick={iniciarEdicion}
-        >
-          <Pencil className="h-3 w-3" />
-          Editar
-        </Button>
-      </div>
-    );
-  }
-
-  const esFaltante = !params && !editando;
-
-  return (
-    <div
-      className="flex flex-col gap-3 p-4 rounded-[var(--arca-r-md)] text-[13px]"
-      style={
-        esFaltante
-          ? {
-              background: 'var(--arca-warning-bg, #fffbeb)',
-              border: '1px solid var(--arca-warning-border, #fde68a)',
-            }
-          : {
-              background: 'var(--arca-surface)',
-              border: '1px solid var(--arca-border)',
-            }
-      }
-    >
-      <div className="flex items-start gap-2.5">
-        {esFaltante ? (
-          <AlertCircle className="h-4 w-4 mt-0.5 shrink-0 text-amber-600" />
-        ) : (
-          <TrendingUp className="h-4 w-4 mt-0.5 shrink-0 text-[var(--arca-ink-3)]" />
-        )}
-        <div>
-          <p
-            className="font-medium"
-            style={{ color: esFaltante ? 'var(--arca-warning-text, #92400e)' : 'var(--arca-ink)' }}
-          >
-            {esFaltante
-              ? `No hay tope imponible cargado para ${periodo}`
-              : 'Editar tope máximo imponible'}
-          </p>
-          {esFaltante && (
-            <p className="text-[12px] mt-0.5 text-amber-700 opacity-90">
-              Sin este dato, las bases imponibles del Record 04 se calculan incorrectamente. Ingresá
-              el valor publicado por ANSES para este período.
-            </p>
-          )}
-        </div>
-      </div>
-
-      <div className="flex items-center gap-2 ml-6 sm:ml-7">
-        <Input
-          type="text"
-          inputMode="numeric"
-          placeholder="Ej: 1357033"
-          className="h-8 w-48 text-[13px] font-mono"
-          value={topeInput}
-          onChange={(e) => setTopeInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && confirmar()}
-          autoFocus
-        />
-        <Button size="sm" className="h-8 text-[13px]" onClick={confirmar} disabled={guardando}>
-          {guardando ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : 'Guardar'}
-        </Button>
-        {params && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 text-[13px]"
-            onClick={cancelar}
-            disabled={guardando}
-          >
-            Cancelar
-          </Button>
-        )}
-      </div>
-    </div>
-  );
 }
 
 // ─── Panel de validación ─────────────────────────────────────────────────────
@@ -715,9 +550,6 @@ function GenerarPresentacionDialog({
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto space-y-4 pr-1">
-            {/* Tope imponible */}
-            <TopeImponibleWidget clientId={clientId} profileId={profileId} periodo={periodo} />
-
             {/* Panel de validación */}
             <ValidacionPanel clientId={clientId} profileId={profileId} periodo={periodo} />
 
