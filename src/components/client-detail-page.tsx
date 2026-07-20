@@ -153,6 +153,7 @@ import {
   Tooltip,
 } from 'recharts';
 import { userQuery } from '@/lib/user-query';
+import { ProvinceSourceCell } from '@/components/convenio-multilateral-tab';
 import { listOrgModules } from '@/actions/admin';
 import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
 import { toTitleCase } from '@/lib/format-name';
@@ -5176,6 +5177,9 @@ export function RepresentativeDetailPage({
                           Destinatario
                         </TableHead>
                         <TableHead className="text-right whitespace-nowrap">
+                          Fuente provincia
+                        </TableHead>
+                        <TableHead className="text-right whitespace-nowrap">
                           Moneda
                         </TableHead>
                         <TableHead className="text-right whitespace-nowrap">
@@ -5228,6 +5232,9 @@ export function RepresentativeDetailPage({
                             <div className="truncate" title={inv.recipientName}>
                               {inv.recipientName || '—'}
                             </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <ProvinceSourceCell inv={inv} />
                           </TableCell>
                           <TableCell className="text-right text-[11px]">
                             {inv.currency || 'ARS'}
@@ -5299,6 +5306,10 @@ export function RepresentativeDetailPage({
                         >
                           {inv.recipientName || '—'}
                         </span>
+                        <span className="text-muted-foreground">
+                          Fuente provincia
+                        </span>
+                        <ProvinceSourceCell inv={inv} />
                         <span className="text-muted-foreground">Moneda</span>
                         <span className="text-right">
                           {inv.currency || 'ARS'}

@@ -617,6 +617,11 @@ export const fiscalEntity = pgTable(
     cuilCuit: text("cuil_cuit").notNull().unique(),
     name: text("name").notNull(),
     province: text("province").notNull(),
+    direccion: text("direccion"),
+    codPostal: text("cod_postal"),
+    // Fuente del dato de provincia/domicilio: 'padron' | 'nosis' | 'manual'
+    provinceSource: text("province_source"),
+    provinceFetchedAt: timestamp("province_fetched_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
