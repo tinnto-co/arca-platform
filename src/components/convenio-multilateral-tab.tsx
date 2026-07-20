@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   CalendarIcon,
   ChevronDown,
@@ -8,6 +8,7 @@ import {
   Loader2,
   X,
   ArrowUpDown,
+  Pencil,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -41,9 +42,15 @@ import {
 import {
   getClientMultilateralSummary,
   getClientMultilateralInvoices,
+  updateFiscalEntityProvince,
 } from '@/actions/invoice';
 import { scrapSingleJob } from '@/actions/client';
 import { cn } from '@/lib/utils';
+import {
+  PROVINCE_LABELS,
+  PROVINCE_SOURCE_LABELS,
+  type ProvinceLabel,
+} from '@/lib/provinces';
 import {
   getMonthBounds,
   MONTH_NAMES_SHORT,
@@ -223,6 +230,122 @@ const getInvoiceTypeLabel = (code: string | number | null | undefined) => {
   if (code == null || code === '') return '—';
   return INVOICE_TYPES_MAP[String(code)] ?? String(code);
 };
+
+// ─── Provincia del receptor: fuente + corrección manual ──────────────
+interface ProvinceSourceInvoice {
+  recipientIdentityNumber: string | null;
+  recipientName: string | null;
+  receiptProvince: string | null;
+  provinceSource: string | null;
+  provinceFetchedAt: string | Date | null;
+}
+
+export function ProvinceSourceCell({ inv }: { inv: ProvinceSourceInvoice }) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [province, setProvince] = useState<string>('');
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      updateFiscalEntityProvince({
+        data: {
+          cuit: inv.recipientIdentityNumber ?? '',
+          province: province as ProvinceLabel,
+        },
+      }),
+    onSuccess: async (res) => {
+      setOpen(false);
+      toast.success(
+        `Provincia corregida a ${res.province} (${res.invoicesUpdated} comprobante${res.invoicesUpdated !== 1 ? 's' : ''} actualizado${res.invoicesUpdated !== 1 ? 's' : ''})`
+      );
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['clientMultilateralInvoices'] }),
+        queryClient.invalidateQueries({ queryKey: ['clientMultilateralSummary'] }),
+        queryClient.invalidateQueries({ queryKey: ['clientMultilateralSummaryPrev'] }),
+      ]);
+    },
+    onError: (err) =>
+      toast.error(err instanceof Error ? err.message : 'Error al corregir la provincia'),
+  });
+
+  const sourceLabel = inv.provinceSource
+    ? (PROVINCE_SOURCE_LABELS[inv.provinceSource] ?? inv.provinceSource)
+    : '—';
+  const fetchedAt = inv.provinceFetchedAt
+    ? new Date(inv.provinceFetchedAt).toLocaleDateString('es-AR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      })
+    : null;
+
+  return (
+    <div className="flex items-center justify-end gap-1.5">
+      <span
+        className="text-[11px] text-muted-foreground whitespace-nowrap"
+        title={fetchedAt ? `Dato obtenido el ${fetchedAt}` : undefined}
+      >
+        {sourceLabel}
+        {fetchedAt ? ` · ${fetchedAt}` : ''}
+      </span>
+      {inv.recipientIdentityNumber ? (
+        <Popover
+          open={open}
+          onOpenChange={(o) => {
+            setOpen(o);
+            if (o) setProvince(inv.receiptProvince ?? '');
+          }}
+        >
+          <PopoverTrigger asChild>
+            <button
+              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+              title="Corregir provincia"
+              aria-label="Corregir provincia"
+            >
+              <Pencil className="h-3 w-3" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-64 p-3 space-y-3" align="end">
+            <p className="text-xs text-muted-foreground">
+              Corregir provincia de{' '}
+              <span className="font-medium text-foreground">
+                {inv.recipientName?.trim()
+                  ? inv.recipientName
+                  : inv.recipientIdentityNumber}
+              </span>
+              . Se aplica a todas sus facturas emitidas y no será pisada por el
+              proceso automático.
+            </p>
+            <Select value={province} onValueChange={setProvince}>
+              <SelectTrigger className="w-full h-8 text-xs">
+                <SelectValue placeholder="Provincia" />
+              </SelectTrigger>
+              <SelectContent>
+                {PROVINCE_LABELS.map((p) => (
+                  <SelectItem key={p} value={p}>
+                    {p}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              size="sm"
+              className="w-full h-8"
+              disabled={!province || mutation.isPending}
+              onClick={() => mutation.mutate()}
+            >
+              {mutation.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                'Guardar'
+              )}
+            </Button>
+          </PopoverContent>
+        </Popover>
+      ) : null}
+    </div>
+  );
+}
 
 // ─── Props ───────────────────────────────────────────────────────────
 interface ConvenioMultilateralTabProps {
@@ -715,6 +838,7 @@ export function ConvenioMultilateralTab({
                         <TableHead className="text-right whitespace-nowrap">Nro. hasta</TableHead>
                         <TableHead className="whitespace-nowrap min-w-[180px]">Emisor</TableHead>
                         <TableHead className="whitespace-nowrap min-w-[180px]">Destinatario</TableHead>
+                        <TableHead className="text-right whitespace-nowrap">Fuente provincia</TableHead>
                         <TableHead className="text-right whitespace-nowrap">Moneda</TableHead>
                         <TableHead className="text-right whitespace-nowrap">Base imponible</TableHead>
                         <TableHead className="text-right whitespace-nowrap">Total IVA</TableHead>
@@ -731,6 +855,7 @@ export function ConvenioMultilateralTab({
                           <TableCell className="text-right text-[11px]">{inv.numberTo || '—'}</TableCell>
                           <TableCell className="max-w-[220px]"><div className="truncate" title={inv.emitterName}>{inv.emitterName || '—'}</div></TableCell>
                           <TableCell className="max-w-[220px]"><div className="truncate" title={inv.recipientName}>{inv.recipientName || '—'}</div></TableCell>
+                          <TableCell className="text-right"><ProvinceSourceCell inv={inv} /></TableCell>
                           <TableCell className="text-right text-[11px]">{inv.currency || 'ARS'}</TableCell>
                           <TableCell className="text-right text-[11px]">{formatARS(inv.baseImponible ?? inv.amountTaxed)}</TableCell>
                           <TableCell className="text-right text-[11px]">{formatARS(inv.totalIVA)}</TableCell>
@@ -753,6 +878,7 @@ export function ConvenioMultilateralTab({
                         <span className="text-muted-foreground">Nro. desde/hasta</span><span className="text-right">{inv.numberFrom || '—'} / {inv.numberTo || '—'}</span>
                         <span className="text-muted-foreground">Emisor</span><span className="text-right truncate" title={inv.emitterName}>{inv.emitterName || '—'}</span>
                         <span className="text-muted-foreground">Destinatario</span><span className="text-right truncate" title={inv.recipientName}>{inv.recipientName || '—'}</span>
+                        <span className="text-muted-foreground">Fuente provincia</span><ProvinceSourceCell inv={inv} />
                         <span className="text-muted-foreground">Moneda</span><span className="text-right">{inv.currency || 'ARS'}</span>
                         <span className="text-muted-foreground">Base imponible</span><span className="text-right">{formatARS(inv.baseImponible ?? inv.amountTaxed)}</span>
                         <span className="text-muted-foreground">Total IVA</span><span className="text-right">{formatARS(inv.totalIVA)}</span>

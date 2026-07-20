@@ -8,12 +8,15 @@ import {
   document,
   client,
   iibbLiquidacion,
+  fiscalEntity,
 } from '@/drizzle/schema';
 import {
   getSessionWithOrg,
   assertCanWrite,
   getMemberRole,
+  getOrgRepresentativeIds,
 } from '@/actions/helpers';
+import { PROVINCE_LABELS } from '@/lib/provinces';
 import {
   eq,
   desc,
@@ -374,12 +377,83 @@ export const getClientMultilateralInvoices = createServerFn({
         baseImponible: sql<string>`(case when ${invoice.type} in ('11', '12', '13', '15', '16', '211', '212', '213') then (${invoice.amount}::numeric)::text else (${invoice.amountTaxed}::numeric)::text end)`,
         totalIVA: invoice.totalIVA,
         amount: invoice.amount,
+        provinceSource: fiscalEntity.provinceSource,
+        provinceFetchedAt: fiscalEntity.provinceFetchedAt,
       })
       .from(invoice)
+      .leftJoin(
+        fiscalEntity,
+        eq(fiscalEntity.cuilCuit, invoice.recipientIdentityNumber)
+      )
       .where(and(...conditions))
       .orderBy(desc(invoice.emitionDate));
 
     return rows;
+  });
+
+export const updateFiscalEntityProvince = createServerFn({
+  method: 'POST',
+})
+  .inputValidator(
+    z.object({
+      cuit: z.string().min(1),
+      province: z.enum(PROVINCE_LABELS),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const { province } = ctx.data;
+    const doc = ctx.data.cuit.replace(/\D/g, '');
+    if (!doc) {
+      throw new Error('CUIT inválido');
+    }
+
+    const now = new Date();
+
+    // Override manual en fiscal_entity: nunca es pisado por el proceso automático
+    const updated = await db
+      .update(fiscalEntity)
+      .set({
+        province,
+        provinceSource: 'manual',
+        provinceFetchedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(fiscalEntity.cuilCuit, doc))
+      .returning({ id: fiscalEntity.id });
+
+    if (updated.length === 0) {
+      await db.insert(fiscalEntity).values({
+        cuilCuit: doc,
+        name: doc,
+        province,
+        provinceSource: 'manual',
+        provinceFetchedAt: now,
+      });
+    }
+
+    // Propagar a las facturas outbound de ese CUIT pertenecientes a la org
+    const representativeIds = await getOrgRepresentativeIds(orgId);
+    if (representativeIds.length === 0) {
+      return { province, invoicesUpdated: 0 };
+    }
+
+    const result = await db
+      .update(invoice)
+      .set({ receiptProvince: province })
+      .where(
+        and(
+          inArray(invoice.representativeId, representativeIds),
+          sql`LOWER(${invoice.direction}) = 'outbound'`,
+          eq(invoice.recipientIdentityNumber, doc)
+        )
+      )
+      .returning({ id: invoice.id });
+
+    return { province, invoicesUpdated: result.length };
   });
 
 export const getInvoice = createServerFn({
