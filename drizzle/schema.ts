@@ -808,6 +808,8 @@ export const payrollConvenioCategoria = pgTable("payroll_convenio_categoria", {
   codigo: text("codigo").notNull(),
   nombre: text("nombre").notNull(),
   orden: integer("orden").default(0).notNull(),
+  /** Si la categoría liquida por valor hora (jornaleros). Activa concepto 2 en lugar del 1. */
+  esValorHora: boolean("es_valor_hora").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
     .defaultNow()

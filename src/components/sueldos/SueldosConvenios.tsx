@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import {
   Dialog,
   DialogContent,
@@ -52,6 +53,7 @@ import {
   upsertEscala,
   deleteEscala,
   deleteConvenio,
+  updateCategoriaEsValorHora,
 } from '@/actions/sueldos';
 
 interface SueldosConveniosProps {
@@ -528,7 +530,7 @@ function CategoriaRow({
   onRefresh,
 }: {
   clientId: string;
-  categoria: { id: string; codigo: string; nombre: string };
+  categoria: { id: string; codigo: string; nombre: string; esValorHora: boolean };
   onRefresh: () => void;
 }) {
   const getCategoriaDisplay = (codigo: string, nombre: string) => {
@@ -592,7 +594,18 @@ function CategoriaRow({
       toast.error(e instanceof Error ? e.message : 'Error al eliminar'),
   });
 
-  const hoy = new Date();
+  const toggleValorHora = useMutation({
+    mutationFn: (val: boolean) =>
+      updateCategoriaEsValorHora({ data: { categoriaId: categoria.id, clientId, esValorHora: val } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['categorias'] });
+      onRefresh();
+      toast.success('Categoría actualizada');
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Error al actualizar'),
+  });
+
+    const hoy = new Date();
 
   return (
     <li className="border-b border-[#ECEAE3] pb-[10px]">
@@ -607,6 +620,14 @@ function CategoriaRow({
         <span className="text-[11px] text-[#3E404A] bg-[#F2F1EB] rounded-full px-2 py-[2px] shrink-0">
           {escalas.length} escala{escalas.length !== 1 ? 's' : ''}
         </span>
+        <label className="flex items-center gap-1 text-[12px] text-[#6E7079] shrink-0 cursor-pointer">
+          <Switch
+            checked={categoria.esValorHora}
+            onCheckedChange={(v) => toggleValorHora.mutate(v)}
+            disabled={toggleValorHora.isPending}
+          />
+          <span>Val/hora</span>
+        </label>
         <button
           type="button"
           onClick={() => setShowEscala(!showEscala)}
