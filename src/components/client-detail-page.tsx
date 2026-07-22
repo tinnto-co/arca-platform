@@ -4457,8 +4457,8 @@ export function RepresentativeDetailPage({
                       <TableBody>
                         {sortedMultilateralSummary.map((row: any) => {
                           const provinceLabel =
-                            row.receiptProvince || 'Sin datos';
-                          const provinceValue = row.receiptProvince ?? null; // null para agrupar "Sin datos"
+                            row.receiptProvince || 'Capital Federal';
+                          const provinceValue = row.receiptProvince ?? null; // null para agrupar "Capital Federal"
                           return (
                             <TableRow
                               key={provinceLabel}
@@ -5765,4 +5765,4 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
       </Dialog>
     </div>
   );
-}
+}

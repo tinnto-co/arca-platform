@@ -588,7 +588,7 @@ export function ConvenioMultilateralTab({
                 const rows = (summary as any[]).map((r: any) => {
                   const base = Number(r.totalTaxed ?? 0);
                   const pct = totalBase > 0 ? ((base / totalBase) * 100).toFixed(1) : '0';
-                  return `${r.receiptProvince || 'Sin datos'}\t${r.invoiceCount}\t${base}\t${Number(r.totalIVA ?? 0)}\t${pct}%`;
+                  return `${r.receiptProvince || 'Capital Federal'}\t${r.invoiceCount}\t${base}\t${Number(r.totalIVA ?? 0)}\t${pct}%`;
                 });
                 const header = 'Provincia\tComprobantes\tBase imponible\tTotal IVA\tParticipación';
                 const csv = [header, ...rows].join('\n');
@@ -734,7 +734,7 @@ export function ConvenioMultilateralTab({
 
               {/* Data rows */}
               {sortedSummary.map((row: any) => {
-                const provinceLabel = row.receiptProvince || 'Sin datos';
+                const provinceLabel = row.receiptProvince || 'Capital Federal';
                 const provinceValue = row.receiptProvince ?? null;
                 const base = Number(row.totalTaxed ?? 0);
                 const pct = totalBase > 0 ? (base / totalBase) * 100 : 0;

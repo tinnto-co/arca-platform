@@ -324,7 +324,7 @@ function IIBBDesglose({
                     key={prov || '__sin__'}
                     style={{ borderTop: i === 0 ? undefined : '1px solid var(--arca-border)' }}
                   >
-                    <td className="px-3 py-2 text-[var(--arca-ink)] whitespace-nowrap">{prov || 'Sin datos'}</td>
+                    <td className="px-3 py-2 text-[var(--arca-ink)] whitespace-nowrap">{prov || 'Capital Federal'}</td>
                     <td className="px-3 py-2 text-right text-[var(--arca-ink-3)] tabular-nums">{row.invoiceCount}</td>
                     <td className="px-3 py-2 text-right text-[var(--arca-ink)] tabular-nums" style={{ fontFamily: 'var(--ff-mono)' }}>
                       {formatARS(row.totalTaxed)}

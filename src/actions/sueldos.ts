@@ -750,6 +750,25 @@ export const createCategoria = createServerFn({ method: 'POST' })
     return row;
   });
 
+export const updateCategoriaEsValorHora = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      categoriaId: z.string().uuid(),
+      clientId: z.string().uuid(),
+      esValorHora: z.boolean(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await db
+      .update(payrollConvenioCategoria)
+      .set({ esValorHora: ctx.data.esValorHora })
+      .where(eq(payrollConvenioCategoria.id, ctx.data.categoriaId));
+  });
+
 // ---------- Escalas salariales ----------
 
 export const listEscalasByCategoria = createServerFn({ method: 'GET' })
@@ -1187,7 +1206,7 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
       )
       .limit(1);
 
-    if (!emp) return { basico: 0, tipoJornada: 'full_time' as const, fechaAlta: null as string | null, fechaIngreso: null as string | null };
+    if (!emp) return { basico: 0, esValorHoraCat: false, tipoJornada: 'full_time' as const, fechaAlta: null as string | null, fechaIngreso: null as string | null };
 
     const empleado = emp.liquidacion_import_empleado;
 
@@ -1197,11 +1216,13 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
 
     let categoriaNombre: string | null = null;
     let esExcluidoConvenio = false;
+    let esValorHoraCat = false;
     if (categoriaId) {
       const [catRow] = await db
         .select({
           nombre: payrollConvenioCategoria.nombre,
           cctCodigo: payrollConvenio.cctCodigo,
+          esValorHora: payrollConvenioCategoria.esValorHora,
         })
         .from(payrollConvenioCategoria)
         .leftJoin(payrollConvenio, eq(payrollConvenio.id, payrollConvenioCategoria.convenioId))
@@ -1209,6 +1230,7 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
         .limit(1);
       categoriaNombre = catRow?.nombre ?? null;
       esExcluidoConvenio = catRow?.cctCodigo === '9999/99';
+      esValorHoraCat = catRow?.esValorHora ?? false;
     }
 
     const periodoNorm = normalizarPeriodoYYYYMM(ctx.data.periodo);
@@ -1218,7 +1240,7 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
     if (!Number.isNaN(override) && override > 0) {
       const fechaAltaStr = empleado.fechaAlta ? empleado.fechaAlta.toISOString().slice(0, 10) : null;
       const fechaIngresoStr = empleado.fechaIngreso ? empleado.fechaIngreso.toISOString().slice(0, 10) : null;
-      return { basico: override, categoriaNombre, esExcluidoConvenio, tipoJornada: empleado.tipoJornada ?? 'full_time', sinEscalaParaPeriodo: false, fallbackPeriodoLabel: null, periodoEscalaLabel: null, fechaAlta: fechaAltaStr, fechaIngreso: fechaIngresoStr };
+      return { basico: override, categoriaNombre, esExcluidoConvenio, esValorHoraCat, tipoJornada: empleado.tipoJornada ?? 'full_time', sinEscalaParaPeriodo: false, fallbackPeriodoLabel: null, periodoEscalaLabel: null, fechaAlta: fechaAltaStr, fechaIngreso: fechaIngresoStr };
     }
 
     // 2° prioridad: escala configurada para el período exacto
@@ -1252,6 +1274,7 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
         basico: Number(escalaPeriodo.monto),
         categoriaNombre,
         esExcluidoConvenio,
+        esValorHoraCat,
         tipoJornada,
         sinEscalaParaPeriodo: false,
         fallbackPeriodoLabel: null,
@@ -1263,7 +1286,7 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
 
     const fechaAltaStr2 = empleado.fechaAlta ? empleado.fechaAlta.toISOString().slice(0, 10) : null;
     const fechaIngresoStr2 = empleado.fechaIngreso ? empleado.fechaIngreso.toISOString().slice(0, 10) : null;
-    if (!categoriaId) return { basico: 0, categoriaNombre: null, esExcluidoConvenio: false, tipoJornada, fechaAlta: fechaAltaStr2, fechaIngreso: fechaIngresoStr2 };
+    if (!categoriaId) return { basico: 0, categoriaNombre: null, esExcluidoConvenio: false, esValorHoraCat: false, tipoJornada, fechaAlta: fechaAltaStr2, fechaIngreso: fechaIngresoStr2 };
 
     // 3° prioridad: escala más reciente anterior al período (fallback)
     let basico = 0;
@@ -1293,6 +1316,7 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
       basico: Number.isNaN(basico) ? 0 : basico,
       categoriaNombre,
       esExcluidoConvenio,
+      esValorHoraCat,
       tipoJornada,
       sinEscalaParaPeriodo,
       fallbackPeriodoLabel,
@@ -3227,6 +3251,20 @@ async function calcularUnaLiquidacion(
     (a, b) => (a.orden ?? 0) - (b.orden ?? 0)
   );
 
+  // Validación: conceptos 1 (Sueldo Básico mensual) y 2 (Horas Normales) son mutuamente excluyentes.
+  const conceptosActivosEnRecibo = conceptosOrdenados.filter(c => {
+    if (!c.activo) return false;
+    const input = inputMap.get(c.id);
+    return !(input && !input.activoEnRecibo);
+  });
+  const tieneConcepto1 = conceptosActivosEnRecibo.some(c => c.numeroSos === 1);
+  const tieneConcepto2 = conceptosActivosEnRecibo.some(c => c.numeroSos === 2);
+  if (tieneConcepto1 && tieneConcepto2) {
+    throw new Error(
+      'Conflicto de conceptos: no se pueden usar "Sueldo Básico" (concepto 1) y "Horas Normales" (concepto 2) al mismo tiempo. Desactivá uno de los dos.'
+    );
+  }
+
   for (const con of conceptosOrdenados) {
     if (!con.activo) continue;
     const input = inputMap.get(con.id);
@@ -3265,6 +3303,14 @@ async function calcularUnaLiquidacion(
     if (input?.importeOverride != null) {
       monto = Number(input.importeOverride);
       montoSource = 'override';
+    } else if (con.baseColumna === 'valHora') {
+      // Concepto 2 (Horas Normales): monto = valor_hora × horas_ingresadas
+      // basico en el contexto = montoBasico de la escala (valor/hora)
+      monto = roundMoney(basico * (cantidad ?? 0));
+      montoSource = 'formula';
+      // Actualizar context.basico al total liquidado para que las fórmulas
+      // de conceptos posteriores (Antigüedad, Presentismo) usen la base correcta.
+      if (monto > 0) context.basico = monto;
     } else {
       const evalResult = evaluatePayrollFormulaStrict(con.formula, context);
       monto = evalResult.value;
@@ -5410,7 +5456,7 @@ export const generarArchivoLsd = createServerFn({ method: 'GET' })
     const r01 = `01${cuit}SJ${periodoLsd}M${nroStr}3${String(numEmpleados).padStart(7, '0')}`;
 
     const lines = [r01, ...r02Lines, ...r03Lines, ...r04Lines];
-    const contenido = lines.join('\n');
+    const contenido = lines.join('\r\n') + '\r\n';
     const filename = `${cuit}_${year}_${month}_LSD.txt`;
 
     // Guardar la presentación en la base de datos
@@ -5920,18 +5966,30 @@ export const getLiqFinalPreview = createServerFn({ method: 'GET' })
     await ensureClientBelongsToRepresentative(ctx.data.profileId, ctx.data.clientId);
 
     const { periodo } = ctx.data;
+    const [py, pm] = periodo.split('-') as [string, string];
+    const periodoStart = new Date(parseInt(py), parseInt(pm) - 1, 1);
+    const periodoEnd = new Date(parseInt(py), parseInt(pm), 0);
 
     const empleados = await db
       .select({
         id: liquidacionImportEmpleado.id,
         nombre: liquidacionImportEmpleado.nombre,
         legajo: liquidacionImportEmpleado.legajo,
+        fechaBaja: liquidacionImportEmpleado.fechaBaja,
       })
       .from(liquidacionImportEmpleado)
       .where(
         and(
           eq(liquidacionImportEmpleado.clientId, ctx.data.profileId),
-          eq(liquidacionImportEmpleado.activo, true)
+          or(
+            eq(liquidacionImportEmpleado.activo, true),
+            and(
+              eq(liquidacionImportEmpleado.activo, false),
+              isNotNull(liquidacionImportEmpleado.fechaBaja),
+              gte(liquidacionImportEmpleado.fechaBaja, periodoStart),
+              lte(liquidacionImportEmpleado.fechaBaja, periodoEnd),
+            )
+          )
         )
       );
 
@@ -6045,6 +6103,13 @@ export const generarLiqFinalMasivo = createServerFn({ method: 'POST' })
           fecha: new Date(item.fechaBaja + 'T00:00:00'),
           origen: 'generado',
         });
+        // Sincronizar fechaBaja y activo en el empleado si no estaba registrado aún
+        await tx.update(liquidacionImportEmpleado)
+          .set({ fechaBaja: new Date(item.fechaBaja + 'T00:00:00'), activo: false })
+          .where(and(
+            eq(liquidacionImportEmpleado.id, item.empleadoId),
+            isNull(liquidacionImportEmpleado.fechaBaja)
+          ));
       }
     });
 
