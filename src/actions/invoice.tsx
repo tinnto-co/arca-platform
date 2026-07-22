@@ -283,14 +283,14 @@ export const getClientMultilateralSummary = createServerFn({
     // (facturas y notas de débito suman; notas de crédito restan).
     const rows = await db
       .select({
-        receiptProvince: invoice.receiptProvince,
+        receiptProvince: sql<string>`CASE WHEN LOWER(COALESCE(${invoice.receiptProvince}, '')) IN ('', 'sin datos') THEN 'Capital Federal' ELSE ${invoice.receiptProvince} END`,
         invoiceCount: sql<number>`count(*)::int`,
         totalIVA: sql<string>`(coalesce(sum(case when ${isCreditNote} then -(${invoice.totalIVA}::numeric) else (${invoice.totalIVA}::numeric) end), 0))::text`,
         totalTaxed: sql<string>`(coalesce(sum(case when ${isCreditNote} then -(${baseForMultilateral}) else (${baseForMultilateral}) end), 0))::text`,
       })
       .from(invoice)
       .where(and(...conditions))
-      .groupBy(invoice.receiptProvince);
+      .groupBy(sql`CASE WHEN LOWER(COALESCE(${invoice.receiptProvince}, '')) IN ('', 'sin datos') THEN 'Capital Federal' ELSE ${invoice.receiptProvince} END`);
 
     return rows;
   });
