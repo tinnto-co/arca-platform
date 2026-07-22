@@ -35,6 +35,7 @@ import {
   getPayrollEmployerConfig,
   setPlantillaEmpleado,
 } from '@/actions/sueldos';
+import { GenerarLiqFinalDialog } from '@/components/sueldos/SueldosRecibo';
 import { legajoParaMostrar } from '@/lib/legajo';
 import { BANCOS } from '@/lib/bancos';
 import {
@@ -1338,12 +1339,16 @@ export function SueldosEmpleados({
   // Dialog para dar de baja
   const [dialogBaja, setDialogBaja] = useState<{ id: string; nombre: string } | null>(null);
   const [fechaBajaInput, setFechaBajaInput] = useState('');
+  const [pendingLiqFinal, setPendingLiqFinal] = useState<{ nombre: string; fechaBaja: string } | null>(null);
+  const [showLiqFinalPost, setShowLiqFinalPost] = useState<{ periodo: string } | null>(null);
 
   const darDeBaja = useMutation({
     mutationFn: ({ id, fechaBaja }: { id: string; fechaBaja: string }) =>
-      updateEmpleado({ data: { id, clientId, fechaBaja } }),
-    onSuccess: () => {
+      updateEmpleado({ data: { id, clientId, fechaBaja, activo: false } }),
+    onSuccess: (_, variables) => {
       toast.success('Fecha de baja registrada');
+      const nombre = dialogBaja?.nombre ?? '';
+      setPendingLiqFinal({ nombre, fechaBaja: variables.fechaBaja });
       setDialogBaja(null);
       setFechaBajaInput('');
       queryClient.invalidateQueries({ queryKey: ['import-empleados', clientId, profileId] });
@@ -1353,7 +1358,7 @@ export function SueldosEmpleados({
 
   const reactivar = useMutation({
     mutationFn: (id: string) =>
-      updateEmpleado({ data: { id, clientId, fechaBaja: null } }),
+      updateEmpleado({ data: { id, clientId, fechaBaja: null, activo: true } }),
     onSuccess: () => {
       toast.success('Empleado reactivado');
       queryClient.invalidateQueries({ queryKey: ['import-empleados', clientId, profileId] });
@@ -1752,6 +1757,46 @@ export function SueldosEmpleados({
         convenios={convenios}
         onSaved={() => setDetalleRow(null)}
       />
+
+      {/* Dialog: ¿Generar Liquidación Final? (post-baja) */}
+      <Dialog open={pendingLiqFinal !== null} onOpenChange={(open) => { if (!open) setPendingLiqFinal(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-[15px]">¿Generar Liquidación Final?</DialogTitle>
+          </DialogHeader>
+          <p className="text-[13px] text-muted-foreground -mt-2">
+            {pendingLiqFinal?.nombre} fue dado/a de baja el{' '}
+            <span className="font-medium text-foreground">{pendingLiqFinal?.fechaBaja}</span>.
+            ¿Querés generar la Liquidación Final para el período{' '}
+            <span className="font-medium text-foreground">{pendingLiqFinal?.fechaBaja?.slice(0, 7)}</span>?
+          </p>
+          <DialogFooter className="gap-2 pt-2">
+            <Button variant="outline" size="sm" onClick={() => setPendingLiqFinal(null)}>
+              No, después
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                const periodo = pendingLiqFinal!.fechaBaja.slice(0, 7);
+                setPendingLiqFinal(null);
+                setShowLiqFinalPost({ periodo });
+              }}
+            >
+              Sí, generar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Liquidación Final post-baja */}
+      {showLiqFinalPost && (
+        <GenerarLiqFinalDialog
+          clientId={clientId}
+          profileId={profileId}
+          periodo={showLiqFinalPost.periodo}
+          onClose={() => setShowLiqFinalPost(null)}
+        />
+      )}
 
       {/* Dialog: Dar de baja */}
       <Dialog open={dialogBaja !== null} onOpenChange={(open) => { if (!open) { setDialogBaja(null); setFechaBajaInput(''); } }}>
