@@ -49,7 +49,7 @@ import {
   eliminarLiquidacionesDelPeriodo,
 } from '@/actions/sueldos';
 import {
-  getPeriodoMaxLiquidable,
+  getPeriodoMesAnterior,
   puedeLiquidarPeriodo,
 } from '@/lib/payroll-period-rules';
 import { legajoParaMostrar } from '@/lib/legajo';
@@ -57,7 +57,7 @@ import { toTitleCase } from '@/lib/format-name';
 
 const now = new Date();
 const [PERIODO_INICIAL_ANO, PERIODO_INICIAL_MES] =
-  getPeriodoMaxLiquidable().split('-');
+  getPeriodoMesAnterior().split('-');
 const ANOS = Array.from({ length: 6 }, (_, i) => now.getFullYear() - i);
 const MESES = Array.from({ length: 12 }, (_, i) => ({
   value: String(i + 1).padStart(2, '0'),

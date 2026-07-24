@@ -19,6 +19,7 @@ dist
 *.dump
 *.pgdump
 *.sql.gz
+backups/
 
 # Claude Code worktrees
 .claude/worktrees/

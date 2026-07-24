@@ -42,7 +42,7 @@ import {
   getInvoicesByProfileInRange,
   getInvoiceStatsByProfile,
 } from '@/actions/invoice';
-import { getLastComprobantesFullJob } from '@/actions/client';
+import { getLastJobByType } from '@/actions/client';
 
 const currencyFormatter = new Intl.NumberFormat('es-AR', {
   style: 'currency',
@@ -485,6 +485,21 @@ function parseNumeric(value: string | null | undefined): number | null {
   return Number.isNaN(n) ? null : n;
 }
 
+/**
+ * Convierte una fecha local a ISO usando el día calendario como límite UTC.
+ * Evita que `toISOString()` corra la medianoche local (UTC-3) a las 03:00Z y
+ * excluya facturas guardadas a las 00:00:00 del primer día del mes.
+ */
+function toUtcDayStartISO(d: Date): string {
+  return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())).toISOString();
+}
+
+function toUtcDayEndISO(d: Date): string {
+  return new Date(
+    Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)
+  ).toISOString();
+}
+
 function sanitizeFilename(name: string): string {
   return (
     name
@@ -543,8 +558,8 @@ export const RenderIvaResume = React.forwardRef<
       getInvoicesByProfileInRange({
         data: {
           profileId: selectedProfileId!,
-          dateFrom: (dateRange.from ?? new Date()).toISOString(),
-          dateTo: (dateRange.to ?? new Date()).toISOString(),
+          dateFrom: toUtcDayStartISO(dateRange.from ?? new Date()),
+          dateTo: toUtcDayEndISO(dateRange.to ?? new Date()),
         },
       }),
     enabled: !!selectedProfileId && !!dateRange.from && !!dateRange.to,
@@ -561,18 +576,18 @@ export const RenderIvaResume = React.forwardRef<
       getInvoiceStatsByProfile({
         data: {
           profileId: selectedProfileId!,
-          dateFrom: (dateRange.from ?? new Date()).toISOString(),
-          dateTo: (dateRange.to ?? new Date()).toISOString(),
+          dateFrom: toUtcDayStartISO(dateRange.from ?? new Date()),
+          dateTo: toUtcDayEndISO(dateRange.to ?? new Date()),
         },
       }),
     enabled: !!selectedProfileId && !!dateRange.from && !!dateRange.to,
   });
 
   const { data: lastScrapeJob } = useQuery({
-    queryKey: ['lastComprobantesFullJob', representativeId],
+    queryKey: ['lastIvaJob', representativeId],
     queryFn: () =>
-      getLastComprobantesFullJob({
-        data: { representativeId },
+      getLastJobByType({
+        data: { representativeId, jobType: 'iva' },
       }),
     enabled: !!representativeId,
   });

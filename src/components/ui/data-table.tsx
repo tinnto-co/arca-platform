@@ -29,6 +29,13 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -112,7 +119,9 @@ export function DataTable<TData, TValue>({
     ),
   };
 
-  const allColumns = (showSelection ? [selectColumn, ...columns] : columns) as ColumnDef<TData, TData>[];
+  const allColumns = (
+    showSelection ? [selectColumn, ...columns] : columns
+  ) as ColumnDef<TData, TData>[];
 
   const table = useReactTable({
     data,
@@ -156,12 +165,16 @@ export function DataTable<TData, TValue>({
                 value={
                   onSearchChange
                     ? (searchValue ?? '')
-                    : ((table.getColumn(searchKey!)?.getFilterValue() as string) ?? '')
+                    : ((table
+                        .getColumn(searchKey!)
+                        ?.getFilterValue() as string) ?? '')
                 }
                 onChange={(e) =>
                   onSearchChange
                     ? onSearchChange(e.target.value)
-                    : table.getColumn(searchKey!)?.setFilterValue(e.target.value)
+                    : table
+                        .getColumn(searchKey!)
+                        ?.setFilterValue(e.target.value)
                 }
                 className="pl-8 h-8 text-[12.5px]"
               />
@@ -360,18 +373,22 @@ function FilterSelect({
   onChange: (v: string) => void;
 }) {
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="h-8 rounded-lg border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-2.5 text-[12.5px] text-[var(--arca-ink-2)] outline-none focus:border-[var(--arca-navy-600)] transition-colors"
+    <Select
+      value={value === '' ? 'all' : value}
+      onValueChange={(v) => onChange(v === 'all' ? '' : v)}
     >
-      <option value="">{label}</option>
-      {options.map((o) => (
-        <option key={o.value} value={o.value}>
-          {o.label}
-        </option>
-      ))}
-    </select>
+      <SelectTrigger size="sm" className="text-[12.5px]">
+        <SelectValue placeholder={label} />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">{label}</SelectItem>
+        {options.map((o) => (
+          <SelectItem key={o.value} value={o.value}>
+            {o.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 

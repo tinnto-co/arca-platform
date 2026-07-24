@@ -24,11 +24,21 @@ import {
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   ArcaCard,
   ArcaCardHead,
   formatArs,
 } from '@/components/dashboard/shared';
-import { getRepresentatives, getRepresentativesWithClients } from '@/actions/client';
+import {
+  getRepresentatives,
+  getRepresentativesWithClients,
+} from '@/actions/client';
 import {
   getExecutiveSummary,
   getClientsAtRisk,
@@ -71,11 +81,34 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-const RISK_CONFIG: Record<string, { label: string; color: string; bg: string; fg: string }> = {
-  low: { label: 'Bajo', color: '#4CAF7D', bg: 'var(--arca-accent-pos-bg)', fg: 'var(--arca-accent-pos-fg)' },
-  medium: { label: 'Medio', color: '#F59E0B', bg: 'var(--arca-accent-warn-bg)', fg: 'var(--arca-accent-warn-fg)' },
-  high: { label: 'Alto', color: '#EF4444', bg: 'var(--arca-accent-neg-bg)', fg: 'var(--arca-accent-neg-fg)' },
-  critical: { label: 'Crítico', color: '#7F1D1D', bg: 'var(--arca-accent-neg-bg)', fg: 'var(--arca-accent-neg-fg)' },
+const RISK_CONFIG: Record<
+  string,
+  { label: string; color: string; bg: string; fg: string }
+> = {
+  low: {
+    label: 'Bajo',
+    color: '#4CAF7D',
+    bg: 'var(--arca-accent-pos-bg)',
+    fg: 'var(--arca-accent-pos-fg)',
+  },
+  medium: {
+    label: 'Medio',
+    color: '#F59E0B',
+    bg: 'var(--arca-accent-warn-bg)',
+    fg: 'var(--arca-accent-warn-fg)',
+  },
+  high: {
+    label: 'Alto',
+    color: '#EF4444',
+    bg: 'var(--arca-accent-neg-bg)',
+    fg: 'var(--arca-accent-neg-fg)',
+  },
+  critical: {
+    label: 'Crítico',
+    color: '#7F1D1D',
+    bg: 'var(--arca-accent-neg-bg)',
+    fg: 'var(--arca-accent-neg-fg)',
+  },
 };
 
 /* ─── Summary card ─── */
@@ -126,9 +159,7 @@ function SummaryKpi({
       <div className="font-display text-[22px] font-bold tracking-[-0.02em] text-[var(--arca-ink)] tabular-nums">
         {value}
       </div>
-      {sub && (
-        <div className="text-[11px] text-[var(--arca-ink-3)]">{sub}</div>
-      )}
+      {sub && <div className="text-[11px] text-[var(--arca-ink-3)]">{sub}</div>}
     </div>
   );
 }
@@ -155,7 +186,9 @@ function AnalyticsPage() {
   const [selectedClientId, setSelectedClientId] = useState<string>('');
   const [ratiosFrom, setRatiosFrom] = useState(monthStart());
   const [ratiosTo, setRatiosTo] = useState(today());
-  const [riskFilter, setRiskFilter] = useState<'medium' | 'high' | 'critical'>('high');
+  const [riskFilter, setRiskFilter] = useState<'medium' | 'high' | 'critical'>(
+    'high'
+  );
   const [riskPeriod, setRiskPeriod] = useState<string>(currentPeriod());
   const [ivaProfileId, setIvaProfileId] = useState<string>('');
 
@@ -213,7 +246,11 @@ function AnalyticsPage() {
   /* Recharts data for ratios */
   const ratiosChartData = ratios
     ? [
-        { name: 'Ventas', actual: ratios.totalSales, prev: ratios.prevTotalSales },
+        {
+          name: 'Ventas',
+          actual: ratios.totalSales,
+          prev: ratios.prevTotalSales,
+        },
         {
           name: 'Compras',
           actual: ratios.totalPurchases,
@@ -319,17 +356,21 @@ function AnalyticsPage() {
               onChange={(e) => setRiskPeriod(e.target.value)}
               title="Período del snapshot de riesgo"
             />
-            <select
-              className={SELECT_CLASS}
+            <Select
               value={riskFilter}
-              onChange={(e) =>
-                setRiskFilter(e.target.value as 'medium' | 'high' | 'critical')
+              onValueChange={(v) =>
+                setRiskFilter(v as 'medium' | 'high' | 'critical')
               }
             >
-              <option value="medium">Medio y superior</option>
-              <option value="high">Alto y crítico</option>
-              <option value="critical">Solo crítico</option>
-            </select>
+              <SelectTrigger className="w-[170px] text-[13px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="medium">Medio y superior</SelectItem>
+                <SelectItem value="high">Alto y crítico</SelectItem>
+                <SelectItem value="critical">Solo crítico</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
         <ArcaCard>
@@ -351,36 +392,38 @@ function AnalyticsPage() {
             </div>
           ) : (
             <div className="divide-y divide-[var(--arca-border)]">
-              {atRisk.map((row: {
-                snapshotId: string;
-                profileId: string;
-                profileName: string;
-                clientName: string;
-                clientCuit?: string | null;
-                riskLevel: string;
-                score: number;
-              }) => (
-                <div
-                  key={row.snapshotId}
-                  className="flex items-center justify-between px-5 py-3 hover:bg-[var(--arca-surface-2)] transition-colors"
-                >
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-[13px] font-medium text-[var(--arca-ink)]">
-                      {row.profileName}
-                    </span>
-                    <span className="text-[11.5px] text-[var(--arca-ink-3)]">
-                      {row.clientName}
-                      {row.clientCuit ? ` · ${row.clientCuit}` : ''}
-                    </span>
+              {atRisk.map(
+                (row: {
+                  snapshotId: string;
+                  profileId: string;
+                  profileName: string;
+                  clientName: string;
+                  clientCuit?: string | null;
+                  riskLevel: string;
+                  score: number;
+                }) => (
+                  <div
+                    key={row.snapshotId}
+                    className="flex items-center justify-between px-5 py-3 hover:bg-[var(--arca-surface-2)] transition-colors"
+                  >
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[13px] font-medium text-[var(--arca-ink)]">
+                        {row.profileName}
+                      </span>
+                      <span className="text-[11.5px] text-[var(--arca-ink-3)]">
+                        {row.clientName}
+                        {row.clientCuit ? ` · ${row.clientCuit}` : ''}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-[13px] font-semibold tabular-nums text-[var(--arca-ink)]">
+                        {row.score.toFixed(1)}
+                      </span>
+                      <RiskBadge level={row.riskLevel} />
+                    </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-[13px] font-semibold tabular-nums text-[var(--arca-ink)]">
-                      {row.score.toFixed(1)}
-                    </span>
-                    <RiskBadge level={row.riskLevel} />
-                  </div>
-                </div>
-              ))}
+                )
+              )}
             </div>
           )}
         </ArcaCard>
@@ -392,18 +435,21 @@ function AnalyticsPage() {
           <h2 className="text-[12px] font-semibold uppercase tracking-widest text-[var(--arca-ink-3)]">
             Ratios por cliente
           </h2>
-          <select
-            className={SELECT_CLASS}
+          <Select
             value={selectedClientId}
-            onChange={(e) => setSelectedClientId(e.target.value)}
+            onValueChange={(v) => setSelectedClientId(v)}
           >
-            <option value="">Seleccionar cliente…</option>
-            {clients.map((c: { id: string; name: string }) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger className="w-[220px] text-[13px]">
+              <SelectValue placeholder="Seleccionar cliente…" />
+            </SelectTrigger>
+            <SelectContent>
+              {clients.map((c: { id: string; name: string }) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <input
             type="date"
             className={SELECT_CLASS}
@@ -546,7 +592,11 @@ function AnalyticsPage() {
                           background: 'var(--arca-surface)',
                         }}
                       />
-                      <Bar dataKey="actual" name="Período actual" radius={[4, 4, 0, 0]}>
+                      <Bar
+                        dataKey="actual"
+                        name="Período actual"
+                        radius={[4, 4, 0, 0]}
+                      >
                         {ratiosChartData.map((_, i) => (
                           <Cell
                             key={i}
@@ -579,20 +629,28 @@ function AnalyticsPage() {
           <h2 className="text-[12px] font-semibold uppercase tracking-widest text-[var(--arca-ink-3)]">
             Proyección IVA
           </h2>
-          <select
-            className={SELECT_CLASS}
+          <Select
             value={ivaProfileId}
-            onChange={(e) => setIvaProfileId(e.target.value)}
+            onValueChange={(v) => setIvaProfileId(v)}
           >
-            <option value="">Seleccionar perfil…</option>
-            {clientsWithProfiles.flatMap((c: { id: string; name: string; profiles?: { id: string; name: string }[] }) =>
-              (c.profiles ?? []).map((p) => (
-                <option key={p.id} value={p.id}>
-                  {c.name} — {p.name}
-                </option>
-              ))
-            )}
-          </select>
+            <SelectTrigger className="w-[260px] text-[13px]">
+              <SelectValue placeholder="Seleccionar perfil…" />
+            </SelectTrigger>
+            <SelectContent>
+              {clientsWithProfiles.flatMap(
+                (c: {
+                  id: string;
+                  name: string;
+                  profiles?: { id: string; name: string }[];
+                }) =>
+                  (c.profiles ?? []).map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {c.name} — {p.name}
+                    </SelectItem>
+                  ))
+              )}
+            </SelectContent>
+          </Select>
         </div>
         {ivaProfileId && (
           <ArcaCard>
@@ -647,7 +705,10 @@ function AnalyticsPage() {
                     'samplesUsed' in (ivaProjection.factors as object) && (
                       <div className="text-[12px] text-[var(--arca-ink-3)]">
                         Basado en{' '}
-                        {(ivaProjection.factors as { samplesUsed: number }).samplesUsed}{' '}
+                        {
+                          (ivaProjection.factors as { samplesUsed: number })
+                            .samplesUsed
+                        }{' '}
                         declaraciones históricas
                       </div>
                     )}

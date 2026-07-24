@@ -7,12 +7,14 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
   integer,
   pgEnum,
   foreignKey,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { user, organization } from "./auth";
 
 export { user, organization };
@@ -76,6 +78,8 @@ export const client = pgTable("client", {
   phone: text("phone").notNull(),
   email: text("email").notNull(),
   status: text("status").notNull(),
+  /** Condición fiscal: 'responsable_inscripto' | 'monotributista' | 'exento' | null (sin clasificar). */
+  fiscalCondition: text("fiscal_condition"),
   liquidaSueldos: boolean("liquida_sueldos").notNull().default(false),
   /**
    * Compatibilidad con flujo legado LSD:
@@ -135,6 +139,13 @@ export const client = pgTable("client", {
   /** Obra social por defecto del empleador. */
   obraSocialDefaultId: uuid("obra_social_default_id")
     .references((): AnyPgColumn => obraSocial.id, { onDelete: "set null" }),
+  // --- Datos fiscales para el membrete de los Estados Contables (EECC) ---
+  /** Actividad principal (ej. "Prestación de servicios de internación domiciliaria"). */
+  actividadPrincipal: text("actividad_principal"),
+  /** Fecha de inscripción en el Registro Público de Comercio. */
+  fechaInscripcion: timestamp("fecha_inscripcion", { mode: "date" }),
+  /** Número de inscripción en la Inspección General de Justicia (IGJ). */
+  numeroInscripcion: text("numero_inscripcion"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -512,6 +523,51 @@ export const ivaScrape = pgTable(
   ]
 );
 
+/** Liquidación de IIBB por período y provincia — datos editables por el usuario */
+export const iibbLiquidacion = pgTable(
+  "iibb_liquidacion",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id").notNull(),
+    /** FK al representative (agrupador de empresa) */
+    representativeId: uuid("representative_id")
+      .notNull()
+      .references(() => representative.id, { onDelete: "cascade" }),
+    /** FK al profile (entidad fiscal con CUIT). Nullable: si null aplica a todos los profiles del representative. */
+    profileId: uuid("profile_id").references(() => client.id, { onDelete: "cascade" }),
+    /** Período en formato "YYYY-MM" (ej. "2026-07") */
+    periodo: text("periodo").notNull(),
+    /** Nombre/código de la provincia tal como viene de los comprobantes */
+    provincia: text("provincia").notNull(),
+    /** Alícuota IIBB (ej. 0.01 = 1%). Default 1% */
+    alicuota: numeric("alicuota", { precision: 7, scale: 6 }).notNull().default("0.01"),
+    /** Saldo a favor del período anterior (arrastrado o ingresado manualmente) */
+    saldoAFavor: numeric("saldo_a_favor", { precision: 18, scale: 2 }).notNull().default("0"),
+    /** Percepciones de agentes de recaudación */
+    percepcionesAgentes: numeric("percepciones_agentes", { precision: 18, scale: 2 }).notNull().default("0"),
+    /** Percepciones aduaneras */
+    percepcionesAduaneras: numeric("percepciones_aduaneras", { precision: 18, scale: 2 }).notNull().default("0"),
+    /** Retenciones de agentes de retención */
+    retencionesAgentes: numeric("retenciones_agentes", { precision: 18, scale: 2 }).notNull().default("0"),
+    /** Retenciones bancarias */
+    retencionesBancarias: numeric("retenciones_bancarias", { precision: 18, scale: 2 }).notNull().default("0"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    unique("iibb_liquidacion_unique").on(
+      table.orgId,
+      table.representativeId,
+      table.profileId,
+      table.periodo,
+      table.provincia
+    ),
+  ]
+);
+
 // Job table for tracking scraping tasks
 export const job = pgTable("job", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -563,6 +619,11 @@ export const fiscalEntity = pgTable(
     cuilCuit: text("cuil_cuit").notNull().unique(),
     name: text("name").notNull(),
     province: text("province").notNull(),
+    direccion: text("direccion"),
+    codPostal: text("cod_postal"),
+    // Fuente del dato de provincia/domicilio: 'padron' | 'nosis' | 'manual'
+    provinceSource: text("province_source"),
+    provinceFetchedAt: timestamp("province_fetched_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -749,6 +810,8 @@ export const payrollConvenioCategoria = pgTable("payroll_convenio_categoria", {
   codigo: text("codigo").notNull(),
   nombre: text("nombre").notNull(),
   orden: integer("orden").default(0).notNull(),
+  /** Si la categoría liquida por valor hora (jornaleros). Activa concepto 2 en lugar del 1. */
+  esValorHora: boolean("es_valor_hora").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
     .defaultNow()
@@ -1418,69 +1481,642 @@ export const representativeRequest = pgTable("representative_request", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// ========== MÓDULO BALANCES / CONTABILIDAD GENERAL ==========
+// Modelo según "Módulo de Balances V1" (PRD + 02_MODELO_DATOS).
+// Multi-tenant: el plan base vive a nivel `organization`; todo lo demás
+// (overrides, ejercicios, períodos, asientos, mayor) vive a nivel `client`
+// (la "empresa fiscal" / `profile` del PRD).
+
+/** scope='base' → cuenta del plan del estudio. scope='custom' → cuenta propia de una empresa. */
+export const accountScopeEnum = pgEnum("account_scope", ["base", "custom"]);
+
+/** imputable acepta movimientos; group solo suma (cuenta de agrupación). */
+export const accountTypeEnum = pgEnum("account_type", ["imputable", "group"]);
+
 /**
- * Chart of accounts per client for formal bookkeeping.
- * Account types: asset, liability, equity, income, expense
+ * Rubro de exposición según RT FACPCE 8/9. Valores en español (términos
+ * normativos argentinos que pierden sentido al traducirse).
  */
-export const accountingAccount = pgTable(
+export const accountGroupEnum = pgEnum("account_group", [
+  // Activo Corriente
+  "caja_bancos",
+  "inversiones_temporarias",
+  "creditos_ventas",
+  "otros_creditos_cte",
+  "bienes_cambio",
+  "otros_activos_cte",
+  // Activo No Corriente
+  "creditos_largo_plazo",
+  "bienes_uso",
+  "intangibles",
+  "inversiones_permanentes",
+  "otros_activos_no_cte",
+  // Pasivo Corriente
+  "deudas_comerciales",
+  "deudas_financieras",
+  "deudas_sociales",
+  "deudas_fiscales",
+  "otras_deudas_cte",
+  // Pasivo No Corriente
+  "deudas_largo_plazo",
+  "previsiones",
+  // Patrimonio Neto
+  "capital",
+  "aportes_irrevocables",
+  "primas_emision",
+  "reservas",
+  "resultados_no_asignados",
+  "resultado_ejercicio",
+  // Resultados
+  "ventas",
+  "costo_ventas",
+  "gastos_administracion",
+  "gastos_comercializacion",
+  "gastos_financieros",
+  "otros_resultados_pos",
+  "otros_resultados_neg",
+  "impuesto_ganancias",
+]);
+
+/** Saldo esperado para validación de razonabilidad de signos. */
+export const accountExpectedBalanceEnum = pgEnum("account_expected_balance", [
+  "debit",
+  "credit",
+  "both",
+]);
+
+/** Clasificación de gasto para el ER (Anexo II). Solo aplica a cuentas de gasto. */
+export const accountExpenseFunctionEnum = pgEnum("account_expense_function", [
+  "administration",
+  "sales",
+  "financial",
+  "other",
+]);
+
+/** Preparado para ajuste por inflación RT 6 (V1.5). No se usa funcionalmente en V1. */
+export const accountInflationNatureEnum = pgEnum("account_inflation_nature", [
+  "monetaria",
+  "no_monetaria",
+]);
+
+/** Preparado para Estado de Flujo de Efectivo (V1.5). No se usa funcionalmente en V1. */
+export const accountCashFlowActivityEnum = pgEnum("account_cash_flow_activity", [
+  "operating",
+  "investing",
+  "financing",
+]);
+
+export const fiscalYearStatusEnum = pgEnum("fiscal_year_status", [
+  "open",
+  "closing",
+  "closed",
+]);
+
+export const accountingPeriodStatusEnum = pgEnum("accounting_period_status", [
+  "open",
+  "closed",
+]);
+
+export const journalEntryOriginEnum = pgEnum("journal_entry_origin", [
+  "manual",
+  "auto_invoice",
+  "auto_payroll",
+  "auto_closing",
+  "auto_opening",
+  "import_excel",
+]);
+
+export const journalEntrySourceTypeEnum = pgEnum("journal_entry_source_type", [
+  "invoice",
+  "payroll",
+  "closing",
+]);
+
+export const accountingLogEventTypeEnum = pgEnum("accounting_log_event_type", [
+  "period_closed",
+  "period_reopened",
+  "fiscal_year_closed",
+  "fiscal_year_reopened",
+  "journal_entry_created",
+  "journal_entry_edited",
+  "journal_entry_voided",
+  "account_created",
+  "account_deactivated",
+  "financial_statement_approved",
+]);
+
+/**
+ * Plan de cuentas. Vive en dos niveles según `scope`:
+ * - scope='base': cuenta del plan base del estudio. organizationId set, clientId null.
+ *   Disponible (referenciada, no clonada) para todas las empresas del estudio.
+ * - scope='custom': cuenta creada por una empresa puntual. clientId set (rango 9.x.xx).
+ *
+ * Nota: la tabla física se llama "accounting_account" para no colisionar con la
+ * tabla "account" de Better Auth (credenciales OAuth). El export JS sigue siendo
+ * `account` por brevedad en las queries del módulo.
+ */
+export const account = pgTable(
   "accounting_account",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    representativeId: uuid("representative_id")
+    scope: accountScopeEnum("scope").notNull(),
+    /** Siempre seteado, también para cuentas custom (el estudio dueño). */
+    organizationId: text("organization_id")
       .notNull()
-      .references(() => representative.id, { onDelete: "cascade" }),
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** NULL si scope='base'; NOT NULL si scope='custom'. */
+    clientId: uuid("client_id").references(() => client.id, { onDelete: "cascade" }),
+    /** Código jerárquico, ej. "1.1.01.001". */
     code: text("code").notNull(),
     name: text("name").notNull(),
-    type: text("type").notNull(),
+    description: text("description"),
+    type: accountTypeEnum("type").notNull(),
+    /** FK self → account.id (jerarquía). Puede apuntar a una cuenta de cualquier scope. */
     parentId: uuid("parent_id"),
-    active: boolean("active").notNull().default(true),
+    /** Rubro de exposición. NULL en nodos estructurales de agrupación (ej. "Activo"); requerido en imputables. */
+    accountGroup: accountGroupEnum("account_group"),
+    /** Saldo esperado para validación de razonabilidad. NULL en nodos de agrupación. */
+    expectedBalance: accountExpectedBalanceEnum("expected_balance"),
+    expenseFunction: accountExpenseFunctionEnum("expense_function"),
+    inflationNature: accountInflationNatureEnum("inflation_nature"),
+    cashFlowActivity: accountCashFlowActivityEnum("cash_flow_activity"),
+    /** Cuentas críticas del sistema (ej. pending_review, resultado_ejercicio). No se borran, desactivan ni renombran. */
+    isSystemAccount: boolean("is_system_account").notNull().default(false),
+    /** Default global de la cuenta. La activación efectiva por empresa se resuelve con accountOverride. */
+    isActive: boolean("is_active").notNull().default(true),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
   },
   (table) => [
-    unique("accounting_account_representative_id_code_unique").on(table.representativeId, table.code),
     foreignKey({
       columns: [table.parentId],
       foreignColumns: [table.id],
-      name: "accounting_account_parent_id_fkey",
+      name: "account_parent_id_fkey",
     }).onDelete("set null"),
+    // Códigos base únicos por estudio.
+    uniqueIndex("account_base_org_code_unique")
+      .on(table.organizationId, table.code)
+      .where(sql`scope = 'base'`),
+    // Códigos custom únicos por empresa.
+    uniqueIndex("account_custom_client_code_unique")
+      .on(table.clientId, table.code)
+      .where(sql`scope = 'custom'`),
+    index("idx_account_org_scope").on(table.organizationId, table.scope),
+    index("idx_account_client").on(table.clientId),
   ],
 );
 
 /**
- * Journal entries for double-entry bookkeeping.
- * Status values: draft, posted, void
+ * Override de una cuenta base para una empresa puntual: permite activar/desactivar
+ * y renombrar sin clonar el plan. Si no existe override, vale el atributo de la cuenta base.
  */
-export const journalEntry = pgTable("journal_entry", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  representativeId: uuid("representative_id")
-    .notNull()
-    .references(() => representative.id, { onDelete: "cascade" }),
-  clientId: uuid("client_id").references(() => client.id, { onDelete: "set null" }),
-  entryDate: timestamp("entry_date").notNull(),
-  description: text("description"),
-  sourceType: text("source_type"),
-  sourceId: uuid("source_id"),
-  status: text("status").notNull().default("draft"),
-  createdByUserId: text("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+export const accountOverride = pgTable(
+  "account_override",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => client.id, { onDelete: "cascade" }),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => account.id, { onDelete: "cascade" }),
+    /** Override del isActive base. NULL = usar el default de la cuenta base. */
+    isActive: boolean("is_active"),
+    /** Renombre solo para esta empresa. NULL = usar el nombre base. */
+    customName: text("custom_name"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    unique("account_override_client_account_unique").on(table.clientId, table.accountId),
+  ],
+);
+
+/** Ejercicio fiscal (típico 12 meses calendario) por empresa. */
+export const fiscalYear = pgTable(
+  "fiscal_year",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => client.id, { onDelete: "cascade" }),
+    startDate: timestamp("start_date", { mode: "date" }).notNull(),
+    endDate: timestamp("end_date", { mode: "date" }).notNull(),
+    status: fiscalYearStatusEnum("status").notNull().default("open"),
+    /** N° de ejercicio (1, 2, 3...). */
+    number: integer("number").notNull(),
+    closedAt: timestamp("closed_at"),
+    closedBy: text("closed_by").references(() => user.id, { onDelete: "set null" }),
+    reopenedAt: timestamp("reopened_at"),
+    reopenedBy: text("reopened_by").references(() => user.id, { onDelete: "set null" }),
+    reopenReason: text("reopen_reason"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_fiscal_year_client").on(table.clientId),
+    unique("fiscal_year_client_number_unique").on(table.clientId, table.number),
+  ],
+);
+
+/** Período mensual dentro de un ejercicio. Se crean los 12 al abrir el ejercicio. */
+export const accountingPeriod = pgTable(
+  "accounting_period",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    fiscalYearId: uuid("fiscal_year_id")
+      .notNull()
+      .references(() => fiscalYear.id, { onDelete: "cascade" }),
+    /** Denormalizado para queries de mayor. */
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => client.id, { onDelete: "cascade" }),
+    year: integer("year").notNull(),
+    month: integer("month").notNull(),
+    status: accountingPeriodStatusEnum("status").notNull().default("open"),
+    closedAt: timestamp("closed_at"),
+    closedBy: text("closed_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_accounting_period_client_fy").on(table.clientId, table.fiscalYearId),
+    unique("accounting_period_fy_year_month_unique").on(
+      table.fiscalYearId,
+      table.year,
+      table.month,
+    ),
+  ],
+);
+
+/** Asiento contable (cabecera). Numeración consecutiva por ejercicio. */
+export const journalEntry = pgTable(
+  "journal_entry",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => client.id, { onDelete: "cascade" }),
+    fiscalYearId: uuid("fiscal_year_id")
+      .notNull()
+      .references(() => fiscalYear.id, { onDelete: "cascade" }),
+    periodId: uuid("period_id")
+      .notNull()
+      .references(() => accountingPeriod.id, { onDelete: "restrict" }),
+    /** Numeración consecutiva por ejercicio, sin saltos. */
+    number: integer("number").notNull(),
+    entryDate: timestamp("entry_date", { mode: "date" }).notNull(),
+    description: text("description"),
+    origin: journalEntryOriginEnum("origin").notNull().default("manual"),
+    sourceType: journalEntrySourceTypeEnum("source_type"),
+    /** FK a la entidad origen (invoice.id, liquidacionImportRecibo.id, etc.). */
+    sourceId: uuid("source_id"),
+    /** FK opcional → ledgerMappingRule. Solo en asientos generados por una regla. */
+    mappingRuleId: uuid("mapping_rule_id").references(() => ledgerMappingRule.id, {
+      onDelete: "set null",
+    }),
+    isVoided: boolean("is_voided").notNull().default(false),
+    voidedAt: timestamp("voided_at"),
+    voidedBy: text("voided_by").references(() => user.id, { onDelete: "set null" }),
+    voidReason: text("void_reason"),
+    /** True si origin=auto pero el contador lo editó. */
+    isEditedPostGeneration: boolean("is_edited_post_generation").notNull().default(false),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("idx_journal_entry_client_fy").on(table.clientId, table.fiscalYearId),
+    index("idx_journal_entry_client_period_voided").on(
+      table.clientId,
+      table.periodId,
+      table.isVoided,
+    ),
+    unique("journal_entry_client_fy_number_unique").on(
+      table.clientId,
+      table.fiscalYearId,
+      table.number,
+    ),
+  ],
+);
+
+/** Línea de asiento (debe/haber). Una línea tiene debit>0 XOR credit>0. */
+export const journalEntryLine = pgTable(
+  "journal_entry_line",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    journalEntryId: uuid("journal_entry_id")
+      .notNull()
+      .references(() => journalEntry.id, { onDelete: "cascade" }),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => account.id, { onDelete: "restrict" }),
+    /** Denormalizado para queries de mayor. */
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => client.id, { onDelete: "cascade" }),
+    /** Denormalizado para queries de mayor. */
+    periodId: uuid("period_id")
+      .notNull()
+      .references(() => accountingPeriod.id, { onDelete: "restrict" }),
+    debit: numeric("debit", { precision: 18, scale: 2 }).notNull().default("0"),
+    credit: numeric("credit", { precision: 18, scale: 2 }).notNull().default("0"),
+    description: text("description"),
+    lineOrder: integer("line_order").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_jel_client_account_period").on(
+      table.clientId,
+      table.accountId,
+      table.periodId,
+    ),
+    index("idx_jel_journal_entry").on(table.journalEntryId),
+  ],
+);
+
+/** Log auditable de acciones contables sensibles (append-only, inmutable). */
+export const accountingLog = pgTable(
+  "accounting_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => client.id, { onDelete: "cascade" }),
+    fiscalYearId: uuid("fiscal_year_id").references(() => fiscalYear.id, {
+      onDelete: "set null",
+    }),
+    eventType: accountingLogEventTypeEnum("event_type").notNull(),
+    /** Snapshot del estado antes/después. */
+    eventData: jsonb("event_data"),
+    userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("idx_accounting_log_client").on(table.clientId)],
+);
+
+/* ───────── Estados Contables (paquete EECC, Fase 6) ───────── */
+
+export const financialStatementStatusEnum = pgEnum(
+  "financial_statement_status",
+  ["draft", "approved"],
+);
 
 /**
- * Individual debit/credit lines within a journal entry.
- * Sum of debits must equal sum of credits per entry.
+ * Paquete de Estados Contables de un ejercicio (notas libres + estado de aprobación).
+ * El ESP/ER/Anexo II se calculan on-the-fly desde los asientos; acá se persisten las
+ * notas markdown del Owner y la aprobación formal. Uno por ejercicio.
+ * Al aprobar (status='approved') las notas quedan inmutables hasta reabrir a borrador.
  */
-export const journalEntryLine = pgTable("journal_entry_line", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  journalEntryId: uuid("journal_entry_id")
-    .notNull()
-    .references(() => journalEntry.id, { onDelete: "cascade" }),
-  accountId: uuid("account_id")
-    .notNull()
-    .references(() => accountingAccount.id, { onDelete: "restrict" }),
-  debit: numeric("debit", { precision: 14, scale: 2 }).notNull().default("0"),
-  credit: numeric("credit", { precision: 14, scale: 2 }).notNull().default("0"),
-  description: text("description"),
-});
+export const financialStatement = pgTable(
+  "financial_statement",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => client.id, { onDelete: "cascade" }),
+    fiscalYearId: uuid("fiscal_year_id")
+      .notNull()
+      .references(() => fiscalYear.id, { onDelete: "cascade" }),
+    status: financialStatementStatusEnum("status").notNull().default("draft"),
+    /** Notas markdown en orden de exposición: [{ id, title, content }]. */
+    notes: jsonb("notes").notNull().default([]),
+    approvedAt: timestamp("approved_at"),
+    approvedBy: text("approved_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    /** PDF del paquete EECC generado, como data URL base64 (US 7.1.1). */
+    pdfUrl: text("pdf_url"),
+    pdfSizeBytes: integer("pdf_size_bytes"),
+    pdfGeneratedAt: timestamp("pdf_generated_at"),
+    pdfGeneratedBy: text("pdf_generated_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    unique("financial_statement_fy_unique").on(table.fiscalYearId),
+    index("idx_financial_statement_client").on(table.clientId),
+  ],
+);
+
+/**
+ * Anexo de Costo de Mercadería Vendida (CMV) por ejercicio. Carga MANUAL por ahora
+ * (método diferencia de inventario): CMV = existencia inicial + compras/gastos − existencia final.
+ * Es un anexo explicativo; no alimenta automáticamente el "Costo de ventas" del ER
+ * (ese sale de los asientos). Uno por ejercicio.
+ */
+export const cmvAnnex = pgTable(
+  "cmv_annex",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => client.id, { onDelete: "cascade" }),
+    fiscalYearId: uuid("fiscal_year_id")
+      .notNull()
+      .references(() => fiscalYear.id, { onDelete: "cascade" }),
+    /** Existencia de mercaderías al inicio del ejercicio. */
+    existenciaInicial: numeric("existencia_inicial", { precision: 18, scale: 2 })
+      .notNull()
+      .default("0"),
+    /** Compras / gastos del ejercicio. */
+    comprasGastos: numeric("compras_gastos", { precision: 18, scale: 2 })
+      .notNull()
+      .default("0"),
+    /** Existencia de mercaderías al cierre del ejercicio. */
+    existenciaFinal: numeric("existencia_final", { precision: 18, scale: 2 })
+      .notNull()
+      .default("0"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    unique("cmv_annex_fy_unique").on(table.fiscalYearId),
+    index("idx_cmv_annex_client").on(table.clientId),
+  ],
+);
+
+/* ───────── Reglas de mapeo (asientos automáticos, Fase 3) ───────── */
+
+/** Módulo origen del comprobante que dispara la regla. */
+export const ledgerMappingSourceModuleEnum = pgEnum("ledger_mapping_source_module", [
+  "invoice",
+  "payroll",
+]);
+
+/** default = fallback; conditional = se aplica si matchea la condición jsonb. */
+export const ledgerMappingRuleTypeEnum = pgEnum("ledger_mapping_rule_type", [
+  "default",
+  "conditional",
+]);
+
+export const ledgerMappingLineSideEnum = pgEnum("ledger_mapping_line_side", [
+  "debit",
+  "credit",
+]);
+
+/** Base sobre la que se calcula el monto de cada línea generada. */
+export const ledgerMappingAmountBasisEnum = pgEnum("ledger_mapping_amount_basis", [
+  "total",
+  "net",
+  "vat",
+  "other_taxes",
+  "concept_value",
+  "fixed",
+]);
+
+/**
+ * Cabecera de la regla de mapeo comprobante→asiento. Define cuándo se aplica.
+ * Las cuentas y montos viven en ledgerMappingRuleLine. Vive a nivel `client` (empresa).
+ */
+export const ledgerMappingRule = pgTable(
+  "ledger_mapping_rule",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => client.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    sourceModule: ledgerMappingSourceModuleEnum("source_module").notNull(),
+    ruleType: ledgerMappingRuleTypeEnum("rule_type").notNull().default("default"),
+    /** Criterios de matching cuando ruleType='conditional' (ej. {"direction":"sale","invoiceType":"A"}). */
+    condition: jsonb("condition"),
+    /** Orden de evaluación: las más específicas (menor número) primero. */
+    priority: integer("priority").notNull().default(100),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("idx_ledger_mapping_rule_client").on(table.clientId, table.sourceModule),
+  ],
+);
+
+/**
+ * Línea-plantilla de una regla: qué cuenta, de qué lado y cómo se calcula el monto.
+ * Una regla generará un asiento con N líneas a partir de estas plantillas.
+ */
+export const ledgerMappingRuleLine = pgTable(
+  "ledger_mapping_rule_line",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ruleId: uuid("rule_id")
+      .notNull()
+      .references(() => ledgerMappingRule.id, { onDelete: "cascade" }),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => account.id, { onDelete: "restrict" }),
+    side: ledgerMappingLineSideEnum("side").notNull(),
+    amountBasis: ledgerMappingAmountBasisEnum("amount_basis").notNull(),
+    /** Monto fijo cuando amountBasis='fixed'; NULL en los demás casos. */
+    fixedAmount: numeric("fixed_amount", { precision: 18, scale: 2 }),
+    lineOrder: integer("line_order").notNull().default(0),
+    description: text("description"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("idx_ledger_mapping_rule_line_rule").on(table.ruleId)],
+);
+
+/* ───────── Bienes de uso (Fase 4) ───────── */
+
+/** Categoría del bien de uso (alineada con los rubros de exposición del Anexo I). */
+export const fixedAssetCategoryEnum = pgEnum("fixed_asset_category", [
+  "rodados",
+  "muebles_utiles",
+  "equipos_computacion",
+  "instalaciones",
+  "inmuebles",
+  "maquinarias",
+  "otros",
+]);
+
+/** Método de amortización. Por ahora solo lineal. */
+export const fixedAssetMethodEnum = pgEnum("fixed_asset_method", ["linear"]);
+
+export const fixedAssetStatusEnum = pgEnum("fixed_asset_status", [
+  "active",
+  "sold",
+  "discarded",
+]);
+
+/** Motivo de baja del bien. */
+export const fixedAssetDisposalReasonEnum = pgEnum("fixed_asset_disposal_reason", [
+  "sale",
+  "disuse",
+  "destruction",
+]);
+
+/**
+ * Bien de uso de una empresa. Insumo del Anexo I y de los asientos de amortización
+ * al cierre. La amortización (lineal) se calcula on-the-fly, no se persiste por mes.
+ * Vive a nivel `client` (empresa).
+ */
+export const fixedAsset = pgTable(
+  "fixed_asset",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => client.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    category: fixedAssetCategoryEnum("category").notNull(),
+    /** Cuenta del activo (bienes_uso, saldo deudor). */
+    assetAccountId: uuid("asset_account_id")
+      .notNull()
+      .references(() => account.id, { onDelete: "restrict" }),
+    /** Cuenta regularizadora "(-) Amortización acumulada" (bienes_uso, saldo acreedor). */
+    accumDeprAccountId: uuid("accum_depr_account_id")
+      .notNull()
+      .references(() => account.id, { onDelete: "restrict" }),
+    /** Cuenta de gasto "Amortización del ejercicio" (resultado negativo). */
+    deprExpenseAccountId: uuid("depr_expense_account_id")
+      .notNull()
+      .references(() => account.id, { onDelete: "restrict" }),
+    acquisitionDate: timestamp("acquisition_date", { mode: "date" }).notNull(),
+    originalValue: numeric("original_value", { precision: 18, scale: 2 }).notNull(),
+    usefulLifeYears: integer("useful_life_years").notNull(),
+    residualValue: numeric("residual_value", { precision: 18, scale: 2 })
+      .notNull()
+      .default("0"),
+    method: fixedAssetMethodEnum("method").notNull().default("linear"),
+    status: fixedAssetStatusEnum("status").notNull().default("active"),
+    disposalDate: timestamp("disposal_date", { mode: "date" }),
+    disposalReason: fixedAssetDisposalReasonEnum("disposal_reason"),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("idx_fixed_asset_client_status").on(table.clientId, table.status),
+  ],
+);
 
 /**
  * Tax projections per client and period for estimated vs actual tracking.
@@ -1583,3 +2219,31 @@ export const payrollLsdPresentacion = pgTable(
   },
   (t) => [unique("uq_lsd_pres_profile_periodo_nro").on(t.profileId, t.periodo, t.nroPresentacion)]
 );
+
+/**
+ * Datos del contador firmante del estudio, para el bloque de firma de los
+ * Estados Contables (EECC). Uno por organización.
+ */
+export const accountantSignature = pgTable("accountant_signature", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: text("organization_id")
+    .notNull()
+    .unique()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  /** Nombre y apellido del contador. */
+  nombre: text("nombre"),
+  /** Título profesional (ej. "Contador Público"). */
+  titulo: text("titulo").notNull().default("Contador Público"),
+  /** Universidad (ej. "U.B.A."). */
+  universidad: text("universidad"),
+  /** Consejo profesional (ej. "C.P.C.E.C.A.B.A."). */
+  consejo: text("consejo"),
+  /** Tomo de la matrícula. */
+  tomo: text("tomo"),
+  /** Folio de la matrícula. */
+  folio: text("folio"),
+  /** Imagen de la firma (data URL base64), opcional. */
+  firmaImagen: text("firma_imagen"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});

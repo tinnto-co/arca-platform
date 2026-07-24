@@ -194,6 +194,44 @@ export const bulkResolveAlerts = createServerFn({ method: 'POST' })
     return { resolved: rows.length };
   });
 
+/**
+ * Dedupea pares (representante, tipo) — un job scrapea todas las relaciones
+ * del representante, así que reintentar dos jobs fallidos del mismo par sería
+ * un scrape duplicado — y saltea pares que ya tienen un job pending/running.
+ */
+async function dedupeRetryJobs(
+  jobsToRetry: { type: string; clientId: string | null }[]
+): Promise<{ type: string; clientId: string }[]> {
+  const uniquePairs = new Map<string, { type: string; clientId: string }>();
+  for (const j of jobsToRetry) {
+    if (!j.clientId) continue;
+    uniquePairs.set(`${j.clientId}:${j.type}`, {
+      type: j.type,
+      clientId: j.clientId,
+    });
+  }
+  if (uniquePairs.size === 0) return [];
+
+  const pairs = [...uniquePairs.values()];
+  const activeJobs = await db
+    .select({ representativeId: job.representativeId, type: job.type })
+    .from(job)
+    .where(
+      and(
+        inArray(
+          job.representativeId,
+          pairs.map((p) => p.clientId)
+        ),
+        inArray(job.status, ['pending', 'running'])
+      )
+    );
+  const activeSet = new Set(
+    activeJobs.map((j) => `${j.representativeId}:${j.type}`)
+  );
+
+  return pairs.filter((p) => !activeSet.has(`${p.clientId}:${p.type}`));
+}
+
 export const retryAlertJobs = createServerFn({ method: 'POST' })
   .inputValidator(z.object({ id: z.string().uuid() }))
   .handler(async (ctx) => {
@@ -227,8 +265,10 @@ export const retryAlertJobs = createServerFn({ method: 'POST' })
 
     if (jobsToRetry.length === 0) throw new Error('No se encontraron los jobs fallidos');
 
-    const jobs = jobsToRetry.map((j) => ({ type: j.type, clientId: j.clientId }));
-    await axios.post(`${JOBS_API_URL}/api/jobs/batch`, { jobs });
+    const jobs = await dedupeRetryJobs(jobsToRetry);
+    if (jobs.length > 0) {
+      await axios.post(`${JOBS_API_URL}/api/jobs/batch`, { jobs });
+    }
 
     await db
       .update(alertTable)
@@ -273,8 +313,10 @@ export const retryAllRetryable = createServerFn({ method: 'POST' })
         .from(job)
         .where(inArray(job.id, allJobIds));
 
-      const jobs = jobsToRetry.map((j) => ({ type: j.type, clientId: j.clientId }));
-      await axios.post(`${JOBS_API_URL}/api/jobs/batch`, { jobs });
+      const jobs = await dedupeRetryJobs(jobsToRetry);
+      if (jobs.length > 0) {
+        await axios.post(`${JOBS_API_URL}/api/jobs/batch`, { jobs });
+      }
     }
 
     const alertIds = retryableAlerts.map((a) => a.id);

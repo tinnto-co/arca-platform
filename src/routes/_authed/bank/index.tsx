@@ -13,6 +13,13 @@ import {
   Plus,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { ArcaCard } from '@/components/dashboard/shared';
 import { getRepresentatives } from '@/actions/client';
 import {
@@ -27,8 +34,7 @@ import { toast } from 'sonner';
 export const Route = createFileRoute('/_authed/bank/')({
   beforeLoad: async () => {
     const modules = await listOrgModules();
-    const enabled =
-      modules.find((m) => m.module === 'banco')?.enabled ?? false;
+    const enabled = modules.find((m) => m.module === 'banco')?.enabled ?? false;
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     if (!enabled) throw redirect({ to: '/' });
   },
@@ -58,9 +64,6 @@ interface TransactionRow {
 }
 
 /* ─── Helpers ─── */
-const SELECT_CLASS =
-  'h-8 px-2.5 text-[12.5px] border border-[var(--arca-border)] rounded-[8px] bg-[var(--arca-surface)] text-[var(--arca-ink)] focus:outline-none';
-
 function fmtAmount(amount: string, direction: string) {
   const n = parseFloat(amount);
   const sign = direction === 'credit' ? '+' : '-';
@@ -412,34 +415,34 @@ function BankPage() {
 
       {/* Filter bar */}
       <div className="flex flex-wrap gap-2 mb-5 items-center">
-        <select
-          value={clientId}
-          onChange={(e) => handleClientChange(e.target.value)}
-          className={SELECT_CLASS}
-        >
-          <option value="">Seleccionar cliente...</option>
-          {clients.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+        <Select value={clientId} onValueChange={(v) => handleClientChange(v)}>
+          <SelectTrigger className="w-[220px] text-[13px]">
+            <SelectValue placeholder="Seleccionar cliente..." />
+          </SelectTrigger>
+          <SelectContent>
+            {clients.map((c) => (
+              <SelectItem key={c.id} value={c.id}>
+                {c.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
         {clientId && (
-          <select
-            value={accountId}
-            onChange={(e) => setAccountId(e.target.value)}
-            className={SELECT_CLASS}
-          >
-            <option value="">Seleccionar cuenta...</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.bankName}
-                {a.alias ? ` · ${a.alias}` : ''}
-                {a.accountNumber ? ` (${a.accountNumber})` : ''}
-              </option>
-            ))}
-          </select>
+          <Select value={accountId} onValueChange={(v) => setAccountId(v)}>
+            <SelectTrigger className="w-[260px] text-[13px]">
+              <SelectValue placeholder="Seleccionar cuenta..." />
+            </SelectTrigger>
+            <SelectContent>
+              {accounts.map((a) => (
+                <SelectItem key={a.id} value={a.id}>
+                  {a.bankName}
+                  {a.alias ? ` · ${a.alias}` : ''}
+                  {a.accountNumber ? ` (${a.accountNumber})` : ''}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         )}
 
         {clientId && (

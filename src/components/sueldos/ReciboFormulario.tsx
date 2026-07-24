@@ -9,7 +9,7 @@ import { format, differenceInYears, endOfMonth, addMonths } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { FilePlus2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { legajoParaMostrar } from '@/lib/legajo';
-import { getPeriodoMaxLiquidable } from '@/lib/payroll-period-rules';
+import { getPeriodoMaxLiquidable, getPeriodoMesAnterior } from '@/lib/payroll-period-rules';
 import { listImportEmpleadosConConfig, listSituaciones } from '@/actions/sueldos';
 import { Button } from '@/components/ui/button';
 import {
@@ -189,7 +189,7 @@ export function ReciboFormulario({
     staleTime: 30 * 60 * 1000,
   });
 
-  const [defaultAno, defaultMes] = getPeriodoMaxLiquidable().split('-');
+  const [defaultAno, defaultMes] = getPeriodoMesAnterior().split('-');
 
   const form = useForm<ReciboFormValues>({
     resolver: zodResolver(formSchema),
