@@ -1,0 +1,34 @@
+name: Tag release
+
+# Cada push a main (ej. merge de staging) crea un tag CalVer: v2026.07.24
+# Si hay más de un release el mismo día: v2026.07.24.2, .3, etc.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create CalVer tag
+        run: |
+          set -euo pipefail
+          BASE="v$(TZ=America/Argentina/Buenos_Aires date +%Y.%m.%d)"
+          TAG="$BASE"
+          N=1
+          while git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; do
+            N=$((N + 1))
+            TAG="$BASE.$N"
+          done
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+          echo "Tagged $TAG"

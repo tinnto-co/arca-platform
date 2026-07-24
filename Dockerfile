@@ -19,6 +19,10 @@ RUN bun run build
 
 # production stage
 FROM base AS release
+
+# curl is required for container healthchecks (Coolify/Docker)
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
 COPY --from=install /usr/src/app/node_modules ./node_modules
 COPY --from=prerelease /usr/src/app/dist ./dist
 COPY --from=prerelease /usr/src/app/server.ts ./server.ts
