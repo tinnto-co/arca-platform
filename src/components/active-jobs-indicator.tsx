@@ -26,6 +26,15 @@ export function ActiveJobsIndicator() {
     countsByType.set(j.type, (countsByType.get(j.type) ?? 0) + 1);
   }
 
+  // Link al detalle: si hay un solo job, filtra por su representante y estado;
+  // si es un solo cliente con varios jobs, filtra por representante.
+  const jobsSearch =
+    activeJobs.length === 1
+      ? { clientId: activeJobs[0].representativeId, status: activeJobs[0].status }
+      : clientCount === 1
+        ? { clientId: activeJobs[0].representativeId }
+        : {};
+
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -56,6 +65,7 @@ export function ActiveJobsIndicator() {
         </ul>
         <Link
           to="/jobs"
+          search={jobsSearch}
           className="mt-3 block text-xs font-medium text-[var(--arca-ink)] underline underline-offset-2"
         >
           Ver detalle en Jobs

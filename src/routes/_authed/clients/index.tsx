@@ -30,7 +30,17 @@ function UpdateAllButton() {
   const dispatchMutation = useMutation({
     mutationFn: () => dispatchAllJobs({ data: {} }),
     onSuccess: (data) => {
-      toast.success(`${data.dispatched} jobs encolados correctamente`);
+      if (data.dispatched === 0) {
+        toast.error(
+          `No se encoló ningún job${data.errors ? ` (${data.errors} con error)` : ''}`
+        );
+      } else if (data.errors > 0) {
+        toast.warning(
+          `${data.dispatched} jobs encolados, ${data.errors} con error`
+        );
+      } else {
+        toast.success(`${data.dispatched} jobs encolados correctamente`);
+      }
       void queryClient.invalidateQueries({ queryKey: ['jobs'] });
       void queryClient.invalidateQueries({ queryKey: ['activeJobsSummary'] });
       setOpen(false);
