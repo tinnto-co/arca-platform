@@ -177,7 +177,7 @@ export function JobsErrorSummary({
           if (!open) setSelectedGroup(null);
         }}
       >
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl sm:max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {selectedGroup?.label}{' '}
@@ -196,7 +196,7 @@ export function JobsErrorSummary({
                   {selectedGroup.sampleReasons.map((reason) => (
                     <div
                       key={reason}
-                      className="rounded-md bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)] px-3 py-2 text-[12.5px]"
+                      className="rounded-md bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)] px-3 py-2 text-[12.5px] break-words"
                     >
                       {reason}
                     </div>
