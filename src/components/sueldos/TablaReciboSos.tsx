@@ -184,6 +184,7 @@ function applySubtotalCascade(
   mejorSueldo = 0,
   diasSemestre = 0,
   brutoMesAnterior = 0,
+  basicoEscala = 0,
 ): EditsMap {
   const subTotals: Record<string, number> = {
     sub1_9: 0, sub1_19: 0, sub1_26: 0,
@@ -287,6 +288,21 @@ function applySubtotalCascade(
           next = { ...next, [c.codigo]: { ...row, monto: effectiveMonto.toFixed(2) } };
         }
       }
+    } else if (bc === 'valHora') {
+      // Concepto 2 (Horas Normales): monto = valor_hora × horas_ingresadas.
+      // valHora es el montoBasico de la escala (valor por hora).
+      const divHs = c.divHsNorm ? 200 : 1;
+      const valHora = basicoEscala / divHs / Math.max(1, c.divCantidad ?? 1);
+      if (valHora > 0) {
+        const cantNum = parseDecimalSos(row.cantidad) ?? 0;
+        if (cantNum > 0) {
+          effectiveMonto = Math.round(valHora * cantNum * 100) / 100;
+          next = { ...next, [c.codigo]: { ...row, monto: effectiveMonto.toFixed(2) } };
+        }
+      }
+      // Actualizar sueldoBase con el total liquidado para que conceptos
+      // posteriores (Antigüedad, Presentismo) usen la base correcta.
+      if (effectiveMonto > 0) sueldoBase = effectiveMonto;
     } else if (bc === 'sueldo' && n > 1) {
       // Base = monto del concepto 1 (sueldo básico).
       const hasPct = (row.porcentaje ?? '').trim() !== '';
@@ -348,7 +364,7 @@ function applySubtotalCascade(
 
     // Registrar monto computado para que conceptos posteriores puedan referenciarlo.
     conceptMontos[c.codigo] = effectiveMonto;
-    if (n === 1) sueldoBase = effectiveMonto;
+    if (n === 1 || n === 2) sueldoBase = effectiveMonto;
 
     if (n >= 1 && n <= 199) {
       subTotals['sub1_199'] += effectiveMonto;
@@ -1039,6 +1055,9 @@ export function TablaReciboSos({
   const activeCodigosRef = useRef<Set<string>>(new Set());
   useEffect(() => { activeCodigosRef.current = codigosActivosSet; }, [codigosActivosSet]);
 
+  const basicoEscalaRef = useRef(basico ?? 0);
+  useEffect(() => { basicoEscalaRef.current = basico ?? 0; }, [basico]);
+
   const osBaseRef = useRef(basicoJornadaCompleta);
   useEffect(() => { osBaseRef.current = basicoJornadaCompleta; }, [basicoJornadaCompleta]);
 
@@ -1085,7 +1104,7 @@ export function TablaReciboSos({
         changed = true;
       }
       if (!changed) return prev;
-      return applySubtotalCascade(next, conceptosRef.current, activeCodigosRef.current, osBaseRef.current, mejorSueldoRef.current, diasSemestreRef.current, brutoMesAnteriorRef.current);
+      return applySubtotalCascade(next, conceptosRef.current, activeCodigosRef.current, osBaseRef.current, mejorSueldoRef.current, diasSemestreRef.current, brutoMesAnteriorRef.current, basicoEscalaRef.current);
     });
   // activeCodigosProp como dep: si basico llegó antes de que los conceptos estén activos,
   // este effect vuelve a ejecutarse cuando la plantilla carga y los códigos se populan.
@@ -1303,7 +1322,7 @@ export function TablaReciboSos({
           }
         }
 
-        return applySubtotalCascade(newEdits, conceptosRef.current, activeCodigosRef.current, osBaseRef.current, mejorSueldoRef.current, diasSemestreRef.current, brutoMesAnteriorRef.current);
+        return applySubtotalCascade(newEdits, conceptosRef.current, activeCodigosRef.current, osBaseRef.current, mejorSueldoRef.current, diasSemestreRef.current, brutoMesAnteriorRef.current, basicoEscalaRef.current);
       });
     },
     []
@@ -1326,7 +1345,7 @@ export function TablaReciboSos({
   // para que conceptos subtotal-based con % pre-cargado calculen su monto automáticamente.
   useEffect(() => {
     activeCodigosRef.current = codigosActivosSet;
-    setEdits((prev) => applySubtotalCascade(prev, conceptosRef.current, codigosActivosSet, osBaseRef.current, mejorSueldoRef.current, diasSemestreRef.current, brutoMesAnteriorRef.current));
+    setEdits((prev) => applySubtotalCascade(prev, conceptosRef.current, codigosActivosSet, osBaseRef.current, mejorSueldoRef.current, diasSemestreRef.current, brutoMesAnteriorRef.current, basicoEscalaRef.current));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [codigosActivosSet]);
 

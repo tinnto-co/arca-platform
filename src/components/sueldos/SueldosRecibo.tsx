@@ -1127,7 +1127,7 @@ function diasDesdefechaBaja(fecha: string): number {
   return isNaN(day) || day < 1 ? 1 : day;
 }
 
-function GenerarLiqFinalDialog({
+export function GenerarLiqFinalDialog({
   clientId,
   profileId,
   periodo,
@@ -1181,6 +1181,7 @@ function GenerarLiqFinalDialog({
       toast.success(`${result.generados} recibos de Liquidación Final generados.`);
       queryClient.invalidateQueries({ queryKey: ['liquidaciones-filtros'] });
       queryClient.invalidateQueries({ queryKey: ['import-recibos'] });
+      queryClient.invalidateQueries({ queryKey: ['import-empleados', clientId, profileId] });
       onClose();
     },
     onError: (err) => toast.error((err as Error).message ?? 'Error al generar las liquidaciones finales.'),

@@ -1,0 +1,1 @@
+ALTER TABLE "payroll_convenio_categoria" ADD COLUMN "es_valor_hora" boolean DEFAULT false NOT NULL;

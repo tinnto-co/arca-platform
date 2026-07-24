@@ -253,6 +253,7 @@ export function SueldosSimulador({
   const basicoEscala = basicoData?.basico ?? 0;
   const tipoJornada = basicoData?.tipoJornada ?? 'full_time';
   const esExcluidoConvenio = basicoData?.esExcluidoConvenio ?? false;
+  const esValorHoraCat = basicoData?.esValorHoraCat ?? false;
   // La base OS (conceptos 203, 502, etc.) siempre calcula sobre el básico de escala al 100%,
   // independientemente del porcentaje que tenga seteado el concepto 1 o el 411.
   const basicoJornadaCompleta = basicoEscala;
@@ -432,9 +433,17 @@ export function SueldosSimulador({
     const plantillaBaseCodes = plantillaManual
       .filter((c) => (c as typeof c & { isPlantillaBase?: boolean }).isPlantillaBase)
       .map((c) => c.codigo);
-    const initial = plantillaBaseCodes.length > 0
-      ? new Set(plantillaBaseCodes)
+    const defaultCodes = esValorHoraCat
+      ? new Set(['2', '3', '201', '202', '203'])
       : new Set(['1', '3', '201', '202', '203']);
+    const initial = plantillaBaseCodes.length > 0
+      ? (() => {
+          const s = new Set(plantillaBaseCodes);
+          // Para empleados con valor por hora: excluir concepto 1 e incluir concepto 2
+          if (esValorHoraCat) { s.delete('1'); s.add('2'); }
+          return s;
+        })()
+      : defaultCodes;
     setActiveCodigos(initial);
   }, [
     flowHeader?.importEmpleadoId,
@@ -442,6 +451,7 @@ export function SueldosSimulador({
     flowHeader?.copiarUltimoRecibo,
     plantillaKey,
     esExcluidoConvenio,
+    esValorHoraCat,
   ]);
 
   // En modo copia: pre-cargar los códigos activos del último recibo.
@@ -873,6 +883,41 @@ export function SueldosSimulador({
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
+            {!loadingBasico && basicoEscala >= 0 && (
+              <div className={`rounded-md border px-3 py-2 text-xs ${sinEscalaParaPeriodo ? 'border-amber-300/60 bg-amber-50/50 text-amber-900' : 'border-emerald-300/60 bg-emerald-50/50 text-emerald-950'}`}>
+                {sinEscalaParaPeriodo ? (
+                  <>
+                    Sin escala cargada para{' '}
+                    <span className="font-semibold">{flowHeader!.periodo}</span>.{' '}
+                    Usando la más reciente
+                    {fallbackPeriodoLabel && <> ({fallbackPeriodoLabel})</>}
+                    :{' '}
+                    <span className="font-mono font-semibold">
+                      ${moneyFmt(basicoEscala)}
+                    </span>
+                    {categoriaEscala && (
+                      <> · Categoría: <span className="font-semibold">{categoriaEscala}</span></>
+                    )}
+                    . Cargá la escala del período en Convenios.
+                  </>
+                ) : (
+                  <>
+                    Escala vigente para período{' '}
+                    <span className="font-semibold">{flowHeader!.periodo}</span>
+                    {periodoEscalaLabel && (
+                      <> (<span className="font-semibold">{periodoEscalaLabel}</span>)</>
+                    )}
+                    :{' '}
+                    <span className="font-mono font-semibold">
+                      ${moneyFmt(basicoEscala)}
+                    </span>
+                    {categoriaEscala && (
+                      <> · Categoría: <span className="font-semibold">{categoriaEscala}</span></>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
             <div className="rounded-lg border bg-background p-3">
             <TablaReciboSos
               key={`${plantillaKey}|${ultimoRecibo.recibo.id}`}
