@@ -1,0 +1,1 @@
+ALTER TABLE "client" ADD COLUMN "fiscal_condition" text;

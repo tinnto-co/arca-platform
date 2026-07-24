@@ -22,6 +22,7 @@ import {
   Landmark,
   BookOpen,
   Globe,
+  Percent,
 } from 'lucide-react';
 
 import { Sidebar, SidebarRail, useSidebar } from '@/components/ui/sidebar';
@@ -264,8 +265,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   <span className="truncate">{org.name}</span>
                   {(org.id === user?.activeOrganizationId ||
                     org.id === activeOrg?.id) && (
-                      <Check className="ml-auto size-4" />
-                    )}
+                    <Check className="ml-auto size-4" />
+                  )}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
@@ -327,6 +328,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <NavItem to="/invoices" icon={FileText} label="Facturas" />
           <NavItem to="/sueldos" icon={DollarSign} label="Sueldos" />
           <NavItem to="/iibb" icon={Globe} label="IIBB" />
+          <NavItem to="/iva" icon={Percent} label="IVA" />
           <NavItem to="/vencimientos" icon={Calendar} label="Vencimientos" />
           {isEnabled('banco') && (
             <NavItem to="/bank" icon={Landmark} label="Banco" />

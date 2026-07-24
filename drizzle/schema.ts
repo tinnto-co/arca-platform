@@ -78,6 +78,8 @@ export const client = pgTable("client", {
   phone: text("phone").notNull(),
   email: text("email").notNull(),
   status: text("status").notNull(),
+  /** Condición fiscal: 'responsable_inscripto' | 'monotributista' | 'exento' | null (sin clasificar). */
+  fiscalCondition: text("fiscal_condition"),
   liquidaSueldos: boolean("liquida_sueldos").notNull().default(false),
   /**
    * Compatibilidad con flujo legado LSD:
