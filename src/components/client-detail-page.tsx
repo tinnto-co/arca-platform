@@ -77,10 +77,7 @@ import {
   getNotifications,
   markNotificationOpened,
 } from '@/actions/notification';
-import {
-  scrapSingleJob,
-  updateDebtStatus,
-} from '@/actions/client';
+import { scrapSingleJob, updateDebtStatus } from '@/actions/client';
 import {
   listClientRequests,
   createClientRequest,
@@ -244,12 +241,13 @@ const MetricDelta = ({
 
   return (
     <p
-      className={`text-xs mt-1 ${diff > 0
-        ? 'text-[var(--arca-accent-pos-fg)]'
-        : diff < 0
-          ? 'text-[var(--arca-accent-neg-fg)]'
-          : 'text-muted-foreground'
-        }`}
+      className={`text-xs mt-1 ${
+        diff > 0
+          ? 'text-[var(--arca-accent-pos-fg)]'
+          : diff < 0
+            ? 'text-[var(--arca-accent-neg-fg)]'
+            : 'text-muted-foreground'
+      }`}
     >
       {label}: {formattedPct}
     </p>
@@ -318,7 +316,8 @@ export function RepresentativeDetailPage({
 }: RepresentativeDetailPageProps) {
   const navigate = useNavigate();
   const [copiedField, setCopiedField] = useState<string | null>(null);
-  const [editRepresentativeDialogOpen, setEditRepresentativeDialogOpen] = useState(false);
+  const [editRepresentativeDialogOpen, setEditRepresentativeDialogOpen] =
+    useState(false);
   const now = new Date();
   const initialMultilateralRange = getMonthBounds(
     now.getFullYear(),
@@ -373,7 +372,9 @@ export function RepresentativeDetailPage({
   const [debtFilterImpuesto, setDebtFilterImpuesto] = useState<string>('');
   const [debtFilterConcepto, setDebtFilterConcepto] = useState<string>('');
   const [debtPage, setDebtPage] = useState(1);
-  const [debtSortKey, setDebtSortKey] = useState<'tax' | 'concept' | 'period' | 'dueDate' | 'detectedAt'>('detectedAt');
+  const [debtSortKey, setDebtSortKey] = useState<
+    'tax' | 'concept' | 'period' | 'dueDate' | 'detectedAt'
+  >('detectedAt');
   const [debtSortDir, setDebtSortDir] = useState<'asc' | 'desc'>('desc');
   const [dueDatePage, setDueDatePage] = useState(1);
 
@@ -438,7 +439,9 @@ export function RepresentativeDetailPage({
       isIntimated: boolean;
     }) => updateDebtStatus({ data: vars }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['representativeDebts', representativeId] });
+      queryClient.invalidateQueries({
+        queryKey: ['representativeDebts', representativeId],
+      });
       toast.success('Deuda actualizada');
     },
     onError: () => {
@@ -482,7 +485,9 @@ export function RepresentativeDetailPage({
   const { data: client, isLoading: loadingClient } = useQuery({
     queryKey: ['representative', representativeId],
     queryFn: async () => {
-      const result = await getRepresentative({ data: { id: representativeId } });
+      const result = await getRepresentative({
+        data: { id: representativeId },
+      });
       return result;
     },
   });
@@ -612,7 +617,9 @@ export function RepresentativeDetailPage({
       alertDaysBefore: number[];
     }) => upsertBalanceConfig({ data: { representativeId, ...vars } }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['balanceConfig', representativeId] });
+      queryClient.invalidateQueries({
+        queryKey: ['balanceConfig', representativeId],
+      });
       toast.success('Configuración guardada');
     },
     onError: () => {
@@ -735,12 +742,18 @@ export function RepresentativeDetailPage({
 
   const { data: debts = [], isLoading: loadingDebts } = useQuery({
     queryKey: ['representativeDebts', representativeId, selectedClientId],
-    queryFn: () => getRepresentativeDebts({ data: { representativeId, clientId: selectedClientId || undefined } }),
+    queryFn: () =>
+      getRepresentativeDebts({
+        data: { representativeId, clientId: selectedClientId || undefined },
+      }),
   });
 
   const { data: dueDates = [], isLoading: loadingDueDates } = useQuery({
     queryKey: ['representativeDueDates', representativeId, selectedClientId],
-    queryFn: () => getRepresentativeDueDates({ data: { representativeId, clientId: selectedClientId || undefined } }),
+    queryFn: () =>
+      getRepresentativeDueDates({
+        data: { representativeId, clientId: selectedClientId || undefined },
+      }),
   });
 
   // Últimos jobs por tipo para mostrar errores en Resumen
@@ -754,7 +767,9 @@ export function RepresentativeDetailPage({
   const { data: lastComprobantesFullJob } = useQuery({
     queryKey: ['lastComprobantesFullJob', representativeId],
     queryFn: () =>
-      getLastJobByType({ data: { representativeId, jobType: 'comprobantes_full' } }),
+      getLastJobByType({
+        data: { representativeId, jobType: 'comprobantes_full' },
+      }),
     enabled: !!representativeId,
   });
 
@@ -769,20 +784,24 @@ export function RepresentativeDetailPage({
 
   const { data: lastIvaJob } = useQuery({
     queryKey: ['lastIvaJob', representativeId],
-    queryFn: () => getLastJobByType({ data: { representativeId, jobType: 'iva' } }),
+    queryFn: () =>
+      getLastJobByType({ data: { representativeId, jobType: 'iva' } }),
     enabled: !!representativeId,
   });
 
   const { data: lastNotificacionesJob } = useQuery({
     queryKey: ['lastNotificacionesJob', representativeId],
     queryFn: () =>
-      getLastJobByType({ data: { representativeId, jobType: 'notificaciones' } }),
+      getLastJobByType({
+        data: { representativeId, jobType: 'notificaciones' },
+      }),
     enabled: !!representativeId,
   });
 
   const { data: lastDeudaJob } = useQuery({
     queryKey: ['lastDeudaJob', representativeId],
-    queryFn: () => getLastJobByType({ data: { representativeId, jobType: 'deuda' } }),
+    queryFn: () =>
+      getLastJobByType({ data: { representativeId, jobType: 'deuda' } }),
     enabled: !!representativeId,
   });
 
@@ -818,7 +837,9 @@ export function RepresentativeDetailPage({
   const { data: runningComprobantesJob } = useQuery({
     queryKey: ['runningComprobantesJob', representativeId],
     queryFn: () =>
-      getRunningJobByType({ data: { representativeId, jobType: 'comprobantes' } }),
+      getRunningJobByType({
+        data: { representativeId, jobType: 'comprobantes' },
+      }),
     enabled: !!representativeId,
     // Refrescar cada 5s para reflejar cambios de estado
     refetchInterval: 5000,
@@ -885,7 +906,9 @@ export function RepresentativeDetailPage({
         },
       }),
     enabled:
-      !!representativeId && !!multilateralPrevDateFrom && !!multilateralPrevDateTo,
+      !!representativeId &&
+      !!multilateralPrevDateFrom &&
+      !!multilateralPrevDateTo,
   });
 
   interface MultilateralAgg {
@@ -1141,7 +1164,9 @@ export function RepresentativeDetailPage({
     const sorted = [...filteredDebts].sort((a, b) => {
       let cmp = 0;
       if (debtSortKey === 'dueDate' || debtSortKey === 'detectedAt') {
-        cmp = new Date(a[debtSortKey] ?? 0).getTime() - new Date(b[debtSortKey] ?? 0).getTime();
+        cmp =
+          new Date(a[debtSortKey] ?? 0).getTime() -
+          new Date(b[debtSortKey] ?? 0).getTime();
       } else {
         cmp = (a[debtSortKey] ?? '').localeCompare(b[debtSortKey] ?? '');
       }
@@ -1368,17 +1393,17 @@ export function RepresentativeDetailPage({
           ? 0
           : null
         : ((invoiceStatsFiltered.totalSales - invoiceStatsPrevious.totalSales) /
-          invoiceStatsPrevious.totalSales) *
-        100;
+            invoiceStatsPrevious.totalSales) *
+          100;
     const purchasesPct =
       invoiceStatsPrevious.totalPurchases === 0
         ? invoiceStatsFiltered.totalPurchases === 0
           ? 0
           : null
         : ((invoiceStatsFiltered.totalPurchases -
-          invoiceStatsPrevious.totalPurchases) /
-          invoiceStatsPrevious.totalPurchases) *
-        100;
+            invoiceStatsPrevious.totalPurchases) /
+            invoiceStatsPrevious.totalPurchases) *
+          100;
     return { salesPct, purchasesPct };
   }, [invoiceStatsFiltered, invoiceStatsPrevious, facturasPeriodType]);
 
@@ -1456,7 +1481,7 @@ export function RepresentativeDetailPage({
       );
       const byMonthKey: Record<string, { ventas: number; compras: number }> =
         {};
-      for (let t = from.getTime(); t <= to.getTime();) {
+      for (let t = from.getTime(); t <= to.getTime(); ) {
         const d = new Date(t);
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         byMonthKey[key] = { ventas: 0, compras: 0 };
@@ -1819,12 +1844,20 @@ export function RepresentativeDetailPage({
                   onClick={async () => {
                     setScrapingAll(true);
                     toast('Iniciando scrapeo');
-                    const jobTypes = ['deuda', 'vencimientos', 'iva', 'notificaciones', 'comprobantes_full'] as const;
+                    const jobTypes = [
+                      'deuda',
+                      'vencimientos',
+                      'iva',
+                      'notificaciones',
+                      'comprobantes_full',
+                    ] as const;
                     let failed = 0;
                     try {
                       for (const jobType of jobTypes) {
                         try {
-                          await scrapSingleJob({ data: { representativeId, jobType } });
+                          await scrapSingleJob({
+                            data: { representativeId, jobType },
+                          });
                         } catch {
                           failed++;
                         }
@@ -1832,12 +1865,18 @@ export function RepresentativeDetailPage({
                       if (failed === 0) {
                         toast.success('Scraping completado');
                       } else if (failed < jobTypes.length) {
-                        toast.warning(`Scraping parcial: ${failed} job(s) fallaron`);
+                        toast.warning(
+                          `Scraping parcial: ${failed} job(s) fallaron`
+                        );
                       } else {
                         toast.error('Todos los jobs fallaron');
                       }
                     } catch (err) {
-                      toast.error(err instanceof Error ? err.message : 'Error al encolar scraping');
+                      toast.error(
+                        err instanceof Error
+                          ? err.message
+                          : 'Error al encolar scraping'
+                      );
                     } finally {
                       setScrapingAll(false);
                     }
@@ -1889,7 +1928,7 @@ export function RepresentativeDetailPage({
                 value="notificaciones"
                 className={tabTriggerCls(
                   (lastNotificacionesJob && !lastNotificacionesJob.success) ||
-                  !!lastNotificacionesJob?.notificationFetchWarning
+                    !!lastNotificacionesJob?.notificationFetchWarning
                 )}
               >
                 <Bell className="h-[14px] w-[14px]" />
@@ -1964,10 +2003,11 @@ export function RepresentativeDetailPage({
                       <span className="text-[10.5px] text-[var(--arca-ink-4)] mt-1">
                         {debtStats.totalDebts === 0
                           ? 'Sin deudas'
-                          : `${debtStats.totalDebts} ${debtStats.totalDebts === 1 ? 'deuda' : 'deudas'}${debtStats.overdueCount > 0
-                            ? ` · ${debtStats.overdueCount} vencida${debtStats.overdueCount === 1 ? '' : 's'}`
-                            : ''
-                          }`}
+                          : `${debtStats.totalDebts} ${debtStats.totalDebts === 1 ? 'deuda' : 'deudas'}${
+                              debtStats.overdueCount > 0
+                                ? ` · ${debtStats.overdueCount} vencida${debtStats.overdueCount === 1 ? '' : 's'}`
+                                : ''
+                            }`}
                       </span>
                     </div>
                   </div>
@@ -1980,12 +2020,12 @@ export function RepresentativeDetailPage({
                     <span className="flex-1 font-display font-semibold text-[14px] leading-none tracking-tight tabular-nums text-right text-[var(--arca-ink)]">
                       {dueDateStats.nextDueDate
                         ? new Date(
-                          dueDateStats.nextDueDate.dueDate
-                        ).toLocaleDateString('es-AR', {
-                          day: 'numeric',
-                          month: 'short',
-                          year: 'numeric',
-                        })
+                            dueDateStats.nextDueDate.dueDate
+                          ).toLocaleDateString('es-AR', {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric',
+                          })
                         : '—'}
                     </span>
                   </div>
@@ -2152,7 +2192,7 @@ export function RepresentativeDetailPage({
                           Number(
                             resumenClientIva.data
                               .saldoLibreDisponibilidadFavorContribuyentePeriodo ??
-                            0
+                              0
                           ) > 0
                             ? 'text-[var(--arca-accent-pos-fg)]'
                             : 'text-[var(--arca-ink-3)]'
@@ -2322,10 +2362,10 @@ export function RepresentativeDetailPage({
                             <p className="text-[10px] font-mono text-[var(--arca-ink-4)] mt-0.5">
                               {notif.publicationDate
                                 ? format(
-                                  new Date(notif.publicationDate),
-                                  'dd/MM/yyyy',
-                                  { locale: es }
-                                )
+                                    new Date(notif.publicationDate),
+                                    'dd/MM/yyyy',
+                                    { locale: es }
+                                  )
                                 : '—'}
                             </p>
                           </button>
@@ -2358,46 +2398,48 @@ export function RepresentativeDetailPage({
                   <label className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)]">
                     Mes de cierre
                   </label>
-                  <select
-                    value={balanceMonth}
-                    onChange={(e) => setBalanceMonth(e.target.value)}
-                    className="h-8 rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-2 text-[12.5px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-navy-700)]"
-                  >
-                    {[
-                      'Enero',
-                      'Febrero',
-                      'Marzo',
-                      'Abril',
-                      'Mayo',
-                      'Junio',
-                      'Julio',
-                      'Agosto',
-                      'Septiembre',
-                      'Octubre',
-                      'Noviembre',
-                      'Diciembre',
-                    ].map((m, i) => (
-                      <option key={i + 1} value={String(i + 1)}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
+                  <Select value={balanceMonth} onValueChange={setBalanceMonth}>
+                    <SelectTrigger size="sm" className="w-full text-[12.5px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {[
+                        'Enero',
+                        'Febrero',
+                        'Marzo',
+                        'Abril',
+                        'Mayo',
+                        'Junio',
+                        'Julio',
+                        'Agosto',
+                        'Septiembre',
+                        'Octubre',
+                        'Noviembre',
+                        'Diciembre',
+                      ].map((m, i) => (
+                        <SelectItem key={i + 1} value={String(i + 1)}>
+                          {m}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="flex flex-col gap-[6px]">
                   <label className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)]">
                     Día de cierre
                   </label>
-                  <select
-                    value={balanceDay}
-                    onChange={(e) => setBalanceDay(e.target.value)}
-                    className="h-8 rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-2 text-[12.5px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-navy-700)]"
-                  >
-                    {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
-                      <option key={d} value={String(d)}>
-                        {d}
-                      </option>
-                    ))}
-                  </select>
+                  <Select value={balanceDay} onValueChange={setBalanceDay}>
+                    <SelectTrigger size="sm" className="w-full text-[12.5px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                        <SelectItem key={d} value={String(d)}>
+                          {d}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="flex flex-col gap-[6px]">
                   <label className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)]">
@@ -2785,27 +2827,36 @@ export function RepresentativeDetailPage({
                   >
                     <thead>
                       <tr className="bg-[var(--arca-surface-2)]">
-                        {([
+                        {[
                           { label: 'Impuesto', key: 'tax' as const },
                           { label: 'Concepto', key: 'concept' as const },
                           { label: 'Período', key: 'period' as const },
                           { label: 'Vencimiento', key: 'dueDate' as const },
                           { label: 'Actualiz.', key: 'detectedAt' as const },
-                        ]).map(({ label, key }) => (
+                        ].map(({ label, key }) => (
                           <th
                             key={key}
                             className="px-[14px] py-[9px] text-left text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] border-b border-[var(--arca-border)] whitespace-nowrap cursor-pointer select-none hover:text-[var(--arca-ink-2)] transition-colors"
                             onClick={() => {
                               if (debtSortKey === key) {
-                                setDebtSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+                                setDebtSortDir((d) =>
+                                  d === 'asc' ? 'desc' : 'asc'
+                                );
                               } else {
                                 setDebtSortKey(key);
-                                setDebtSortDir(key === 'detectedAt' ? 'desc' : 'asc');
+                                setDebtSortDir(
+                                  key === 'detectedAt' ? 'desc' : 'asc'
+                                );
                               }
                               setDebtPage(1);
                             }}
                           >
-                            {label} {debtSortKey === key ? (debtSortDir === 'asc' ? '▲' : '▼') : ''}
+                            {label}{' '}
+                            {debtSortKey === key
+                              ? debtSortDir === 'asc'
+                                ? '▲'
+                                : '▼'
+                              : ''}
                           </th>
                         ))}
                         {(['Saldo', 'Int. Comp.', 'Int. Punit.'] as const).map(
@@ -2893,11 +2944,14 @@ export function RepresentativeDetailPage({
                             </td>
                             <td className="px-[14px] py-[10px] whitespace-nowrap font-mono text-[10.5px] text-[var(--arca-ink-4)]">
                               {debt.detectedAt
-                                ? new Date(debt.detectedAt).toLocaleDateString('es-AR', {
-                                  day: '2-digit',
-                                  month: '2-digit',
-                                  year: '2-digit',
-                                })
+                                ? new Date(debt.detectedAt).toLocaleDateString(
+                                    'es-AR',
+                                    {
+                                      day: '2-digit',
+                                      month: '2-digit',
+                                      year: '2-digit',
+                                    }
+                                  )
                                 : '-'}
                             </td>
                             <td
@@ -2948,27 +3002,39 @@ export function RepresentativeDetailPage({
                             </td>
                             <td className="px-[14px] py-[10px] whitespace-nowrap">
                               <div className="flex items-center gap-2">
-                                <select
+                                <Select
                                   value={debtStatus}
-                                  onChange={(e) => {
-                                    const newStatus = e.target.value as
-                                      | 'open'
-                                      | 'in_plan'
-                                      | 'paid'
-                                      | 'disputed';
+                                  onValueChange={(v) => {
                                     updateDebtStatusMutation.mutate({
                                       id: debt.id,
-                                      status: newStatus,
+                                      status: v as
+                                        | 'open'
+                                        | 'in_plan'
+                                        | 'paid'
+                                        | 'disputed',
                                       isIntimated,
                                     });
                                   }}
-                                  className="text-[11.5px] border border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] bg-[var(--arca-surface)] px-2 py-1 text-[var(--arca-ink)] cursor-pointer"
                                 >
-                                  <option value="open">Abierta</option>
-                                  <option value="in_plan">En plan</option>
-                                  <option value="paid">Pagada</option>
-                                  <option value="disputed">Disputada</option>
-                                </select>
+                                  <SelectTrigger
+                                    size="sm"
+                                    className="w-[110px] text-[11.5px]"
+                                  >
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="open">
+                                      Abierta
+                                    </SelectItem>
+                                    <SelectItem value="in_plan">
+                                      En plan
+                                    </SelectItem>
+                                    <SelectItem value="paid">Pagada</SelectItem>
+                                    <SelectItem value="disputed">
+                                      Disputada
+                                    </SelectItem>
+                                  </SelectContent>
+                                </Select>
                                 <button
                                   onClick={() =>
                                     updateDebtStatusMutation.mutate({
@@ -3207,7 +3273,10 @@ export function RepresentativeDetailPage({
                       });
                       await Promise.all([
                         queryClient.invalidateQueries({
-                          queryKey: ['representativeDueDates', representativeId],
+                          queryKey: [
+                            'representativeDueDates',
+                            representativeId,
+                          ],
                         }),
                         queryClient.invalidateQueries({
                           queryKey: ['lastVencimientosJob', representativeId],
@@ -3469,7 +3538,11 @@ export function RepresentativeDetailPage({
                         data: { representativeId, jobType: 'notificaciones' },
                       });
                       await queryClient.invalidateQueries({
-                        queryKey: ['clientNotifications', orgKey, representativeId],
+                        queryKey: [
+                          'clientNotifications',
+                          orgKey,
+                          representativeId,
+                        ],
                       });
                       await queryClient.invalidateQueries({
                         queryKey: ['lastNotificacionesJob', representativeId],
@@ -3594,7 +3667,10 @@ export function RepresentativeDetailPage({
                           queryKey: ['invoices'],
                         }),
                         queryClient.invalidateQueries({
-                          queryKey: ['lastComprobantesFullJob', representativeId],
+                          queryKey: [
+                            'lastComprobantesFullJob',
+                            representativeId,
+                          ],
                         }),
                         queryClient.invalidateQueries({
                           queryKey: ['lastComprobantesJob', representativeId],
@@ -3757,8 +3833,8 @@ export function RepresentativeDetailPage({
                           ? facturasDateRange?.to
                             ? `${format(facturasDateRange.from, 'dd/MM/yyyy', { locale: es })} – ${format(facturasDateRange.to, 'dd/MM/yyyy', { locale: es })}`
                             : format(facturasDateRange.from, 'dd/MM/yyyy', {
-                              locale: es,
-                            })
+                                locale: es,
+                              })
                           : 'Elegir fechas'}
                       </Button>
                     </PopoverTrigger>
@@ -3850,11 +3926,11 @@ export function RepresentativeDetailPage({
                       {invoiceStatsFiltered == null
                         ? '—'
                         : new Intl.NumberFormat('es-AR', {
-                          style: 'currency',
-                          currency: 'ARS',
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        }).format(invoiceStatsFiltered.totalSales)}
+                            style: 'currency',
+                            currency: 'ARS',
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          }).format(invoiceStatsFiltered.totalSales)}
                     </div>
                     {facturasVariationPct?.salesPct !== undefined && (
                       <div
@@ -3863,7 +3939,7 @@ export function RepresentativeDetailPage({
                           facturasVariationPct.salesPct === 0
                             ? 'text-muted-foreground'
                             : facturasVariationPct.salesPct !== null &&
-                              facturasVariationPct.salesPct > 0
+                                facturasVariationPct.salesPct > 0
                               ? 'text-[var(--arca-accent-pos-fg)]'
                               : 'text-[var(--arca-accent-neg-fg)]'
                         )}
@@ -3888,11 +3964,11 @@ export function RepresentativeDetailPage({
                       {invoiceStatsFiltered == null
                         ? '—'
                         : new Intl.NumberFormat('es-AR', {
-                          style: 'currency',
-                          currency: 'ARS',
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        }).format(invoiceStatsFiltered.totalPurchases)}
+                            style: 'currency',
+                            currency: 'ARS',
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          }).format(invoiceStatsFiltered.totalPurchases)}
                     </div>
                     {facturasVariationPct?.purchasesPct !== undefined && (
                       <div
@@ -3901,7 +3977,7 @@ export function RepresentativeDetailPage({
                           facturasVariationPct.purchasesPct === 0
                             ? 'text-muted-foreground'
                             : facturasVariationPct.purchasesPct !== null &&
-                              facturasVariationPct.purchasesPct > 0
+                                facturasVariationPct.purchasesPct > 0
                               ? 'text-[var(--arca-accent-pos-fg)]'
                               : 'text-[var(--arca-accent-neg-fg)]'
                         )}
@@ -3927,8 +4003,8 @@ export function RepresentativeDetailPage({
                         'text-xl font-bold tabular-nums break-all',
                         invoiceStatsFiltered != null &&
                           invoiceStatsFiltered.totalSales -
-                          invoiceStatsFiltered.totalPurchases <
-                          0
+                            invoiceStatsFiltered.totalPurchases <
+                            0
                           ? 'text-[var(--arca-accent-neg-fg)]'
                           : 'text-foreground'
                       )}
@@ -3936,14 +4012,14 @@ export function RepresentativeDetailPage({
                       {invoiceStatsFiltered == null
                         ? '—'
                         : new Intl.NumberFormat('es-AR', {
-                          style: 'currency',
-                          currency: 'ARS',
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        }).format(
-                          invoiceStatsFiltered.totalSales -
-                          invoiceStatsFiltered.totalPurchases
-                        )}
+                            style: 'currency',
+                            currency: 'ARS',
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          }).format(
+                            invoiceStatsFiltered.totalSales -
+                              invoiceStatsFiltered.totalPurchases
+                          )}
                     </div>
                   </div>
                 </CardContent>
@@ -4554,9 +4630,12 @@ export function RepresentativeDetailPage({
                       </DialogTrigger>
                       <DialogContent className="sm:max-w-[360px] p-0 overflow-hidden rounded-[var(--arca-r-lg,14px)] border border-[var(--arca-border)]">
                         <div className="px-5 pt-5 pb-3">
-                          <h3 className="font-display text-[15px] font-semibold tracking-[-0.01em] text-[var(--arca-ink)]">Actualizar IVA</h3>
+                          <h3 className="font-display text-[15px] font-semibold tracking-[-0.01em] text-[var(--arca-ink)]">
+                            Actualizar IVA
+                          </h3>
                           <p className="text-[12px] leading-relaxed text-[var(--arca-ink-4)] mt-1">
-                            Si las facturas ya están al día, podés scrapear solo IVA para ir más rápido.
+                            Si las facturas ya están al día, podés scrapear solo
+                            IVA para ir más rápido.
                           </p>
                         </div>
                         <div className="px-3 pb-3 space-y-1.5">
@@ -4566,20 +4645,59 @@ export function RepresentativeDetailPage({
                               onClick={async () => {
                                 setScrapingSection('iva');
                                 try {
-                                  await scrapSingleJob({ data: { representativeId, jobType: 'comprobantes' } });
-                                  await scrapSingleJob({ data: { representativeId, jobType: 'iva' } });
+                                  await scrapSingleJob({
+                                    data: {
+                                      representativeId,
+                                      jobType: 'comprobantes',
+                                    },
+                                  });
+                                  await scrapSingleJob({
+                                    data: { representativeId, jobType: 'iva' },
+                                  });
                                   await Promise.all([
-                                    queryClient.invalidateQueries({ queryKey: ['clientIva', representativeId] }),
-                                    queryClient.invalidateQueries({ queryKey: ['clientAllInvoices', representativeId] }),
-                                    queryClient.invalidateQueries({ queryKey: ['invoices'] }),
-                                    queryClient.invalidateQueries({ queryKey: ['lastComprobantesFullJob', representativeId] }),
-                                    queryClient.invalidateQueries({ queryKey: ['lastIvaJob', representativeId] }),
+                                    queryClient.invalidateQueries({
+                                      queryKey: ['clientIva', representativeId],
+                                    }),
+                                    queryClient.invalidateQueries({
+                                      queryKey: [
+                                        'clientAllInvoices',
+                                        representativeId,
+                                      ],
+                                    }),
+                                    queryClient.invalidateQueries({
+                                      queryKey: ['invoices'],
+                                    }),
+                                    queryClient.invalidateQueries({
+                                      queryKey: [
+                                        'lastComprobantesFullJob',
+                                        representativeId,
+                                      ],
+                                    }),
+                                    queryClient.invalidateQueries({
+                                      queryKey: [
+                                        'lastIvaJob',
+                                        representativeId,
+                                      ],
+                                    }),
                                   ]);
-                                  toast.success('IVA y comprobantes actualizados');
+                                  toast.success(
+                                    'IVA y comprobantes actualizados'
+                                  );
                                 } catch (err) {
-                                  toast.error(err instanceof Error ? err.message : 'Error al actualizar');
-                                  queryClient.invalidateQueries({ queryKey: ['lastIvaJob', representativeId] });
-                                  queryClient.invalidateQueries({ queryKey: ['lastComprobantesJob', representativeId] });
+                                  toast.error(
+                                    err instanceof Error
+                                      ? err.message
+                                      : 'Error al actualizar'
+                                  );
+                                  queryClient.invalidateQueries({
+                                    queryKey: ['lastIvaJob', representativeId],
+                                  });
+                                  queryClient.invalidateQueries({
+                                    queryKey: [
+                                      'lastComprobantesJob',
+                                      representativeId,
+                                    ],
+                                  });
                                 } finally {
                                   setScrapingSection(null);
                                 }
@@ -4589,8 +4707,13 @@ export function RepresentativeDetailPage({
                                 <FileText className="w-4 h-4" />
                               </div>
                               <div className="min-w-0">
-                                <div className="text-[13px] font-medium text-[var(--arca-ink)]">Comprobantes + IVA</div>
-                                <div className="text-[11px] leading-snug text-[var(--arca-ink-4)] mt-0.5">Actualiza facturas primero, después IVA. Más lento pero completo.</div>
+                                <div className="text-[13px] font-medium text-[var(--arca-ink)]">
+                                  Comprobantes + IVA
+                                </div>
+                                <div className="text-[11px] leading-snug text-[var(--arca-ink-4)] mt-0.5">
+                                  Actualiza facturas primero, después IVA. Más
+                                  lento pero completo.
+                                </div>
                               </div>
                             </button>
                           </DialogClose>
@@ -4600,15 +4723,32 @@ export function RepresentativeDetailPage({
                               onClick={async () => {
                                 setScrapingSection('iva');
                                 try {
-                                  await scrapSingleJob({ data: { representativeId, jobType: 'iva' } });
+                                  await scrapSingleJob({
+                                    data: { representativeId, jobType: 'iva' },
+                                  });
                                   await Promise.all([
-                                    queryClient.invalidateQueries({ queryKey: ['clientIva', representativeId] }),
-                                    queryClient.invalidateQueries({ queryKey: ['lastIvaJob', representativeId] }),
+                                    queryClient.invalidateQueries({
+                                      queryKey: ['clientIva', representativeId],
+                                    }),
+                                    queryClient.invalidateQueries({
+                                      queryKey: [
+                                        'lastIvaJob',
+                                        representativeId,
+                                      ],
+                                    }),
                                   ]);
-                                  toast.success('IVA actualizado correctamente');
+                                  toast.success(
+                                    'IVA actualizado correctamente'
+                                  );
                                 } catch (err) {
-                                  toast.error(err instanceof Error ? err.message : 'Error al actualizar IVA');
-                                  queryClient.invalidateQueries({ queryKey: ['lastIvaJob', representativeId] });
+                                  toast.error(
+                                    err instanceof Error
+                                      ? err.message
+                                      : 'Error al actualizar IVA'
+                                  );
+                                  queryClient.invalidateQueries({
+                                    queryKey: ['lastIvaJob', representativeId],
+                                  });
                                 } finally {
                                   setScrapingSection(null);
                                 }
@@ -4618,8 +4758,13 @@ export function RepresentativeDetailPage({
                                 <RefreshCw className="w-4 h-4" />
                               </div>
                               <div className="min-w-0">
-                                <div className="text-[13px] font-medium text-[var(--arca-ink)]">Solo IVA</div>
-                                <div className="text-[11px] leading-snug text-[var(--arca-ink-4)] mt-0.5">Más rápido. Usá esta opción si las facturas ya están al día.</div>
+                                <div className="text-[13px] font-medium text-[var(--arca-ink)]">
+                                  Solo IVA
+                                </div>
+                                <div className="text-[11px] leading-snug text-[var(--arca-ink-4)] mt-0.5">
+                                  Más rápido. Usá esta opción si las facturas ya
+                                  están al día.
+                                </div>
                               </div>
                             </button>
                           </DialogClose>
@@ -4866,8 +5011,8 @@ export function RepresentativeDetailPage({
                             <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)] whitespace-nowrap">
                               {req.dueAt
                                 ? new Date(
-                                  req.dueAt as unknown as string
-                                ).toLocaleDateString('es-AR')
+                                    req.dueAt as unknown as string
+                                  ).toLocaleDateString('es-AR')
                                 : '—'}
                             </td>
                             <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)] whitespace-nowrap">
@@ -5202,13 +5347,13 @@ export function RepresentativeDetailPage({
                           <TableCell className="text-[11px]">
                             {inv.emitionDate
                               ? new Date(inv.emitionDate).toLocaleDateString(
-                                'es-AR',
-                                {
-                                  day: '2-digit',
-                                  month: '2-digit',
-                                  year: 'numeric',
-                                }
-                              )
+                                  'es-AR',
+                                  {
+                                    day: '2-digit',
+                                    month: '2-digit',
+                                    year: 'numeric',
+                                  }
+                                )
                               : '—'}
                           </TableCell>
                           <TableCell className="text-[11px]">
@@ -5267,13 +5412,13 @@ export function RepresentativeDetailPage({
                         <span className="text-muted-foreground">
                           {inv.emitionDate
                             ? new Date(inv.emitionDate).toLocaleDateString(
-                              'es-AR',
-                              {
-                                day: '2-digit',
-                                month: '2-digit',
-                                year: 'numeric',
-                              }
-                            )
+                                'es-AR',
+                                {
+                                  day: '2-digit',
+                                  month: '2-digit',
+                                  year: 'numeric',
+                                }
+                              )
                             : '—'}
                         </span>
                       </div>
@@ -5345,10 +5490,9 @@ export function RepresentativeDetailPage({
   );
 }
 
-
 // ── Portal Access Tab ────────────────────────────────────────────────────────
 
-type PortalUser = {
+interface PortalUser {
   accessId: string;
   userId: string;
   name: string | null;
@@ -5359,9 +5503,14 @@ type PortalUser = {
   canUploadDocuments: boolean;
   canChatAi: boolean;
   createdAt: Date;
-};
+}
 
-type PermissionKey = 'canViewDebts' | 'canViewIva' | 'canViewPayroll' | 'canUploadDocuments' | 'canChatAi';
+type PermissionKey =
+  | 'canViewDebts'
+  | 'canViewIva'
+  | 'canViewPayroll'
+  | 'canUploadDocuments'
+  | 'canChatAi';
 
 const PERMISSION_LABELS: Record<PermissionKey, string> = {
   canViewDebts: 'Deudas',
@@ -5371,7 +5520,13 @@ const PERMISSION_LABELS: Record<PermissionKey, string> = {
   canChatAi: 'Chat IA',
 };
 
-function PermissionBadge({ active, label }: { active: boolean; label: string }) {
+function PermissionBadge({
+  active,
+  label,
+}: {
+  active: boolean;
+  label: string;
+}) {
   if (!active) return null;
   return (
     <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-[var(--arca-accent-primary-bg)] text-[var(--arca-accent-primary)] border border-[var(--arca-accent-primary)]/20">
@@ -5421,19 +5576,33 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
     mutationFn: (vars: Parameters<typeof createPortalUser>[0]['data']) =>
       createPortalUser({ data: vars }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['portalUsers', representativeId] });
+      queryClient.invalidateQueries({
+        queryKey: ['portalUsers', representativeId],
+      });
       toast.success('Usuario creado');
       setCreateOpen(false);
-      setCreateForm({ name: '', email: '', password: '', canViewDebts: true, canViewIva: true, canViewPayroll: false, canUploadDocuments: true, canChatAi: true });
+      setCreateForm({
+        name: '',
+        email: '',
+        password: '',
+        canViewDebts: true,
+        canViewIva: true,
+        canViewPayroll: false,
+        canUploadDocuments: true,
+        canChatAi: true,
+      });
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
   const editMutation = useMutation({
-    mutationFn: (vars: Parameters<typeof updatePortalUserPermissions>[0]['data']) =>
-      updatePortalUserPermissions({ data: vars }),
+    mutationFn: (
+      vars: Parameters<typeof updatePortalUserPermissions>[0]['data']
+    ) => updatePortalUserPermissions({ data: vars }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['portalUsers', representativeId] });
+      queryClient.invalidateQueries({
+        queryKey: ['portalUsers', representativeId],
+      });
       toast.success('Permisos actualizados');
       setEditTarget(null);
     },
@@ -5454,7 +5623,9 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
     mutationFn: (vars: Parameters<typeof revokePortalAccess>[0]['data']) =>
       revokePortalAccess({ data: vars }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['portalUsers', representativeId] });
+      queryClient.invalidateQueries({
+        queryKey: ['portalUsers', representativeId],
+      });
       toast.success('Acceso revocado');
       setRevokeTarget(null);
     },
@@ -5478,9 +5649,12 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-[var(--arca-ink)]">Usuarios con acceso al portal</h3>
+          <h3 className="text-sm font-semibold text-[var(--arca-ink)]">
+            Usuarios con acceso al portal
+          </h3>
           <p className="text-xs text-[var(--arca-ink-3)] mt-0.5">
-            Los usuarios portal pueden consultar la información fiscal del cliente.
+            Los usuarios portal pueden consultar la información fiscal del
+            cliente.
           </p>
         </div>
         <Button
@@ -5502,7 +5676,9 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
       ) : users.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-32 gap-2 rounded-lg border border-dashed border-[var(--arca-border)]">
           <UserCheck className="h-6 w-6 text-[var(--arca-ink-3)]" />
-          <p className="text-sm text-[var(--arca-ink-3)]">No hay usuarios con acceso al portal</p>
+          <p className="text-sm text-[var(--arca-ink-3)]">
+            No hay usuarios con acceso al portal
+          </p>
         </div>
       ) : (
         <div className="rounded-lg border border-[var(--arca-border)] overflow-hidden">
@@ -5518,14 +5694,27 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
             </TableHeader>
             <TableBody>
               {(users as PortalUser[]).map((u) => (
-                <TableRow key={u.accessId} className="hover:bg-[var(--arca-surface-2)]/50">
-                  <TableCell className="text-sm font-medium">{u.name ?? '—'}</TableCell>
-                  <TableCell className="text-sm text-[var(--arca-ink-3)]">{u.email ?? '—'}</TableCell>
+                <TableRow
+                  key={u.accessId}
+                  className="hover:bg-[var(--arca-surface-2)]/50"
+                >
+                  <TableCell className="text-sm font-medium">
+                    {u.name ?? '—'}
+                  </TableCell>
+                  <TableCell className="text-sm text-[var(--arca-ink-3)]">
+                    {u.email ?? '—'}
+                  </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
-                      {(Object.keys(PERMISSION_LABELS) as PermissionKey[]).map((k) => (
-                        <PermissionBadge key={k} active={u[k]} label={PERMISSION_LABELS[k]} />
-                      ))}
+                      {(Object.keys(PERMISSION_LABELS) as PermissionKey[]).map(
+                        (k) => (
+                          <PermissionBadge
+                            key={k}
+                            active={u[k]}
+                            label={PERMISSION_LABELS[k]}
+                          />
+                        )
+                      )}
                     </div>
                   </TableCell>
                   <TableCell className="text-xs text-[var(--arca-ink-3)]">
@@ -5568,29 +5757,41 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--arca-ink)]">Nombre completo</label>
+              <label className="text-xs font-medium text-[var(--arca-ink)]">
+                Nombre completo
+              </label>
               <Input
                 value={createForm.name}
-                onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))}
+                onChange={(e) =>
+                  setCreateForm((f) => ({ ...f, name: e.target.value }))
+                }
                 placeholder="Ej: Juan García"
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--arca-ink)]">Email</label>
+              <label className="text-xs font-medium text-[var(--arca-ink)]">
+                Email
+              </label>
               <Input
                 type="email"
                 value={createForm.email}
-                onChange={(e) => setCreateForm((f) => ({ ...f, email: e.target.value }))}
+                onChange={(e) =>
+                  setCreateForm((f) => ({ ...f, email: e.target.value }))
+                }
                 placeholder="juan@empresa.com"
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--arca-ink)]">Contraseña</label>
+              <label className="text-xs font-medium text-[var(--arca-ink)]">
+                Contraseña
+              </label>
               <div className="relative">
                 <Input
                   type={showPassword ? 'text' : 'password'}
                   value={createForm.password}
-                  onChange={(e) => setCreateForm((f) => ({ ...f, password: e.target.value }))}
+                  onChange={(e) =>
+                    setCreateForm((f) => ({ ...f, password: e.target.value }))
+                  }
                   placeholder="Mínimo 8 caracteres"
                   className="pr-9"
                 />
@@ -5599,24 +5800,40 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
                   onClick={() => setShowPassword((v) => !v)}
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)]"
                 >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
                 </button>
               </div>
             </div>
             <div className="space-y-2">
-              <label className="text-xs font-medium text-[var(--arca-ink)]">Permisos</label>
+              <label className="text-xs font-medium text-[var(--arca-ink)]">
+                Permisos
+              </label>
               <div className="grid grid-cols-2 gap-2">
-                {(Object.keys(PERMISSION_LABELS) as PermissionKey[]).map((k) => (
-                  <label key={k} className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={createForm[k]}
-                      onChange={(e) => setCreateForm((f) => ({ ...f, [k]: e.target.checked }))}
-                      className="rounded border-[var(--arca-border)]"
-                    />
-                    {PERMISSION_LABELS[k]}
-                  </label>
-                ))}
+                {(Object.keys(PERMISSION_LABELS) as PermissionKey[]).map(
+                  (k) => (
+                    <label
+                      key={k}
+                      className="flex items-center gap-2 text-sm cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={createForm[k]}
+                        onChange={(e) =>
+                          setCreateForm((f) => ({
+                            ...f,
+                            [k]: e.target.checked,
+                          }))
+                        }
+                        className="rounded border-[var(--arca-border)]"
+                      />
+                      {PERMISSION_LABELS[k]}
+                    </label>
+                  )
+                )}
               </div>
             </div>
           </div>
@@ -5626,7 +5843,12 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
             </Button>
             <Button
               className="bg-[var(--arca-ink)] hover:bg-black text-white"
-              disabled={!createForm.name || !createForm.email || createForm.password.length < 8 || createMutation.isPending}
+              disabled={
+                !createForm.name ||
+                !createForm.email ||
+                createForm.password.length < 8 ||
+                createMutation.isPending
+              }
               onClick={() =>
                 createMutation.mutate({
                   representativeId,
@@ -5644,7 +5866,10 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
               }
             >
               {createMutation.isPending ? (
-                <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Creando…</>
+                <>
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  Creando…
+                </>
               ) : (
                 'Crear usuario'
               )}
@@ -5654,7 +5879,12 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
       </Dialog>
 
       {/* Edit Permissions Dialog */}
-      <Dialog open={!!editTarget} onOpenChange={(open) => { if (!open) setEditTarget(null); }}>
+      <Dialog
+        open={!!editTarget}
+        onOpenChange={(open) => {
+          if (!open) setEditTarget(null);
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Editar acceso — {editTarget?.name}</DialogTitle>
@@ -5662,19 +5892,28 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
           <div className="space-y-5 py-2">
             {/* Permissions */}
             <div className="space-y-2">
-              <label className="text-xs font-medium text-[var(--arca-ink)]">Permisos</label>
+              <label className="text-xs font-medium text-[var(--arca-ink)]">
+                Permisos
+              </label>
               <div className="grid grid-cols-2 gap-2">
-                {(Object.keys(PERMISSION_LABELS) as PermissionKey[]).map((k) => (
-                  <label key={k} className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={editPerms[k]}
-                      onChange={(e) => setEditPerms((p) => ({ ...p, [k]: e.target.checked }))}
-                      className="rounded border-[var(--arca-border)]"
-                    />
-                    {PERMISSION_LABELS[k]}
-                  </label>
-                ))}
+                {(Object.keys(PERMISSION_LABELS) as PermissionKey[]).map(
+                  (k) => (
+                    <label
+                      key={k}
+                      className="flex items-center gap-2 text-sm cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={editPerms[k]}
+                        onChange={(e) =>
+                          setEditPerms((p) => ({ ...p, [k]: e.target.checked }))
+                        }
+                        className="rounded border-[var(--arca-border)]"
+                      />
+                      {PERMISSION_LABELS[k]}
+                    </label>
+                  )
+                )}
               </div>
             </div>
 
@@ -5698,16 +5937,32 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
                     onClick={() => setShowNewPassword((v) => !v)}
                     className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)]"
                   >
-                    {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    {showNewPassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
                   </button>
                 </div>
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={newPassword.length < 8 || resetPasswordMutation.isPending}
-                  onClick={() => editTarget && resetPasswordMutation.mutate({ userId: editTarget.userId, newPassword })}
+                  disabled={
+                    newPassword.length < 8 || resetPasswordMutation.isPending
+                  }
+                  onClick={() =>
+                    editTarget &&
+                    resetPasswordMutation.mutate({
+                      userId: editTarget.userId,
+                      newPassword,
+                    })
+                  }
                 >
-                  {resetPasswordMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Guardar'}
+                  {resetPasswordMutation.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    'Guardar'
+                  )}
                 </Button>
               </div>
             </div>
@@ -5721,11 +5976,17 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
               disabled={editMutation.isPending}
               onClick={() =>
                 editTarget &&
-                editMutation.mutate({ accessId: editTarget.accessId, permissions: editPerms })
+                editMutation.mutate({
+                  accessId: editTarget.accessId,
+                  permissions: editPerms,
+                })
               }
             >
               {editMutation.isPending ? (
-                <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Guardando…</>
+                <>
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  Guardando…
+                </>
               ) : (
                 'Guardar permisos'
               )}
@@ -5735,15 +5996,22 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
       </Dialog>
 
       {/* Revoke Confirm Dialog */}
-      <Dialog open={!!revokeTarget} onOpenChange={(open) => { if (!open) setRevokeTarget(null); }}>
+      <Dialog
+        open={!!revokeTarget}
+        onOpenChange={(open) => {
+          if (!open) setRevokeTarget(null);
+        }}
+      >
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Revocar acceso</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-[var(--arca-ink-3)] py-2">
             ¿Confirmar revocar el acceso al portal de{' '}
-            <span className="font-medium text-[var(--arca-ink)]">{revokeTarget?.name}</span>?
-            El usuario no podrá ingresar más al portal.
+            <span className="font-medium text-[var(--arca-ink)]">
+              {revokeTarget?.name}
+            </span>
+            ? El usuario no podrá ingresar más al portal.
           </p>
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={() => setRevokeTarget(null)}>
@@ -5752,10 +6020,16 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
             <Button
               variant="destructive"
               disabled={revokeMutation.isPending}
-              onClick={() => revokeTarget && revokeMutation.mutate({ accessId: revokeTarget.accessId })}
+              onClick={() =>
+                revokeTarget &&
+                revokeMutation.mutate({ accessId: revokeTarget.accessId })
+              }
             >
               {revokeMutation.isPending ? (
-                <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Revocando…</>
+                <>
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  Revocando…
+                </>
               ) : (
                 'Revocar acceso'
               )}
@@ -5765,4 +6039,4 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
       </Dialog>
     </div>
   );
-}
+}

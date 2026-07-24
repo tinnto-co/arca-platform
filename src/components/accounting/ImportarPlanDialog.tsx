@@ -20,6 +20,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { importChartOfAccounts } from '@/actions/accounting';
 import { downloadChartTemplate } from '@/lib/accounting-chart-template';
 import {
@@ -261,31 +268,45 @@ export function ImportarPlanDialog({
             <div className="flex flex-wrap gap-4">
               <label className="flex flex-col gap-1 text-[12px]">
                 <span className="text-[var(--arca-ink-3)]">Importar a</span>
-                <select
+                <Select
                   value={target}
-                  onChange={(e) => {
-                    setTarget(e.target.value as Target);
+                  onValueChange={(v) => {
+                    setTarget(v as Target);
                     setPreview(null);
                   }}
-                  className="h-8 px-2 rounded-[8px] border border-[var(--arca-border)] bg-transparent text-[13px]"
                 >
-                  <option value="base">Plan base del estudio</option>
-                  <option value="custom">Cuentas propias de la empresa</option>
-                </select>
+                  <SelectTrigger size="sm" className="w-[230px] text-[13px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="base">Plan base del estudio</SelectItem>
+                    <SelectItem value="custom">
+                      Cuentas propias de la empresa
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </label>
               <label className="flex flex-col gap-1 text-[12px]">
                 <span className="text-[var(--arca-ink-3)]">Modo</span>
-                <select
+                <Select
                   value={mode}
-                  onChange={(e) => {
-                    setMode(e.target.value as Mode);
+                  onValueChange={(v) => {
+                    setMode(v as Mode);
                     setPreview(null);
                   }}
-                  className="h-8 px-2 rounded-[8px] border border-[var(--arca-border)] bg-transparent text-[13px]"
                 >
-                  <option value="complementar">Complementar (agregar)</option>
-                  <option value="reemplazar">Reemplazar (desde cero)</option>
-                </select>
+                  <SelectTrigger size="sm" className="w-[220px] text-[13px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="complementar">
+                      Complementar (agregar)
+                    </SelectItem>
+                    <SelectItem value="reemplazar">
+                      Reemplazar (desde cero)
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </label>
             </div>
 

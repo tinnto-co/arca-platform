@@ -15,8 +15,13 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
+  SelectValue,
 } from '@/components/ui/select';
-import { getRepresentativeDebts, updateDebtStatus, scrapSingleJob } from '@/actions/client';
+import {
+  getRepresentativeDebts,
+  updateDebtStatus,
+  scrapSingleJob,
+} from '@/actions/client';
 import { cn } from '@/lib/utils';
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -65,7 +70,13 @@ interface Debt {
 }
 
 // ─── Status pill ─────────────────────────────────────────────────────
-function StatusPill({ status, isOverdue }: { status: DebtStatus; isOverdue: boolean }) {
+function StatusPill({
+  status,
+  isOverdue,
+}: {
+  status: DebtStatus;
+  isOverdue: boolean;
+}) {
   if (isOverdue && status === 'open') {
     return (
       <span className="inline-flex items-center px-[9px] py-[3px] rounded-full text-[12px] font-semibold bg-[#fce8e6] text-[#c0392b] whitespace-nowrap">
@@ -81,7 +92,12 @@ function StatusPill({ status, isOverdue }: { status: DebtStatus; isOverdue: bool
   };
   const { label, cls } = map[status] ?? map.open;
   return (
-    <span className={cn('inline-flex items-center px-[9px] py-[3px] rounded-full text-[12px] font-semibold whitespace-nowrap', cls)}>
+    <span
+      className={cn(
+        'inline-flex items-center px-[9px] py-[3px] rounded-full text-[12px] font-semibold whitespace-nowrap',
+        cls
+      )}
+    >
       {label}
     </span>
   );
@@ -92,8 +108,17 @@ interface DeudasTabProps {
   representativeId: string;
   selectedClientId?: string;
   scrapingSection: string | null;
-  setScrapingSection: (s: 'iva' | 'deudas' | 'vencimientos' | 'facturas' | 'notificaciones' | null) => void;
-  lastDeudaJob: { createdAt?: string | Date; success?: boolean; failedReason?: string | null } | null | undefined;
+  setScrapingSection: (
+    s: 'iva' | 'deudas' | 'vencimientos' | 'facturas' | 'notificaciones' | null
+  ) => void;
+  lastDeudaJob:
+    | {
+        createdAt?: string | Date;
+        success?: boolean;
+        failedReason?: string | null;
+      }
+    | null
+    | undefined;
 }
 
 // ─── Main component ─────────────────────────────────────────────────
@@ -110,7 +135,9 @@ export function DeudasTab({
   const [currentPage, setCurrentPage] = useState(1);
   const [filterImpuesto, setFilterImpuesto] = useState('');
   const [filterConcepto, setFilterConcepto] = useState('');
-  const [sortKey, setSortKey] = useState<'tax' | 'concept' | 'period' | 'dueDate' | 'detectedAt'>('detectedAt');
+  const [sortKey, setSortKey] = useState<
+    'tax' | 'concept' | 'period' | 'dueDate' | 'detectedAt'
+  >('detectedAt');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   const PAGE_SIZE = 10;
@@ -132,15 +159,20 @@ export function DeudasTab({
 
   // ── Mutation ──
   const updateMutation = useMutation({
-    mutationFn: (vars: { id: string; status: DebtStatus; isIntimated: boolean }) =>
-      updateDebtStatus({ data: vars }),
+    mutationFn: (vars: {
+      id: string;
+      status: DebtStatus;
+      isIntimated: boolean;
+    }) => updateDebtStatus({ data: vars }),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ['representativeDebts', representativeId, selectedClientId],
       });
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Error al actualizar la deuda');
+      toast.error(
+        err instanceof Error ? err.message : 'Error al actualizar la deuda'
+      );
     },
   });
 
@@ -179,7 +211,8 @@ export function DeudasTab({
       totalBalance,
       totalCompensatoryInterest,
       totalPunitiveInterest,
-      totalDebt: totalBalance + totalCompensatoryInterest + totalPunitiveInterest,
+      totalDebt:
+        totalBalance + totalCompensatoryInterest + totalPunitiveInterest,
       overdueCount,
       totalDebts: debts.length,
     };
@@ -214,11 +247,22 @@ export function DeudasTab({
       const dir = sortDir === 'asc' ? 1 : -1;
       let av: string | number = 0;
       let bv: string | number = 0;
-      if (sortKey === 'tax') { av = a.tax ?? ''; bv = b.tax ?? ''; }
-      else if (sortKey === 'concept') { av = a.concept ?? ''; bv = b.concept ?? ''; }
-      else if (sortKey === 'period') { av = a.period ?? ''; bv = b.period ?? ''; }
-      else if (sortKey === 'dueDate') { av = new Date(a.dueDate).getTime(); bv = new Date(b.dueDate).getTime(); }
-      else if (sortKey === 'detectedAt') { av = new Date(a.detectedAt).getTime(); bv = new Date(b.detectedAt).getTime(); }
+      if (sortKey === 'tax') {
+        av = a.tax ?? '';
+        bv = b.tax ?? '';
+      } else if (sortKey === 'concept') {
+        av = a.concept ?? '';
+        bv = b.concept ?? '';
+      } else if (sortKey === 'period') {
+        av = a.period ?? '';
+        bv = b.period ?? '';
+      } else if (sortKey === 'dueDate') {
+        av = new Date(a.dueDate).getTime();
+        bv = new Date(b.dueDate).getTime();
+      } else if (sortKey === 'detectedAt') {
+        av = new Date(a.detectedAt).getTime();
+        bv = new Date(b.detectedAt).getTime();
+      }
       if (av === bv) return 0;
       return av > bv ? dir : -dir;
     });
@@ -227,7 +271,10 @@ export function DeudasTab({
 
   // ── Pagination ──
   const totalPages = Math.max(1, Math.ceil(sortedDebts.length / PAGE_SIZE));
-  const paginated = sortedDebts.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const paginated = sortedDebts.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE
+  );
 
   const getPaginationPages = () => {
     const maxVisible = 7;
@@ -248,7 +295,10 @@ export function DeudasTab({
     return { startPage, endPage };
   };
   const { startPage, endPage } = getPaginationPages();
-  const visiblePages = Array.from({ length: endPage - startPage + 1 }, (_, i) => startPage + i);
+  const visiblePages = Array.from(
+    { length: endPage - startPage + 1 },
+    (_, i) => startPage + i
+  );
 
   // ── Sort toggle ──
   const handleSort = (key: typeof sortKey) => {
@@ -271,7 +321,9 @@ export function DeudasTab({
       ]);
       toast.success('Deudas actualizadas correctamente');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Error al actualizar deudas');
+      toast.error(
+        err instanceof Error ? err.message : 'Error al actualizar deudas'
+      );
       queryClient.invalidateQueries({ queryKey: ['lastDeudaJob'] });
     } finally {
       setScrapingSection(null);
@@ -313,7 +365,10 @@ export function DeudasTab({
   return (
     <div
       className="bg-[#F7F6F2] border border-[#DFDCD3] rounded-2xl overflow-hidden"
-      style={{ boxShadow: '0 1px 3px rgba(18,19,26,.04), 0 8px 24px rgba(18,19,26,.05)' }}
+      style={{
+        boxShadow:
+          '0 1px 3px rgba(18,19,26,.04), 0 8px 24px rgba(18,19,26,.05)',
+      }}
     >
       {/* ── KPI band ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 bg-white">
@@ -342,7 +397,12 @@ export function DeudasTab({
             {formatARS(debtStats.totalDebt)}
           </div>
           <div className="mt-[10px] text-[12.5px] text-[#6E7079]">
-            + {formatARS(debtStats.totalCompensatoryInterest + debtStats.totalPunitiveInterest)} intereses
+            +{' '}
+            {formatARS(
+              debtStats.totalCompensatoryInterest +
+                debtStats.totalPunitiveInterest
+            )}{' '}
+            intereses
           </div>
         </div>
 
@@ -385,20 +445,27 @@ export function DeudasTab({
               '—'
             )}
           </p>
-          {lastDeudaJob && !lastDeudaJob.success && lastDeudaJob.failedReason && (
-            <span className="relative group flex items-center gap-1" title={lastDeudaJob.failedReason}>
-              <AlertTriangle className="h-4 w-4 text-[#c0392b] cursor-help" />
-              <span className="text-[12px] text-[#c0392b] max-w-[280px] truncate hidden sm:block">
-                {lastDeudaJob.failedReason}
+          {lastDeudaJob &&
+            !lastDeudaJob.success &&
+            lastDeudaJob.failedReason && (
+              <span
+                className="relative group flex items-center gap-1"
+                title={lastDeudaJob.failedReason}
+              >
+                <AlertTriangle className="h-4 w-4 text-[#c0392b] cursor-help" />
+                <span className="text-[12px] text-[#c0392b] max-w-[280px] truncate hidden sm:block">
+                  {lastDeudaJob.failedReason}
+                </span>
+                <span className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 hidden group-hover:block w-max max-w-sm rounded-lg bg-[#12131A] text-white text-[11px] leading-snug px-3 py-2 shadow-lg pointer-events-none">
+                  {lastDeudaJob.failedReason}
+                </span>
               </span>
-              <span className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 hidden group-hover:block w-max max-w-sm rounded-lg bg-[#12131A] text-white text-[11px] leading-snug px-3 py-2 shadow-lg pointer-events-none">
-                {lastDeudaJob.failedReason}
-              </span>
-            </span>
-          )}
-          {lastDeudaJob && !lastDeudaJob.success && !lastDeudaJob.failedReason && (
-            <Info className="h-4 w-4 text-[#c0392b]" />
-          )}
+            )}
+          {lastDeudaJob &&
+            !lastDeudaJob.success &&
+            !lastDeudaJob.failedReason && (
+              <Info className="h-4 w-4 text-[#c0392b]" />
+            )}
         </div>
 
         <button
@@ -476,8 +543,10 @@ export function DeudasTab({
       {/* ── Table heading ── */}
       <div className="px-6 py-3 border-b border-[#ECEAE3] text-[13px] text-[#6E7079]">
         Deudas del cliente ·{' '}
-        <span className="font-semibold text-[#12131A]">{filteredDebts.length} mostradas</span>
-        {' '}· {(debts as Debt[]).length} totales
+        <span className="font-semibold text-[#12131A]">
+          {filteredDebts.length} mostradas
+        </span>{' '}
+        · {(debts as Debt[]).length} totales
       </div>
 
       {/* ── Table ── */}
@@ -582,23 +651,30 @@ export function DeudasTab({
                 </div>
 
                 {/* GESTIÓN */}
-                <div className="flex flex-col gap-[6px]" onClick={(e) => e.stopPropagation()}>
-                  <select
-                    className="text-[12px] text-[#3E404A] bg-white border border-[#DFDCD3] rounded-[8px] px-2 py-[4px] cursor-pointer focus:outline-none focus:border-[#9B9CA3] transition-colors w-full"
+                <div
+                  className="flex flex-col gap-[6px]"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Select
                     value={debt.status}
-                    onChange={(e) =>
+                    onValueChange={(v) =>
                       updateMutation.mutate({
                         id: debt.id,
-                        status: e.target.value as DebtStatus,
+                        status: v as DebtStatus,
                         isIntimated: debt.isIntimated,
                       })
                     }
                   >
-                    <option value="open">Abierta</option>
-                    <option value="in_plan">En plan</option>
-                    <option value="paid">Pagada</option>
-                    <option value="disputed">Disputada</option>
-                  </select>
+                    <SelectTrigger size="sm" className="w-full text-[12px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="open">Abierta</SelectItem>
+                      <SelectItem value="in_plan">En plan</SelectItem>
+                      <SelectItem value="paid">Pagada</SelectItem>
+                      <SelectItem value="disputed">Disputada</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <button
                     className={cn(
                       'text-[11.5px] font-semibold text-left underline underline-offset-2 transition-colors',
@@ -692,7 +768,9 @@ export function DeudasTab({
                 ? 'opacity-50 pointer-events-none'
                 : 'hover:bg-white cursor-pointer'
             )}
-            onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+            onClick={() =>
+              setCurrentPage(Math.min(totalPages, currentPage + 1))
+            }
             disabled={currentPage === totalPages}
           >
             Siguiente

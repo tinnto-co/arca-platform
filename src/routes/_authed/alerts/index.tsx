@@ -22,6 +22,13 @@ import { getRepresentatives } from '@/actions/client';
 import { listOrgMembersForAssignment } from '@/actions/notification';
 import { CATEGORY_LABELS } from '@/lib/error-classifier';
 import { SearchableSelect } from '@/components/ui/searchable-select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { toast } from 'sonner';
 
 export const Route = createFileRoute('/_authed/alerts/')({
@@ -256,21 +263,18 @@ function AlertRowItem({
 
         {assigningId === alert.id && (
           <div className="mt-2 flex items-center gap-2">
-            <select
-              autoFocus
-              className="text-[12px] border border-[var(--arca-border)] rounded-[6px] px-2 py-1 bg-[var(--arca-surface)] text-[var(--arca-ink)]"
-              defaultValue=""
-              onChange={(e) => {
-                if (e.target.value) onAssign(e.target.value);
-              }}
-            >
-              <option value="">Seleccionar miembro...</option>
-              {members.map((m) => (
-                <option key={m.userId} value={m.userId}>
-                  {m.name || m.email}
-                </option>
-              ))}
-            </select>
+            <Select onValueChange={(v) => onAssign(v)}>
+              <SelectTrigger size="sm" className="w-[190px] text-[12px]">
+                <SelectValue placeholder="Seleccionar miembro..." />
+              </SelectTrigger>
+              <SelectContent>
+                {members.map((m) => (
+                  <SelectItem key={m.userId} value={m.userId}>
+                    {m.name || m.email}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <button
               onClick={() => setAssigningId(null)}
               className="text-[12px] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)]"
@@ -424,7 +428,7 @@ function AlertsPage() {
   });
 
   const retryableCount = alerts.filter(
-    (a) => (a.metadata as AlertMetadata)?.retryable === true
+    (a) => a.metadata?.retryable === true
   ).length;
 
   return (

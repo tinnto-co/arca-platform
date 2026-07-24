@@ -48,6 +48,15 @@ import {
 import { PageHeader } from '@/components/shared/page-header';
 import { ArcaCard } from '@/components/dashboard/shared';
 import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   listAccountingClients,
   getCurrentRole,
   getChartOfAccounts,
@@ -210,8 +219,6 @@ export const Route = createFileRoute('/_authed/accounting/')({
 });
 
 /* ─── Shared styles ─── */
-const SELECT_CLASS =
-  'h-8 px-2.5 text-[12.5px] border border-[var(--arca-border)] rounded-[8px] bg-[var(--arca-surface)] text-[var(--arca-ink)] focus:outline-none';
 const INPUT_CLASS =
   'h-8 px-2.5 text-[12.5px] border border-[var(--arca-border)] rounded-[8px] bg-[var(--arca-surface)] text-[var(--arca-ink)] focus:outline-none';
 
@@ -373,18 +380,21 @@ function AccountingPage() {
               className="w-4 h-4 text-[var(--arca-ink-3)]"
               strokeWidth={1.8}
             />
-            <select
+            <Select
               value={effectiveClientId}
-              onChange={(e) => setClientId(e.target.value)}
-              className={`${SELECT_CLASS} max-w-[260px]`}
+              onValueChange={(v) => setClientId(v)}
             >
-              {clients.length === 0 && <option value="">Sin empresas</option>}
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} · {c.identityNumber}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger size="sm" className="max-w-[260px] text-[12.5px]">
+                <SelectValue placeholder="Sin empresas" />
+              </SelectTrigger>
+              <SelectContent>
+                {clients.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name} · {c.identityNumber}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         }
       />
@@ -806,34 +816,41 @@ function PlanDeCuentas({
             />
           </div>
 
-          <select
-            value={rubro}
-            onChange={(e) => setRubro(e.target.value)}
-            className={`${SELECT_CLASS} w-52`}
+          <Select
+            value={rubro === '' ? 'all' : rubro}
+            onValueChange={(v) => setRubro(v === 'all' ? '' : v)}
           >
-            <option value="">Todos los rubros</option>
-            {ACCOUNT_GROUP_SECTIONS.map((sec) => (
-              <optgroup key={sec.section} label={sec.section}>
-                {sec.groups.map((g) => (
-                  <option key={g} value={g}>
-                    {ACCOUNT_GROUP_LABELS[g]}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
+            <SelectTrigger size="sm" className="w-52 text-[12.5px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos los rubros</SelectItem>
+              {ACCOUNT_GROUP_SECTIONS.map((sec) => (
+                <SelectGroup key={sec.section}>
+                  <SelectLabel>{sec.section}</SelectLabel>
+                  {sec.groups.map((g) => (
+                    <SelectItem key={g} value={g}>
+                      {ACCOUNT_GROUP_LABELS[g]}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              ))}
+            </SelectContent>
+          </Select>
 
-          <select
+          <Select
             value={origin}
-            onChange={(e) =>
-              setOrigin(e.target.value as 'all' | 'base' | 'custom')
-            }
-            className={`${SELECT_CLASS} w-32`}
+            onValueChange={(v) => setOrigin(v as 'all' | 'base' | 'custom')}
           >
-            <option value="all">Base y propias</option>
-            <option value="base">Solo base</option>
-            <option value="custom">Solo propias</option>
-          </select>
+            <SelectTrigger size="sm" className="w-36 text-[12.5px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Base y propias</SelectItem>
+              <SelectItem value="base">Solo base</SelectItem>
+              <SelectItem value="custom">Solo propias</SelectItem>
+            </SelectContent>
+          </Select>
 
           <label className="flex items-center gap-1.5 text-[12px] text-[var(--arca-ink-2)] cursor-pointer select-none">
             <input
@@ -1381,14 +1398,20 @@ function AccountFormDialog({
             )}
           </Field>
           <Field label="Tipo *">
-            <select
+            <Select
               value={type}
-              onChange={(e) => setType(e.target.value as 'imputable' | 'group')}
-              className={`${SELECT_CLASS} w-full h-9`}
+              onValueChange={(v) => setType(v as 'imputable' | 'group')}
             >
-              <option value="imputable">Imputable (admite movimientos)</option>
-              <option value="group">Agrupación (solo suma)</option>
-            </select>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="imputable">
+                  Imputable (admite movimientos)
+                </SelectItem>
+                <SelectItem value="group">Agrupación (solo suma)</SelectItem>
+              </SelectContent>
+            </Select>
           </Field>
 
           <Field label="Nombre *" full>
@@ -1401,55 +1424,70 @@ function AccountFormDialog({
           </Field>
 
           <Field label="Rubro de exposición" full>
-            <select
-              value={accountGroup}
-              onChange={(e) => setAccountGroup(e.target.value)}
-              className={`${SELECT_CLASS} w-full h-9`}
+            <Select
+              value={accountGroup === '' ? 'none' : accountGroup}
+              onValueChange={(v) => setAccountGroup(v === 'none' ? '' : v)}
             >
-              <option value="">— Sin rubro (solo agrupaciones) —</option>
-              {ACCOUNT_GROUP_SECTIONS.map((sec) => (
-                <optgroup key={sec.section} label={sec.section}>
-                  {sec.groups.map((g) => (
-                    <option key={g} value={g}>
-                      {ACCOUNT_GROUP_LABELS[g]}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">
+                  — Sin rubro (solo agrupaciones) —
+                </SelectItem>
+                {ACCOUNT_GROUP_SECTIONS.map((sec) => (
+                  <SelectGroup key={sec.section}>
+                    <SelectLabel>{sec.section}</SelectLabel>
+                    {sec.groups.map((g) => (
+                      <SelectItem key={g} value={g}>
+                        {ACCOUNT_GROUP_LABELS[g]}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                ))}
+              </SelectContent>
+            </Select>
           </Field>
 
           <Field label="Saldo esperado">
-            <select
-              value={expectedBalance}
-              onChange={(e) => setExpectedBalance(e.target.value)}
-              className={`${SELECT_CLASS} w-full h-9`}
+            <Select
+              value={expectedBalance === '' ? 'none' : expectedBalance}
+              onValueChange={(v) => setExpectedBalance(v === 'none' ? '' : v)}
             >
-              <option value="">—</option>
-              {(['debit', 'credit', 'both'] as const).map((b) => (
-                <option key={b} value={b}>
-                  {EXPECTED_BALANCE_LABELS[b]}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">—</SelectItem>
+                {(['debit', 'credit', 'both'] as const).map((b) => (
+                  <SelectItem key={b} value={b}>
+                    {EXPECTED_BALANCE_LABELS[b]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </Field>
 
           {isExpenseGroup && (
             <Field label="Clasificación de gasto">
-              <select
-                value={expenseFunction}
-                onChange={(e) => setExpenseFunction(e.target.value)}
-                className={`${SELECT_CLASS} w-full h-9`}
+              <Select
+                value={expenseFunction === '' ? 'none' : expenseFunction}
+                onValueChange={(v) => setExpenseFunction(v === 'none' ? '' : v)}
               >
-                <option value="">—</option>
-                {(
-                  ['administration', 'sales', 'financial', 'other'] as const
-                ).map((f) => (
-                  <option key={f} value={f}>
-                    {EXPENSE_FUNCTION_LABELS[f]}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">—</SelectItem>
+                  {(
+                    ['administration', 'sales', 'financial', 'other'] as const
+                  ).map((f) => (
+                    <SelectItem key={f} value={f}>
+                      {EXPENSE_FUNCTION_LABELS[f]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </Field>
           )}
 
@@ -1458,10 +1496,10 @@ function AccountFormDialog({
               label={isCustom ? 'Cuenta padre (rubro) *' : 'Cuenta padre'}
               full
             >
-              <select
-                value={parentId}
-                onChange={(e) => {
-                  const pid = e.target.value;
+              <Select
+                value={parentId === '' ? 'none' : parentId}
+                onValueChange={(v) => {
+                  const pid = v === 'none' ? '' : v;
                   setParentId(pid);
                   const p = pid
                     ? accounts.find((a) => a.id === pid)
@@ -1483,15 +1521,19 @@ function AccountFormDialog({
                     );
                   }
                 }}
-                className={`${SELECT_CLASS} w-full h-9`}
               >
-                <option value="">— Ninguna —</option>
-                {parentOptions.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.code} · {a.name}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">— Ninguna —</SelectItem>
+                  {parentOptions.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.code} · {a.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </Field>
           )}
 
@@ -3082,41 +3124,49 @@ function Asientos({
             <label className="text-[10px] text-[var(--arca-ink-3)]">
               Cuenta
             </label>
-            <select
-              value={accountId}
-              onChange={(e) => {
-                setAccountId(e.target.value);
+            <Select
+              value={accountId === '' ? 'all' : accountId}
+              onValueChange={(v) => {
+                setAccountId(v === 'all' ? '' : v);
                 setPage(1);
               }}
-              className={`${SELECT_CLASS} w-52`}
             >
-              <option value="">Todas las cuentas</option>
-              {postable.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.code} · {a.name}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger size="sm" className="w-52 text-[12.5px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas las cuentas</SelectItem>
+                {postable.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.code} · {a.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-[10px] text-[var(--arca-ink-3)]">
               Origen
             </label>
-            <select
-              value={origin}
-              onChange={(e) => {
-                setOrigin(e.target.value);
+            <Select
+              value={origin === '' ? 'all' : origin}
+              onValueChange={(v) => {
+                setOrigin(v === 'all' ? '' : v);
                 setPage(1);
               }}
-              className={`${SELECT_CLASS} w-36`}
             >
-              <option value="">Todos</option>
-              {Object.entries(JOURNAL_ORIGIN_LABELS).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger size="sm" className="w-36 text-[12.5px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                {Object.entries(JOURNAL_ORIGIN_LABELS).map(([k, v]) => (
+                  <SelectItem key={k} value={k}>
+                    {v}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <label className="flex items-center gap-1.5 text-[12px] text-[var(--arca-ink-2)] cursor-pointer select-none h-8">
             <input
@@ -3139,20 +3189,24 @@ function Asientos({
             >
               {allExpanded ? 'Colapsar todo' : 'Expandir todo'}
             </button>
-            <select
+            <Select
               value={`${sortBy}:${sortDir}`}
-              onChange={(e) => {
-                const [b, d2] = e.target.value.split(':');
+              onValueChange={(v) => {
+                const [b, d2] = v.split(':');
                 setSortBy(b as 'number' | 'date');
                 setSortDir(d2 as 'asc' | 'desc');
               }}
-              className={`${SELECT_CLASS} w-44`}
             >
-              <option value="number:desc">N° (desc)</option>
-              <option value="number:asc">N° (asc)</option>
-              <option value="date:desc">Fecha (desc)</option>
-              <option value="date:asc">Fecha (asc)</option>
-            </select>
+              <SelectTrigger size="sm" className="w-44 text-[12.5px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="number:desc">N° (desc)</SelectItem>
+                <SelectItem value="number:asc">N° (asc)</SelectItem>
+                <SelectItem value="date:desc">Fecha (desc)</SelectItem>
+                <SelectItem value="date:asc">Fecha (asc)</SelectItem>
+              </SelectContent>
+            </Select>
             {isOwner && (
               <button
                 onClick={exportLibroDiario}
@@ -3387,18 +3441,24 @@ function AsientoEditor({
                 key={i}
                 className="flex items-center gap-2 px-3 py-1.5 border-t border-[var(--arca-border)]"
               >
-                <select
+                <Select
                   value={l.accountId}
-                  onChange={(e) => updateLine(i, { accountId: e.target.value })}
-                  className={`${SELECT_CLASS} flex-1 min-w-0 w-0 h-8`}
+                  onValueChange={(v) => updateLine(i, { accountId: v })}
                 >
-                  <option value="">— Elegí cuenta —</option>
-                  {postable.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.code} · {a.name}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger
+                    size="sm"
+                    className="flex-1 min-w-0 w-0 text-[12.5px]"
+                  >
+                    <SelectValue placeholder="— Elegí cuenta —" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {postable.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.code} · {a.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <input
                   value={l.description}
                   onChange={(e) =>
@@ -4050,17 +4110,21 @@ function Mayor({
               <label className="text-[10px] text-[var(--arca-ink-3)]">
                 Ejercicio
               </label>
-              <select
+              <Select
                 value={effectiveFyId}
-                onChange={(e) => setFiscalYearId(e.target.value)}
-                className={`${SELECT_CLASS} w-36`}
+                onValueChange={(v) => setFiscalYearId(v)}
               >
-                {fiscalYears.map((y) => (
-                  <option key={y.id} value={y.id}>
-                    N°{y.number}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger size="sm" className="w-36 text-[12.5px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {fiscalYears.map((y) => (
+                    <SelectItem key={y.id} value={y.id}>
+                      N°{y.number}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
 
@@ -4069,18 +4133,18 @@ function Mayor({
               <label className="text-[10px] text-[var(--arca-ink-3)]">
                 Cuenta
               </label>
-              <select
-                value={accountId}
-                onChange={(e) => setAccountId(e.target.value)}
-                className={`${SELECT_CLASS} w-72`}
-              >
-                <option value="">— Elegí una cuenta —</option>
-                {imputables.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.code} · {a.name}
-                  </option>
-                ))}
-              </select>
+              <Select value={accountId} onValueChange={(v) => setAccountId(v)}>
+                <SelectTrigger size="sm" className="w-72 text-[12.5px]">
+                  <SelectValue placeholder="— Elegí una cuenta —" />
+                </SelectTrigger>
+                <SelectContent>
+                  {imputables.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.code} · {a.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
 
@@ -4110,18 +4174,22 @@ function Mayor({
             <label className="text-[10px] text-[var(--arca-ink-3)]">
               Origen
             </label>
-            <select
-              value={origin}
-              onChange={(e) => setOrigin(e.target.value)}
-              className={`${SELECT_CLASS} w-36`}
+            <Select
+              value={origin === '' ? 'all' : origin}
+              onValueChange={(v) => setOrigin(v === 'all' ? '' : v)}
             >
-              <option value="">Todos</option>
-              {Object.entries(JOURNAL_ORIGIN_LABELS).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger size="sm" className="w-36 text-[12.5px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                {Object.entries(JOURNAL_ORIGIN_LABELS).map(([k, v]) => (
+                  <SelectItem key={k} value={k}>
+                    {v}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="ml-auto flex items-center gap-2 self-end">
@@ -4473,17 +4541,21 @@ function Balance({
               <label className="text-[10px] text-[var(--arca-ink-3)]">
                 Ejercicio
               </label>
-              <select
+              <Select
                 value={effectiveFyId}
-                onChange={(e) => setFiscalYearId(e.target.value)}
-                className={`${SELECT_CLASS} w-36`}
+                onValueChange={(v) => setFiscalYearId(v)}
               >
-                {fiscalYears.map((y) => (
-                  <option key={y.id} value={y.id}>
-                    N°{y.number}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger size="sm" className="w-36 text-[12.5px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {fiscalYears.map((y) => (
+                    <SelectItem key={y.id} value={y.id}>
+                      N°{y.number}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
           <div className="flex flex-col gap-1">
@@ -4803,15 +4875,19 @@ function Reglas({
             <label className="text-[10px] text-[var(--arca-ink-3)]">
               Módulo origen
             </label>
-            <select
-              value={moduleFilter}
-              onChange={(e) => setModuleFilter(e.target.value)}
-              className={`${SELECT_CLASS} w-40`}
+            <Select
+              value={moduleFilter === '' ? 'all' : moduleFilter}
+              onValueChange={(v) => setModuleFilter(v === 'all' ? '' : v)}
             >
-              <option value="">Todos</option>
-              <option value="invoice">Facturas</option>
-              <option value="payroll">Sueldos</option>
-            </select>
+              <SelectTrigger size="sm" className="w-40 text-[12.5px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                <SelectItem value="invoice">Facturas</SelectItem>
+                <SelectItem value="payroll">Sueldos</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           {isOwner && (
             <div className="ml-auto flex items-center gap-2 self-end">
@@ -5163,16 +5239,18 @@ function RuleEditorDialog({
               </>
             }
           >
-            <select
+            <Select
               value={sourceModule}
-              onChange={(e) =>
-                setSourceModule(e.target.value as 'invoice' | 'payroll')
-              }
-              className={`${SELECT_CLASS} w-full h-9`}
+              onValueChange={(v) => setSourceModule(v as 'invoice' | 'payroll')}
             >
-              <option value="invoice">Facturas</option>
-              <option value="payroll">Sueldos</option>
-            </select>
+              <SelectTrigger className="w-full text-[12.5px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="invoice">Facturas</SelectItem>
+                <SelectItem value="payroll">Sueldos</SelectItem>
+              </SelectContent>
+            </Select>
           </Field>
           <Field
             label={
@@ -5197,16 +5275,18 @@ function RuleEditorDialog({
               </>
             }
           >
-            <select
+            <Select
               value={ruleType}
-              onChange={(e) =>
-                setRuleType(e.target.value as 'default' | 'conditional')
-              }
-              className={`${SELECT_CLASS} w-full h-9`}
+              onValueChange={(v) => setRuleType(v as 'default' | 'conditional')}
             >
-              <option value="default">Default (fallback)</option>
-              <option value="conditional">Condicional</option>
-            </select>
+              <SelectTrigger className="w-full text-[12.5px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="default">Default (fallback)</SelectItem>
+                <SelectItem value="conditional">Condicional</SelectItem>
+              </SelectContent>
+            </Select>
           </Field>
           {ruleType === 'conditional' && sourceModule === 'invoice' && (
             <>
@@ -5218,17 +5298,23 @@ function RuleEditorDialog({
                   </>
                 }
               >
-                <select
-                  value={condDirection}
-                  onChange={(e) =>
-                    setCondDirection(e.target.value as '' | 'sale' | 'purchase')
+                <Select
+                  value={condDirection === '' ? 'any' : condDirection}
+                  onValueChange={(v) =>
+                    setCondDirection(
+                      (v === 'any' ? '' : v) as '' | 'sale' | 'purchase'
+                    )
                   }
-                  className={`${SELECT_CLASS} w-full h-9`}
                 >
-                  <option value="">Cualquiera</option>
-                  <option value="sale">Venta (emitida)</option>
-                  <option value="purchase">Compra (recibida)</option>
-                </select>
+                  <SelectTrigger className="w-full text-[12.5px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="any">Cualquiera</SelectItem>
+                    <SelectItem value="sale">Venta (emitida)</SelectItem>
+                    <SelectItem value="purchase">Compra (recibida)</SelectItem>
+                  </SelectContent>
+                </Select>
               </Field>
               <Field
                 label={
@@ -5313,39 +5399,53 @@ function RuleEditorDialog({
               key={i}
               className="flex items-center gap-2 px-3 py-1.5 border-t border-[var(--arca-border)]"
             >
-              <select
+              <Select
                 value={l.accountId}
-                onChange={(e) => updateLine(i, { accountId: e.target.value })}
-                className={`${SELECT_CLASS} flex-1 min-w-0 w-0 h-8`}
+                onValueChange={(v) => updateLine(i, { accountId: v })}
               >
-                <option value="">— Cuenta —</option>
-                {postable.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.code} · {a.name}
-                  </option>
-                ))}
-              </select>
-              <select
+                <SelectTrigger
+                  size="sm"
+                  className="flex-1 min-w-0 w-0 text-[12.5px]"
+                >
+                  <SelectValue placeholder="— Cuenta —" />
+                </SelectTrigger>
+                <SelectContent>
+                  {postable.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.code} · {a.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
                 value={l.side}
-                onChange={(e) =>
-                  updateLine(i, { side: e.target.value as 'debit' | 'credit' })
+                onValueChange={(v) =>
+                  updateLine(i, { side: v as 'debit' | 'credit' })
                 }
-                className={`${SELECT_CLASS} w-20 h-8`}
               >
-                <option value="debit">Debe</option>
-                <option value="credit">Haber</option>
-              </select>
-              <select
+                <SelectTrigger size="sm" className="w-24 text-[12.5px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="debit">Debe</SelectItem>
+                  <SelectItem value="credit">Haber</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select
                 value={l.amountBasis}
-                onChange={(e) => updateLine(i, { amountBasis: e.target.value })}
-                className={`${SELECT_CLASS} w-44 h-8`}
+                onValueChange={(v) => updateLine(i, { amountBasis: v })}
               >
-                {AMOUNT_BASES.map((b) => (
-                  <option key={b} value={b}>
-                    {MAPPING_AMOUNT_BASIS_LABELS[b]}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger size="sm" className="w-44 text-[12.5px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {AMOUNT_BASES.map((b) => (
+                    <SelectItem key={b} value={b}>
+                      {MAPPING_AMOUNT_BASIS_LABELS[b]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <input
                 type="number"
                 step="0.01"
@@ -5572,18 +5672,18 @@ function ImportRulesDialog({
             <label className="text-[11px] text-[var(--arca-ink-3)]">
               Empresa origen
             </label>
-            <select
-              value={fromId}
-              onChange={(e) => setFromId(e.target.value)}
-              className={`${SELECT_CLASS} w-full h-9`}
-            >
-              <option value="">— Elegí la empresa origen —</option>
-              {others.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+            <Select value={fromId} onValueChange={(v) => setFromId(v)}>
+              <SelectTrigger className="w-full text-[12.5px]">
+                <SelectValue placeholder="— Elegí la empresa origen —" />
+              </SelectTrigger>
+              <SelectContent>
+                {others.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {fromId && (
@@ -5778,18 +5878,22 @@ function Contabilizar({
       {/* Controles */}
       <ArcaCard>
         <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-[var(--arca-border)]">
-          <select
+          <Select
             value={direction}
-            onChange={(e) => {
-              setDirection(e.target.value as 'all' | 'sale' | 'purchase');
+            onValueChange={(v) => {
+              setDirection(v as 'all' | 'sale' | 'purchase');
               setSelected(new Set());
             }}
-            className="h-8 px-2 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] bg-white"
           >
-            <option value="all">Ventas y compras</option>
-            <option value="sale">Solo ventas</option>
-            <option value="purchase">Solo compras</option>
-          </select>
+            <SelectTrigger size="sm" className="w-44 text-[12.5px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Ventas y compras</SelectItem>
+              <SelectItem value="sale">Solo ventas</SelectItem>
+              <SelectItem value="purchase">Solo compras</SelectItem>
+            </SelectContent>
+          </Select>
           <label className="flex items-center gap-1.5 text-[12.5px] text-[var(--arca-ink-2)] cursor-pointer select-none">
             <input
               type="checkbox"
@@ -6262,28 +6366,36 @@ function BienesDeUso({
       ) : (
         <ArcaCard>
           <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-[var(--arca-border)]">
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className={SELECT_CLASS}
+            <Select
+              value={category === '' ? 'all' : category}
+              onValueChange={(v) => setCategory(v === 'all' ? '' : v)}
             >
-              <option value="">Todas las categorías</option>
-              {Object.entries(FIXED_ASSET_CATEGORY_LABELS).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v}
-                </option>
-              ))}
-            </select>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              className={SELECT_CLASS}
+              <SelectTrigger size="sm" className="w-48 text-[12.5px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas las categorías</SelectItem>
+                {Object.entries(FIXED_ASSET_CATEGORY_LABELS).map(([k, v]) => (
+                  <SelectItem key={k} value={k}>
+                    {v}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={status === '' ? 'all' : status}
+              onValueChange={(v) => setStatus(v === 'all' ? '' : v)}
             >
-              <option value="">Todos los estados</option>
-              <option value="active">Activos</option>
-              <option value="sold">Vendidos</option>
-              <option value="discarded">Dados de baja</option>
-            </select>
+              <SelectTrigger size="sm" className="w-44 text-[12.5px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos los estados</SelectItem>
+                <SelectItem value="active">Activos</SelectItem>
+                <SelectItem value="sold">Vendidos</SelectItem>
+                <SelectItem value="discarded">Dados de baja</SelectItem>
+              </SelectContent>
+            </Select>
             <div className="flex-1" />
             {canWrite && (
               <button
@@ -6494,18 +6606,18 @@ function FixedAssetEditor({
     opts: { id: string; code: string; name: string }[] | undefined,
     placeholder: string
   ) => (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className={`${SELECT_CLASS} w-0 min-w-0 flex-1`}
-    >
-      <option value="">{placeholder}</option>
-      {(opts ?? []).map((a) => (
-        <option key={a.id} value={a.id}>
-          {a.code} · {a.name}
-        </option>
-      ))}
-    </select>
+    <Select value={value} onValueChange={(v) => onChange(v)}>
+      <SelectTrigger size="sm" className="w-0 min-w-0 flex-1 text-[12.5px]">
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent>
+        {(opts ?? []).map((a) => (
+          <SelectItem key={a.id} value={a.id}>
+            {a.code} · {a.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 
   return (
@@ -6529,17 +6641,18 @@ function FixedAssetEditor({
           </Field>
 
           <Field label="Categoría *">
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className={SELECT_CLASS}
-            >
-              {Object.entries(FIXED_ASSET_CATEGORY_LABELS).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v}
-                </option>
-              ))}
-            </select>
+            <Select value={category} onValueChange={(v) => setCategory(v)}>
+              <SelectTrigger size="sm" className="w-full text-[12.5px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(FIXED_ASSET_CATEGORY_LABELS).map(([k, v]) => (
+                  <SelectItem key={k} value={k}>
+                    {v}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </Field>
 
           <Field label="Fecha de adquisición *">
@@ -6731,21 +6844,25 @@ function DisposeAssetDialog({
             />
           </Field>
           <Field label="Motivo *">
-            <select
+            <Select
               value={reason}
-              onChange={(e) =>
-                setReason(e.target.value as 'sale' | 'disuse' | 'destruction')
+              onValueChange={(v) =>
+                setReason(v as 'sale' | 'disuse' | 'destruction')
               }
-              className={SELECT_CLASS}
             >
-              {Object.entries(FIXED_ASSET_DISPOSAL_REASON_LABELS).map(
-                ([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                )
-              )}
-            </select>
+              <SelectTrigger size="sm" className="w-full text-[12.5px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(FIXED_ASSET_DISPOSAL_REASON_LABELS).map(
+                  ([k, v]) => (
+                    <SelectItem key={k} value={k}>
+                      {v}
+                    </SelectItem>
+                  )
+                )}
+              </SelectContent>
+            </Select>
           </Field>
         </div>
 
@@ -6894,17 +7011,21 @@ function AnexoIView({
           <span className="text-[12px] text-[var(--arca-ink-3)]">
             Ejercicio
           </span>
-          <select
+          <Select
             value={effectiveFyId}
-            onChange={(e) => setSelectedFyId(e.target.value)}
-            className={SELECT_CLASS}
+            onValueChange={(v) => setSelectedFyId(v)}
           >
-            {fiscalYears.map((y) => (
-              <option key={y.id} value={y.id}>
-                N°{y.number} ({y.status === 'open' ? 'abierto' : 'cerrado'})
-              </option>
-            ))}
-          </select>
+            <SelectTrigger size="sm" className="w-44 text-[12.5px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {fiscalYears.map((y) => (
+                <SelectItem key={y.id} value={y.id}>
+                  N°{y.number} ({y.status === 'open' ? 'abierto' : 'cerrado'})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <div className="flex-1" />
           {data && data.categories.length > 0 && (
             <>
@@ -7328,17 +7449,21 @@ function EstadosContables({
           <span className="text-[12px] text-[var(--arca-ink-3)]">
             Ejercicio
           </span>
-          <select
+          <Select
             value={effectiveFyId}
-            onChange={(e) => setSelectedFyId(e.target.value)}
-            className={SELECT_CLASS}
+            onValueChange={(v) => setSelectedFyId(v)}
           >
-            {fiscalYears.map((y) => (
-              <option key={y.id} value={y.id}>
-                N°{y.number} ({y.status === 'open' ? 'abierto' : 'cerrado'})
-              </option>
-            ))}
-          </select>
+            <SelectTrigger size="sm" className="w-44 text-[12.5px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {fiscalYears.map((y) => (
+                <SelectItem key={y.id} value={y.id}>
+                  N°{y.number} ({y.status === 'open' ? 'abierto' : 'cerrado'})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <span className="text-[10.5px] px-2 py-1 rounded-full bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
             Valores históricos
           </span>
@@ -7966,8 +8091,9 @@ function AnexoCMVView({
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const upd = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setForm((f) => ({ ...f, [k]: e.target.value }));
+  const upd =
+    (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+      setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const buildCmvExport = (): CmvExportData => ({
     empresaName: clientName,
@@ -8754,18 +8880,22 @@ function AuditoriaView({ clientId }: { clientId: string }) {
           Acciones sensibles · solo lectura (append-only)
         </span>
         <div className="flex-1" />
-        <select
+        <Select
           value={filter}
-          onChange={(e) => setFilter(e.target.value as AuditEventType | 'all')}
-          className={SELECT_CLASS}
+          onValueChange={(v) => setFilter(v as AuditEventType | 'all')}
         >
-          <option value="all">Todos los eventos</option>
-          {(Object.keys(AUDIT_EVENT_LABELS) as AuditEventType[]).map((t) => (
-            <option key={t} value={t}>
-              {AUDIT_EVENT_LABELS[t]}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger size="sm" className="w-52 text-[12.5px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos los eventos</SelectItem>
+            {(Object.keys(AUDIT_EVENT_LABELS) as AuditEventType[]).map((t) => (
+              <SelectItem key={t} value={t}>
+                {AUDIT_EVENT_LABELS[t]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {isLoading ? (
