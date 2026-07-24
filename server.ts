@@ -470,6 +470,9 @@ async function initializeServer() {
     port: SERVER_PORT,
 
     routes: {
+      // Healthcheck endpoint (used by Coolify/Docker)
+      '/api/health': () => new Response('OK', { status: 200 }),
+
       // Serve static assets (preloaded or on-demand)
       ...routes,
 
