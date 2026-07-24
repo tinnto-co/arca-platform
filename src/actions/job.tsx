@@ -354,7 +354,8 @@ export const dispatchAllJobs = createServerFn({ method: 'POST' })
       representatives = representatives.slice(0, ctx.data.limit);
     }
 
-    if (representatives.length === 0) return { success: true, dispatched: 0 };
+    if (representatives.length === 0)
+      return { success: true, dispatched: 0, errors: 0 };
 
     const representativeIds = representatives.map((c) => c.id);
 
@@ -382,11 +383,15 @@ export const dispatchAllJobs = createServerFn({ method: 'POST' })
       'iva',
     ] as const;
     const jobs = representatives.flatMap((c) =>
-      types.map((type) => ({ type, clientId: c.id }))
+      types.map((type) => ({ type, representativeId: c.id }))
     );
 
-    await axios.post(`${JOBS_API_URL}/api/jobs/batch`, { jobs });
-    return { success: true, dispatched: jobs.length };
+    const { data } = await axios.post(`${JOBS_API_URL}/api/jobs/batch`, {
+      jobs,
+    });
+    const created = data?.created ?? 0;
+    const errors = data?.errors ?? 0;
+    return { success: errors === 0, dispatched: created, errors };
   });
 
 export interface ErrorGroup {
