@@ -52,6 +52,7 @@ import {
   getPeriodoMesAnterior,
   puedeLiquidarPeriodo,
 } from '@/lib/payroll-period-rules';
+import { SueldosCierreContable } from '@/components/sueldos/SueldosCierreContable';
 import { legajoParaMostrar } from '@/lib/legajo';
 import { toTitleCase } from '@/lib/format-name';
 
@@ -489,6 +490,13 @@ export function SueldosDashboard({
           </div>
         </div>
       </div>
+
+      {/* Cierre contable del período (US 3.3.1) */}
+      <SueldosCierreContable
+        clientId={clientId}
+        profileId={profileId}
+        periodo={periodo}
+      />
 
       {/* Two-column body */}
       <div className="grid grid-cols-[1.15fr_1fr] gap-[44px]">

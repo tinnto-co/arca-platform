@@ -4,6 +4,46 @@
  * Se pueden generar y consultar recibos de cualquier mes del año en curso.
  */
 
+/**
+ * Normaliza un período o fecha a "YYYY-MM". Devuelve la entrada tal cual si no
+ * matchea el patrón, para no romper datos importados con formatos raros.
+ */
+export function normalizarPeriodoYYYYMM(fechaStr: string): string {
+  const t = fechaStr.trim();
+  const m = /^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?/.exec(t);
+  if (!m) return t;
+  const y = m[1];
+  const mo = String(m[2]).padStart(2, '0');
+  return `${y}-${mo}`;
+}
+
+/**
+ * Variantes de período que pueden estar en la BD (p. ej. 2026-04 vs 2026-4),
+ * para que el listado de recibos coincida con importados y con el valor crudo del UI.
+ * Incluye `periodoCrudo` para no perder coincidencias si la normalización difiere del texto guardado.
+ */
+export function variantesPeriodoParaBusqueda(
+  periodoNorm: string,
+  periodoCrudo: string
+): string[] {
+  const cands = new Set<string>();
+  const raw = periodoCrudo.trim();
+  const norm = periodoNorm.trim();
+  if (raw.length > 0) cands.add(raw);
+  if (norm.length > 0) cands.add(norm);
+
+  for (const s of [norm, raw]) {
+    const m = /^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?/.exec(s);
+    if (m) {
+      const y = m[1];
+      const mo = String(m[2]).padStart(2, '0');
+      cands.add(`${y}-${mo}`);
+      cands.add(`${y}-${parseInt(m[2], 10)}`);
+    }
+  }
+  return [...cands].filter((x) => x.length > 0);
+}
+
 /** Período en curso (YYYY-MM) según el calendario. */
 export function getPeriodoMesActual(): string {
   const now = new Date();

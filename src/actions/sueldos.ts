@@ -31,6 +31,8 @@ import {
   payrollParametrosPeriodo,
   payrollLocalidad,
   payrollLsdPresentacion,
+  payrollLiquidacionCierre,
+  journalEntry,
 } from '@/drizzle/schema';
 import {
   getSessionWithOrg,
@@ -214,7 +216,15 @@ import {
   roundMoney,
   type PayrollFormulaContext,
 } from '../lib/payroll-formula';
-import { puedeLiquidarPeriodo } from '../lib/payroll-period-rules';
+import {
+  normalizarPeriodoYYYYMM,
+  puedeLiquidarPeriodo,
+  variantesPeriodoParaBusqueda,
+} from '../lib/payroll-period-rules';
+import {
+  closePayrollPeriod,
+  reopenPayrollPeriod,
+} from '@/lib/accounting-payroll-close';
 import { differenceInYears, parseISO } from 'date-fns';
 
 // ---------- Convenios ----------
@@ -856,42 +866,6 @@ export const upsertEscala = createServerFn({ method: 'POST' })
   });
 
 /** Normaliza período a YYYY-MM (trim, mes con 2 dígitos). */
-function normalizarPeriodoYYYYMM(fechaStr: string): string {
-  const t = fechaStr.trim();
-  const m = /^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?/.exec(t);
-  if (!m) return t;
-  const y = m[1];
-  const mo = String(m[2]).padStart(2, '0');
-  return `${y}-${mo}`;
-}
-
-/**
- * Variantes de período que pueden estar en la BD (p. ej. 2026-04 vs 2026-4),
- * para que el listado de recibos coincida con importados y con el valor crudo del UI.
- * Incluye `periodoCrudo` para no perder coincidencias si la normalización difiere del texto guardado.
- */
-function variantesPeriodoParaBusqueda(
-  periodoNorm: string,
-  periodoCrudo: string
-): string[] {
-  const cands = new Set<string>();
-  const raw = periodoCrudo.trim();
-  const norm = periodoNorm.trim();
-  if (raw.length > 0) cands.add(raw);
-  if (norm.length > 0) cands.add(norm);
-
-  for (const s of [norm, raw]) {
-    const m = /^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?/.exec(s);
-    if (m) {
-      const y = m[1];
-      const mo = String(m[2]).padStart(2, '0');
-      cands.add(`${y}-${mo}`);
-      cands.add(`${y}-${parseInt(m[2], 10)}`);
-    }
-  }
-  return [...cands].filter((x) => x.length > 0);
-}
-
 function condicionPeriodoRecibo(periodoCrudo: string) {
   const periodoNorm = normalizarPeriodoYYYYMM(periodoCrudo);
   const variantes = variantesPeriodoParaBusqueda(periodoNorm, periodoCrudo);
@@ -3938,6 +3912,123 @@ export const listLiquidacionesByFiltros = createServerFn({ method: 'GET' })
         asc(liquidacionImportEmpleado.nombre)
       )
       .limit(300);
+  });
+
+/* ───────── Cierre de liquidación y asiento automático (US 3.3.1) ───────── */
+
+const cierreLiquidacionSchema = z.object({
+  /** Representante (agrupador). */
+  clientId: z.string().uuid(),
+  /** Empresa con CUIT propio — es el `clientId` que usa contabilidad. */
+  profileId: z.string().uuid(),
+  periodo: z.string().min(4),
+});
+
+/**
+ * Estado del cierre de sueldos de un período: si está cerrado, con qué asiento
+ * y cuántos conceptos quedaron sin regla.
+ */
+export const getCierreLiquidacion = createServerFn({ method: 'GET' })
+  .inputValidator(cierreLiquidacionSchema)
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureClientBelongsToRepresentative(
+      ctx.data.profileId,
+      ctx.data.clientId
+    );
+    const periodo = normalizarPeriodoYYYYMM(ctx.data.periodo);
+    const [row] = await db
+      .select({
+        id: payrollLiquidacionCierre.id,
+        periodo: payrollLiquidacionCierre.periodo,
+        journalEntryId: payrollLiquidacionCierre.journalEntryId,
+        recibos: payrollLiquidacionCierre.recibos,
+        conceptosSinRegla: payrollLiquidacionCierre.conceptosSinRegla,
+        closedAt: payrollLiquidacionCierre.closedAt,
+        entryNumber: journalEntry.number,
+      })
+      .from(payrollLiquidacionCierre)
+      .leftJoin(
+        journalEntry,
+        eq(journalEntry.id, payrollLiquidacionCierre.journalEntryId)
+      )
+      .where(
+        and(
+          eq(payrollLiquidacionCierre.clientId, ctx.data.profileId),
+          eq(payrollLiquidacionCierre.periodo, periodo),
+          isNull(payrollLiquidacionCierre.reopenedAt)
+        )
+      )
+      .limit(1);
+    return { periodo, cierre: row ?? null };
+  });
+
+/**
+ * Previsualiza el asiento sin persistir nada: mismo cálculo que el cierre real.
+ * Sirve para que el contador vea las imputaciones antes de confirmar.
+ */
+export const previewAsientoLiquidacion = createServerFn({ method: 'POST' })
+  .inputValidator(cierreLiquidacionSchema)
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureClientBelongsToRepresentative(
+      ctx.data.profileId,
+      ctx.data.clientId
+    );
+    return await closePayrollPeriod({
+      clientId: ctx.data.profileId,
+      orgId,
+      periodo: ctx.data.periodo,
+      userId: null,
+      dryRun: true,
+    });
+  });
+
+/**
+ * Cierra la liquidación del período y genera su asiento `auto_payroll`.
+ * Los conceptos sin regla van a pending_review, que bloquea el cierre contable.
+ */
+export const cerrarLiquidacionPeriodo = createServerFn({ method: 'POST' })
+  .inputValidator(cierreLiquidacionSchema)
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureClientBelongsToRepresentative(
+      ctx.data.profileId,
+      ctx.data.clientId
+    );
+    return await closePayrollPeriod({
+      clientId: ctx.data.profileId,
+      orgId,
+      periodo: ctx.data.periodo,
+      userId,
+    });
+  });
+
+/** Reabre la liquidación: anula el asiento y permite volver a cerrar. */
+export const reabrirLiquidacionPeriodo = createServerFn({ method: 'POST' })
+  .inputValidator(
+    cierreLiquidacionSchema.extend({ motivo: z.string().optional() })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureClientBelongsToRepresentative(
+      ctx.data.profileId,
+      ctx.data.clientId
+    );
+    return await reopenPayrollPeriod({
+      clientId: ctx.data.profileId,
+      periodo: ctx.data.periodo,
+      userId,
+      reason: ctx.data.motivo,
+    });
   });
 
 /** Marca la liquidación como recibo confirmado; así aparece en la solapa Recibo. */

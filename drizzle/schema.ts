@@ -2041,6 +2041,55 @@ export const ledgerMappingRuleLine = pgTable(
   (table) => [index("idx_ledger_mapping_rule_line_rule").on(table.ruleId)],
 );
 
+/**
+ * Cierre de la liquidación de sueldos de un período (US 3.3.1).
+ *
+ * Materializa el evento "liquidación cerrada": el módulo de sueldos no tenía una
+ * entidad de liquidación con estado — solo recibos por empleado. Una fila acá es
+ * el disparador del asiento automático y el destino de `journalEntry.sourceId`,
+ * lo que da idempotencia (unique por empresa+período) y permite reabrir.
+ */
+export const payrollLiquidacionCierre = pgTable(
+  "payroll_liquidacion_cierre",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Empresa con CUIT propio (client). */
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => client.id, { onDelete: "cascade" }),
+    /** Período liquidado, formato "YYYY-MM". */
+    periodo: text("periodo").notNull(),
+    /** Asiento generado al cerrar. NULL si el cierre aún no pudo contabilizarse. */
+    journalEntryId: uuid("journal_entry_id").references(() => journalEntry.id, {
+      onDelete: "set null",
+    }),
+    /** Cantidad de recibos incluidos en el cierre. */
+    recibos: integer("recibos").notNull().default(0),
+    /** Cantidad de conceptos agregados que no matchearon ninguna regla. */
+    conceptosSinRegla: integer("conceptos_sin_regla").notNull().default(0),
+    closedAt: timestamp("closed_at").defaultNow().notNull(),
+    closedBy: text("closed_by").references(() => user.id, { onDelete: "set null" }),
+    /** Seteado al reabrir; la fila se conserva como historial. */
+    reopenedAt: timestamp("reopened_at"),
+    reopenedBy: text("reopened_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    /**
+     * Único solo entre los cierres VIGENTES: al reabrir, la fila se conserva
+     * como historial y debe poder crearse un cierre nuevo del mismo período.
+     */
+    uniqueIndex("payroll_liquidacion_cierre_client_periodo_unique")
+      .on(table.clientId, table.periodo)
+      .where(sql`reopened_at is null`),
+    index("idx_payroll_liquidacion_cierre_client").on(table.clientId, table.periodo),
+  ],
+);
+
 /* ───────── Bienes de uso (Fase 4) ───────── */
 
 /** Categoría del bien de uso (alineada con los rubros de exposición del Anexo I). */

@@ -1,4 +1,5 @@
 import { createFileRoute, redirect, Link } from '@tanstack/react-router';
+import { z } from 'zod';
 import { listOrgModules } from '@/actions/admin';
 import { useMemo, useState, useEffect, Fragment } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -207,7 +208,29 @@ import {
 } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
 
+const TAB_IDS = [
+  'plan',
+  'ejercicios',
+  'asientos',
+  'mayor',
+  'balance',
+  'reglas',
+  'contabilizar',
+  'pendientes',
+  'bienes',
+  'estados',
+  'auditoria',
+] as const;
+type Tab = (typeof TAB_IDS)[number];
+
+/** Permite entrar directo a una empresa/solapa (ej. desde el cierre de sueldos). */
+const accountingSearchSchema = z.object({
+  clientId: z.string().uuid().optional(),
+  tab: z.enum(TAB_IDS).optional(),
+});
+
 export const Route = createFileRoute('/_authed/accounting/')({
+  validateSearch: accountingSearchSchema,
   beforeLoad: async () => {
     const modules = await listOrgModules();
     const enabled =
@@ -256,18 +279,6 @@ function OriginBadge({ scope }: { scope: 'base' | 'custom' }) {
 }
 
 /* ─── Tab bar ─── */
-type Tab =
-  | 'plan'
-  | 'ejercicios'
-  | 'asientos'
-  | 'mayor'
-  | 'balance'
-  | 'reglas'
-  | 'contabilizar'
-  | 'pendientes'
-  | 'bienes'
-  | 'estados'
-  | 'auditoria';
 
 function TabBar({
   active,
@@ -346,8 +357,15 @@ function TabBar({
 
 /* ─── Page ─── */
 function AccountingPage() {
-  const [tab, setTab] = useState<Tab>('plan');
-  const [clientId, setClientId] = useState<string>('');
+  const search = Route.useSearch();
+  // Guarda en runtime: el search viene de la URL, puede traer cualquier cosa.
+  const [tab, setTab] = useState<Tab>(() => {
+    const t = String(search.tab ?? '');
+    return (TAB_IDS as readonly string[]).includes(t) ? (t as Tab) : 'plan';
+  });
+  const [clientId, setClientId] = useState<string>(() =>
+    String(search.clientId ?? '')
+  );
 
   const { data: clients = [] } = useQuery({
     queryKey: ['accounting', 'clients'],
@@ -4814,6 +4832,14 @@ const AMOUNT_BASES = [
 /** Letras de comprobante soportadas por la condición (clave "type"). */
 const INVOICE_TYPE_OPTIONS = ['A', 'B', 'C', 'M', 'E'];
 
+/** Tipos de concepto de sueldos que puede filtrar una regla condicional. */
+const PAYROLL_CONCEPT_TIPO_OPTIONS = [
+  { value: 'remunerativo', label: 'Remunerativo' },
+  { value: 'no_remunerativo', label: 'No remunerativo' },
+  { value: 'descuento', label: 'Descuento' },
+  { value: 'retencion', label: 'Retención' },
+];
+
 /** Normaliza el valor de dirección leído de una condición guardada. */
 function normalizeCondDirection(raw: unknown): '' | 'sale' | 'purchase' {
   const v = typeof raw === 'string' ? raw.toLowerCase().trim() : '';
@@ -5075,6 +5101,10 @@ function RuleEditorDialog({
     ''
   );
   const [condTypes, setCondTypes] = useState<string[]>([]);
+  /** Sueldos: tipos de concepto a los que aplica la regla. */
+  const [condConceptTipos, setCondConceptTipos] = useState<string[]>([]);
+  /** Sueldos: códigos SOS exactos, separados por coma (ej. "101, 102"). */
+  const [condSosCodes, setCondSosCodes] = useState('');
   const [priority, setPriority] = useState('100');
   const [lines, setLines] = useState<RuleLineDraft[]>([
     emptyRuleLine('debit'),
@@ -5098,6 +5128,22 @@ function RuleEditorDialog({
       setCondTypes(
         typeArr.map((t) => String(t).trim().toUpperCase()).filter(Boolean)
       );
+      const rawTipo = cond.tipo;
+      const tipoArr = Array.isArray(rawTipo)
+        ? rawTipo
+        : rawTipo != null
+          ? [rawTipo]
+          : [];
+      setCondConceptTipos(
+        tipoArr.map((t) => String(t).trim().toLowerCase()).filter(Boolean)
+      );
+      const rawSos = cond.sosCode ?? cond.codigo;
+      const sosArr = Array.isArray(rawSos)
+        ? rawSos
+        : rawSos != null
+          ? [rawSos]
+          : [];
+      setCondSosCodes(sosArr.map((c) => String(c).trim()).join(', '));
     }
     setPriority(String(existing.rule.priority));
     setLines(
@@ -5136,6 +5182,15 @@ function RuleEditorDialog({
         const c: Record<string, unknown> = {};
         if (condDirection) c.direction = condDirection;
         if (condTypes.length) c.type = condTypes;
+        condition = Object.keys(c).length ? c : undefined;
+      } else if (ruleType === 'conditional' && sourceModule === 'payroll') {
+        const c: Record<string, unknown> = {};
+        const codes = condSosCodes
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+        if (codes.length) c.sosCode = codes;
+        if (condConceptTipos.length) c.tipo = condConceptTipos;
         condition = Object.keys(c).length ? c : undefined;
       }
       const payloadLines = lines.map((l) => ({
@@ -5369,10 +5424,83 @@ function RuleEditorDialog({
             </>
           )}
           {ruleType === 'conditional' && sourceModule === 'payroll' && (
-            <div className="col-span-2 text-[11.5px] text-[var(--arca-ink-3)] rounded-[8px] border border-dashed border-[var(--arca-border)] px-3 py-2">
-              Las condiciones por dirección y tipo aplican solo a facturas. El
-              mapeo automático de sueldos aún no está disponible.
-            </div>
+            <>
+              <Field
+                label={
+                  <>
+                    Tipo de concepto
+                    <HelpTip text="Marcá los tipos de concepto a los que aplica la regla. Si no marcás ninguno, no filtra por tipo." />
+                  </>
+                }
+                full
+              >
+                <div className="flex flex-wrap gap-1.5">
+                  {PAYROLL_CONCEPT_TIPO_OPTIONS.map((t) => {
+                    const on = condConceptTipos.includes(t.value);
+                    return (
+                      <button
+                        type="button"
+                        key={t.value}
+                        onClick={() =>
+                          setCondConceptTipos((prev) =>
+                            prev.includes(t.value)
+                              ? prev.filter((x) => x !== t.value)
+                              : [...prev, t.value]
+                          )
+                        }
+                        className={`h-8 px-2.5 text-[12.5px] font-medium rounded-[8px] border transition-colors ${
+                          on
+                            ? 'bg-[var(--arca-navy-900)] text-white border-[var(--arca-navy-900)]'
+                            : 'border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]'
+                        }`}
+                      >
+                        {t.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </Field>
+              <Field
+                label={
+                  <>
+                    Códigos SOS
+                    <HelpTip text="Códigos de concepto exactos, separados por coma (ej. 101, 102). Dejalo vacío para no filtrar por código. La regla aplica solo si el concepto cumple código Y tipo." />
+                  </>
+                }
+                full
+              >
+                <input
+                  value={condSosCodes}
+                  onChange={(e) => setCondSosCodes(e.target.value)}
+                  placeholder="101, 102"
+                  className={`${INPUT_CLASS} w-full h-9`}
+                />
+                <p className="mt-1 text-[11px] text-[var(--arca-ink-3)]">
+                  {condSosCodes.trim() || condConceptTipos.length ? (
+                    <>
+                      Aplica a conceptos
+                      {condConceptTipos.length
+                        ? ` ${condConceptTipos
+                            .map(
+                              (t) =>
+                                PAYROLL_CONCEPT_TIPO_OPTIONS.find(
+                                  (o) => o.value === t
+                                )?.label ?? t
+                            )
+                            .join(', ')
+                            .toLowerCase()}`
+                        : ''}
+                      {condSosCodes.trim()
+                        ? ` con código ${condSosCodes.trim()}`
+                        : ''}
+                      .
+                    </>
+                  ) : (
+                    'Sin filtros: esta regla condicional aplicaría a cualquier concepto.'
+                  )}
+                </p>
+              </Field>
+            </>
           )}
         </div>
 
