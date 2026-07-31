@@ -10,14 +10,16 @@
  */
 
 import { GoogleGenAI } from '@google/genai';
-import { and, eq, inArray } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { db } from '@/lib/db';
+import { runWithDbContext } from '@/lib/db-context';
 import {
-  payrollConvenio,
-  payrollConvenioCategoria,
-  payrollEscala,
-  payrollParametrosPeriodo,
+  convenio,
+  convenioCategoria,
+  escalaSalarial,
+  parametroPeriodo,
 } from '@/drizzle/schema';
+import { organization } from '@/drizzle/auth';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fuentes CCT monitoreadas
@@ -176,6 +178,12 @@ ${pageText}`;
 // Normalización de nombres para matching
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Valida el 'YYYY-MM-DD' que devolvió Gemini; null si viene vacío o no es fecha. */
+function aFecha(s: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  return isNaN(new Date(`${s}T00:00:00Z`).getTime()) ? null : s;
+}
+
 function canon(s: string): string {
   return s
     .normalize('NFD')
@@ -195,21 +203,21 @@ async function syncCCT(
   fuente: string
 ): Promise<{ upserted: number; skipped: number }> {
   const convenios = await db
-    .select({ id: payrollConvenio.id })
-    .from(payrollConvenio)
-    .where(eq(payrollConvenio.cctCodigo, cctCodigo));
+    .select({ id: convenio.id })
+    .from(convenio)
+    .where(eq(convenio.cctCodigo, cctCodigo));
 
   if (convenios.length === 0) return { upserted: 0, skipped: 0 };
 
   const convenioIds = convenios.map((c) => c.id);
   const categorias = await db
     .select({
-      id: payrollConvenioCategoria.id,
-      convenioId: payrollConvenioCategoria.convenioId,
-      nombre: payrollConvenioCategoria.nombre,
+      id: convenioCategoria.id,
+      convenioId: convenioCategoria.convenioId,
+      nombre: convenioCategoria.nombre,
     })
-    .from(payrollConvenioCategoria)
-    .where(inArray(payrollConvenioCategoria.convenioId, convenioIds));
+    .from(convenioCategoria)
+    .where(inArray(convenioCategoria.convenioId, convenioIds));
 
   let upserted = 0;
   let skipped = 0;
@@ -219,14 +227,13 @@ async function syncCCT(
     const catByCanon = new Map(convCats.map((c) => [canon(c.nombre), c]));
 
     for (const periodo of periodos) {
-      const desde = new Date(periodo.vigenciaDesde);
-      if (isNaN(desde.getTime())) {
+      // Las vigencias son columnas `date`: se guardan como 'YYYY-MM-DD'.
+      const desde = aFecha(periodo.vigenciaDesde);
+      if (!desde) {
         skipped++;
         continue;
       }
-      const hasta = periodo.vigenciaHasta
-        ? new Date(periodo.vigenciaHasta)
-        : null;
+      const hasta = aFecha(periodo.vigenciaHasta);
       const nr = periodo.noRemunerativo ?? 0;
 
       for (const ref of periodo.categorias) {
@@ -236,31 +243,11 @@ async function syncCCT(
           continue;
         }
 
-        const [existing] = await db
-          .select({ id: payrollEscala.id })
-          .from(payrollEscala)
-          .where(
-            and(
-              eq(payrollEscala.categoriaId, cat.id),
-              eq(payrollEscala.vigenciaDesde, desde),
-              eq(payrollEscala.periodoLabel, periodo.label)
-            )
-          )
-          .limit(1);
-
-        if (existing) {
-          await db
-            .update(payrollEscala)
-            .set({
-              montoBasico: String(ref.basico),
-              montoNoRemunerativo: String(nr),
-              vigenciaHasta: hasta,
-              fuente,
-              updatedAt: new Date(),
-            })
-            .where(eq(payrollEscala.id, existing.id));
-        } else {
-          await db.insert(payrollEscala).values({
+        // (categoria, vigencia_desde) es único: re-correr el cron pisa el valor
+        // anterior en vez de duplicarlo.
+        await db
+          .insert(escalaSalarial)
+          .values({
             categoriaId: cat.id,
             vigenciaDesde: desde,
             vigenciaHasta: hasta,
@@ -268,8 +255,17 @@ async function syncCCT(
             montoNoRemunerativo: String(nr),
             periodoLabel: periodo.label,
             fuente,
+          })
+          .onConflictDoUpdate({
+            target: [escalaSalarial.categoriaId, escalaSalarial.vigenciaDesde],
+            set: {
+              vigenciaHasta: hasta,
+              montoBasico: String(ref.basico),
+              montoNoRemunerativo: String(nr),
+              periodoLabel: periodo.label,
+              fuente,
+            },
           });
-        }
         upserted++;
       }
     }
@@ -434,23 +430,24 @@ export async function syncTopeImponible(): Promise<{ periodo: string; tope: numb
     return null;
   }
 
+  // `parametro_periodo.periodo` es un `date`: el período mensual se guarda como
+  // el día 1 del mes.
   await db
-    .insert(payrollParametrosPeriodo)
+    .insert(parametroPeriodo)
     .values({
-      periodo: resultado.periodo,
+      periodo: `${resultado.periodo}-01`,
       topeMaximoImponible: String(resultado.tope),
       salarioMinimo: resultado.smvm ? String(resultado.smvm) : null,
       fuente: resultado.fuente,
       actualizadoPorCron: true,
     })
     .onConflictDoUpdate({
-      target: payrollParametrosPeriodo.periodo,
+      target: parametroPeriodo.periodo,
       set: {
         topeMaximoImponible: String(resultado.tope),
         salarioMinimo: resultado.smvm ? String(resultado.smvm) : null,
         fuente: resultado.fuente,
         actualizadoPorCron: true,
-        updatedAt: new Date(),
       },
     });
 
@@ -478,7 +475,13 @@ export async function runPayrollCronJob(): Promise<void> {
   }
 
   // ── 2. Escalas salariales por CCT ──────────────────────────────────────────
-  console.log('[payroll-cron] Actualizando escalas salariales...');
+  // Los convenios están aislados por organización (RLS), así que el scrapeo se
+  // hace una vez y el guardado se repite por organización: sin `app.org_id` la
+  // BD no devuelve ningún convenio.
+  const orgs = await db.select({ id: organization.id }).from(organization);
+  console.log(
+    `[payroll-cron] Actualizando escalas salariales para ${orgs.length} organización(es)...`
+  );
   for (const source of CCT_SOURCES) {
     try {
       console.log(
@@ -490,14 +493,15 @@ export async function runPayrollCronJob(): Promise<void> {
         `[payroll-cron] Gemini detectó ${periodos.length} período(s) con ` +
           `${periodos.reduce((s, p) => s + p.categorias.length, 0)} valores de categorías`
       );
-      const { upserted, skipped } = await syncCCT(
-        source.cctCodigo,
-        periodos,
-        source.url
-      );
-      console.log(
-        `[payroll-cron] ${source.cctCodigo}: ${upserted} escalas guardadas, ${skipped} sin coincidencia`
-      );
+      for (const org of orgs) {
+        const { upserted, skipped } = await runWithDbContext(
+          { orgId: org.id },
+          () => syncCCT(source.cctCodigo, periodos, source.url)
+        );
+        console.log(
+          `[payroll-cron] ${source.cctCodigo} · ${org.id}: ${upserted} escalas guardadas, ${skipped} sin coincidencia`
+        );
+      }
     } catch (err) {
       console.error(
         `[payroll-cron] Error en ${source.cctCodigo}:`,
