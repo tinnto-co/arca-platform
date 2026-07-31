@@ -1,7 +1,13 @@
 import { createServerFn } from '@tanstack/react-start';
 import z from 'zod';
 import { db } from '@/lib/db';
-import { representative, client, ivaScrape, invoice } from '@/drizzle/schema';
+import {
+  cliente,
+  ivaDeclaracion,
+  comprobante,
+  comprobanteTipo,
+  condicionIva,
+} from '@/drizzle/schema';
 import {
   getSessionWithOrg,
   getMemberRole,
@@ -9,16 +15,29 @@ import {
 } from '@/actions/helpers';
 import { and, eq, asc, desc, isNull, sql } from 'drizzle-orm';
 
-export const FISCAL_CONDITIONS = [
-  'responsable_inscripto',
-  'monotributista',
-  'exento',
-] as const;
+export const FISCAL_CONDITIONS = condicionIva.enumValues;
 
 /**
- * Resumen de posición IVA (iva_scrape) para todas las empresas Responsable
+ * Los logins de AFIP del cliente, en una sola línea. Un cliente puede tener
+ * más de uno (varios representantes declaran por él), así que se agregan.
+ */
+const credencialesSql = sql<string | null>`(
+  select string_agg(distinct coalesce(cr.nombre, cr.cuit), ', ')
+  from cliente_credencial cc
+  join credencial_afip cr on cr.id = cc.credencial_id
+  where cc.cliente_id = ${cliente.id}
+)`;
+
+/** "MM/YYYY" → primer día del mes, que es como se guarda el período. */
+function periodoADate(periodo: string): string {
+  const [mm, yyyy] = periodo.split('/');
+  return `${yyyy}-${mm}-01`;
+}
+
+/**
+ * Resumen de posición IVA (F2051 scrapeado) de todos los clientes Responsable
  * Inscripto de la organización, para un período fiscal dado ("MM/YYYY").
- * Left join: las empresas RI sin scrape del período aparecen con datos en null.
+ * Left join: los RI sin declaración del período aparecen con datos en null.
  */
 export const getIvaResumenRI = createServerFn({ method: 'GET' })
   .inputValidator(
@@ -28,160 +47,134 @@ export const getIvaResumenRI = createServerFn({ method: 'GET' })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-    const { periodo } = ctx.data;
+    const periodo = periodoADate(ctx.data.periodo);
 
     return await db
       .select({
-        clientId: client.id,
-        clientName: client.name,
-        cuit: client.identityNumber,
-        representativeName: representative.name,
-        fiscalCondition: client.fiscalCondition,
-        scrapeId: ivaScrape.id,
-        ok: ivaScrape.ok,
-        fechaPresentacion: ivaScrape.fechaPresentacion,
-        debitoFiscal: ivaScrape.debitoFiscal,
-        creditoFiscal: ivaScrape.creditoFiscal,
-        saldoTecnicoFavorContribuyente:
-          ivaScrape.saldoTecnicoFavorContribuyente,
-        saldoLibreDisponibilidad:
-          ivaScrape.saldoLibreDisponibilidadFavorContribuyentePeriodo,
-        totalRetencionesPercepciones:
-          ivaScrape.totalRetencionesPercepcionesPeriodo,
+        clienteId: cliente.id,
+        razonSocial: cliente.razonSocial,
+        cuit: cliente.cuit,
+        credenciales: credencialesSql,
+        condicionIva: cliente.condicionIva,
+        declaracionId: ivaDeclaracion.id,
+        presentadaAt: ivaDeclaracion.presentadaAt,
+        debitoFiscal: ivaDeclaracion.debitoFiscal,
+        creditoFiscal: ivaDeclaracion.creditoFiscal,
+        saldoTecnicoFavor: ivaDeclaracion.saldoTecnicoFavor,
+        saldoLibreDisponibilidadFavor:
+          ivaDeclaracion.saldoLibreDisponibilidadFavor,
+        retencionesPercepcionesPeriodo:
+          ivaDeclaracion.retencionesPercepcionesPeriodo,
       })
-      .from(client)
-      .innerJoin(representative, eq(client.representativeId, representative.id))
+      .from(cliente)
       .leftJoin(
-        ivaScrape,
+        ivaDeclaracion,
         and(
-          eq(ivaScrape.clientId, client.id),
-          eq(ivaScrape.periodoFiscal, periodo)
+          eq(ivaDeclaracion.clienteId, cliente.id),
+          eq(ivaDeclaracion.periodo, periodo)
         )
       )
       .where(
         and(
-          eq(representative.organizationId, orgId),
-          eq(client.fiscalCondition, 'responsable_inscripto'),
-          isNull(client.disabledAt)
+          eq(cliente.orgId, orgId),
+          eq(cliente.condicionIva, 'responsable_inscripto'),
+          eq(cliente.estado, 'activo')
         )
       )
-      .orderBy(asc(client.name));
+      .orderBy(asc(cliente.razonSocial));
   });
 
 /**
- * Empresas monotributistas con facturación emitida acumulada de los últimos
- * 12 meses cerrados (para monitorear límites de categoría).
- * Las notas de crédito (tipos 3, 8, 13) restan; el total es el del comprobante.
+ * Clientes monotributistas con la facturación emitida acumulada de los últimos
+ * 12 meses cerrados, para monitorear los límites de categoría. Las notas de
+ * crédito restan: el catálogo `comprobante_tipo` dice cuáles lo son.
  */
 export const getMonotributistasFacturacion = createServerFn({
   method: 'GET',
 }).handler(async () => {
   const { orgId } = await getSessionWithOrg();
 
-  const isCreditNote = sql`(${invoice.type} in ('3', '8', '13') or ${invoice.type}::text ilike '%Crédito%')`;
+  const facturado = sql`coalesce(sum(
+    case when ${comprobanteTipo.esNc} then -${comprobante.total} else ${comprobante.total} end
+  ), 0)`;
 
   return await db
     .select({
-      clientId: client.id,
-      clientName: client.name,
-      cuit: client.identityNumber,
-      representativeName: representative.name,
-      fiscalCondition: client.fiscalCondition,
-      invoiceCount: sql<number>`count(${invoice.id})::int`,
-      ultimaFactura: sql<string | null>`max(${invoice.emitionDate})::text`,
-      facturacion12m: sql<string>`coalesce(sum(case when ${isCreditNote} then -(${invoice.amount}::numeric) else (${invoice.amount}::numeric) end), 0)::text`,
+      clienteId: cliente.id,
+      razonSocial: cliente.razonSocial,
+      cuit: cliente.cuit,
+      credenciales: credencialesSql,
+      condicionIva: cliente.condicionIva,
+      comprobanteCount: sql<number>`count(${comprobante.id})::int`,
+      ultimoComprobante: sql<string | null>`max(${comprobante.fechaEmision})::text`,
+      facturacion12m: sql<string>`${facturado}::text`,
     })
-    .from(client)
-    .innerJoin(representative, eq(client.representativeId, representative.id))
+    .from(cliente)
     .leftJoin(
-      invoice,
+      comprobante,
       and(
-        eq(invoice.clientId, client.id),
-        sql`LOWER(${invoice.direction}) = 'outbound'`,
-        sql`${invoice.emitionDate} >= date_trunc('month', now()) - interval '12 months'`
+        eq(comprobante.clienteId, cliente.id),
+        eq(comprobante.direccion, 'emitido'),
+        sql`${comprobante.fechaEmision} >= date_trunc('month', now()) - interval '12 months'`
       )
     )
+    .leftJoin(comprobanteTipo, eq(comprobanteTipo.codigo, comprobante.tipo))
     .where(
       and(
-        eq(representative.organizationId, orgId),
-        eq(client.fiscalCondition, 'monotributista'),
-        isNull(client.disabledAt)
+        eq(cliente.orgId, orgId),
+        eq(cliente.condicionIva, 'monotributista'),
+        eq(cliente.estado, 'activo')
       )
     )
-    .groupBy(
-      client.id,
-      client.name,
-      client.identityNumber,
-      representative.name,
-      client.fiscalCondition
-    )
-    .orderBy(
-      desc(
-        sql`coalesce(sum(case when ${isCreditNote} then -(${invoice.amount}::numeric) else (${invoice.amount}::numeric) end), 0)`
-      )
-    );
+    .groupBy(cliente.id, cliente.razonSocial, cliente.cuit, cliente.condicionIva)
+    .orderBy(desc(facturado));
 });
 
-/** Empresas activas de la organización sin condición fiscal asignada. */
-export const getClientsSinClasificar = createServerFn({
+/** Clientes activos de la organización sin condición fiscal asignada. */
+export const getClientesSinClasificar = createServerFn({
   method: 'GET',
 }).handler(async () => {
   const { orgId } = await getSessionWithOrg();
 
   return await db
     .select({
-      clientId: client.id,
-      clientName: client.name,
-      cuit: client.identityNumber,
-      representativeName: representative.name,
-      fiscalCondition: client.fiscalCondition,
+      clienteId: cliente.id,
+      razonSocial: cliente.razonSocial,
+      cuit: cliente.cuit,
+      credenciales: credencialesSql,
+      condicionIva: cliente.condicionIva,
     })
-    .from(client)
-    .innerJoin(representative, eq(client.representativeId, representative.id))
+    .from(cliente)
     .where(
       and(
-        eq(representative.organizationId, orgId),
-        isNull(client.fiscalCondition),
-        isNull(client.disabledAt)
+        eq(cliente.orgId, orgId),
+        isNull(cliente.condicionIva),
+        eq(cliente.estado, 'activo')
       )
     )
-    .orderBy(asc(client.name));
+    .orderBy(asc(cliente.razonSocial));
 });
 
-/** Actualiza la condición fiscal de una empresa (client). */
-export const updateClientFiscalCondition = createServerFn({ method: 'POST' })
+export const updateClienteCondicionIva = createServerFn({ method: 'POST' })
   .inputValidator(
     z.object({
-      clientId: z.string().uuid(),
-      fiscalCondition: z.enum(FISCAL_CONDITIONS).nullable(),
+      clienteId: z.string().uuid(),
+      condicionIva: z.enum(condicionIva.enumValues).nullable(),
     })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     assertCanWrite(await getMemberRole());
 
-    const { clientId, fiscalCondition } = ctx.data;
-
-    // Verificar que la empresa pertenece a la organización activa
-    const [owned] = await db
-      .select({ id: client.id })
-      .from(client)
-      .innerJoin(representative, eq(client.representativeId, representative.id))
-      .where(
-        and(eq(client.id, clientId), eq(representative.organizationId, orgId))
-      )
-      .limit(1);
-
-    if (!owned) throw new Error('Empresa no encontrada o no autorizada');
-
     const [updated] = await db
-      .update(client)
-      .set({ fiscalCondition, updatedAt: new Date() })
-      .where(eq(client.id, clientId))
+      .update(cliente)
+      .set({ condicionIva: ctx.data.condicionIva, updatedAt: new Date() })
+      .where(and(eq(cliente.id, ctx.data.clienteId), eq(cliente.orgId, orgId)))
       .returning({
-        clientId: client.id,
-        fiscalCondition: client.fiscalCondition,
+        clienteId: cliente.id,
+        condicionIva: cliente.condicionIva,
       });
 
+    if (!updated) throw new Error('Cliente no encontrado o no autorizado');
     return updated;
   });

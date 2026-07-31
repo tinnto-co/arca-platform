@@ -1,16 +1,21 @@
+/**
+ * Analytics del estudio: proyección de impuestos, ratios por cliente y resumen
+ * ejecutivo. Todo cuelga de `cliente`, que ya trae `org_id`: no hace falta
+ * pasar por el login de AFIP para acotar por organización.
+ */
 import { createServerFn } from '@tanstack/react-start';
 import z from 'zod';
 import { db } from '@/lib/db';
 import {
-  client,
-  representative,
-  ivaScrape,
-  taxProjection,
-  clientRiskSnapshot,
-  invoice,
-  debt,
-  notification,
-  dueDate,
+  cliente,
+  ivaDeclaracion,
+  proyeccionImpuesto,
+  riesgoSnapshot,
+  riesgoNivel,
+  comprobante,
+  deuda,
+  notificacion,
+  vencimiento,
 } from '@/drizzle/schema';
 import {
   eq,
@@ -24,458 +29,377 @@ import {
 } from 'drizzle-orm';
 import { getSessionWithOrg } from '@/actions/helpers';
 
-// ── generateIvaProjection ────────────────────────────────────────────────────
-// Projects IVA liability for a given period based on last 6 months of scrapes.
+/** Cómo se llegó al monto proyectado, para poder auditarlo después. */
+interface FactoresProyeccion {
+  metodo: 'sin_datos' | 'promedio_historico';
+  muestras: number;
+  mensaje?: string;
+  debitoPromedio?: number;
+  creditoPromedio?: number;
+  posicionPromedio?: number;
+  periodos?: string[];
+}
+
+/** Lo que el motor de riesgo deja anotado: cada factor con su puntaje. */
+type FactoresRiesgo = Record<string, number | string | boolean | null>;
+
+/** "YYYY-MM" → primer día del mes, que es como se guardan los períodos. */
+const periodoADate = (periodo: string) => `${periodo}-01`;
+
+const soloFecha = (d: Date) => d.toISOString().slice(0, 10);
+
+/** El cliente, validando que sea de la organización activa. */
+async function getClienteDeOrg(clienteId: string, orgId: string) {
+  const [row] = await db
+    .select({ id: cliente.id, razonSocial: cliente.razonSocial })
+    .from(cliente)
+    .where(and(eq(cliente.id, clienteId), eq(cliente.orgId, orgId)))
+    .limit(1);
+  if (!row) throw new Error('Cliente no encontrado o no autorizado');
+  return row;
+}
+
+/** Importe en pesos: las declaraciones en dólares traen su cotización. */
+const totalEnPesos = sql<number>`(${comprobante.total} * ${comprobante.cotizacion})`;
+
+// ── Proyección de IVA ────────────────────────────────────────────────────────
 
 export const generateIvaProjection = createServerFn({ method: 'POST' })
   .inputValidator(
     z.object({
-      profileId: z.string().uuid(),
-      period: z.string().regex(/^\d{4}-\d{2}$/, 'period must be YYYY-MM'),
+      clienteId: z.string().uuid(),
+      periodo: z.string().regex(/^\d{4}-\d{2}$/, 'El período debe ser YYYY-MM'),
     })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
+    await getClienteDeOrg(ctx.data.clienteId, orgId);
 
-    // Validate profile belongs to org
-    const profileRow = await db
-      .select({ id: client.id, clientId: client.representativeId })
-      .from(client)
-      .innerJoin(representative, eq(client.representativeId, representative.id))
-      .where(
-        and(eq(client.id, ctx.data.profileId), eq(representative.organizationId, orgId as string))
-      )
-      .limit(1)
-      .then((r) => r[0]);
-
-    if (!profileRow) throw new Error('Perfil no encontrado o no autorizado');
-
-    // Fetch last 6 months of IVA scrapes for trend analysis
-    // periodoFiscal is stored as "MM/YYYY" format
-    const scrapes = await db
+    const declaraciones = await db
       .select({
-        periodoFiscal: ivaScrape.periodoFiscal,
-        debitoFiscal: ivaScrape.debitoFiscal,
-        creditoFiscal: ivaScrape.creditoFiscal,
-        saldoTecnico: ivaScrape.saldoTecnicoFavorContribuyente,
-        ok: ivaScrape.ok,
+        periodo: ivaDeclaracion.periodo,
+        debitoFiscal: ivaDeclaracion.debitoFiscal,
+        creditoFiscal: ivaDeclaracion.creditoFiscal,
       })
-      .from(ivaScrape)
-      .where(eq(ivaScrape.clientId, ctx.data.profileId))
-      .orderBy(desc(ivaScrape.createdAt))
+      .from(ivaDeclaracion)
+      .where(eq(ivaDeclaracion.clienteId, ctx.data.clienteId))
+      .orderBy(desc(ivaDeclaracion.periodo))
       .limit(6);
 
-    const validScrapes = scrapes.filter(
-      (s) => s.ok && s.debitoFiscal !== null
-    );
+    const conDato = declaraciones.filter((d) => d.debitoFiscal !== null);
 
-    let projectedAmount = 0;
-    let confidence: string;
-    let factors: Record<string, unknown>;
+    let montoProyectado = 0;
+    let confianza: 'baja' | 'media' | 'alta';
+    let factores: FactoresProyeccion;
 
-    if (validScrapes.length === 0) {
-      // No data: project 0 with low confidence
-      projectedAmount = 0;
-      confidence = 'low';
-      factors = {
-        method: 'no_data',
-        samplesUsed: 0,
-        message: 'Sin historial de declaraciones IVA disponible',
+    if (conDato.length === 0) {
+      confianza = 'baja';
+      factores = {
+        metodo: 'sin_datos',
+        muestras: 0,
+        mensaje: 'Sin historial de declaraciones de IVA',
       };
     } else {
-      // Average (debitoFiscal - creditoFiscal) across valid scrapes
-      // Positive = IVA to pay; negative = credit in favor of taxpayer
-      const positions = validScrapes.map((s) => {
-        const debito = parseFloat(s.debitoFiscal ?? '0');
-        const credito = parseFloat(s.creditoFiscal ?? '0');
-        return debito - credito;
-      });
+      // Posición del período: positiva = IVA a pagar, negativa = saldo a favor.
+      const posiciones = conDato.map(
+        (d) => Number(d.debitoFiscal ?? 0) - Number(d.creditoFiscal ?? 0)
+      );
+      const promedio =
+        posiciones.reduce((sum, v) => sum + v, 0) / posiciones.length;
 
-      const avgPosition =
-        positions.reduce((sum, v) => sum + v, 0) / positions.length;
+      montoProyectado = Math.max(0, promedio);
+      confianza =
+        conDato.length >= 5 ? 'alta' : conDato.length >= 3 ? 'media' : 'baja';
 
-      projectedAmount = Math.max(0, avgPosition); // negative = credit, store as 0
-
-      // Apply a simple trend weight: weight last month more
-      if (validScrapes.length >= 3) {
-        confidence = 'medium';
-      } else {
-        confidence = 'low';
-      }
-      if (validScrapes.length >= 5) {
-        confidence = 'high';
-      }
-
-      factors = {
-        method: 'historical_average',
-        samplesUsed: validScrapes.length,
-        avgDebit:
-          validScrapes.reduce(
-            (sum, s) => sum + parseFloat(s.debitoFiscal ?? '0'),
-            0
-          ) / validScrapes.length,
-        avgCredit:
-          validScrapes.reduce(
-            (sum, s) => sum + parseFloat(s.creditoFiscal ?? '0'),
-            0
-          ) / validScrapes.length,
-        avgPosition,
-        periods: validScrapes.map((s) => s.periodoFiscal),
+      factores = {
+        metodo: 'promedio_historico',
+        muestras: conDato.length,
+        debitoPromedio:
+          conDato.reduce((sum, d) => sum + Number(d.debitoFiscal ?? 0), 0) /
+          conDato.length,
+        creditoPromedio:
+          conDato.reduce((sum, d) => sum + Number(d.creditoFiscal ?? 0), 0) /
+          conDato.length,
+        posicionPromedio: promedio,
+        periodos: conDato.map((d) => d.periodo),
       };
     }
 
-    // Upsert into taxProjection
+    const periodo = periodoADate(ctx.data.periodo);
+
     await db
-      .insert(taxProjection)
+      .insert(proyeccionImpuesto)
       .values({
-        profileId: ctx.data.profileId,
-        period: ctx.data.period,
-        tax: 'iva',
-        projectedAmount: String(projectedAmount.toFixed(2)),
-        confidence,
-        factors,
+        clienteId: ctx.data.clienteId,
+        periodo,
+        impuesto: 'iva',
+        montoProyectado: montoProyectado.toFixed(2),
+        confianza,
+        factores,
       })
       .onConflictDoUpdate({
         target: [
-          taxProjection.clientId,
-          taxProjection.period,
-          taxProjection.tax,
+          proyeccionImpuesto.clienteId,
+          proyeccionImpuesto.periodo,
+          proyeccionImpuesto.impuesto,
         ],
         set: {
-          projectedAmount: String(projectedAmount.toFixed(2)),
-          confidence,
-          factors,
-          generatedAt: new Date(),
+          montoProyectado: montoProyectado.toFixed(2),
+          confianza,
+          factores,
+          generadaAt: new Date(),
         },
       });
 
     return {
-      profileId: ctx.data.profileId,
-      period: ctx.data.period,
-      tax: 'iva',
-      projectedAmount,
-      confidence,
-      factors,
-    } as any;
+      clienteId: ctx.data.clienteId,
+      periodo,
+      impuesto: 'iva' as const,
+      montoProyectado,
+      confianza,
+      factores,
+    };
   });
 
-// ── getRatios ────────────────────────────────────────────────────────────────
-// Business ratios for a client over a date range.
+// ── Ratios por cliente ───────────────────────────────────────────────────────
 
 export const getRatios = createServerFn({ method: 'GET' })
   .inputValidator(
     z.object({
-      clientId: z.string().uuid(),
+      clienteId: z.string().uuid(),
       from: z.string(),
       to: z.string(),
     })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
+    const clienteRow = await getClienteDeOrg(ctx.data.clienteId, orgId);
 
-    // Validate representative belongs to org
-    const representativeRow = await db
-      .select({ id: representative.id, name: representative.name })
-      .from(representative)
-      .where(
-        and(eq(representative.id, ctx.data.clientId), eq(representative.organizationId, orgId as string))
-      )
-      .limit(1)
-      .then((r) => r[0]);
+    const desde = new Date(ctx.data.from);
+    const hasta = new Date(ctx.data.to);
 
-    if (!representativeRow) throw new Error('Cliente no encontrado o no autorizado');
+    // Período anterior del mismo largo, para comparar.
+    const rango = hasta.getTime() - desde.getTime();
+    const anteriorHasta = new Date(desde.getTime() - 24 * 60 * 60 * 1000);
+    const anteriorDesde = new Date(anteriorHasta.getTime() - rango);
 
-    const fromDate = new Date(ctx.data.from);
-    const toDate = new Date(ctx.data.to);
-    toDate.setHours(23, 59, 59, 999);
-
-    // Previous period of same length
-    const rangeMs = toDate.getTime() - fromDate.getTime();
-    const prevToDate = new Date(fromDate.getTime() - 1);
-    const prevFromDate = new Date(prevToDate.getTime() - rangeMs);
-
-    const arsAmount = sql<number>`CASE
-      WHEN LOWER(${invoice.currency}) = 'usd'
-      THEN CAST(${invoice.amount} AS DECIMAL) * CAST(${invoice.cureencyRate} AS DECIMAL)
-      ELSE CAST(${invoice.amount} AS DECIMAL)
-    END`;
-
-    const [currentPeriod, previousPeriod] = await Promise.all([
+    const totales = (from: string, to: string) =>
       db
         .select({
-          totalSales: sql<number>`COALESCE(SUM(CASE WHEN LOWER(${invoice.direction}) = 'outbound' THEN ${arsAmount} ELSE 0 END), 0)`,
-          totalPurchases: sql<number>`COALESCE(SUM(CASE WHEN LOWER(${invoice.direction}) = 'inbound' THEN ${arsAmount} ELSE 0 END), 0)`,
-          invoiceCount: sql<number>`COUNT(*)`,
+          ventas: sql<number>`coalesce(sum(case when ${comprobante.direccion} = 'emitido' then ${totalEnPesos} else 0 end), 0)`,
+          compras: sql<number>`coalesce(sum(case when ${comprobante.direccion} = 'recibido' then ${totalEnPesos} else 0 end), 0)`,
+          cantidad: sql<number>`count(*)::int`,
         })
-        .from(invoice)
+        .from(comprobante)
         .where(
           and(
-            eq(invoice.representativeId, ctx.data.clientId),
-            gte(invoice.emitionDate, fromDate),
-            lte(invoice.emitionDate, toDate)
+            eq(comprobante.clienteId, ctx.data.clienteId),
+            gte(comprobante.fechaEmision, from),
+            lte(comprobante.fechaEmision, to)
           )
-        ),
+        );
 
-      db
-        .select({
-          totalSales: sql<number>`COALESCE(SUM(CASE WHEN LOWER(${invoice.direction}) = 'outbound' THEN ${arsAmount} ELSE 0 END), 0)`,
-          totalPurchases: sql<number>`COALESCE(SUM(CASE WHEN LOWER(${invoice.direction}) = 'inbound' THEN ${arsAmount} ELSE 0 END), 0)`,
-        })
-        .from(invoice)
-        .where(
-          and(
-            eq(invoice.representativeId, ctx.data.clientId),
-            gte(invoice.emitionDate, prevFromDate),
-            lte(invoice.emitionDate, prevToDate)
-          )
-        ),
+    const [[actual], [anterior]] = await Promise.all([
+      totales(ctx.data.from, ctx.data.to),
+      totales(soloFecha(anteriorDesde), soloFecha(anteriorHasta)),
     ]);
 
-    const cur = currentPeriod[0];
-    const prev = previousPeriod[0];
-
-    const totalSales = Number(cur?.totalSales ?? 0);
-    const totalPurchases = Number(cur?.totalPurchases ?? 0);
-    const invoiceCount = Number(cur?.invoiceCount ?? 0);
-    const prevSales = Number(prev?.totalSales ?? 0);
-    const prevPurchases = Number(prev?.totalPurchases ?? 0);
-
-    const salesPurchasesRatio =
-      totalPurchases > 0 ? totalSales / totalPurchases : null;
-
-    const salesGrowthPct =
-      prevSales > 0 ? ((totalSales - prevSales) / prevSales) * 100 : null;
-
-    const purchasesGrowthPct =
-      prevPurchases > 0
-        ? ((totalPurchases - prevPurchases) / prevPurchases) * 100
-        : null;
-
-    const netPosition = totalSales - totalPurchases;
+    const ventas = Number(actual?.ventas ?? 0);
+    const compras = Number(actual?.compras ?? 0);
+    const ventasAnterior = Number(anterior?.ventas ?? 0);
+    const comprasAnterior = Number(anterior?.compras ?? 0);
 
     return {
-      clientId: ctx.data.clientId,
-      clientName: representativeRow.name,
+      clienteId: ctx.data.clienteId,
+      razonSocial: clienteRow.razonSocial,
       from: ctx.data.from,
       to: ctx.data.to,
-      totalSales,
-      totalPurchases,
-      invoiceCount,
-      netPosition,
-      salesPurchasesRatio,
-      salesGrowthPct,
-      purchasesGrowthPct,
-      prevTotalSales: prevSales,
-      prevTotalPurchases: prevPurchases,
+      ventas,
+      compras,
+      comprobantes: Number(actual?.cantidad ?? 0),
+      posicionNeta: ventas - compras,
+      ratioVentasCompras: compras > 0 ? ventas / compras : null,
+      variacionVentasPct:
+        ventasAnterior > 0
+          ? ((ventas - ventasAnterior) / ventasAnterior) * 100
+          : null,
+      variacionComprasPct:
+        comprasAnterior > 0
+          ? ((compras - comprasAnterior) / comprasAnterior) * 100
+          : null,
+      ventasAnterior,
+      comprasAnterior,
     };
   });
 
-// ── getClientsAtRisk ──────────────────────────────────────────────────────────
-// Returns profiles with high or critical risk based on latest risk snapshot.
+// ── Clientes en riesgo ───────────────────────────────────────────────────────
 
-export const getClientsAtRisk = createServerFn({ method: 'GET' })
+export const getClientesEnRiesgo = createServerFn({ method: 'GET' })
   .inputValidator(
     z.object({
-      period: z.string().regex(/^\d{4}-\d{2}$/).optional(),
-      riskLevel: z
-        .enum(['medium', 'high', 'critical'])
-        .optional()
-        .default('high'),
+      periodo: z
+        .string()
+        .regex(/^\d{4}-\d{2}$/)
+        .optional(),
+      nivelMinimo: z.enum(riesgoNivel.enumValues).optional().default('alto'),
       limit: z.number().int().min(1).max(100).default(20),
     })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    // Use provided period or current month
     const now = new Date();
-    const period =
-      ctx.data.period ??
-      `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const periodo = periodoADate(
+      ctx.data.periodo ??
+        `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    );
 
-    // Risk level filter: include current level and above
-    const riskLevelOrder = ['low', 'medium', 'high', 'critical'];
-    const minIdx = riskLevelOrder.indexOf(ctx.data.riskLevel);
-    const targetLevels = riskLevelOrder.slice(minIdx);
+    // El filtro es "de este nivel para arriba".
+    const niveles = riesgoNivel.enumValues.slice(
+      riesgoNivel.enumValues.indexOf(ctx.data.nivelMinimo)
+    );
 
     const snapshots = await db
       .select({
-        snapshotId: clientRiskSnapshot.id,
-        profileId: clientRiskSnapshot.clientId,
-        score: clientRiskSnapshot.score,
-        riskLevel: clientRiskSnapshot.riskLevel,
-        factors: clientRiskSnapshot.factors,
-        profileName: client.name,
-        clientId: client.id,
-        clientName: client.name,
-        clientCuit: client.identityNumber,
+        snapshotId: riesgoSnapshot.id,
+        clienteId: cliente.id,
+        razonSocial: cliente.razonSocial,
+        cuit: cliente.cuit,
+        score: riesgoSnapshot.score,
+        nivel: riesgoSnapshot.nivel,
+        factores: sql<FactoresRiesgo | null>`${riesgoSnapshot.factores}`,
       })
-      .from(clientRiskSnapshot)
-      .innerJoin(client, eq(clientRiskSnapshot.clientId, client.id))
-      .innerJoin(representative, eq(client.representativeId, representative.id))
+      .from(riesgoSnapshot)
+      .innerJoin(cliente, eq(riesgoSnapshot.clienteId, cliente.id))
       .where(
         and(
-          eq(clientRiskSnapshot.period, period),
-          eq(representative.organizationId, orgId as string),
-          inArray(clientRiskSnapshot.riskLevel, targetLevels)
+          eq(riesgoSnapshot.periodo, periodo),
+          eq(cliente.orgId, orgId),
+          inArray(riesgoSnapshot.nivel, niveles)
         )
       )
-      .orderBy(desc(clientRiskSnapshot.score))
+      .orderBy(desc(riesgoSnapshot.score))
       .limit(ctx.data.limit);
 
-    return snapshots.map((s) => ({
-      ...s,
-      score: Number(s.score),
-    })) as any;
+    return snapshots.map((s) => ({ ...s, score: Number(s.score) }));
   });
 
-// ── getExecutiveSummary ───────────────────────────────────────────────────────
-// High-level org summary for analytics dashboard.
+// ── Resumen ejecutivo ────────────────────────────────────────────────────────
 
-export const getExecutiveSummary = createServerFn({
-  method: 'GET',
-}).handler(async () => {
-  const { orgId } = await getSessionWithOrg();
+export const getExecutiveSummary = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    const { orgId } = await getSessionWithOrg();
 
-  const orgRepresentatives = await db
-    .select({ id: representative.id })
-    .from(representative)
-    .where(eq(representative.organizationId, orgId as string));
+    const clientes = await db
+      .select({ id: cliente.id })
+      .from(cliente)
+      .where(and(eq(cliente.orgId, orgId), eq(cliente.estado, 'activo')));
 
-  const clientIds = orgRepresentatives.map((c) => c.id);
-  const totalClients = clientIds.length;
+    if (clientes.length === 0) {
+      return {
+        totalClientes: 0,
+        deudasAbiertas: 0,
+        deudaTotal: 0,
+        notificacionesUrgentes: 0,
+        vencimientosProximos: 0,
+        clientesRiesgoCritico: 0,
+        clientesRiesgoAlto: 0,
+        ventasDelMes: 0,
+        comprasDelMes: 0,
+      };
+    }
 
-  if (clientIds.length === 0) {
+    const clienteIds = clientes.map((c) => c.id);
+
+    const now = new Date();
+    const inicioMes = soloFecha(new Date(now.getFullYear(), now.getMonth(), 1));
+    const finMes = soloFecha(
+      new Date(now.getFullYear(), now.getMonth() + 1, 0)
+    );
+    const enSieteDias = soloFecha(
+      new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
+    );
+    const periodoActual = periodoADate(
+      `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    );
+
+    const [deudas, urgentes, proximos, riesgo, movimiento] = await Promise.all([
+      db
+        .select({
+          count: sql<number>`count(*)::int`,
+          total: sql<number>`coalesce(sum(${deuda.saldo}), 0)`,
+        })
+        .from(deuda)
+        .where(and(eq(deuda.orgId, orgId), eq(deuda.estado, 'abierta'))),
+
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(notificacion)
+        .where(
+          and(
+            eq(notificacion.orgId, orgId),
+            eq(notificacion.severidad, 'urgente'),
+            isNull(notificacion.resueltaAt)
+          )
+        ),
+
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(vencimiento)
+        .where(
+          and(
+            eq(vencimiento.orgId, orgId),
+            gte(vencimiento.venceAt, soloFecha(now)),
+            lte(vencimiento.venceAt, enSieteDias),
+            isNull(vencimiento.completadoAt)
+          )
+        ),
+
+      db
+        .select({
+          nivel: riesgoSnapshot.nivel,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(riesgoSnapshot)
+        .innerJoin(cliente, eq(riesgoSnapshot.clienteId, cliente.id))
+        .where(
+          and(
+            eq(riesgoSnapshot.periodo, periodoActual),
+            eq(cliente.orgId, orgId),
+            inArray(riesgoSnapshot.nivel, ['alto', 'critico'])
+          )
+        )
+        .groupBy(riesgoSnapshot.nivel),
+
+      db
+        .select({
+          ventas: sql<number>`coalesce(sum(case when ${comprobante.direccion} = 'emitido' then ${totalEnPesos} else 0 end), 0)`,
+          compras: sql<number>`coalesce(sum(case when ${comprobante.direccion} = 'recibido' then ${totalEnPesos} else 0 end), 0)`,
+        })
+        .from(comprobante)
+        .where(
+          and(
+            inArray(comprobante.clienteId, clienteIds),
+            gte(comprobante.fechaEmision, inicioMes),
+            lte(comprobante.fechaEmision, finMes)
+          )
+        ),
+    ]);
+
+    const porNivel = Object.fromEntries(
+      riesgo.map((r) => [r.nivel, Number(r.count)])
+    );
+
     return {
-      totalClients: 0,
-      totalManagedProfiles: 0,
-      openDebtCount: 0,
-      openDebtTotal: 0,
-      criticalNotificationCount: 0,
-      upcomingDueDateCount: 0,
-      criticalRiskProfileCount: 0,
-      highRiskProfileCount: 0,
-      currentMonthSales: 0,
-      currentMonthPurchases: 0,
+      totalClientes: clientes.length,
+      deudasAbiertas: Number(deudas[0]?.count ?? 0),
+      deudaTotal: Number(deudas[0]?.total ?? 0),
+      notificacionesUrgentes: Number(urgentes[0]?.count ?? 0),
+      vencimientosProximos: Number(proximos[0]?.count ?? 0),
+      clientesRiesgoCritico: porNivel.critico ?? 0,
+      clientesRiesgoAlto: porNivel.alto ?? 0,
+      ventasDelMes: Number(movimiento[0]?.ventas ?? 0),
+      comprasDelMes: Number(movimiento[0]?.compras ?? 0),
     };
   }
-
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-  const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-
-  const currentPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-
-  const arsAmount = sql<number>`CASE
-    WHEN LOWER(${invoice.currency}) = 'usd'
-    THEN CAST(${invoice.amount} AS DECIMAL) * CAST(${invoice.cureencyRate} AS DECIMAL)
-    ELSE CAST(${invoice.amount} AS DECIMAL)
-  END`;
-
-  const [
-    profileCountResult,
-    debtResult,
-    criticalNotifResult,
-    upcomingDueDateResult,
-    riskResult,
-    salesResult,
-  ] = await Promise.all([
-    // Managed profiles
-    db
-      .select({ count: sql<number>`COUNT(*)` })
-      .from(client)
-      .innerJoin(representative, eq(client.representativeId, representative.id))
-      .where(
-        and(
-          eq(representative.organizationId, orgId as string),
-          eq(client.managedByStudy, true),
-          isNull(client.disabledAt)
-        )
-      ),
-
-    // Open debts: count + total balance
-    db
-      .select({
-        count: sql<number>`COUNT(*)`,
-        total: sql<number>`COALESCE(SUM(CAST(${debt.balance} AS DECIMAL)), 0)`,
-      })
-      .from(debt)
-      .where(and(inArray(debt.representativeId, clientIds), eq(debt.status, 'open'))),
-
-    // Critical unresolved notifications
-    db
-      .select({ count: sql<number>`COUNT(*)` })
-      .from(notification)
-      .where(
-        and(
-          inArray(notification.representativeId, clientIds),
-          eq(notification.severity, 'critical'),
-          isNull(notification.resolvedAt)
-        )
-      ),
-
-    // Upcoming due dates within 7 days, not completed
-    db
-      .select({ count: sql<number>`COUNT(*)` })
-      .from(dueDate)
-      .where(
-        and(
-          inArray(dueDate.representativeId, clientIds),
-          gte(dueDate.dueDate, now),
-          lte(dueDate.dueDate, sevenDaysFromNow),
-          isNull(dueDate.completedAt)
-        )
-      ),
-
-    // High/critical risk profiles from latest snapshots
-    db
-      .select({
-        riskLevel: clientRiskSnapshot.riskLevel,
-        count: sql<number>`COUNT(*)`,
-      })
-      .from(clientRiskSnapshot)
-      .innerJoin(client, eq(clientRiskSnapshot.clientId, client.id))
-      .innerJoin(representative, eq(client.representativeId, representative.id))
-      .where(
-        and(
-          eq(clientRiskSnapshot.period, currentPeriod),
-          eq(representative.organizationId, orgId as string),
-          inArray(clientRiskSnapshot.riskLevel, ['high', 'critical'])
-        )
-      )
-      .groupBy(clientRiskSnapshot.riskLevel),
-
-    // Current month sales/purchases
-    db
-      .select({
-        totalSales: sql<number>`COALESCE(SUM(CASE WHEN LOWER(${invoice.direction}) = 'outbound' THEN ${arsAmount} ELSE 0 END), 0)`,
-        totalPurchases: sql<number>`COALESCE(SUM(CASE WHEN LOWER(${invoice.direction}) = 'inbound' THEN ${arsAmount} ELSE 0 END), 0)`,
-      })
-      .from(invoice)
-      .where(
-        and(
-          inArray(invoice.representativeId, clientIds),
-          gte(invoice.emitionDate, monthStart),
-          lte(invoice.emitionDate, monthEnd)
-        )
-      ),
-  ]);
-
-  const riskMap = Object.fromEntries(
-    riskResult.map((r) => [r.riskLevel, Number(r.count)])
-  );
-
-  return {
-    totalClients,
-    totalManagedProfiles: Number(profileCountResult[0]?.count ?? 0),
-    openDebtCount: Number(debtResult[0]?.count ?? 0),
-    openDebtTotal: Number(debtResult[0]?.total ?? 0),
-    criticalNotificationCount: Number(criticalNotifResult[0]?.count ?? 0),
-    upcomingDueDateCount: Number(upcomingDueDateResult[0]?.count ?? 0),
-    criticalRiskProfileCount: riskMap.critical ?? 0,
-    highRiskProfileCount: riskMap.high ?? 0,
-    currentMonthSales: Number(salesResult[0]?.totalSales ?? 0),
-    currentMonthPurchases: Number(salesResult[0]?.totalPurchases ?? 0),
-  };
-});
+);

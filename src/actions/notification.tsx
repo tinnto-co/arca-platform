@@ -3,21 +3,28 @@ import z from 'zod';
 import { GoogleGenAI } from '@google/genai';
 import { db } from '@/lib/db';
 import {
-  notification,
-  representative,
-  client,
-  invoiceAttachment,
-  document,
-  dataSourceEvent,
+  notificacion,
+  notificacionAdjunto,
+  credencialAfip,
+  cliente,
+  documento,
+  evento,
+  notificacionSeveridad,
 } from '@/drizzle/schema';
 import { member, user } from '@/drizzle/auth';
 import {
   getSessionWithOrg,
   assertCanWrite,
   getMemberRole,
-  getOrgRepresentativeIds,
 } from '@/actions/helpers';
-import { eq, desc, and, gte, lte, sql, inArray, isNull } from 'drizzle-orm';
+import { eq, desc, and, gte, lte, sql, isNull } from 'drizzle-orm';
+
+/**
+ * Las notificaciones cuelgan del login de AFIP (`credencial_afip`), no del
+ * cliente: AFIP las publica por CUIT del representante y recién después se
+ * atribuyen a un cliente, si se puede. `notificacion.org_id` resuelve el
+ * multi-tenancy sin pasar por ninguna tabla intermedia.
+ */
 
 export const getNotifications = createServerFn({
   method: 'GET',
@@ -26,121 +33,98 @@ export const getNotifications = createServerFn({
     z.object({
       page: z.number().default(1),
       limit: z.number().default(10),
-      representativeFilter: z.string().optional(),
+      credencialFilter: z.string().optional(),
       dateFrom: z.string().optional(),
       dateTo: z.string().optional(),
-      clientId: z.string().optional(),
+      clienteId: z.string().optional(),
       search: z.string().optional(),
-      opened: z.boolean().optional(),
-      category: z.string().optional(),
+      leida: z.boolean().optional(),
+      categoria: z.string().optional(),
       onlyUnresolved: z.boolean().optional(),
     })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
 
     const {
       page,
       limit,
-      representativeFilter,
+      credencialFilter,
       dateFrom,
       dateTo,
-      clientId,
-      opened,
-      category,
+      clienteId,
+      leida,
+      categoria,
       onlyUnresolved,
     } = ctx.data;
     const offset = (page - 1) * limit;
 
-    if (orgRepresentativeIds.length === 0) {
-      return {
-        notifications: [],
-        totalCount: 0,
-        totalPages: 0,
-        currentPage: page,
-      };
+    const conditions = [eq(notificacion.orgId, orgId)];
+
+    if (credencialFilter && credencialFilter !== 'all') {
+      conditions.push(eq(notificacion.credencialId, credencialFilter));
     }
-
-    // Build where conditions (always scoped to active organization via clients)
-    const conditions = [inArray(notification.representativeId, orgRepresentativeIds)];
-
-    if (representativeFilter && representativeFilter !== 'all') {
-      if (!orgRepresentativeIds.includes(representativeFilter)) {
-        return {
-          notifications: [],
-          totalCount: 0,
-          totalPages: 0,
-          currentPage: page,
-        };
-      }
-      conditions.push(eq(notification.representativeId, representativeFilter));
+    if (clienteId && clienteId !== 'all') {
+      conditions.push(eq(notificacion.clienteId, clienteId));
     }
-
-    if (clientId && clientId !== 'all') {
-      conditions.push(eq(notification.clientId, clientId));
-    }
-
     if (dateFrom) {
-      conditions.push(gte(notification.publicationDate, new Date(dateFrom)));
+      conditions.push(gte(notificacion.publicadaAt, new Date(dateFrom)));
     }
-
     if (dateTo) {
-      conditions.push(lte(notification.publicationDate, new Date(dateTo)));
+      conditions.push(lte(notificacion.publicadaAt, new Date(dateTo)));
     }
-
-    if (opened !== undefined) {
-      conditions.push(eq(notification.opened, opened));
+    if (leida !== undefined) {
+      conditions.push(eq(notificacion.leida, leida));
     }
-
-    if (category && category !== 'all') {
-      conditions.push(eq(notification.category, category));
+    if (categoria && categoria !== 'all') {
+      conditions.push(eq(notificacion.categoria, categoria));
     }
-
     if (onlyUnresolved) {
-      conditions.push(isNull(notification.resolvedAt));
+      conditions.push(isNull(notificacion.resueltaAt));
     }
 
     const whereCondition = and(...conditions);
 
-    // Get total count for pagination
     const [{ count }] = await db
       .select({ count: sql<number>`count(*)` })
-      .from(notification)
-      .leftJoin(representative, eq(notification.representativeId, representative.id))
+      .from(notificacion)
       .where(whereCondition);
 
-    // Get notifications with client + profile data
     const notifications = await db
       .select({
-        id: notification.id,
-        externalId: notification.externalId,
-        message: notification.message,
-        expirationDate: notification.expirationDate,
-        publicationDate: notification.publicationDate,
-        opened: notification.opened,
-        clientId: notification.representativeId,
-        clientName: representative.name,
-        clientEmail: representative.email,
-        profileId: notification.clientId,
-        profileName: client.name,
-        profileIdentityNumber: client.identityNumber,
-        severity: notification.severity,
-        category: notification.category,
-        aiSummary: notification.aiSummary,
-        assignedToUserId: notification.assignedToUserId,
-        resolvedAt: notification.resolvedAt,
-        resolvedByUserId: notification.resolvedByUserId,
-        createdAt: notification.createdAt,
-        updatedAt: notification.updatedAt,
+        id: notificacion.id,
+        externalId: notificacion.externalId,
+        mensaje: notificacion.mensaje,
+        publicadaAt: notificacion.publicadaAt,
+        venceAt: notificacion.venceAt,
+        leida: notificacion.leida,
+        credencialId: notificacion.credencialId,
+        credencialNombre: credencialAfip.nombre,
+        credencialCuit: credencialAfip.cuit,
+        credencialEmail: credencialAfip.email,
+        clienteId: notificacion.clienteId,
+        clienteRazonSocial: cliente.razonSocial,
+        clienteCuit: cliente.cuit,
+        severidad: notificacion.severidad,
+        categoria: notificacion.categoria,
+        aiResumen: notificacion.aiResumen,
+        asignadaA: notificacion.asignadaA,
+        resueltaAt: notificacion.resueltaAt,
+        resueltaPor: notificacion.resueltaPor,
+        createdAt: notificacion.createdAt,
+        updatedAt: notificacion.updatedAt,
       })
-      .from(notification)
-      .leftJoin(representative, eq(notification.representativeId, representative.id))
-      .leftJoin(client, eq(notification.clientId, client.id))
+      .from(notificacion)
+      .innerJoin(
+        credencialAfip,
+        eq(notificacion.credencialId, credencialAfip.id)
+      )
+      .leftJoin(cliente, eq(notificacion.clienteId, cliente.id))
       .where(whereCondition)
-      .orderBy(desc(notification.publicationDate))
+      .orderBy(desc(notificacion.publicadaAt))
       .limit(limit)
       .offset(offset);
+
     return {
       notifications,
       totalCount: count,
@@ -155,209 +139,66 @@ export const getNotification = createServerFn({
   .inputValidator(z.object({ id: z.string() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
-    if (orgRepresentativeIds.length === 0)
-      throw new Error('Notificación no encontrada');
 
-    // Get notification with client and profile data (only if client belongs to org)
     const [notificationData] = await db
       .select({
-        id: notification.id,
-        externalId: notification.externalId,
-        message: notification.message,
-        expirationDate: notification.expirationDate,
-        publicationDate: notification.publicationDate,
-        opened: notification.opened,
-        clientId: notification.representativeId,
-        clientName: representative.name,
-        clientEmail: representative.email,
-        profileId: notification.clientId,
-        profileName: client.name,
-        profileIdentityNumber: client.identityNumber,
-        severity: notification.severity,
-        category: notification.category,
-        aiSummary: notification.aiSummary,
-        assignedToUserId: notification.assignedToUserId,
-        resolvedAt: notification.resolvedAt,
-        resolvedByUserId: notification.resolvedByUserId,
-        createdAt: notification.createdAt,
-        updatedAt: notification.updatedAt,
+        id: notificacion.id,
+        externalId: notificacion.externalId,
+        mensaje: notificacion.mensaje,
+        publicadaAt: notificacion.publicadaAt,
+        venceAt: notificacion.venceAt,
+        leida: notificacion.leida,
+        credencialId: notificacion.credencialId,
+        credencialNombre: credencialAfip.nombre,
+        credencialCuit: credencialAfip.cuit,
+        credencialEmail: credencialAfip.email,
+        clienteId: notificacion.clienteId,
+        clienteRazonSocial: cliente.razonSocial,
+        clienteCuit: cliente.cuit,
+        severidad: notificacion.severidad,
+        categoria: notificacion.categoria,
+        aiResumen: notificacion.aiResumen,
+        asignadaA: notificacion.asignadaA,
+        resueltaAt: notificacion.resueltaAt,
+        resueltaPor: notificacion.resueltaPor,
+        createdAt: notificacion.createdAt,
+        updatedAt: notificacion.updatedAt,
       })
-      .from(notification)
-      .leftJoin(representative, eq(notification.representativeId, representative.id))
-      .leftJoin(client, eq(notification.clientId, client.id))
+      .from(notificacion)
+      .innerJoin(
+        credencialAfip,
+        eq(notificacion.credencialId, credencialAfip.id)
+      )
+      .leftJoin(cliente, eq(notificacion.clienteId, cliente.id))
       .where(
-        and(
-          eq(notification.id, ctx.data.id),
-          inArray(notification.representativeId, orgRepresentativeIds)
-        )
+        and(eq(notificacion.id, ctx.data.id), eq(notificacion.orgId, orgId))
       )
       .limit(1);
 
     if (!notificationData) throw new Error('Notificación no encontrada');
 
-    // Get attachments for this notification
-    const attachments = await db
+    const adjuntos = await db
       .select({
-        id: invoiceAttachment.id,
-        externalId: invoiceAttachment.externalId,
-        documentId: invoiceAttachment.document,
-        documentName: document.name,
-        documentUrl: document.url,
-        documentType: document.type,
-        createdAt: invoiceAttachment.createdAt,
+        id: notificacionAdjunto.id,
+        externalId: notificacionAdjunto.externalId,
+        documentoId: notificacionAdjunto.documentoId,
+        nombre: documento.nombre,
+        mimeType: documento.mimeType,
+        tamanoBytes: documento.tamanoBytes,
+        createdAt: notificacionAdjunto.createdAt,
       })
-      .from(invoiceAttachment)
-      .leftJoin(document, eq(invoiceAttachment.document, document.id))
-      .where(eq(invoiceAttachment.notification, ctx.data.id));
+      .from(notificacionAdjunto)
+      .innerJoin(documento, eq(notificacionAdjunto.documentoId, documento.id))
+      .where(eq(notificacionAdjunto.notificacionId, ctx.data.id));
 
     return {
       ...notificationData,
-      attachments,
+      adjuntos: adjuntos.map((a) => ({
+        ...a,
+        // El archivo vive en R2 (bucket privado): se sirve por endpoint autenticado.
+        url: `/api/documents/${a.documentoId}`,
+      })),
     };
-  });
-
-export const getNotificationAttachments = createServerFn({
-  method: 'GET',
-})
-  .inputValidator(z.object({ id: z.string() }))
-  .handler(async (ctx) => {
-    const { orgId } = await getSessionWithOrg();
-    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
-    if (orgRepresentativeIds.length === 0) return [];
-
-    const [n] = await db
-      .select({ id: notification.id })
-      .from(notification)
-      .where(
-        and(
-          eq(notification.id, ctx.data.id),
-          inArray(notification.representativeId, orgRepresentativeIds)
-        )
-      )
-      .limit(1);
-    if (!n) return [];
-
-    const attachments = await db
-      .select({
-        id: invoiceAttachment.id,
-        externalId: invoiceAttachment.externalId,
-        documentId: document.id,
-        documentName: document.name,
-        documentUrl: document.url,
-        documentType: document.type,
-        createdAt: invoiceAttachment.createdAt,
-      })
-      .from(invoiceAttachment)
-      .leftJoin(document, eq(invoiceAttachment.document, document.id))
-      .where(eq(invoiceAttachment.notification, ctx.data.id));
-
-    return attachments;
-  });
-
-export const createNotification = createServerFn({
-  method: 'POST',
-})
-  .inputValidator(
-    z.object({
-      externalId: z.string().min(1, 'El ID externo es requerido'),
-      representativeId: z.string().uuid('ID de cliente inválido'),
-      clientId: z.string().uuid('ID de perfil inválido').optional(),
-      message: z.string().min(1, 'El mensaje es requerido'),
-      expirationDate: z.string().transform((str) => new Date(str)),
-      publicationDate: z.string().transform((str) => new Date(str)),
-    })
-  )
-  .handler(async (ctx) => {
-    const { orgId } = await getSessionWithOrg();
-    const role = await getMemberRole();
-    assertCanWrite(role);
-
-    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
-    const {
-      externalId,
-      representativeId,
-      clientId,
-      message,
-      expirationDate,
-      publicationDate,
-    } = ctx.data;
-
-    if (!orgRepresentativeIds.includes(representativeId)) {
-      throw new Error('El cliente no pertenece a la organización activa');
-    }
-
-    const [newNotification] = await db
-      .insert(notification)
-      .values({
-        externalId,
-        representativeId,
-        clientId: clientId || null,
-        message,
-        expirationDate,
-        publicationDate,
-      })
-      .returning();
-
-    if (!newNotification) throw new Error('Error al crear la notificación');
-
-    return newNotification;
-  });
-
-export const updateNotification = createServerFn({
-  method: 'POST',
-})
-  .inputValidator(
-    z.object({
-      id: z.string(),
-      externalId: z.string().min(1, 'El ID externo es requerido'),
-      representativeId: z.string().uuid('ID de cliente inválido'),
-      clientId: z.string().uuid('ID de perfil inválido').optional(),
-      message: z.string().min(1, 'El mensaje es requerido'),
-      expirationDate: z.string().transform((str) => new Date(str)),
-      publicationDate: z.string().transform((str) => new Date(str)),
-    })
-  )
-  .handler(async (ctx) => {
-    const { orgId } = await getSessionWithOrg();
-    const role = await getMemberRole();
-    assertCanWrite(role);
-
-    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
-    const {
-      id,
-      externalId,
-      representativeId,
-      clientId,
-      message,
-      expirationDate,
-      publicationDate,
-    } = ctx.data;
-
-    if (!orgRepresentativeIds.includes(representativeId)) {
-      throw new Error('El cliente no pertenece a la organización activa');
-    }
-
-    const [updatedNotification] = await db
-      .update(notification)
-      .set({
-        externalId,
-        representativeId,
-        clientId: clientId || null,
-        message,
-        expirationDate,
-        publicationDate,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(eq(notification.id, id), inArray(notification.representativeId, orgRepresentativeIds))
-      )
-      .returning();
-
-    if (!updatedNotification)
-      throw new Error('Error al actualizar la notificación');
-
-    return updatedNotification;
   });
 
 export const markNotificationOpened = createServerFn({
@@ -367,26 +208,16 @@ export const markNotificationOpened = createServerFn({
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const userRepresentatives = await db
-      .select({ id: representative.id })
-      .from(representative)
-      .where(eq(representative.organizationId, orgId));
-    const userRepresentativeIds = userRepresentatives.map((c) => c.id);
-    if (userRepresentativeIds.length === 0) throw new Error('Unauthorized');
-
     const [updated] = await db
-      .update(notification)
-      .set({ opened: true, updatedAt: new Date() })
+      .update(notificacion)
+      .set({ leida: true, updatedAt: new Date() })
       .where(
-        and(
-          eq(notification.id, ctx.data.id),
-          inArray(notification.representativeId, userRepresentativeIds)
-        )
+        and(eq(notificacion.id, ctx.data.id), eq(notificacion.orgId, orgId))
       )
       .returning();
 
     if (!updated) throw new Error('Notificación no encontrada o sin acceso');
-    return { opened: true };
+    return { leida: true };
   });
 
 export const markNotificationUnread = createServerFn({
@@ -395,41 +226,29 @@ export const markNotificationUnread = createServerFn({
   .inputValidator(z.object({ id: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
-    if (orgRepresentativeIds.length === 0) throw new Error('Unauthorized');
 
     const [updated] = await db
-      .update(notification)
-      .set({ opened: false, updatedAt: new Date() })
+      .update(notificacion)
+      .set({ leida: false, updatedAt: new Date() })
       .where(
-        and(
-          eq(notification.id, ctx.data.id),
-          inArray(notification.representativeId, orgRepresentativeIds)
-        )
+        and(eq(notificacion.id, ctx.data.id), eq(notificacion.orgId, orgId))
       )
       .returning();
 
     if (!updated) throw new Error('Notificación no encontrada o sin acceso');
-    return { opened: false };
+    return { leida: false };
   });
 
 export const markAllNotificationsRead = createServerFn({
   method: 'POST',
 }).handler(async () => {
   const { orgId } = await getSessionWithOrg();
-  const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
-  if (orgRepresentativeIds.length === 0) return { count: 0 };
 
   const updated = await db
-    .update(notification)
-    .set({ opened: true, updatedAt: new Date() })
-    .where(
-      and(
-        inArray(notification.representativeId, orgRepresentativeIds),
-        eq(notification.opened, false)
-      )
-    )
-    .returning({ id: notification.id });
+    .update(notificacion)
+    .set({ leida: true, updatedAt: new Date() })
+    .where(and(eq(notificacion.orgId, orgId), eq(notificacion.leida, false)))
+    .returning({ id: notificacion.id });
 
   return { count: updated.length };
 });
@@ -443,29 +262,20 @@ export const deleteNotification = createServerFn({
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
-    if (orgRepresentativeIds.length === 0) {
-      throw new Error('Error al eliminar la notificación');
-    }
-
-    const [deletedNotification] = await db
-      .delete(notification)
+    const [deleted] = await db
+      .delete(notificacion)
       .where(
-        and(
-          eq(notification.id, ctx.data.id),
-          inArray(notification.representativeId, orgRepresentativeIds)
-        )
+        and(eq(notificacion.id, ctx.data.id), eq(notificacion.orgId, orgId))
       )
       .returning();
 
-    if (!deletedNotification)
-      throw new Error('Error al eliminar la notificación');
+    if (!deleted) throw new Error('Error al eliminar la notificación');
 
     return { success: true };
   });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Assignment & Resolution
+// Asignación y resolución
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const listOrgMembersForAssignment = createServerFn({
@@ -500,18 +310,11 @@ export const assignNotification = createServerFn({
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
-    if (orgRepresentativeIds.length === 0)
-      throw new Error('Notificación no encontrada');
-
     const [updated] = await db
-      .update(notification)
-      .set({ assignedToUserId: ctx.data.userId, updatedAt: new Date() })
+      .update(notificacion)
+      .set({ asignadaA: ctx.data.userId, updatedAt: new Date() })
       .where(
-        and(
-          eq(notification.id, ctx.data.id),
-          inArray(notification.representativeId, orgRepresentativeIds)
-        )
+        and(eq(notificacion.id, ctx.data.id), eq(notificacion.orgId, orgId))
       )
       .returning();
 
@@ -528,19 +331,12 @@ export const resolveNotification = createServerFn({
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
-    if (orgRepresentativeIds.length === 0)
-      throw new Error('Notificación no encontrada');
-
     const now = new Date();
     const [updated] = await db
-      .update(notification)
-      .set({ resolvedAt: now, resolvedByUserId: userId, updatedAt: now })
+      .update(notificacion)
+      .set({ resueltaAt: now, resueltaPor: userId, updatedAt: now })
       .where(
-        and(
-          eq(notification.id, ctx.data.id),
-          inArray(notification.representativeId, orgRepresentativeIds)
-        )
+        and(eq(notificacion.id, ctx.data.id), eq(notificacion.orgId, orgId))
       )
       .returning();
 
@@ -557,18 +353,11 @@ export const unresolveNotification = createServerFn({
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
-    if (orgRepresentativeIds.length === 0)
-      throw new Error('Notificación no encontrada');
-
     const [updated] = await db
-      .update(notification)
-      .set({ resolvedAt: null, resolvedByUserId: null, updatedAt: new Date() })
+      .update(notificacion)
+      .set({ resueltaAt: null, resueltaPor: null, updatedAt: new Date() })
       .where(
-        and(
-          eq(notification.id, ctx.data.id),
-          inArray(notification.representativeId, orgRepresentativeIds)
-        )
+        and(eq(notificacion.id, ctx.data.id), eq(notificacion.orgId, orgId))
       )
       .returning();
 
@@ -577,17 +366,19 @@ export const unresolveNotification = createServerFn({
   });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AI Classification helpers
+// Clasificación con IA
 // ─────────────────────────────────────────────────────────────────────────────
 
+type Severidad = (typeof notificacionSeveridad.enumValues)[number];
+
 interface ClassificationResult {
-  severity: string;
-  category: string;
-  ai_summary: string;
+  severidad: Severidad;
+  categoria: string;
+  resumen: string;
 }
 
 async function classifyWithGemini(
-  message: string
+  mensaje: string
 ): Promise<ClassificationResult> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY no configurada');
@@ -598,10 +389,9 @@ async function classifyWithGemini(
 Analizá el siguiente mensaje de notificación y determiná su severidad, categoría y generá un resumen breve en español.
 
 Severidades disponibles:
-- critical: requiere acción urgente (intimaciones, inspecciones activas, deudas con embargo)
-- medium: requiere acción en los próximos días (requerimientos, vencimientos próximos)
-- low: informativo con plazo holgado (notificaciones preventivas, comunicaciones de baja urgencia)
-- informational: sin acción requerida (acuse de recibo, confirmaciones, informativos generales)
+- urgente: requiere acción inmediata (intimaciones, inspecciones activas, deudas con embargo)
+- accion_requerida: hay que hacer algo en los próximos días (requerimientos, vencimientos próximos)
+- informativa: no requiere acción (acuses de recibo, confirmaciones, comunicaciones generales)
 
 Categorías disponibles:
 - requerimiento: AFIP requiere documentación o información
@@ -613,7 +403,7 @@ Categorías disponibles:
 - otro: no encaja en ninguna categoría anterior
 
 Mensaje de notificación:
-${message}`;
+${mensaje}`;
 
   const response = await ai.models.generateContent({
     model: 'gemini-2.5-flash',
@@ -623,11 +413,14 @@ ${message}`;
       responseSchema: {
         type: 'OBJECT',
         properties: {
-          severity: { type: 'STRING' },
-          category: { type: 'STRING' },
-          ai_summary: { type: 'STRING' },
+          severidad: {
+            type: 'STRING',
+            enum: ['urgente', 'accion_requerida', 'informativa'],
+          },
+          categoria: { type: 'STRING' },
+          resumen: { type: 'STRING' },
         },
-        required: ['severity', 'category', 'ai_summary'],
+        required: ['severidad', 'categoria', 'resumen'],
       },
     },
   });
@@ -635,7 +428,28 @@ ${message}`;
   const text = response.text ?? '';
   if (!text) throw new Error('Gemini no devolvió respuesta');
 
-  return JSON.parse(text) as ClassificationResult;
+  const parsed = JSON.parse(text) as ClassificationResult;
+  if (!notificacionSeveridad.enumValues.includes(parsed.severidad)) {
+    throw new Error(`Severidad no reconocida: ${parsed.severidad}`);
+  }
+  return parsed;
+}
+
+/** Deja el rastro de que la clasificación la hizo la IA, no una persona. */
+async function registrarEventoClasificacion(
+  orgId: string,
+  notif: { id: string; clienteId: string | null },
+  result: ClassificationResult
+) {
+  await db.insert(evento).values({
+    orgId,
+    clienteId: notif.clienteId,
+    entidad: 'notificacion',
+    entidadId: notif.id,
+    tipo: 'cambio',
+    actorTipo: 'agent',
+    detalle: { severidad: result.severidad, categoria: result.categoria },
+  });
 }
 
 export const classifyNotification = createServerFn({
@@ -647,56 +461,36 @@ export const classifyNotification = createServerFn({
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
-    if (orgRepresentativeIds.length === 0)
-      throw new Error('Notificación no encontrada');
-
     const [notif] = await db
       .select({
-        id: notification.id,
-        message: notification.message,
-        representativeId: notification.representativeId,
-        clientId: notification.clientId,
+        id: notificacion.id,
+        mensaje: notificacion.mensaje,
+        clienteId: notificacion.clienteId,
       })
-      .from(notification)
+      .from(notificacion)
       .where(
-        and(
-          eq(notification.id, ctx.data.id),
-          inArray(notification.representativeId, orgRepresentativeIds)
-        )
+        and(eq(notificacion.id, ctx.data.id), eq(notificacion.orgId, orgId))
       )
       .limit(1);
 
     if (!notif) throw new Error('Notificación no encontrada');
 
-    const result = await classifyWithGemini(notif.message);
+    const result = await classifyWithGemini(notif.mensaje);
 
     const now = new Date();
     const [updated] = await db
-      .update(notification)
+      .update(notificacion)
       .set({
-        severity: result.severity,
-        category: result.category,
-        aiSummary: result.ai_summary,
-        aiClassifiedAt: now,
+        severidad: result.severidad,
+        categoria: result.categoria,
+        aiResumen: result.resumen,
+        aiClasificadaAt: now,
         updatedAt: now,
       })
-      .where(eq(notification.id, notif.id))
+      .where(eq(notificacion.id, notif.id))
       .returning();
 
-    await db.insert(dataSourceEvent).values({
-      organizationId: orgId,
-      representativeId: notif.representativeId ?? undefined,
-      clientId: notif.clientId ?? undefined,
-      entityType: 'notification',
-      entityId: notif.id,
-      source: 'ai',
-      action: 'classified',
-      metadata: {
-        severity: result.severity,
-        category: result.category,
-      },
-    });
+    await registrarEventoClasificacion(orgId, notif, result);
 
     return updated;
   });
@@ -714,28 +508,22 @@ export const classifyUnclassifiedNotifications = createServerFn({
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
-    if (orgRepresentativeIds.length === 0) return { classified: 0, errors: 0 };
-
     const limit = ctx.data?.limit;
     const baseQuery = db
       .select({
-        id: notification.id,
-        message: notification.message,
-        representativeId: notification.representativeId,
-        clientId: notification.clientId,
+        id: notificacion.id,
+        mensaje: notificacion.mensaje,
+        clienteId: notificacion.clienteId,
       })
-      .from(notification)
+      .from(notificacion)
       .where(
         and(
-          inArray(notification.representativeId, orgRepresentativeIds),
-          eq(notification.severity, 'unclassified'),
-          isNull(notification.aiClassifiedAt)
+          eq(notificacion.orgId, orgId),
+          eq(notificacion.severidad, 'sin_clasificar'),
+          isNull(notificacion.aiClasificadaAt)
         )
       );
-    const unclassified = limit
-      ? await baseQuery.limit(limit)
-      : await baseQuery;
+    const unclassified = limit ? await baseQuery.limit(limit) : await baseQuery;
 
     let classified = 0;
     let errors = 0;
@@ -743,32 +531,20 @@ export const classifyUnclassifiedNotifications = createServerFn({
 
     for (const notif of unclassified) {
       try {
-        const result = await classifyWithGemini(notif.message);
+        const result = await classifyWithGemini(notif.mensaje);
 
         await db
-          .update(notification)
+          .update(notificacion)
           .set({
-            severity: result.severity,
-            category: result.category,
-            aiSummary: result.ai_summary,
-            aiClassifiedAt: now,
+            severidad: result.severidad,
+            categoria: result.categoria,
+            aiResumen: result.resumen,
+            aiClasificadaAt: now,
             updatedAt: now,
           })
-          .where(eq(notification.id, notif.id));
+          .where(eq(notificacion.id, notif.id));
 
-        await db.insert(dataSourceEvent).values({
-          organizationId: orgId,
-          representativeId: notif.representativeId ?? undefined,
-          clientId: notif.clientId ?? undefined,
-          entityType: 'notification',
-          entityId: notif.id,
-          source: 'ai',
-          action: 'classified',
-          metadata: {
-            severity: result.severity,
-            category: result.category,
-          },
-        });
+        await registrarEventoClasificacion(orgId, notif, result);
 
         classified++;
       } catch {

@@ -1,26 +1,27 @@
 import { createServerFn } from '@tanstack/react-start';
-import { getRequestHeaders } from '@tanstack/react-start/server';
 import z from 'zod';
 import axios from 'axios';
 import { db } from '@/lib/db';
 import {
-  representative,
-  client,
-  debt,
-  dueDate,
-  ivaScrape,
+  credencialAfip,
+  cliente,
+  clienteCredencial,
+  clienteEmpleadorConfig,
+  clienteEeccConfig,
+  deuda,
+  vencimiento,
+  ivaDeclaracion,
   job,
-  representativeBalanceConfig,
-  alert,
+  alerta,
 } from '@/drizzle/schema';
-import { auth } from '@/lib/auth';
 import {
   getSessionWithOrg,
   assertCanWrite,
   getMemberRole,
 } from '@/actions/helpers';
 import { encrypt, safeDecrypt } from '@/lib/crypto';
-import { eq, and, inArray, desc, asc, or, sql } from 'drizzle-orm';
+import { eq, and, inArray, desc, asc, isNotNull, sql } from 'drizzle-orm';
+
 const JOBS_API_URL =
   process.env.SCRAPPER_JOBS_URL ||
   process.env.BACKEND_API_URL ||
@@ -29,23 +30,33 @@ const JOBS_API_URL =
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLL_ATTEMPTS = 300; // ~15 min max per job
 
-const representativeBaseSelect = {
-  id: representative.id,
-  organizationId: representative.organizationId,
-  userId: representative.userId,
-  name: representative.name,
-  email: representative.email,
-  phone: representative.phone,
-  address: representative.address,
-  cuit: representative.cuit,
-  image: representative.image,
-  status: representative.status,
-  convenioMultilateral: representative.convenioMultilateral,
-  regimenLocal: representative.regimenLocal,
-  fiscalCondition: representative.fiscalCondition,
-  registeredAt: representative.registeredAt,
-  createdAt: representative.createdAt,
-  updatedAt: representative.updatedAt,
+const credencialBaseSelect = {
+  id: credencialAfip.id,
+  orgId: credencialAfip.orgId,
+  cuit: credencialAfip.cuit,
+  nombre: credencialAfip.nombre,
+  email: credencialAfip.email,
+  telefono: credencialAfip.telefono,
+  estado: credencialAfip.estado,
+  ultimoLoginOk: credencialAfip.ultimoLoginOk,
+  createdAt: credencialAfip.createdAt,
+  updatedAt: credencialAfip.updatedAt,
+};
+
+const clienteBaseSelect = {
+  id: cliente.id,
+  orgId: cliente.orgId,
+  cuit: cliente.cuit,
+  razonSocial: cliente.razonSocial,
+  tipoPersona: cliente.tipoPersona,
+  condicionIva: cliente.condicionIva,
+  iibbRegimen: cliente.iibbRegimen,
+  estado: cliente.estado,
+  email: cliente.email,
+  telefono: cliente.telefono,
+  domicilio: cliente.domicilio,
+  createdAt: cliente.createdAt,
+  updatedAt: cliente.updatedAt,
 };
 
 function getErrorMessage(error: unknown): string {
@@ -59,149 +70,144 @@ function getErrorMessage(error: unknown): string {
   return 'Unknown error';
 }
 
-export const createRepresentative = createServerFn({
+/** Valida que la credencial sea de la organización activa. Devuelve su id. */
+async function assertCredencialDeOrg(
+  credencialId: string,
+  orgId: string
+): Promise<string> {
+  const [row] = await db
+    .select({ id: credencialAfip.id })
+    .from(credencialAfip)
+    .where(
+      and(eq(credencialAfip.id, credencialId), eq(credencialAfip.orgId, orgId))
+    )
+    .limit(1);
+  if (!row) throw new Error('Credencial no encontrada o no autorizada');
+  return row.id;
+}
+
+export const createCredencial = createServerFn({
   method: 'POST',
 })
   .inputValidator(
     z.object({
-      firstName: z.string().min(1, 'El nombre es requerido'),
-      lastName: z.string().min(1, 'El apellido es requerido'),
-      name: z.string().min(1, 'El nombre completo es requerido'),
       cuit: z.string().min(1, 'El CUIT es requerido'),
-      identityNumber: z.string().min(1, 'El numero de identidad es requerido'),
-      password: z.string().min(1, 'La contrasena es requerida'),
-      email: z.string().email('Email invalido').optional(),
-      phone: z.string().optional(),
-      address: z.string().optional(),
-      image: z.string().optional(),
-      convenioMultilateral: z.boolean().optional(),
-      regimenLocal: z.boolean().optional(),
-      fiscalCondition: z
-        .enum([
-          'responsable_inscripto',
-          'monotributista',
-          'exento',
-          'consumidor_final',
-        ])
-        .optional(),
+      password: z.string().min(1, 'La contraseña es requerida'),
+      nombre: z.string().optional(),
+      email: z.string().email('Email inválido').optional().or(z.literal('')),
+      telefono: z.string().optional(),
     })
   )
   .handler(async (ctx) => {
-    const { orgId, userId } = await getSessionWithOrg();
+    const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const {
-      name,
-      identityNumber,
-      password,
-      email,
-      phone,
-      address,
-      image,
-      convenioMultilateral,
-      regimenLocal,
-      fiscalCondition,
-    } = ctx.data;
-
-    const [newRepresentative] = await db
-      .insert(representative)
+    const [nueva] = await db
+      .insert(credencialAfip)
       .values({
-        userId: userId,
-        organizationId: orgId,
-        name,
-        cuit: identityNumber,
-        afipPassword: password ? encrypt(password) : '',
-        email: email || '',
-        phone: phone || '',
-        address: address || '',
-        image: image || null,
-        status: 'active',
-        convenioMultilateral: convenioMultilateral ?? false,
-        regimenLocal: regimenLocal ?? false,
-        fiscalCondition: fiscalCondition ?? null,
-        registeredAt: new Date(),
+        orgId,
+        cuit: ctx.data.cuit,
+        clave: encrypt(ctx.data.password),
+        nombre: ctx.data.nombre || null,
+        email: ctx.data.email || null,
+        telefono: ctx.data.telefono || null,
+        estado: 'activa',
       })
       .returning();
 
-    if (!newRepresentative) throw new Error('Error al crear el cliente');
+    if (!nueva) throw new Error('Error al crear la credencial');
 
-    return newRepresentative;
+    return nueva;
   });
 
 /**
- * Creates a representative + selected clients in one transaction.
- * Called from the new 2-step creation dialog after profile discovery.
+ * Alta de un login de AFIP + los clientes que se eligieron en el discovery,
+ * en una transacción. Los vincula por `cliente_credencial`.
  */
-export const createRepresentativeWithClients = createServerFn({
+export const createCredencialWithClientes = createServerFn({
   method: 'POST',
 })
   .inputValidator(
     z.object({
       cuit: z.string().min(1),
       password: z.string().min(1),
-      name: z.string().optional(),
+      nombre: z.string().optional(),
       email: z.string().optional(),
-      phone: z.string().optional(),
-      clients: z.array(z.object({
-        cuit: z.string().min(1),
-        name: z.string().min(1),
-      })).min(1, 'Debe seleccionar al menos un cliente'),
+      telefono: z.string().optional(),
+      clientes: z
+        .array(
+          z.object({
+            cuit: z.string().min(1),
+            razonSocial: z.string().min(1),
+            afipContribuyenteId: z.number().int().optional(),
+          })
+        )
+        .min(1, 'Debe seleccionar al menos un cliente'),
     })
   )
   .handler(async (ctx) => {
-    const { orgId, userId } = await getSessionWithOrg();
+    const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const { cuit, password, name, email, phone, clients: selectedClients } = ctx.data;
+    const { cuit, password, nombre, email, telefono, clientes } = ctx.data;
 
     const result = await db.transaction(async (tx) => {
-      // 1. Create representative
-      const [rep] = await tx
-        .insert(representative)
+      const [cred] = await tx
+        .insert(credencialAfip)
         .values({
-          userId,
-          organizationId: orgId,
-          name: name || null,
+          orgId,
           cuit,
-          afipPassword: encrypt(password),
-          email: email || '',
-          phone: phone || '',
-          status: 'active',
-          registeredAt: new Date(),
+          clave: encrypt(password),
+          nombre: nombre || null,
+          email: email || null,
+          telefono: telefono || null,
+          estado: 'activa',
         })
         .returning();
 
-      if (!rep) throw new Error('Error al crear el representante');
+      if (!cred) throw new Error('Error al crear la credencial');
 
-      // 2. Create selected clients
-      const createdClients = [];
-      for (const cl of selectedClients) {
-        const [newClient] = await tx
-          .insert(client)
+      const creados = [];
+      for (const c of clientes) {
+        // Un CUIT puede ya existir como cliente (otro login lo ve también):
+        // en ese caso sólo se agrega la relación.
+        const [nuevo] = await tx
+          .insert(cliente)
           .values({
-            representativeId: rep.id,
-            name: cl.name,
-            identityNumber: cl.cuit,
-            identityType: 'cuit',
-            address: '',
-            phone: '',
-            email: '',
-            status: 'active',
+            orgId,
+            cuit: c.cuit,
+            razonSocial: c.razonSocial,
+            tipoPersona: tipoPersonaDeCuit(c.cuit),
+          })
+          .onConflictDoUpdate({
+            target: [cliente.orgId, cliente.cuit],
+            set: { razonSocial: c.razonSocial },
           })
           .returning();
-        if (newClient) createdClients.push(newClient);
+        if (!nuevo) continue;
+
+        await tx
+          .insert(clienteCredencial)
+          .values({
+            clienteId: nuevo.id,
+            credencialId: cred.id,
+            fuente: 'manual',
+            afipContribuyenteId: c.afipContribuyenteId ?? null,
+          })
+          .onConflictDoNothing();
+
+        creados.push(nuevo);
       }
 
-      return { representative: rep, clients: createdClients };
+      return { credencial: cred, clientes: creados };
     });
 
-    // 3. Trigger initial scraping
     try {
       await axios.post(`${JOBS_API_URL}/api/jobs`, {
         type: 'comprobantes',
-        representativeId: result.representative.id,
+        credencialId: result.credencial.id,
       });
     } catch (error) {
       console.error('Error triggering initial scraping:', error);
@@ -210,139 +216,70 @@ export const createRepresentativeWithClients = createServerFn({
     return result;
   });
 
-export const notifyBackendNewRepresentative = createServerFn({
+/** 20/23/24/27 son personas físicas; 30/33/34 jurídicas. */
+export function tipoPersonaDeCuit(cuit: string): 'fisica' | 'juridica' {
+  return ['20', '23', '24', '27'].includes(cuit.replace(/\D/g, '').slice(0, 2))
+    ? 'fisica'
+    : 'juridica';
+}
+
+export const notifyBackendNewCredencial = createServerFn({
   method: 'POST',
 })
-  .inputValidator(z.object({ representativeId: z.string() }))
+  .inputValidator(z.object({ credencialId: z.string() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const [representativeData] = await db
-      .select({ id: representative.id })
-      .from(representative)
-      .where(
-        and(eq(representative.id, ctx.data.representativeId), eq(representative.organizationId, orgId))
-      )
-      .limit(1);
-
-    if (!representativeData) {
-      throw new Error('Cliente no encontrado o no autorizado');
-    }
+    await assertCredencialDeOrg(ctx.data.credencialId, orgId);
 
     try {
       await axios.post(`${JOBS_API_URL}/api/jobs`, {
         type: 'comprobantes',
-        representativeId: ctx.data.representativeId,
+        credencialId: ctx.data.credencialId,
       });
       return { success: true, type: 'comprobantes' };
-    } catch (error) {
-      throw new Error(
-        'Error al crear el job de comprobantes para el nuevo cliente'
-      );
+    } catch {
+      throw new Error('Error al crear el job de comprobantes');
     }
   });
 
-export const updateOldRepresentative = createServerFn({
-  method: 'POST',
-})
-  .inputValidator(z.object({ representativeId: z.string() }))
-  .handler(async (ctx) => {
-    const { orgId } = await getSessionWithOrg();
-    const role = await getMemberRole();
-    assertCanWrite(role);
-
-    const [representativeData] = await db
-      .select({ id: representative.id })
-      .from(representative)
-      .where(
-        and(eq(representative.id, ctx.data.representativeId), eq(representative.organizationId, orgId))
-      )
-      .limit(1);
-
-    if (!representativeData) {
-      throw new Error('Cliente no encontrado o no autorizado');
-    }
-
-    // Initiate scraping for old representative
-    const backendUrl = process.env.BACKEND_API_URL || 'http://localhost:3001';
-    try {
-      const response = await axios.post(`${backendUrl}/api/scrap/old-client`, {
-        clientId: ctx.data.representativeId,
-      });
-      return {
-        success: true,
-        message: response.data.message || 'Scraping iniciado',
-        representativeId: ctx.data.representativeId,
-      };
-    } catch (error: any) {
-      throw new Error(
-        error.response?.data?.error ||
-        'Error al iniciar el scraping para el cliente'
-      );
-    }
-  });
-
-export const getRepresentatives = createServerFn({
+export const getCredenciales = createServerFn({
   method: 'GET',
 }).handler(async () => {
   try {
     const { orgId } = await getSessionWithOrg();
 
-    const representatives = await db
-      .select(representativeBaseSelect)
-      .from(representative)
-      .where(eq(representative.organizationId, orgId))
-      .orderBy(asc(representative.name));
-
-    return representatives;
+    return await db
+      .select(credencialBaseSelect)
+      .from(credencialAfip)
+      .where(eq(credencialAfip.orgId, orgId))
+      .orderBy(asc(credencialAfip.nombre));
   } catch (error) {
-    throw new Error(`Error loading clients: ${getErrorMessage(error)}`);
+    throw new Error(`Error loading credentials: ${getErrorMessage(error)}`);
   }
 });
 
-/** Clientes con régimen local o convenio multilateral (módulo IIBB). */
-export const getRepresentativesForIIBB = createServerFn({
+/** Clientes con régimen de Ingresos Brutos (módulo IIBB). */
+export const getClientesForIIBB = createServerFn({
   method: 'GET',
 }).handler(async () => {
   try {
     const { orgId } = await getSessionWithOrg();
 
-    const rows = await db
-      .select({
-        ...representativeBaseSelect,
-        clientId: client.id,
-        clientName: client.name,
-        clientIdentityNumber: client.identityNumber,
-      })
-      .from(representative)
-      .leftJoin(client, eq(client.representativeId, representative.id))
-      .where(
-        and(
-          eq(representative.organizationId, orgId),
-          or(eq(representative.convenioMultilateral, true), eq(representative.regimenLocal, true))
-        )
-      )
-      .orderBy(asc(representative.name));
-
-    const grouped = Map.groupBy(rows, (r) => r.id);
-    return [...grouped.values()].map((repRows) => {
-      const { clientId, clientName, clientIdentityNumber, ...rep } = repRows[0];
-      return {
-        ...rep,
-        clients: repRows
-          .filter((r) => r.clientId !== null)
-          .map((r) => ({ id: r.clientId!, name: r.clientName, identityNumber: r.clientIdentityNumber })),
-      };
-    });
+    return await db
+      .select(clienteBaseSelect)
+      .from(cliente)
+      .where(and(eq(cliente.orgId, orgId), isNotNull(cliente.iibbRegimen)))
+      .orderBy(asc(cliente.razonSocial));
   } catch (error) {
     throw new Error(`Error loading IIBB clients: ${getErrorMessage(error)}`);
   }
 });
 
-/** Clientes habilitados para el modulo de liquidacion de sueldos. */
-export const getRepresentativesForSueldos = createServerFn({
+/** Clientes habilitados para el módulo de liquidación de sueldos. */
+export const getClientesForSueldos = createServerFn({
   method: 'GET',
 }).handler(async () => {
   try {
@@ -350,319 +287,272 @@ export const getRepresentativesForSueldos = createServerFn({
 
     const rows = await db
       .select({
-        clientId: client.id,
-        clientName: client.name,
-        clientIdentityNumber: client.identityNumber,
-        representativeId: representative.id,
-        representativeIdentityNumber: representative.cuit,
+        id: cliente.id,
+        razonSocial: cliente.razonSocial,
+        cuit: cliente.cuit,
       })
-      .from(client)
-      .innerJoin(representative, eq(client.representativeId, representative.id))
-      .where(
-        and(eq(representative.organizationId, orgId), eq(client.liquidaSueldos, true))
+      .from(cliente)
+      .innerJoin(
+        clienteEmpleadorConfig,
+        eq(clienteEmpleadorConfig.clienteId, cliente.id)
       )
-      .orderBy(asc(client.name));
+      .where(
+        and(
+          eq(cliente.orgId, orgId),
+          eq(clienteEmpleadorConfig.liquidaSueldos, true)
+        )
+      )
+      .orderBy(asc(cliente.razonSocial));
 
-    return rows.map((p) => ({
-      id: `client:${p.clientId}`,
-      representativeId: p.representativeId,
-      clientId: p.clientId,
-      name: p.clientName,
-      label: `${p.clientName}${p.clientIdentityNumber || p.representativeIdentityNumber
-        ? ` (${p.clientIdentityNumber ?? p.representativeIdentityNumber})`
-        : ''
-        }`,
-      type: 'client' as const,
+    return rows.map((c) => ({
+      id: c.id,
+      clienteId: c.id,
+      name: c.razonSocial,
+      label: `${c.razonSocial} (${c.cuit})`,
     }));
   } catch (error) {
     throw new Error(`Error loading clients: ${getErrorMessage(error)}`);
   }
 });
 
-export const getClientsWithRepresentative = createServerFn({
-  method: 'GET',
-}).handler(async () => {
-  const { orgId } = await getSessionWithOrg();
-
-  return await db
-    .select({
-      id: client.id,
-      name: client.name,
-      identityNumber: client.identityNumber,
-      status: client.status,
-      representativeId: client.representativeId,
-      representativeName: representative.name,
-      createdAt: client.createdAt,
-    })
-    .from(client)
-    .innerJoin(representative, eq(client.representativeId, representative.id))
-    .where(eq(representative.organizationId, orgId))
-    .orderBy(asc(client.name));
-});
-
-export const getRepresentativesWithClients = createServerFn({
-  method: 'GET',
-}).handler(async () => {
-  const { orgId } = await getSessionWithOrg();
-
-  const rows = await db
-    .select({
-      ...representativeBaseSelect,
-      clientId: client.id,
-      clientName: client.name,
-      clientIdentityNumber: client.identityNumber,
-    })
-    .from(representative)
-    .leftJoin(client, eq(client.representativeId, representative.id))
-    .where(eq(representative.organizationId, orgId))
-    .orderBy(asc(representative.name));
-
-  const grouped = Map.groupBy(rows, (r) => r.id);
-
-  return [...grouped.values()].map((rows) => {
-    const { clientId, clientName, clientIdentityNumber, ...rep } = rows[0];
-    return {
-      ...rep,
-      clients: rows
-        .filter((r) => r.clientId !== null)
-        .map((r) => ({ id: r.clientId!, name: r.clientName, identityNumber: r.clientIdentityNumber })),
-    };
-  });
-});
-
-export const getClients = createServerFn({
+/**
+ * Todos los clientes de la organización, con los logins de AFIP por los que
+ * se los scrapea y si alguno de esos logins tiene la clave rechazada.
+ */
+export const getClientes = createServerFn({
   method: 'GET',
 }).handler(async () => {
   try {
     const { orgId } = await getSessionWithOrg();
 
-    const [rows, credAlerts] = await Promise.all([
+    const [clientes, relaciones, credAlertas] = await Promise.all([
+      db
+        .select(clienteBaseSelect)
+        .from(cliente)
+        .where(eq(cliente.orgId, orgId))
+        .orderBy(asc(cliente.razonSocial)),
       db
         .select({
-          id: client.id,
-          name: client.name,
-          identityNumber: client.identityNumber,
-          status: client.status,
-          createdAt: client.createdAt,
-          representativeId: client.representativeId,
-          representativeName: representative.name,
-          representativeCuit: representative.cuit,
+          clienteId: clienteCredencial.clienteId,
+          credencialId: clienteCredencial.credencialId,
+          credencialCuit: credencialAfip.cuit,
+          credencialNombre: credencialAfip.nombre,
         })
-        .from(client)
-        .innerJoin(representative, eq(client.representativeId, representative.id))
-        .where(eq(representative.organizationId, orgId))
-        .orderBy(asc(client.name)),
+        .from(clienteCredencial)
+        .innerJoin(
+          credencialAfip,
+          eq(credencialAfip.id, clienteCredencial.credencialId)
+        )
+        .where(eq(credencialAfip.orgId, orgId)),
       db
-        .select({ representativeId: alert.representativeId })
-        .from(alert)
+        .select({ credencialId: alerta.credencialId })
+        .from(alerta)
         .where(
           and(
-            eq(alert.organizationId, orgId),
-            eq(alert.type, 'scraper_error'),
-            eq(alert.status, 'open'),
-            sql`${alert.metadata}->>'errorCategory' = 'credentials'`
+            eq(alerta.orgId, orgId),
+            eq(alerta.tipo, 'error_scraping'),
+            eq(alerta.estado, 'abierta'),
+            sql`${alerta.detalle}->>'errorCategory' = 'credentials'`
           )
         ),
     ]);
 
-    const credentialErrorReps = new Set(
-      credAlerts.map((a) => a.representativeId).filter(Boolean)
+    const credencialesConError = new Set(
+      credAlertas.map((a) => a.credencialId).filter(Boolean)
     );
+    const porCliente = new Map<string, typeof relaciones>();
+    for (const r of relaciones) {
+      const lista = porCliente.get(r.clienteId) ?? [];
+      lista.push(r);
+      porCliente.set(r.clienteId, lista);
+    }
 
-    return rows.map((row) => ({
-      ...row,
-      credentialError: credentialErrorReps.has(row.representativeId),
-    }));
+    return clientes.map((c) => {
+      const creds = porCliente.get(c.id) ?? [];
+      return {
+        ...c,
+        credenciales: creds.map((r) => ({
+          id: r.credencialId,
+          cuit: r.credencialCuit,
+          nombre: r.credencialNombre,
+        })),
+        credentialError: creds.some((r) =>
+          credencialesConError.has(r.credencialId)
+        ),
+      };
+    });
   } catch (error) {
     throw new Error(`Error loading clients: ${getErrorMessage(error)}`);
   }
 });
 
-export const getRepresentative = createServerFn({
+export const getCliente = createServerFn({
   method: 'GET',
 })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error('Unauthorized');
+    const { orgId } = await getSessionWithOrg();
 
-    const [representativeData] = await db
-      .select(representativeBaseSelect)
-      .from(representative)
-      .where(eq(representative.id, ctx.data.id))
+    const [row] = await db
+      .select(clienteBaseSelect)
+      .from(cliente)
+      .where(and(eq(cliente.id, ctx.data.id), eq(cliente.orgId, orgId)))
       .limit(1);
 
-    if (!representativeData) throw new Error('Cliente no encontrado');
+    if (!row) throw new Error('Cliente no encontrado');
 
-    return representativeData;
+    return row;
   });
 
-export const getRepresentativePassword = createServerFn({
+/** Los logins de AFIP por los que se scrapea a este cliente. */
+export const getClienteCredenciales = createServerFn({
   method: 'GET',
 })
-  .inputValidator(z.object({ representativeId: z.string() }))
+  .inputValidator(z.object({ clienteId: z.string() }))
   .handler(async (ctx) => {
-    await getSessionWithOrg();
+    const { orgId } = await getSessionWithOrg();
+
+    return await db
+      .select({
+        ...credencialBaseSelect,
+        preferida: clienteCredencial.preferida,
+        afipContribuyenteId: clienteCredencial.afipContribuyenteId,
+      })
+      .from(clienteCredencial)
+      .innerJoin(
+        credencialAfip,
+        eq(credencialAfip.id, clienteCredencial.credencialId)
+      )
+      .where(
+        and(
+          eq(clienteCredencial.clienteId, ctx.data.clienteId),
+          eq(credencialAfip.orgId, orgId)
+        )
+      )
+      .orderBy(desc(clienteCredencial.preferida));
+  });
+
+/** Los clientes que se scrapean con este login. */
+export const getCredencialClientes = createServerFn({
+  method: 'GET',
+})
+  .inputValidator(z.object({ credencialId: z.string() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+
+    return await db
+      .select(clienteBaseSelect)
+      .from(clienteCredencial)
+      .innerJoin(cliente, eq(cliente.id, clienteCredencial.clienteId))
+      .where(
+        and(
+          eq(clienteCredencial.credencialId, ctx.data.credencialId),
+          eq(cliente.orgId, orgId)
+        )
+      )
+      .orderBy(asc(cliente.razonSocial));
+  });
+
+export const getCredencialPassword = createServerFn({
+  method: 'GET',
+})
+  .inputValidator(z.object({ credencialId: z.string() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const [rep] = await db
-      .select({ afipPassword: representative.afipPassword })
-      .from(representative)
-      .where(eq(representative.id, ctx.data.representativeId))
+    await assertCredencialDeOrg(ctx.data.credencialId, orgId);
+
+    const [cred] = await db
+      .select({ clave: credencialAfip.clave })
+      .from(credencialAfip)
+      .where(eq(credencialAfip.id, ctx.data.credencialId))
       .limit(1);
 
-    if (!rep) throw new Error('Representante no encontrado');
-
-    return { password: rep.afipPassword ? safeDecrypt(rep.afipPassword) : '' };
+    return { password: cred?.clave ? safeDecrypt(cred.clave) : '' };
   });
 
-/**
- * Periodo fiscal del mes anterior en formato "MM/YYYY".
- * Ej: hoy 30/1/26 -> "12/2025"
- */
-function getPreviousMonthPeriodoFiscal(): string {
+/** Primer día del mes anterior, que es como se guarda `periodo` (date). */
+function periodoMesAnterior(): string {
   const now = new Date();
-  const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const month = String(prev.getMonth() + 1).padStart(2, '0');
-  const year = prev.getFullYear();
-  return `${month}/${year}`;
+  const prev = new Date(Date.UTC(now.getFullYear(), now.getMonth() - 1, 1));
+  return prev.toISOString().slice(0, 10);
 }
 
-/**
- * Dado un periodo fiscal "MM/YYYY" del resumen que ve el usuario, devuelve el periodo anterior
- * (el scrape que se usa para "saldo a favor" etc.). Ej: "01/2026" -> "12/2025"
- */
-function getPreviousMonthFromPeriod(periodoFiscalResumen: string): string {
-  const parts = periodoFiscalResumen.trim().split('/');
-  if (parts.length !== 2) return getPreviousMonthPeriodoFiscal();
-  const mm = parseInt(parts[0], 10);
-  const yyyy = parseInt(parts[1], 10);
-  if (Number.isNaN(mm) || Number.isNaN(yyyy))
-    return getPreviousMonthPeriodoFiscal();
-  if (mm === 1) return `12/${yyyy - 1}`;
-  return `${String(mm - 1).padStart(2, '0')}/${yyyy}`;
+/** Dado un periodo "YYYY-MM-DD", devuelve el primer día del mes anterior. */
+function periodoAnteriorA(periodo: string): string {
+  const [y, m] = periodo.split('-').map(Number);
+  if (!y || !m) return periodoMesAnterior();
+  return new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 10);
 }
 
-export const getRepresentativeIvaCredit = createServerFn({
+/** Declaración de IVA (F2051 scrapeado) del período anterior al que se mira. */
+export const getClienteIvaCredit = createServerFn({
   method: 'POST',
 })
   .inputValidator(
     z.object({
-      representativeId: z.string(),
-      /** Si se pasa, se devuelve IVA solo de este cliente (del mes anterior al indicado o al actual). */
-      clientId: z.string().optional(),
-      /** Periodo fiscal del resumen que ve el usuario ("MM/YYYY"). Si se pasa, se devuelve el scrape del periodo anterior a este. */
-      periodoFiscalResumen: z.string().optional(),
+      clienteId: z.string(),
+      /** Período del resumen que ve el usuario ("YYYY-MM-DD"). */
+      periodoResumen: z.string().optional(),
     })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const [representativeData] = await db
-      .select(representativeBaseSelect)
-      .from(representative)
+    const [row] = await db
+      .select({ id: cliente.id, cuit: cliente.cuit })
+      .from(cliente)
+      .where(and(eq(cliente.id, ctx.data.clienteId), eq(cliente.orgId, orgId)))
+      .limit(1);
+
+    if (!row) throw new Error('Cliente no encontrado o no autorizado');
+
+    const periodo = ctx.data.periodoResumen
+      ? periodoAnteriorA(ctx.data.periodoResumen)
+      : periodoMesAnterior();
+
+    const [iva] = await db
+      .select()
+      .from(ivaDeclaracion)
       .where(
-        and(eq(representative.id, ctx.data.representativeId), eq(representative.organizationId, orgId))
+        and(
+          eq(ivaDeclaracion.clienteId, row.id),
+          eq(ivaDeclaracion.periodo, periodo)
+        )
       )
       .limit(1);
 
-    if (!representativeData) {
-      throw new Error('Cliente no encontrado o no autorizado');
-    }
-
-    const periodoFiscal = ctx.data.periodoFiscalResumen
-      ? getPreviousMonthFromPeriod(ctx.data.periodoFiscalResumen)
-      : getPreviousMonthPeriodoFiscal();
-
-    // Si hay clientId, validar que pertenezca al representante
-    if (ctx.data.clientId) {
-      const [clientRow] = await db
-        .select({ id: client.id })
-        .from(client)
-        .where(
-          and(
-            eq(client.id, ctx.data.clientId),
-            eq(client.representativeId, representativeData.id)
-          )
-        )
-        .limit(1);
-      if (!clientRow) {
-        return {
-          cuit: representativeData.cuit,
-          data: null,
-        };
-      }
-      // IVA scrape del periodo anterior (al resumen o al mes actual) para este cliente
-      const [ivaRow] = await db
-        .select()
-        .from(ivaScrape)
-        .where(
-          and(
-            eq(ivaScrape.clientId, ctx.data.clientId),
-            eq(ivaScrape.periodoFiscal, periodoFiscal)
-          )
-        )
-        .limit(1);
-      if (!ivaRow) {
-        return {
-          cuit: representativeData.cuit,
-          data: null,
-        };
-      }
-      return {
-        cuit: representativeData.cuit,
-        data: {
-          periodoFiscal: ivaRow.periodoFiscal,
-          fechaPresentacion: ivaRow.fechaPresentacion ?? undefined,
-          debitoFiscal: ivaRow.debitoFiscal,
-          creditoFiscal: ivaRow.creditoFiscal,
-          saldoMesPasado: ivaRow.saldoMesPasado,
-          saldoArcaMes: ivaRow.saldoArcaMes,
-          saldoTecnicoFavorContribuyente: ivaRow.saldoTecnicoFavorContribuyente,
-          saldoTecnicoFavorContribuyentePosicionMensual:
-            ivaRow.saldoTecnicoFavorContribuyentePosicionMensual,
-          saldoLibreDisponibilidadPeriodoAnteriorNeto:
-            ivaRow.saldoLibreDisponibilidadPeriodoAnteriorNeto,
-          totalRetencionesPercepcionesPeriodo:
-            ivaRow.totalRetencionesPercepcionesPeriodo,
-          saldoLibreDisponibilidadFavorContribuyentePeriodo:
-            ivaRow.saldoLibreDisponibilidadFavorContribuyentePeriodo,
-          ok: ivaRow.ok,
-        },
-        message: 'Datos del periodo fiscal (scrape mensual).',
-      };
-    }
-
-    // Sin clientId: sin datos (la UI debe elegir cliente)
     return {
-      cuit: representativeData.cuit,
-      data: null,
+      cuit: row.cuit,
+      data: iva ?? null,
+      ...(iva && { message: 'Datos del período fiscal (scrape mensual).' }),
     };
   });
 
-export const updateRepresentative = createServerFn({
+export const updateCliente = createServerFn({
   method: 'POST',
 })
   .inputValidator(
     z.object({
       id: z.string(),
-      name: z.string().min(1, 'El nombre es requerido'),
-      email: z.string().email('Email invalido').optional().or(z.literal('')),
-      phone: z.string().optional().or(z.literal('')),
-      address: z.string().optional().or(z.literal('')),
-      image: z.string().optional(),
-      // Contraseña de AFIP (usada por el scraper). Vacío/ausente = no se modifica.
-      password: z.string().optional(),
-      convenioMultilateral: z.boolean().optional(),
-      regimenLocal: z.boolean().optional(),
-      fiscalCondition: z
+      razonSocial: z.string().min(1, 'La razón social es requerida'),
+      email: z.string().email('Email inválido').optional().or(z.literal('')),
+      telefono: z.string().optional().or(z.literal('')),
+      domicilio: z.string().optional().or(z.literal('')),
+      notas: z.string().optional().or(z.literal('')),
+      condicionIva: z
         .enum([
           'responsable_inscripto',
           'monotributista',
           'exento',
-          'consumidor_final',
+          'no_alcanzado',
         ])
+        .optional()
+        .or(z.literal('')),
+      iibbRegimen: z
+        .enum(['local', 'convenio_multilateral'])
         .optional()
         .or(z.literal('')),
     })
@@ -672,52 +562,42 @@ export const updateRepresentative = createServerFn({
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const { id, password, ...updateData } = ctx.data;
+    const { id, ...data } = ctx.data;
 
-    const [updatedRepresentative] = await db
-      .update(representative)
-      .set({
-        name: updateData.name,
-        email: updateData.email || '',
-        phone: updateData.phone || '',
-        address: updateData.address || '',
-        image: updateData.image || null,
-        // Solo se re-encripta y actualiza si el usuario ingresó una nueva contraseña.
-        afipPassword: password ? encrypt(password) : undefined,
-        convenioMultilateral:
-          typeof updateData.convenioMultilateral === 'boolean'
-            ? updateData.convenioMultilateral
-            : undefined,
-        regimenLocal:
-          typeof updateData.regimenLocal === 'boolean'
-            ? updateData.regimenLocal
-            : undefined,
-        fiscalCondition:
-          updateData.fiscalCondition === ''
-            ? null
-            : (updateData.fiscalCondition ?? undefined),
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(representative.id, id),
-          eq(representative.organizationId, orgId)
-        )
-      )
+    // Update parcial: sólo se pisan los campos que vinieron en el payload.
+    // `undefined` = el formulario no maneja ese campo; `''` = el usuario lo
+    // vació a propósito. Sin esa distinción, un diálogo que no muestra
+    // `notas` las borraba en cada guardado.
+    const patch: Partial<typeof cliente.$inferInsert> = {
+      razonSocial: data.razonSocial,
+    };
+    if (data.email !== undefined) patch.email = data.email || null;
+    if (data.telefono !== undefined) patch.telefono = data.telefono || null;
+    if (data.domicilio !== undefined) patch.domicilio = data.domicilio || null;
+    if (data.notas !== undefined) patch.notas = data.notas || null;
+    if (data.condicionIva !== undefined)
+      patch.condicionIva = data.condicionIva || null;
+    if (data.iibbRegimen !== undefined)
+      patch.iibbRegimen = data.iibbRegimen || null;
+
+    const [updated] = await db
+      .update(cliente)
+      .set(patch)
+      .where(and(eq(cliente.id, id), eq(cliente.orgId, orgId)))
       .returning();
 
-    if (!updatedRepresentative) throw new Error('Error al actualizar el cliente');
+    if (!updated) throw new Error('Error al actualizar el cliente');
 
-    return updatedRepresentative;
+    return updated;
   });
 
-export const updateRepresentativePassword = createServerFn({
+export const updateCredencialPassword = createServerFn({
   method: 'POST',
 })
   .inputValidator(
     z.object({
       id: z.string(),
-      password: z.string().min(1, 'La contrasena es requerida'),
+      password: z.string().min(1, 'La contraseña es requerida'),
     })
   )
   .handler(async (ctx) => {
@@ -726,131 +606,111 @@ export const updateRepresentativePassword = createServerFn({
     assertCanWrite(role);
 
     const [updated] = await db
-      .update(representative)
-      .set({
-        afipPassword: encrypt(ctx.data.password),
-        updatedAt: new Date(),
-      })
+      .update(credencialAfip)
+      .set({ clave: encrypt(ctx.data.password), estado: 'activa' })
       .where(
         and(
-          eq(representative.id, ctx.data.id),
-          eq(representative.organizationId, orgId)
+          eq(credencialAfip.id, ctx.data.id),
+          eq(credencialAfip.orgId, orgId)
         )
       )
-      .returning({ id: representative.id });
+      .returning({ id: credencialAfip.id });
 
-    if (!updated) throw new Error('Error al actualizar la contrasena');
+    if (!updated) throw new Error('Error al actualizar la contraseña');
 
-    // Resolver alertas abiertas de credenciales invalidas de este representante
+    // La clave nueva invalida las alertas abiertas de credenciales rechazadas.
     await db
-      .update(alert)
+      .update(alerta)
       .set({
-        status: 'resolved',
-        resolvedAt: new Date(),
-        resolvedByUserId: userId,
-        updatedAt: new Date(),
+        estado: 'resuelta',
+        resueltaAt: new Date(),
+        resueltaPor: userId,
       })
       .where(
         and(
-          eq(alert.organizationId, orgId),
-          eq(alert.representativeId, ctx.data.id),
-          eq(alert.type, 'scraper_error'),
-          eq(alert.status, 'open'),
-          sql`${alert.metadata}->>'errorCategory' = 'credentials'`
+          eq(alerta.orgId, orgId),
+          eq(alerta.credencialId, ctx.data.id),
+          eq(alerta.tipo, 'error_scraping'),
+          eq(alerta.estado, 'abierta'),
+          sql`${alerta.detalle}->>'errorCategory' = 'credentials'`
         )
       );
 
     return { success: true };
   });
 
-export const deleteRepresentative = createServerFn({
+export const deleteCredencial = createServerFn({
   method: 'POST',
 })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async (ctx) => {
-    await getSessionWithOrg();
+    const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const [deletedRepresentative] = await db
-      .delete(representative)
-      .where(eq(representative.id, ctx.data.id))
+    const [deleted] = await db
+      .delete(credencialAfip)
+      .where(
+        and(eq(credencialAfip.id, ctx.data.id), eq(credencialAfip.orgId, orgId))
+      )
       .returning();
 
-    if (!deletedRepresentative) throw new Error('Error al eliminar el cliente');
+    if (!deleted) throw new Error('Error al eliminar la credencial');
 
     return { success: true };
   });
 
-export const getRepresentativeClients = createServerFn({
+export const getClienteDeudas = createServerFn({
   method: 'GET',
 })
-  .inputValidator(z.object({ representativeId: z.string() }))
+  .inputValidator(z.object({ clienteId: z.string() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error('Unauthorized');
+    const { orgId } = await getSessionWithOrg();
 
-    const clients = await db
+    return await db
       .select()
-      .from(client)
-      .where(eq(client.representativeId, ctx.data.representativeId))
-      .orderBy(client.createdAt);
-
-    return clients;
+      .from(deuda)
+      .where(
+        and(eq(deuda.orgId, orgId), eq(deuda.clienteId, ctx.data.clienteId))
+      )
+      .orderBy(deuda.venceAt);
   });
 
-export const getRepresentativeDebts = createServerFn({
+/**
+ * Deudas del CUIT de un login de AFIP. AFIP las devuelve por login, no por
+ * cliente, así que las que no se pudieron atribuir viven acá.
+ */
+export const getCredencialDeudas = createServerFn({
   method: 'GET',
 })
-  .inputValidator(z.object({ representativeId: z.string(), clientId: z.string().optional() }))
+  .inputValidator(z.object({ credencialId: z.string() }))
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error('Unauthorized');
+    const { orgId } = await getSessionWithOrg();
 
-    const conditions = [eq(debt.representativeId, ctx.data.representativeId)];
-    if (ctx.data.clientId) {
-      conditions.push(eq(debt.clientId, ctx.data.clientId));
-    }
-
-    const debts = await db
+    return await db
       .select({
-        id: debt.id,
-        representativeId: debt.representativeId,
-        clientId: debt.clientId,
-        clientName: client.name,
-        establishment: debt.establishment,
-        tax: debt.tax,
-        concept: debt.concept,
-        subConcept: debt.subConcept,
-        period: debt.period,
-        quotaNumber: debt.quotaNumber,
-        dueDate: debt.dueDate,
-        balance: debt.balance,
-        compensatoryInterest: debt.compensatoryInterest,
-        punitiveInterest: debt.punitiveInterest,
-        status: debt.status,
-        detectedAt: debt.detectedAt,
-        sourcePeriod: debt.sourcePeriod,
-        isIntimated: debt.isIntimated,
-        createdAt: debt.createdAt,
-        updatedAt: debt.updatedAt,
+        deuda,
+        clienteRazonSocial: cliente.razonSocial,
       })
-      .from(debt)
-      .leftJoin(client, eq(debt.clientId, client.id))
-      .where(and(...conditions))
-      .orderBy(debt.dueDate);
-
-    return debts;
+      .from(deuda)
+      .leftJoin(cliente, eq(cliente.id, deuda.clienteId))
+      .where(
+        and(
+          eq(deuda.orgId, orgId),
+          eq(deuda.credencialId, ctx.data.credencialId)
+        )
+      )
+      .orderBy(deuda.venceAt);
   });
 
-export const updateDebtStatus = createServerFn({
+export const updateDeudaEstado = createServerFn({
   method: 'POST',
 })
   .inputValidator(
     z.object({
       id: z.string().uuid(),
-      status: z.enum(['open', 'in_plan', 'paid', 'disputed']),
-      isIntimated: z.boolean(),
+      estado: z.enum(['abierta', 'pagada', 'plan_pago', 'prescripta']),
+      intimada: z.boolean(),
     })
   )
   .handler(async (ctx) => {
@@ -858,74 +718,41 @@ export const updateDebtStatus = createServerFn({
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    // Validate debt belongs to this org via representative
-    const [existing] = await db
-      .select({ id: debt.id, representativeId: debt.representativeId })
-      .from(debt)
-      .innerJoin(representative, eq(debt.representativeId, representative.id))
-      .where(and(eq(debt.id, ctx.data.id), eq(representative.organizationId, orgId)));
+    const [updated] = await db
+      .update(deuda)
+      .set({ estado: ctx.data.estado, intimada: ctx.data.intimada })
+      .where(and(eq(deuda.id, ctx.data.id), eq(deuda.orgId, orgId)))
+      .returning({ id: deuda.id });
 
-    if (!existing) throw new Error('Deuda no encontrada o sin acceso');
-
-    await db
-      .update(debt)
-      .set({ status: ctx.data.status, isIntimated: ctx.data.isIntimated })
-      .where(eq(debt.id, ctx.data.id));
+    if (!updated) throw new Error('Deuda no encontrada o sin acceso');
 
     return { ok: true };
   });
 
-export const getRepresentativeDueDates = createServerFn({
+export const getCredencialVencimientos = createServerFn({
   method: 'GET',
 })
   .inputValidator(
     z.object({
-      representativeId: z.string(),
-      clientId: z.string().optional(),
+      credencialId: z.string(),
+      clienteId: z.string().optional(),
     })
   )
   .handler(async (ctx) => {
-    const session = await auth.api.getSession({ headers: getRequestHeaders() });
-    if (!session?.user?.id) throw new Error('Unauthorized');
+    const { orgId } = await getSessionWithOrg();
 
-    const conditions = [eq(dueDate.representativeId, ctx.data.representativeId)];
-    if (ctx.data.clientId) {
-      conditions.push(eq(dueDate.clientId, ctx.data.clientId));
-    }
+    const conditions = [
+      eq(vencimiento.orgId, orgId),
+      eq(vencimiento.credencialId, ctx.data.credencialId),
+    ];
+    if (ctx.data.clienteId)
+      conditions.push(eq(vencimiento.clienteId, ctx.data.clienteId));
 
-    const dueDates = await db
+    return await db
       .select()
-      .from(dueDate)
+      .from(vencimiento)
       .where(and(...conditions))
-      .orderBy(dueDate.dueDate);
-
-    return dueDates;
-  });
-
-export const scrapOldRepresentative = createServerFn({
-  method: 'POST',
-})
-  .inputValidator(z.object({ representativeId: z.string() }))
-  .handler(async (ctx) => {
-    await getSessionWithOrg();
-    const role = await getMemberRole();
-    assertCanWrite(role);
-
-    const backendUrl = process.env.BACKEND_API_URL || 'http://localhost:3001';
-    try {
-      const response = await axios.post(`${backendUrl}/api/scrap/old-client`, {
-        clientId: ctx.data.representativeId,
-      });
-      return {
-        success: true,
-        message: response.data.message || 'Scraping iniciado',
-        representativeId: ctx.data.representativeId,
-      };
-    } catch (error: any) {
-      throw new Error(
-        error.response?.data?.error || 'Error al scrapear el cliente'
-      );
-    }
+      .orderBy(vencimiento.venceAt);
   });
 
 /** Espera a que un job termine (finished o failed) haciendo polling */
@@ -943,98 +770,19 @@ async function waitForJob(
   throw new Error('Tiempo de espera agotado esperando el job');
 }
 
-export const scrapUpdateRepresentative = createServerFn({
+/** Encola la actualización de todos los módulos para un login de AFIP. */
+export const updateCredencialModules = createServerFn({
   method: 'POST',
 })
-  .inputValidator(z.object({ representativeId: z.string() }))
-  .handler(async (ctx) => {
-    await getSessionWithOrg();
-    const role = await getMemberRole();
-    assertCanWrite(role);
-
-    const baseUrl = JOBS_API_URL;
-    const { representativeId } = ctx.data;
-
-    try {
-      // 1. Crear job comprobantes_full y esperar a que termine
-      const { data: compJob } = await axios.post(`${baseUrl}/api/jobs`, {
-        type: 'comprobantes_full',
-        representativeId,
-      });
-
-      const compResult = await waitForJob(baseUrl, compJob.id);
-      if (compResult.status === 'failed') {
-        throw new Error(
-          compResult.failedReason || 'Error en el scrape de comprobantes'
-        );
-      }
-
-      // 2. Crear job iva y esperar a que termine
-      const { data: ivaJob } = await axios.post(`${baseUrl}/api/jobs`, {
-        type: 'iva',
-        representativeId,
-      });
-
-      const ivaResult = await waitForJob(baseUrl, ivaJob.id);
-      if (ivaResult.status === 'failed') {
-        throw new Error(ivaResult.failedReason || 'Error en el scrape de IVA');
-      }
-
-      // 3. Crear job deuda y esperar a que termine
-      const { data: deudaJob } = await axios.post(`${baseUrl}/api/jobs`, {
-        type: 'deuda',
-        representativeId,
-      });
-
-      const deudaResult = await waitForJob(baseUrl, deudaJob.id);
-      if (deudaResult.status === 'failed') {
-        throw new Error(
-          deudaResult.failedReason || 'Error en el scrape de deudas'
-        );
-      }
-
-      return {
-        success: true,
-        message:
-          'Cliente actualizado correctamente (comprobantes, IVA y deudas)',
-        representativeId,
-        comprobantes: compResult.result ?? {},
-        iva: ivaResult.result ?? {},
-        deuda: deudaResult.result ?? {},
-      };
-    } catch (error: any) {
-      console.error('[scrapUpdateRepresentative]', error?.response?.data ?? error);
-      const msg =
-        error.response?.data?.error ||
-        error.message ||
-        'Error al actualizar el cliente';
-      throw new Error(msg);
-    }
-  });
-
-/** Encola la actualizacion de todos los modulos (deudas, vencimientos, novedades, facturas, IVA) para un representante. */
-export const updateRepresentativeModules = createServerFn({
-  method: 'POST',
-})
-  .inputValidator(z.object({ representativeId: z.string() }))
+  .inputValidator(z.object({ credencialId: z.string() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const { representativeId } = ctx.data;
+    const { credencialId } = ctx.data;
+    await assertCredencialDeOrg(credencialId, orgId);
 
-    const [representativeData] = await db
-      .select({ id: representative.id })
-      .from(representative)
-      .where(and(eq(representative.id, representativeId), eq(representative.organizationId, orgId)))
-      .limit(1);
-
-    if (!representativeData) {
-      throw new Error('Cliente no encontrado o no autorizado');
-    }
-
-    const baseUrl = JOBS_API_URL;
     const types = [
       'deuda',
       'vencimientos',
@@ -1048,7 +796,7 @@ export const updateRepresentativeModules = createServerFn({
       .from(job)
       .where(
         and(
-          eq(job.representativeId, representativeId),
+          eq(job.credencialId, credencialId),
           inArray(job.type, [...types]),
           inArray(job.status, ['pending', 'running'])
         )
@@ -1061,44 +809,44 @@ export const updateRepresentativeModules = createServerFn({
       return {
         success: true,
         message: 'Todos los módulos ya tienen actualizaciones en curso',
-        representativeId,
+        credencialId,
         skipped,
       };
     }
 
-    const jobs = pendingTypes.map((type) => ({ type, representativeId }));
+    const jobs = pendingTypes.map((type) => ({ type, credencialId }));
 
     try {
-      await axios.post(`${baseUrl}/api/jobs/batch`, { jobs });
+      await axios.post(`${JOBS_API_URL}/api/jobs/batch`, { jobs });
       return {
         success: true,
         message:
           skipped.length > 0
             ? `Actualización encolada (${pendingTypes.length} módulos; ${skipped.length} ya en ejecución)`
-            : 'Actualizacion encolada: deudas, vencimientos, novedades, facturas e IVA',
-        representativeId,
+            : 'Actualización encolada: deudas, vencimientos, novedades, facturas e IVA',
+        credencialId,
         skipped,
       };
     } catch (error: any) {
-      console.error('[updateRepresentativeModules]', error?.response?.data ?? error);
-      const msg =
+      console.error('[updateCredencialModules]', error?.response?.data ?? error);
+      throw new Error(
         error.response?.data?.error ||
-        error.message ||
-        'Error al encolar la actualizacion';
-      throw new Error(msg);
+          error.message ||
+          'Error al encolar la actualización'
+      );
     }
   });
 
 /**
  * Encola en batch (fire-and-forget) los módulos seleccionados para varios
- * representantes. No espera la finalización de los jobs.
+ * logins de AFIP. No espera la finalización de los jobs.
  */
 export const scrapBatchJobs = createServerFn({
   method: 'POST',
 })
   .inputValidator(
     z.object({
-      representativeIds: z.array(z.string()).min(1),
+      credencialIds: z.array(z.string()).min(1),
       jobTypes: z
         .array(
           z.enum([
@@ -1117,20 +865,20 @@ export const scrapBatchJobs = createServerFn({
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const { representativeIds, jobTypes } = ctx.data;
+    const { credencialIds, jobTypes } = ctx.data;
 
     const owned = await db
-      .select({ id: representative.id })
-      .from(representative)
+      .select({ id: credencialAfip.id })
+      .from(credencialAfip)
       .where(
         and(
-          inArray(representative.id, representativeIds),
-          eq(representative.organizationId, orgId)
+          inArray(credencialAfip.id, credencialIds),
+          eq(credencialAfip.orgId, orgId)
         )
       );
 
     if (owned.length === 0) {
-      throw new Error('Clientes no encontrados o no autorizados');
+      throw new Error('Credenciales no encontradas o no autorizadas');
     }
 
     // Si se piden comprobantes e IVA juntos, encolar comprobantes primero
@@ -1145,15 +893,15 @@ export const scrapBatchJobs = createServerFn({
       ] as const
     ).filter((t) => jobTypes.includes(t));
 
-    // Evitar duplicados: omitir pares (representante, tipo) que ya tienen
+    // Evitar duplicados: omitir pares (credencial, tipo) que ya tienen
     // un job pending/running.
     const activeJobs = await db
-      .select({ representativeId: job.representativeId, type: job.type })
+      .select({ credencialId: job.credencialId, type: job.type })
       .from(job)
       .where(
         and(
           inArray(
-            job.representativeId,
+            job.credencialId,
             owned.map((o) => o.id)
           ),
           inArray(job.type, [...orderedTypes]),
@@ -1161,14 +909,14 @@ export const scrapBatchJobs = createServerFn({
         )
       );
     const activeSet = new Set(
-      activeJobs.map((j) => `${j.representativeId}:${j.type}`)
+      activeJobs.map((j) => `${j.credencialId}:${j.type}`)
     );
 
     const allPairs = owned.flatMap(({ id }) =>
-      orderedTypes.map((type) => ({ type, representativeId: id }))
+      orderedTypes.map((type) => ({ type, credencialId: id }))
     );
     const jobs = allPairs.filter(
-      (j) => !activeSet.has(`${j.representativeId}:${j.type}`)
+      (j) => !activeSet.has(`${j.credencialId}:${j.type}`)
     );
     const skipped = allPairs.length - jobs.length;
 
@@ -1193,21 +941,21 @@ export const scrapBatchJobs = createServerFn({
         message?: string;
       };
       console.error('[scrapBatchJobs]', axiosError.response?.data ?? error);
-      const msg =
+      throw new Error(
         axiosError.response?.data?.error ??
-        axiosError.message ??
-        'Error al encolar la actualización masiva';
-      throw new Error(msg);
+          axiosError.message ??
+          'Error al encolar la actualización masiva'
+      );
     }
   });
 
-/** [DEBUG] Ejecuta un solo job por tipo - temporal para debugear */
+/** Ejecuta un solo job por tipo y espera a que termine. */
 export const scrapSingleJob = createServerFn({
   method: 'POST',
 })
   .inputValidator(
     z.object({
-      representativeId: z.string(),
+      credencialId: z.string(),
       jobType: z.enum([
         'comprobantes_full',
         'comprobantes',
@@ -1219,27 +967,22 @@ export const scrapSingleJob = createServerFn({
     })
   )
   .handler(async (ctx) => {
-    console.log('[scrapSingleJob] start', ctx.data);
-    await getSessionWithOrg();
-    console.log('[scrapSingleJob] session ok');
+    const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
-    console.log('[scrapSingleJob] role:', role);
     assertCanWrite(role);
-    console.log('[scrapSingleJob] canWrite ok');
 
-    const baseUrl = JOBS_API_URL;
-    const { representativeId, jobType } = ctx.data;
+    const { credencialId, jobType } = ctx.data;
+    await assertCredencialDeOrg(credencialId, orgId);
 
-    // Si ya hay un job pending/running para este representante+tipo (p. ej.
-    // otro cliente que comparte representante), reusarlo en vez de encolar
-    // un scrape duplicado: cada job IVA scrapea todas las relaciones del
-    // representante igual.
+    // Si ya hay un job pending/running para esta credencial+tipo (p. ej.
+    // otro cliente que comparte login), reusarlo en vez de encolar un
+    // scrape duplicado: cada job scrapea todas las relaciones del login.
     const [existing] = await db
       .select({ id: job.id })
       .from(job)
       .where(
         and(
-          eq(job.representativeId, representativeId),
+          eq(job.credencialId, credencialId),
           eq(job.type, jobType),
           inArray(job.status, ['pending', 'running'])
         )
@@ -1249,18 +992,16 @@ export const scrapSingleJob = createServerFn({
     try {
       let jobId: string;
       if (existing) {
-        console.log('[scrapSingleJob] reusing active job', existing.id);
         jobId = existing.id;
       } else {
-        console.log('[scrapSingleJob] posting to', `${baseUrl}/api/jobs`);
-        const { data: created } = await axios.post(`${baseUrl}/api/jobs`, {
+        const { data: created } = await axios.post(`${JOBS_API_URL}/api/jobs`, {
           type: jobType,
-          representativeId,
+          credencialId,
         });
         jobId = created.id;
       }
 
-      const result = await waitForJob(baseUrl, jobId);
+      const result = await waitForJob(JOBS_API_URL, jobId);
       if (result.status === 'failed') {
         throw new Error(
           result.failedReason || `Error en el scrape de ${jobType}`
@@ -1270,27 +1011,26 @@ export const scrapSingleJob = createServerFn({
       return {
         success: true,
         jobType,
-        representativeId,
+        credencialId,
         result: result.result ?? {},
       };
     } catch (error: any) {
       console.error('[scrapSingleJob]', error?.response?.data ?? error);
-      const msg =
+      throw new Error(
         error.response?.data?.error ||
-        error.message ||
-        `Error al ejecutar job ${jobType}`;
-      throw new Error(msg);
+          error.message ||
+          `Error al ejecutar job ${jobType}`
+      );
     }
   });
 
-
-/** Ultimo job de un tipo dado para un representante (por created_at), con estado success/error. */
+/** Último job de un tipo dado para un login (por created_at), con estado success/error. */
 export const getLastJobByType = createServerFn({
   method: 'GET',
 })
   .inputValidator(
     z.object({
-      representativeId: z.string(),
+      credencialId: z.string(),
       jobType: z.enum([
         'iva',
         'comprobantes',
@@ -1303,15 +1043,7 @@ export const getLastJobByType = createServerFn({
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-
-    const { representativeId, jobType } = ctx.data;
-
-    const orgRepresentatives = await db
-      .select({ id: representative.id })
-      .from(representative)
-      .where(eq(representative.organizationId, orgId));
-    const canAccess = orgRepresentatives.some((c) => c.id === representativeId);
-    if (!canAccess) return null;
+    const { credencialId, jobType } = ctx.data;
 
     const [lastJob] = await db
       .select({
@@ -1321,7 +1053,13 @@ export const getLastJobByType = createServerFn({
         result: job.result,
       })
       .from(job)
-      .where(and(eq(job.representativeId, representativeId), eq(job.type, jobType)))
+      .where(
+        and(
+          eq(job.orgId, orgId),
+          eq(job.credencialId, credencialId),
+          eq(job.type, jobType)
+        )
+      )
       .orderBy(desc(job.createdAt))
       .limit(1);
 
@@ -1339,20 +1077,20 @@ export const getLastJobByType = createServerFn({
       failedReason: lastJob.failedReason ?? undefined,
       ...(jobType === 'notificaciones' &&
         result?.notificationFetchWarning != null && {
-        notificationFetchWarning: result.notificationFetchWarning,
-        notificationFetchWarningCuits:
-          result.notificationFetchWarningCuits ?? [],
-      }),
+          notificationFetchWarning: result.notificationFetchWarning,
+          notificationFetchWarningCuits:
+            result.notificationFetchWarningCuits ?? [],
+        }),
     };
   });
 
-/** Ultimo job RUNNING de un tipo dado para un representante (o null si no hay). */
+/** Último job RUNNING de un tipo dado para un login (o null si no hay). */
 export const getRunningJobByType = createServerFn({
   method: 'GET',
 })
   .inputValidator(
     z.object({
-      representativeId: z.string(),
+      credencialId: z.string(),
       jobType: z.enum([
         'iva',
         'comprobantes',
@@ -1365,15 +1103,7 @@ export const getRunningJobByType = createServerFn({
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-
-    const { representativeId, jobType } = ctx.data;
-
-    const orgRepresentatives = await db
-      .select({ id: representative.id })
-      .from(representative)
-      .where(eq(representative.organizationId, orgId));
-    const canAccess = orgRepresentatives.some((c) => c.id === representativeId);
-    if (!canAccess) return null;
+    const { credencialId, jobType } = ctx.data;
 
     const [runningJob] = await db
       .select({
@@ -1385,7 +1115,8 @@ export const getRunningJobByType = createServerFn({
       .from(job)
       .where(
         and(
-          eq(job.representativeId, representativeId),
+          eq(job.orgId, orgId),
+          eq(job.credencialId, credencialId),
           eq(job.type, jobType),
           eq(job.status, 'running')
         )
@@ -1403,7 +1134,7 @@ export const getRunningJobByType = createServerFn({
     };
   });
 
-export const markDueDateCompleted = createServerFn({
+export const markVencimientoCompletado = createServerFn({
   method: 'POST',
 })
   .inputValidator(
@@ -1417,59 +1148,54 @@ export const markDueDateCompleted = createServerFn({
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    // Validate due_date belongs to this org via representative
-    const [existing] = await db
-      .select({ id: dueDate.id })
-      .from(dueDate)
-      .innerJoin(representative, eq(dueDate.representativeId, representative.id))
-      .where(
-        and(eq(dueDate.id, ctx.data.id), eq(representative.organizationId, orgId))
-      );
-
-    if (!existing) throw new Error('Vencimiento no encontrado o sin acceso');
-
-    await db
-      .update(dueDate)
+    const [updated] = await db
+      .update(vencimiento)
       .set({
-        completedAt: ctx.data.completed ? new Date() : null,
-        completedByUserId: ctx.data.completed ? userId : null,
+        completadoAt: ctx.data.completed ? new Date() : null,
+        completadoPor: ctx.data.completed ? userId : null,
       })
-      .where(eq(dueDate.id, ctx.data.id));
+      .where(
+        and(eq(vencimiento.id, ctx.data.id), eq(vencimiento.orgId, orgId))
+      )
+      .returning({ id: vencimiento.id });
+
+    if (!updated) throw new Error('Vencimiento no encontrado o sin acceso');
 
     return { ok: true };
   });
 
-export const getBalanceConfig = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ representativeId: z.string().uuid() }))
+/** Cierre de ejercicio del cliente, para los avisos de presentación de balance. */
+export const getEeccConfig = createServerFn({ method: 'GET' })
+  .inputValidator(z.object({ clienteId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const [c] = await db
-      .select({ id: representative.id })
-      .from(representative)
-      .where(
-        and(eq(representative.id, ctx.data.representativeId), eq(representative.organizationId, orgId))
-      );
-    if (!c) throw new Error('Cliente no encontrado o sin acceso');
-
     const [config] = await db
-      .select()
-      .from(representativeBalanceConfig)
-      .where(eq(representativeBalanceConfig.representativeId, ctx.data.representativeId));
+      .select({
+        clienteId: clienteEeccConfig.clienteId,
+        actividadPrincipal: clienteEeccConfig.actividadPrincipal,
+        cierreEjercicioMes: clienteEeccConfig.cierreEjercicioMes,
+        firmanteId: clienteEeccConfig.firmanteId,
+      })
+      .from(clienteEeccConfig)
+      .innerJoin(cliente, eq(cliente.id, clienteEeccConfig.clienteId))
+      .where(
+        and(
+          eq(clienteEeccConfig.clienteId, ctx.data.clienteId),
+          eq(cliente.orgId, orgId)
+        )
+      );
 
-    return (config ?? null) as
-      | (typeof config & { alertDaysBefore: number[] })
-      | null;
+    return config ?? null;
   });
 
-export const upsertBalanceConfig = createServerFn({ method: 'POST' })
+export const upsertEeccConfig = createServerFn({ method: 'POST' })
   .inputValidator(
     z.object({
-      representativeId: z.string().uuid(),
-      fiscalYearEndMonth: z.number().int().min(1).max(12),
-      fiscalYearEndDay: z.number().int().min(1).max(31),
-      presentationDueDays: z.number().int().nullable().optional(),
-      alertDaysBefore: z.array(z.number().int()).optional(),
+      clienteId: z.string().uuid(),
+      cierreEjercicioMes: z.number().int().min(1).max(12).nullable(),
+      actividadPrincipal: z.string().optional(),
+      firmanteId: z.string().uuid().nullable().optional(),
     })
   )
   .handler(async (ctx) => {
@@ -1477,37 +1203,29 @@ export const upsertBalanceConfig = createServerFn({ method: 'POST' })
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const {
-      representativeId,
-      fiscalYearEndMonth,
-      fiscalYearEndDay,
-      presentationDueDays,
-      alertDaysBefore,
-    } = ctx.data;
+    const { clienteId, cierreEjercicioMes, actividadPrincipal, firmanteId } =
+      ctx.data;
 
     const [c] = await db
-      .select({ id: representative.id })
-      .from(representative)
-      .where(and(eq(representative.id, representativeId), eq(representative.organizationId, orgId)));
+      .select({ id: cliente.id })
+      .from(cliente)
+      .where(and(eq(cliente.id, clienteId), eq(cliente.orgId, orgId)));
     if (!c) throw new Error('Cliente no encontrado o sin acceso');
 
     await db
-      .insert(representativeBalanceConfig)
+      .insert(clienteEeccConfig)
       .values({
-        representativeId,
-        fiscalYearEndMonth,
-        fiscalYearEndDay,
-        presentationDueDays: presentationDueDays ?? null,
-        alertDaysBefore: alertDaysBefore ?? [60, 30, 15, 7],
+        clienteId,
+        cierreEjercicioMes,
+        actividadPrincipal: actividadPrincipal || null,
+        firmanteId: firmanteId ?? null,
       })
       .onConflictDoUpdate({
-        target: representativeBalanceConfig.representativeId,
+        target: clienteEeccConfig.clienteId,
         set: {
-          fiscalYearEndMonth,
-          fiscalYearEndDay,
-          presentationDueDays: presentationDueDays ?? null,
-          alertDaysBefore: alertDaysBefore ?? [60, 30, 15, 7],
-          updatedAt: new Date(),
+          cierreEjercicioMes,
+          actividadPrincipal: actividadPrincipal || null,
+          firmanteId: firmanteId ?? null,
         },
       });
 

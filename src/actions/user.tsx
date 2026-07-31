@@ -130,13 +130,13 @@ export const setActiveOrganization = createServerFn({
 
 export const getCookieFn = createServerFn({
   method: 'GET',
-}).handler(async ({ context }) => {
+}).handler(async () => {
   return getCookie('sidebar_state');
 });
 
 export const getDashboardId = createServerFn({
   method: 'GET',
-}).handler(async ({ context }) => {
+}).handler(async () => {
   return getCookie('dashboard_id');
 });
 
@@ -210,7 +210,7 @@ export const setNewPassword = createServerFn({
 
 export const signOut = createServerFn({
   method: 'POST',
-}).handler(async (ctx) => {
+}).handler(async () => {
   await auth.api.signOut({
     headers: getRequestHeaders(),
   });

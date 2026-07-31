@@ -4,7 +4,7 @@ import z from 'zod';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { member, organization, user } from '@/drizzle/auth';
-import { organizationModule } from '@/drizzle/schema';
+import { organizationModule, orgModule } from '@/drizzle/schema';
 import { eq, and } from 'drizzle-orm';
 import { getSessionWithOrg } from './helpers';
 import { seedBaseChartForOrg } from '@/lib/accounting-seed';
@@ -187,14 +187,8 @@ export const cancelInvitation = createServerFn({
     return { success: true };
   });
 
-const MODULES = [
-  'sueldos',
-  'banco',
-  'contabilidad',
-  'analytics',
-  'portal_cliente',
-  'ai_agent',
-] as const;
+/** Los módulos vienen del enum de la BD: una sola fuente de verdad. */
+const MODULES = orgModule.enumValues;
 
 export type OrgModule = (typeof MODULES)[number];
 
@@ -206,7 +200,7 @@ export const listOrgModules = createServerFn({
   const rows = await db
     .select()
     .from(organizationModule)
-    .where(eq(organizationModule.organizationId, orgId as string));
+    .where(eq(organizationModule.orgId, orgId));
 
   return MODULES.map((m) => ({
     module: m,
@@ -230,13 +224,13 @@ export const setModuleEnabled = createServerFn({
     await db
       .insert(organizationModule)
       .values({
-        organizationId: orgId,
+        orgId,
         module: ctx.data.module,
         enabled: ctx.data.enabled,
         enabledAt: ctx.data.enabled ? new Date() : null,
       })
       .onConflictDoUpdate({
-        target: [organizationModule.organizationId, organizationModule.module],
+        target: [organizationModule.orgId, organizationModule.module],
         set: {
           enabled: ctx.data.enabled,
           enabledAt: ctx.data.enabled ? new Date() : null,

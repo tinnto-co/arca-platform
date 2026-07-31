@@ -1,3 +1,11 @@
+/**
+ * Portal del cliente.
+ *
+ * El acceso es **por cliente** (entidad fiscal), no por login de AFIP: un
+ * usuario del portal ve su empresa, no todo lo que declara el representante.
+ * Las deudas, vencimientos y notificaciones se filtran por `cliente_id`, que
+ * queda vacío cuando el dato es del CUIT del login y no de una empresa.
+ */
 import { createServerFn } from '@tanstack/react-start';
 import { getRequestHeaders } from '@tanstack/react-start/server';
 import z from 'zod';
@@ -5,726 +13,665 @@ import { db } from '@/lib/db';
 import { auth } from '@/lib/auth';
 import { user as userTable } from '@/drizzle/auth';
 import {
-  representative,
-  representativeUserAccess,
-  representativeRequest,
-  debt,
-  dueDate,
-  notification,
-  document as documentTable,
+  cliente,
+  clienteCredencial,
+  accesoUsuarioCliente,
+  solicitud,
+  solicitudTipo,
+  solicitudEstado,
+  deuda,
+  vencimiento,
+  notificacion,
+  documento,
 } from '@/drizzle/schema';
 import {
   getAuthSession,
+  getClientePortalSession,
   getSessionWithOrg,
   getMemberRole,
   assertCanWrite,
 } from '@/actions/helpers';
-import { eq, and, or, isNull, gte, asc, desc } from 'drizzle-orm';
+import { eq, and, isNull, gte, asc, desc, sql } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
+import * as r2 from '@/lib/r2';
+
+/** Lo que queda guardado en `solicitud.detalle` cuando el cliente sube un archivo. */
+export interface SolicitudDetalle {
+  documentoId?: string;
+  documentoNombre?: string;
+  documentoMimeType?: string;
+  subidoAt?: string;
+  subidoPor?: string;
+}
+
+const hoy = () => new Date().toISOString().slice(0, 10);
 
 export const getPortalSession = createServerFn({ method: 'GET' }).handler(
   async () => {
-    const session = await getAuthSession();
-    const userId = session.user.id;
-
-    const [access] = await db
-      .select()
-      .from(representativeUserAccess)
-      .where(eq(representativeUserAccess.userId, userId))
-      .limit(1);
-
-    if (!access) throw new Error('Sin acceso al portal del cliente');
-
-    return { userId, clientId: access.representativeId, access };
+    const { userId, clienteId, access } = await getClientePortalSession();
+    return { userId, clienteId, access };
   }
 );
 
-/**
- * Validates that the calling user has a representativeUserAccess row for the given client.
- * Returns the access row (with permission flags) or throws if not found.
- */
-async function getRepresentativePortalAccess(userId: string, representativeId: string) {
+/** El acceso del usuario a ese cliente, con sus permisos. Tira si no lo tiene. */
+async function getAccesoPortal(userId: string, clienteId: string) {
   const [access] = await db
     .select()
-    .from(representativeUserAccess)
+    .from(accesoUsuarioCliente)
     .where(
       and(
-        eq(representativeUserAccess.userId, userId),
-        eq(representativeUserAccess.representativeId, representativeId)
+        eq(accesoUsuarioCliente.userId, userId),
+        eq(accesoUsuarioCliente.clienteId, clienteId)
       )
     )
     .limit(1);
 
-  if (!access) {
-    throw new Error('Acceso denegado al portal del cliente');
-  }
+  if (!access) throw new Error('Acceso denegado al portal del cliente');
   return access;
 }
 
-export const getClientPortalDashboard = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ clientId: z.string().uuid() }))
-  .handler(async ({ data }) => {
+export const getClientePortalDashboard = createServerFn({ method: 'GET' })
+  .inputValidator(z.object({ clienteId: z.string().uuid() }))
+  .handler(async (ctx) => {
     const session = await getAuthSession();
-    const userId = session.user.id;
-    const access = await getRepresentativePortalAccess(userId, data.clientId);
+    const access = await getAccesoPortal(session.user.id, ctx.data.clienteId);
 
-    const [clientData] = await db
+    const [clienteData] = await db
       .select({
-        id: representative.id,
-        name: representative.name,
-        cuit: representative.cuit,
-        fiscalCondition: representative.fiscalCondition,
-        status: representative.status,
+        id: cliente.id,
+        razonSocial: cliente.razonSocial,
+        cuit: cliente.cuit,
+        condicionIva: cliente.condicionIva,
+        estado: cliente.estado,
       })
-      .from(representative)
-      .where(eq(representative.id, data.clientId))
+      .from(cliente)
+      .where(eq(cliente.id, ctx.data.clienteId))
       .limit(1);
 
-    if (!clientData) throw new Error('Cliente no encontrado');
+    if (!clienteData) throw new Error('Cliente no encontrado');
 
-    const now = new Date();
-
-    const [nextDueDates, openDebts, unreadNotifications, pendingRequests] =
+    const [proximosVencimientos, deudasAbiertas, sinLeer, solicitudesAbiertas] =
       await Promise.all([
-        // Next 3 due dates
         db
           .select({
-            id: dueDate.id,
-            tax: dueDate.tax,
-            concept: dueDate.concept,
-            dueDate: dueDate.dueDate,
-            completedAt: dueDate.completedAt,
+            id: vencimiento.id,
+            impuesto: vencimiento.impuesto,
+            concepto: vencimiento.concepto,
+            venceAt: vencimiento.venceAt,
+            completadoAt: vencimiento.completadoAt,
           })
-          .from(dueDate)
+          .from(vencimiento)
           .where(
             and(
-              eq(dueDate.representativeId, data.clientId),
-              isNull(dueDate.completedAt),
-              gte(dueDate.dueDate, now)
+              eq(vencimiento.clienteId, ctx.data.clienteId),
+              isNull(vencimiento.completadoAt),
+              gte(vencimiento.venceAt, hoy())
             )
           )
-          .orderBy(asc(dueDate.dueDate))
+          .orderBy(asc(vencimiento.venceAt))
           .limit(3),
 
-        // Open debts summary (only if permitted)
-        access.canViewDebts
+        access.puedeVerDeudas
           ? db
               .select({
-                id: debt.id,
-                tax: debt.tax,
-                concept: debt.concept,
-                balance: debt.balance,
-                dueDate: debt.dueDate,
-                status: debt.status,
+                id: deuda.id,
+                impuesto: deuda.impuesto,
+                concepto: deuda.concepto,
+                saldo: deuda.saldo,
+                venceAt: deuda.venceAt,
+                estado: deuda.estado,
               })
-              .from(debt)
+              .from(deuda)
               .where(
-                and(eq(debt.representativeId, data.clientId), eq(debt.status, 'open'))
+                and(
+                  eq(deuda.clienteId, ctx.data.clienteId),
+                  eq(deuda.estado, 'abierta')
+                )
               )
-              .orderBy(desc(debt.dueDate))
+              .orderBy(desc(deuda.venceAt))
               .limit(5)
           : Promise.resolve([]),
 
-        // Unread notifications count
         db
-          .select({ id: notification.id })
-          .from(notification)
+          .select({ id: notificacion.id })
+          .from(notificacion)
           .where(
             and(
-              eq(notification.representativeId, data.clientId),
-              eq(notification.opened, false),
-              isNull(notification.resolvedAt)
+              eq(notificacion.clienteId, ctx.data.clienteId),
+              eq(notificacion.leida, false),
+              isNull(notificacion.resueltaAt)
             )
           ),
 
-        // Pending requests
         db
           .select({
-            id: representativeRequest.id,
-            title: representativeRequest.title,
-            type: representativeRequest.type,
-            status: representativeRequest.status,
-            dueAt: representativeRequest.dueAt,
-            createdAt: representativeRequest.createdAt,
+            id: solicitud.id,
+            titulo: solicitud.titulo,
+            tipo: solicitud.tipo,
+            estado: solicitud.estado,
+            venceAt: solicitud.venceAt,
+            createdAt: solicitud.createdAt,
           })
-          .from(representativeRequest)
+          .from(solicitud)
           .where(
             and(
-              eq(representativeRequest.representativeId, data.clientId),
-              eq(representativeRequest.status, 'open')
+              eq(solicitud.clienteId, ctx.data.clienteId),
+              eq(solicitud.estado, 'abierta')
             )
           )
-          .orderBy(asc(representativeRequest.dueAt))
+          .orderBy(asc(solicitud.venceAt))
           .limit(10),
       ]);
 
     return {
-      client: clientData,
-      nextDueDates,
-      openDebts: access.canViewDebts ? openDebts : null,
-      unreadNotificationsCount: unreadNotifications.length,
-      pendingRequests,
-      permissions: {
-        canViewDebts: access.canViewDebts,
-        canViewIva: access.canViewIva,
-        canViewPayroll: access.canViewPayroll,
-        canUploadDocuments: access.canUploadDocuments,
-        canChatAi: access.canChatAi,
+      cliente: clienteData,
+      proximosVencimientos,
+      deudasAbiertas: access.puedeVerDeudas ? deudasAbiertas : null,
+      notificacionesSinLeer: sinLeer.length,
+      solicitudesAbiertas,
+      permisos: {
+        puedeVerDeudas: access.puedeVerDeudas,
+        puedeVerIva: access.puedeVerIva,
+        puedeVerSueldos: access.puedeVerSueldos,
+        puedeSubirDocumentos: access.puedeSubirDocumentos,
+        puedeChatearIa: access.puedeChatearIa,
       },
     };
   });
 
-export const getClientPortalDebts = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ clientId: z.string().uuid() }))
-  .handler(async ({ data }) => {
+export const getClientePortalDeudas = createServerFn({ method: 'GET' })
+  .inputValidator(z.object({ clienteId: z.string().uuid() }))
+  .handler(async (ctx) => {
     const session = await getAuthSession();
-    const userId = session.user.id;
-    const access = await getRepresentativePortalAccess(userId, data.clientId);
+    const access = await getAccesoPortal(session.user.id, ctx.data.clienteId);
 
-    if (!access.canViewDebts) {
-      throw new Error('No tienes permiso para ver las deudas');
+    if (!access.puedeVerDeudas) {
+      throw new Error('No tenés permiso para ver las deudas');
     }
 
-    const debts = await db
+    return db
       .select({
-        id: debt.id,
-        tax: debt.tax,
-        concept: debt.concept,
-        subConcept: debt.subConcept,
-        period: debt.period,
-        dueDate: debt.dueDate,
-        balance: debt.balance,
-        compensatoryInterest: debt.compensatoryInterest,
-        punitiveInterest: debt.punitiveInterest,
-        status: debt.status,
-        isIntimated: debt.isIntimated,
-        createdAt: debt.createdAt,
+        id: deuda.id,
+        impuesto: deuda.impuesto,
+        concepto: deuda.concepto,
+        subConcepto: deuda.subConcepto,
+        periodo: deuda.periodo,
+        venceAt: deuda.venceAt,
+        saldo: deuda.saldo,
+        interesResarcitorio: deuda.interesResarcitorio,
+        interesPunitorio: deuda.interesPunitorio,
+        estado: deuda.estado,
+        intimada: deuda.intimada,
+        createdAt: deuda.createdAt,
       })
-      .from(debt)
-      .where(eq(debt.representativeId, data.clientId))
-      .orderBy(desc(debt.dueDate));
-
-    return debts;
+      .from(deuda)
+      .where(eq(deuda.clienteId, ctx.data.clienteId))
+      .orderBy(desc(deuda.venceAt));
   });
 
-export const getClientPortalDueDates = createServerFn({ method: 'GET' })
+export const getClientePortalVencimientos = createServerFn({ method: 'GET' })
   .inputValidator(
     z.object({
-      clientId: z.string().uuid(),
-      includeCompleted: z.boolean().optional().default(false),
+      clienteId: z.string().uuid(),
+      incluirCompletados: z.boolean().optional().default(false),
     })
   )
-  .handler(async ({ data }) => {
+  .handler(async (ctx) => {
     const session = await getAuthSession();
-    const userId = session.user.id;
-    await getRepresentativePortalAccess(userId, data.clientId);
+    await getAccesoPortal(session.user.id, ctx.data.clienteId);
 
-    const conditions = [eq(dueDate.representativeId, data.clientId)];
-    if (!data.includeCompleted) {
-      conditions.push(isNull(dueDate.completedAt));
+    const conditions = [eq(vencimiento.clienteId, ctx.data.clienteId)];
+    if (!ctx.data.incluirCompletados) {
+      conditions.push(isNull(vencimiento.completadoAt));
     }
 
-    const dueDates = await db
+    return db
       .select({
-        id: dueDate.id,
-        tax: dueDate.tax,
-        concept: dueDate.concept,
-        subConcept: dueDate.subConcept,
-        period: dueDate.period,
-        dueDate: dueDate.dueDate,
-        completedAt: dueDate.completedAt,
-        createdAt: dueDate.createdAt,
+        id: vencimiento.id,
+        impuesto: vencimiento.impuesto,
+        concepto: vencimiento.concepto,
+        subConcepto: vencimiento.subConcepto,
+        periodo: vencimiento.periodo,
+        venceAt: vencimiento.venceAt,
+        completadoAt: vencimiento.completadoAt,
+        createdAt: vencimiento.createdAt,
       })
-      .from(dueDate)
+      .from(vencimiento)
       .where(and(...conditions))
-      .orderBy(asc(dueDate.dueDate));
-
-    return dueDates;
+      .orderBy(asc(vencimiento.venceAt));
   });
 
-export const getClientPortalNotifications = createServerFn({ method: 'GET' })
+export const getClientePortalNotificaciones = createServerFn({ method: 'GET' })
   .inputValidator(
     z.object({
-      clientId: z.string().uuid(),
+      clienteId: z.string().uuid(),
       limit: z.number().optional().default(50),
     })
   )
-  .handler(async ({ data }) => {
+  .handler(async (ctx) => {
     const session = await getAuthSession();
-    const userId = session.user.id;
-    await getRepresentativePortalAccess(userId, data.clientId);
+    await getAccesoPortal(session.user.id, ctx.data.clienteId);
 
-    const notifications = await db
+    return db
       .select({
-        id: notification.id,
-        message: notification.message,
-        severity: notification.severity,
-        category: notification.category,
-        aiSummary: notification.aiSummary,
-        opened: notification.opened,
-        publicationDate: notification.publicationDate,
-        resolvedAt: notification.resolvedAt,
-        createdAt: notification.createdAt,
+        id: notificacion.id,
+        mensaje: notificacion.mensaje,
+        severidad: notificacion.severidad,
+        categoria: notificacion.categoria,
+        aiResumen: notificacion.aiResumen,
+        leida: notificacion.leida,
+        publicadaAt: notificacion.publicadaAt,
+        resueltaAt: notificacion.resueltaAt,
+        createdAt: notificacion.createdAt,
       })
-      .from(notification)
+      .from(notificacion)
       .where(
         and(
-          eq(notification.representativeId, data.clientId),
-          isNull(notification.resolvedAt)
+          eq(notificacion.clienteId, ctx.data.clienteId),
+          isNull(notificacion.resueltaAt)
         )
       )
-      .orderBy(desc(notification.publicationDate))
-      .limit(data.limit);
-
-    return notifications;
+      .orderBy(desc(notificacion.publicadaAt))
+      .limit(ctx.data.limit);
   });
 
-export const getClientPortalRequests = createServerFn({ method: 'GET' })
+export const getClientePortalSolicitudes = createServerFn({ method: 'GET' })
   .inputValidator(
     z.object({
-      clientId: z.string().uuid(),
-      status: z.string().optional(),
+      clienteId: z.string().uuid(),
+      estado: z.enum(solicitudEstado.enumValues).optional(),
     })
   )
-  .handler(async ({ data }) => {
+  .handler(async (ctx) => {
     const session = await getAuthSession();
-    const userId = session.user.id;
-    await getRepresentativePortalAccess(userId, data.clientId);
+    await getAccesoPortal(session.user.id, ctx.data.clienteId);
 
-    const conditions = [eq(representativeRequest.representativeId, data.clientId)];
-    if (data.status) {
-      conditions.push(eq(representativeRequest.status, data.status));
-    }
+    const conditions = [eq(solicitud.clienteId, ctx.data.clienteId)];
+    if (ctx.data.estado) conditions.push(eq(solicitud.estado, ctx.data.estado));
 
-    const requests = await db
+    return db
       .select({
-        id: representativeRequest.id,
-        title: representativeRequest.title,
-        description: representativeRequest.description,
-        type: representativeRequest.type,
-        status: representativeRequest.status,
-        dueAt: representativeRequest.dueAt,
-        completedAt: representativeRequest.completedAt,
-        metadata: representativeRequest.metadata,
-        createdAt: representativeRequest.createdAt,
+        id: solicitud.id,
+        titulo: solicitud.titulo,
+        descripcion: solicitud.descripcion,
+        tipo: solicitud.tipo,
+        estado: solicitud.estado,
+        venceAt: solicitud.venceAt,
+        completadaAt: solicitud.completadaAt,
+        detalle: sql<SolicitudDetalle | null>`${solicitud.detalle}`,
+        createdAt: solicitud.createdAt,
       })
-      .from(representativeRequest)
+      .from(solicitud)
       .where(and(...conditions))
-      .orderBy(desc(representativeRequest.createdAt));
-
-    return requests as any;
+      .orderBy(desc(solicitud.createdAt));
   });
 
-export const completeClientRequest = createServerFn({ method: 'POST' })
-  .inputValidator(z.object({ requestId: z.string().uuid() }))
-  .handler(async ({ data }) => {
+export const completarSolicitud = createServerFn({ method: 'POST' })
+  .inputValidator(z.object({ solicitudId: z.string().uuid() }))
+  .handler(async (ctx) => {
     const session = await getAuthSession();
-    const userId = session.user.id;
 
-    // Find the request to verify the user has access to this client
-    const [request] = await db
-      .select({ id: representativeRequest.id, clientId: representativeRequest.representativeId })
-      .from(representativeRequest)
-      .where(eq(representativeRequest.id, data.requestId))
+    const [row] = await db
+      .select({ id: solicitud.id, clienteId: solicitud.clienteId })
+      .from(solicitud)
+      .where(eq(solicitud.id, ctx.data.solicitudId))
       .limit(1);
 
-    if (!request) throw new Error('Solicitud no encontrada');
-
-    // Validate user has access to the client
-    await getRepresentativePortalAccess(userId, request.clientId);
+    if (!row) throw new Error('Solicitud no encontrada');
+    await getAccesoPortal(session.user.id, row.clienteId);
 
     await db
-      .update(representativeRequest)
-      .set({ status: 'completed', completedAt: new Date() })
-      .where(eq(representativeRequest.id, data.requestId));
+      .update(solicitud)
+      .set({ estado: 'completada', completadaAt: new Date() })
+      .where(eq(solicitud.id, ctx.data.solicitudId));
 
     return { success: true };
   });
 
-// ── Studio-side server functions ─────────────────────────────────────────────
-
-export const listClientRequests = createServerFn({ method: 'GET' })
+export const uploadDocumentoSolicitud = createServerFn({ method: 'POST' })
   .inputValidator(
     z.object({
-      clientId: z.string().uuid(),
-      status: z.string().optional(),
-      profileId: z.string().optional(),
-    })
-  )
-  .handler(async ({ data }) => {
-    const { orgId } = await getSessionWithOrg();
-
-    // Validate client belongs to org
-    const [clientRow] = await db
-      .select({ id: representative.id })
-      .from(representative)
-      .where(
-        and(eq(representative.id, data.clientId), eq(representative.organizationId, orgId))
-      )
-      .limit(1);
-    if (!clientRow) throw new Error('Cliente no encontrado');
-
-    const conditions = [eq(representativeRequest.representativeId, data.clientId)];
-    if (data.status) {
-      conditions.push(eq(representativeRequest.status, data.status));
-    }
-    // Empresa seleccionada: incluir sus solicitudes + las del representante (sin empresa).
-    if (data.profileId) {
-      const profileCond = or(
-        eq(representativeRequest.clientId, data.profileId),
-        isNull(representativeRequest.clientId)
-      );
-      if (profileCond) conditions.push(profileCond);
-    }
-
-    const rows = await db
-      .select({
-        id: representativeRequest.id,
-        organizationId: representativeRequest.organizationId,
-        clientId: representativeRequest.representativeId,
-        profileId: representativeRequest.clientId,
-        requestedByUserId: representativeRequest.requestedByUserId,
-        title: representativeRequest.title,
-        description: representativeRequest.description,
-        type: representativeRequest.type,
-        status: representativeRequest.status,
-        dueAt: representativeRequest.dueAt,
-        completedAt: representativeRequest.completedAt,
-        metadata: representativeRequest.metadata,
-        createdAt: representativeRequest.createdAt,
-      })
-      .from(representativeRequest)
-      .where(and(...conditions))
-      .orderBy(desc(representativeRequest.createdAt));
-    return rows as any;
-  });
-
-export const createClientRequest = createServerFn({ method: 'POST' })
-  .inputValidator(
-    z.object({
-      clientId: z.string().uuid(),
-      title: z.string().min(1),
-      description: z.string().optional(),
-      type: z.string().min(1),
-      dueAt: z.string().optional(),
-    })
-  )
-  .handler(async ({ data }) => {
-    const { orgId, userId } = await getSessionWithOrg();
-    const role = await getMemberRole();
-    assertCanWrite(role);
-
-    // Validate client belongs to org
-    const [clientRow] = await db
-      .select({ id: representative.id })
-      .from(representative)
-      .where(
-        and(eq(representative.id, data.clientId), eq(representative.organizationId, orgId))
-      )
-      .limit(1);
-    if (!clientRow) throw new Error('Cliente no encontrado');
-
-    const [created] = await db
-      .insert(representativeRequest)
-      .values({
-        organizationId: orgId,
-        representativeId: data.clientId,
-        requestedByUserId: userId,
-        title: data.title,
-        description: data.description ?? null,
-        type: data.type,
-        status: 'open',
-        dueAt: data.dueAt ? new Date(data.dueAt) : null,
-      })
-      .returning({
-        id: representativeRequest.id,
-        organizationId: representativeRequest.organizationId,
-        clientId: representativeRequest.representativeId,
-        profileId: representativeRequest.clientId,
-        requestedByUserId: representativeRequest.requestedByUserId,
-        title: representativeRequest.title,
-        description: representativeRequest.description,
-        type: representativeRequest.type,
-        status: representativeRequest.status,
-        dueAt: representativeRequest.dueAt,
-        completedAt: representativeRequest.completedAt,
-        createdAt: representativeRequest.createdAt,
-      });
-
-    return created;
-  });
-
-export const uploadDocumentForRequest = createServerFn({ method: 'POST' })
-  .inputValidator(
-    z.object({
-      requestId: z.string().uuid(),
+      solicitudId: z.string().uuid(),
       fileName: z.string().min(1),
       mimeType: z.string().min(1),
       sizeBytes: z.number().int().positive(),
       base64Data: z.string().min(1),
     })
   )
-  .handler(async ({ data }) => {
+  .handler(async (ctx) => {
     const session = await getAuthSession();
     const userId = session.user.id;
 
-    const [request] = await db
+    const [row] = await db
       .select({
-        id: representativeRequest.id,
-        clientId: representativeRequest.representativeId,
-        status: representativeRequest.status,
+        id: solicitud.id,
+        orgId: solicitud.orgId,
+        clienteId: solicitud.clienteId,
+        estado: solicitud.estado,
       })
-      .from(representativeRequest)
-      .where(eq(representativeRequest.id, data.requestId))
+      .from(solicitud)
+      .where(eq(solicitud.id, ctx.data.solicitudId))
       .limit(1);
 
-    if (!request) throw new Error('Solicitud no encontrada');
-    if (request.status !== 'open')
-      throw new Error('La solicitud no está abierta');
+    if (!row) throw new Error('Solicitud no encontrada');
+    if (row.estado !== 'abierta') throw new Error('La solicitud no está abierta');
 
-    const access = await getRepresentativePortalAccess(userId, request.clientId);
-    if (!access.canUploadDocuments) {
-      throw new Error('No tienes permiso para subir documentos');
+    const access = await getAccesoPortal(userId, row.clienteId);
+    if (!access.puedeSubirDocumentos) {
+      throw new Error('No tenés permiso para subir documentos');
     }
 
-    const dataUrl = `data:${data.mimeType};base64,${data.base64Data}`;
+    // `documento` cuelga del login de AFIP (los documentos nacieron del scraping),
+    // así que un archivo subido por el portal se archiva bajo el login con el que
+    // el estudio administra a ese cliente.
+    const [rel] = await db
+      .select({ credencialId: clienteCredencial.credencialId })
+      .from(clienteCredencial)
+      .where(eq(clienteCredencial.clienteId, row.clienteId))
+      .limit(1);
+    if (!rel) throw new Error('El cliente no tiene una credencial de AFIP asociada');
+
+    const buffer = Buffer.from(ctx.data.base64Data, 'base64');
+    // El id se genera acá para poder armar la key de R2 antes de insertar.
+    const documentoId = randomUUID();
+    const storageKey = r2.documentKey({
+      orgId: row.orgId,
+      clienteId: row.clienteId,
+      documentId: documentoId,
+      extension: r2.extensionFor(ctx.data.fileName, ctx.data.mimeType),
+    });
+    await r2.upload(storageKey, buffer, ctx.data.mimeType);
+
     const [doc] = await db
-      .insert(documentTable)
+      .insert(documento)
       .values({
-        representativeId: request.clientId,
-        type: 'uploaded',
-        name: data.fileName,
-        url: dataUrl,
-        storageProvider: 'upload',
-        storageKey: data.fileName,
-        mimeType: data.mimeType,
-        sizeBytes: data.sizeBytes,
+        id: documentoId,
+        orgId: row.orgId,
+        credencialId: rel.credencialId,
+        clienteId: row.clienteId,
+        nombre: ctx.data.fileName,
+        storageKey,
+        mimeType: ctx.data.mimeType,
+        tamanoBytes: buffer.length,
+        checksum: r2.checksum(buffer),
+        fuente: 'manual',
       })
-      .returning({ id: documentTable.id });
+      .returning({ id: documento.id });
 
+    const detalle: SolicitudDetalle = {
+      documentoId: doc.id,
+      documentoNombre: ctx.data.fileName,
+      documentoMimeType: ctx.data.mimeType,
+      subidoAt: new Date().toISOString(),
+      subidoPor: userId,
+    };
     await db
-      .update(representativeRequest)
-      .set({
-        metadata: {
-          documentId: doc.id,
-          documentName: data.fileName,
-          documentMimeType: data.mimeType,
-          uploadedAt: new Date().toISOString(),
-          uploadedByUserId: userId,
-        } as any,
-      })
-      .where(eq(representativeRequest.id, data.requestId));
+      .update(solicitud)
+      .set({ detalle })
+      .where(eq(solicitud.id, ctx.data.solicitudId));
 
-    return { documentId: doc.id, success: true };
+    return { documentoId: doc.id, success: true };
   });
 
-export const getRequestDocument = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ requestId: z.string().uuid() }))
-  .handler(async ({ data }) => {
+// ── Lado estudio ─────────────────────────────────────────────────────────────
+
+/** Valida que el cliente sea de la organización activa. */
+async function assertClienteDeOrg(clienteId: string, orgId: string) {
+  const [row] = await db
+    .select({ id: cliente.id })
+    .from(cliente)
+    .where(and(eq(cliente.id, clienteId), eq(cliente.orgId, orgId)))
+    .limit(1);
+  if (!row) throw new Error('Cliente no encontrado');
+  return row;
+}
+
+export const listSolicitudes = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clienteId: z.string().uuid(),
+      estado: z.enum(solicitudEstado.enumValues).optional(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await assertClienteDeOrg(ctx.data.clienteId, orgId);
+
+    const conditions = [eq(solicitud.clienteId, ctx.data.clienteId)];
+    if (ctx.data.estado) conditions.push(eq(solicitud.estado, ctx.data.estado));
+
+    return db
+      .select({
+        id: solicitud.id,
+        orgId: solicitud.orgId,
+        clienteId: solicitud.clienteId,
+        pedidaPor: solicitud.pedidaPor,
+        titulo: solicitud.titulo,
+        descripcion: solicitud.descripcion,
+        tipo: solicitud.tipo,
+        estado: solicitud.estado,
+        venceAt: solicitud.venceAt,
+        completadaAt: solicitud.completadaAt,
+        detalle: sql<SolicitudDetalle | null>`${solicitud.detalle}`,
+        createdAt: solicitud.createdAt,
+      })
+      .from(solicitud)
+      .where(and(...conditions))
+      .orderBy(desc(solicitud.createdAt));
+  });
+
+export const createSolicitud = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      clienteId: z.string().uuid(),
+      titulo: z.string().min(1),
+      descripcion: z.string().optional(),
+      tipo: z.enum(solicitudTipo.enumValues),
+      venceAt: z.string().optional(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    assertCanWrite(await getMemberRole());
+    await assertClienteDeOrg(ctx.data.clienteId, orgId);
+
+    const [created] = await db
+      .insert(solicitud)
+      .values({
+        orgId,
+        clienteId: ctx.data.clienteId,
+        pedidaPor: userId,
+        titulo: ctx.data.titulo,
+        descripcion: ctx.data.descripcion ?? null,
+        tipo: ctx.data.tipo,
+        estado: 'abierta',
+        venceAt: ctx.data.venceAt ? new Date(ctx.data.venceAt) : null,
+      })
+      .returning({
+        id: solicitud.id,
+        orgId: solicitud.orgId,
+        clienteId: solicitud.clienteId,
+        pedidaPor: solicitud.pedidaPor,
+        titulo: solicitud.titulo,
+        descripcion: solicitud.descripcion,
+        tipo: solicitud.tipo,
+        estado: solicitud.estado,
+        venceAt: solicitud.venceAt,
+        completadaAt: solicitud.completadaAt,
+        createdAt: solicitud.createdAt,
+      });
+
+    return created;
+  });
+
+export const getDocumentoSolicitud = createServerFn({ method: 'GET' })
+  .inputValidator(z.object({ solicitudId: z.string().uuid() }))
+  .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const [requestRow] = await db
-      .select({ id: representativeRequest.id, metadata: representativeRequest.metadata })
-      .from(representativeRequest)
-      .innerJoin(representative, eq(representative.id, representativeRequest.representativeId))
+    const [row] = await db
+      .select({ detalle: sql<SolicitudDetalle | null>`${solicitud.detalle}` })
+      .from(solicitud)
       .where(
-        and(
-          eq(representativeRequest.id, data.requestId),
-          eq(representative.organizationId, orgId)
-        )
+        and(eq(solicitud.id, ctx.data.solicitudId), eq(solicitud.orgId, orgId))
       )
       .limit(1);
 
-    if (!requestRow) throw new Error('Solicitud no encontrada');
-
-    const meta = requestRow.metadata as { documentId?: string } | null;
-    if (!meta?.documentId) return null;
+    if (!row) throw new Error('Solicitud no encontrada');
+    if (!row.detalle?.documentoId) return null;
 
     const [doc] = await db
       .select({
-        id: documentTable.id,
-        name: documentTable.name,
-        url: documentTable.url,
-        mimeType: documentTable.mimeType,
-        sizeBytes: documentTable.sizeBytes,
-        createdAt: documentTable.createdAt,
+        id: documento.id,
+        nombre: documento.nombre,
+        mimeType: documento.mimeType,
+        tamanoBytes: documento.tamanoBytes,
+        createdAt: documento.createdAt,
       })
-      .from(documentTable)
-      .where(eq(documentTable.id, meta.documentId))
+      .from(documento)
+      .where(eq(documento.id, row.detalle.documentoId))
       .limit(1);
 
-    return doc ?? null;
+    if (!doc) return null;
+    // El archivo vive en R2 (bucket privado): se sirve por endpoint autenticado.
+    return { ...doc, url: `/api/documents/${doc.id}` };
   });
 
-export const updateClientRequestStatus = createServerFn({ method: 'POST' })
+export const updateSolicitudEstado = createServerFn({ method: 'POST' })
   .inputValidator(
     z.object({
-      requestId: z.string().uuid(),
-      status: z.string().min(1),
+      solicitudId: z.string().uuid(),
+      estado: z.enum(solicitudEstado.enumValues),
     })
   )
-  .handler(async ({ data }) => {
+  .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-    const role = await getMemberRole();
-    assertCanWrite(role);
+    assertCanWrite(await getMemberRole());
 
-    // Validate request belongs to org
-    const [existing] = await db
-      .select({
-        id: representativeRequest.id,
-        organizationId: representativeRequest.organizationId,
+    // `solicitud_completada_coherente`: la fecha de completado va de la mano del estado.
+    const [row] = await db
+      .update(solicitud)
+      .set({
+        estado: ctx.data.estado,
+        completadaAt: ctx.data.estado === 'completada' ? new Date() : null,
       })
-      .from(representativeRequest)
-      .where(eq(representativeRequest.id, data.requestId))
-      .limit(1);
-    if (!existing || existing.organizationId !== orgId) {
-      throw new Error('Solicitud no encontrada');
-    }
+      .where(
+        and(eq(solicitud.id, ctx.data.solicitudId), eq(solicitud.orgId, orgId))
+      )
+      .returning({ id: solicitud.id });
 
-    const completedAt = data.status === 'completed' ? new Date() : null;
-
-    await db
-      .update(representativeRequest)
-      .set({ status: data.status, completedAt })
-      .where(eq(representativeRequest.id, data.requestId));
-
+    if (!row) throw new Error('Solicitud no encontrada');
     return { success: true };
   });
 
-// ── Portal user management (studio-side) ────────────────────────────────────
-
-/**
- * Helper: validates that a representative belongs to the calling org.
- * Returns the representative row or throws.
- */
-async function assertRepresentativeOwnership(representativeId: string, orgId: string) {
-  const [rep] = await db
-    .select({ id: representative.id })
-    .from(representative)
-    .where(
-      and(eq(representative.id, representativeId), eq(representative.organizationId, orgId))
-    )
-    .limit(1);
-  if (!rep) throw new Error('Cliente no encontrado');
-  return rep;
-}
+// ── Usuarios del portal (lado estudio) ──────────────────────────────────────
 
 export const listPortalUsers = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ representativeId: z.string().uuid() }))
-  .handler(async ({ data }) => {
+  .inputValidator(z.object({ clienteId: z.string().uuid() }))
+  .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-    await assertRepresentativeOwnership(data.representativeId, orgId);
+    await assertClienteDeOrg(ctx.data.clienteId, orgId);
 
-    const rows = await db
+    return db
       .select({
-        accessId: representativeUserAccess.id,
-        userId: representativeUserAccess.userId,
-        role: representativeUserAccess.role,
-        canViewDebts: representativeUserAccess.canViewDebts,
-        canViewIva: representativeUserAccess.canViewIva,
-        canViewPayroll: representativeUserAccess.canViewPayroll,
-        canUploadDocuments: representativeUserAccess.canUploadDocuments,
-        canChatAi: representativeUserAccess.canChatAi,
-        createdAt: representativeUserAccess.createdAt,
+        accessId: accesoUsuarioCliente.id,
+        userId: accesoUsuarioCliente.userId,
+        rol: accesoUsuarioCliente.rol,
+        puedeVerDeudas: accesoUsuarioCliente.puedeVerDeudas,
+        puedeVerIva: accesoUsuarioCliente.puedeVerIva,
+        puedeVerSueldos: accesoUsuarioCliente.puedeVerSueldos,
+        puedeSubirDocumentos: accesoUsuarioCliente.puedeSubirDocumentos,
+        puedeChatearIa: accesoUsuarioCliente.puedeChatearIa,
+        createdAt: accesoUsuarioCliente.createdAt,
         name: userTable.name,
         email: userTable.email,
       })
-      .from(representativeUserAccess)
-      .innerJoin(userTable, eq(userTable.id, representativeUserAccess.userId))
-      .where(eq(representativeUserAccess.representativeId, data.representativeId));
-
-    return rows;
+      .from(accesoUsuarioCliente)
+      .innerJoin(userTable, eq(userTable.id, accesoUsuarioCliente.userId))
+      .where(eq(accesoUsuarioCliente.clienteId, ctx.data.clienteId));
   });
 
-const portalPermissionsSchema = z.object({
-  canViewDebts: z.boolean().default(true),
-  canViewIva: z.boolean().default(true),
-  canViewPayroll: z.boolean().default(false),
-  canUploadDocuments: z.boolean().default(true),
-  canChatAi: z.boolean().default(true),
+const permisosSchema = z.object({
+  puedeVerDeudas: z.boolean().default(true),
+  puedeVerIva: z.boolean().default(true),
+  puedeVerSueldos: z.boolean().default(false),
+  puedeSubirDocumentos: z.boolean().default(true),
+  puedeChatearIa: z.boolean().default(true),
 });
 
 export const createPortalUser = createServerFn({ method: 'POST' })
   .inputValidator(
     z.object({
-      representativeId: z.string().uuid(),
+      clienteId: z.string().uuid(),
       name: z.string().min(1),
       email: z.string().email(),
       password: z.string().min(8),
-      permissions: portalPermissionsSchema,
+      permisos: permisosSchema,
     })
   )
-  .handler(async ({ data }) => {
+  .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-    const role = await getMemberRole();
-    assertCanWrite(role);
-    await assertRepresentativeOwnership(data.representativeId, orgId);
+    assertCanWrite(await getMemberRole());
+    await assertClienteDeOrg(ctx.data.clienteId, orgId);
 
-    // Check email not already in use
     const [existing] = await db
       .select({ id: userTable.id })
       .from(userTable)
-      .where(eq(userTable.email, data.email))
+      .where(eq(userTable.email, ctx.data.email))
       .limit(1);
     if (existing) throw new Error('Ya existe un usuario con ese email');
 
     const created = await auth.api.createUser({
       headers: getRequestHeaders(),
       body: {
-        name: data.name,
-        email: data.email,
-        password: data.password,
+        name: ctx.data.name,
+        email: ctx.data.email,
+        password: ctx.data.password,
         role: 'user',
       },
     });
 
     const [access] = await db
-      .insert(representativeUserAccess)
+      .insert(accesoUsuarioCliente)
       .values({
-        representativeId: data.representativeId,
+        clienteId: ctx.data.clienteId,
         userId: created.user.id,
-        role: 'client_viewer',
-        canViewDebts: data.permissions.canViewDebts,
-        canViewIva: data.permissions.canViewIva,
-        canViewPayroll: data.permissions.canViewPayroll,
-        canUploadDocuments: data.permissions.canUploadDocuments,
-        canChatAi: data.permissions.canChatAi,
+        rol: 'cliente_lector',
+        ...ctx.data.permisos,
       })
       .returning();
 
     return access;
   });
 
+/** El acceso, validando que su cliente sea de la organización activa. */
+async function getAccesoDeOrg(accessId: string, orgId: string) {
+  const [row] = await db
+    .select({ id: accesoUsuarioCliente.id })
+    .from(accesoUsuarioCliente)
+    .innerJoin(cliente, eq(cliente.id, accesoUsuarioCliente.clienteId))
+    .where(and(eq(accesoUsuarioCliente.id, accessId), eq(cliente.orgId, orgId)))
+    .limit(1);
+  if (!row) throw new Error('Acceso no encontrado');
+  return row;
+}
+
 export const updatePortalUserPermissions = createServerFn({ method: 'POST' })
   .inputValidator(
     z.object({
       accessId: z.string().uuid(),
-      permissions: portalPermissionsSchema,
+      permisos: permisosSchema,
     })
   )
-  .handler(async ({ data }) => {
+  .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-    const role = await getMemberRole();
-    assertCanWrite(role);
-
-    // Validate that the access row belongs to a representative in this org
-    const [accessRow] = await db
-      .select({ representativeId: representativeUserAccess.representativeId })
-      .from(representativeUserAccess)
-      .where(eq(representativeUserAccess.id, data.accessId))
-      .limit(1);
-    if (!accessRow) throw new Error('Acceso no encontrado');
-    await assertRepresentativeOwnership(accessRow.representativeId, orgId);
+    assertCanWrite(await getMemberRole());
+    await getAccesoDeOrg(ctx.data.accessId, orgId);
 
     await db
-      .update(representativeUserAccess)
-      .set({
-        canViewDebts: data.permissions.canViewDebts,
-        canViewIva: data.permissions.canViewIva,
-        canViewPayroll: data.permissions.canViewPayroll,
-        canUploadDocuments: data.permissions.canUploadDocuments,
-        canChatAi: data.permissions.canChatAi,
-      })
-      .where(eq(representativeUserAccess.id, data.accessId));
+      .update(accesoUsuarioCliente)
+      .set(ctx.data.permisos)
+      .where(eq(accesoUsuarioCliente.id, ctx.data.accessId));
 
     return { success: true };
   });
@@ -736,27 +683,19 @@ export const resetPortalUserPassword = createServerFn({ method: 'POST' })
       newPassword: z.string().min(8),
     })
   )
-  .handler(async ({ data }) => {
+  .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-    const role = await getMemberRole();
-    assertCanWrite(role);
+    assertCanWrite(await getMemberRole());
 
-    // Validate that this userId has access to a representative belonging to this org
-    const accessRows = await db
-      .select({ representativeId: representativeUserAccess.representativeId })
-      .from(representativeUserAccess)
-      .where(eq(representativeUserAccess.userId, data.userId));
-
-    const repIds = accessRows.map((r) => r.representativeId);
-    if (repIds.length === 0) throw new Error('Usuario no encontrado');
-
+    // Solo se puede tocar a un usuario que acceda a un cliente del estudio.
     const [owned] = await db
-      .select({ id: representative.id })
-      .from(representative)
+      .select({ id: accesoUsuarioCliente.id })
+      .from(accesoUsuarioCliente)
+      .innerJoin(cliente, eq(cliente.id, accesoUsuarioCliente.clienteId))
       .where(
         and(
-          eq(representative.organizationId, orgId),
-          eq(representative.id, repIds[0])
+          eq(accesoUsuarioCliente.userId, ctx.data.userId),
+          eq(cliente.orgId, orgId)
         )
       )
       .limit(1);
@@ -764,7 +703,7 @@ export const resetPortalUserPassword = createServerFn({ method: 'POST' })
 
     await auth.api.setUserPassword({
       headers: getRequestHeaders(),
-      body: { userId: data.userId, newPassword: data.newPassword },
+      body: { userId: ctx.data.userId, newPassword: ctx.data.newPassword },
     });
 
     return { success: true };
@@ -772,22 +711,14 @@ export const resetPortalUserPassword = createServerFn({ method: 'POST' })
 
 export const revokePortalAccess = createServerFn({ method: 'POST' })
   .inputValidator(z.object({ accessId: z.string().uuid() }))
-  .handler(async ({ data }) => {
+  .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-    const role = await getMemberRole();
-    assertCanWrite(role);
-
-    const [accessRow] = await db
-      .select({ representativeId: representativeUserAccess.representativeId })
-      .from(representativeUserAccess)
-      .where(eq(representativeUserAccess.id, data.accessId))
-      .limit(1);
-    if (!accessRow) throw new Error('Acceso no encontrado');
-    await assertRepresentativeOwnership(accessRow.representativeId, orgId);
+    assertCanWrite(await getMemberRole());
+    await getAccesoDeOrg(ctx.data.accessId, orgId);
 
     await db
-      .delete(representativeUserAccess)
-      .where(eq(representativeUserAccess.id, data.accessId));
+      .delete(accesoUsuarioCliente)
+      .where(eq(accesoUsuarioCliente.id, ctx.data.accessId));
 
     return { success: true };
   });

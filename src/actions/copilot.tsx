@@ -1,24 +1,86 @@
+/**
+ * Funciones que el copiloto expone como herramientas al LLM.
+ *
+ * El nombre que tipea el usuario puede ser el de una empresa (`cliente`) o el
+ * de un login de AFIP (`credencial_afip`), que suele agrupar varias empresas:
+ * por eso la resolución prueba primero por cliente y después por credencial, y
+ * devuelve una lista de clientes con sus totales.
+ */
 import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
 import { db, dbReadonly } from '@/lib/db';
 import {
-  representative,
-  client,
-  ivaScrape,
-  invoice,
-  movements,
-  debt,
-  notification,
+  cliente,
+  clienteCredencial,
+  credencialAfip,
+  ivaDeclaracion,
+  comprobante,
+  comprobanteAlicuota,
+  comprobanteTipo,
+  cuentaBancaria,
+  movimientoBancario,
+  deuda,
+  notificacion,
   job,
 } from '@/drizzle/schema';
-import { and, desc, eq, gte, ilike, lte, sql } from 'drizzle-orm';
-import { calcularIvaDesdeFacturas, type InvoiceIvaRow } from '@/lib/iva-calc';
+import { and, desc, eq, gte, ilike, inArray, lte, sql } from 'drizzle-orm';
+import { calcularIva, type ComprobanteAlicuotaRow } from '@/lib/iva-calc';
 import { assertCanWrite, getMemberRole, getSessionWithOrg } from './helpers';
+
+/** `YYYY-MM-DD` en hora local: las columnas `date` de la BD son strings. */
+function aFecha(d: Date): string {
+  const mes = String(d.getMonth() + 1).padStart(2, '0');
+  const dia = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mes}-${dia}`;
+}
+
+/** "MM/YYYY" → primer día del mes, que es como se guarda el período. */
+function periodoADate(periodo: string): string {
+  const [mm, yyyy] = periodo.split('/');
+  return `${yyyy}-${mm}-01`;
+}
+
+const n = (v: string | number | null | undefined) => Number(v ?? 0) || 0;
+
+/**
+ * Los clientes que el usuario quiso nombrar. Busca por razón social y, si no
+ * encuentra nada, por el nombre del login de AFIP (que agrupa varias empresas).
+ */
+async function resolverClientes(orgId: string, nombre: string) {
+  const porRazonSocial = await dbReadonly
+    .select({
+      id: cliente.id,
+      razonSocial: cliente.razonSocial,
+      cuit: cliente.cuit,
+    })
+    .from(cliente)
+    .where(
+      and(eq(cliente.orgId, orgId), ilike(cliente.razonSocial, `%${nombre}%`))
+    );
+
+  if (porRazonSocial.length > 0) return porRazonSocial;
+
+  return await dbReadonly
+    .select({
+      id: cliente.id,
+      razonSocial: cliente.razonSocial,
+      cuit: cliente.cuit,
+    })
+    .from(cliente)
+    .innerJoin(clienteCredencial, eq(clienteCredencial.clienteId, cliente.id))
+    .innerJoin(
+      credencialAfip,
+      eq(clienteCredencial.credencialId, credencialAfip.id)
+    )
+    .where(
+      and(eq(cliente.orgId, orgId), ilike(credencialAfip.nombre, `%${nombre}%`))
+    );
+}
 
 const getIvaPositionInput = z.object({
   clientName: z.string(),
-  displayMonth: z.string().optional(),
-  profileName: z.string().optional(),
+  /** Período fiscal "MM/YYYY". Por defecto, el último declarado. */
+  periodo: z.string().optional(),
 });
 
 export type GetIvaPositionForCopilotResult =
@@ -27,16 +89,12 @@ export type GetIvaPositionForCopilotResult =
       options?: string[];
     }
   | {
-      cliente: string;
-      clienteId: string;
-      periodoMostrado: string;
-      periodoIvaScrape: string;
-      perfiles: {
-        profileId: string;
-        perfil: string;
-        cuit: string | null;
-        periodo: string;
-        fechaPresentacion: string;
+      periodo: string;
+      clientes: {
+        clienteId: string;
+        razonSocial: string;
+        cuit: string;
+        presentadaAt: string | null;
         ventas: {
           netoA21: string;
           netoA105: string;
@@ -51,27 +109,20 @@ export type GetIvaPositionForCopilotResult =
           netoGravado27: string;
           creditoFiscal: string;
         };
-        saldosAFIP: {
-          saldoAFavorPeriodoAnterior: string | null;
-          saldoLibreDisponibilidad: string | null;
-          totalRetencionesPercepciones: string | null;
-        };
         saldoTecnico: string;
         saldoLibreDisponibilidad: string;
         totalRetencionesPercepciones: string;
         tieneDatosAFIP: boolean;
-        ivaScrape: {
-          periodoFiscal: string;
-          fechaPresentacion: string | null;
+        declaracionAfip: {
           debitoFiscal: string | null;
           creditoFiscal: string | null;
-          saldoMesPasado: string | null;
-          saldoArcaMes: string | null;
-          saldoTecnicoFavorContribuyente: string | null;
-          saldoTecnicoFavorContribuyentePosicionMensual: string | null;
-          saldoLibreDisponibilidadPeriodoAnteriorNeto: string | null;
-          totalRetencionesPercepcionesPeriodo: string | null;
-          saldoLibreDisponibilidadFavorContribuyentePeriodo: string | null;
+          saldoMesAnterior: string | null;
+          saldoAfipMes: string | null;
+          saldoTecnicoFavor: string | null;
+          saldoTecnicoFavorMensual: string | null;
+          saldoLibreDisponibilidadAnteriorNeto: string | null;
+          retencionesPercepcionesPeriodo: string | null;
+          saldoLibreDisponibilidadFavor: string | null;
         } | null;
       }[];
       totales: {
@@ -85,227 +136,129 @@ export type GetIvaPositionForCopilotResult =
 export const getIvaPositionForCopilot = createServerFn({ method: 'POST' })
   .inputValidator(getIvaPositionInput)
   .handler(async (ctx): Promise<GetIvaPositionForCopilotResult> => {
-    const { orgId } = (await getSessionWithOrg()) as { orgId: string };
-    const { clientName, displayMonth, profileName } = ctx.data;
+    const { orgId } = await getSessionWithOrg();
+    const { clientName } = ctx.data;
 
-    const matchingClients = await dbReadonly
-      .select({ id: representative.id, name: sql<string>`coalesce(${representative.name}, '')` })
-      .from(representative)
-      .where(
-        and(
-          eq(representative.organizationId, orgId),
-          ilike(representative.name, `%${clientName}%`)
-        )
-      );
-
-    if (matchingClients.length === 0) {
+    const clientes = await resolverClientes(orgId, clientName);
+    if (clientes.length === 0) {
       return { error: `No encontré clientes con nombre "${clientName}"` };
     }
-    if (matchingClients.length > 1) {
-      return {
-        error: 'Más de un cliente coincide',
-        options: matchingClients.map((c) => c.name),
-      };
-    }
 
-    const foundClient = matchingClients[0];
+    const clienteIds = clientes.map((c) => c.id);
 
-    const profileWhere = profileName
-      ? and(
-          eq(client.representativeId, foundClient.id),
-          ilike(client.name, `%${profileName}%`)
-        )
-      : eq(client.representativeId, foundClient.id);
-
-    const profiles = await dbReadonly
-      .select({
-        id: client.id,
-        name: client.name,
-        identityNumber: client.identityNumber,
-      })
-      .from(client)
-      .where(profileWhere);
-
-    if (profiles.length === 0) {
-      return { error: `No se encontraron perfiles para ${foundClient.name}` };
-    }
-
-    const profileIds = profiles.map((p) => p.id);
-
-    // "03/2026" → "02/2026"
-    const prevMonthStr = (s: string): string => {
-      const [mm, yyyy] = s.split('/').map(Number);
-      const d = new Date(yyyy, mm - 2, 1);
-      return `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
-    };
-
-    // "02/2026" → "03/2026"
-    const nextMonthStr = (s: string): string => {
-      const [mm, yyyy] = s.split('/').map(Number);
-      const d = new Date(yyyy, mm, 1);
-      return `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
-    };
-
-    const periodToDateRange = (p: string): { from: Date; to: Date } => {
-      const [mm, yyyy] = p.split('/').map(Number);
-      const from = new Date(yyyy, mm - 1, 1);
-      const to = new Date(yyyy, mm, 0, 23, 59, 59);
-      return { from, to };
-    };
-
-    let invoicePeriod: string;
-    let ivaScrapeperiod: string;
-
-    if (displayMonth) {
-      invoicePeriod = displayMonth;
-      ivaScrapeperiod = prevMonthStr(displayMonth);
+    // Sin período explícito se usa el último declarado por alguno de ellos.
+    let periodo: string;
+    if (ctx.data.periodo) {
+      periodo = periodoADate(ctx.data.periodo);
     } else {
-      const rows = await dbReadonly.execute(
-        sql.raw(
-          `SELECT periodo_fiscal FROM iva_scrape
-           WHERE client_id = ANY(ARRAY[${profileIds.map((id) => `'${id}'`).join(',')}]::uuid[])
-           ORDER BY TO_DATE(periodo_fiscal, 'MM/YYYY') DESC LIMIT 1`
-        )
-      );
-      const arr: { periodo_fiscal: string }[] = Array.from(
-        rows as Iterable<{ periodo_fiscal: string }>
-      );
-      if (arr.length === 0) {
-        return {
-          error: `No hay datos de IVA disponibles para ${foundClient.name}.`,
-        };
+      const [ultima] = await dbReadonly
+        .select({ periodo: ivaDeclaracion.periodo })
+        .from(ivaDeclaracion)
+        .where(inArray(ivaDeclaracion.clienteId, clienteIds))
+        .orderBy(desc(ivaDeclaracion.periodo))
+        .limit(1);
+      if (!ultima) {
+        return { error: `No hay declaraciones de IVA para "${clientName}".` };
       }
-      ivaScrapeperiod = arr[0].periodo_fiscal;
-      invoicePeriod = nextMonthStr(ivaScrapeperiod);
+      periodo = ultima.periodo;
     }
 
-    const { from: dateFrom, to: dateTo } = periodToDateRange(invoicePeriod);
-    const n = (v: string | null | undefined) => parseFloat(v ?? '0') || 0;
+    // Primer y último día del período, para acotar los comprobantes.
+    const [anio, mes] = periodo.split('-').map(Number);
+    const desde = aFecha(new Date(anio, mes - 1, 1));
+    const hasta = aFecha(new Date(anio, mes, 0));
 
     const results: Extract<
       GetIvaPositionForCopilotResult,
-      { perfiles: unknown }
-    >['perfiles'] = [];
+      { clientes: unknown }
+    >['clientes'] = [];
 
-    for (const p of profiles) {
-      const [ivaRow] = await dbReadonly
+    for (const c of clientes) {
+      const [declaracion] = await dbReadonly
         .select()
-        .from(ivaScrape)
+        .from(ivaDeclaracion)
         .where(
           and(
-            eq(ivaScrape.clientId, p.id),
-            eq(ivaScrape.periodoFiscal, ivaScrapeperiod)
+            eq(ivaDeclaracion.clienteId, c.id),
+            eq(ivaDeclaracion.periodo, periodo)
           )
         )
         .limit(1);
 
-      const invoices = await dbReadonly
+      const alicuotas: ComprobanteAlicuotaRow[] = await dbReadonly
         .select({
-          direction: invoice.direction,
-          type: invoice.type,
-          currency: invoice.currency,
-          currencyRate: invoice.cureencyRate,
-          amountIVA21: invoice.amountIVA21,
-          amountIVA105: invoice.amountIVA105,
-          amountIVA27: invoice.amountIVA27,
-          amountIVA5: invoice.amountIVA5,
-          amountIVA25: invoice.amountIVA25,
-          IVA21: invoice.IVA21,
-          IVA105: invoice.IVA105,
-          IVA27: invoice.IVA27,
+          direccion: comprobante.direccion,
+          letra: comprobanteTipo.letra,
+          esNc: comprobanteTipo.esNc,
+          moneda: comprobante.moneda,
+          cotizacion: comprobante.cotizacion,
+          alicuota: comprobanteAlicuota.alicuota,
+          neto: comprobanteAlicuota.neto,
+          iva: comprobanteAlicuota.iva,
         })
-        .from(invoice)
+        .from(comprobanteAlicuota)
+        .innerJoin(
+          comprobante,
+          eq(comprobanteAlicuota.comprobanteId, comprobante.id)
+        )
+        .innerJoin(comprobanteTipo, eq(comprobante.tipo, comprobanteTipo.codigo))
         .where(
           and(
-            eq(invoice.clientId, p.id),
-            gte(invoice.emitionDate, dateFrom),
-            lte(invoice.emitionDate, dateTo)
+            eq(comprobante.clienteId, c.id),
+            gte(comprobante.fechaEmision, desde),
+            lte(comprobante.fechaEmision, hasta)
           )
         );
 
-      const ivaCalc = calcularIvaDesdeFacturas(invoices as InvoiceIvaRow[]);
-      const debitoFiscalCalculado = ivaCalc.debitoFiscal;
-      const creditoFiscalCalculado = ivaCalc.creditoFiscalCompras;
-      const {
-        netoA21,
-        netoA105,
-        totalAmountB21: totalB21,
-        totalAmountB105: totalB105,
-        totalAmountB27: totalB27,
-        netoInbound21: netoIn21,
-        netoInbound105: netoIn105,
-        netoInbound27: netoIn27,
-      } = ivaCalc;
-
-      const saldoAFavor = n(ivaRow?.saldoTecnicoFavorContribuyente);
-      const saldoLibreDisp = n(
-        ivaRow?.saldoLibreDisponibilidadFavorContribuyentePeriodo
-      );
-      const totalRetenciones = n(ivaRow?.totalRetencionesPercepcionesPeriodo);
-
-      const saldoTecnico =
-        debitoFiscalCalculado - creditoFiscalCalculado - saldoAFavor;
+      const iva = calcularIva(alicuotas);
+      const saldoAFavor = n(declaracion?.saldoTecnicoFavor);
+      const saldoLibreDisp = n(declaracion?.saldoLibreDisponibilidadFavor);
+      const retenciones = n(declaracion?.retencionesPercepcionesPeriodo);
 
       results.push({
-        profileId: p.id,
-        perfil: p.name,
-        cuit: p.identityNumber,
-        periodo: invoicePeriod,
-        fechaPresentacion: ivaRow?.fechaPresentacion ?? 'No disponible',
+        clienteId: c.id,
+        razonSocial: c.razonSocial,
+        cuit: c.cuit,
+        presentadaAt: declaracion?.presentadaAt ?? null,
         ventas: {
-          netoA21: netoA21.toFixed(2),
-          netoA105: netoA105.toFixed(2),
-          totalB21: totalB21.toFixed(2),
-          totalB105: totalB105.toFixed(2),
-          totalB27: totalB27.toFixed(2),
-          debitoFiscal: debitoFiscalCalculado.toFixed(2),
+          netoA21: iva.netoA21.toFixed(2),
+          netoA105: iva.netoA105.toFixed(2),
+          totalB21: iva.totalAmountB21.toFixed(2),
+          totalB105: iva.totalAmountB105.toFixed(2),
+          totalB27: iva.totalAmountB27.toFixed(2),
+          debitoFiscal: iva.debitoFiscal.toFixed(2),
         },
         compras: {
-          netoGravado21: netoIn21.toFixed(2),
-          netoGravado105: netoIn105.toFixed(2),
-          netoGravado27: netoIn27.toFixed(2),
-          creditoFiscal: creditoFiscalCalculado.toFixed(2),
+          netoGravado21: iva.netoInbound21.toFixed(2),
+          netoGravado105: iva.netoInbound105.toFixed(2),
+          netoGravado27: iva.netoInbound27.toFixed(2),
+          creditoFiscal: iva.creditoFiscalCompras.toFixed(2),
         },
-        saldosAFIP: {
-          saldoAFavorPeriodoAnterior:
-            ivaRow?.saldoTecnicoFavorContribuyente ?? null,
-          saldoLibreDisponibilidad:
-            ivaRow?.saldoLibreDisponibilidadFavorContribuyentePeriodo ?? null,
-          totalRetencionesPercepciones:
-            ivaRow?.totalRetencionesPercepcionesPeriodo ?? null,
-        },
-        saldoTecnico: saldoTecnico.toFixed(2),
+        saldoTecnico: (
+          iva.debitoFiscal -
+          iva.creditoFiscalCompras -
+          saldoAFavor
+        ).toFixed(2),
         saldoLibreDisponibilidad: saldoLibreDisp.toFixed(2),
-        totalRetencionesPercepciones: totalRetenciones.toFixed(2),
-        tieneDatosAFIP: !!ivaRow,
-        ivaScrape: ivaRow
+        totalRetencionesPercepciones: retenciones.toFixed(2),
+        tieneDatosAFIP: !!declaracion,
+        declaracionAfip: declaracion
           ? {
-              periodoFiscal: ivaRow.periodoFiscal,
-              fechaPresentacion: ivaRow.fechaPresentacion ?? null,
-              debitoFiscal: ivaRow.debitoFiscal ?? null,
-              creditoFiscal: ivaRow.creditoFiscal ?? null,
-              saldoMesPasado: ivaRow.saldoMesPasado ?? null,
-              saldoArcaMes: ivaRow.saldoArcaMes ?? null,
-              saldoTecnicoFavorContribuyente:
-                ivaRow.saldoTecnicoFavorContribuyente ?? null,
-              saldoTecnicoFavorContribuyentePosicionMensual:
-                ivaRow.saldoTecnicoFavorContribuyentePosicionMensual ?? null,
-              saldoLibreDisponibilidadPeriodoAnteriorNeto:
-                ivaRow.saldoLibreDisponibilidadPeriodoAnteriorNeto ?? null,
-              totalRetencionesPercepcionesPeriodo:
-                ivaRow.totalRetencionesPercepcionesPeriodo ?? null,
-              saldoLibreDisponibilidadFavorContribuyentePeriodo:
-                ivaRow.saldoLibreDisponibilidadFavorContribuyentePeriodo ??
-                null,
+              debitoFiscal: declaracion.debitoFiscal,
+              creditoFiscal: declaracion.creditoFiscal,
+              saldoMesAnterior: declaracion.saldoMesAnterior,
+              saldoAfipMes: declaracion.saldoAfipMes,
+              saldoTecnicoFavor: declaracion.saldoTecnicoFavor,
+              saldoTecnicoFavorMensual: declaracion.saldoTecnicoFavorMensual,
+              saldoLibreDisponibilidadAnteriorNeto:
+                declaracion.saldoLibreDisponibilidadAnteriorNeto,
+              retencionesPercepcionesPeriodo:
+                declaracion.retencionesPercepcionesPeriodo,
+              saldoLibreDisponibilidadFavor:
+                declaracion.saldoLibreDisponibilidadFavor,
             }
           : null,
       });
-    }
-
-    if (results.length === 0) {
-      return {
-        error: `No hay datos para ${foundClient.name} en el período ${invoicePeriod}.`,
-      };
     }
 
     const totales =
@@ -326,28 +279,20 @@ export const getIvaPositionForCopilot = createServerFn({ method: 'POST' })
           }
         : null;
 
-    return {
-      cliente: foundClient.name,
-      clienteId: foundClient.id,
-      periodoMostrado: invoicePeriod,
-      periodoIvaScrape: ivaScrapeperiod,
-      perfiles: results,
-      totales,
-    };
+    return { periodo, clientes: results, totales };
   });
 
 /* =========================================================================
-   Resolución de cliente por nombre o id, scoped al org.
-   Devuelve { id, name } o un mensaje de error.
-   Usada por escanearExtractoBancario para que el LLM pueda pasar nombre.
+   Resolución de cliente por nombre o id, acotada al estudio.
+   Usada por el escáner de extractos para que el LLM pueda pasar un nombre.
    ========================================================================= */
 const resolveClientInput = z
   .object({
-    clientId: z.string().optional(),
+    clienteId: z.string().optional(),
     clientName: z.string().optional(),
   })
-  .refine((v) => Boolean(v.clientId ?? v.clientName), {
-    message: 'Se requiere clientId o clientName',
+  .refine((v) => Boolean(v.clienteId ?? v.clientName), {
+    message: 'Se requiere clienteId o clientName',
   });
 
 export type ResolveClientResult =
@@ -357,46 +302,37 @@ export type ResolveClientResult =
 export const resolveClientForCopilot = createServerFn({ method: 'POST' })
   .inputValidator(resolveClientInput)
   .handler(async (ctx): Promise<ResolveClientResult> => {
-    const { orgId } = (await getSessionWithOrg()) as { orgId: string };
-    const { clientId, clientName } = ctx.data;
+    const { orgId } = await getSessionWithOrg();
+    const { clienteId, clientName } = ctx.data;
 
-    if (clientId) {
+    if (clienteId) {
       const [row] = await dbReadonly
-        .select({ id: representative.id, name: sql<string>`coalesce(${representative.name}, '')` })
-        .from(representative)
-        .where(and(eq(representative.id, clientId), eq(representative.organizationId, orgId)))
+        .select({ id: cliente.id, razonSocial: cliente.razonSocial })
+        .from(cliente)
+        .where(and(eq(cliente.id, clienteId), eq(cliente.orgId, orgId)))
         .limit(1);
       if (!row) return { error: 'Cliente no encontrado o fuera del estudio.' };
-      return { id: row.id, name: row.name };
+      return { id: row.id, name: row.razonSocial };
     }
 
-    const matches = await dbReadonly
-      .select({ id: representative.id, name: sql<string>`coalesce(${representative.name}, '')` })
-      .from(representative)
-      .where(
-        and(
-          eq(representative.organizationId, orgId),
-          ilike(representative.name, `%${clientName!}%`)
-        )
-      );
+    const matches = await resolverClientes(orgId, clientName!);
     if (matches.length === 0) {
       return { error: `No encontré clientes con nombre "${clientName!}"` };
     }
     if (matches.length > 1) {
       return {
         error: 'Más de un cliente coincide',
-        options: matches.map((c) => c.name),
+        options: matches.map((c) => c.razonSocial),
       };
     }
-    return { id: matches[0].id, name: matches[0].name };
+    return { id: matches[0].id, name: matches[0].razonSocial };
   });
 
 /* =========================================================================
-   Persistir movimientos extraídos de un extracto bancario por scanBankStatement.
-   Inserta en `movements` (FK por userId, no por client — ver schema.ts:353).
-   El clientId se valida contra el org pero no queda almacenado en la fila
-   (la tabla actual no tiene FK a client). Se incluye una nota en `descripcion`
-   con el banco y el cliente para preservar la trazabilidad.
+   Persistir los movimientos que el escáner extrajo de un extracto bancario.
+   Van a `movimiento_bancario`, que cuelga de una cuenta del cliente: si esa
+   cuenta no existe todavía se crea con el banco que informó el extracto.
+   El importe se guarda siempre positivo — el signo lo lleva `direccion`.
    ========================================================================= */
 const movementInputSchema = z.object({
   fecha: z.string().min(1),
@@ -407,7 +343,7 @@ const movementInputSchema = z.object({
 });
 
 const persistMovementsInput = z.object({
-  clientId: z.string().min(1),
+  clienteId: z.string().min(1),
   banco: z.string().optional().default(''),
   ingresos: z.array(movementInputSchema),
   egresos: z.array(movementInputSchema),
@@ -416,8 +352,9 @@ const persistMovementsInput = z.object({
 export interface PersistMovementsResult {
   inserted: number;
   skipped: number;
-  clientId: string;
-  clientName: string;
+  clienteId: string;
+  clienteNombre: string;
+  cuentaBancariaId: string;
   banco: string;
 }
 
@@ -430,8 +367,8 @@ function parseArgMonto(raw: string): number | null {
   // Acepta formato argentino "1.234.567,89" o "1234567,89" o "1234567.89".
   if (ARG_MONTO_RE.test(trimmed)) {
     const normalized = trimmed.replace(/\./g, '').replace(',', '.');
-    const n = Number(normalized);
-    return Number.isFinite(n) ? n : null;
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
   }
   // Fallback permisivo: quita separadores y prueba.
   const fallback = Number(
@@ -440,7 +377,7 @@ function parseArgMonto(raw: string): number | null {
   return Number.isFinite(fallback) ? fallback : null;
 }
 
-function parseArgFecha(raw: string): Date | null {
+function parseArgFecha(raw: string): string | null {
   const m = FECHA_RE.exec(raw.trim());
   if (!m) return null;
   const day = Number(m[1]);
@@ -448,102 +385,119 @@ function parseArgFecha(raw: string): Date | null {
   let year = Number(m[3]);
   if (year < 100) year += 2000;
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-  const d = new Date(year, month - 1, day, 12, 0, 0);
-  return Number.isFinite(d.getTime()) ? d : null;
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
 export const persistBankStatementMovements = createServerFn({ method: 'POST' })
   .inputValidator(persistMovementsInput)
   .handler(async (ctx): Promise<PersistMovementsResult> => {
-    const { orgId, userId } = (await getSessionWithOrg()) as {
-      orgId: string;
-      userId: string;
-    };
-    const role = await getMemberRole();
-    assertCanWrite(role);
+    const { orgId } = await getSessionWithOrg();
+    assertCanWrite(await getMemberRole());
 
-    const { clientId, banco, ingresos, egresos } = ctx.data;
+    const { clienteId, banco, ingresos, egresos } = ctx.data;
 
     const [target] = await db
-      .select({ id: representative.id, name: sql<string>`coalesce(${representative.name}, '')` })
-      .from(representative)
-      .where(and(eq(representative.id, clientId), eq(representative.organizationId, orgId)))
+      .select({ id: cliente.id, razonSocial: cliente.razonSocial })
+      .from(cliente)
+      .where(and(eq(cliente.id, clienteId), eq(cliente.orgId, orgId)))
       .limit(1);
     if (!target) {
       throw new Error('Cliente no encontrado o fuera del estudio.');
     }
 
-    const all: {
-      tipo: 'ingreso' | 'egreso';
-      m: z.infer<typeof movementInputSchema>;
-    }[] = [
-      ...ingresos.map((m) => ({ tipo: 'ingreso' as const, m })),
-      ...egresos.map((m) => ({ tipo: 'egreso' as const, m })),
+    const nombreBanco = banco.trim() || 'Sin identificar';
+    const [existente] = await db
+      .select({ id: cuentaBancaria.id })
+      .from(cuentaBancaria)
+      .where(
+        and(
+          eq(cuentaBancaria.clienteId, target.id),
+          eq(cuentaBancaria.banco, nombreBanco)
+        )
+      )
+      .limit(1);
+
+    const cuentaBancariaId =
+      existente?.id ??
+      (
+        await db
+          .insert(cuentaBancaria)
+          .values({ orgId, clienteId: target.id, banco: nombreBanco })
+          .returning({ id: cuentaBancaria.id })
+      )[0].id;
+
+    const todos = [
+      ...ingresos.map((m) => ({ direccion: 'ingreso' as const, m })),
+      ...egresos.map((m) => ({ direccion: 'egreso' as const, m })),
     ];
 
-    const rows: (typeof movements.$inferInsert)[] = [];
+    const rows: (typeof movimientoBancario.$inferInsert)[] = [];
     let skipped = 0;
-    for (const { tipo, m } of all) {
+    for (const { direccion, m } of todos) {
       const fecha = parseArgFecha(m.fecha);
-      const montoNum = parseArgMonto(m.monto);
-      if (!fecha || montoNum == null) {
+      const monto = parseArgMonto(m.monto);
+      if (!fecha || monto == null) {
         skipped += 1;
         continue;
       }
-      const descripcion = banco
-        ? `[${banco}] ${m.infoExtra ?? ''}`.trim()
-        : (m.infoExtra ?? '').trim() || tipo;
       rows.push({
-        id: crypto.randomUUID(),
-        userId,
-        tipo,
+        cuentaBancariaId,
         fecha,
-        descripcion,
-        monto: Math.abs(montoNum).toFixed(2),
-        tipoGasto: m.tipoGasto ?? 'Sin especificar',
+        direccion,
+        importe: Math.abs(monto).toFixed(2),
+        descripcion: (m.infoExtra ?? '').trim() || direccion,
+        fuente: 'import',
+        // El tipo de gasto que sugirió el escáner no tiene columna propia:
+        // se conserva crudo hasta que se impute a una cuenta contable.
+        datosCrudos: m.tipoGasto ? { tipoGasto: m.tipoGasto } : null,
       });
     }
 
     if (rows.length > 0) {
-      await db.insert(movements).values(rows);
+      await db.insert(movimientoBancario).values(rows);
     }
 
     return {
       inserted: rows.length,
       skipped,
-      clientId: target.id,
-      clientName: target.name,
-      banco: banco ?? '',
+      clienteId: target.id,
+      clienteNombre: target.razonSocial,
+      cuentaBancariaId,
+      banco: nombreBanco,
     };
   });
 
 /**
- * Resumen de salud de un cliente (módulo Clientes).
+ * Resumen de salud de un cliente.
  *
- * Combina datos de varias tablas para devolver un overview ejecutivo:
- * - Health score 0-100
- * - Facturación del mes en curso
- * - Deudas vencidas y pendientes
- * - Notificaciones AFIP no leídas
- * - Estado del último scrape de cada tipo (auth_error / ok / fallido)
+ * Combina varias tablas para responder "cómo está el cliente X" sin abrir 7
+ * pestañas: health score 0-100, facturación del mes, deudas, notificaciones sin
+ * leer y estado del último scrape de cada tipo.
  *
- * Diseñado para responder "cómo está el cliente X" sin abrir 7 tabs.
- *
- * Acepta `clientId` y/o `clientName`. Si el id no resuelve (LLMs suelen
- * "regenerar" UUIDs cambiándole un dígito), cae por fuzzy match al nombre.
+ * Acepta `clienteId` y/o `clientName`. Si el id no resuelve (los LLMs suelen
+ * "regenerar" UUIDs cambiándole un dígito), cae por búsqueda de nombre.
  */
 const getResumenSaludClienteInput = z.object({
-  clientId: z.string().optional(),
+  clienteId: z.string().optional(),
   clientName: z.string().optional(),
 });
 
 export type GetResumenSaludClienteResult =
   | { error: string }
   | {
-      cliente: { id: string; name: string; identityNumber: string };
+      cliente: { id: string; razonSocial: string; cuit: string };
       healthScore: number;
-      facturacionMesActual: { ventas: number; compras: number; cantidad: number };
-      deudas: { vencidas: number; vencidasMonto: number; total: number; totalMonto: number };
+      facturacionMesActual: {
+        ventas: number;
+        compras: number;
+        cantidad: number;
+      };
+      deudas: {
+        vencidas: number;
+        vencidasMonto: number;
+        total: number;
+        totalMonto: number;
+      };
       notificaciones: { noLeidas: number };
       ultimoScrapePorTipo: {
         tipo: string;
@@ -558,52 +512,35 @@ export type GetResumenSaludClienteResult =
 export const getResumenSaludCliente = createServerFn({ method: 'POST' })
   .inputValidator(getResumenSaludClienteInput)
   .handler(async (ctx): Promise<GetResumenSaludClienteResult> => {
-    const { orgId } = (await getSessionWithOrg()) as { orgId: string };
-    const { clientId, clientName } = ctx.data;
+    const { orgId } = await getSessionWithOrg();
+    const { clienteId, clientName } = ctx.data;
 
-    if (!clientId && !clientName) {
-      return { error: 'Se requiere clientId o clientName.' };
+    if (!clienteId && !clientName) {
+      return { error: 'Se requiere clienteId o clientName.' };
     }
 
-    // 1) Try exact id match first (typical happy path).
-    let target: { id: string; name: string; identityNumber: string } | null = null;
-    if (clientId) {
+    let target: { id: string; razonSocial: string; cuit: string } | null = null;
+    if (clienteId) {
       const [byId] = await dbReadonly
         .select({
-          id: representative.id,
-          name: sql<string>`coalesce(${representative.name}, '')`,
-          identityNumber: representative.cuit,
+          id: cliente.id,
+          razonSocial: cliente.razonSocial,
+          cuit: cliente.cuit,
         })
-        .from(representative)
-        .where(
-          and(eq(representative.id, clientId), eq(representative.organizationId, orgId))
-        )
+        .from(cliente)
+        .where(and(eq(cliente.id, clienteId), eq(cliente.orgId, orgId)))
         .limit(1);
       if (byId) target = byId;
     }
 
-    // 2) Fallback: fuzzy match by name (LLMs sometimes mangle UUIDs).
     if (!target && clientName) {
-      const matches = await dbReadonly
-        .select({
-          id: representative.id,
-          name: sql<string>`coalesce(${representative.name}, '')`,
-          identityNumber: representative.cuit,
-        })
-        .from(representative)
-        .where(
-          and(
-            eq(representative.organizationId, orgId),
-            ilike(representative.name, `%${clientName}%`)
-          )
-        )
-        .limit(5);
+      const matches = await resolverClientes(orgId, clientName);
       if (matches.length === 1) {
         target = matches[0];
       } else if (matches.length > 1) {
         return {
           error: `Encontré varios clientes con nombre similar a "${clientName}". Especificá cuál: ${matches
-            .map((m) => m.name)
+            .map((m) => m.razonSocial)
             .join(', ')}`,
         };
       }
@@ -618,95 +555,106 @@ export const getResumenSaludCliente = createServerFn({ method: 'POST' })
     }
 
     const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+    const desde = aFecha(new Date(now.getFullYear(), now.getMonth(), 1));
+    const hasta = aFecha(new Date(now.getFullYear(), now.getMonth() + 1, 0));
 
-    const [debtRows, notifRow, jobRows, invoiceAgg] = await Promise.all([
-      dbReadonly.select().from(debt).where(eq(debt.representativeId, target.id)),
+    // Los jobs cuelgan del login de AFIP, no del cliente.
+    const credenciales = await dbReadonly
+      .select({ id: clienteCredencial.credencialId })
+      .from(clienteCredencial)
+      .where(eq(clienteCredencial.clienteId, target.id));
+    const credencialIds = credenciales.map((c) => c.id);
+
+    const [deudas, sinLeer, jobs, facturacion] = await Promise.all([
+      dbReadonly.select().from(deuda).where(eq(deuda.clienteId, target.id)),
       dbReadonly
         .select({ count: sql<number>`count(*)` })
-        .from(notification)
-        .where(
-          and(eq(notification.representativeId, target.id), eq(notification.opened, false))
-        ),
-      // Último job de cada tipo
-      dbReadonly
-        .select({
-          type: job.type,
-          status: job.status,
-          finishedAt: job.finishedAt,
-          createdAt: job.createdAt,
-          failedReason: job.failedReason,
-        })
-        .from(job)
-        .where(eq(job.representativeId, target.id))
-        .orderBy(desc(job.createdAt))
-        .limit(50),
-      // Facturación del mes
-      dbReadonly
-        .select({
-          direction: invoice.direction,
-          totalSum: sql<string>`COALESCE(SUM(${invoice.amount}), 0)`,
-          count: sql<number>`count(*)`,
-        })
-        .from(invoice)
-        .innerJoin(client, eq(invoice.clientId, client.id))
+        .from(notificacion)
         .where(
           and(
-            eq(client.representativeId, target.id),
-            gte(invoice.emitionDate, monthStart),
-            lte(invoice.emitionDate, monthEnd)
+            eq(notificacion.clienteId, target.id),
+            eq(notificacion.leida, false)
+          )
+        ),
+      credencialIds.length === 0
+        ? []
+        : dbReadonly
+            .select({
+              type: job.type,
+              status: job.status,
+              finishedAt: job.finishedAt,
+              createdAt: job.createdAt,
+              failedReason: job.failedReason,
+            })
+            .from(job)
+            .where(inArray(job.credencialId, credencialIds))
+            .orderBy(desc(job.createdAt))
+            .limit(50),
+      dbReadonly
+        .select({
+          direccion: comprobante.direccion,
+          total: sql<string>`COALESCE(SUM(${comprobante.total} * ${comprobante.cotizacion}), 0)`,
+          count: sql<number>`count(*)`,
+        })
+        .from(comprobante)
+        .where(
+          and(
+            eq(comprobante.clienteId, target.id),
+            gte(comprobante.fechaEmision, desde),
+            lte(comprobante.fechaEmision, hasta)
           )
         )
-        .groupBy(invoice.direction),
+        .groupBy(comprobante.direccion),
     ]);
-
-    const num = (v: unknown) => Number(v ?? 0);
 
     let ventas = 0;
     let compras = 0;
-    let invoiceCount = 0;
-    for (const row of invoiceAgg) {
-      const total = num(row.totalSum);
-      invoiceCount += Number(row.count);
-      if (row.direction === 'output' || row.direction === 'sales')
-        ventas += total;
-      else compras += total;
+    let cantidad = 0;
+    for (const row of facturacion) {
+      cantidad += Number(row.count);
+      if (row.direccion === 'emitido') ventas += n(row.total);
+      else compras += n(row.total);
     }
 
-    const debtsVencidas = debtRows.filter((d) => d.dueDate && new Date(d.dueDate) < now);
-    const debtsVencidasMonto = debtsVencidas.reduce((s, d) => s + num(d.balance), 0);
-    const debtsTotalMonto = debtRows.reduce((s, d) => s + num(d.balance), 0);
+    const hoy = aFecha(now);
+    const vencidas = deudas.filter((d) => d.venceAt && d.venceAt < hoy);
+    const vencidasMonto = vencidas.reduce((s, d) => s + n(d.saldo), 0);
+    const totalMonto = deudas.reduce((s, d) => s + n(d.saldo), 0);
+    const noLeidas = Number(sinLeer[0]?.count ?? 0);
 
-    const noLeidas = Number(notifRow[0]?.count ?? 0);
-
-    // Reducir jobs a último por tipo
-    const tipos = ['iva', 'comprobantes', 'notificaciones', 'deuda', 'vencimientos'] as const;
+    const tipos = [
+      'iva',
+      'comprobantes',
+      'notificaciones',
+      'deuda',
+      'vencimientos',
+    ] as const;
     const ultimoScrapePorTipo = tipos.map((tipo) => {
-      const last = jobRows.find((j) => j.type === tipo);
-      const finished = last?.finishedAt ? new Date(last.finishedAt) : null;
-      const diasDesde = finished
-        ? Math.floor((now.getTime() - finished.getTime()) / (1000 * 60 * 60 * 24))
-        : null;
+      const ultimo = jobs.find((j) => j.type === tipo);
+      const fin = ultimo?.finishedAt ? new Date(ultimo.finishedAt) : null;
       return {
         tipo,
-        status: last?.status ?? null,
-        finishedAt: finished ? finished.toISOString() : null,
-        diasDesde,
-        failedReason: last?.failedReason ?? null,
+        status: ultimo?.status ?? null,
+        finishedAt: fin ? fin.toISOString() : null,
+        diasDesde: fin
+          ? Math.floor((now.getTime() - fin.getTime()) / 86400000)
+          : null,
+        failedReason: ultimo?.failedReason ?? null,
       };
     });
 
-    // Health score
     let score = 0;
-    const observaciones: { severidad: 'info' | 'warn' | 'error'; mensaje: string }[] = [];
+    const observaciones: {
+      severidad: 'info' | 'warn' | 'error';
+      mensaje: string;
+    }[] = [];
 
     // 25 pts: sin deudas vencidas
-    if (debtsVencidas.length === 0) score += 25;
+    if (vencidas.length === 0) score += 25;
     else
       observaciones.push({
         severidad: 'error',
-        mensaje: `${debtsVencidas.length} deudas vencidas por $${debtsVencidasMonto.toFixed(0)}`,
+        mensaje: `${vencidas.length} deudas vencidas por $${vencidasMonto.toFixed(0)}`,
       });
 
     // 20 pts: scrape reciente (cualquier tipo, <7 días)
@@ -729,7 +677,7 @@ export const getResumenSaludCliente = createServerFn({ method: 'POST' })
         mensaje: 'Hay jobs fallidos recientes — revisar credenciales',
       });
 
-    // 15 pts: notif no leídas < 5
+    // 15 pts: notificaciones sin leer < 5
     if (noLeidas < 5) score += 15;
     else
       observaciones.push({
@@ -738,7 +686,7 @@ export const getResumenSaludCliente = createServerFn({ method: 'POST' })
       });
 
     // 20 pts: tiene facturación reciente
-    if (invoiceCount > 0) score += 20;
+    if (cantidad > 0) score += 20;
     else
       observaciones.push({
         severidad: 'info',
@@ -748,12 +696,12 @@ export const getResumenSaludCliente = createServerFn({ method: 'POST' })
     return {
       cliente: target,
       healthScore: score,
-      facturacionMesActual: { ventas, compras, cantidad: invoiceCount },
+      facturacionMesActual: { ventas, compras, cantidad },
       deudas: {
-        vencidas: debtsVencidas.length,
-        vencidasMonto: debtsVencidasMonto,
-        total: debtRows.length,
-        totalMonto: debtsTotalMonto,
+        vencidas: vencidas.length,
+        vencidasMonto,
+        total: deudas.length,
+        totalMonto,
       },
       notificaciones: { noLeidas },
       ultimoScrapePorTipo,
