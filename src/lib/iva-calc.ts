@@ -1,145 +1,154 @@
-// Tipos de comprobante según AFIP
-export const INVOICE_TYPES_A = [
-  '1',
-  '2',
-  '3',
-  '4',
-  '51',
-  '52',
-  '53',
-  '54',
-  '201',
-  '202',
-  '203',
-];
-export const INVOICE_TYPES_B = ['6', '7', '8'];
-export const CREDIT_NOTE_TYPES = [
-  '3',
-  '8',
-  '13',
-  '21',
-  '53',
-  '114',
-  '197',
-  '203',
-  '208',
-  '213',
-];
+/**
+ * Cálculo de débito y crédito fiscal sobre el modelo ideal.
+ *
+ * A diferencia del modelo viejo (una fila `invoice` con 10 columnas
+ * `amount_iva_XX`/`iva_XX`), acá cada comprobante trae sus alícuotas como filas
+ * de `comprobante_alicuota`, con el neto y el IVA ya discriminados. El cálculo
+ * es entonces una suma sobre esas filas: no hace falta despejar el IVA del
+ * total dividiendo por 1,21.
+ *
+ * La letra (A/B/C/M/E) y si es nota de crédito salen del catálogo
+ * `comprobante_tipo`, no de listas de códigos hardcodeadas.
+ */
 
-export interface InvoiceIvaRow {
-  direction: string | null;
-  type: string | null;
-  currency: string | null;
-  currencyRate: string | null;
-  amountIVA21: string | null;
-  amountIVA105: string | null;
-  amountIVA27: string | null;
-  amountIVA5: string | null;
-  amountIVA25: string | null;
-  IVA21: string | null;
-  IVA105: string | null;
-  IVA27: string | null;
+/** Una fila de `comprobante_alicuota` con los datos de su comprobante. */
+export interface ComprobanteAlicuotaRow {
+  direccion: 'emitido' | 'recibido';
+  /** `comprobante_tipo.letra` — null en los tipos sin letra (tique genérico). */
+  letra: string | null;
+  /** `comprobante_tipo.es_nc`. */
+  esNc: boolean;
+  moneda: string | null;
+  cotizacion: string | null;
+  /** Alícuota en puntos porcentuales: '21.00', '10.50'. */
+  alicuota: string;
+  neto: string;
+  iva: string;
 }
 
 export interface IvaBreakdown {
-  // Ventas (Outbound)
+  // Ventas (emitidos)
   netoA21: number;
   netoA105: number;
   totalAmountB21: number;
   totalAmountB105: number;
   totalAmountB27: number;
+  /** Neto de las NC recibidas de proveedores; integra el débito fiscal. */
+  ncRecibidasNeto: number;
+  /** IVA de las NC recibidas de proveedores; integra el débito fiscal. */
+  ncRecibidasIva: number;
   debitoFiscal: number;
-  // Compras (Inbound)
+  // Compras (recibidos)
   netoInbound21: number;
   netoInbound105: number;
   netoInbound27: number;
   netoInbound5: number;
   netoInbound25: number;
+  /** Neto de las NC emitidas a clientes; integra el crédito fiscal. */
+  ncEmitidasNeto: number;
+  /** IVA de las NC emitidas a clientes; integra el crédito fiscal. */
+  ncEmitidasIva: number;
   netoGravadoCompras: number;
   creditoFiscalCompras: number;
 }
 
+/** Los comprobantes A y M discriminan IVA igual; el reporte los muestra juntos. */
+const LETRAS_DISCRIMINADAS = ['A', 'M'];
+
 /**
- * Calcula débito y crédito fiscal a partir de un conjunto de facturas.
- * Misma lógica que getInvoiceStatsByProfile en invoice.tsx.
+ * Calcula débito y crédito fiscal a partir de las alícuotas de un conjunto de
+ * comprobantes.
+ *
+ * Las notas de crédito no se restan del lado en el que se emitieron: según los
+ * arts. 11 y 12 de la Ley de IVA, la NC recibida de un proveedor se computa
+ * como débito fiscal (devuelve el crédito que se había tomado) y la NC emitida
+ * a un cliente se computa como crédito fiscal (recupera el débito declarado).
  */
-export function calcularIvaDesdeFacturas(
-  invoices: InvoiceIvaRow[]
-): IvaBreakdown {
+export function calcularIva(rows: ComprobanteAlicuotaRow[]): IvaBreakdown {
   const n = (v: string | null | undefined) => parseFloat(v ?? '0') || 0;
 
-  let netoA21 = 0,
-    netoA105 = 0;
-  let totalAmountB21 = 0,
-    totalAmountB105 = 0,
-    totalAmountB27 = 0;
-  let netoInbound21 = 0,
-    netoInbound105 = 0,
-    netoInbound27 = 0,
-    netoInbound5 = 0,
-    netoInbound25 = 0;
+  const b: IvaBreakdown = {
+    netoA21: 0,
+    netoA105: 0,
+    totalAmountB21: 0,
+    totalAmountB105: 0,
+    totalAmountB27: 0,
+    ncRecibidasNeto: 0,
+    ncRecibidasIva: 0,
+    debitoFiscal: 0,
+    netoInbound21: 0,
+    netoInbound105: 0,
+    netoInbound27: 0,
+    netoInbound5: 0,
+    netoInbound25: 0,
+    ncEmitidasNeto: 0,
+    ncEmitidasIva: 0,
+    netoGravadoCompras: 0,
+    creditoFiscalCompras: 0,
+  };
 
-  for (const inv of invoices) {
-    const rate =
-      inv.currency?.toUpperCase() === 'USD' ? n(inv.currencyRate) || 1 : 1;
-    const sign = CREDIT_NOTE_TYPES.includes(inv.type ?? '') ? -1 : 1;
-    const dir = inv.direction?.toLowerCase();
-    const type = inv.type ?? '';
+  for (const r of rows) {
+    // Los importes se guardan en la moneda del comprobante; el reporte es en pesos.
+    const cot = r.moneda?.toUpperCase() === 'ARS' ? 1 : n(r.cotizacion) || 1;
+    const neto = n(r.neto) * cot;
+    const iva = n(r.iva) * cot;
+    const alicuota = n(r.alicuota);
 
-    if (dir === 'outbound' && INVOICE_TYPES_A.includes(type)) {
-      netoA21 += sign * n(inv.amountIVA21) * rate;
-      netoA105 += sign * n(inv.amountIVA105) * rate;
+    if (r.esNc) {
+      if (r.direccion === 'recibido') {
+        b.ncRecibidasNeto += neto;
+        b.ncRecibidasIva += iva;
+      } else {
+        b.ncEmitidasNeto += neto;
+        b.ncEmitidasIva += iva;
+      }
+      continue;
     }
 
-    if (dir === 'outbound' && INVOICE_TYPES_B.includes(type)) {
-      totalAmountB21 += sign * (n(inv.amountIVA21) + n(inv.IVA21)) * rate;
-      totalAmountB105 += sign * (n(inv.amountIVA105) + n(inv.IVA105)) * rate;
-      totalAmountB27 += sign * (n(inv.amountIVA27) + n(inv.IVA27)) * rate;
+    if (r.direccion === 'emitido') {
+      if (r.letra && LETRAS_DISCRIMINADAS.includes(r.letra)) {
+        if (alicuota === 21) b.netoA21 += neto;
+        else if (alicuota === 10.5) b.netoA105 += neto;
+      } else if (r.letra === 'B') {
+        // El comprobante B no discrimina IVA en el papel: el reporte muestra el
+        // total (neto + IVA), aunque el dato scrapeado venga separado.
+        if (alicuota === 21) b.totalAmountB21 += neto + iva;
+        else if (alicuota === 10.5) b.totalAmountB105 += neto + iva;
+        else if (alicuota === 27) b.totalAmountB27 += neto + iva;
+      }
+      continue;
     }
 
-    if (dir === 'inbound') {
-      netoInbound21 += sign * n(inv.amountIVA21) * rate;
-      netoInbound105 += sign * n(inv.amountIVA105) * rate;
-      netoInbound27 += sign * n(inv.amountIVA27) * rate;
-      netoInbound5 += sign * n(inv.amountIVA5) * rate;
-      netoInbound25 += sign * n(inv.amountIVA25) * rate;
-    }
+    if (alicuota === 21) b.netoInbound21 += neto;
+    else if (alicuota === 10.5) b.netoInbound105 += neto;
+    else if (alicuota === 27) b.netoInbound27 += neto;
+    else if (alicuota === 5) b.netoInbound5 += neto;
+    else if (alicuota === 2.5) b.netoInbound25 += neto;
   }
 
-  const debitoFiscal =
-    netoA21 * 0.21 +
-    netoA105 * 0.105 +
-    (totalAmountB21 / 1.21) * 0.21 +
-    (totalAmountB105 / 1.105) * 0.105 +
-    (totalAmountB27 / 1.27) * 0.27;
+  b.debitoFiscal =
+    b.netoA21 * 0.21 +
+    b.netoA105 * 0.105 +
+    (b.totalAmountB21 / 1.21) * 0.21 +
+    (b.totalAmountB105 / 1.105) * 0.105 +
+    (b.totalAmountB27 / 1.27) * 0.27 +
+    b.ncRecibidasIva;
 
-  const netoGravadoCompras =
-    netoInbound27 +
-    netoInbound21 +
-    netoInbound105 +
-    netoInbound5 +
-    netoInbound25;
+  b.netoGravadoCompras =
+    b.netoInbound27 +
+    b.netoInbound21 +
+    b.netoInbound105 +
+    b.netoInbound5 +
+    b.netoInbound25 +
+    b.ncEmitidasNeto;
 
-  const creditoFiscalCompras =
-    netoInbound21 * 0.21 +
-    netoInbound105 * 0.105 +
-    netoInbound27 * 0.27 +
-    netoInbound5 * 0.05 +
-    netoInbound25 * 0.025;
+  b.creditoFiscalCompras =
+    b.netoInbound21 * 0.21 +
+    b.netoInbound105 * 0.105 +
+    b.netoInbound27 * 0.27 +
+    b.netoInbound5 * 0.05 +
+    b.netoInbound25 * 0.025 +
+    b.ncEmitidasIva;
 
-  return {
-    netoA21,
-    netoA105,
-    totalAmountB21,
-    totalAmountB105,
-    totalAmountB27,
-    debitoFiscal,
-    netoInbound21,
-    netoInbound105,
-    netoInbound27,
-    netoInbound5,
-    netoInbound25,
-    netoGravadoCompras,
-    creditoFiscalCompras,
-  };
+  return b;
 }

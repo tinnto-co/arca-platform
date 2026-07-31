@@ -39,9 +39,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useQuery } from '@tanstack/react-query';
 import {
-  getInvoicesByProfileInRange,
-  getInvoiceStatsByProfile,
-} from '@/actions/invoice';
+  getComprobantesEnRango,
+  getComprobanteStats,
+} from '@/actions/comprobante';
 import { getLastJobByType } from '@/actions/client';
 
 const currencyFormatter = new Intl.NumberFormat('es-AR', {
@@ -155,15 +155,12 @@ function BandRow({
 function DesgloseRow({
   label,
   value,
-  negative = false,
   last = false,
 }: {
   label: string;
   value: number;
-  negative?: boolean;
   last?: boolean;
 }) {
-  const shown = negative ? -Math.abs(value) : value;
   return (
     <div
       className={`flex items-baseline justify-between py-2 text-[14px] ${
@@ -173,12 +170,12 @@ function DesgloseRow({
       <span className="text-[var(--arca-ink-2)]">{label}</span>
       <span
         className={`tnum font-medium ${
-          shown < 0
+          value < 0
             ? 'text-[var(--arca-accent-neg-fg)]'
             : 'text-[var(--arca-ink)]'
         }`}
       >
-        {fmtCurrency(shown)}
+        {fmtCurrency(value)}
       </span>
     </div>
   );
@@ -393,11 +390,6 @@ function AdjustControl({
   );
 }
 
-interface DateRange {
-  from?: Date;
-  to?: Date;
-}
-
 export const MONTH_NAMES = [
   'Enero',
   'Febrero',
@@ -462,12 +454,13 @@ export interface RenderIvaResumeRef {
 }
 
 interface RenderIvaResumeProps {
+  /** Login de AFIP (`credencial_afip.id`): de ahí sale el último job de IVA. */
   representativeId: string;
   /** Nombre del cliente para el nombre del archivo Excel. */
   clientName?: string | null;
   /** Datos de IVA crédito fiscal del cliente (período anterior). Opcional mientras carga o si no hay datos. */
   clientIva?: ClientIvaCreditData | undefined;
-  /** Perfil seleccionado en la pestaña IVA (definido en client-detail-page). */
+  /** Empresa seleccionada en la pestaña IVA: es un `cliente.id`. */
   selectedProfileId?: string | undefined;
   /** Rango de fechas del período (controlado desde el padre). */
   dateRange: { from: Date; to: Date };
@@ -486,18 +479,13 @@ function parseNumeric(value: string | null | undefined): number | null {
 }
 
 /**
- * Convierte una fecha local a ISO usando el día calendario como límite UTC.
- * Evita que `toISOString()` corra la medianoche local (UTC-3) a las 03:00Z y
- * excluya facturas guardadas a las 00:00:00 del primer día del mes.
+ * `comprobante.fecha_emision` es una columna `date`: los filtros viajan como
+ * `YYYY-MM-DD` y no como timestamp ISO, para no correr el día por zona horaria.
  */
-function toUtcDayStartISO(d: Date): string {
-  return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())).toISOString();
-}
-
-function toUtcDayEndISO(d: Date): string {
-  return new Date(
-    Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)
-  ).toISOString();
+function aFechaISO(d: Date): string {
+  const mes = String(d.getMonth() + 1).padStart(2, '0');
+  const dia = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mes}-${dia}`;
 }
 
 function sanitizeFilename(name: string): string {
@@ -543,23 +531,19 @@ export const RenderIvaResume = React.forwardRef<
     mockData.saldosYRetenciones.Compensaciones
   );
 
-  const {
-    data: invoicesInRange,
-    error: invoicesError,
-    isLoading: loadingInvoices,
-  } = useQuery({
+  const { isLoading: loadingInvoices } = useQuery({
     queryKey: [
-      'invoicesByProfileInRange',
+      'comprobantesEnRango',
       selectedProfileId,
       dateRange.from?.toISOString(),
       dateRange.to?.toISOString(),
     ],
     queryFn: () =>
-      getInvoicesByProfileInRange({
+      getComprobantesEnRango({
         data: {
-          profileId: selectedProfileId!,
-          dateFrom: toUtcDayStartISO(dateRange.from ?? new Date()),
-          dateTo: toUtcDayEndISO(dateRange.to ?? new Date()),
+          clienteId: selectedProfileId!,
+          dateFrom: aFechaISO(dateRange.from ?? new Date()),
+          dateTo: aFechaISO(dateRange.to ?? new Date()),
         },
       }),
     enabled: !!selectedProfileId && !!dateRange.from && !!dateRange.to,
@@ -567,17 +551,17 @@ export const RenderIvaResume = React.forwardRef<
 
   const { data: invoiceStats, isLoading: loadingInvoiceStats } = useQuery({
     queryKey: [
-      'invoiceStatsByProfile',
+      'comprobanteStats',
       selectedProfileId,
       dateRange.from?.toISOString(),
       dateRange.to?.toISOString(),
     ],
     queryFn: () =>
-      getInvoiceStatsByProfile({
+      getComprobanteStats({
         data: {
-          profileId: selectedProfileId!,
-          dateFrom: toUtcDayStartISO(dateRange.from ?? new Date()),
-          dateTo: toUtcDayEndISO(dateRange.to ?? new Date()),
+          clienteId: selectedProfileId!,
+          dateFrom: aFechaISO(dateRange.from ?? new Date()),
+          dateTo: aFechaISO(dateRange.to ?? new Date()),
         },
       }),
     enabled: !!selectedProfileId && !!dateRange.from && !!dateRange.to,
@@ -587,14 +571,10 @@ export const RenderIvaResume = React.forwardRef<
     queryKey: ['lastIvaJob', representativeId],
     queryFn: () =>
       getLastJobByType({
-        data: { representativeId, jobType: 'iva' },
+        data: { credencialId: representativeId, jobType: 'iva' },
       }),
     enabled: !!representativeId,
   });
-
-  React.useEffect(() => {
-    console.log('[RenderIvaResume] invoicesInRange', invoicesInRange);
-  }, [invoicesInRange]);
 
   // Débito: Neto A y Total B desde stats (ventas tipo A y tipo B)
   const debitoRows = React.useMemo(() => {
@@ -612,6 +592,7 @@ export const RenderIvaResume = React.forwardRef<
       'Total B 10,50%': totalB105,
       'Total B 21%': totalB21,
       'Total B 27%': totalB27,
+      'NC recibidas': invoiceStats?.ncRecibidasNeto ?? 0,
     };
   }, [
     invoiceStats?.netoA21,
@@ -619,6 +600,7 @@ export const RenderIvaResume = React.forwardRef<
     invoiceStats?.totalAmountB21,
     invoiceStats?.totalAmountB105,
     invoiceStats?.totalAmountB27,
+    invoiceStats?.ncRecibidasNeto,
   ]);
 
   // Crédito / Compras: netos por alícuota desde stats (27%, 21%, 10,5%, 5%, 2,5%)
@@ -639,6 +621,7 @@ export const RenderIvaResume = React.forwardRef<
       'Compras 10,50%': neto105,
       'Compras 5% (4,93%)': neto5,
       'Compras 2,5%': neto25,
+      'NC emitidas': invoiceStats?.ncEmitidasNeto ?? 0,
     };
   }, [
     invoiceStats?.netoInbound27,
@@ -646,10 +629,12 @@ export const RenderIvaResume = React.forwardRef<
     invoiceStats?.netoInbound105,
     invoiceStats?.netoInbound5,
     invoiceStats?.netoInbound25,
+    invoiceStats?.ncEmitidasNeto,
   ]);
 
   // Débito Fiscal (ventas) = (B6*0.21)+(B7*0.105)+(B9/1.21*0.21)+(B8/1.105*0.105)+(B10/1.27*0.27)+B11
   // B6=Neto A 21%, B7=Neto A 10,5%, B9=Total B 21%, B8=Total B 10,5%, B10=Total B 27%, B11=ajuste ventas
+  // Se suma el IVA de las NC recibidas de proveedores, que integra el débito fiscal.
   const debitoFiscalTotal = React.useMemo(() => {
     const B6 = debitoRows['Neto A 21%'];
     const B7 = debitoRows['Neto A 10,5%'];
@@ -663,9 +648,10 @@ export const RenderIvaResume = React.forwardRef<
       (B9 / 1.21) * 0.21 +
       (B8 / 1.105) * 0.105 +
       (B10 / 1.27) * 0.27 +
+      (invoiceStats?.ncRecibidasIva ?? 0) +
       B11
     );
-  }, [debitoRows, ajusteVentas]);
+  }, [debitoRows, ajusteVentas, invoiceStats?.ncRecibidasIva]);
 
   const creditoFiscalTotal =
     invoiceStats != null
@@ -728,8 +714,16 @@ export const RenderIvaResume = React.forwardRef<
     const B9 = debitoRows['Total B 21%'];
     const B10 = debitoRows['Total B 27%'];
     const B11 = ajusteVentas;
-    return B6 + B7 + B8 / 1.105 + B9 / 1.21 + B10 / 1.27 + B11;
-  }, [debitoRows, ajusteVentas]);
+    return (
+      B6 +
+      B7 +
+      B8 / 1.105 +
+      B9 / 1.21 +
+      B10 / 1.27 +
+      (invoiceStats?.ncRecibidasNeto ?? 0) +
+      B11
+    );
+  }, [debitoRows, ajusteVentas, invoiceStats?.ncRecibidasNeto]);
   // Saldos mostrados: base + valores editables (Retenciones, Percepciones, Percepciones Aduaneras)
   const saldosParaTotal = React.useMemo(
     () => ({
@@ -1054,7 +1048,6 @@ export const RenderIvaResume = React.forwardRef<
                   key={label}
                   label={label}
                   value={value}
-                  negative
                   last={i === entries.length - 1}
                 />
               ));
