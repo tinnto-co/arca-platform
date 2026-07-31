@@ -21,13 +21,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ArcaCard } from '@/components/dashboard/shared';
-import { getRepresentatives } from '@/actions/client';
+import { getClientes } from '@/actions/client';
 import {
-  listBankAccounts,
-  listBankTransactions,
-  autoMatchTransactions,
-  getReconciliationSummary,
-  createBankAccount,
+  listCuentasBancarias,
+  listMovimientos,
+  autoConciliar,
+  getResumenConciliacion,
+  createCuentaBancaria,
 } from '@/actions/bank';
 import { toast } from 'sonner';
 
@@ -42,31 +42,13 @@ export const Route = createFileRoute('/_authed/bank/')({
 });
 
 /* ─── Types ─── */
-interface BankAccountRow {
-  id: string;
-  bankName: string;
-  accountNumber?: string | null;
-  alias?: string | null;
-  cbu?: string | null;
-  currency: string;
-}
-
-interface TransactionRow {
-  id: string;
-  transactionDate: string | Date;
-  description?: string | null;
-  amount: string;
-  direction: string;
-  counterpartyName?: string | null;
-  counterpartyIdentityNumber?: string | null;
-  matched: boolean;
-  matches: { matchType: string; confidence?: string | null }[];
-}
+type MovimientoRow = Awaited<ReturnType<typeof listMovimientos>>[number];
+type ResumenConciliacion = Awaited<ReturnType<typeof getResumenConciliacion>>;
 
 /* ─── Helpers ─── */
-function fmtAmount(amount: string, direction: string) {
-  const n = parseFloat(amount);
-  const sign = direction === 'credit' ? '+' : '-';
+function fmtAmount(importe: string, direccion: string) {
+  const n = parseFloat(importe);
+  const sign = direccion === 'ingreso' ? '+' : '-';
   return `${sign}$${n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
@@ -79,59 +61,47 @@ function fmtDate(d: string | Date) {
 }
 
 /* ─── Summary cards ─── */
-function SummaryCards({
-  summary,
-}: {
-  summary: {
-    totalTransactions: number;
-    matchedTransactions: number;
-    unmatchedTransactions: number;
-    matchRate: number;
-    totalCredit: string;
-    totalDebit: string;
-    accountCount: number;
-  };
-}) {
+function SummaryCards({ summary }: { summary: ResumenConciliacion }) {
   const cards = [
     {
       label: 'Cuentas',
-      value: summary.accountCount,
+      value: summary.cuentas,
       icon: Landmark,
       color: 'var(--arca-ink-2)',
     },
     {
-      label: 'Transacciones',
-      value: summary.totalTransactions,
+      label: 'Movimientos',
+      value: summary.movimientos,
       icon: ArrowLeftRight,
       color: 'var(--arca-ink-2)',
     },
     {
-      label: 'Conciliadas',
-      value: summary.matchedTransactions,
+      label: 'Conciliados',
+      value: summary.conciliados,
       icon: CheckCircle2,
       color: 'oklch(0.55 0.12 145)',
     },
     {
       label: 'Pendientes',
-      value: summary.unmatchedTransactions,
+      value: summary.pendientes,
       icon: CircleDashed,
       color: 'var(--arca-accent-warn)',
     },
     {
       label: 'Tasa de conciliación',
-      value: `${summary.matchRate}%`,
+      value: `${summary.porcentajeConciliado}%`,
       icon: ArrowLeftRight,
       color: 'var(--arca-ink-2)',
     },
     {
-      label: 'Total créditos',
-      value: `$${parseFloat(summary.totalCredit).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`,
+      label: 'Total ingresos',
+      value: `$${parseFloat(summary.totalIngresos).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`,
       icon: TrendingUp,
       color: 'oklch(0.55 0.12 145)',
     },
     {
-      label: 'Total débitos',
-      value: `$${parseFloat(summary.totalDebit).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`,
+      label: 'Total egresos',
+      value: `$${parseFloat(summary.totalEgresos).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`,
       icon: TrendingDown,
       color: 'var(--arca-accent-neg)',
     },
@@ -165,13 +135,14 @@ function SummaryCards({
 }
 
 /* ─── Transaction row ─── */
-function TransactionItem({ tx }: { tx: TransactionRow }) {
-  const isCredit = tx.direction === 'credit';
+function TransactionItem({ tx }: { tx: MovimientoRow }) {
+  const isIngreso = tx.direccion === 'ingreso';
+  const conciliacion = tx.conciliaciones[0];
   return (
     <div className="px-5 py-3.5 flex items-center gap-4 hover:bg-[var(--arca-surface-2)] transition-colors duration-[120ms]">
       {/* Match indicator */}
       <div className="shrink-0">
-        {tx.matched ? (
+        {tx.conciliado ? (
           <CheckCircle2
             className="w-4 h-4"
             style={{ color: 'oklch(0.55 0.12 145)' }}
@@ -187,41 +158,40 @@ function TransactionItem({ tx }: { tx: TransactionRow }) {
 
       {/* Date */}
       <div className="w-[90px] shrink-0 text-[12px] text-[var(--arca-ink-3)] font-mono">
-        {fmtDate(tx.transactionDate)}
+        {fmtDate(tx.fecha)}
       </div>
 
       {/* Description */}
       <div className="flex-1 min-w-0">
         <div className="text-[13px] font-medium text-[var(--arca-ink)] truncate">
-          {tx.description ?? '—'}
+          {tx.descripcion ?? '—'}
         </div>
-        {tx.counterpartyName && (
+        {tx.contraparteTexto && (
           <div className="text-[11.5px] text-[var(--arca-ink-3)] truncate">
-            {tx.counterpartyName}
-            {tx.counterpartyIdentityNumber &&
-              ` · ${tx.counterpartyIdentityNumber}`}
+            {tx.contraparteTexto}
           </div>
         )}
       </div>
 
       {/* Match type badge */}
-      {tx.matched && tx.matches[0] && (
+      {conciliacion && (
         <span
           className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10.5px] font-medium"
           style={{
             background:
-              tx.matches[0].matchType === 'manual'
+              conciliacion.fuente === 'manual'
                 ? 'var(--arca-accent-pos-bg, oklch(0.95 0.05 145))'
                 : 'var(--arca-surface-2)',
             color:
-              tx.matches[0].matchType === 'manual'
+              conciliacion.fuente === 'manual'
                 ? 'oklch(0.45 0.14 145)'
                 : 'var(--arca-ink-3)',
           }}
         >
-          {tx.matches[0].matchType === 'manual' ? 'Manual' : 'Auto'}
-          {tx.matches[0].confidence &&
-            ` ${Math.round(parseFloat(tx.matches[0].confidence))}%`}
+          {conciliacion.fuente === 'manual' ? 'Manual' : 'Auto'}
+          {/* `confianza` viene 0–1 (numeric), no en porcentaje. */}
+          {conciliacion.confianza &&
+            ` ${Math.round(parseFloat(conciliacion.confianza) * 100)}%`}
         </span>
       )}
 
@@ -229,12 +199,12 @@ function TransactionItem({ tx }: { tx: TransactionRow }) {
       <div
         className="w-[130px] text-right shrink-0 text-[13.5px] font-semibold tabular-nums"
         style={{
-          color: isCredit
+          color: isIngreso
             ? 'oklch(0.45 0.14 145)'
             : 'var(--arca-accent-neg, oklch(0.55 0.18 25))',
         }}
       >
-        {fmtAmount(tx.amount, tx.direction)}
+        {fmtAmount(tx.importe, tx.direccion)}
       </div>
     </div>
   );
@@ -242,36 +212,36 @@ function TransactionItem({ tx }: { tx: TransactionRow }) {
 
 /* ─── Create account dialog ─── */
 function CreateAccountForm({
-  clientId,
+  clienteId,
   onCreated,
 }: {
-  clientId: string;
+  clienteId: string;
   onCreated: () => void;
 }) {
-  const [bankName, setBankName] = useState('');
-  const [accountNumber, setAccountNumber] = useState('');
+  const [banco, setBanco] = useState('');
+  const [numero, setNumero] = useState('');
   const [alias, setAlias] = useState('');
   const [cbu, setCbu] = useState('');
   const queryClient = useQueryClient();
 
   const createMutation = useMutation({
     mutationFn: () =>
-      createBankAccount({
+      createCuentaBancaria({
         data: {
-          clientId,
-          bankName,
-          accountNumber: accountNumber || undefined,
+          clienteId,
+          banco,
+          numero: numero || undefined,
           alias: alias || undefined,
           cbu: cbu || undefined,
         },
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({
-        queryKey: ['bankAccounts', clientId],
+        queryKey: ['bankAccounts', clienteId],
       });
       toast.success('Cuenta bancaria creada');
-      setBankName('');
-      setAccountNumber('');
+      setBanco('');
+      setNumero('');
       setAlias('');
       setCbu('');
       onCreated();
@@ -290,8 +260,8 @@ function CreateAccountForm({
             Banco *
           </label>
           <input
-            value={bankName}
-            onChange={(e) => setBankName(e.target.value)}
+            value={banco}
+            onChange={(e) => setBanco(e.target.value)}
             placeholder="Ej: Banco Nación"
             className="h-8 px-2.5 text-[12.5px] border border-[var(--arca-border)] rounded-[8px] bg-[var(--arca-surface)] text-[var(--arca-ink)] focus:outline-none w-40"
           />
@@ -301,8 +271,8 @@ function CreateAccountForm({
             N° de cuenta
           </label>
           <input
-            value={accountNumber}
-            onChange={(e) => setAccountNumber(e.target.value)}
+            value={numero}
+            onChange={(e) => setNumero(e.target.value)}
             placeholder="Opcional"
             className="h-8 px-2.5 text-[12.5px] border border-[var(--arca-border)] rounded-[8px] bg-[var(--arca-surface)] text-[var(--arca-ink)] focus:outline-none w-36"
           />
@@ -327,7 +297,7 @@ function CreateAccountForm({
         </div>
         <button
           onClick={() => createMutation.mutate()}
-          disabled={!bankName || createMutation.isPending}
+          disabled={!banco || createMutation.isPending}
           className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
         >
           {createMutation.isPending ? 'Guardando...' : 'Guardar'}
@@ -339,57 +309,52 @@ function CreateAccountForm({
 
 /* ─── Page ─── */
 function BankPage() {
-  const [clientId, setClientId] = useState('');
+  const [clienteId, setClienteId] = useState('');
   const [accountId, setAccountId] = useState('');
   const [showCreateAccount, setShowCreateAccount] = useState(false);
   const queryClient = useQueryClient();
 
-  /* Clients */
-  const { data: clientsRaw = [] } = useQuery({
-    queryKey: ['clients'],
-    queryFn: () => getRepresentatives(),
+  /* Clientes */
+  const { data: clientes = [] } = useQuery({
+    queryKey: ['clientes'],
+    queryFn: () => getClientes(),
     staleTime: 60_000,
   });
-  const clients = clientsRaw as { id: string; name: string }[];
 
   /* Bank accounts */
-  const { data: accountsRaw = [] } = useQuery({
-    queryKey: ['bankAccounts', clientId],
-    queryFn: () => listBankAccounts({ data: { clientId } }),
-    enabled: !!clientId,
+  const { data: accounts = [] } = useQuery({
+    queryKey: ['bankAccounts', clienteId],
+    queryFn: () => listCuentasBancarias({ data: { clienteId } }),
+    enabled: !!clienteId,
   });
-  const accounts = accountsRaw as BankAccountRow[];
 
   /* Summary */
   const { data: summary } = useQuery({
-    queryKey: ['bankSummary', clientId],
-    queryFn: () => getReconciliationSummary({ data: { clientId } }),
-    enabled: !!clientId,
+    queryKey: ['bankSummary', clienteId],
+    queryFn: () => getResumenConciliacion({ data: { clienteId } }),
+    enabled: !!clienteId,
   });
 
-  /* Transactions */
-  const { data: txsRaw = [], isFetching: txsFetching } = useQuery({
+  /* Movimientos */
+  const { data: transactions = [], isFetching: txsFetching } = useQuery({
     queryKey: ['bankTransactions', accountId],
     queryFn: () =>
-      listBankTransactions({ data: { bankAccountId: accountId, limit: 200 } }),
+      listMovimientos({ data: { cuentaBancariaId: accountId, limit: 200 } }),
     enabled: !!accountId,
   });
-  const transactions = txsRaw as TransactionRow[];
 
-  /* Auto-match */
+  /* Auto-conciliación */
   const autoMatchMutation = useMutation({
-    mutationFn: () =>
-      autoMatchTransactions({ data: { bankAccountId: accountId } }),
-    onSuccess: (result) => {
-      const r = result as { matched: number };
+    mutationFn: () => autoConciliar({ data: { cuentaBancariaId: accountId } }),
+    onSuccess: ({ conciliados }) => {
       void queryClient.invalidateQueries({
         queryKey: ['bankTransactions', accountId],
       });
       void queryClient.invalidateQueries({
-        queryKey: ['bankSummary', clientId],
+        queryKey: ['bankSummary', clienteId],
       });
       toast.success(
-        `${r.matched} transacción${r.matched !== 1 ? 'es' : ''} conciliada${r.matched !== 1 ? 's' : ''} automáticamente`
+        `${conciliados} movimiento${conciliados !== 1 ? 's' : ''} conciliado${conciliados !== 1 ? 's' : ''} automáticamente`
       );
     },
     onError: () => toast.error('Error en la conciliación automática'),
@@ -397,13 +362,13 @@ function BankPage() {
 
   /* When client changes, reset account selection */
   const handleClientChange = (id: string) => {
-    setClientId(id);
+    setClienteId(id);
     setAccountId('');
     setShowCreateAccount(false);
   };
 
-  const unmatchedCount = transactions.filter((t) => !t.matched).length;
-  const matchedCount = transactions.filter((t) => t.matched).length;
+  const unmatchedCount = transactions.filter((t) => !t.conciliado).length;
+  const matchedCount = transactions.filter((t) => t.conciliado).length;
 
   return (
     <div className="p-[28px_36px_60px] max-w-[1440px]">
@@ -415,20 +380,20 @@ function BankPage() {
 
       {/* Filter bar */}
       <div className="flex flex-wrap gap-2 mb-5 items-center">
-        <Select value={clientId} onValueChange={(v) => handleClientChange(v)}>
+        <Select value={clienteId} onValueChange={(v) => handleClientChange(v)}>
           <SelectTrigger className="w-[220px] text-[13px]">
             <SelectValue placeholder="Seleccionar cliente..." />
           </SelectTrigger>
           <SelectContent>
-            {clients.map((c) => (
+            {clientes.map((c) => (
               <SelectItem key={c.id} value={c.id}>
-                {c.name}
+                {c.razonSocial}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
 
-        {clientId && (
+        {clienteId && (
           <Select value={accountId} onValueChange={(v) => setAccountId(v)}>
             <SelectTrigger className="w-[260px] text-[13px]">
               <SelectValue placeholder="Seleccionar cuenta..." />
@@ -436,16 +401,16 @@ function BankPage() {
             <SelectContent>
               {accounts.map((a) => (
                 <SelectItem key={a.id} value={a.id}>
-                  {a.bankName}
+                  {a.banco}
                   {a.alias ? ` · ${a.alias}` : ''}
-                  {a.accountNumber ? ` (${a.accountNumber})` : ''}
+                  {a.numero ? ` (${a.numero})` : ''}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         )}
 
-        {clientId && (
+        {clienteId && (
           <button
             onClick={() => setShowCreateAccount((v) => !v)}
             className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] transition-colors"
@@ -470,13 +435,13 @@ function BankPage() {
       </div>
 
       {/* Summary stats */}
-      {clientId && summary && <SummaryCards summary={summary} />}
+      {clienteId && summary && <SummaryCards summary={summary} />}
 
       {/* Create account form */}
-      {showCreateAccount && clientId && (
+      {showCreateAccount && clienteId && (
         <div className="mb-4 rounded-[12px] border border-[var(--arca-border)] overflow-hidden">
           <CreateAccountForm
-            clientId={clientId}
+            clienteId={clienteId}
             onCreated={() => setShowCreateAccount(false)}
           />
         </div>
@@ -488,10 +453,10 @@ function BankPage() {
           {/* Header */}
           <div className="px-5 py-3 flex items-center gap-3 border-b border-[var(--arca-border)]">
             <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
-              Transacciones
+              Movimientos
             </span>
             <span className="text-[11.5px] text-[var(--arca-ink-3)]">
-              {transactions.length} total · {matchedCount} conciliadas ·{' '}
+              {transactions.length} total · {matchedCount} conciliados ·{' '}
               {unmatchedCount} pendientes
             </span>
             {txsFetching && (
@@ -524,9 +489,7 @@ function BankPage() {
                 className="w-8 h-8 mb-2 opacity-40"
                 strokeWidth={1.5}
               />
-              <p className="text-[13px]">
-                No hay transacciones para esta cuenta
-              </p>
+              <p className="text-[13px]">No hay movimientos para esta cuenta</p>
               <p className="text-[12px] mt-1 text-[var(--arca-ink-3)]">
                 Importá movimientos para comenzar la conciliación
               </p>
@@ -539,12 +502,12 @@ function BankPage() {
             </div>
           )}
         </ArcaCard>
-      ) : clientId ? (
+      ) : clienteId ? (
         <ArcaCard>
           <div className="flex flex-col items-center justify-center py-14 text-[var(--arca-ink-3)]">
             <Landmark className="w-8 h-8 mb-2 opacity-40" strokeWidth={1.5} />
             <p className="text-[13px]">
-              Seleccioná una cuenta para ver transacciones
+              Seleccioná una cuenta para ver movimientos
             </p>
           </div>
         </ArcaCard>

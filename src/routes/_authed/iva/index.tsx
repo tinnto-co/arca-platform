@@ -21,8 +21,8 @@ import { PageHeader } from '@/components/shared/page-header';
 import {
   getIvaResumenRI,
   getMonotributistasFacturacion,
-  getClientsSinClasificar,
-  updateClientFiscalCondition,
+  getClientesSinClasificar,
+  updateClienteCondicionIva,
 } from '@/actions/iva';
 import { cn } from '@/lib/utils';
 
@@ -68,11 +68,19 @@ const thCls =
   'px-3 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap';
 const monoStyle = { fontFamily: 'var(--ff-mono)' } as const;
 
-type FiscalCondition =
-  | 'responsable_inscripto'
-  | 'monotributista'
-  | 'exento'
-  | null;
+/** Fila del resumen RI, tal cual la devuelve `getIvaResumenRI`. */
+type RiRow = Awaited<ReturnType<typeof getIvaResumenRI>>[number];
+/** Fila de monotributistas, tal cual la devuelve `getMonotributistasFacturacion`. */
+type MonoRow = Awaited<ReturnType<typeof getMonotributistasFacturacion>>[number];
+/** Valores del enum `condicion_iva` en BD (+ null = sin clasificar). */
+type CondicionIva = RiRow['condicionIva'];
+
+/** `date` de Drizzle llega como 'YYYY-MM-DD'; se muestra DD/MM/YYYY sin pasar por Date. */
+function formatFechaISO(fecha: string | null): string {
+  if (!fecha) return '—';
+  const [yyyy, mm, dd] = fecha.slice(0, 10).split('-');
+  return dd && mm && yyyy ? `${dd}/${mm}/${yyyy}` : fecha;
+}
 
 interface SortState {
   key: string;
@@ -148,16 +156,16 @@ function SortableTh({
 
 /** Select inline para cambiar la condición fiscal de una empresa. */
 function FiscalConditionSelect({
-  clientId,
+  clienteId,
   value,
 }: {
-  clientId: string;
-  value: FiscalCondition;
+  clienteId: string;
+  value: CondicionIva;
 }) {
   const queryClient = useQueryClient();
   const mutation = useMutation({
-    mutationFn: (fiscalCondition: FiscalCondition) =>
-      updateClientFiscalCondition({ data: { clientId, fiscalCondition } }),
+    mutationFn: (condicionIva: CondicionIva) =>
+      updateClienteCondicionIva({ data: { clienteId, condicionIva } }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['iva'] });
       toast.success('Condición fiscal actualizada');
@@ -170,7 +178,7 @@ function FiscalConditionSelect({
       value={value ?? 'none'}
       disabled={mutation.isPending}
       onValueChange={(v) =>
-        mutation.mutate((v === 'none' ? null : v) as FiscalCondition)
+        mutation.mutate(v === 'none' ? null : (v as NonNullable<CondicionIva>))
       }
     >
       <SelectTrigger size="sm" className="w-[150px] text-[12px]">
@@ -181,35 +189,27 @@ function FiscalConditionSelect({
         <SelectItem value="responsable_inscripto">Resp. Inscripto</SelectItem>
         <SelectItem value="monotributista">Monotributista</SelectItem>
         <SelectItem value="exento">Exento</SelectItem>
+        <SelectItem value="no_alcanzado">No alcanzado</SelectItem>
       </SelectContent>
     </Select>
   );
 }
 
-function EstadoBadge({
-  scrapeId,
-  ok,
-}: {
-  scrapeId: string | null;
-  ok: boolean | null;
-}) {
-  if (!scrapeId) {
+/**
+ * Estado de la declaración del período. En BD_IDEAL `iva_declaracion` ya no
+ * guarda un flag de éxito del scrape: o existe la declaración o no hay datos.
+ */
+function EstadoBadge({ declaracionId }: { declaracionId: string | null }) {
+  if (!declaracionId) {
     return (
       <span className="inline-block rounded-full px-2 py-0.5 text-[11px] font-medium bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
         Sin datos
       </span>
     );
   }
-  if (ok) {
-    return (
-      <span className="inline-block rounded-full px-2 py-0.5 text-[11px] font-medium bg-emerald-50 text-emerald-700">
-        OK
-      </span>
-    );
-  }
   return (
-    <span className="inline-block rounded-full px-2 py-0.5 text-[11px] font-medium bg-amber-50 text-amber-700">
-      Con errores
+    <span className="inline-block rounded-full px-2 py-0.5 text-[11px] font-medium bg-emerald-50 text-emerald-700">
+      Presentada
     </span>
   );
 }
@@ -232,21 +232,17 @@ function IvaResumenRI() {
   const [sort, setSort] = useState<SortState>({ key: 'empresa', dir: 'asc' });
   const onSort = (key: string) => setSort((prev) => toggleSort(prev, key));
 
-  type RiRow = (typeof rows)[number];
   const num = (v: string | null) => (v == null ? null : Number(v));
   const riGetters: SortGetters<RiRow> = {
-    empresa: (r) => r.clientName,
+    empresa: (r) => r.razonSocial,
     debito: (r) => num(r.debitoFiscal),
     credito: (r) => num(r.creditoFiscal),
-    saldoTecnico: (r) => num(r.saldoTecnicoFavorContribuyente),
-    saldoLibre: (r) => num(r.saldoLibreDisponibilidad),
-    retPerc: (r) => num(r.totalRetencionesPercepciones),
-    // "DD/MM/YYYY" → "YYYY-MM-DD" para orden cronológico
-    presentacion: (r) =>
-      r.fechaPresentacion
-        ? r.fechaPresentacion.split('/').reverse().join('-')
-        : null,
-    estado: (r) => (!r.scrapeId ? 0 : r.ok ? 2 : 1),
+    saldoTecnico: (r) => num(r.saldoTecnicoFavor),
+    saldoLibre: (r) => num(r.saldoLibreDisponibilidadFavor),
+    retPerc: (r) => num(r.retencionesPercepcionesPeriodo),
+    // `presentadaAt` ya viene como 'YYYY-MM-DD': ordena cronológicamente tal cual.
+    presentacion: (r) => r.presentadaAt,
+    estado: (r) => (r.declaracionId ? 1 : 0),
   };
   const sortedRows = useMemo(
     () => sortRows(rows, sort, riGetters),
@@ -261,10 +257,10 @@ function IvaResumenRI() {
     (acc, r) => ({
       debito: acc.debito + Number(r.debitoFiscal ?? 0),
       credito: acc.credito + Number(r.creditoFiscal ?? 0),
-      saldoTecnico:
-        acc.saldoTecnico + Number(r.saldoTecnicoFavorContribuyente ?? 0),
-      saldoLibre: acc.saldoLibre + Number(r.saldoLibreDisponibilidad ?? 0),
-      retPerc: acc.retPerc + Number(r.totalRetencionesPercepciones ?? 0),
+      saldoTecnico: acc.saldoTecnico + Number(r.saldoTecnicoFavor ?? 0),
+      saldoLibre:
+        acc.saldoLibre + Number(r.saldoLibreDisponibilidadFavor ?? 0),
+      retPerc: acc.retPerc + Number(r.retencionesPercepcionesPeriodo ?? 0),
     }),
     { debito: 0, credito: 0, saldoTecnico: 0, saldoLibre: 0, retPerc: 0 }
   );
@@ -401,22 +397,24 @@ function IvaResumenRI() {
             <tbody>
               {sortedRows.map((r, i) => (
                 <tr
-                  key={r.clientId}
+                  key={r.clienteId}
                   style={{
                     borderTop:
                       i === 0 ? undefined : '1px solid var(--arca-border)',
                   }}
                 >
                   <td className="px-3 py-2 whitespace-nowrap">
-                    <div className="text-[var(--arca-ink)]">{r.clientName}</div>
+                    <div className="text-[var(--arca-ink)]">
+                      {r.razonSocial}
+                    </div>
                     <div className="text-[11px] text-[var(--arca-ink-3)] tabular-nums">
                       {r.cuit}
                     </div>
                   </td>
                   <td className="px-3 py-2">
                     <FiscalConditionSelect
-                      clientId={r.clientId}
-                      value={r.fiscalCondition as FiscalCondition}
+                      clienteId={r.clienteId}
+                      value={r.condicionIva}
                     />
                   </td>
                   <td
@@ -436,30 +434,30 @@ function IvaResumenRI() {
                     style={{
                       ...monoStyle,
                       color:
-                        Number(r.saldoTecnicoFavorContribuyente ?? 0) > 0
+                        Number(r.saldoTecnicoFavor ?? 0) > 0
                           ? 'var(--arca-green, #16a34a)'
                           : 'var(--arca-ink)',
                     }}
                   >
-                    {formatARS(r.saldoTecnicoFavorContribuyente)}
+                    {formatARS(r.saldoTecnicoFavor)}
                   </td>
                   <td
                     className="px-3 py-2 text-right text-[var(--arca-ink)] tabular-nums"
                     style={monoStyle}
                   >
-                    {formatARS(r.saldoLibreDisponibilidad)}
+                    {formatARS(r.saldoLibreDisponibilidadFavor)}
                   </td>
                   <td
                     className="px-3 py-2 text-right text-[var(--arca-ink)] tabular-nums"
                     style={monoStyle}
                   >
-                    {formatARS(r.totalRetencionesPercepciones)}
+                    {formatARS(r.retencionesPercepcionesPeriodo)}
                   </td>
                   <td className="px-3 py-2 text-[var(--arca-ink-3)] whitespace-nowrap">
-                    {r.fechaPresentacion ?? '—'}
+                    {formatFechaISO(r.presentadaAt)}
                   </td>
                   <td className="px-3 py-2">
-                    <EstadoBadge scrapeId={r.scrapeId} ok={r.ok} />
+                    <EstadoBadge declaracionId={r.declaracionId} />
                   </td>
                 </tr>
               ))}
@@ -528,12 +526,11 @@ function MonotributistasTab() {
   });
   const onSort = (key: string) => setSort((prev) => toggleSort(prev, key));
 
-  type MonoRow = (typeof rows)[number];
   const monoGetters: SortGetters<MonoRow> = {
-    empresa: (r) => r.clientName,
-    representante: (r) => r.representativeName,
-    comprobantes: (r) => r.invoiceCount,
-    ultimaFactura: (r) => r.ultimaFactura,
+    empresa: (r) => r.razonSocial,
+    representante: (r) => r.credenciales,
+    comprobantes: (r) => r.comprobanteCount,
+    ultimaFactura: (r) => r.ultimoComprobante,
     facturacion: (r) => Number(r.facturacion12m),
   };
   const sortedRows = useMemo(
@@ -584,7 +581,7 @@ function MonotributistasTab() {
                   onSort={onSort}
                 />
                 <SortableTh
-                  label="Representante"
+                  label="Login AFIP"
                   colKey="representante"
                   sort={sort}
                   onSort={onSort}
@@ -615,32 +612,36 @@ function MonotributistasTab() {
             <tbody>
               {sortedRows.map((r, i) => (
                 <tr
-                  key={r.clientId}
+                  key={r.clienteId}
                   style={{
                     borderTop:
                       i === 0 ? undefined : '1px solid var(--arca-border)',
                   }}
                 >
                   <td className="px-3 py-2 whitespace-nowrap">
-                    <div className="text-[var(--arca-ink)]">{r.clientName}</div>
+                    <div className="text-[var(--arca-ink)]">
+                      {r.razonSocial}
+                    </div>
                     <div className="text-[11px] text-[var(--arca-ink-3)] tabular-nums">
                       {r.cuit}
                     </div>
                   </td>
                   <td className="px-3 py-2 text-[var(--arca-ink-3)] whitespace-nowrap">
-                    {r.representativeName}
+                    {r.credenciales ?? '—'}
                   </td>
                   <td className="px-3 py-2">
                     <FiscalConditionSelect
-                      clientId={r.clientId}
-                      value={r.fiscalCondition as FiscalCondition}
+                      clienteId={r.clienteId}
+                      value={r.condicionIva}
                     />
                   </td>
                   <td className="px-3 py-2 text-right text-[var(--arca-ink-3)] tabular-nums">
-                    {r.invoiceCount}
+                    {r.comprobanteCount}
                   </td>
                   <td className="px-3 py-2 text-[var(--arca-ink-3)] whitespace-nowrap tabular-nums">
-                    {r.ultimaFactura ? r.ultimaFactura.slice(0, 10) : '—'}
+                    {r.ultimoComprobante
+                      ? r.ultimoComprobante.slice(0, 10)
+                      : '—'}
                   </td>
                   <td
                     className="px-3 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
@@ -662,7 +663,7 @@ function MonotributistasTab() {
 function SinClasificarBlock() {
   const { data: rows = [] } = useQuery({
     queryKey: ['iva', 'sin-clasificar'],
-    queryFn: () => getClientsSinClasificar(),
+    queryFn: () => getClientesSinClasificar(),
   });
 
   if (rows.length === 0) return null;
@@ -694,30 +695,30 @@ function SinClasificarBlock() {
             >
               <th className={cn(thCls, 'text-left')}>Empresa</th>
               <th className={cn(thCls, 'text-left')}>CUIT</th>
-              <th className={cn(thCls, 'text-left')}>Representante</th>
+              <th className={cn(thCls, 'text-left')}>Login AFIP</th>
               <th className={cn(thCls, 'text-left')}>Condición</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r, i) => (
               <tr
-                key={r.clientId}
+                key={r.clienteId}
                 style={{
                   borderTop:
                     i === 0 ? undefined : '1px solid var(--arca-border)',
                 }}
               >
                 <td className="px-3 py-2 text-[var(--arca-ink)] whitespace-nowrap">
-                  {r.clientName}
+                  {r.razonSocial}
                 </td>
                 <td className="px-3 py-2 text-[var(--arca-ink-3)] tabular-nums whitespace-nowrap">
                   {r.cuit}
                 </td>
                 <td className="px-3 py-2 text-[var(--arca-ink-3)] whitespace-nowrap">
-                  {r.representativeName}
+                  {r.credenciales ?? '—'}
                 </td>
                 <td className="px-3 py-2">
-                  <FiscalConditionSelect clientId={r.clientId} value={null} />
+                  <FiscalConditionSelect clienteId={r.clienteId} value={null} />
                 </td>
               </tr>
             ))}

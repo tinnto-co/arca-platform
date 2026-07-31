@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { scanBankStatement } from '@/actions/scannerAi';
 import { Button } from '@/components/ui/button';
 import { RenderPdfInfo } from '@/components/render-pdf-info';
-import { getRepresentatives } from '@/actions/client';
+import { getClientes } from '@/actions/client';
 import { useQuery } from '@tanstack/react-query';
 import { Label } from '@/components/ui/label';
 import {
@@ -34,8 +34,8 @@ function RouteComponent() {
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
 
   const { data: clients = [] } = useQuery({
-    queryKey: ['clients'],
-    queryFn: () => getRepresentatives(),
+    queryKey: ['clientes'],
+    queryFn: () => getClientes(),
   });
 
   const fileToBase64 = (file: File): Promise<string> => {
@@ -91,7 +91,7 @@ function RouteComponent() {
       {/* Flujo pre-escaneo: Drag & Drop + Botón */}
       {!result && (
         <div className="space-y-4">
-          <DragDrop onFileSelected={setFile} />
+          <DragDrop onFileSelected={setFile} isProcessing={isScanning} />
           <Button onClick={handleScan} disabled={!file || isScanning} size="lg">
             {isScanning ? 'Escaneando...' : 'Escanear PDF'}
           </Button>
@@ -113,8 +113,8 @@ function RouteComponent() {
                     className="w-full justify-between"
                   >
                     {selectedClientId
-                      ? clients.find((c: any) => c.id === selectedClientId)
-                        ?.name
+                      ? clients.find((c) => c.id === selectedClientId)
+                          ?.razonSocial
                       : 'Seleccionar cliente'}
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
@@ -126,10 +126,10 @@ function RouteComponent() {
                     <CommandEmpty>No se encontró ningún cliente.</CommandEmpty>
 
                     <CommandGroup>
-                      {clients.map((client: any) => (
+                      {clients.map((client) => (
                         <CommandItem
                           key={client.id}
-                          value={client.name}
+                          value={client.razonSocial}
                           onSelect={() => {
                             setSelectedClientId(client.id);
                           }}
@@ -142,7 +142,7 @@ function RouteComponent() {
                                 : 'opacity-0'
                             )}
                           />
-                          {client.name}
+                          {client.razonSocial}
                         </CommandItem>
                       ))}
                     </CommandGroup>

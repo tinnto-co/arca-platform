@@ -11,57 +11,28 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { db, dbReadonly } from '@/lib/db';
-import { agentConversation, agentMessage, ivaScrape, client, invoice, representative, organization } from '@/drizzle/schema';
-import { eq, and, sql, ilike, gte, lte } from 'drizzle-orm';
+import { setDbContext } from '@/lib/db-context';
 import {
-  INVOICE_TYPES_A,
-  INVOICE_TYPES_B,
-  CREDIT_NOTE_TYPES,
-  calcularIvaDesdeFacturas,
-  type InvoiceIvaRow,
-} from '@/lib/iva-calc';
+  agentConversation,
+  agentMessage,
+  cliente,
+  clienteCredencial,
+  comprobante,
+  comprobanteAlicuota,
+  comprobanteTipo,
+  credencialAfip,
+  ivaDeclaracion,
+} from '@/drizzle/schema';
+import { organization } from '@/drizzle/auth';
+import { eq, and, sql, ilike, gte, lte, desc } from 'drizzle-orm';
+import { calcularIva, type ComprobanteAlicuotaRow } from '@/lib/iva-calc';
 
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
 
-// ─── MAPA DE SCHEMA ──────────────────────────────────────────────────────────
-// Si cambia el schema de DB, solo tocá este bloque.
-// El resto del archivo usa estas constantes — nunca referencias hardcodeadas.
-//
-// Jerarquía actual:
-//   organization → representative (login AFIP) → client (entidad fiscal con CUIT)
-//                                                    └── invoices, iva_scrape, empleados...
-//
-// Historia: antes existía una tabla "profile" que era la entidad fiscal.
-// Ahora ese rol lo cumple "client". El viejo "client" (agrupador) pasó a llamarse "representative".
-
-// Tabla "entidad fiscal" — empresa con CUIT, donde viven facturas, IVA, empleados
-const T_ENTITY            = client
-const COL_ENTITY_ID       = client.id
-const COL_ENTITY_NAME     = client.name
-const COL_ENTITY_CUIT     = client.identityNumber
-// FK que conecta la entidad fiscal con su login AFIP (su "dueño")
-const COL_ENTITY_OWNER_FK = client.representativeId
-
-// Tabla "login AFIP" — la persona que entra a AFIP, dueña de varias entidades fiscales
-const T_OWNER       = representative
-const COL_OWNER_ID  = representative.id
-// Esta columna es el filtro de seguridad multi-tenant: SIEMPRE filtrar por esto
-const COL_OWNER_ORG = representative.organizationId
-
-// FK a la entidad fiscal en otras tablas (antes apuntaban a "profile", ahora a "client")
-const COL_IVA_ENTITY_FK     = ivaScrape.clientId   // antes: ivaScrape.profileId
-const COL_INVOICE_ENTITY_FK = invoice.clientId     // antes: invoice.profileId (columna que ya no existe)
-// ─────────────────────────────────────────────────────────────────────────────
-
-// ─── HELPER DE FORMATEO ───────────────────────────────────────────────────────
-// Función TypeScript normal — NO es un tool. Puede ser llamada directamente
-// desde cualquier tool sin pasar por el modelo.
-//
-// Recibe:
-//   headers → array con los nombres de columna a mostrar (deben coincidir con
-//             las keys de los objetos en rows)
-//   rows    → array de objetos con los datos
-//
-// Devuelve una tabla en formato Markdown que el modelo renderiza en el chat.
+/**
+ * Tabla en Markdown para que el modelo la renderice tal cual en el chat.
+ * `headers` son las keys de los objetos de `rows`.
+ */
 function formatAsMarkdownTable(
   headers: string[],
   rows: Record<string, unknown>[]
@@ -69,12 +40,34 @@ function formatAsMarkdownTable(
   if (rows.length === 0) return '_Sin resultados._';
   const headerRow = `| ${headers.join(' | ')} |`;
   const separator = `| ${headers.map(() => '---').join(' | ')} |`;
-  const dataRows  = rows.map(
+  const dataRows = rows.map(
     (row) => `| ${headers.map((h) => String(row[h] ?? '')).join(' | ')} |`
   );
   return [headerRow, separator, ...dataRows].join('\n');
 }
-// ─────────────────────────────────────────────────────────────────────────────
+
+/** "MM/YYYY" → 'YYYY-MM-01', que es como se guardan los períodos mensuales. */
+function periodoADate(periodo: string): string {
+  const [mm, yyyy] = periodo.split('/');
+  return `${yyyy}-${mm.padStart(2, '0')}-01`;
+}
+
+/** "MM/YYYY" → rango de fechas del mes, en 'YYYY-MM-DD' (columnas `date`). */
+function rangoDelMes(periodo: string): { desde: string; hasta: string } {
+  const [mm, yyyy] = periodo.split('/').map(Number);
+  const ultimoDia = new Date(yyyy, mm, 0).getDate();
+  const m = String(mm).padStart(2, '0');
+  return {
+    desde: `${yyyy}-${m}-01`,
+    hasta: `${yyyy}-${m}-${String(ultimoDia).padStart(2, '0')}`,
+  };
+}
+
+/** 'YYYY-MM-DD' → "MM/YYYY", para mostrarle el período al usuario. */
+function dateAPeriodo(fecha: string): string {
+  const [yyyy, mm] = fecha.split('-');
+  return `${mm}/${yyyy}`;
+}
 
 const googleAI = createGoogleGenerativeAI({
   apiKey: process.env.GEMINI_API_KEY!,
@@ -86,22 +79,21 @@ SCHEMA DE BASE DE DATOS — organización '${orgId}'
 ═══════════════════════════════════════════════
 
 SEGURIDAD — OBLIGATORIO EN TODA QUERY
-  La jerarquía es: representative (login AFIP) → client (entidad fiscal con CUIT).
-  El filtro de organización vive en representative.organization_id.
-  Según la tabla, usá uno de estos dos patrones:
+  La entidad central es "cliente" (la empresa con CUIT). Casi todas las tablas de
+  hechos llevan org_id propio, así que el filtro es directo:
 
-  Tablas con client_id (iva_scrape, debt, due_date, liquidacion_import_empleado):
-    JOIN client c ON c.id = <tabla>.client_id
-    JOIN representative r ON r.id = c.representative_id
-    WHERE r.organization_id = '${orgId}'
+    WHERE <tabla>.org_id = '${orgId}'
 
-  Tablas con representative_id directo (invoice, notification, job):
-    JOIN representative r ON r.id = <tabla>.representative_id
-    WHERE r.organization_id = '${orgId}'
+  Tablas CON org_id: cliente, credencial_afip, comprobante, deuda, vencimiento,
+  notificacion, job, empleado, recibo, alerta, documento, evento.
 
-  Para client directamente:
-    JOIN representative r ON r.id = client.representative_id
-    WHERE r.organization_id = '${orgId}'
+  Tablas SIN org_id — filtrá por el padre que sí lo tiene:
+    iva_declaracion      → JOIN cliente c ON c.id = iva_declaracion.cliente_id
+    comprobante_alicuota → JOIN comprobante cp ON cp.id = comprobante_alicuota.comprobante_id
+    recibo_concepto      → JOIN recibo r ON r.id = recibo_concepto.recibo_id
+    cliente_credencial   → JOIN cliente c ON c.id = cliente_credencial.cliente_id
+  Catálogos globales sin org (no requieren filtro, pero nunca los uses como
+  punto de entrada): comprobante_tipo, contraparte, concepto.
 
   NUNCA ejecutes INSERT / UPDATE / DELETE / DROP.
 
@@ -109,190 +101,208 @@ SEGURIDAD — OBLIGATORIO EN TODA QUERY
 TABLAS PRINCIPALES
 ───────────────────────────────────────────────
 
-## representative  [SQL table: "representative"]
-Login AFIP del estudio. Contiene la clave fiscal y es el ancla de seguridad multi-tenant.
+## cliente  [SQL table: "cliente"]
+La empresa / contribuyente. Es el centro del modelo: facturas, IVA, deudas y
+empleados cuelgan de acá.
   id (uuid PK)
-  organization_id (text) — filtro de seguridad, presente en TODAS las queries
-  name (text) — nombre de la persona física
-  cuit (text) — CUIT del login AFIP
-  fiscal_condition (text) — 'responsable_inscripto' | 'monotributista' | etc.
-  liquida_sueldos (boolean)
-  registered_at (timestamp)
-  ⚠ NUNCA selecciones ni muestres la columna "afip_password" (clave fiscal AFIP, dato sensible).
+  org_id (text) — filtro de seguridad
+  cuit (text)
+  razon_social (text) — el nombre que usa el usuario al hablar de "un cliente"
+  tipo_persona — 'fisica' | 'juridica'
+  condicion_iva — 'responsable_inscripto' | 'monotributista' | 'exento' | 'no_alcanzado'
+  estado — 'activo' | 'pausado' | 'baja'
+  email, telefono, domicilio, notas (text)
 
-## client  [SQL table: "client"]
-Entidad fiscal individual (empresa o persona con CUIT propio). Acá viven las facturas, IVA y empleados.
-  id (uuid PK)
-  representative_id (uuid → representative.id) — FK al login AFIP que la gestiona
-  name (text) — razón social
-  identity_number (text) — CUIT/CUIL
-  identity_type (text)
-  status (text) — 'active' | 'inactive'
-  liquida_sueldos (boolean)
-  scraped_at (timestamp) — último scrape exitoso de AFIP
+## credencial_afip  [SQL table: "credencial_afip"]
+Login de AFIP del estudio. Un login puede administrar varias empresas.
+  id (uuid PK), org_id (text)
+  cuit (text) — CUIT del login
+  nombre (text) — nombre de la persona que figura como titular del login
+  estado — 'activa' | 'invalida' | 'bloqueada'
+  ultimo_login_ok (timestamp)
+  ⚠ NUNCA selecciones ni muestres la columna "clave" (clave fiscal AFIP, dato sensible).
 
-## invoice  [SQL table: "invoice"]
-Facturas emitidas y recibidas, scrapeadas de AFIP ("Mis Comprobantes").
-  id (uuid PK)
-  representative_id (uuid → representative.id)
-  client_id (uuid → client.id)
-  direction (text) — 'Outbound' = venta emitida | 'Inbound' = compra recibida
+## cliente_credencial  [SQL table: "cliente_credencial"]
+Puente N:M entre empresa y login: qué credencial scrapea a qué cliente.
+  cliente_id (uuid → cliente.id), credencial_id (uuid → credencial_afip.id)
+
+## comprobante  [SQL table: "comprobante"]
+Facturas emitidas y recibidas, scrapeadas de "Mis Comprobantes".
+  id (uuid PK), org_id (text), cliente_id (uuid → cliente.id)
+  direccion — 'emitido' = venta | 'recibido' = compra
     SEMÁNTICA OBLIGATORIA:
-      "facturó/vendió/emitió/facturación" → WHERE direction = 'Outbound'
-      "gastó/compró/compras/proveedores"  → WHERE direction = 'Inbound'
-      NUNCA sumes Outbound + Inbound salvo que se pida el total combinado explícitamente.
-  emition_date (timestamp) — fecha de emisión
-  type (text) — código AFIP del comprobante: '1'=Fact.A, '6'=Fact.B, '11'=Fact.C,
-                '3'=NC A, '8'=NC B, '201'=Fact.Crédito MiPyME A, etc.
-  sale_point (text) — punto de venta
-  id_from, id_to (numeric) — rango de numeración
-  authorization_number (text) — CAE/CAEA
-  emitter_name (text), emitter_identity_number (text)
-  recipient_name (text), recipient_identity_number (text)
-  receipt_province (text) — provincia del receptor (IIBB)
-  currency (text) — 'ARS' | 'USD'
-  currency_rate (numeric) — tipo de cambio
-  amount (numeric) — total del comprobante en la moneda original
-  amount_taxed (numeric), imp_neto_no_gravado (numeric), amount_exempt (numeric)
-  amount_iva_0, amount_iva_25, amount_iva_5, amount_iva_105, amount_iva_21, amount_iva_27 — base imponible por alícuota
-  iva_25, iva_5, iva_105, iva_21, iva_27 — monto de IVA liquidado por alícuota
-  total_iva (numeric), other_taxes (numeric)
-  ► Convertir a ARS: CASE WHEN UPPER(currency)='USD' THEN amount::numeric * currency_rate::numeric ELSE amount::numeric END
+      "facturó/vendió/emitió/facturación" → WHERE direccion = 'emitido'
+      "gastó/compró/compras/proveedores"  → WHERE direccion = 'recibido'
+      NUNCA sumes emitido + recibido salvo que se pida el total combinado explícitamente.
+  tipo (smallint) — código AFIP del comprobante (1=Fact.A, 6=Fact.B, 11=Fact.C, 3=NC A…).
+    Para la letra o saber si es nota de crédito, JOIN comprobante_tipo (NO hardcodees códigos).
+  punto_venta (int), numero (bigint), cae (text)
+  fecha_emision (date), periodo (date, generada = día 1 del mes de fecha_emision)
+  contraparte_id (uuid → contraparte.id) — el otro lado de la operación
+  moneda (char(3)), cotizacion (numeric, 1 si es ARS)
+  neto_gravado, neto_no_gravado, exento, otros_tributos, iva_total, total (numeric)
+  ► Convertir a ARS: total::numeric * cotizacion::numeric  (cotizacion ya vale 1 en ARS)
 
-## notification  [SQL table: "notification"]
-Notificaciones del domicilio fiscal electrónico de AFIP.
-  id (uuid PK)
-  representative_id (uuid → representative.id)
-  client_id (uuid → client.id, nullable)
-  message (text), expiration_date (timestamp), publication_date (timestamp)
-  opened (boolean) — true si el estudio la marcó como leída
-  severity (text), category (text)
+## comprobante_tipo  [SQL table: "comprobante_tipo"]
+Catálogo de tipos de comprobante AFIP.
+  codigo (smallint PK) — se une con comprobante.tipo
+  descripcion (text), letra (char) — 'A' | 'B' | 'C' | 'M' | 'E' | NULL
+  clase — 'factura' | 'nota_credito' | 'nota_debito' | 'recibo' | 'tique'
+  es_nc (boolean) — true si es nota de crédito
+  discrimina_iva (boolean)
 
-## debt  [SQL table: "debt"]
-Deudas con AFIP del último scrape. Snapshot, no histórico.
-  id (uuid PK)
-  client_id (uuid → client.id)
-  tax (text) — 'IVA' | 'Ganancias' | 'Monotributo' | 'IIBB' | 'Autónomos' | etc.
-  concept (text) — 'Saldo DDJJ' | 'Anticipo' | 'Plan de pagos' | etc.
-  sub_concept (text) — 'Capital' | 'Intereses Resarcitorios' | 'Intereses Punitorios' | 'Multas'
-  period (text) — texto libre tal como viene de AFIP, sin formato garantizado
-  quota_number (text), due_date (timestamp)
-  balance (numeric), compensatory_interest (numeric), punitive_interest (numeric)
-  ► Deuda total = balance + compensatory_interest + punitive_interest
+## comprobante_alicuota  [SQL table: "comprobante_alicuota"]
+Una fila por alícuota de cada comprobante. Acá vive el IVA discriminado.
+  comprobante_id (uuid → comprobante.id)
+  alicuota (numeric) — puntos porcentuales: 21.00, 10.50, 27.00, 5.00, 2.50
+  neto (numeric), iva (numeric)
+  ► Para posición IVA usá SIEMPRE el tool getIvaPosition, no SQL directo.
 
-## due_date  [SQL table: "due_date"]
-Vencimientos fiscales próximos. Snapshot scrapeado periódicamente. No tiene montos.
-  id (uuid PK)
-  client_id (uuid → client.id)
-  tax (text), concept (text), sub_concept (text)
-  period (text) — texto libre, sin formato garantizado
-  quota_number (text), due_date (timestamp)
-  detail (text) — descripción adicional del vencimiento
+## contraparte  [SQL table: "contraparte"]
+Catálogo global de emisores/receptores vistos en comprobantes.
+  id (uuid PK), doc_tipo — 'cuit' | 'dni' | 'otro', doc_nro (text)
+  nombre (text), provincia (text) — provincia del receptor para IIBB
 
-## iva_scrape
-Snapshot mensual de la DDJJ de IVA (F.2002) por entidad fiscal. Una fila por (client, período).
-  id (uuid PK), client_id (uuid → client.id)
-  periodo_fiscal (text) — formato 'MM/YYYY', ej: '03/2026'
-  fecha_presentacion (text) — 'DD/MM/YYYY', nullable
-  ok (boolean) — false = scrape incompleto, valores pueden estar vacíos
+## iva_declaracion  [SQL table: "iva_declaracion"]
+DDJJ mensual de IVA (F.2002) scrapeada de AFIP. Una fila por (cliente, período).
+  id (uuid PK), cliente_id (uuid → cliente.id)
+  periodo (date) — día 1 del mes declarado. Ej: marzo 2026 → DATE '2026-03-01'
+  presentada_at (date, nullable)
   debito_fiscal, credito_fiscal (numeric)
-  saldo_mes_pasado (numeric) — saldo técnico arrastrado del período anterior
-  saldo_arca_mes (numeric) — saldo a favor del fisco
-  saldo_tecnico_favor_contribuyente (numeric) — saldo técnico a favor del contribuyente
-  saldo_tecnico_favor_contribuyente_posicion_mensual (numeric)
-  saldo_libre_disponibilidad_periodo_anterior_neto (numeric)
-  total_retenciones_percepciones_periodo (numeric)
-  saldo_libre_disponibilidad_favor_contribuyente_periodo (numeric)
-  ► Para consultas de IVA usá SIEMPRE el tool getIvaPosition (más confiable que SQL directo)
+  saldo_mes_anterior, saldo_afip_mes (numeric)
+  saldo_tecnico_favor, saldo_tecnico_favor_mensual (numeric)
+  saldo_libre_disponibilidad_anterior_neto (numeric)
+  retenciones_percepciones_periodo (numeric)
+  saldo_libre_disponibilidad_favor (numeric)
+  ⚠ debito_fiscal NULL = el scrape quedó incompleto.
 
-## job
-Tareas de scraping encoladas. Útil para saber cuándo fue la última actualización.
-  id (uuid PK), representative_id (uuid → representative.id)
-  type (text) — 'iva' | 'comprobantes' | 'comprobantes_full' | 'notificaciones' | 'deuda' | 'vencimientos'
-  status (text) — 'pending' | 'running' | 'failed' | 'finished'
-  started_at, finished_at, failed_at (timestamp)
-  failed_reason (text)
-  ► Para saber última actualización: WHERE type='X' AND status='finished' ORDER BY finished_at DESC LIMIT 1
+## deuda  [SQL table: "deuda"]
+Deudas con AFIP del último scrape. Snapshot, no histórico.
+  id (uuid PK), org_id (text)
+  credencial_id (uuid → credencial_afip.id) — el login que la reportó
+  cliente_id (uuid → cliente.id, NULLABLE) — AFIP publica la deuda por CUIT del
+    login, así que puede no estar atribuida a ninguna empresa
+  cuit (text) — CUIT al que AFIP le imputa la deuda
+  impuesto (text) — 'IVA' | 'Ganancias' | 'Monotributo' | 'Autónomos' | …
+  concepto (text), sub_concepto (text)
+  periodo (date, nullable), cuota (numeric), vence_at (date)
+  saldo, interes_resarcitorio, interes_punitorio (numeric)
+  estado — 'abierta' | 'pagada' | 'plan_pago' | 'prescripta'
+  ► Deuda total = saldo + interes_resarcitorio + interes_punitorio
 
-## liquidacion_import_empleado
-Empleados de nómina de cada entidad fiscal.
-  id (uuid PK), client_id (uuid → client.id)
+## vencimiento  [SQL table: "vencimiento"]
+Vencimientos fiscales próximos. Snapshot scrapeado. No tiene montos.
+  id (uuid PK), org_id (text), credencial_id (uuid), cliente_id (uuid, NULLABLE)
+  cuit (text), impuesto (text), concepto (text), sub_concepto (text)
+  periodo (date, nullable), cuota (numeric), vence_at (date NOT NULL)
+  detalle (text), completado_at (timestamp, NULL = pendiente)
+
+## notificacion  [SQL table: "notificacion"]
+Notificaciones del domicilio fiscal electrónico de AFIP.
+  id (uuid PK), org_id (text), credencial_id (uuid), cliente_id (uuid, NULLABLE)
+  mensaje (text), publicada_at (timestamp), vence_at (timestamp)
+  leida (boolean) — true si el estudio la marcó como leída
+  severidad — 'sin_clasificar' | 'informativa' | 'accion_requerida' | 'urgente'
+  categoria (text), resuelta_at (timestamp)
+
+## job  [SQL table: "job"]
+Tareas de scraping encoladas. Sirve para saber cuándo se actualizó cada dato.
+  id (uuid PK), org_id (text), credencial_id (uuid), cliente_id (uuid, NULLABLE)
+  type — 'iva' | 'comprobantes' | 'comprobantes_full' | 'notificaciones' | 'deuda' | 'vencimientos' | 'batch'
+  status — 'pending' | 'running' | 'failed' | 'finished'
+  started_at, finished_at, failed_at (timestamp), failed_reason (text)
+  ► Última actualización: WHERE type='X' AND status='finished' ORDER BY finished_at DESC LIMIT 1
+
+## empleado  [SQL table: "empleado"]
+Empleados de nómina de cada empresa.
+  id (uuid PK), org_id (text), cliente_id (uuid → cliente.id)
   cuil (text), legajo (text), nombre (text)
-  activo (boolean), fecha_alta (date), fecha_baja (date, null = vigente)
-  tipo_jornada (text) — 'full_time' | 'part_time' | 'reducida'
-  categoria (text), convenio_id (uuid → payroll_convenio.id, nullable)
+  activo (boolean), fecha_alta (date), fecha_baja (date, NULL = vigente)
+  tipo_jornada — 'full_time' | 'part_time' | 'reducida'
+  convenio_id (uuid → convenio.id), categoria_id (uuid → convenio_categoria.id)
 
-## liquidacion_import_recibo
-Recibos de sueldo por empleado y período.
-  id (uuid PK), empleado_id (uuid → liquidacion_import_empleado.id)
-  periodo (text) — formato 'YYYY-MM', ej: '2026-03'  ⚠ distinto al formato de iva_scrape
-  tipo (text) — 'sueldo' | 'anticipo' | 'SAC' | 'vacaciones' | 'despido' | 'comisiones' | 'varios'
+## recibo  [SQL table: "recibo"]
+Recibos de sueldo por empleado y período. Cuelga de cliente Y de empleado.
+  id (uuid PK), org_id (text), cliente_id (uuid), empleado_id (uuid → empleado.id)
+  periodo (date) — día 1 del mes liquidado. Ej: marzo 2026 → DATE '2026-03-01'
+  tipo — 'mensual' | 'quincenal' | 'sac' | 'liquidacion_final' | 'vacaciones'
   basico, haberes, no_remunerativo, descuentos, retenciones, neto (numeric)
-  situacion_revista (text) — 'activo' | 'vacaciones' | 'licencia_enfermedad' | 'baja_despido' | etc.
-  recibo_confirmado (boolean) — filtrar solo true para agregaciones oficiales
-  fecha (date), forma_pago (text)
-  ► Para sueldos del mes: WHERE periodo = 'YYYY-MM' AND tipo = 'sueldo' AND recibo_confirmado = true
+  confirmado (boolean) — false son borradores, excluilos de los totales
+  fecha, fecha_pago (date), forma_pago (text)
+  ► Sueldos del mes: WHERE periodo = DATE 'YYYY-MM-01' AND tipo='mensual' AND confirmado = true
 
-## liquidacion_import_concepto_valor
+## recibo_concepto  [SQL table: "recibo_concepto"]
 Líneas de cada recibo (un concepto por fila).
-  id (uuid PK), recibo_id (uuid → liquidacion_import_recibo.id)
-  codigo (text) — código del concepto (ej: '810000')
-  monto (numeric) — importe resultante
-  tipo_liquidacion (text) — 'remunerativo' | 'no_remunerativo' | 'descuento' | 'retencion'
+  id (uuid PK), recibo_id (uuid → recibo.id), concepto_id (uuid → concepto.id)
+  tipo — 'remunerativo' | 'no_remunerativo' | 'descuento' | 'retencion'
+  monto (numeric)
+
+## concepto  [SQL table: "concepto"]
+Catálogo global de conceptos de liquidación.
+  id (uuid PK), numero (smallint) — número SOS, nombre (text), codigo_afip (text)
 
 ───────────────────────────────────────────────
-FORMATOS DE PERÍODO — no comparar entre tablas sin parsear
+PERÍODOS
 ───────────────────────────────────────────────
-  iva_scrape.periodo_fiscal         → 'MM/YYYY'   ej: '03/2026'
-  liquidacion_import_recibo.periodo → 'YYYY-MM'   ej: '2026-03'
-  debt.period / due_date.period     → texto libre de AFIP, sin garantías
-  Regla: siempre usá TO_DATE() antes de comparar períodos entre tablas distintas.
+  Todos los períodos mensuales son columnas DATE con el día 1 del mes:
+    iva_declaracion.periodo, recibo.periodo, deuda.periodo, vencimiento.periodo,
+    comprobante.periodo (generada desde fecha_emision)
+  Comparalos directo entre tablas: WHERE periodo = DATE '2026-03-01'.
+  No hay strings 'MM/YYYY' ni 'YYYY-MM' en la base: no uses TO_DATE().
 
 ───────────────────────────────────────────────
 TRAMPAS CONOCIDAS
 ───────────────────────────────────────────────
-  • invoice.direction está en PascalCase en la DB ('Outbound'/'Inbound'). Filtrá con ILIKE o usá LOWER().
-  • La columna de tipo de cambio se llama "currency_rate" en la DB. No uses "cureency_rate".
-  • debt y due_date NO tienen representative_id. Filtrá SIEMPRE via client → representative.
-  • NUNCA expongas representative.afip_password (clave fiscal AFIP).
-  • recibo_confirmado = false son borradores, excluirlos de totales.
-  • Períodos en debt/due_date son texto libre, no comparables con LIKE fijo.
+  • comprobante.direccion es un enum en minúscula: 'emitido' / 'recibido'. Sin ILIKE.
+  • El IVA no está en comprobante: vive en comprobante_alicuota (una fila por alícuota).
+  • deuda / vencimiento / notificacion pueden tener cliente_id NULL: AFIP los publica
+    por CUIT del login. Si el usuario pregunta por una empresa, filtrá por cliente_id;
+    si pregunta "todo lo del login", filtrá por credencial_id.
+  • NUNCA expongas credencial_afip.clave (clave fiscal AFIP).
+  • recibo.confirmado = false son borradores, excluirlos de totales.
+  • Para saber si un comprobante es nota de crédito usá comprobante_tipo.es_nc,
+    nunca una lista de códigos escrita a mano.
 
 ───────────────────────────────────────────────
 EJEMPLOS DE QUERIES FRECUENTES
 ───────────────────────────────────────────────
 
--- Deudas de un cliente (debt + compensatory_interest + punitive_interest = total real)
-SELECT d.tax, d.concept, d.sub_concept, d.period,
-  ROUND(COALESCE(d.balance::numeric,0) + COALESCE(d.compensatory_interest::numeric,0) + COALESCE(d.punitive_interest::numeric,0), 2) AS total
-FROM debt d
-JOIN client c ON c.id = d.client_id
-JOIN representative r ON r.id = c.representative_id
-WHERE r.organization_id = '${orgId}' AND LOWER(c.name) ILIKE '%nombre%'
+-- Deudas de un cliente (saldo + intereses = total real)
+SELECT d.impuesto, d.concepto, d.sub_concepto, d.periodo,
+  ROUND(d.saldo::numeric + d.interes_resarcitorio::numeric + d.interes_punitorio::numeric, 2) AS total
+FROM deuda d
+JOIN cliente c ON c.id = d.cliente_id
+WHERE d.org_id = '${orgId}' AND c.razon_social ILIKE '%nombre%' AND d.estado = 'abierta'
 ORDER BY total DESC LIMIT 50;
 
 -- Vencimientos próximos 30 días de un cliente
-SELECT c.name, dd.tax, dd.concept, dd.due_date::date, dd.detail
-FROM due_date dd
-JOIN client c ON c.id = dd.client_id
-JOIN representative r ON r.id = c.representative_id
-WHERE r.organization_id = '${orgId}' AND LOWER(c.name) ILIKE '%nombre%'
-  AND dd.due_date >= NOW() AND dd.due_date <= NOW() + INTERVAL '30 days'
-ORDER BY dd.due_date ASC LIMIT 20;
+SELECT c.razon_social, v.impuesto, v.concepto, v.vence_at, v.detalle
+FROM vencimiento v
+JOIN cliente c ON c.id = v.cliente_id
+WHERE v.org_id = '${orgId}' AND c.razon_social ILIKE '%nombre%'
+  AND v.completado_at IS NULL
+  AND v.vence_at BETWEEN CURRENT_DATE AND CURRENT_DATE + 30
+ORDER BY v.vence_at ASC LIMIT 20;
 
--- Notificaciones no leídas de un cliente (client_id puede ser NULL en notificaciones generales)
-SELECT n.message, n.severity, n.category, n.publication_date::date, n.expiration_date::date
-FROM notification n
-JOIN representative r ON r.id = n.representative_id
-WHERE r.organization_id = '${orgId}' AND n.client_id = '<uuid>'
-  AND n.opened = false
-ORDER BY n.publication_date DESC LIMIT 20;
+-- Notificaciones no leídas de un cliente
+SELECT n.mensaje, n.severidad, n.categoria, n.publicada_at::date
+FROM notificacion n
+WHERE n.org_id = '${orgId}' AND n.cliente_id = '<uuid>' AND n.leida = false
+ORDER BY n.publicada_at DESC LIMIT 20;
 
--- Último scrape exitoso por tipo para un representante
+-- Facturación de un mes por empresa
+SELECT c.razon_social,
+  ROUND(SUM(cp.total::numeric * cp.cotizacion::numeric), 2) AS ventas_ars
+FROM comprobante cp
+JOIN cliente c ON c.id = cp.cliente_id
+WHERE cp.org_id = '${orgId}' AND cp.direccion = 'emitido'
+  AND cp.periodo = DATE '2026-03-01'
+GROUP BY c.id, c.razon_social ORDER BY ventas_ars DESC LIMIT 50;
+
+-- Último scrape exitoso por tipo
 SELECT j.type, MAX(j.finished_at) AS ultima_actualizacion
 FROM job j
-JOIN representative r ON r.id = j.representative_id
-WHERE r.organization_id = '${orgId}' AND j.status = 'finished'
+WHERE j.org_id = '${orgId}' AND j.status = 'finished'
 GROUP BY j.type ORDER BY j.type;
 ─────────────────────────────────────────────`;
 
@@ -308,6 +318,7 @@ export const Route = createFileRoute('/api/agent')({
           | null;
         if (!orgId)
           return new Response('No active organization', { status: 403 });
+        setDbContext({ orgId });
         const userId = session.user.id;
 
         // Nombre del estudio/organización activa, para que el agente pueda
@@ -344,7 +355,7 @@ export const Route = createFileRoute('/api/agent')({
           .where(
             and(
               eq(agentConversation.id, conversationId),
-              eq(agentConversation.organizationId, orgId),
+              eq(agentConversation.orgId, orgId),
               eq(agentConversation.userId, userId)
             )
           )
@@ -355,9 +366,9 @@ export const Route = createFileRoute('/api/agent')({
             .insert(agentConversation)
             .values({
               id: conversationId,
-              organizationId: orgId,
+              orgId,
               userId,
-              title:
+              titulo:
                 userText.length > 60
                   ? userText.slice(0, 60) + '…'
                   : userText || 'Nueva conversación',
@@ -370,18 +381,17 @@ export const Route = createFileRoute('/api/agent')({
         // el historial ya incluye este turno y no se pierde contexto.
         await db
           .insert(agentMessage)
-          .values({ conversationId, role: 'user', content: userText });
+          .values({ conversationId, role: 'user', contenido: userText });
 
         // Historial de la conversación (ya incluye el mensaje que acabamos de guardar)
         const prevMessages = await db
           .select({
             id: agentMessage.id,
             role: agentMessage.role,
-            content: agentMessage.content,
+            contenido: agentMessage.contenido,
           })
           .from(agentMessage)
           .where(eq(agentMessage.conversationId, conversationId))
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
           .orderBy(agentMessage.createdAt)
           .limit(20);
 
@@ -390,9 +400,55 @@ export const Route = createFileRoute('/api/agent')({
         const historyUiMessages = prevMessages.slice(0, -1).map((m) => ({
           id: m.id,
           role: m.role as 'user' | 'assistant',
-          parts: [{ type: 'text' as const, text: m.content }],
-          content: m.content,
+          parts: [{ type: 'text' as const, text: m.contenido }],
+          content: m.contenido,
         }));
+
+        /**
+         * Resuelve el nombre que tipeó el usuario a una única empresa de la org.
+         * Busca primero por razón social y, si no hay match, por el nombre del
+         * login de AFIP (que agrupa varias empresas y es como el estudio suele
+         * referirse a "el cliente").
+         */
+        const resolverCliente = async (nombre: string) => {
+          const porRazonSocial = await dbReadonly
+            .select({
+              id: cliente.id,
+              razonSocial: cliente.razonSocial,
+              cuit: cliente.cuit,
+            })
+            .from(cliente)
+            .where(
+              and(
+                eq(cliente.orgId, orgId),
+                ilike(cliente.razonSocial, `%${nombre}%`)
+              )
+            );
+
+          if (porRazonSocial.length > 0) return porRazonSocial;
+
+          return await dbReadonly
+            .select({
+              id: cliente.id,
+              razonSocial: cliente.razonSocial,
+              cuit: cliente.cuit,
+            })
+            .from(cliente)
+            .innerJoin(
+              clienteCredencial,
+              eq(clienteCredencial.clienteId, cliente.id)
+            )
+            .innerJoin(
+              credencialAfip,
+              eq(clienteCredencial.credencialId, credencialAfip.id)
+            )
+            .where(
+              and(
+                eq(cliente.orgId, orgId),
+                ilike(credencialAfip.nombre, `%${nombre}%`)
+              )
+            );
+        };
 
         const agent = new ToolLoopAgent({
           model: googleAI('gemini-2.5-flash'),
@@ -408,7 +464,7 @@ COMPORTAMIENTO — MUY IMPORTANTE
 - NUNCA describas lo que vas a hacer antes de hacerlo. Ejecutá el tool directamente y respondé con el resultado.
 - NUNCA digas "voy a consultar", "necesito ejecutar", "permití que busque", "déjame verificar" ni frases similares. Hacelo y listo.
 - Si una query falla, corregí el SQL y reintentá una vez sin comentarlo. Si falla dos veces, reportá el error técnico brevemente.
-- En preguntas de seguimiento sobre el mismo cliente (ej: "¿y cuántas deudas tiene?"), SIEMPRE incluí el filtro r.organization_id = '${orgId}' via JOIN con representative en la nueva query. Nunca omitas este filtro aunque el cliente ya haya sido identificado antes.
+- En preguntas de seguimiento sobre el mismo cliente (ej: "¿y cuántas deudas tiene?"), SIEMPRE volvé a incluir el filtro org_id = '${orgId}' en la nueva query. Nunca lo omitas aunque el cliente ya haya sido identificado antes.
 
 CONTEXTO DE CONVERSACIÓN — MUY IMPORTANTE
 - Tenés acceso al historial completo de la conversación. Leelo antes de cada respuesta.
@@ -436,31 +492,30 @@ FORMATO DE SALIDA
 
 SEGURIDAD — CRÍTICO
 - Nunca respondas preguntas sobre contraseñas, credenciales o datos sensibles que no sean contables.
-- Toda query DEBE filtrar por organization_id = '${orgId}' via JOIN con representative. Si una query no incluye este filtro, es un error de seguridad — no la ejecutes.
+- Toda query DEBE filtrar por org_id = '${orgId}'. Si una query no incluye este filtro, es un error de seguridad — no la ejecutes.
 - Solo queries SELECT. Nunca INSERT, UPDATE, DELETE, DROP, ni nada que modifique datos.
 
 ${buildSchema(orgId)}
 
 REGLAS AL ESCRIBIR QUERIES
 1. Solo SELECT. Siempre incluí LIMIT (máximo 200).
-2. SIEMPRE filtrá por organization_id = '${orgId}' via JOIN con representative — en CADA query, incluso en follow-ups del mismo cliente.
-3. Montos en ARS: CASE WHEN UPPER(currency)='USD' THEN amount::numeric * currency_rate::numeric ELSE amount::numeric END
-4. Facturas — direction: "facturó/vendió" → WHERE LOWER(direction)='outbound' | "gastó/compró" → WHERE LOWER(direction)='inbound'
-5. Notificaciones: para las atribuibles a una entidad fiscal, WHERE client_id IS NOT NULL
-6. Búsquedas por nombre de cliente: ILIKE '%texto%'. IMPORTANTE: cuando el usuario nombra un "cliente" (ej: "Produsel S.A"), casi siempre se refiere a representative.name (la razón social que gestiona el estudio), NO a client.name. Resolvé el nombre contra representative.name. Para datos de actividad usá la FK directa al representante: invoice, debt, due_date, notification y job tienen representative_id, así que podés filtrar por r.id sin necesidad de pasar por client. Recién filtrá por client.name si el usuario nombra explícitamente una entidad fiscal específica dentro del representante.
+2. SIEMPRE filtrá por org_id = '${orgId}' — en CADA query, incluso en follow-ups del mismo cliente. Si la tabla no tiene org_id, joineá con la que sí lo tiene.
+3. Montos en ARS: total::numeric * cotizacion::numeric (cotizacion vale 1 cuando la moneda es ARS).
+4. Comprobantes — direccion: "facturó/vendió" → WHERE direccion = 'emitido' | "gastó/compró" → WHERE direccion = 'recibido'
+5. Deudas, vencimientos y notificaciones pueden tener cliente_id NULL (AFIP los publica por CUIT del login). Para preguntas sobre una empresa, filtrá por cliente_id.
+6. Búsquedas por nombre de cliente: cliente.razon_social ILIKE '%texto%'. Si no encontrás nada, probá contra credencial_afip.nombre (el nombre del login de AFIP) y bajá a sus clientes vía cliente_credencial.
 7. No agregues el sufijo societario exacto al ILIKE: para "Produsel S.A" buscá ILIKE '%Produsel%' (sin "S.A."/"S.A"/puntos), porque la razón social guardada puede variar en el sufijo.
 8. Si la pregunta no puede responderse con los datos disponibles, respondé: "No tengo información suficiente en la base de datos para responder eso."
 
 HERRAMIENTAS DISPONIBLES
-- executeQuery: para cualquier consulta SQL general. Usala para clientes, facturas, deudas, vencimientos, notificaciones, convenios, empleados (cantidad, filtros), empresas con sueldos, o cualquier consulta que no tenga tool dedicada.
+- executeQuery: para cualquier consulta SQL general. Usala para clientes, comprobantes, deudas, vencimientos, notificaciones, convenios, empleados (cantidad, filtros), empresas con sueldos, o cualquier consulta que no tenga tool dedicada.
 - getIvaPosition: USÁ SIEMPRE ESTE TOOL para consultas sobre IVA, posición IVA, saldo IVA, crédito/débito fiscal. Tiene lógica interna que SQL solo no puede replicar.
-- getMontosfacturacion: montos totales de ventas y compras en ARS. Acepta empresa y/o período opcionales. Maneja conversión USD→ARS internamente.
-- getEmpleados: lista los empleados de una empresa con legajo, nombre, CUIT y si está activo, ya formateada como tabla. Usala cuando el usuario quiera ver el listado de empleados.
-- getMontosNomina: montos de nómina (básico, bruto, no remunerativo, neto) de una empresa para un período. Solo recibos confirmados de tipo sueldo. Convierte MM/YYYY al formato interno automáticamente.
+- getMontosfacturacion: montos totales de ventas y compras en ARS. Acepta empresa y/o período opcionales.
+- getEmpleados: lista los empleados de una empresa con legajo, nombre, CUIL y si está activo, ya formateada como tabla.
+- getMontosNomina: montos de nómina (básico, bruto, no remunerativo, neto) de una empresa para un período. Solo recibos confirmados de tipo mensual.
 - getResumenCliente: USÁ ESTE TOOL cuando el usuario pida un resumen, panorama general o "cómo está" una empresa. Devuelve en una sola llamada: deuda AFIP total, vencimientos próximos, facturación del mes, notificaciones no leídas y última actualización de datos. Nunca uses múltiples tools para armar un resumen si podés usar este.
-  - El parámetro displayMonth de getIvaPosition es el mes que el usuario quiere ver (ej: "Marzo 2026" → "03/2026"). El tool internamente usa el mes anterior para consultar iva_scrape.
-  - NUNCA respondas "no hay datos para X mes" desde la memoria de la conversación. Siempre volvé a llamar al tool con el displayMonth específico que pide el usuario.
-  - Devuelve los datos de IVA de la entidad fiscal encontrada.`,
+  - El parámetro periodo de getIvaPosition es el mes que se declara, en formato MM/YYYY (ej: "Marzo 2026" → "03/2026"). Es el mismo mes de los comprobantes: no hay desfasaje.
+  - NUNCA respondas "no hay datos para X mes" desde la memoria de la conversación. Siempre volvé a llamar al tool con el período específico que pide el usuario.`,
           tools: {
             executeQuery: tool({
               description:
@@ -469,7 +524,7 @@ HERRAMIENTAS DISPONIBLES
                 query: z
                   .string()
                   .describe(
-                    'Query SQL SELECT. Debe incluir LIMIT y filtrar por organization_id via JOIN con representative.'
+                    'Query SQL SELECT. Debe incluir LIMIT y filtrar por org_id.'
                   ),
                 description: z
                   .string()
@@ -486,7 +541,7 @@ HERRAMIENTAS DISPONIBLES
                 if (!trimmed.includes(orgId)) {
                   console.warn('[agent.executeQuery] rejected (missing orgId):', trimmed.slice(0, 200));
                   return {
-                    error: `La query debe filtrar por organization_id = '${orgId}'. Revisá el JOIN con representative (via client.representative_id o directamente desde la tabla).`,
+                    error: `La query debe filtrar por org_id = '${orgId}'. Si la tabla no tiene org_id, joineá con la que sí lo tiene (cliente, comprobante, recibo…).`,
                   };
                 }
 
@@ -512,165 +567,142 @@ HERRAMIENTAS DISPONIBLES
             }),
             getIvaPosition: tool({
               description:
-                'Obtiene la posición IVA completa de un cliente para un período dado. Devuelve datos de todos los perfiles del cliente con totales consolidados. Usá este tool para cualquier consulta sobre IVA, saldo IVA, débito/crédito fiscal.',
+                'Obtiene la posición IVA completa de una empresa para un período. Cruza los comprobantes del mes con la DDJJ presentada en AFIP. Usá este tool para cualquier consulta sobre IVA, saldo IVA, débito/crédito fiscal.',
               inputSchema: z.object({
-                clientName: z.string().describe('Nombre de la entidad fiscal (búsqueda parcial)'),
-                displayMonth: z
+                clientName: z.string().describe('Nombre de la empresa (búsqueda parcial)'),
+                periodo: z
                   .string()
                   .optional()
                   .describe(
-                    'Mes que el usuario quiere ver, en formato MM/YYYY. Ej: "03/2026" para Marzo 2026. ' +
-                    'Si no se especifica, usa el mes más reciente con datos disponibles. ' +
-                    'IMPORTANTE: "marzo" → "03/2026", "febrero" → "02/2026", etc.'
+                    'Período a consultar en formato MM/YYYY. Ej: "03/2026" para Marzo 2026. ' +
+                    'Si no se especifica, usa el período más reciente con DDJJ disponible.'
                   ),
               }),
-              execute: async ({ clientName, displayMonth }) => {
-                console.info('[agent.getIvaPosition] llamado con:', { clientName, displayMonth });
-               try {
-                // 1. Buscar la entidad fiscal por nombre dentro de la organización.
-                //    El filtro de org vive en representative, no en client — por eso el JOIN.
-                const matchingClients = await dbReadonly
-                  .select({ id: COL_ENTITY_ID, name: COL_ENTITY_NAME, identityNumber: COL_ENTITY_CUIT })
-                  .from(T_ENTITY)
-                  .innerJoin(T_OWNER, eq(COL_OWNER_ID, COL_ENTITY_OWNER_FK))
-                  .where(and(eq(COL_OWNER_ORG, orgId), ilike(COL_ENTITY_NAME, `%${clientName}%`)));
+              execute: async ({ clientName, periodo }) => {
+                console.info('[agent.getIvaPosition] llamado con:', { clientName, periodo });
+                try {
+                  const matches = await resolverCliente(clientName);
+                  if (matches.length === 0)
+                    return { error: `No encontré empresas con nombre "${clientName}"` };
+                  if (matches.length > 1)
+                    return {
+                      error: 'Más de una empresa coincide',
+                      opciones: matches.map((c) => c.razonSocial),
+                    };
 
-                if (matchingClients.length === 0)
-                  return { error: `No encontré clientes con nombre "${clientName}"` };
-                if (matchingClients.length > 1)
-                  return { error: 'Más de un cliente coincide', options: matchingClients.map((c) => c.name) };
+                  const found = matches[0];
 
-                const foundClient = matchingClients[0];
+                  // Los comprobantes del mes y la DDJJ de AFIP son del MISMO
+                  // período: no hay desfasaje entre ambos.
+                  let periodoDate: string;
+                  if (periodo) {
+                    periodoDate = periodoADate(periodo);
+                  } else {
+                    const [ultima] = await dbReadonly
+                      .select({ periodo: ivaDeclaracion.periodo })
+                      .from(ivaDeclaracion)
+                      .where(eq(ivaDeclaracion.clienteId, found.id))
+                      .orderBy(desc(ivaDeclaracion.periodo))
+                      .limit(1);
+                    if (!ultima)
+                      return { error: `No hay datos de IVA disponibles para ${found.razonSocial}.` };
+                    periodoDate = ultima.periodo;
+                  }
 
-                // "03/2026" → "02/2026"
-                const prevMonthStr = (s: string): string => {
-                  const [mm, yyyy] = s.split('/').map(Number);
-                  const d = new Date(yyyy, mm - 2, 1);
-                  return `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
-                };
+                  const periodoLabel = dateAPeriodo(periodoDate);
+                  const { desde, hasta } = rangoDelMes(periodoLabel);
+                  const n = (v: string | null | undefined) => parseFloat(v ?? '0') || 0;
 
-                // "02/2026" → "03/2026"
-                const nextMonthStr = (s: string): string => {
-                  const [mm, yyyy] = s.split('/').map(Number);
-                  const d = new Date(yyyy, mm, 1);
-                  return `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
-                };
+                  const [declaracion] = await dbReadonly
+                    .select()
+                    .from(ivaDeclaracion)
+                    .where(
+                      and(
+                        eq(ivaDeclaracion.clienteId, found.id),
+                        eq(ivaDeclaracion.periodo, periodoDate)
+                      )
+                    )
+                    .limit(1);
 
-                const periodToDateRange = (p: string): { from: Date; to: Date } => {
-                  const [mm, yyyy] = p.split('/').map(Number);
-                  const from = new Date(yyyy, mm - 1, 1);
-                  const to = new Date(yyyy, mm, 0, 23, 59, 59);
-                  return { from, to };
-                };
+                  // El IVA se calcula desde las alícuotas discriminadas, no desde
+                  // el total del comprobante.
+                  const alicuotas: ComprobanteAlicuotaRow[] = await dbReadonly
+                    .select({
+                      direccion: comprobante.direccion,
+                      letra: comprobanteTipo.letra,
+                      esNc: comprobanteTipo.esNc,
+                      moneda: comprobante.moneda,
+                      cotizacion: comprobante.cotizacion,
+                      alicuota: comprobanteAlicuota.alicuota,
+                      neto: comprobanteAlicuota.neto,
+                      iva: comprobanteAlicuota.iva,
+                    })
+                    .from(comprobanteAlicuota)
+                    .innerJoin(
+                      comprobante,
+                      eq(comprobanteAlicuota.comprobanteId, comprobante.id)
+                    )
+                    .innerJoin(
+                      comprobanteTipo,
+                      eq(comprobante.tipo, comprobanteTipo.codigo)
+                    )
+                    .where(
+                      and(
+                        eq(comprobante.clienteId, found.id),
+                        gte(comprobante.fechaEmision, desde),
+                        lte(comprobante.fechaEmision, hasta)
+                      )
+                    );
 
-                /*
-                 * CONVENCIÓN DE PERÍODOS — igual que la UI:
-                 *   invoicePeriod   = el mes que el usuario quiere ver ("displayMonth")
-                 *   ivaScrapeperiod = invoicePeriod - 1 mes  (el scrape de AFIP del mes anterior)
-                 *
-                 * Ejemplo: usuario pide "Marzo 2026" (03/2026)
-                 *   → facturas: 01-mar al 31-mar 2026
-                 *   → iva_scrape: "02/2026" (posición IVA de febrero, presentada en marzo)
-                 */
-                let invoicePeriod: string;
-                let ivaScrapeperiod: string;
+                  const iva = calcularIva(alicuotas);
+                  const saldoAFavor = n(declaracion?.saldoTecnicoFavor);
+                  const saldoLibreDisp = n(declaracion?.saldoLibreDisponibilidadFavor);
+                  const retenciones = n(declaracion?.retencionesPercepcionesPeriodo);
 
-                if (displayMonth) {
-                  invoicePeriod = displayMonth;
-                  ivaScrapeperiod = prevMonthStr(displayMonth);
-                } else {
-                  // Sin período: buscar el último iva_scrape disponible para esta entidad
-                  const rows = await dbReadonly.execute(sql.raw(
-                    `SELECT periodo_fiscal FROM iva_scrape WHERE client_id = '${foundClient.id}' ORDER BY TO_DATE(periodo_fiscal, 'MM/YYYY') DESC LIMIT 1`
-                  ));
-                  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-                  const arr = Array.from(rows) as Record<string, unknown>[];
-                  if (arr.length === 0) return { error: `No hay datos de IVA disponibles para ${foundClient.name}.` };
-                  ivaScrapeperiod = arr[0].periodo_fiscal as string; // eslint-disable-line @typescript-eslint/no-unsafe-assignment
-                  invoicePeriod = nextMonthStr(ivaScrapeperiod);
+                  return {
+                    cliente: found.razonSocial,
+                    cuit: found.cuit,
+                    periodo: periodoLabel,
+                    presentadaAt: declaracion?.presentadaAt ?? 'No disponible',
+                    ventas: {
+                      netoA21: iva.netoA21.toFixed(2),
+                      netoA105: iva.netoA105.toFixed(2),
+                      totalB21: iva.totalAmountB21.toFixed(2),
+                      totalB105: iva.totalAmountB105.toFixed(2),
+                      totalB27: iva.totalAmountB27.toFixed(2),
+                      debitoFiscal: iva.debitoFiscal.toFixed(2),
+                    },
+                    compras: {
+                      netoGravado21: iva.netoInbound21.toFixed(2),
+                      netoGravado105: iva.netoInbound105.toFixed(2),
+                      netoGravado27: iva.netoInbound27.toFixed(2),
+                      creditoFiscal: iva.creditoFiscalCompras.toFixed(2),
+                    },
+                    saldosAFIP: {
+                      debitoFiscalDeclarado: declaracion?.debitoFiscal ?? null,
+                      creditoFiscalDeclarado: declaracion?.creditoFiscal ?? null,
+                      saldoTecnicoFavor: declaracion?.saldoTecnicoFavor ?? null,
+                      saldoLibreDisponibilidad: declaracion?.saldoLibreDisponibilidadFavor ?? null,
+                      retencionesPercepciones: declaracion?.retencionesPercepcionesPeriodo ?? null,
+                    },
+                    saldoTecnico: (
+                      iva.debitoFiscal -
+                      iva.creditoFiscalCompras -
+                      saldoAFavor
+                    ).toFixed(2),
+                    saldoLibreDisponibilidad: saldoLibreDisp.toFixed(2),
+                    totalRetencionesPercepciones: retenciones.toFixed(2),
+                    tieneDatosAFIP: !!declaracion,
+                  };
+                } catch (err: any) {
+                  console.error('[agent.getIvaPosition] error:', err?.message, err?.stack);
+                  return { error: `Error al calcular posición IVA: ${err?.message ?? 'error desconocido'}` };
                 }
-
-                const { from: dateFrom, to: dateTo } = periodToDateRange(invoicePeriod);
-                const n = (v: string | null | undefined) => parseFloat(v ?? '0') || 0;
-
-                // 2. iva_scrape: período del mes ANTERIOR al que se muestra (convención AFIP)
-                const [ivaRow] = await dbReadonly.select().from(ivaScrape)
-                  .where(and(eq(COL_IVA_ENTITY_FK, foundClient.id), eq(ivaScrape.periodoFiscal, ivaScrapeperiod)))
-                  .limit(1);
-
-                // 3. Facturas del mes que el usuario quiere ver
-                const invoices = await dbReadonly.select({
-                  direction: invoice.direction,
-                  type: invoice.type,
-                  currency: invoice.currency,
-                  currencyRate: invoice.cureencyRate,
-                  amountIVA21: invoice.amountIVA21,
-                  amountIVA105: invoice.amountIVA105,
-                  amountIVA27: invoice.amountIVA27,
-                  amountIVA5: invoice.amountIVA5,
-                  amountIVA25: invoice.amountIVA25,
-                  IVA21: invoice.IVA21,
-                  IVA105: invoice.IVA105,
-                  IVA27: invoice.IVA27,
-                }).from(invoice)
-                  .where(and(
-                    eq(COL_INVOICE_ENTITY_FK, foundClient.id),
-                    gte(invoice.emitionDate, dateFrom),
-                    lte(invoice.emitionDate, dateTo),
-                  ));
-
-                // 4. Calcular débito/crédito fiscal usando lógica compartida con el módulo de clientes
-                const ivaCalc = calcularIvaDesdeFacturas(invoices as InvoiceIvaRow[]);
-                const debitoFiscalCalculado = ivaCalc.debitoFiscal;
-                const creditoFiscalCalculado = ivaCalc.creditoFiscalCompras;
-                const { netoA21, netoA105, totalAmountB21: totalB21, totalAmountB105: totalB105, totalAmountB27: totalB27,
-                  netoInbound21: netoIn21, netoInbound105: netoIn105, netoInbound27: netoIn27 } = ivaCalc;
-
-                // 5. Saldos de iva_scrape (AFIP)
-                const saldoAFavor = n(ivaRow?.saldoTecnicoFavorContribuyente);
-                const saldoLibreDisp = n(ivaRow?.saldoLibreDisponibilidadFavorContribuyentePeriodo);
-                const totalRetenciones = n(ivaRow?.totalRetencionesPercepcionesPeriodo);
-                const saldoTecnico = debitoFiscalCalculado - creditoFiscalCalculado - saldoAFavor;
-
-                return {
-                  cliente: foundClient.name,
-                  cuit: foundClient.identityNumber,
-                  periodoMostrado: invoicePeriod,
-                  periodoIvaScrape: ivaScrapeperiod,
-                  fechaPresentacion: ivaRow?.fechaPresentacion ?? 'No disponible',
-                  ventas: {
-                    netoA21: netoA21.toFixed(2),
-                    netoA105: netoA105.toFixed(2),
-                    totalB21: totalB21.toFixed(2),
-                    totalB105: totalB105.toFixed(2),
-                    totalB27: totalB27.toFixed(2),
-                    debitoFiscal: debitoFiscalCalculado.toFixed(2),
-                  },
-                  compras: {
-                    netoGravado21: netoIn21.toFixed(2),
-                    netoGravado105: netoIn105.toFixed(2),
-                    netoGravado27: netoIn27.toFixed(2),
-                    creditoFiscal: creditoFiscalCalculado.toFixed(2),
-                  },
-                  saldosAFIP: {
-                    saldoAFavorPeriodoAnterior: ivaRow?.saldoTecnicoFavorContribuyente ?? null,
-                    saldoLibreDisponibilidad: ivaRow?.saldoLibreDisponibilidadFavorContribuyentePeriodo ?? null,
-                    totalRetencionesPercepciones: ivaRow?.totalRetencionesPercepcionesPeriodo ?? null,
-                  },
-                  saldoTecnico: saldoTecnico.toFixed(2),
-                  saldoLibreDisponibilidad: saldoLibreDisp.toFixed(2),
-                  totalRetencionesPercepciones: totalRetenciones.toFixed(2),
-                  tieneDatosAFIP: !!ivaRow,
-                };
-               } catch (err: any) {
-                 console.error('[agent.getIvaPosition] error:', err?.message, err?.stack);
-                 return { error: `Error al calcular posición IVA: ${err?.message ?? 'error desconocido'}` };
-               }
               },
             }),
             getMontosfacturacion: tool({
               description:
-                'Muestra los montos totales de ventas (Outbound) y compras (Inbound) en ARS. ' +
+                'Muestra los montos totales de ventas (emitidos) y compras (recibidos) en ARS. ' +
                 'Puede filtrar por empresa y/o período. Si no se especifica empresa muestra todas; ' +
                 'si no se especifica período muestra el acumulado total.',
               inputSchema: z.object({
@@ -680,37 +712,30 @@ HERRAMIENTAS DISPONIBLES
               execute: async ({ clientName, periodo }) => {
                 console.info('[agent.getMontosfacturacion]', { clientName, periodo });
                 try {
-                  let clientFilter = '';
+                  let clienteFilter = '';
                   if (clientName) {
-                    const matches = await dbReadonly
-                      .select({ id: COL_ENTITY_ID, name: COL_ENTITY_NAME })
-                      .from(T_ENTITY)
-                      .innerJoin(T_OWNER, eq(COL_OWNER_ID, COL_ENTITY_OWNER_FK))
-                      .where(and(eq(COL_OWNER_ORG, orgId), ilike(COL_ENTITY_NAME, `%${clientName}%`)));
-                    if (matches.length === 0) return { error: `No encontré empresas con nombre "${clientName}"` };
-                    if (matches.length > 1) return { error: 'Más de una empresa coincide', opciones: matches.map((m) => m.name) };
-                    clientFilter = `AND c.id = '${matches[0].id}'`;
+                    const matches = await resolverCliente(clientName);
+                    if (matches.length === 0)
+                      return { error: `No encontré empresas con nombre "${clientName}"` };
+                    if (matches.length > 1)
+                      return { error: 'Más de una empresa coincide', opciones: matches.map((m) => m.razonSocial) };
+                    clienteFilter = `AND cp.cliente_id = '${matches[0].id}'`;
                   }
-                  let periodoFilter = '';
-                  if (periodo) {
-                    const [mm, yyyy] = periodo.split('/');
-                    periodoFilter = `AND DATE_TRUNC('month', i.emition_date) = DATE_TRUNC('month', DATE '${yyyy}-${mm.padStart(2, '0')}-01')`;
-                  }
+                  const periodoFilter = periodo
+                    ? `AND cp.periodo = DATE '${periodoADate(periodo)}'`
+                    : '';
                   const rows = Array.from(await dbReadonly.execute(sql.raw(`
-                    SELECT c.name AS empresa,
-                      ROUND(SUM(CASE WHEN LOWER(i.direction) = 'outbound' THEN
-                        CASE WHEN UPPER(i.currency) = 'USD' THEN i.amount::numeric * i.currency_rate::numeric
-                        ELSE i.amount::numeric END ELSE 0 END), 2) AS ventas_ars,
-                      ROUND(SUM(CASE WHEN LOWER(i.direction) = 'inbound' THEN
-                        CASE WHEN UPPER(i.currency) = 'USD' THEN i.amount::numeric * i.currency_rate::numeric
-                        ELSE i.amount::numeric END ELSE 0 END), 2) AS compras_ars
-                    FROM invoice i
-                    JOIN representative r ON r.id = i.representative_id
-                    JOIN client c ON c.id = i.client_id
-                    WHERE r.organization_id = '${orgId}' ${clientFilter} ${periodoFilter}
-                    GROUP BY c.id, c.name ORDER BY ventas_ars DESC
+                    SELECT c.razon_social AS empresa,
+                      ROUND(SUM(CASE WHEN cp.direccion = 'emitido'
+                        THEN cp.total::numeric * cp.cotizacion::numeric ELSE 0 END), 2) AS ventas_ars,
+                      ROUND(SUM(CASE WHEN cp.direccion = 'recibido'
+                        THEN cp.total::numeric * cp.cotizacion::numeric ELSE 0 END), 2) AS compras_ars
+                    FROM comprobante cp
+                    JOIN cliente c ON c.id = cp.cliente_id
+                    WHERE cp.org_id = '${orgId}' ${clienteFilter} ${periodoFilter}
+                    GROUP BY c.id, c.razon_social ORDER BY ventas_ars DESC
                   `))) as Record<string, unknown>[];
-                  if (rows.length === 0) return { mensaje: 'No hay facturas para el criterio indicado.' };
+                  if (rows.length === 0) return { mensaje: 'No hay comprobantes para el criterio indicado.' };
                   const tabla = formatAsMarkdownTable(['empresa', 'ventas_ars', 'compras_ars'], rows);
                   return { tabla, totalEmpresas: rows.length };
                 } catch (err: any) {
@@ -721,7 +746,7 @@ HERRAMIENTAS DISPONIBLES
             }),
             getEmpleados: tool({
               description:
-                'Lista los empleados de una empresa con legajo, nombre, CUIT y si está activo. ' +
+                'Lista los empleados de una empresa con legajo, nombre, CUIL y si está activo. ' +
                 'Usalo cuando el usuario quiera ver el listado de empleados de una empresa.',
               inputSchema: z.object({
                 clientName: z.string().describe('Nombre parcial de la empresa.'),
@@ -729,22 +754,21 @@ HERRAMIENTAS DISPONIBLES
               execute: async ({ clientName }) => {
                 console.info('[agent.getEmpleados]', { clientName });
                 try {
-                  const matches = await dbReadonly
-                    .select({ id: COL_ENTITY_ID, name: COL_ENTITY_NAME })
-                    .from(T_ENTITY)
-                    .innerJoin(T_OWNER, eq(COL_OWNER_ID, COL_ENTITY_OWNER_FK))
-                    .where(and(eq(COL_OWNER_ORG, orgId), ilike(COL_ENTITY_NAME, `%${clientName}%`)));
-                  if (matches.length === 0) return { error: `No encontré empresas con nombre "${clientName}"` };
-                  if (matches.length > 1) return { error: 'Más de una empresa coincide', opciones: matches.map((m) => m.name) };
+                  const matches = await resolverCliente(clientName);
+                  if (matches.length === 0)
+                    return { error: `No encontré empresas con nombre "${clientName}"` };
+                  if (matches.length > 1)
+                    return { error: 'Más de una empresa coincide', opciones: matches.map((m) => m.razonSocial) };
                   const rows = Array.from(await dbReadonly.execute(sql.raw(`
-                    SELECT e.legajo, e.nombre, e.cuil AS cuit, e.activo
-                    FROM liquidacion_import_empleado e
-                    WHERE e.client_id = '${matches[0].id}'
+                    SELECT e.legajo, e.nombre, e.cuil, e.activo
+                    FROM empleado e
+                    WHERE e.org_id = '${orgId}' AND e.cliente_id = '${matches[0].id}'
                     ORDER BY e.activo DESC, e.nombre ASC
                   `))) as Record<string, unknown>[];
-                  if (rows.length === 0) return { mensaje: `${matches[0].name} no tiene empleados registrados.` };
-                  const tabla = formatAsMarkdownTable(['legajo', 'nombre', 'cuit', 'activo'], rows);
-                  return { empresa: matches[0].name, tabla, total: rows.length };
+                  if (rows.length === 0)
+                    return { mensaje: `${matches[0].razonSocial} no tiene empleados registrados.` };
+                  const tabla = formatAsMarkdownTable(['legajo', 'nombre', 'cuil', 'activo'], rows);
+                  return { empresa: matches[0].razonSocial, tabla, total: rows.length };
                 } catch (err: any) {
                   console.error('[agent.getEmpleados] error:', err?.message);
                   return { error: `Error: ${err?.message}` };
@@ -754,7 +778,7 @@ HERRAMIENTAS DISPONIBLES
             getMontosNomina: tool({
               description:
                 'Muestra los montos de nómina de una empresa para un período: básico, bruto, ' +
-                'no remunerativo y neto a pagar. Solo incluye recibos confirmados de tipo sueldo.',
+                'no remunerativo y neto a pagar. Solo incluye recibos confirmados de tipo mensual.',
               inputSchema: z.object({
                 clientName: z.string().describe('Nombre parcial de la empresa.'),
                 periodo: z.string().describe('Período en formato MM/YYYY. Ej: "03/2026".'),
@@ -762,33 +786,28 @@ HERRAMIENTAS DISPONIBLES
               execute: async ({ clientName, periodo }) => {
                 console.info('[agent.getMontosNomina]', { clientName, periodo });
                 try {
-                  const matches = await dbReadonly
-                    .select({ id: COL_ENTITY_ID, name: COL_ENTITY_NAME })
-                    .from(T_ENTITY)
-                    .innerJoin(T_OWNER, eq(COL_OWNER_ID, COL_ENTITY_OWNER_FK))
-                    .where(and(eq(COL_OWNER_ORG, orgId), ilike(COL_ENTITY_NAME, `%${clientName}%`)));
-                  if (matches.length === 0) return { error: `No encontré empresas con nombre "${clientName}"` };
-                  if (matches.length > 1) return { error: 'Más de una empresa coincide', opciones: matches.map((m) => m.name) };
-                  // Convertir MM/YYYY → YYYY-MM (formato interno de liquidacion_import_recibo.periodo)
-                  const [mm, yyyy] = periodo.split('/');
-                  const periodoRecibo = `${yyyy}-${mm.padStart(2, '0')}`;
+                  const matches = await resolverCliente(clientName);
+                  if (matches.length === 0)
+                    return { error: `No encontré empresas con nombre "${clientName}"` };
+                  if (matches.length > 1)
+                    return { error: 'Más de una empresa coincide', opciones: matches.map((m) => m.razonSocial) };
                   const rows = Array.from(await dbReadonly.execute(sql.raw(`
                     SELECT COUNT(*)::int AS cantidad_recibos,
                       ROUND(SUM(r.basico::numeric), 2) AS total_basico,
                       ROUND(SUM(r.haberes::numeric), 2) AS total_bruto,
                       ROUND(SUM(r.no_remunerativo::numeric), 2) AS total_no_remunerativo,
                       ROUND(SUM(r.neto::numeric), 2) AS total_neto
-                    FROM liquidacion_import_recibo r
-                    JOIN liquidacion_import_empleado e ON e.id = r.empleado_id
-                    WHERE e.client_id = '${matches[0].id}'
-                      AND r.periodo = '${periodoRecibo}'
-                      AND r.recibo_confirmado = true
-                      AND r.tipo = 'sueldo'
+                    FROM recibo r
+                    WHERE r.org_id = '${orgId}'
+                      AND r.cliente_id = '${matches[0].id}'
+                      AND r.periodo = DATE '${periodoADate(periodo)}'
+                      AND r.confirmado = true
+                      AND r.tipo = 'mensual'
                   `))) as Record<string, unknown>[];
                   const row = rows[0];
                   if (!row || row.cantidad_recibos === 0)
-                    return { mensaje: `No hay recibos confirmados para ${matches[0].name} en ${periodo}.` };
-                  return { empresa: matches[0].name, periodo, ...row };
+                    return { mensaje: `No hay recibos confirmados para ${matches[0].razonSocial} en ${periodo}.` };
+                  return { empresa: matches[0].razonSocial, periodo, ...row };
                 } catch (err: any) {
                   console.error('[agent.getMontosNomina] error:', err?.message);
                   return { error: `Error: ${err?.message}` };
@@ -806,74 +825,64 @@ HERRAMIENTAS DISPONIBLES
               execute: async ({ clientName }) => {
                 console.info('[agent.getResumenCliente]', { clientName });
                 try {
-                  const matches = await dbReadonly
-                    .select({ id: COL_ENTITY_ID, name: COL_ENTITY_NAME, identityNumber: COL_ENTITY_CUIT })
-                    .from(T_ENTITY)
-                    .innerJoin(T_OWNER, eq(COL_OWNER_ID, COL_ENTITY_OWNER_FK))
-                    .where(and(eq(COL_OWNER_ORG, orgId), ilike(COL_ENTITY_NAME, `%${clientName}%`)));
-
-                  if (matches.length === 0) return { error: `No encontré empresas con nombre "${clientName}"` };
-                  if (matches.length > 1) return { error: 'Más de una empresa coincide', opciones: matches.map((m) => m.name) };
+                  const matches = await resolverCliente(clientName);
+                  if (matches.length === 0)
+                    return { error: `No encontré empresas con nombre "${clientName}"` };
+                  if (matches.length > 1)
+                    return { error: 'Más de una empresa coincide', opciones: matches.map((m) => m.razonSocial) };
 
                   const found = matches[0];
                   const now = new Date();
                   const mm = String(now.getMonth() + 1).padStart(2, '0');
                   const yyyy = String(now.getFullYear());
-                  const periodoRecibo = `${yyyy}-${mm}`;
 
                   const [deudas, vencimientos, ultimosJobs, facturacion, notificaciones] = await Promise.all([
-                    // Deudas AFIP
+                    // Deudas AFIP abiertas
                     dbReadonly.execute(sql.raw(`
-                      SELECT d.tax, d.concept, d.sub_concept, d.period,
-                        ROUND(COALESCE(d.balance::numeric,0) + COALESCE(d.compensatory_interest::numeric,0) + COALESCE(d.punitive_interest::numeric,0), 2) AS total
-                      FROM debt d
-                      JOIN client c ON c.id = d.client_id
-                      JOIN representative r ON r.id = c.representative_id
-                      WHERE r.organization_id = '${orgId}' AND c.id = '${found.id}'
+                      SELECT d.impuesto, d.concepto, d.sub_concepto, d.periodo,
+                        ROUND(d.saldo::numeric + d.interes_resarcitorio::numeric + d.interes_punitorio::numeric, 2) AS total
+                      FROM deuda d
+                      WHERE d.org_id = '${orgId}' AND d.cliente_id = '${found.id}'
+                        AND d.estado = 'abierta'
                       ORDER BY total DESC LIMIT 20
                     `)),
-                    // Vencimientos próximos 30 días
+                    // Vencimientos pendientes en los próximos 30 días
                     dbReadonly.execute(sql.raw(`
-                      SELECT dd.tax, dd.concept, dd.due_date::date AS due_date, dd.detail
-                      FROM due_date dd
-                      JOIN client c ON c.id = dd.client_id
-                      JOIN representative r ON r.id = c.representative_id
-                      WHERE r.organization_id = '${orgId}' AND c.id = '${found.id}'
-                        AND dd.due_date >= NOW() AND dd.due_date <= NOW() + INTERVAL '30 days'
-                      ORDER BY dd.due_date ASC LIMIT 10
+                      SELECT v.impuesto, v.concepto, v.vence_at, v.detalle
+                      FROM vencimiento v
+                      WHERE v.org_id = '${orgId}' AND v.cliente_id = '${found.id}'
+                        AND v.completado_at IS NULL
+                        AND v.vence_at BETWEEN CURRENT_DATE AND CURRENT_DATE + 30
+                      ORDER BY v.vence_at ASC LIMIT 10
                     `)),
-                    // Último job exitoso por tipo (scoped al representative del cliente)
+                    // Último job exitoso por tipo, de los logins que scrapean a esta empresa
                     dbReadonly.execute(sql.raw(`
                       SELECT j.type, MAX(j.finished_at)::date AS ultima_actualizacion
                       FROM job j
-                      JOIN representative r ON r.id = j.representative_id
-                      JOIN client c ON c.representative_id = r.id
-                      WHERE r.organization_id = '${orgId}' AND c.id = '${found.id}' AND j.status = 'finished'
+                      JOIN cliente_credencial cc ON cc.credencial_id = j.credencial_id
+                      WHERE j.org_id = '${orgId}' AND cc.cliente_id = '${found.id}'
+                        AND j.status = 'finished'
                       GROUP BY j.type ORDER BY j.type
                     `)),
                     // Facturación del mes actual
                     dbReadonly.execute(sql.raw(`
                       SELECT
-                        ROUND(SUM(CASE WHEN LOWER(i.direction) = 'outbound' THEN
-                          CASE WHEN UPPER(i.currency) = 'USD' THEN i.amount::numeric * i.currency_rate::numeric
-                          ELSE i.amount::numeric END ELSE 0 END), 2) AS ventas_ars,
-                        ROUND(SUM(CASE WHEN LOWER(i.direction) = 'inbound' THEN
-                          CASE WHEN UPPER(i.currency) = 'USD' THEN i.amount::numeric * i.currency_rate::numeric
-                          ELSE i.amount::numeric END ELSE 0 END), 2) AS compras_ars,
+                        ROUND(SUM(CASE WHEN cp.direccion = 'emitido'
+                          THEN cp.total::numeric * cp.cotizacion::numeric ELSE 0 END), 2) AS ventas_ars,
+                        ROUND(SUM(CASE WHEN cp.direccion = 'recibido'
+                          THEN cp.total::numeric * cp.cotizacion::numeric ELSE 0 END), 2) AS compras_ars,
                         COUNT(*)::int AS cantidad_comprobantes
-                      FROM invoice i
-                      JOIN representative r ON r.id = i.representative_id
-                      WHERE r.organization_id = '${orgId}' AND i.client_id = '${found.id}'
-                        AND DATE_TRUNC('month', i.emition_date) = DATE_TRUNC('month', DATE '${yyyy}-${mm}-01')
+                      FROM comprobante cp
+                      WHERE cp.org_id = '${orgId}' AND cp.cliente_id = '${found.id}'
+                        AND cp.periodo = DATE '${yyyy}-${mm}-01'
                     `)),
                     // Notificaciones no leídas
                     dbReadonly.execute(sql.raw(`
-                      SELECT n.message, n.severity, n.category, n.publication_date::date AS publication_date
-                      FROM notification n
-                      JOIN representative r ON r.id = n.representative_id
-                      WHERE r.organization_id = '${orgId}' AND n.client_id = '${found.id}'
-                        AND n.opened = false
-                      ORDER BY n.publication_date DESC LIMIT 5
+                      SELECT n.mensaje, n.severidad, n.categoria, n.publicada_at::date AS publicada_at
+                      FROM notificacion n
+                      WHERE n.org_id = '${orgId}' AND n.cliente_id = '${found.id}'
+                        AND n.leida = false
+                      ORDER BY n.publicada_at DESC LIMIT 5
                     `)),
                   ]);
 
@@ -881,8 +890,8 @@ HERRAMIENTAS DISPONIBLES
                   const deudaTotal = deudasRows.reduce((acc, r) => acc + (parseFloat(String(r.total ?? 0)) || 0), 0);
 
                   return {
-                    empresa: found.name,
-                    cuit: found.identityNumber,
+                    empresa: found.razonSocial,
+                    cuit: found.cuit,
                     mesConsultado: `${mm}/${yyyy}`,
                     deudaAFIP: {
                       totalARS: deudaTotal.toFixed(2),
@@ -939,7 +948,7 @@ HERRAMIENTAS DISPONIBLES
                 await db.insert(agentMessage).values({
                   conversationId,
                   role: 'assistant',
-                  content: assistantText,
+                  contenido: assistantText,
                 });
               }
             } catch (err) {

@@ -18,7 +18,7 @@ import {
   retryAlertJobs,
   retryAllRetryable,
 } from '@/actions/alert';
-import { getRepresentatives } from '@/actions/client';
+import { getCredenciales } from '@/actions/client';
 import { listOrgMembersForAssignment } from '@/actions/notification';
 import { CATEGORY_LABELS } from '@/lib/error-classifier';
 import { SearchableSelect } from '@/components/ui/searchable-select';
@@ -40,25 +40,25 @@ const SEVERITY_CONFIG: Record<
   string,
   { label: string; bg: string; fg: string; dot: string }
 > = {
-  critical: {
+  critica: {
     label: 'Crítico',
     bg: 'var(--arca-accent-neg-bg)',
     fg: 'var(--arca-accent-neg-fg)',
     dot: 'var(--arca-accent-neg)',
   },
-  high: {
+  alta: {
     label: 'Alto',
     bg: 'var(--arca-accent-warn-bg)',
     fg: 'var(--arca-accent-warn-fg)',
     dot: 'var(--arca-accent-warn)',
   },
-  medium: {
+  media: {
     label: 'Medio',
     bg: 'var(--arca-accent-warn-bg)',
     fg: 'var(--arca-accent-warn-fg)',
     dot: 'var(--arca-accent-warn)',
   },
-  low: {
+  baja: {
     label: 'Bajo',
     bg: 'var(--arca-surface-2)',
     fg: 'var(--arca-ink-3)',
@@ -98,53 +98,17 @@ const CATEGORY_BADGE: Record<string, { bg: string; fg: string }> = {
 };
 
 const TYPE_LABELS: Record<string, string> = {
-  overdue_debt: 'Deuda vencida',
-  critical_notification: 'Notificación crítica',
-  upcoming_due_date: 'Vencimiento próximo',
-  scraper_error: 'Error de scraping',
-  balance_due_soon: 'Balance próximo',
-  missing_activity: 'Sin actividad',
+  error_scraping: 'Error de scraping',
 };
 
 /* ─── Helpers ─── */
 function getSourceHref(alert: AlertRow): string {
-  switch (alert.type) {
-    case 'overdue_debt':
-      return alert.clientId ? `/clients/${alert.clientId}` : '/clients';
-    case 'critical_notification':
-      return '/notifications';
-    case 'upcoming_due_date':
-      return '/vencimientos';
-    case 'scraper_error':
-      return '/jobs';
-    default:
-      return alert.clientId ? `/clients/${alert.clientId}` : '/clients';
-  }
+  if (alert.tipo === 'error_scraping') return '/jobs';
+  return alert.clienteId ? `/clients/${alert.clienteId}` : '/clients';
 }
 
 /* ─── Types ─── */
-interface AlertMetadata {
-  errorCategory?: string;
-  retryable?: boolean;
-  failedJobIds?: string[];
-  failedJobTypes?: string[];
-  sampleError?: string;
-  jobCount?: number;
-}
-
-interface AlertRow {
-  id: string;
-  type: string;
-  severity: string;
-  title: string;
-  description?: string | null;
-  clientId?: string | null;
-  sourceEntityType?: string | null;
-  status: string;
-  assignedToUserId?: string | null;
-  createdAt: string | Date;
-  metadata?: AlertMetadata | null;
-}
+type AlertRow = Awaited<ReturnType<typeof listAlerts>>[number];
 
 interface Member {
   userId: string;
@@ -206,9 +170,10 @@ function AlertRowItem({
   onRetry: () => void;
   retryingId: string | null;
 }) {
-  const isResolved = alert.status === 'resolved';
+  const isResolved = alert.estado === 'resuelta';
   const sourceHref = getSourceHref(alert);
-  const meta = alert.metadata;
+  const meta = alert.detalle;
+  const jobCount = meta?.failedJobIds?.length;
   const isRetryable = meta?.retryable === true;
   const isRetrying = retryingId === alert.id;
 
@@ -219,33 +184,33 @@ function AlertRowItem({
     >
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap mb-1">
-          <SeverityBadge severity={alert.severity} />
+          <SeverityBadge severity={alert.severidad} />
           <span className="text-[11px] text-[var(--arca-ink-3)] bg-[var(--arca-surface-2)] border border-[var(--arca-border)] px-1.5 py-0.5 rounded-[4px]">
-            {TYPE_LABELS[alert.type] ?? alert.type}
+            {TYPE_LABELS[alert.tipo] ?? alert.tipo}
           </span>
           {meta?.errorCategory && (
             <CategoryBadge category={meta.errorCategory} />
           )}
-          {meta?.jobCount != null && (
+          {jobCount != null && (
             <span className="text-[11px] text-[var(--arca-ink-3)]">
-              {meta.jobCount} job{meta.jobCount !== 1 ? 's' : ''}
+              {jobCount} job{jobCount !== 1 ? 's' : ''}
             </span>
           )}
         </div>
 
         <div className="text-[13.5px] font-medium text-[var(--arca-ink)] leading-snug">
-          {alert.title}
+          {alert.titulo}
         </div>
 
-        {alert.description && (
+        {alert.descripcion && (
           <div className="text-[12px] text-[var(--arca-ink-3)] mt-0.5 line-clamp-1">
-            {alert.description}
+            {alert.descripcion}
           </div>
         )}
 
-        {meta?.sampleError && (
+        {meta?.errorMessage && (
           <div className="text-[11px] text-[var(--arca-ink-3)] mt-0.5 font-mono bg-[var(--arca-surface-2)] px-2 py-0.5 rounded-[4px] line-clamp-1">
-            {meta.sampleError}
+            {meta.errorMessage}
           </div>
         )}
 
@@ -255,8 +220,8 @@ function AlertRowItem({
               {clientName}
             </span>
           )}
-          {clientName !== '-' && alert.sourceEntityType && <span>·</span>}
-          {alert.sourceEntityType && <span>{alert.sourceEntityType}</span>}
+          {clientName !== '-' && alert.origenTipo && <span>·</span>}
+          {alert.origenTipo && <span>{alert.origenTipo}</span>}
           <span>·</span>
           <span>{relativeTime(alert.createdAt)}</span>
         </div>
@@ -337,45 +302,48 @@ function AlertRowItem({
 function AlertsPage() {
   const [severityFilter, setSeverityFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('open');
-  const [clientIdFilter, setClientIdFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('abierta');
+  const [credencialIdFilter, setCredencialIdFilter] = useState('all');
   const [errorCategoryFilter, setErrorCategoryFilter] = useState('all');
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
 
   const queryClient = useQueryClient();
 
-  const toFilter = (v: string) => (v === 'all' ? undefined : v);
+  const toFilter = <T extends string>(v: string) =>
+    v === 'all' ? undefined : (v as T);
 
-  const { data: alertsRaw = [] } = useQuery({
+  const { data: alerts = [] } = useQuery({
     queryKey: [
       'alerts',
       statusFilter,
       severityFilter,
       typeFilter,
-      clientIdFilter,
+      credencialIdFilter,
       errorCategoryFilter,
     ],
     queryFn: () =>
       listAlerts({
         data: {
-          status: toFilter(statusFilter),
-          severity: toFilter(severityFilter),
-          type: toFilter(typeFilter),
-          clientId: toFilter(clientIdFilter),
+          estado: toFilter<'abierta' | 'resuelta'>(statusFilter),
+          severidad: toFilter<'baja' | 'media' | 'alta' | 'critica'>(
+            severityFilter
+          ),
+          tipo: toFilter<'error_scraping'>(typeFilter),
+          credencialId: toFilter(credencialIdFilter),
           errorCategory: toFilter(errorCategoryFilter),
           limit: 100,
         },
       }),
   });
-  const alerts = alertsRaw as AlertRow[];
 
-  const { data: clientsRaw = [] } = useQuery({
-    queryKey: ['clients'],
-    queryFn: () => getRepresentatives(),
+  // Las alertas de scraping cuelgan de la credencial (el login AFIP), no del
+  // cliente: un job scrapea todas las relaciones de ese login.
+  const { data: credenciales = [] } = useQuery({
+    queryKey: ['credenciales'],
+    queryFn: () => getCredenciales(),
     staleTime: 60_000,
   });
-  const clients = clientsRaw as { id: string; name: string }[];
 
   const { data: membersRaw = [] } = useQuery({
     queryKey: ['orgMembersForAssignment'],
@@ -384,7 +352,9 @@ function AlertsPage() {
   });
   const members = membersRaw as Member[];
 
-  const clientMap = Object.fromEntries(clients.map((c) => [c.id, c.name]));
+  const credencialMap: Record<string, string> = Object.fromEntries(
+    credenciales.map((c) => [c.id, c.nombre ?? c.cuit])
+  );
 
   const resolveMutation = useMutation({
     mutationFn: (id: string) => resolveAlert({ data: { id } }),
@@ -419,7 +389,7 @@ function AlertsPage() {
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['alerts'] });
       toast.success(
-        `${data.retried} job${data.retried !== 1 ? 's' : ''} encolado${data.retried !== 1 ? 's' : ''} — ${data.acknowledged} alerta${data.acknowledged !== 1 ? 's' : ''} reconocida${data.acknowledged !== 1 ? 's' : ''}`
+        `${data.retried} job${data.retried !== 1 ? 's' : ''} encolado${data.retried !== 1 ? 's' : ''} — ${data.resolved} alerta${data.resolved !== 1 ? 's' : ''} resuelta${data.resolved !== 1 ? 's' : ''}`
       );
     },
     onError: (err: any) => {
@@ -428,7 +398,7 @@ function AlertsPage() {
   });
 
   const retryableCount = alerts.filter(
-    (a) => a.metadata?.retryable === true
+    (a) => a.detalle?.retryable === true
   ).length;
 
   return (
@@ -438,7 +408,7 @@ function AlertsPage() {
           title="Alertas"
           subtitle={`${alerts.length} alerta${alerts.length !== 1 ? 's' : ''}`}
         />
-        {retryableCount > 0 && statusFilter === 'open' && (
+        {retryableCount > 0 && statusFilter === 'abierta' && (
           <button
             onClick={() => retryAllMutation.mutate()}
             disabled={retryAllMutation.isPending}
@@ -457,9 +427,8 @@ function AlertsPage() {
       <div className="flex flex-wrap gap-2 mb-5">
         <SearchableSelect
           options={[
-            { value: 'open', label: 'Abiertas' },
-            { value: 'acknowledged', label: 'Reconocidas' },
-            { value: 'resolved', label: 'Resueltas' },
+            { value: 'abierta', label: 'Abiertas' },
+            { value: 'resuelta', label: 'Resueltas' },
             { value: 'all', label: 'Todas' },
           ]}
           value={statusFilter}
@@ -472,12 +441,7 @@ function AlertsPage() {
         <SearchableSelect
           options={[
             { value: 'all', label: 'Todos los tipos' },
-            { value: 'overdue_debt', label: 'Deuda vencida' },
-            { value: 'critical_notification', label: 'Notificación crítica' },
-            { value: 'upcoming_due_date', label: 'Vencimiento próximo' },
-            { value: 'scraper_error', label: 'Error de scraping' },
-            { value: 'balance_due_soon', label: 'Balance próximo' },
-            { value: 'missing_activity', label: 'Sin actividad' },
+            { value: 'error_scraping', label: 'Error de scraping' },
           ]}
           value={typeFilter}
           onValueChange={setTypeFilter}
@@ -489,10 +453,10 @@ function AlertsPage() {
         <SearchableSelect
           options={[
             { value: 'all', label: 'Todas las severidades' },
-            { value: 'critical', label: 'Crítico' },
-            { value: 'high', label: 'Alto' },
-            { value: 'medium', label: 'Medio' },
-            { value: 'low', label: 'Bajo' },
+            { value: 'critica', label: 'Crítico' },
+            { value: 'alta', label: 'Alto' },
+            { value: 'media', label: 'Medio' },
+            { value: 'baja', label: 'Bajo' },
           ]}
           value={severityFilter}
           onValueChange={setSeverityFilter}
@@ -521,13 +485,16 @@ function AlertsPage() {
 
         <SearchableSelect
           options={[
-            { value: 'all', label: 'Todos los clientes' },
-            ...clients.map((c) => ({ value: c.id, label: c.name })),
+            { value: 'all', label: 'Todas las credenciales' },
+            ...credenciales.map((c) => ({
+              value: c.id,
+              label: c.nombre ?? c.cuit,
+            })),
           ]}
-          value={clientIdFilter}
-          onValueChange={setClientIdFilter}
-          placeholder="Filtrar por cliente"
-          searchPlaceholder="Buscar cliente..."
+          value={credencialIdFilter}
+          onValueChange={setCredencialIdFilter}
+          placeholder="Filtrar por credencial"
+          searchPlaceholder="Buscar credencial..."
           width={224}
         />
       </div>
@@ -549,7 +516,9 @@ function AlertsPage() {
                 key={alert.id}
                 alert={alert}
                 clientName={
-                  alert.clientId ? (clientMap[alert.clientId] ?? '-') : '-'
+                  alert.credencialId
+                    ? (credencialMap[alert.credencialId] ?? '-')
+                    : '-'
                 }
                 members={members}
                 assigningId={assigningId}

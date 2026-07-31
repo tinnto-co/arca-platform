@@ -1,9 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  getClientPortalRequests,
-  completeClientRequest,
-  uploadDocumentForRequest,
+  getClientePortalSolicitudes,
+  completarSolicitud,
+  uploadDocumentoSolicitud,
 } from '@/actions/client-portal';
 import {
   ClipboardList,
@@ -19,19 +19,8 @@ import { es } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { useState, useRef } from 'react';
 
-type RequestMeta = { documentId?: string; documentName?: string } | null;
-
-interface PortalRequest {
-  id: string;
-  title: string;
-  description: string | null;
-  type: string;
-  status: string;
-  dueAt: string | Date | null;
-  completedAt: string | Date | null;
-  metadata?: RequestMeta;
-  createdAt: string | Date;
-}
+/** Los filtros de la UI: los tres estados del enum, o "" para todas. */
+type EstadoFiltro = '' | 'abierta' | 'completada' | 'cancelada';
 
 export const Route = createFileRoute('/_client/portal/solicitudes/')({
   component: PortalSolicitudes,
@@ -41,19 +30,19 @@ const STATUS_LABELS: Record<
   string,
   { label: string; bg: string; color: string; icon: React.ReactNode }
 > = {
-  open: {
+  abierta: {
     label: 'Pendiente',
     bg: 'var(--arca-accent-warn-bg)',
     color: 'var(--arca-accent-warn)',
     icon: <Clock size={12} />,
   },
-  completed: {
+  completada: {
     label: 'Completada',
     bg: 'var(--arca-accent-pos-bg)',
     color: 'var(--arca-accent-pos)',
     icon: <CheckCircle2 size={12} />,
   },
-  cancelled: {
+  cancelada: {
     label: 'Cancelada',
     bg: 'var(--arca-surface-2)',
     color: 'var(--arca-ink-3)',
@@ -62,32 +51,31 @@ const STATUS_LABELS: Record<
 };
 
 function PortalSolicitudes() {
-  const { clientId } = Route.useRouteContext();
+  const { clienteId } = Route.useRouteContext();
   const queryClient = useQueryClient();
-  const [statusFilter, setStatusFilter] = useState<string>('open');
+  const [statusFilter, setStatusFilter] = useState<EstadoFiltro>('abierta');
   const [uploadingRequestId, setUploadingRequestId] = useState<string | null>(
     null
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { data: requestsRaw, isLoading } = useQuery({
-    queryKey: ['portalRequests', clientId, statusFilter],
+  const { data: requests = [], isLoading } = useQuery({
+    queryKey: ['portalRequests', clienteId, statusFilter],
     queryFn: () =>
-      getClientPortalRequests({
-        data: { clientId, status: statusFilter || undefined },
+      getClientePortalSolicitudes({
+        data: { clienteId, estado: statusFilter || undefined },
       }),
-    enabled: !!clientId,
+    enabled: !!clienteId,
     staleTime: 30_000,
   });
-  const requests: PortalRequest[] = (requestsRaw as PortalRequest[]) ?? [];
 
   const completeMutation = useMutation({
-    mutationFn: (requestId: string) =>
-      completeClientRequest({ data: { requestId } }),
+    mutationFn: (solicitudId: string) =>
+      completarSolicitud({ data: { solicitudId } }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['portalRequests', clientId] });
+      queryClient.invalidateQueries({ queryKey: ['portalRequests', clienteId] });
       queryClient.invalidateQueries({
-        queryKey: ['portalDashboard', clientId],
+        queryKey: ['portalDashboard', clienteId],
       });
       toast.success('Solicitud marcada como completada');
     },
@@ -114,9 +102,9 @@ function PortalSolicitudes() {
         reader.readAsDataURL(file);
       });
 
-      return uploadDocumentForRequest({
+      return uploadDocumentoSolicitud({
         data: {
-          requestId,
+          solicitudId: requestId,
           fileName: file.name,
           mimeType: file.type || 'application/octet-stream',
           sizeBytes: file.size,
@@ -125,9 +113,9 @@ function PortalSolicitudes() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['portalRequests', clientId] });
+      queryClient.invalidateQueries({ queryKey: ['portalRequests', clienteId] });
       queryClient.invalidateQueries({
-        queryKey: ['portalDashboard', clientId],
+        queryKey: ['portalDashboard', clienteId],
       });
       setUploadingRequestId(null);
       toast.success('Documento enviado correctamente');
@@ -177,11 +165,13 @@ function PortalSolicitudes() {
 
       {/* Filter */}
       <div className="flex gap-2 mb-5">
-        {[
-          { value: 'open', label: 'Pendientes' },
-          { value: 'completed', label: 'Completadas' },
-          { value: '', label: 'Todas' },
-        ].map((f) => (
+        {(
+          [
+            { value: 'abierta', label: 'Pendientes' },
+            { value: 'completada', label: 'Completadas' },
+            { value: '', label: 'Todas' },
+          ] as { value: EstadoFiltro; label: string }[]
+        ).map((f) => (
           <button
             key={f.value}
             onClick={() => setStatusFilter(f.value)}
@@ -212,15 +202,15 @@ function PortalSolicitudes() {
         <div className="flex flex-col items-center justify-center gap-3 py-16 text-[var(--arca-ink-3)]">
           <ClipboardList size={32} className="opacity-30" />
           <p className="text-sm">
-            No hay solicitudes{statusFilter === 'open' ? ' pendientes' : ''}
+            No hay solicitudes{statusFilter === 'abierta' ? ' pendientes' : ''}
           </p>
         </div>
       ) : (
         <ul className="space-y-3">
           {requests.map((req) => {
-            const sc = STATUS_LABELS[req.status] ?? STATUS_LABELS.open;
-            const meta = req.metadata as RequestMeta;
-            const hasDocument = !!meta?.documentId;
+            const sc = STATUS_LABELS[req.estado] ?? STATUS_LABELS.abierta;
+            const meta = req.detalle;
+            const hasDocument = !!meta?.documentoId;
             const isUploadingThis =
               uploadMutation.isPending && uploadingRequestId === req.id;
 
@@ -232,11 +222,11 @@ function PortalSolicitudes() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <p className="text-[14px] font-semibold text-[var(--arca-ink)] leading-snug">
-                      {req.title}
+                      {req.titulo}
                     </p>
-                    {req.description && (
+                    {req.descripcion && (
                       <p className="text-[12px] text-[var(--arca-ink-3)] mt-1 leading-relaxed">
-                        {req.description}
+                        {req.descripcion}
                       </p>
                     )}
                     <div className="flex flex-wrap items-center gap-3 mt-2.5">
@@ -248,26 +238,22 @@ function PortalSolicitudes() {
                         {sc.label}
                       </span>
                       <span className="text-[11px] text-[var(--arca-ink-4)]">
-                        Tipo: {req.type}
+                        Tipo: {req.tipo}
                       </span>
-                      {req.dueAt && (
+                      {req.venceAt && (
                         <span className="text-[11px] text-[var(--arca-ink-4)]">
                           Vence:{' '}
-                          {format(
-                            new Date(req.dueAt as unknown as string),
-                            'dd/MM/yyyy',
-                            { locale: es }
-                          )}
+                          {format(new Date(req.venceAt), 'dd/MM/yyyy', {
+                            locale: es,
+                          })}
                         </span>
                       )}
-                      {req.completedAt && (
+                      {req.completadaAt && (
                         <span className="text-[11px] text-[var(--arca-accent-pos)]">
                           Completada el{' '}
-                          {format(
-                            new Date(req.completedAt as unknown as string),
-                            'dd/MM/yyyy',
-                            { locale: es }
-                          )}
+                          {format(new Date(req.completadaAt), 'dd/MM/yyyy', {
+                            locale: es,
+                          })}
                         </span>
                       )}
                       {/* Document attachment indicator */}
@@ -281,7 +267,7 @@ function PortalSolicitudes() {
                           }}
                         >
                           <Paperclip size={10} />
-                          {meta?.documentName ?? 'Documento adjunto'}
+                          {meta?.documentoNombre ?? 'Documento adjunto'}
                         </span>
                       )}
                     </div>
@@ -290,7 +276,7 @@ function PortalSolicitudes() {
                   {/* Action buttons */}
                   <div className="flex flex-col gap-2 items-end shrink-0">
                     {/* Document upload for open document-type requests */}
-                    {req.status === 'open' && req.type === 'document' && (
+                    {req.estado === 'abierta' && req.tipo === 'documentacion' && (
                       <>
                         {hasDocument ? (
                           <span className="text-[11px] text-[var(--arca-accent-pos)] flex items-center gap-1">
@@ -324,7 +310,7 @@ function PortalSolicitudes() {
                     )}
 
                     {/* Complete button for open non-document requests */}
-                    {req.status === 'open' && req.type !== 'document' && (
+                    {req.estado === 'abierta' && req.tipo !== 'documentacion' && (
                       <button
                         disabled={completeMutation.isPending}
                         onClick={() => completeMutation.mutate(req.id)}

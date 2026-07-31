@@ -1,6 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { NotificationsView } from '@/components/notifications-view';
-import { Bell } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { getNotifications } from '@/actions/notification';
 import { userQuery } from '../../../lib/user-query';

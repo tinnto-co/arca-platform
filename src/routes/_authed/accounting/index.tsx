@@ -180,6 +180,7 @@ import {
   FIXED_ASSET_STATUS_LABELS,
   FIXED_ASSET_DISPOSAL_REASON_LABELS,
   type AccountGroup,
+  type JournalOrigin,
 } from '@/lib/accounting-labels';
 import { monthlyDepreciation } from '@/lib/accounting-depreciation';
 import {
@@ -223,7 +224,7 @@ const INPUT_CLASS =
   'h-8 px-2.5 text-[12.5px] border border-[var(--arca-border)] rounded-[8px] bg-[var(--arca-surface)] text-[var(--arca-ink)] focus:outline-none';
 
 /* ─── Badges ─── */
-function TypeBadge({ type }: { type: 'imputable' | 'group' }) {
+function TypeBadge({ type }: { type: 'imputable' | 'grupo' }) {
   const color =
     type === 'imputable' ? 'oklch(0.45 0.10 220)' : 'oklch(0.50 0.02 260)';
   return (
@@ -239,9 +240,9 @@ function TypeBadge({ type }: { type: 'imputable' | 'group' }) {
   );
 }
 
-function OriginBadge({ scope }: { scope: 'base' | 'custom' }) {
+function OriginBadge({ scope }: { scope: 'base' | 'propia' }) {
   const color =
-    scope === 'custom' ? 'oklch(0.50 0.13 50)' : 'oklch(0.45 0.04 250)';
+    scope === 'propia' ? 'oklch(0.50 0.13 50)' : 'oklch(0.45 0.04 250)';
   return (
     <span
       className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium shrink-0"
@@ -250,7 +251,7 @@ function OriginBadge({ scope }: { scope: 'base' | 'custom' }) {
         color,
       }}
     >
-      {scope === 'custom' ? 'Propia' : 'Base'}
+      {scope === 'propia' ? 'Propia' : 'Base'}
     </span>
   );
 }
@@ -507,14 +508,18 @@ type FormMode =
 function accountsToTemplate(accounts: ChartAccount[]): ChartTemplateAccount[] {
   return accounts
     .filter(
-      (a) => a.scope !== 'custom' && a.code !== '0' && !a.code.startsWith('0.')
+      (a) => a.scope !== 'propia' && a.code !== '0' && !a.code.startsWith('0.')
     )
     .map((a) => ({
       code: a.code,
       name: a.name,
       type: a.type,
       accountGroup: a.accountGroup,
-      expectedBalance: a.expectedBalance as 'debit' | 'credit' | 'both' | null,
+      expectedBalance: a.expectedBalance as
+        | 'deudor'
+        | 'acreedor'
+        | 'ambos'
+        | null,
       expenseFunction: a.expenseFunction,
       description: a.description,
     }));
@@ -531,7 +536,7 @@ function PlanDeCuentas({
   const [search, setSearch] = useState('');
   const [rubro, setRubro] = useState<string>('');
   const [onlyActive, setOnlyActive] = useState(false);
-  const [origin, setOrigin] = useState<'all' | 'base' | 'custom'>('all');
+  const [origin, setOrigin] = useState<'all' | 'base' | 'propia'>('all');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const [formMode, setFormMode] = useState<FormMode | null>(null);
@@ -672,7 +677,7 @@ function PlanDeCuentas({
           </span>
 
           <span
-            className={`flex-1 min-w-0 truncate text-[13px] ${account.type === 'group' ? 'font-semibold' : 'font-medium'} ${
+            className={`flex-1 min-w-0 truncate text-[13px] ${account.type === 'grupo' ? 'font-semibold' : 'font-medium'} ${
               account.isActive
                 ? 'text-[var(--arca-ink)]'
                 : 'text-[var(--arca-ink-3)] line-through'
@@ -773,7 +778,7 @@ function PlanDeCuentas({
                   </IconBtn>
                 </>
               )}
-              {account.scope === 'custom' && (
+              {account.scope === 'propia' && (
                 <IconBtn
                   title="Borrar cuenta propia"
                   onClick={() => setDeleteTarget(account)}
@@ -840,7 +845,7 @@ function PlanDeCuentas({
 
           <Select
             value={origin}
-            onValueChange={(v) => setOrigin(v as 'all' | 'base' | 'custom')}
+            onValueChange={(v) => setOrigin(v as 'all' | 'base' | 'propia')}
           >
             <SelectTrigger size="sm" className="w-36 text-[12.5px]">
               <SelectValue />
@@ -848,7 +853,7 @@ function PlanDeCuentas({
             <SelectContent>
               <SelectItem value="all">Base y propias</SelectItem>
               <SelectItem value="base">Solo base</SelectItem>
-              <SelectItem value="custom">Solo propias</SelectItem>
+              <SelectItem value="propia">Solo propias</SelectItem>
             </SelectContent>
           </Select>
 
@@ -1017,7 +1022,7 @@ function PlanDeCuentas({
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>
-                {deleteTarget.scope === 'custom'
+                {deleteTarget.scope === 'propia'
                   ? 'Borrar cuenta propia'
                   : 'Borrar cuenta del plan base'}
               </AlertDialogTitle>
@@ -1027,7 +1032,7 @@ function PlanDeCuentas({
                   {deleteTarget.code} · {deleteTarget.name}
                 </strong>
                 ?{' '}
-                {deleteTarget.scope === 'custom'
+                {deleteTarget.scope === 'propia'
                   ? 'No se puede borrar si tiene movimientos o subcuentas.'
                   : 'Afecta a todas las empresas del estudio. No se puede borrar si tiene movimientos en alguna empresa o subcuentas.'}
               </AlertDialogDescription>
@@ -1036,7 +1041,7 @@ function PlanDeCuentas({
               <AlertDialogCancel>Cancelar</AlertDialogCancel>
               <AlertDialogAction
                 onClick={() =>
-                  (deleteTarget.scope === 'custom'
+                  (deleteTarget.scope === 'propia'
                     ? deleteCustomAccount({
                         data: { clientId, id: deleteTarget.id },
                       })
@@ -1256,7 +1261,7 @@ function AccountFormDialog({
   const [code, setCode] = useState(editing?.code ?? '');
   const [name, setName] = useState(editing?.name ?? '');
   const [description, setDescription] = useState(editing?.description ?? '');
-  const [type, setType] = useState<'imputable' | 'group'>(
+  const [type, setType] = useState<'imputable' | 'grupo'>(
     editing?.type ?? 'imputable'
   );
   const [accountGroup, setAccountGroup] = useState<string>(
@@ -1298,15 +1303,15 @@ function AccountFormDialog({
     mutationFn: () => {
       const groupVal = accountGroup || undefined;
       const balVal = (expectedBalance || undefined) as
-        | 'debit'
-        | 'credit'
-        | 'both'
+        | 'deudor'
+        | 'acreedor'
+        | 'ambos'
         | undefined;
       const expVal = (expenseFunction || undefined) as
-        | 'administration'
-        | 'sales'
-        | 'financial'
-        | 'other'
+        | 'administracion'
+        | 'comercializacion'
+        | 'financiero'
+        | 'otro'
         | undefined;
       if (mode.kind === 'custom') {
         return createCustomAccount({
@@ -1356,7 +1361,7 @@ function AccountFormDialog({
   });
 
   const parentOptions = accounts.filter(
-    (a) => a.type === 'group' && a.id !== editing?.id
+    (a) => a.type === 'grupo' && a.id !== editing?.id
   );
 
   return (
@@ -1400,7 +1405,7 @@ function AccountFormDialog({
           <Field label="Tipo *">
             <Select
               value={type}
-              onValueChange={(v) => setType(v as 'imputable' | 'group')}
+              onValueChange={(v) => setType(v as 'imputable' | 'grupo')}
             >
               <SelectTrigger className="w-full">
                 <SelectValue />
@@ -1409,7 +1414,7 @@ function AccountFormDialog({
                 <SelectItem value="imputable">
                   Imputable (admite movimientos)
                 </SelectItem>
-                <SelectItem value="group">Agrupación (solo suma)</SelectItem>
+                <SelectItem value="grupo">Agrupación (solo suma)</SelectItem>
               </SelectContent>
             </Select>
           </Field>
@@ -1459,7 +1464,7 @@ function AccountFormDialog({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">—</SelectItem>
-                {(['debit', 'credit', 'both'] as const).map((b) => (
+                {(['deudor', 'acreedor', 'ambos'] as const).map((b) => (
                   <SelectItem key={b} value={b}>
                     {EXPECTED_BALANCE_LABELS[b]}
                   </SelectItem>
@@ -1480,7 +1485,12 @@ function AccountFormDialog({
                 <SelectContent>
                   <SelectItem value="none">—</SelectItem>
                   {(
-                    ['administration', 'sales', 'financial', 'other'] as const
+                    [
+                      'administracion',
+                      'comercializacion',
+                      'financiero',
+                      'otro',
+                    ] as const
                   ).map((f) => (
                     <SelectItem key={f} value={f}>
                       {EXPENSE_FUNCTION_LABELS[f]}
@@ -1693,7 +1703,7 @@ function Ejercicios({
   const effectiveFyId =
     selectedFyId !== ''
       ? selectedFyId
-      : (fiscalYears.find((y) => y.status === 'open')?.id ??
+      : (fiscalYears.find((y) => y.estado === 'abierto')?.id ??
         fiscalYears[0]?.id ??
         '');
 
@@ -1783,11 +1793,11 @@ function Ejercicios({
                 color: active ? 'var(--arca-ink)' : 'var(--arca-ink-2)',
               }}
             >
-              <span className="font-semibold">Ejercicio N°{y.number}</span>
+              <span className="font-semibold">Ejercicio N°{y.numero}</span>
               <span className="text-[var(--arca-ink-3)]">
-                {fmtFecha(y.startDate)} – {fmtFecha(y.endDate)}
+                {fmtFecha(y.fechaDesde)} – {fmtFecha(y.fechaHasta)}
               </span>
-              <FyStatusBadge status={y.status} />
+              <FyStatusBadge status={y.estado} />
               <span className="text-[11px] text-[var(--arca-ink-3)]">
                 {y.periodsClosed}/{y.periodsTotal} cerrados
               </span>
@@ -1810,9 +1820,9 @@ function Ejercicios({
         <ArcaCard>
           <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--arca-border)]">
             <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
-              Períodos · Ejercicio N°{detail.fiscalYear.number}
+              Períodos · Ejercicio N°{detail.ejercicio.numero}
             </span>
-            <FyStatusBadge status={detail.fiscalYear.status} />
+            <FyStatusBadge status={detail.ejercicio.estado} />
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 p-4">
@@ -1951,11 +1961,15 @@ function Ejercicios({
   );
 }
 
-function FyStatusBadge({ status }: { status: 'open' | 'closing' | 'closed' }) {
+function FyStatusBadge({
+  status,
+}: {
+  status: 'abierto' | 'en_cierre' | 'cerrado';
+}) {
   const color =
-    status === 'open'
+    status === 'abierto'
       ? 'oklch(0.45 0.14 145)'
-      : status === 'closing'
+      : status === 'en_cierre'
         ? 'oklch(0.55 0.15 50)'
         : 'oklch(0.50 0.02 260)';
   return (
@@ -1984,7 +1998,7 @@ function PeriodCard({
   onReopen: () => void;
   onGoToPending: () => void;
 }) {
-  const closed = period.status === 'closed';
+  const closed = period.status === 'cerrado';
   const hasPending = period.pendingCount > 0;
   const estado = closed
     ? { label: 'Cerrado', color: 'oklch(0.50 0.02 260)' }
@@ -2106,7 +2120,7 @@ function CierreChecklist({
   });
   if (!data) return null;
 
-  if (data.fiscalYearStatus === 'closed') {
+  if (data.fiscalYearStatus === 'cerrado') {
     return (
       <ArcaCard className="mt-4">
         <div className="flex items-center gap-2 px-5 py-4 text-[13px] text-[var(--arca-ink-2)]">
@@ -3008,7 +3022,7 @@ function Asientos({
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [accountId, setAccountId] = useState('');
-  const [origin, setOrigin] = useState('');
+  const [origin, setOrigin] = useState<'' | JournalOrigin>('');
   const [includeVoided, setIncludeVoided] = useState(false);
   const [sortBy, setSortBy] = useState<'number' | 'date'>('number');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -3028,7 +3042,7 @@ function Asientos({
     from: from || undefined,
     to: to || undefined,
     accountId: accountId || undefined,
-    origin: (origin || undefined) as never,
+    origin: origin || undefined,
     includeVoided,
     sortBy,
     sortDir,
@@ -3071,9 +3085,9 @@ function Asientos({
         return exportLibroDiarioPdf({
           empresaName: book.empresaName,
           cuit: book.cuit,
-          fiscalYearNumber: book.fiscalYear.number,
-          from: book.fiscalYear.startDate,
-          to: book.fiscalYear.endDate,
+          fiscalYearNumber: book.ejercicio.number,
+          from: book.ejercicio.startDate,
+          to: book.ejercicio.endDate,
           entries: book.entries,
         });
       })
@@ -3151,7 +3165,7 @@ function Asientos({
             <Select
               value={origin === '' ? 'all' : origin}
               onValueChange={(v) => {
-                setOrigin(v === 'all' ? '' : v);
+                setOrigin(v === 'all' ? '' : (v as JournalOrigin));
                 setPage(1);
               }}
             >
@@ -3601,8 +3615,8 @@ function EntryDetailBody({
 
   const toInitial = (): EditorInitial => ({
     id: data.entry.id,
-    entryDate: new Date(data.entry.entryDate).toISOString().slice(0, 10),
-    description: data.entry.description ?? '',
+    entryDate: new Date(data.entry.fecha).toISOString().slice(0, 10),
+    description: data.entry.descripcion ?? '',
     lines: data.lines.map((l) => ({
       accountId: l.accountId,
       debit: l.debit > 0 ? String(l.debit) : '',
@@ -3611,13 +3625,13 @@ function EntryDetailBody({
     })),
   });
 
-  const editable = !data.entry.isVoided && data.entry.periodStatus === 'open';
+  const editable = !data.entry.anulado && data.entry.periodStatus === 'abierto';
 
   return (
     <div className="space-y-3">
-      {data.entry.isVoided && data.entry.voidReason && (
+      {data.entry.anulado && data.entry.motivoAnulacion && (
         <div className="text-[12px] rounded-[8px] bg-[color-mix(in_oklch,oklch(0.55_0.18_25),transparent_92%)] text-[oklch(0.45_0.16_25)] px-3 py-2">
-          Motivo de anulación: {data.entry.voidReason}
+          Motivo de anulación: {data.entry.motivoAnulacion}
         </div>
       )}
 
@@ -3795,8 +3809,8 @@ function AsientoDetail({
       <DialogContent className="sm:max-w-[680px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            {data ? `Asiento N°${data.entry.number}` : 'Asiento'}
-            {data?.entry.isVoided && (
+            {data ? `Asiento N°${data.entry.numero}` : 'Asiento'}
+            {data?.entry.anulado && (
               <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-[color-mix(in_oklch,oklch(0.55_0.18_25),transparent_88%)] text-[oklch(0.50_0.18_25)]">
                 Anulado
               </span>
@@ -3804,8 +3818,9 @@ function AsientoDetail({
           </DialogTitle>
           <DialogDescription>
             {data
-              ? `${fmtFecha(data.entry.entryDate)} · ${
-                  JOURNAL_ORIGIN_LABELS[data.entry.origin] ?? data.entry.origin
+              ? `${fmtFecha(data.entry.fecha)} · ${
+                  JOURNAL_ORIGIN_LABELS[data.entry.origenTipo] ??
+                  data.entry.origenTipo
                 } · Ejercicio N°${data.entry.fyNumber}${
                   data.entry.createdByName
                     ? ` · cargado por ${data.entry.createdByName}`
@@ -3814,9 +3829,9 @@ function AsientoDetail({
               : 'Cargando…'}
           </DialogDescription>
         </DialogHeader>
-        {data?.entry.description && (
+        {data?.entry.descripcion && (
           <p className="text-[13px] text-[var(--arca-ink)] -mt-1">
-            {data.entry.description}
+            {data.entry.descripcion}
           </p>
         )}
         <EntryDetailBody
@@ -3933,7 +3948,7 @@ function Mayor({
   const [accountId, setAccountId] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const [origin, setOrigin] = useState('');
+  const [origin, setOrigin] = useState<'' | JournalOrigin>('');
   const [detailId, setDetailId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [sheetPerAccount, setSheetPerAccount] = useState(false);
@@ -3945,7 +3960,7 @@ function Mayor({
   const effectiveFyId =
     fiscalYearId !== ''
       ? fiscalYearId
-      : (fiscalYears.find((y) => y.status === 'open')?.id ??
+      : (fiscalYears.find((y) => y.estado === 'abierto')?.id ??
         fiscalYears[0]?.id ??
         '');
 
@@ -3957,7 +3972,7 @@ function Mayor({
     (a) => a.type === 'imputable'
   );
 
-  const originArg = (origin || undefined) as never;
+  const originArg = origin || undefined;
 
   const { data: ledger, isLoading: loadingLedger } = useQuery({
     queryKey: [
@@ -4011,8 +4026,8 @@ function Mayor({
     if (mode === 'cuenta') {
       if (!ledger) return null;
       const section: MayorSection = {
-        code: ledger.account.code,
-        name: ledger.account.name,
+        code: ledger.cuenta.code,
+        name: ledger.cuenta.name,
         saldoInicial: ledger.saldoInicial,
         rows: ledger.rows,
         totalDebit: ledger.totalDebit,
@@ -4021,16 +4036,16 @@ function Mayor({
       };
       return {
         empresaName: clientName,
-        fiscalYearNumber: ledger.fiscalYear.number,
+        fiscalYearNumber: ledger.ejercicio.number,
         from: ledger.from,
         to: ledger.to,
         sections: [section],
       };
     }
-    if (!consol?.fiscalYear) return null;
+    if (!consol?.ejercicio) return null;
     return {
       empresaName: clientName,
-      fiscalYearNumber: consol.fiscalYear.number,
+      fiscalYearNumber: consol.ejercicio.number,
       from: consol.from,
       to: consol.to,
       sections: consol.accounts.map((a) => ({
@@ -4120,7 +4135,7 @@ function Mayor({
                 <SelectContent>
                   {fiscalYears.map((y) => (
                     <SelectItem key={y.id} value={y.id}>
-                      N°{y.number}
+                      N°{y.numero}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -4176,7 +4191,9 @@ function Mayor({
             </label>
             <Select
               value={origin === '' ? 'all' : origin}
-              onValueChange={(v) => setOrigin(v === 'all' ? '' : v)}
+              onValueChange={(v) =>
+                setOrigin(v === 'all' ? '' : (v as JournalOrigin))
+              }
             >
               <SelectTrigger size="sm" className="w-36 text-[12.5px]">
                 <SelectValue />
@@ -4486,7 +4503,7 @@ function Balance({
   const effectiveFyId =
     fiscalYearId !== ''
       ? fiscalYearId
-      : (fiscalYears.find((y) => y.status === 'open')?.id ??
+      : (fiscalYears.find((y) => y.estado === 'abierto')?.id ??
         fiscalYears[0]?.id ??
         '');
 
@@ -4510,7 +4527,7 @@ function Balance({
     }
     const payload = {
       empresaName: clientName,
-      fiscalYearNumber: data.fiscalYear.number,
+      fiscalYearNumber: data.ejercicio.number,
       asOf: data.asOf,
       rows: data.rows,
       totals: data.totals,
@@ -4551,7 +4568,7 @@ function Balance({
                 <SelectContent>
                   {fiscalYears.map((y) => (
                     <SelectItem key={y.id} value={y.id}>
-                      N°{y.number}
+                      N°{y.numero}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -4795,35 +4812,44 @@ interface AccClient {
 }
 interface RuleLineDraft {
   accountId: string;
-  side: 'debit' | 'credit';
-  amountBasis: string;
+  side: 'debe' | 'haber';
+  amountBasis: RuleAmountBasis;
   fixedAmount: string;
   description: string;
 }
 type RuleEditorState = { mode: 'create' } | { mode: 'edit'; ruleId: string };
 
-const AMOUNT_BASES = [
+type RuleAmountBasis =
+  | 'total'
+  | 'neto'
+  | 'iva'
+  | 'otros_tributos'
+  | 'valor_concepto'
+  | 'fijo';
+
+const AMOUNT_BASES: RuleAmountBasis[] = [
   'total',
-  'net',
-  'vat',
-  'other_taxes',
-  'concept_value',
-  'fixed',
+  'neto',
+  'iva',
+  'otros_tributos',
+  'valor_concepto',
+  'fijo',
 ];
 
-/** Letras de comprobante soportadas por la condición (clave "type"). */
+/** Letras de comprobante soportadas por la condición (clave "letra"). */
 const INVOICE_TYPE_OPTIONS = ['A', 'B', 'C', 'M', 'E'];
 
-/** Normaliza el valor de dirección leído de una condición guardada. */
-function normalizeCondDirection(raw: unknown): '' | 'sale' | 'purchase' {
+/**
+ * Normaliza el valor leído de `condicion.direccion`. El vocabulario lo define
+ * `reglaMatchea()` en `@/lib/accounting-invoice-posting`: una clave o un valor
+ * que no entienda hace que la regla NO matchee, en silencio.
+ */
+function normalizeCondDirection(raw: unknown): '' | 'emitido' | 'recibido' {
   const v = typeof raw === 'string' ? raw.toLowerCase().trim() : '';
-  if (['sale', 'venta', 'outbound', 'emitida'].includes(v)) return 'sale';
-  if (['purchase', 'compra', 'inbound', 'recibida'].includes(v))
-    return 'purchase';
-  return '';
+  return v === 'emitido' || v === 'recibido' ? v : '';
 }
 
-function emptyRuleLine(side: 'debit' | 'credit'): RuleLineDraft {
+function emptyRuleLine(side: 'debe' | 'haber'): RuleLineDraft {
   return {
     accountId: '',
     side,
@@ -4843,7 +4869,9 @@ function Reglas({
   clients: AccClient[];
 }) {
   const qc = useQueryClient();
-  const [moduleFilter, setModuleFilter] = useState('');
+  const [moduleFilter, setModuleFilter] = useState<
+    '' | 'comprobante' | 'recibo' | 'movimiento_bancario'
+  >('');
   const [editor, setEditor] = useState<RuleEditorState | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
@@ -4853,7 +4881,7 @@ function Reglas({
     queryKey,
     queryFn: () =>
       listMappingRules({
-        data: { clientId, sourceModule: (moduleFilter || undefined) as never },
+        data: { clientId, sourceModule: moduleFilter || undefined },
       }),
   });
   const invalidate = () => {
@@ -4877,15 +4905,21 @@ function Reglas({
             </label>
             <Select
               value={moduleFilter === '' ? 'all' : moduleFilter}
-              onValueChange={(v) => setModuleFilter(v === 'all' ? '' : v)}
+              onValueChange={(v) =>
+                setModuleFilter(
+                  v === 'all'
+                    ? ''
+                    : (v as 'comprobante' | 'recibo' | 'movimiento_bancario')
+                )
+              }
             >
               <SelectTrigger size="sm" className="w-40 text-[12.5px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos</SelectItem>
-                <SelectItem value="invoice">Facturas</SelectItem>
-                <SelectItem value="payroll">Sueldos</SelectItem>
+                <SelectItem value="comprobante">Facturas</SelectItem>
+                <SelectItem value="recibo">Sueldos</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -4954,7 +4988,10 @@ function Reglas({
                 <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
                   {
                     MAPPING_SOURCE_LABELS[
-                      r.sourceModule as 'invoice' | 'payroll'
+                      r.sourceModule as
+                        | 'comprobante'
+                        | 'recibo'
+                        | 'movimiento_bancario'
                     ]
                   }
                 </span>
@@ -4962,7 +4999,7 @@ function Reglas({
               <div className="w-28 shrink-0 text-[11.5px] text-[var(--arca-ink-3)]">
                 {
                   MAPPING_RULE_TYPE_LABELS[
-                    r.ruleType as 'default' | 'conditional'
+                    r.ruleType as 'default' | 'condicional'
                   ]
                 }
               </div>
@@ -5065,41 +5102,41 @@ function RuleEditorDialog({
   });
 
   const [name, setName] = useState('');
-  const [sourceModule, setSourceModule] = useState<'invoice' | 'payroll'>(
-    'invoice'
-  );
-  const [ruleType, setRuleType] = useState<'default' | 'conditional'>(
+  const [sourceModule, setSourceModule] = useState<
+    'comprobante' | 'recibo' | 'movimiento_bancario'
+  >('comprobante');
+  const [ruleType, setRuleType] = useState<'default' | 'condicional'>(
     'default'
   );
-  const [condDirection, setCondDirection] = useState<'' | 'sale' | 'purchase'>(
-    ''
-  );
+  const [condDirection, setCondDirection] = useState<
+    '' | 'emitido' | 'recibido'
+  >('');
   const [condTypes, setCondTypes] = useState<string[]>([]);
   const [priority, setPriority] = useState('100');
   const [lines, setLines] = useState<RuleLineDraft[]>([
-    emptyRuleLine('debit'),
-    emptyRuleLine('credit'),
+    emptyRuleLine('debe'),
+    emptyRuleLine('haber'),
   ]);
   const [loaded, setLoaded] = useState(!isEdit);
 
   if (isEdit && existing && !loaded) {
-    setName(existing.rule.name);
-    setSourceModule(existing.rule.sourceModule);
-    setRuleType(existing.rule.ruleType);
+    setName(existing.rule.nombre);
+    setSourceModule(existing.rule.modulo);
+    setRuleType(existing.rule.tipo);
     {
       const cond = (existing.rule.condition ?? {}) as Record<string, unknown>;
-      setCondDirection(normalizeCondDirection(cond.direction));
-      const rawType = cond.type ?? cond.invoiceType;
-      const typeArr = Array.isArray(rawType)
-        ? rawType
-        : rawType != null
-          ? [rawType]
+      setCondDirection(normalizeCondDirection(cond.direccion));
+      const rawLetra = cond.letra;
+      const typeArr = Array.isArray(rawLetra)
+        ? rawLetra
+        : rawLetra != null
+          ? [rawLetra]
           : [];
       setCondTypes(
         typeArr.map((t) => String(t).trim().toUpperCase()).filter(Boolean)
       );
     }
-    setPriority(String(existing.rule.priority));
+    setPriority(String(existing.rule.prioridad));
     setLines(
       existing.lines.map((l) => ({
         accountId: l.accountId,
@@ -5117,32 +5154,31 @@ function RuleEditorDialog({
       prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l))
     );
 
-  const hasDebit = lines.some((l) => l.side === 'debit');
-  const hasCredit = lines.some((l) => l.side === 'credit');
+  const hasDebit = lines.some((l) => l.side === 'debe');
+  const hasCredit = lines.some((l) => l.side === 'haber');
   const linesOk =
     lines.length >= 2 &&
     hasDebit &&
     hasCredit &&
     lines.every(
-      (l) =>
-        l.accountId && (l.amountBasis !== 'fixed' || num(l.fixedAmount) > 0)
+      (l) => l.accountId && (l.amountBasis !== 'fijo' || num(l.fixedAmount) > 0)
     );
   const canSave = !!name.trim() && linesOk;
 
   const mut = useMutation({
     mutationFn: async () => {
       let condition: unknown = undefined;
-      if (ruleType === 'conditional' && sourceModule === 'invoice') {
+      if (ruleType === 'condicional' && sourceModule === 'comprobante') {
         const c: Record<string, unknown> = {};
-        if (condDirection) c.direction = condDirection;
-        if (condTypes.length) c.type = condTypes;
+        if (condDirection) c.direccion = condDirection;
+        if (condTypes.length) c.letra = condTypes;
         condition = Object.keys(c).length ? c : undefined;
       }
       const payloadLines = lines.map((l) => ({
         accountId: l.accountId,
         side: l.side,
-        amountBasis: l.amountBasis as never,
-        fixedAmount: l.amountBasis === 'fixed' ? num(l.fixedAmount) : null,
+        amountBasis: l.amountBasis,
+        fixedAmount: l.amountBasis === 'fijo' ? num(l.fixedAmount) : null,
         description: l.description || undefined,
       }));
       const base = {
@@ -5241,14 +5277,18 @@ function RuleEditorDialog({
           >
             <Select
               value={sourceModule}
-              onValueChange={(v) => setSourceModule(v as 'invoice' | 'payroll')}
+              onValueChange={(v) =>
+                setSourceModule(
+                  v as 'comprobante' | 'recibo' | 'movimiento_bancario'
+                )
+              }
             >
               <SelectTrigger className="w-full text-[12.5px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="invoice">Facturas</SelectItem>
-                <SelectItem value="payroll">Sueldos</SelectItem>
+                <SelectItem value="comprobante">Facturas</SelectItem>
+                <SelectItem value="recibo">Sueldos</SelectItem>
               </SelectContent>
             </Select>
           </Field>
@@ -5277,18 +5317,18 @@ function RuleEditorDialog({
           >
             <Select
               value={ruleType}
-              onValueChange={(v) => setRuleType(v as 'default' | 'conditional')}
+              onValueChange={(v) => setRuleType(v as 'default' | 'condicional')}
             >
               <SelectTrigger className="w-full text-[12.5px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="default">Default (fallback)</SelectItem>
-                <SelectItem value="conditional">Condicional</SelectItem>
+                <SelectItem value="condicional">Condicional</SelectItem>
               </SelectContent>
             </Select>
           </Field>
-          {ruleType === 'conditional' && sourceModule === 'invoice' && (
+          {ruleType === 'condicional' && sourceModule === 'comprobante' && (
             <>
               <Field
                 label={
@@ -5302,7 +5342,7 @@ function RuleEditorDialog({
                   value={condDirection === '' ? 'any' : condDirection}
                   onValueChange={(v) =>
                     setCondDirection(
-                      (v === 'any' ? '' : v) as '' | 'sale' | 'purchase'
+                      (v === 'any' ? '' : v) as '' | 'emitido' | 'recibido'
                     )
                   }
                 >
@@ -5311,8 +5351,8 @@ function RuleEditorDialog({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="any">Cualquiera</SelectItem>
-                    <SelectItem value="sale">Venta (emitida)</SelectItem>
-                    <SelectItem value="purchase">Compra (recibida)</SelectItem>
+                    <SelectItem value="emitido">Venta (emitido)</SelectItem>
+                    <SelectItem value="recibido">Compra (recibido)</SelectItem>
                   </SelectContent>
                 </Select>
               </Field>
@@ -5354,12 +5394,12 @@ function RuleEditorDialog({
                   {condDirection || condTypes.length ? (
                     <>
                       Aplica a{' '}
-                      {condDirection === 'sale'
+                      {condDirection === 'emitido'
                         ? 'ventas'
-                        : condDirection === 'purchase'
+                        : condDirection === 'recibido'
                           ? 'compras'
                           : 'comprobantes'}
-                      {condTypes.length ? ` tipo ${condTypes.join(', ')}` : ''}.
+                      {condTypes.length ? ` letra ${condTypes.join(', ')}` : ''}.
                     </>
                   ) : (
                     'Sin filtros: esta regla condicional aplicaría a cualquier comprobante.'
@@ -5368,7 +5408,7 @@ function RuleEditorDialog({
               </Field>
             </>
           )}
-          {ruleType === 'conditional' && sourceModule === 'payroll' && (
+          {ruleType === 'condicional' && sourceModule === 'recibo' && (
             <div className="col-span-2 text-[11.5px] text-[var(--arca-ink-3)] rounded-[8px] border border-dashed border-[var(--arca-border)] px-3 py-2">
               Las condiciones por dirección y tipo aplican solo a facturas. El
               mapeo automático de sueldos aún no está disponible.
@@ -5420,20 +5460,22 @@ function RuleEditorDialog({
               <Select
                 value={l.side}
                 onValueChange={(v) =>
-                  updateLine(i, { side: v as 'debit' | 'credit' })
+                  updateLine(i, { side: v as 'debe' | 'haber' })
                 }
               >
                 <SelectTrigger size="sm" className="w-24 text-[12.5px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="debit">Debe</SelectItem>
-                  <SelectItem value="credit">Haber</SelectItem>
+                  <SelectItem value="debe">Debe</SelectItem>
+                  <SelectItem value="haber">Haber</SelectItem>
                 </SelectContent>
               </Select>
               <Select
                 value={l.amountBasis}
-                onValueChange={(v) => updateLine(i, { amountBasis: v })}
+                onValueChange={(v) =>
+                  updateLine(i, { amountBasis: v as RuleAmountBasis })
+                }
               >
                 <SelectTrigger size="sm" className="w-44 text-[12.5px]">
                   <SelectValue />
@@ -5450,7 +5492,7 @@ function RuleEditorDialog({
                 type="number"
                 step="0.01"
                 value={l.fixedAmount}
-                disabled={l.amountBasis !== 'fixed'}
+                disabled={l.amountBasis !== 'fijo'}
                 onChange={(e) => updateLine(i, { fixedAmount: e.target.value })}
                 className={`${INPUT_CLASS} w-24 h-8 text-right disabled:opacity-40`}
               />
@@ -5468,7 +5510,7 @@ function RuleEditorDialog({
           <div className="flex items-center gap-3 px-3 py-2 border-t border-[var(--arca-border)] bg-[var(--arca-surface-2)]">
             <button
               onClick={() =>
-                setLines((prev) => [...prev, emptyRuleLine('debit')])
+                setLines((prev) => [...prev, emptyRuleLine('debe')])
               }
               className="flex items-center gap-1 text-[11.5px] font-medium text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
             >
@@ -5547,21 +5589,21 @@ function RuleDetailDialog({
           <>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                {data.rule.name}
-                {!data.rule.isActive && (
+                {data.rule.nombre}
+                {!data.rule.activa && (
                   <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
                     Inactiva
                   </span>
                 )}
               </DialogTitle>
               <DialogDescription>
-                Módulo: {MAPPING_SOURCE_LABELS[data.rule.sourceModule]} ·{' '}
-                {MAPPING_RULE_TYPE_LABELS[data.rule.ruleType]} · Prioridad{' '}
-                {data.rule.priority}
+                Módulo: {MAPPING_SOURCE_LABELS[data.rule.modulo]} ·{' '}
+                {MAPPING_RULE_TYPE_LABELS[data.rule.tipo]} · Prioridad{' '}
+                {data.rule.prioridad}
               </DialogDescription>
             </DialogHeader>
 
-            {data.rule.ruleType === 'conditional' && data.rule.condition && (
+            {data.rule.tipo === 'condicional' && data.rule.condition && (
               <div className="text-[11.5px] font-mono rounded-[8px] bg-[var(--arca-surface-2)] border border-[var(--arca-border)] px-3 py-2 text-[var(--arca-ink-2)]">
                 {JSON.stringify(data.rule.condition)}
               </div>
@@ -5589,7 +5631,7 @@ function RuleDetailDialog({
                   </div>
                   <div className="w-48 text-[var(--arca-ink-2)]">
                     {MAPPING_AMOUNT_BASIS_LABELS[l.amountBasis]}
-                    {l.amountBasis === 'fixed' && l.fixedAmount
+                    {l.amountBasis === 'fijo' && l.fixedAmount
                       ? ` ($ ${fmtMoney(l.fixedAmount)})`
                       : ''}
                   </div>
@@ -5600,11 +5642,11 @@ function RuleDetailDialog({
             {isOwner && (
               <DialogFooter>
                 <button
-                  onClick={() => toggleMut.mutate(!data.rule.isActive)}
+                  onClick={() => toggleMut.mutate(!data.rule.activa)}
                   className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
                 >
                   <Power className="w-3.5 h-3.5" strokeWidth={1.8} />
-                  {data.rule.isActive ? 'Desactivar' : 'Activar'}
+                  {data.rule.activa ? 'Desactivar' : 'Activar'}
                 </button>
                 <button
                   onClick={() => onEdit(ruleId)}
@@ -5705,7 +5747,10 @@ function ImportRulesDialog({
                     <span className="text-[var(--arca-ink-3)]">
                       {
                         MAPPING_SOURCE_LABELS[
-                          r.sourceModule as 'invoice' | 'payroll'
+                          r.sourceModule as
+                            | 'comprobante'
+                            | 'recibo'
+                            | 'movimiento_bancario'
                         ]
                       }{' '}
                       · {r.lineCount} líneas
@@ -5751,7 +5796,7 @@ function Contabilizar({
   canWrite: boolean;
 }) {
   const qc = useQueryClient();
-  const [direction, setDirection] = useState<'all' | 'sale' | 'purchase'>(
+  const [direction, setDirection] = useState<'all' | 'emitido' | 'recibido'>(
     'all'
   );
   const [includePosted, setIncludePosted] = useState(false);
@@ -5780,7 +5825,7 @@ function Contabilizar({
 
   // Solo se pueden contabilizar las pendientes con período abierto.
   const selectable = useMemo(
-    () => invoices.filter((i) => !i.posted && i.periodStatus !== 'closed'),
+    () => invoices.filter((i) => !i.posted && i.periodStatus !== 'cerrado'),
     [invoices]
   );
 
@@ -5881,7 +5926,7 @@ function Contabilizar({
           <Select
             value={direction}
             onValueChange={(v) => {
-              setDirection(v as 'all' | 'sale' | 'purchase');
+              setDirection(v as 'all' | 'emitido' | 'recibido');
               setSelected(new Set());
             }}
           >
@@ -5890,8 +5935,8 @@ function Contabilizar({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Ventas y compras</SelectItem>
-              <SelectItem value="sale">Solo ventas</SelectItem>
-              <SelectItem value="purchase">Solo compras</SelectItem>
+              <SelectItem value="emitido">Solo ventas</SelectItem>
+              <SelectItem value="recibido">Solo compras</SelectItem>
             </SelectContent>
           </Select>
           <label className="flex items-center gap-1.5 text-[12.5px] text-[var(--arca-ink-2)] cursor-pointer select-none">
@@ -6036,12 +6081,12 @@ function PostingRow({
   onRegenerate: () => void;
   regenerating: boolean;
 }) {
-  const closed = inv.periodStatus === 'closed';
+  const closed = inv.periodStatus === 'cerrado';
   const selectable = !inv.posted && !closed;
   const dirLabel =
-    inv.direction === 'sale'
+    inv.direction === 'emitido'
       ? 'Venta'
-      : inv.direction === 'purchase'
+      : inv.direction === 'recibido'
         ? 'Compra'
         : '—';
 
@@ -6253,7 +6298,7 @@ function PendingRow({
   onOpen: () => void;
   onCreateRule: () => void;
 }) {
-  const closed = entry.periodStatus === 'closed';
+  const closed = entry.periodStatus === 'cerrado';
   return (
     <tr className="border-b border-[var(--arca-border)] last:border-0 hover:bg-[var(--arca-surface-2)]">
       <td className="py-2 pl-4 tabular-nums">{entry.number}</td>
@@ -6315,7 +6360,9 @@ function BienesDeUso({
   const qc = useQueryClient();
   const [view, setView] = useState<'inventario' | 'anexo'>('inventario');
   const [category, setCategory] = useState('');
-  const [status, setStatus] = useState('active');
+  const [status, setStatus] = useState<'' | 'activo' | 'vendido' | 'baja'>(
+    'activo'
+  );
   const [showEditor, setShowEditor] = useState(false);
   const [disposeTarget, setDisposeTarget] = useState<FixedAssetRow | null>(
     null
@@ -6328,7 +6375,7 @@ function BienesDeUso({
         data: {
           clientId,
           category: category || undefined,
-          status: (status || undefined) as never,
+          status: status || undefined,
         },
       }),
   });
@@ -6384,16 +6431,20 @@ function BienesDeUso({
             </Select>
             <Select
               value={status === '' ? 'all' : status}
-              onValueChange={(v) => setStatus(v === 'all' ? '' : v)}
+              onValueChange={(v) =>
+                setStatus(
+                  v === 'all' ? '' : (v as 'activo' | 'vendido' | 'baja')
+                )
+              }
             >
               <SelectTrigger size="sm" className="w-44 text-[12.5px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos los estados</SelectItem>
-                <SelectItem value="active">Activos</SelectItem>
-                <SelectItem value="sold">Vendidos</SelectItem>
-                <SelectItem value="discarded">Dados de baja</SelectItem>
+                <SelectItem value="activo">Activos</SelectItem>
+                <SelectItem value="vendido">Vendidos</SelectItem>
+                <SelectItem value="baja">Dados de baja</SelectItem>
               </SelectContent>
             </Select>
             <div className="flex-1" />
@@ -6461,7 +6512,7 @@ function BienesDeUso({
                       />
                     </td>
                     <td className="py-2 pr-4 text-right">
-                      {canWrite && a.status === 'active' && (
+                      {canWrite && a.status === 'activo' && (
                         <button
                           onClick={() => setDisposeTarget(a)}
                           className="text-[12px] text-[var(--arca-ink-2)] hover:text-red-600"
@@ -6511,7 +6562,7 @@ function FixedAssetStatusBadge({
   reason: string | null;
 }) {
   const color =
-    status === 'active' ? 'oklch(0.45 0.14 145)' : 'oklch(0.50 0.02 260)';
+    status === 'activo' ? 'oklch(0.45 0.14 145)' : 'oklch(0.50 0.02 260)';
   const label = FIXED_ASSET_STATUS_LABELS[status] ?? status;
   return (
     <span
@@ -6562,7 +6613,7 @@ function FixedAssetEditor({
           originalValue: ov,
           usefulLifeYears: life,
           residualValue: rv,
-          status: 'active',
+          status: 'activo',
         })
       : 0;
 
@@ -6808,8 +6859,8 @@ function DisposeAssetDialog({
   onSaved: () => void;
 }) {
   const [disposalDate, setDisposalDate] = useState('');
-  const [reason, setReason] = useState<'sale' | 'disuse' | 'destruction'>(
-    'sale'
+  const [reason, setReason] = useState<'venta' | 'desuso' | 'destruccion'>(
+    'venta'
   );
 
   const mut = useMutation({
@@ -6847,7 +6898,7 @@ function DisposeAssetDialog({
             <Select
               value={reason}
               onValueChange={(v) =>
-                setReason(v as 'sale' | 'disuse' | 'destruction')
+                setReason(v as 'venta' | 'desuso' | 'destruccion')
               }
             >
               <SelectTrigger size="sm" className="w-full text-[12.5px]">
@@ -6910,7 +6961,7 @@ function AnexoIView({
   });
   const effectiveFyId =
     selectedFyId ||
-    fiscalYears.find((y) => y.status === 'open')?.id ||
+    fiscalYears.find((y) => y.estado === 'abierto')?.id ||
     fiscalYears[0]?.id ||
     '';
 
@@ -6943,12 +6994,12 @@ function AnexoIView({
   }
 
   const periodLabel = data
-    ? `${fmtFecha(data.fiscalYear.startDate)} – ${fmtFecha(data.fiscalYear.endDate)}`
+    ? `${fmtFecha(data.ejercicio.startDate)} – ${fmtFecha(data.ejercicio.endDate)}`
     : '';
 
   const buildExportData = (): AnexoIExportData => ({
     empresaName: clientName,
-    fiscalYearNumber: data!.fiscalYear.number,
+    fiscalYearNumber: data!.ejercicio.number,
     periodLabel,
     categories: data!.categories.map((c) => ({
       category: FIXED_ASSET_CATEGORY_LABELS[c.category] ?? c.category,
@@ -6979,8 +7030,8 @@ function AnexoIView({
             ? fmtFecha(membrete.fechaInscripcion)
             : '',
           numeroInscripcion: membrete.numeroInscripcion,
-          inicioLabel: fmtFechaLarga(data!.fiscalYear.startDate),
-          cierreLabel: fmtFechaLarga(data!.fiscalYear.endDate),
+          inicioLabel: fmtFechaLarga(data!.ejercicio.startDate),
+          cierreLabel: fmtFechaLarga(data!.ejercicio.endDate),
           accountant: membrete.accountant,
         }
       : null,
@@ -6990,15 +7041,15 @@ function AnexoIView({
     if (!data) return;
     const lines: LineDraft[] = data.suggestion.lines.map((l) => ({
       accountId: l.accountId,
-      debit: l.side === 'debit' ? String(l.amount) : '',
-      credit: l.side === 'credit' ? String(l.amount) : '',
+      debit: l.side === 'debe' ? String(l.amount) : '',
+      credit: l.side === 'haber' ? String(l.amount) : '',
       description: 'Amortización del ejercicio',
     }));
     setEditor({
       mode: 'create',
       initial: {
-        entryDate: new Date(data.fiscalYear.endDate).toISOString().slice(0, 10),
-        description: `Amortización del ejercicio N°${data.fiscalYear.number}`,
+        entryDate: new Date(data.ejercicio.endDate).toISOString().slice(0, 10),
+        description: `Amortización del ejercicio N°${data.ejercicio.number}`,
         lines,
       },
     });
@@ -7021,7 +7072,7 @@ function AnexoIView({
             <SelectContent>
               {fiscalYears.map((y) => (
                 <SelectItem key={y.id} value={y.id}>
-                  N°{y.number} ({y.status === 'open' ? 'abierto' : 'cerrado'})
+                  N°{y.numero} ({y.estado === 'abierto' ? 'abierto' : 'cerrado'})
                 </SelectItem>
               ))}
             </SelectContent>
@@ -7224,10 +7275,10 @@ function AnexoIView({
                       {l.name}
                     </td>
                     <td className="py-1.5 text-right tabular-nums">
-                      {l.side === 'debit' ? `$ ${fmtMoney(l.amount)}` : ''}
+                      {l.side === 'debe' ? `$ ${fmtMoney(l.amount)}` : ''}
                     </td>
                     <td className="py-1.5 text-right tabular-nums">
-                      {l.side === 'credit' ? `$ ${fmtMoney(l.amount)}` : ''}
+                      {l.side === 'haber' ? `$ ${fmtMoney(l.amount)}` : ''}
                     </td>
                   </tr>
                 ))}
@@ -7376,7 +7427,7 @@ function EstadosContables({
   });
   const effectiveFyId =
     selectedFyId ||
-    fiscalYears.find((y) => y.status === 'open')?.id ||
+    fiscalYears.find((y) => y.estado === 'abierto')?.id ||
     fiscalYears[0]?.id ||
     '';
   const selectedFy = fiscalYears.find((y) => y.id === effectiveFyId);
@@ -7389,7 +7440,7 @@ function EstadosContables({
       }),
     enabled: !!effectiveFyId,
   });
-  const approved = fs?.status === 'approved';
+  const approved = fs?.status === 'aprobado';
 
   const invalidateFs = () =>
     qc.invalidateQueries({
@@ -7459,7 +7510,7 @@ function EstadosContables({
             <SelectContent>
               {fiscalYears.map((y) => (
                 <SelectItem key={y.id} value={y.id}>
-                  N°{y.number} ({y.status === 'open' ? 'abierto' : 'cerrado'})
+                  N°{y.numero} ({y.estado === 'abierto' ? 'abierto' : 'cerrado'})
                 </SelectItem>
               ))}
             </SelectContent>
@@ -7623,8 +7674,8 @@ function EspView({
       accountId: a.accountId,
       code: a.code,
       name: a.name,
-      from: new Date(selectedFy.startDate).toISOString().slice(0, 10),
-      to: new Date(selectedFy.endDate).toISOString().slice(0, 10),
+      from: new Date(selectedFy.fechaDesde).toISOString().slice(0, 10),
+      to: new Date(selectedFy.fechaHasta).toISOString().slice(0, 10),
     });
   };
 
@@ -7868,8 +7919,8 @@ function ErView({
       accountId: a.accountId,
       code: a.code,
       name: a.name,
-      from: new Date(selectedFy.startDate).toISOString().slice(0, 10),
-      to: new Date(selectedFy.endDate).toISOString().slice(0, 10),
+      from: new Date(selectedFy.fechaDesde).toISOString().slice(0, 10),
+      to: new Date(selectedFy.fechaHasta).toISOString().slice(0, 10),
     });
   };
 
@@ -8115,8 +8166,8 @@ function AnexoCMVView({
               ? fmtFecha(membrete.fechaInscripcion)
               : '',
             numeroInscripcion: membrete.numeroInscripcion,
-            inicioLabel: fmtFechaLarga(selectedFy.startDate),
-            cierreLabel: fmtFechaLarga(selectedFy.endDate),
+            inicioLabel: fmtFechaLarga(selectedFy.fechaDesde),
+            cierreLabel: fmtFechaLarga(selectedFy.fechaHasta),
             accountant: membrete.accountant,
           }
         : null,
@@ -8270,8 +8321,8 @@ function AnexoIIView({
       accountId: a.accountId,
       code: a.code,
       name: a.name,
-      from: new Date(selectedFy.startDate).toISOString().slice(0, 10),
-      to: new Date(selectedFy.endDate).toISOString().slice(0, 10),
+      from: new Date(selectedFy.fechaDesde).toISOString().slice(0, 10),
+      to: new Date(selectedFy.fechaHasta).toISOString().slice(0, 10),
     });
   };
 
@@ -8694,7 +8745,7 @@ function ExportView({
   };
 
   const onMayor = async () => {
-    if (!consol?.fiscalYear || consol.accounts.length === 0) {
+    if (!consol?.ejercicio || consol.accounts.length === 0) {
       toast.error('No hay cuentas con movimientos en el ejercicio');
       return;
     }
@@ -8702,7 +8753,7 @@ function ExportView({
     try {
       const data: MayorExportData = {
         empresaName: clientName,
-        fiscalYearNumber: consol.fiscalYear.number,
+        fiscalYearNumber: consol.ejercicio.number,
         from: consol.from,
         to: consol.to,
         sections: consol.accounts.map((a) => ({

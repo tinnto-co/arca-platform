@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { getClientPortalDashboard } from '@/actions/client-portal';
+import { getClientePortalDashboard } from '@/actions/client-portal';
 import {
   Calendar,
   FileText,
@@ -17,12 +17,12 @@ export const Route = createFileRoute('/_client/portal/')({
 });
 
 function PortalDashboard() {
-  const { clientId } = Route.useRouteContext();
+  const { clienteId } = Route.useRouteContext();
 
   const { data, isLoading } = useQuery({
-    queryKey: ['portalDashboard', clientId],
-    queryFn: () => getClientPortalDashboard({ data: { clientId } }),
-    enabled: !!clientId,
+    queryKey: ['portalDashboard', clienteId],
+    queryFn: () => getClientePortalDashboard({ data: { clienteId } }),
+    enabled: !!clienteId,
     staleTime: 60_000,
   });
 
@@ -37,16 +37,16 @@ function PortalDashboard() {
   if (!data) return null;
 
   const {
-    client,
-    nextDueDates,
-    openDebts,
-    unreadNotificationsCount,
-    pendingRequests,
-    permissions,
+    cliente,
+    proximosVencimientos: nextDueDates,
+    deudasAbiertas: openDebts,
+    notificacionesSinLeer: unreadNotificationsCount,
+    solicitudesAbiertas: pendingRequests,
+    permisos: permissions,
   } = data;
 
   const totalDebt = openDebts
-    ? openDebts.reduce((sum, d) => sum + parseFloat(d.balance ?? '0'), 0)
+    ? openDebts.reduce((sum, d) => sum + parseFloat(d.saldo ?? '0'), 0)
     : 0;
 
   return (
@@ -54,7 +54,7 @@ function PortalDashboard() {
       {/* Greeting */}
       <div className="mb-7">
         <h1 className="text-[22px] font-semibold text-[var(--arca-ink)] leading-tight">
-          Bienvenido, {client.name}
+          Bienvenido, {cliente.razonSocial}
         </h1>
         <p className="text-sm text-[var(--arca-ink-3)] mt-1">
           Resumen de su estado fiscal
@@ -74,7 +74,7 @@ function PortalDashboard() {
           colorVar="var(--arca-accent-primary)"
           bgVar="var(--arca-accent-primary-bg)"
         />
-        {permissions.canViewDebts && (
+        {permissions.puedeVerDeudas && (
           <SummaryCard
             icon={<FileText size={16} />}
             label="Deuda abierta"
@@ -149,7 +149,7 @@ function PortalDashboard() {
           ) : (
             <ul className="divide-y divide-[var(--arca-border)]">
               {nextDueDates.map((d) => {
-                const date = new Date(d.dueDate as unknown as string);
+                const date = new Date(d.venceAt);
                 const overdue = isPast(date);
                 return (
                   <li key={d.id} className="py-2.5 flex items-center gap-3">
@@ -168,10 +168,10 @@ function PortalDashboard() {
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-[var(--arca-ink)] truncate">
-                        {d.tax}
+                        {d.impuesto}
                       </p>
                       <p className="text-xs text-[var(--arca-ink-3)] truncate">
-                        {d.concept}
+                        {d.concepto}
                       </p>
                     </div>
                     {overdue && (
@@ -180,7 +180,7 @@ function PortalDashboard() {
                         className="shrink-0 text-[var(--arca-accent-neg)]"
                       />
                     )}
-                    {d.completedAt && (
+                    {d.completadoAt && (
                       <CheckCircle2
                         size={14}
                         className="shrink-0 text-[var(--arca-accent-pos)]"
@@ -194,7 +194,7 @@ function PortalDashboard() {
         </PortalCard>
 
         {/* Open debts */}
-        {permissions.canViewDebts && (
+        {permissions.puedeVerDeudas && (
           <PortalCard
             title="Deudas abiertas"
             icon={<FileText size={15} className="text-[var(--arca-ink-3)]" />}
@@ -209,15 +209,15 @@ function PortalDashboard() {
                   <li key={d.id} className="py-2.5 flex items-center gap-3">
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-[var(--arca-ink)] truncate">
-                        {d.tax}
+                        {d.impuesto}
                       </p>
                       <p className="text-xs text-[var(--arca-ink-3)] truncate">
-                        {d.concept}
+                        {d.concepto}
                       </p>
                     </div>
                     <span className="text-sm font-semibold text-[var(--arca-accent-neg)] tabular-nums shrink-0">
                       $
-                      {parseFloat(d.balance ?? '0').toLocaleString('es-AR', {
+                      {parseFloat(d.saldo ?? '0').toLocaleString('es-AR', {
                         maximumFractionDigits: 0,
                       })}
                     </span>
@@ -248,12 +248,12 @@ function PortalDashboard() {
                 <li key={r.id} className="py-2.5 flex items-center gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-[var(--arca-ink)] truncate">
-                      {r.title}
+                      {r.titulo}
                     </p>
                     <p className="text-xs text-[var(--arca-ink-3)]">
-                      {r.dueAt
-                        ? `Vence: ${format(new Date(r.dueAt as unknown as string), 'dd/MM/yyyy')}`
-                        : `Recibida: ${format(new Date(r.createdAt as unknown as string), 'dd/MM/yyyy')}`}
+                      {r.venceAt
+                        ? `Vence: ${format(new Date(r.venceAt), 'dd/MM/yyyy')}`
+                        : `Recibida: ${format(new Date(r.createdAt), 'dd/MM/yyyy')}`}
                     </p>
                   </div>
                   <span

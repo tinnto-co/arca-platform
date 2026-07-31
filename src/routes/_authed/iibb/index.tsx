@@ -12,12 +12,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { getRepresentativesForIIBB } from '@/actions/client';
+import { getClientesForIIBB } from '@/actions/client';
 import {
-  getClientMultilateralSummary,
-  getIibbLiquidacion,
-  saveIibbLiquidacion,
-} from '@/actions/invoice';
+  getClienteMultilateralResumen,
+  getLiquidacionIibb,
+  saveLiquidacionIibb,
+} from '@/actions/comprobante';
 import { cn } from '@/lib/utils';
 
 export const Route = createFileRoute('/_authed/iibb/')({
@@ -79,43 +79,23 @@ const DEFAULT_LIQ: LiqRow = {
 const inputCls =
   'w-[100px] rounded border border-[var(--arca-border)] bg-[var(--arca-surface)] px-1.5 py-0.5 text-right text-[12px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-accent,#2563eb)] tabular-nums';
 
+/** Cliente con régimen de IIBB que alimenta el selector. */
+type ClienteIIBB = Awaited<ReturnType<typeof getClientesForIIBB>>[number];
+
 /** Selector de empresa + periodo + tabla de desglose + liquidación IIBB por provincia. */
 function IIBBDesglose({
   clients,
   emptyMessage,
 }: {
-  clients: {
-    id: string;
-    name: string | null;
-    cuit: string | null;
-    clients: {
-      id: string;
-      name: string | null;
-      identityNumber: string | null;
-    }[];
-  }[];
+  clients: ClienteIIBB[];
   emptyMessage: string;
 }) {
   const now = new Date();
   const queryClient = useQueryClient();
 
   const [selectedRepId, setSelectedRepId] = useState('');
-  const [selectedProfileId, setSelectedProfileId] = useState('');
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
-
-  const selectedRep = clients.find((c) => c.id === selectedRepId);
-
-  const profileOptions = useMemo(() => {
-    if (!selectedRep) return [];
-    return (selectedRep.clients ?? []).map((c) => ({
-      value: c.id,
-      label: c.name ?? c.identityNumber ?? c.id,
-    }));
-  }, [selectedRep]);
-
-  const effectiveProfileId =
-    selectedProfileId || profileOptions[0]?.value || '';
 
   const dateFrom = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-01`;
   const lastDay = new Date(selectedYear, selectedMonth + 1, 0).getDate();
@@ -123,37 +103,19 @@ function IIBBDesglose({
   const periodo = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
 
   const { data: provinceSummary = [], isLoading: loadingInvoices } = useQuery({
-    queryKey: [
-      'iibb',
-      'summary',
-      selectedRepId,
-      effectiveProfileId,
-      dateFrom,
-      dateTo,
-    ],
+    queryKey: ['iibb', 'summary', selectedRepId, dateFrom, dateTo],
     queryFn: () =>
-      getClientMultilateralSummary({
-        data: {
-          clientId: selectedRepId,
-          profileId: effectiveProfileId,
-          dateFrom,
-          dateTo,
-        },
+      getClienteMultilateralResumen({
+        data: { clienteId: selectedRepId, dateFrom, dateTo },
       }),
-    enabled: !!selectedRepId && !!effectiveProfileId,
+    enabled: !!selectedRepId,
   });
 
   const { data: liqData, isLoading: loadingLiq } = useQuery({
-    queryKey: ['iibb', 'liq', selectedRepId, effectiveProfileId, periodo],
+    queryKey: ['iibb', 'liq', selectedRepId, periodo],
     queryFn: () =>
-      getIibbLiquidacion({
-        data: {
-          representativeId: selectedRepId,
-          profileId: effectiveProfileId,
-          periodo,
-        },
-      }),
-    enabled: !!selectedRepId && !!effectiveProfileId,
+      getLiquidacionIibb({ data: { clienteId: selectedRepId, periodo } }),
+    enabled: !!selectedRepId,
   });
 
   // Local editable state keyed by provincia
@@ -182,10 +144,9 @@ function IIBBDesglose({
 
   const saveMutation = useMutation({
     mutationFn: (vars: { provincia: string } & LiqRow) =>
-      saveIibbLiquidacion({
+      saveLiquidacionIibb({
         data: {
-          representativeId: selectedRepId,
-          profileId: effectiveProfileId,
+          clienteId: selectedRepId,
           periodo,
           provincia: vars.provincia,
           alicuota: vars.alicuota,
@@ -198,7 +159,7 @@ function IIBBDesglose({
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ['iibb', 'liq', selectedRepId, effectiveProfileId, periodo],
+        queryKey: ['iibb', 'liq', selectedRepId, periodo],
       });
     },
   });
@@ -235,18 +196,18 @@ function IIBBDesglose({
   const maxMonth = selectedYear === now.getFullYear() ? now.getMonth() : 11;
   const repOptions = clients.map((c) => ({
     value: c.id,
-    label: `${c.name}${c.cuit ? ` (${c.cuit})` : ''}`,
+    label: `${c.razonSocial}${c.cuit ? ` (${c.cuit})` : ''}`,
   }));
 
-  const rows = provinceSummary as any[];
+  const rows = provinceSummary;
   const isLoading = loadingInvoices || loadingLiq;
 
   const totals = useMemo(() => {
     return rows.reduce(
       (acc, row) => {
-        const prov = row.receiptProvince ?? '';
+        const prov = row.provincia ?? '';
         const liq = getLiq(prov);
-        const base = Number(row.totalTaxed ?? 0);
+        const base = Number(row.totalBase ?? 0);
         const impDet = base * liq.alicuota;
         const liquidacion =
           impDet -
@@ -256,7 +217,7 @@ function IIBBDesglose({
           liq.retencionesAgentes -
           liq.retencionesBancarias;
         return {
-          count: acc.count + (row.invoiceCount ?? 0),
+          count: acc.count + (row.cantidad ?? 0),
           base: acc.base + base,
           impDet: acc.impDet + impDet,
           saldoAFavor: acc.saldoAFavor + liq.saldoAFavor,
@@ -294,21 +255,11 @@ function IIBBDesglose({
           value={selectedRepId}
           onValueChange={(v) => {
             setSelectedRepId(v);
-            setSelectedProfileId('');
             setLocalLiq({});
           }}
           placeholder="Seleccionar empresa..."
           width={320}
         />
-        {profileOptions.length > 1 && (
-          <SearchableSelect
-            options={profileOptions}
-            value={effectiveProfileId}
-            onValueChange={setSelectedProfileId}
-            placeholder="Seleccionar perfil..."
-            width={260}
-          />
-        )}
         <div className="flex items-center gap-2">
           <Select
             value={String(selectedMonth)}
@@ -428,9 +379,9 @@ function IIBBDesglose({
             </thead>
             <tbody>
               {rows.map((row, i) => {
-                const prov = row.receiptProvince ?? '';
+                const prov = row.provincia ?? '';
                 const liq = getLiq(prov);
-                const base = Number(row.totalTaxed ?? 0);
+                const base = Number(row.totalBase ?? 0);
                 const impDet = base * liq.alicuota;
                 const liquidacion =
                   impDet -
@@ -452,13 +403,13 @@ function IIBBDesglose({
                       {prov || 'Capital Federal'}
                     </td>
                     <td className="px-3 py-2 text-right text-[var(--arca-ink-3)] tabular-nums">
-                      {row.invoiceCount}
+                      {row.cantidad}
                     </td>
                     <td
                       className="px-3 py-2 text-right text-[var(--arca-ink)] tabular-nums"
                       style={{ fontFamily: 'var(--ff-mono)' }}
                     >
-                      {formatARS(row.totalTaxed)}
+                      {formatARS(row.totalBase)}
                     </td>
                     {/* Alícuota editable — ingreso en % (ej. "1" = 1%) */}
                     <td className="px-3 py-2 text-right">
@@ -683,11 +634,14 @@ function IIBBDesglose({
 function RouteComponent() {
   const { data: allClients = [] } = useQuery({
     queryKey: ['iibb', 'representatives'],
-    queryFn: () => getRepresentativesForIIBB(),
+    queryFn: () => getClientesForIIBB(),
   });
 
-  const localClients = allClients.filter((c) => c.regimenLocal);
-  const multilateralClients = allClients.filter((c) => c.convenioMultilateral);
+  // `iibbRegimen` reemplazó a los dos booleanos regimenLocal/convenioMultilateral.
+  const localClients = allClients.filter((c) => c.iibbRegimen === 'local');
+  const multilateralClients = allClients.filter(
+    (c) => c.iibbRegimen === 'convenio_multilateral'
+  );
 
   return (
     <div className="p-6 max-w-[1200px] mx-auto">

@@ -23,7 +23,7 @@ import { SueldosSimulador } from '@/components/sueldos/SueldosSimulador';
 import { SueldosRecibo } from '@/components/sueldos/SueldosRecibo';
 import { SueldosFirmaDigital } from '@/components/sueldos/SueldosFirmaDigital';
 import { SueldosCargas } from '@/components/sueldos/SueldosCargas';
-import { getRepresentativesForSueldos } from '@/actions/client';
+import { getClientesForSueldos } from '@/actions/client';
 import { listOrgModules } from '@/actions/admin';
 import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
 import {
@@ -99,7 +99,7 @@ function RouteComponent() {
 
   const { data: clients = [], isLoading } = useQuery({
     queryKey: ['clients', 'sueldos'],
-    queryFn: () => getRepresentativesForSueldos(),
+    queryFn: () => getClientesForSueldos(),
   });
 
   const { data: orgModules = [] } = useQuery({
@@ -109,11 +109,10 @@ function RouteComponent() {
   const aiAgentEnabled =
     orgModules.find((m) => m.module === 'ai_agent')?.enabled ?? false;
 
-  // En el modelo nuevo de main: el param `profileId` de la ruta lleva el id de
-  // la entidad fiscal (= clientId), y el prop `clientId` que esperan los
-  // componentes de payroll es el agrupador (= representativeId).
-  const selectedOption = clients.find((c) => c.clientId === profileId);
-  const clientId = selectedOption?.representativeId ?? '';
+  // El par (clientId, profileId) colapsó en un solo `cliente`: el param
+  // `profileId` de la URL lleva directamente el id del cliente.
+  const selectedOption = clients.find((c) => c.id === profileId);
+  const clientId = selectedOption?.id ?? '';
 
   const setTab = (next: SueldosTab) => {
     if (next !== 'simulador') setEditReciboData(undefined);
@@ -150,7 +149,7 @@ function RouteComponent() {
     <div className="overflow-x-hidden bg-[#F7F6F2] min-h-screen max-w-[1380px] mx-auto px-[44px] pt-[34px] pb-[72px] space-y-6">
       {aiAgentEnabled && selectedOption && (
         <CopilotReadableEntity
-          description="Estado actual del módulo Sueldos visible en pantalla. Usá clientId/profileId al invocar acciones de payroll. mesLiquidable es el único período sobre el que se pueden calcular liquidaciones."
+          description="Estado actual del módulo Sueldos visible en pantalla. Usá clientId al invocar acciones de payroll. mesLiquidable es el único período sobre el que se pueden calcular liquidaciones."
           value={{
             modulo: 'sueldos',
             tabActiva: activeTab,
@@ -158,7 +157,6 @@ function RouteComponent() {
             cliente: {
               optionId: selectedOption.id,
               clientId,
-              profileId,
               label: selectedOption.label,
             },
             mesActual: getPeriodoMesActual(),
@@ -268,12 +266,11 @@ function RouteComponent() {
           </div>
           <div className="min-w-0 max-w-full">
             <TabsContent value="dashboard">
-              <SueldosDashboard clientId={clientId} profileId={profileId} />
+              <SueldosDashboard clientId={clientId} />
             </TabsContent>
             <TabsContent value="empleados">
               <SueldosEmpleados
                 clientId={clientId}
-                profileId={profileId}
                 onVerRecibos={(empleadoId) => {
                   setReciboFiltroEmpleadoId(empleadoId);
                   setTab('recibo');
@@ -281,15 +278,14 @@ function RouteComponent() {
               />
             </TabsContent>
             <TabsContent value="convenios">
-              <SueldosConvenios clientId={clientId} profileId={profileId} />
+              <SueldosConvenios clientId={clientId} />
             </TabsContent>
             <TabsContent value="conceptos">
-              <SueldosConceptos clientId={clientId} profileId={profileId} />
+              <SueldosConceptos clientId={clientId} />
             </TabsContent>
             <TabsContent value="simulador">
               <SueldosSimulador
                 clientId={clientId}
-                profileId={profileId}
                 onConfirmRecibo={() => setTab('recibo')}
                 initialData={editReciboData}
                 onReset={() => setEditReciboData(undefined)}
@@ -299,7 +295,6 @@ function RouteComponent() {
               <SueldosRecibo
                 key={reciboFiltroEmpleadoId}
                 clientId={clientId}
-                profileId={profileId}
                 initialEmpleadoId={reciboFiltroEmpleadoId || undefined}
                 onEditRecibo={(data) => {
                   setEditReciboData(data);
@@ -308,10 +303,10 @@ function RouteComponent() {
               />
             </TabsContent>
             <TabsContent value="firma-digital">
-              <SueldosFirmaDigital clientId={clientId} profileId={profileId} />
+              <SueldosFirmaDigital clientId={clientId} />
             </TabsContent>
             <TabsContent value="cargas">
-              <SueldosCargas clientId={clientId} profileId={profileId} />
+              <SueldosCargas clientId={clientId} />
             </TabsContent>
           </div>
         </Tabs>

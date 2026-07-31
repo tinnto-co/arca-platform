@@ -23,7 +23,10 @@ export const Route = createFileRoute('/_client')({
   beforeLoad: async () => {
     try {
       const portalSession = await getPortalSession();
-      return { clientId: portalSession.clientId, access: portalSession.access };
+      return {
+        clienteId: portalSession.clienteId,
+        access: portalSession.access,
+      };
     } catch {
       throw redirect({ to: '/login' });
     }
