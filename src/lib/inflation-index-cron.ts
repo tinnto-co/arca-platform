@@ -9,10 +9,17 @@
  * cambió, así que corre una vez por día en vez de intentar adivinar el día
  * exacto de publicación: si el mes ya está cargado, no hace nada.
  *
+ * Corriendo a diario, 29 de cada 30 corridas no traen novedad. Por eso solo
+ * loguea cuando aparece un mes nuevo: si informara cada corrida, el día que
+ * realmente pasa algo quedaría enterrado entre avisos de que no pasó nada.
+ *
  * Configurable por entorno:
  * - INFLATION_INDEX_CRON_INTERVAL_MS: intervalo entre corridas (default 24 h).
  * - INFLATION_INDEX_CRON_DISABLED: "1" para apagarlo.
  */
+import { desc, eq } from 'drizzle-orm';
+import { db } from '@/lib/db';
+import { inflationIndex } from '@/drizzle/schema';
 import {
   fetchFacpceSeries,
   upsertInflationIndexes,
@@ -22,13 +29,38 @@ const DEFAULT_INTERVAL_MS = 24 * 60 * 60 * 1000; // 1 día
 /** Margen tras el arranque, para no competir con el boot del server. */
 const FIRST_RUN_DELAY_MS = 5 * 60 * 1000;
 
-export async function runInflationIndexSync(): Promise<void> {
+/** Último mes con índice publicado, como "AAAA-MM". null si la serie está vacía. */
+async function latestPeriod(): Promise<string | null> {
+  const [row] = await db
+    .select({ year: inflationIndex.year, month: inflationIndex.month })
+    .from(inflationIndex)
+    .where(eq(inflationIndex.source, 'facpce_rt6'))
+    .orderBy(desc(inflationIndex.year), desc(inflationIndex.month))
+    .limit(1);
+  return row ? `${row.year}-${String(row.month).padStart(2, '0')}` : null;
+}
+
+/**
+ * Sincroniza la serie. Devuelve el mes nuevo si apareció uno, o null si no hubo
+ * novedad.
+ *
+ * Las revisiones de meses anteriores (FACPCE a veces corrige) se aplican igual,
+ * en silencio: el dato queda bien, simplemente no se anuncia.
+ */
+export async function runInflationIndexSync(): Promise<string | null> {
+  const before = await latestPeriod();
   const { rows, skipped, url } = await fetchFacpceSeries();
-  const { processed, from, to } = await upsertInflationIndexes(rows);
-  console.log(
-    `[inflation-index] serie actualizada desde ${url}: ${processed} meses (${from} → ${to})` +
-      (skipped > 0 ? `, ${skipped} sin publicar` : '')
-  );
+  const { processed } = await upsertInflationIndexes(rows);
+  const after = await latestPeriod();
+
+  if (after && after !== before) {
+    console.log(
+      `[inflation-index] nuevo índice: ${after} (serie de ${processed} meses desde ${url})` +
+        (skipped > 0 ? `, ${skipped} mes(es) sin publicar` : '')
+    );
+    return after;
+  }
+  return null;
 }
 
 export function startInflationIndexCron(): void {
