@@ -139,28 +139,28 @@ export const ACCOUNT_GROUP_LABELS: Record<AccountGroup, string> = {
   impuesto_ganancias: 'Impuesto a las ganancias',
 };
 
-export const ACCOUNT_TYPE_LABELS: Record<'imputable' | 'group', string> = {
+export const ACCOUNT_TYPE_LABELS: Record<'imputable' | 'grupo', string> = {
   imputable: 'Imputable',
-  group: 'Agrupación',
+  grupo: 'Agrupación',
 };
 
 export const EXPECTED_BALANCE_LABELS: Record<
-  'debit' | 'credit' | 'both',
+  'deudor' | 'acreedor' | 'ambos',
   string
 > = {
-  debit: 'Deudor',
-  credit: 'Acreedor',
-  both: 'Ambos',
+  deudor: 'Deudor',
+  acreedor: 'Acreedor',
+  ambos: 'Ambos',
 };
 
 export const EXPENSE_FUNCTION_LABELS: Record<
-  'administration' | 'sales' | 'financial' | 'other',
+  'administracion' | 'comercializacion' | 'financiero' | 'otro',
   string
 > = {
-  administration: 'Administración',
-  sales: 'Comercialización',
-  financial: 'Financiero',
-  other: 'Otros',
+  administracion: 'Administración',
+  comercializacion: 'Comercialización',
+  financiero: 'Financiero',
+  otro: 'Otros',
 };
 
 /** Prefijo reservado para cuentas custom de cada empresa (esquema legacy "9.x"). */
@@ -195,51 +195,68 @@ export const MONTH_NAMES = [
 ] as const;
 
 export const FISCAL_YEAR_STATUS_LABELS: Record<
-  'open' | 'closing' | 'closed',
+  'abierto' | 'en_cierre' | 'cerrado',
   string
 > = {
-  open: 'Abierto',
-  closing: 'En cierre',
-  closed: 'Cerrado',
+  abierto: 'Abierto',
+  en_cierre: 'En cierre',
+  cerrado: 'Cerrado',
 };
 
+/** `asiento.origen_tipo`: de dónde salió el asiento. */
+export type JournalOrigin =
+  | 'manual'
+  | 'comprobante'
+  | 'recibo'
+  | 'movimiento_bancario'
+  | 'cierre'
+  | 'apertura'
+  | 'import';
+
+// Indexable por string (el origen llega como string desde varios actions),
+// pero `satisfies` obliga a que estén todos los valores del enum.
 export const JOURNAL_ORIGIN_LABELS: Record<string, string> = {
   manual: 'Manual',
-  auto_invoice: 'Auto · Factura',
-  auto_payroll: 'Auto · Sueldos',
-  auto_closing: 'Auto · Cierre',
-  auto_opening: 'Auto · Apertura',
-  import_excel: 'Import Excel',
-};
+  comprobante: 'Auto · Comprobante',
+  recibo: 'Auto · Sueldos',
+  movimiento_bancario: 'Auto · Banco',
+  cierre: 'Auto · Cierre',
+  apertura: 'Auto · Apertura',
+  import: 'Import',
+} satisfies Record<JournalOrigin, string>;
 
 /* ── Reglas de mapeo (asientos automáticos) ── */
 
-export const MAPPING_SOURCE_LABELS: Record<'invoice' | 'payroll', string> = {
-  invoice: 'Facturas',
-  payroll: 'Sueldos',
+export const MAPPING_SOURCE_LABELS: Record<
+  'comprobante' | 'recibo' | 'movimiento_bancario',
+  string
+> = {
+  comprobante: 'Comprobantes',
+  recibo: 'Sueldos',
+  movimiento_bancario: 'Banco',
 };
 
 export const MAPPING_RULE_TYPE_LABELS: Record<
-  'default' | 'conditional',
+  'default' | 'condicional',
   string
 > = {
   default: 'Default (fallback)',
-  conditional: 'Condicional',
+  condicional: 'Condicional',
 };
 
-export const MAPPING_SIDE_LABELS: Record<'debit' | 'credit', string> = {
-  debit: 'Debe',
-  credit: 'Haber',
+export const MAPPING_SIDE_LABELS: Record<'debe' | 'haber', string> = {
+  debe: 'Debe',
+  haber: 'Haber',
 };
 
 /** Base sobre la que se calcula el monto de cada línea del asiento generado. */
 export const MAPPING_AMOUNT_BASIS_LABELS: Record<string, string> = {
   total: 'Total del comprobante',
-  net: 'Neto (sin IVA)',
-  vat: 'IVA',
-  other_taxes: 'Otros impuestos / percepciones',
-  concept_value: 'Valor del concepto (sueldos)',
-  fixed: 'Monto fijo',
+  neto: 'Neto (sin IVA)',
+  iva: 'IVA',
+  otros_tributos: 'Otros impuestos / percepciones',
+  valor_concepto: 'Valor del concepto (sueldos)',
+  fijo: 'Monto fijo',
 };
 
 /* ── Bienes de uso (Fase 4) ── */
@@ -255,15 +272,15 @@ export const FIXED_ASSET_CATEGORY_LABELS: Record<string, string> = {
 };
 
 export const FIXED_ASSET_STATUS_LABELS: Record<string, string> = {
-  active: 'Activo',
-  sold: 'Vendido',
-  discarded: 'Dado de baja',
+  activo: 'Activo',
+  vendido: 'Vendido',
+  baja: 'Dado de baja',
 };
 
 export const FIXED_ASSET_DISPOSAL_REASON_LABELS: Record<string, string> = {
-  sale: 'Venta',
-  disuse: 'Desuso',
-  destruction: 'Destrucción',
+  venta: 'Venta',
+  desuso: 'Desuso',
+  destruccion: 'Destrucción',
 };
 
 /** Rubros considerados de gasto/resultado negativo (para validar la cuenta de amortización). */
