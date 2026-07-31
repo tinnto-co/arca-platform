@@ -1,6 +1,8 @@
 'use client';
 
 import { Document, Page, View, Text, Image, StyleSheet, pdf } from '@react-pdf/renderer';
+import { dateAPeriodo } from '@/lib/periodo';
+import { tipoReciboLabel, quincenaLabel } from '@/lib/sueldos-labels';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -13,7 +15,7 @@ interface DetalleRow {
     monto: string | null;
     cantidad: string | null;
     porcentaje: string | null;
-    activoEnRecibo?: boolean | null;
+    activo?: boolean | null;
     memo?: string | null;
   };
   concepto: { nombre?: string | null; tipo?: string | null; numeroSos?: number | null } | null;
@@ -27,7 +29,7 @@ export interface ReciboDetallePdf {
     id: string;
     periodo: string;
     tipo: string | null;
-    quincena: string | null;
+    quincena: number | null;
     basico: string | null;
     fechaPago: string | null;
     lugarPago: string | null;
@@ -43,8 +45,7 @@ export interface ReciboDetallePdf {
     cuil: string | null;
     fechaAlta: string | null;
     tipoJornada: string | null;
-    categoria: string | null;
-    lugarPago: string | null;
+    categoriaTexto: string | null;
     formaPago: string | null;
     cbu: string | null;
     banco: string | null;
@@ -57,12 +58,15 @@ export interface ReciboDetallePdf {
   detalles: DetalleRow[];
 }
 
+/**
+ * Datos de la empresa que encabezan el recibo. En el modelo nuevo el cliente
+ * ya no tiene `name`/`address`/`identityNumber`: la única razón social es
+ * `razonSocial` y el CUIT vive en `cuit`.
+ */
 export interface ClientDataPdf {
-  name: string | null;
-  address: string | null;
-  identityNumber: string | null;
-  razonSocial?: string | null;
-  cuitEmpresa?: string | null;
+  razonSocial: string | null;
+  domicilio: string | null;
+  cuit: string | null;
 }
 
 // ─── Formatters ──────────────────────────────────────────────────────────────
@@ -94,27 +98,13 @@ function legajoParaMostrar(raw: string | null | undefined): string {
   return s;
 }
 
-function tipoReciboLabel(tipo: string | null): string {
-  if (!tipo) return 'Sueldo';
-  const map: Record<string, string> = {
-    sueldo: 'Sueldo', anticipo: 'Anticipo', SAC: 'SAC',
-    vacaciones: 'Vacaciones', despido: 'Liquidación final',
-    comisiones: 'Comisiones', desempleo: 'Fondo de desempleo', varios: 'Varios',
-  };
-  return map[tipo] ?? tipo;
-}
-
-function quincenaLabel(q: string | null): string {
-  if (q === '1') return '1ra quincena';
-  if (q === '2') return '2da quincena';
-  return 'Mes completo';
-}
-
 function formaPagoLabel(v: string | null | undefined): string {
   if (!v) return '—';
   const s = String(v).trim().toLowerCase();
   if (s === '1' || s === 'efectivo') return 'Efectivo';
-  if (s === '2' || s === 'acreditacion' || s === 'acreditación') return 'Acreditación';
+  if (s === '2' || s === 'deposito' || s === 'acreditacion' || s === 'acreditación')
+    return 'Depósito en cuenta';
+  if (s === 'transferencia') return 'Transferencia';
   if (s === '3' || s === 'cheque') return 'Cheque';
   if (s === '4' || s === 'otro' || s === 'otros') return 'Otro';
   return String(v);
@@ -561,7 +551,7 @@ function ReciboPdfPage({
   const basicoEscalaNum       = Number(basicoEscalaCategoria ?? 0);
   const basicoLiquidacionNum  = Number(liquidacion.basico ?? 0);
   const basicoDetalleNum      = basicoDesdeDetalle(detalles);
-  const esGerente             = esCategoriaGerente(categoria?.nombre) || esCategoriaGerente(empleado.categoria);
+  const esGerente             = esCategoriaGerente(categoria?.nombre) || esCategoriaGerente(empleado.categoriaTexto);
   const mostrarBasicoEscalaGerente = esGerente && basicoCalculadoNum <= 0 && basicoEscalaNum > 0;
   const basicoMostrado = mostrarBasicoEscalaGerente
     ? basicoEscalaNum
@@ -572,7 +562,7 @@ function ReciboPdfPage({
       : basicoCalculadoNum;
 
   // Clasificar conceptos activos
-  const conceptosActivos = detalles.filter((d) => d.detalle.activoEnRecibo !== false);
+  const conceptosActivos = detalles.filter((d) => d.detalle.activo !== false);
   const haberesCon  = conceptosActivos.filter((d) => columnaConcepto(d) === 'remunerativo');
   const haberesSin  = conceptosActivos.filter((d) => columnaConcepto(d) === 'no_remunerativo');
   const descuentos  = conceptosActivos.filter((d) => columnaConcepto(d) === 'descuento');
@@ -596,15 +586,16 @@ function ReciboPdfPage({
 
   // Datos de cabecera de pago
   const cab       = pickCabecera(liquidacion);
-  const lugarPago = cab.lugarPago ?? valorCabeceraLegible(empleado.lugarPago);
+  // `empleado.lugarPago` desapareció: el lugar de pago vive solo en el recibo.
+  const lugarPago = cab.lugarPago;
   const banco     = cab.banco     ?? valorCabeceraLegible(empleado.banco);
   const formaPago = cab.formaPago ?? valorCabeceraLegible(empleado.formaPago);
   const cbu       = cab.cbu       ?? valorCabeceraLegible(empleado.cbu);
 
   // Datos de empresa
-  const empresaNombre   = toTitleCase(clientData?.razonSocial) || toTitleCase(clientData?.name) || '—';
-  const empresaCUIT     = clientData?.cuitEmpresa || clientData?.identityNumber || '—';
-  const empresaDirec    = clientData?.address || null;
+  const empresaNombre   = toTitleCase(clientData?.razonSocial) || '—';
+  const empresaCUIT     = clientData?.cuit || '—';
+  const empresaDirec    = clientData?.domicilio || null;
 
   return (
     <Page size="A4" style={S.page}>
@@ -643,7 +634,8 @@ function ReciboPdfPage({
 
           {/* Fila de pago 1 */}
           <View style={S.headerPayRow}>
-            <InfoCell label="Período a pagar" value={liquidacion.periodo ?? '—'} />
+            {/* `recibo.periodo` es date ('YYYY-MM-01'): se muestra como 'YYYY-MM'. */}
+            <InfoCell label="Período a pagar" value={liquidacion.periodo ? dateAPeriodo(liquidacion.periodo) : '—'} />
             <InfoCell label="Fecha de pago"   value={dateFmt(cab.fechaPago)} />
             <InfoCell label="Lugar de pago"   value={lugarPago ?? '—'} last />
           </View>
@@ -660,7 +652,7 @@ function ReciboPdfPage({
 
       {/* ── Fila: Categoría | Tipo de liquidación ───────────────────────────── */}
       <View style={S.infoRow}>
-        <InfoCell label="Categoría" value={empleado.categoria ? toTitleCase(empleado.categoria) : (categoria?.nombre ?? '—')} />
+        <InfoCell label="Categoría" value={empleado.categoriaTexto ? toTitleCase(empleado.categoriaTexto) : (categoria?.nombre ?? '—')} />
         <InfoCell
           label="Tipo de liquidación"
           value={`${tipoReciboLabel(liquidacion.tipo)} — ${quincenaLabel(liquidacion.quincena)}`}

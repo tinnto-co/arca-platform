@@ -87,14 +87,15 @@ function fmtDate(s: string | null | undefined): string {
 }
 
 type TipoReciboGuardar =
-  | 'sueldo'
+  | 'mensual'
+  | 'quincenal'
   | 'anticipo'
-  | 'SAC'
+  | 'sac'
   | 'vacaciones'
-  | 'despido'
+  | 'liquidacion_final'
   | 'comisiones'
-  | 'desempleo'
-  | 'varios';
+  | 'fondo_desempleo'
+  | 'otros';
 
 interface FlowHeader {
   importEmpleadoId: string;
@@ -110,8 +111,7 @@ interface FlowHeader {
   fechaLiquidacion?: string;
   obraSocialId?: string | null;
   fechaPago?: string;
-  lugarPago?: string | null;
-  formaPago?: 'efectivo' | 'cheque' | 'acreditacion';
+  formaPago?: 'efectivo' | 'deposito' | 'transferencia' | 'cheque';
   cbu?: string | null;
   banco?: string | null;
   periodoCargas?: string;
@@ -133,7 +133,6 @@ interface FlowHeader {
 
 interface SueldosSimuladorProps {
   clientId: string;
-  profileId: string;
   /** Tras guardar en liquidacion_import_*: período y id del recibo importado */
   onConfirmRecibo?: (periodo: string, reciboImportId: string) => void;
   /** Pre-carga el simulador (desde Recibo → Editar) saltando el formulario. */
@@ -167,7 +166,6 @@ interface SueldosSimuladorProps {
 
 export function SueldosSimulador({
   clientId,
-  profileId,
   onConfirmRecibo,
   initialData,
   onReset,
@@ -217,10 +215,10 @@ export function SueldosSimulador({
   // (es decir, después de que el usuario presionó "Agregar").
   const { data: plantillaManual = [], isLoading: loadingPlantilla } = useQuery(
     {
-      queryKey: ['plantilla-manual-sos', clientId, profileId],
+      queryKey: ['plantilla-manual-sos', clientId],
       queryFn: () =>
         listConceptosPlantillaManualSos({
-          data: { clientId, profileId },
+          data: { clientId },
         }),
       enabled: !!clientId && !!flowHeader,
       staleTime: 10 * 60 * 1000,
@@ -251,7 +249,6 @@ export function SueldosSimulador({
   // El básico de escala se pasa como prop implícito a TablaReciboSos.
   // No se inyecta en la columna Importe — el cálculo ocurre internamente en la grilla.
   const basicoEscala = basicoData?.basico ?? 0;
-  const tipoJornada = basicoData?.tipoJornada ?? 'full_time';
   const esExcluidoConvenio = basicoData?.esExcluidoConvenio ?? false;
   const esValorHoraCat = basicoData?.esValorHoraCat ?? false;
   // La base OS (conceptos 203, 502, etc.) siempre calcula sobre el básico de escala al 100%,
@@ -281,9 +278,9 @@ export function SueldosSimulador({
   }, [fechaIngresoDisplay, flowHeader?.periodo]);
 
   const { data: employerConfig } = useQuery({
-    queryKey: ['payroll-employer-config', clientId, profileId],
-    queryFn: () => getPayrollEmployerConfig({ data: { clientId, profileId } }),
-    enabled: !!clientId && !!profileId,
+    queryKey: ['payroll-employer-config', clientId],
+    queryFn: () => getPayrollEmployerConfig({ data: { clientId } }),
+    enabled: !!clientId,
   });
   const firmaEmpleadorUrl = employerConfig?.firmaEmpleadorUrl ?? null;
 
@@ -292,7 +289,7 @@ export function SueldosSimulador({
       return {
         id: 'pendiente',
         periodo: '',
-        tipo: 'sueldo',
+        tipo: 'mensual',
         haberes: null as string | null,
         noRemunerativo: null as string | null,
         descuentos: null as string | null,
@@ -334,9 +331,14 @@ export function SueldosSimulador({
         ultimoRecibo.conceptos.map((c) => [c.codigo, c])
       );
       const plantillaCodes = new Set(plantillaManual.map((p) => p.codigo));
-      const extras = ultimoRecibo.conceptos.filter(
-        (c) => !plantillaCodes.has(c.codigo)
-      );
+      // `reciboConcepto.conceptoRef` viaja como número; la grilla trabaja con strings.
+      const refATexto = (v: number | null) => (v != null ? String(v) : null);
+      const extras = ultimoRecibo.conceptos
+        .filter((c) => !plantillaCodes.has(c.codigo))
+        .map((c) => ({
+          ...c,
+          importeConceptoNumero: refATexto(c.importeConceptoNumero),
+        }));
       filas = [
         ...plantillaManual.map((p) => {
           const prev = ultimoByCode.get(p.codigo);
@@ -346,7 +348,7 @@ export function SueldosSimulador({
             monto: prev.monto,
             cantidad: prev.cantidad,
             porcentaje: prev.porcentaje,
-            importeConceptoNumero: prev.importeConceptoNumero,
+            importeConceptoNumero: refATexto(prev.importeConceptoNumero),
             importe: prev.importe,
             importeMinimo: prev.importeMinimo,
             importeMaximo: prev.importeMaximo,
@@ -491,7 +493,6 @@ export function SueldosSimulador({
       return guardarReciboDesdeTabla({
         data: {
           clientId,
-          profileId,
           importEmpleadoId: flowHeader.importEmpleadoId,
           periodo: flowHeader.periodo,
           tipoRecibo: flowHeader.tipoRecibo,
@@ -500,7 +501,6 @@ export function SueldosSimulador({
           fechaLiquidacion: flowHeader.fechaLiquidacion,
           obraSocialId: flowHeader.obraSocialId,
           fechaPago: flowHeader.fechaPago,
-          lugarPago: flowHeader.lugarPago,
           formaPago: flowHeader.formaPago,
           cbu: flowHeader.cbu,
           banco: flowHeader.banco,
@@ -648,12 +648,13 @@ export function SueldosSimulador({
       tipoRecibo: string;
       copiarUltimoRecibo: boolean;
       antiguedadAnios: number | null;
+      fechaAlta: string | null;
+      fechaIngreso: string | null;
       quincena: '0' | '1' | '2';
       fechaLiquidacion: string;
       obraSocialId: string | null;
       fechaPago: string;
-      lugarPago: string | null;
-      formaPago: 'efectivo' | 'cheque' | 'acreditacion';
+      formaPago: 'efectivo' | 'deposito' | 'transferencia' | 'cheque';
       cbu: string | null;
       banco: string | null;
       periodoCargas: string;
@@ -683,7 +684,6 @@ export function SueldosSimulador({
         fechaLiquidacion: payload.fechaLiquidacion,
         obraSocialId: payload.obraSocialId,
         fechaPago: payload.fechaPago,
-        lugarPago: payload.lugarPago,
         formaPago: payload.formaPago,
         cbu: payload.cbu,
         banco: payload.banco,
@@ -734,8 +734,9 @@ export function SueldosSimulador({
   const editarDatos = useCallback(() => {
     if (!flowHeader) return;
     const [ano, mes] = flowHeader.periodo.split('-');
+    // `periodoCargas` viaja como 'YYYY-MM' (ver ReciboFormulario.onSubmit).
     const [anoCargas, mesCargas] = flowHeader.periodoCargas
-      ? flowHeader.periodoCargas.split(' / ')
+      ? flowHeader.periodoCargas.split('-')
       : [ano, mes];
     setInitialFormValues({
       importEmpleadoId: flowHeader.importEmpleadoId,
@@ -781,7 +782,6 @@ export function SueldosSimulador({
       {!flowHeader && (
         <ReciboFormulario
           clientId={clientId}
-          profileId={profileId}
           onSuccess={onFormSuccess}
           initialValues={initialFormValues ?? undefined}
         />

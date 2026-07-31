@@ -24,6 +24,8 @@ import {
   montoLiquidadoDesdeEditsSos,
   parseDecimalSos,
 } from '@/lib/sos-recibo-totales';
+import { dateAPeriodo } from '@/lib/periodo';
+import { tipoReciboLabel } from '@/lib/sueldos-labels';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -1474,7 +1476,8 @@ export function TablaReciboSos({
   return (
     <div className="space-y-2">
       <p className="text-xs text-muted-foreground">
-        Período <strong>{recibo.periodo}</strong> · Tipo <strong>{recibo.tipo}</strong> · {pieNota}
+        {/* `recibo.periodo` puede venir del server como date ('YYYY-MM-01'). */}
+        Período <strong>{dateAPeriodo(recibo.periodo)}</strong> · Tipo <strong>{tipoReciboLabel(recibo.tipo)}</strong> · {pieNota}
       </p>
       {guardrails.errors.length > 0 && (
         <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-800">

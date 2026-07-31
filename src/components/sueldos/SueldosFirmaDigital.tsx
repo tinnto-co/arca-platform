@@ -2,7 +2,7 @@
 
 import { useState, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Upload, X, Loader2, PenLine } from 'lucide-react';
+import { Upload, X, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   getPayrollEmployerConfig,
@@ -11,21 +11,19 @@ import {
 
 interface SueldosFirmaDigitalProps {
   clientId: string;
-  profileId: string;
 }
 
 export function SueldosFirmaDigital({
   clientId,
-  profileId,
 }: SueldosFirmaDigitalProps) {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
 
   const { data: config } = useQuery({
-    queryKey: ['payroll-employer-config', clientId, profileId],
-    queryFn: () => getPayrollEmployerConfig({ data: { clientId, profileId } }),
-    enabled: !!clientId && !!profileId,
+    queryKey: ['payroll-employer-config', clientId],
+    queryFn: () => getPayrollEmployerConfig({ data: { clientId } }),
+    enabled: !!clientId,
   });
 
   const firmaUrl = config?.firmaEmpleadorUrl ?? null;
@@ -50,10 +48,10 @@ export function SueldosFirmaDigital({
     try {
       const dataUrl = await readFileAsDataUrl(file);
       await saveFirmaDigitalEmpleador({
-        data: { clientId, profileId, firmaDigitalEmpleador: dataUrl },
+        data: { clientId, firmaDigitalEmpleador: dataUrl },
       });
       await queryClient.invalidateQueries({
-        queryKey: ['payroll-employer-config', clientId, profileId],
+        queryKey: ['payroll-employer-config', clientId],
       });
       toast.success('Firma guardada.');
     } catch {
@@ -68,10 +66,10 @@ export function SueldosFirmaDigital({
     setSaving(true);
     try {
       await saveFirmaDigitalEmpleador({
-        data: { clientId, profileId, firmaDigitalEmpleador: null },
+        data: { clientId, firmaDigitalEmpleador: null },
       });
       await queryClient.invalidateQueries({
-        queryKey: ['payroll-employer-config', clientId, profileId],
+        queryKey: ['payroll-employer-config', clientId],
       });
       toast.success('Firma eliminada.');
     } catch {

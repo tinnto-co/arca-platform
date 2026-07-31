@@ -53,6 +53,7 @@ import {
   puedeLiquidarPeriodo,
 } from '@/lib/payroll-period-rules';
 import { legajoParaMostrar } from '@/lib/legajo';
+import { dateAPeriodo } from '@/lib/periodo';
 import { toTitleCase } from '@/lib/format-name';
 
 const now = new Date();
@@ -80,7 +81,6 @@ function compareLegajoAsc(
 
 interface SueldosDashboardProps {
   clientId: string;
-  profileId: string;
 }
 
 type LiquidacionMasivaResultItem = {
@@ -95,7 +95,6 @@ type LiquidacionMasivaResultItem = {
 
 export function SueldosDashboard({
   clientId,
-  profileId,
 }: SueldosDashboardProps) {
   const queryClient = useQueryClient();
   const [ano, setAno] = useState(PERIODO_INICIAL_ANO);
@@ -107,24 +106,24 @@ export function SueldosDashboard({
     : MESES;
 
   const liquidacionesQuery = useQuery({
-    queryKey: ['liquidaciones', clientId, profileId, periodo],
+    queryKey: ['liquidaciones', clientId, periodo],
     queryFn: () =>
-      listLiquidacionesByPeriodo({ data: { clientId, profileId, periodo } }),
-    enabled: !!clientId && !!profileId,
+      listLiquidacionesByPeriodo({ data: { clientId, periodo } }),
+    enabled: !!clientId,
   });
   const { data: liquidaciones = [], isLoading: loadingLiq } = liquidacionesQuery;
 
   const empleadosQuery = useQuery({
-    queryKey: ['empleados', clientId, profileId],
-    queryFn: () => listEmpleados({ data: { clientId, profileId } }),
-    enabled: !!clientId && !!profileId,
+    queryKey: ['empleados', clientId],
+    queryFn: () => listEmpleados({ data: { clientId } }),
+    enabled: !!clientId,
   });
   const { data: empleados = [] } = empleadosQuery;
 
   const importEmpleadosQuery = useQuery({
-    queryKey: ['import-empleados', clientId, profileId],
-    queryFn: () => listImportEmpleados({ data: { clientId, profileId } }),
-    enabled: !!clientId && !!profileId,
+    queryKey: ['import-empleados', clientId],
+    queryFn: () => listImportEmpleados({ data: { clientId } }),
+    enabled: !!clientId,
   });
   const { data: importEmpleados = [] } = importEmpleadosQuery;
 
@@ -139,14 +138,14 @@ export function SueldosDashboard({
     'Error desconocido';
 
   const { data: convenios = [] } = useQuery({
-    queryKey: ['convenios', clientId, profileId],
-    queryFn: () => listConvenios({ data: { clientId, profileId } }),
-    enabled: !!clientId && !!profileId,
+    queryKey: ['convenios', clientId],
+    queryFn: () => listConvenios({ data: { clientId } }),
+    enabled: !!clientId,
   });
   const { data: profileSueldosConfig } = useQuery({
-    queryKey: ['profile-sueldos-config', clientId, profileId],
-    queryFn: () => getProfileSueldosConfig({ data: { clientId, profileId } }),
-    enabled: !!clientId && !!profileId,
+    queryKey: ['profile-sueldos-config', clientId],
+    queryFn: () => getProfileSueldosConfig({ data: { clientId } }),
+    enabled: !!clientId,
   });
   const usaLsdReferencia = profileSueldosConfig?.usaLsdReferencia ?? false;
 
@@ -154,9 +153,9 @@ export function SueldosDashboard({
     const set = new Set<string>();
     for (const l of liquidaciones) {
       if (
-        l.liquidacion.periodo === periodo &&
-        l.liquidacion.tipo === 'sueldo' &&
-        l.liquidacion.origen === 'generado'
+        dateAPeriodo(l.liquidacion.periodo) === periodo &&
+        l.liquidacion.tipo === 'mensual' &&
+        l.liquidacion.fuente === 'calculo'
       ) {
         set.add(l.empleado.id);
       }
@@ -176,8 +175,8 @@ export function SueldosDashboard({
             return !liquidaciones.some(
               (l) =>
                 l.empleado.id === e.empleado.id &&
-                l.liquidacion.periodo === periodo &&
-                l.liquidacion.tipo === 'sueldo'
+                dateAPeriodo(l.liquidacion.periodo) === periodo &&
+                l.liquidacion.tipo === 'mensual'
             );
           }
         )
@@ -196,7 +195,7 @@ export function SueldosDashboard({
 
   const liquidacionMasiva = useMutation({
     mutationFn: (p: string) =>
-      calcularLiquidacionMasiva({ data: { clientId, profileId, periodo: p } }),
+      calcularLiquidacionMasiva({ data: { clientId, periodo: p } }),
     onSuccess: (payload) => {
       const { summary, results } = payload;
       const { ok, fail, skipped } = summary;
@@ -215,7 +214,7 @@ export function SueldosDashboard({
         toast.warning(`${ok} OK, ${fail} con error. Revisar datos.`);
       }
       queryClient.invalidateQueries({
-        queryKey: ['liquidaciones', clientId, profileId, periodo],
+        queryKey: ['liquidaciones', clientId, periodo],
       });
     },
     onError: () => toast.error('Error al ejecutar liquidación masiva'),
@@ -315,7 +314,7 @@ export function SueldosDashboard({
           : 'No había liquidaciones para eliminar.'
       );
       queryClient.invalidateQueries({
-        queryKey: ['liquidaciones', clientId, profileId, periodo],
+        queryKey: ['liquidaciones', clientId, periodo],
       });
     },
     onError: (e) =>
@@ -328,7 +327,7 @@ export function SueldosDashboard({
       setLiquidacionToDelete(null);
       toast.success('Liquidación eliminada.');
       queryClient.invalidateQueries({
-        queryKey: ['liquidaciones', clientId, profileId, periodo],
+        queryKey: ['liquidaciones', clientId, periodo],
       });
     },
     onError: (e) =>
@@ -349,10 +348,10 @@ export function SueldosDashboard({
     0
   );
   const liquidacionesGeneradas = liquidaciones.filter(
-    (l) => l.liquidacion.origen === 'generado'
+    (l) => l.liquidacion.fuente === 'calculo'
   );
   const liquidacionesImportadasLsd = liquidaciones.filter(
-    (l) => l.liquidacion.origen === 'import'
+    (l) => l.liquidacion.fuente === 'import'
   );
 
   return (

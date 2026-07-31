@@ -54,14 +54,14 @@ import {
 
 interface SueldosEmpleadosProps {
   clientId: string;
-  profileId: string;
   onVerRecibos?: (empleadoId: string) => void;
 }
 
 const FORMAS_PAGO = [
   { value: 'efectivo', label: 'Efectivo' },
   { value: 'cheque', label: 'Cheque' },
-  { value: 'acreditacion', label: 'Acreditación en cuenta' },
+  { value: 'deposito', label: 'Depósito en cuenta' },
+  { value: 'transferencia', label: 'Transferencia' },
 ] as const;
 
 function formaDbToSelect(
@@ -70,13 +70,17 @@ function formaDbToSelect(
   if (v == null || String(v).trim() === '') return 'efectivo';
   const s = String(v).trim().toLowerCase();
   if (s === '1' || s === 'efectivo') return 'efectivo';
-  if (s === '2' || s === 'acreditacion' || s === 'acreditación') {
-    return 'acreditacion';
+  if (
+    s === '2' ||
+    s === 'deposito' ||
+    s === 'acreditacion' ||
+    s === 'acreditación'
+  ) {
+    return 'deposito';
   }
   if (s === '3' || s === 'cheque') return 'cheque';
   if (s === '4' || s === 'otro' || s === 'otros') return 'efectivo';
-  if (s === 'cheque') return 'cheque';
-  if (s === 'acreditacion') return 'acreditacion';
+  if (s === 'transferencia') return 'transferencia';
   return 'efectivo';
 }
 
@@ -141,19 +145,14 @@ function tipoJornadaLabel(v: string | null | undefined): string {
   return v ?? '—';
 }
 
-function codigoConNombre(codigo: string | null | undefined, nombre: string | null | undefined): string | null {
-  const c = codigo?.trim() || null;
-  const n = nombre?.trim() || null;
-  if (c && n) return `${c} - ${n}`;
-  return n ?? c ?? null;
-}
-
 function formaPagoLabel(v: string | null | undefined): string {
   if (!v) return '—';
   const s = v.trim().toLowerCase();
   if (s === '1' || s === 'efectivo') return 'Efectivo';
-  if (s === '2' || s === 'acreditacion' || s === 'acreditación') return 'Acreditación';
+  if (s === '2' || s === 'deposito' || s === 'acreditacion' || s === 'acreditación')
+    return 'Depósito en cuenta';
   if (s === '3' || s === 'cheque') return 'Cheque';
+  if (s === 'transferencia') return 'Transferencia';
   return v;
 }
 
@@ -192,7 +191,6 @@ function EmpleadoDetalleDialog({
   open,
   onClose,
   clientId,
-  profileId,
   convenios,
   onSaved,
 }: {
@@ -200,7 +198,6 @@ function EmpleadoDetalleDialog({
   open: boolean;
   onClose: () => void;
   clientId: string;
-  profileId: string;
   convenios: { id: string; nombre: string }[];
   onSaved: () => void;
 }) {
@@ -212,24 +209,20 @@ function EmpleadoDetalleDialog({
   const [nombre, setNombre] = useState('');
   const [cuil, setCuil] = useState('');
   const [fechaAlta, setFechaAlta] = useState('');
-  const [fechaIngreso, setFechaIngreso] = useState('');
   const [activo, setActivo] = useState(true);
   const [tipoJornada, setTipoJornada] = useState<'full_time' | 'part_time' | 'reducida'>('full_time');
   const [convenioId, setConvenioId] = useState('');
   const [categoriaId, setCategoriaId] = useState('');
   const [categoria, setCategoria] = useState('');
   const [legajo, setLegajo] = useState('');
-  const [lugarPago, setLugarPago] = useState('');
   const [formaPago, setFormaPago] = useState<(typeof FORMAS_PAGO)[number]['value']>('efectivo');
   const [banco, setBanco] = useState('_otro banco');
   const [cbu, setCbu] = useState('');
   // Domicilio y familia
   const [domicilio, setDomicilio] = useState('');
-  const [localidad, setLocalidad] = useState('');
   const [codigoPostal, setCodigoPostal] = useState('');
   const [conyuge, setConyuge] = useState('');
   const [hijos, setHijos] = useState('');
-  const [adherentes, setAdherentes] = useState('');
   // Obra social
   const [obraSocialId, setObraSocialId] = useState('');
   // Provincia
@@ -309,27 +302,19 @@ function EmpleadoDetalleDialog({
         ? (typeof emp.fechaAlta === 'string' ? emp.fechaAlta : (emp.fechaAlta as Date).toISOString()).slice(0, 10)
         : ''
     );
-    setFechaIngreso(
-      emp.fechaIngreso
-        ? (typeof emp.fechaIngreso === 'string' ? emp.fechaIngreso : (emp.fechaIngreso as Date).toISOString()).slice(0, 10)
-        : ''
-    );
     setActivo(emp.activo ?? true);
     setTipoJornada((emp.tipoJornada as 'full_time' | 'part_time' | 'reducida') ?? 'full_time');
     setConvenioId(emp.convenioId ?? '');
     setCategoriaId(emp.categoriaId ?? '');
-    setCategoria(emp.categoria ?? '');
+    setCategoria(emp.categoriaTexto ?? '');
     setLegajo(emp.legajo ?? '');
-    setLugarPago(emp.lugarPago ?? '');
     setFormaPago(formaDbToSelect(emp.formaPago));
     setBanco(emp.banco && emp.banco.trim() !== '' ? emp.banco : '_otro banco');
     setCbu(emp.cbu ?? '');
     setDomicilio(emp.domicilio ?? '');
-    setLocalidad(emp.localidad ?? '');
     setCodigoPostal(emp.codigoPostal ?? '');
     setConyuge(emp.conyuge != null ? String(emp.conyuge) : '');
     setHijos(emp.hijos != null ? String(emp.hijos) : '');
-    setAdherentes(emp.adherentes != null ? String(emp.adherentes) : '');
     setObraSocialId(emp.obraSocialId ?? '');
     setProvinciaId(emp.provinciaId ?? '');
     setModalidadContratacionId(emp.modalidadContratacionId ?? '');
@@ -358,23 +343,19 @@ function EmpleadoDetalleDialog({
           nombre: nombre.trim() || undefined,
           cuilCuil: cuil.trim() || undefined,
           fechaAlta: fechaAlta || undefined,
-          fechaIngreso: fechaIngreso || undefined,
           activo,
           tipoJornada,
           convenioId: convenioId || undefined,
           categoriaId: categoriaId || undefined,
           categoria: categoria.trim() || undefined,
           legajo: legajo.trim() || null,
-          lugarPago: lugarPago.trim() || null,
           formaPago,
           banco: banco.trim() || null,
           cbu: cbu.trim() || null,
           domicilio: domicilio.trim() || null,
-          localidad: localidad.trim() || null,
           codigoPostal: codigoPostal.trim() || null,
           conyuge: conyuge !== '' ? parseInt(conyuge, 10) : null,
           hijos: hijos !== '' ? parseInt(hijos, 10) : null,
-          adherentes: adherentes !== '' ? parseInt(adherentes, 10) : null,
           obraSocialId: obraSocialId || null,
           provinciaId: provinciaId || null,
           modalidadContratacionId: modalidadContratacionId || null,
@@ -390,7 +371,7 @@ function EmpleadoDetalleDialog({
     },
     onSuccess: () => {
       toast.success('Empleado guardado');
-      queryClient.invalidateQueries({ queryKey: ['import-empleados', clientId, profileId] });
+      queryClient.invalidateQueries({ queryKey: ['import-empleados', clientId] });
       queryClient.invalidateQueries({ queryKey: ['empleados', clientId] });
       queryClient.invalidateQueries({ queryKey: ['recibo-detalle'] });
       setIsEditing(false);
@@ -470,7 +451,7 @@ function EmpleadoDetalleDialog({
                     <Campo label="CUIL" value={e.cuil} />
                     <Campo label="Sexo" value={e.sexo} />
                     <Campo label="Fecha de nacimiento" value={formatDate(e.fechaNacimiento)} />
-                    <Campo label="Origen" value={e.origen === 'manual' ? 'Manual' : 'Importado'} />
+                    <Campo label="Origen" value={e.fuente === 'manual' ? 'Manual' : 'Importado'} />
                     <Campo label="Estado" value={e.activo ? 'Activo' : 'Inactivo'} />
                   </>
                 )}
@@ -481,10 +462,6 @@ function EmpleadoDetalleDialog({
                     <div className="space-y-1">
                       <Label>Domicilio</Label>
                       <Input value={domicilio} onChange={(ev) => setDomicilio(ev.target.value)} />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Localidad</Label>
-                      <Input value={localidad} onChange={(ev) => setLocalidad(ev.target.value)} />
                     </div>
                     <div className="space-y-1">
                       <Label>Provincia</Label>
@@ -510,20 +487,14 @@ function EmpleadoDetalleDialog({
                       <Label>Hijos</Label>
                       <Input type="number" min={0} value={hijos} onChange={(ev) => setHijos(ev.target.value)} placeholder="0" />
                     </div>
-                    <div className="space-y-1">
-                      <Label>Adherentes</Label>
-                      <Input type="number" min={0} value={adherentes} onChange={(ev) => setAdherentes(ev.target.value)} placeholder="0" />
-                    </div>
                   </>
                 ) : (
                   <>
                     <Campo label="Domicilio" value={e.domicilio} />
-                    <Campo label="Localidad" value={e.localidad} />
                     <Campo label="Provincia" value={row.provinciaNombre ?? null} />
                     <Campo label="Código postal" value={e.codigoPostal} />
                     <Campo label="Cónyuge" value={e.conyuge != null ? (e.conyuge > 0 ? 'Sí' : 'No') : null} />
                     <Campo label="Hijos" value={e.hijos != null ? String(e.hijos) : null} />
-                    <Campo label="Adherentes" value={e.adherentes != null ? String(e.adherentes) : null} />
                   </>
                 )}
               </Seccion>
@@ -543,10 +514,6 @@ function EmpleadoDetalleDialog({
                       <Input type="date" value={fechaAlta} onChange={(ev) => setFechaAlta(ev.target.value)} />
                     </div>
                     <div className="space-y-1">
-                      <Label>Fecha de ingreso</Label>
-                      <Input type="date" value={fechaIngreso} onChange={(ev) => setFechaIngreso(ev.target.value)} />
-                    </div>
-                    <div className="space-y-1">
                       <Label>Tipo jornada</Label>
                       <Select value={tipoJornada} onValueChange={(v) => setTipoJornada(v as typeof tipoJornada)}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
@@ -561,12 +528,9 @@ function EmpleadoDetalleDialog({
                 ) : (
                   <>
                     <Campo label="Fecha de alta (antigüedad)" value={formatDate(e.fechaAlta)} />
-                    <Campo label="Fecha de ingreso" value={formatDate(e.fechaIngreso)} />
                     <Campo label="Fecha de baja" value={formatDate(e.fechaBaja)} />
                     <Campo label="Tipo jornada" value={tipoJornadaLabel(e.tipoJornada)} />
-                    <Campo label="Modo contrato" value={e.modoContrato} />
                     <Campo label="Tarea / Puesto" value={e.tarea} />
-                    <Campo label="Tipo empleador" value={e.tipoEmpleador} />
                   </>
                 )}
               </Seccion>
@@ -612,7 +576,7 @@ function EmpleadoDetalleDialog({
                   <>
                     <Campo label="Convenio" value={row.convenioNombre ? formatTitleCaseDisplay(row.convenioNombre) : null} />
                     <Campo label="Categoría (sistema)" value={row.categoriaNombre ? formatTitleCaseDisplay(row.categoriaNombre) : null} />
-                    <Campo label="Puesto" value={e.categoria ? formatTitleCaseDisplay(e.categoria) : null} />
+                    <Campo label="Puesto" value={e.categoriaTexto ? formatTitleCaseDisplay(e.categoriaTexto) : null} />
                   </>
                 )}
               </Seccion>
@@ -636,7 +600,6 @@ function EmpleadoDetalleDialog({
                 <Campo label="Valor hora override" value={e.valorHora ? `$${Number(e.valorHora).toLocaleString('es-AR', { minimumFractionDigits: 2 })}` : null} />
                 <Campo label="Horas mensuales" value={e.horasMensualesNormales != null ? String(e.horasMensualesNormales) : null} />
                 <Campo label="Días mensuales" value={e.diasMensualesNormales != null ? String(e.diasMensualesNormales) : null} />
-                <Campo label="Aporte adicional SS" value={e.porcentajeAporteAdicionalSS ? `${Number(e.porcentajeAporteAdicionalSS)}%` : null} />
               </Seccion>
             </TabsContent>
 
@@ -667,10 +630,6 @@ function EmpleadoDetalleDialog({
                 {isEditing ? (
                   <>
                     <div className="space-y-1">
-                      <Label htmlFor="det-lugar">Lugar de pago</Label>
-                      <Input id="det-lugar" value={lugarPago} onChange={(ev) => setLugarPago(ev.target.value)} maxLength={80} placeholder="Ej. CABA" />
-                    </div>
-                    <div className="space-y-1">
                       <Label>Forma de pago</Label>
                       <Select value={formaPago} onValueChange={(v) => setFormaPago(v as typeof formaPago)}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
@@ -692,7 +651,7 @@ function EmpleadoDetalleDialog({
                         </SelectContent>
                       </Select>
                     </div>
-                    {formaPago === 'acreditacion' && (
+                    {(formaPago === 'deposito' || formaPago === 'transferencia') && (
                       <div className="space-y-1">
                         <Label htmlFor="det-cbu">CBU / cuenta</Label>
                         <Input id="det-cbu" value={cbu} onChange={(ev) => setCbu(ev.target.value)} maxLength={22} className="font-mono" placeholder="22 dígitos" />
@@ -702,7 +661,6 @@ function EmpleadoDetalleDialog({
                 ) : (
                   <>
                     <Campo label="Forma de pago" value={formaPagoLabel(e.formaPago)} />
-                    <Campo label="Lugar de pago" value={e.lugarPago} />
                     <Campo label="Banco" value={e.banco && e.banco !== '_otro banco' ? e.banco : null} />
                     <Campo label="CBU" value={e.cbu} />
                   </>
@@ -790,12 +748,12 @@ function EmpleadoDetalleDialog({
                   </>
                 ) : (
                   <>
-                    <Campo label="Modalidad contratación" value={codigoConNombre(e.codigoModalidadContratacion, row.modalidadNombre)} />
-                    <Campo label="Situación" value={codigoConNombre(e.codigoSituacion, row.situacionNombre)} />
-                    <Campo label="Zona" value={codigoConNombre(e.codigoZona, row.zonaNombre)} />
-                    <Campo label="Condición" value={codigoConNombre(e.codigoCondicion, row.condicionNombre)} />
-                    <Campo label="Actividad" value={codigoConNombre(e.codigoActividad, row.actividadNombre)} />
-                    <Campo label="Siniestrado" value={codigoConNombre(e.codigoSiniestrado, row.siniestradoNombre)} />
+                    <Campo label="Modalidad contratación" value={row.modalidadNombre ?? null} />
+                    <Campo label="Situación" value={row.situacionNombre ?? null} />
+                    <Campo label="Zona" value={row.zonaNombre ?? null} />
+                    <Campo label="Condición" value={row.condicionNombre ?? null} />
+                    <Campo label="Actividad" value={row.actividadNombre ?? null} />
+                    <Campo label="Siniestrado" value={row.siniestradoNombre ?? null} />
                   </>
                 )}
               </Seccion>
@@ -829,13 +787,11 @@ function NuevoEmpleadoDialog({
   open,
   onClose,
   clientId,
-  profileId,
   convenios,
 }: {
   open: boolean;
   onClose: () => void;
   clientId: string;
-  profileId: string;
   convenios: { id: string; nombre: string }[];
 }) {
   const queryClient = useQueryClient();
@@ -848,17 +804,13 @@ function NuevoEmpleadoDialog({
   const [convenioId, setConvenioId] = useState('');
   const [categoriaId, setCategoriaId] = useState('');
   const [legajo, setLegajo] = useState('');
-  const [modoContrato, setModoContrato] = useState('');
-  const [lugarPago, setLugarPago] = useState('');
   const [formaPago, setFormaPago] = useState<(typeof FORMAS_PAGO)[number]['value']>('efectivo');
   const [banco, setBanco] = useState('_otro banco');
   const [cbu, setCbu] = useState('');
   const [domicilio, setDomicilio] = useState('');
-  const [localidad, setLocalidad] = useState('');
   const [codigoPostal, setCodigoPostal] = useState('');
   const [conyuge, setConyuge] = useState('');
   const [hijos, setHijos] = useState('');
-  const [adherentes, setAdherentes] = useState('');
   const [obraSocialId, setObraSocialId] = useState('');
   const [provinciaId, setProvinciaId] = useState('');
   const [modalidadContratacionId, setModalidadContratacionId] = useState('');
@@ -872,10 +824,10 @@ function NuevoEmpleadoDialog({
   const resetForm = () => {
     setNombre(''); setCuil(''); setFechaAlta(''); setFechaBaja('');
     setTipoJornada('full_time'); setConvenioId(''); setCategoriaId('');
-    setLegajo(''); setModoContrato(''); setLugarPago('');
+    setLegajo('');
     setFormaPago('efectivo'); setBanco('_otro banco'); setCbu('');
-    setDomicilio(''); setLocalidad(''); setCodigoPostal('');
-    setConyuge(''); setHijos(''); setAdherentes('');
+    setDomicilio(''); setCodigoPostal('');
+    setConyuge(''); setHijos('');
     setObraSocialId(''); setProvinciaId('');
     setModalidadContratacionId(''); setSituacionId('');
     setZonaId(''); setCondicionId(''); setActividadId('');
@@ -945,26 +897,21 @@ function NuevoEmpleadoDialog({
       createManualEmpleado({
         data: {
           clientId,
-          profileId,
           cuil: cuil.trim(),
           legajo: legajo.trim(),
           nombre: nombre.trim(),
           fechaAlta: fechaAlta || undefined,
           fechaBaja: fechaBaja || undefined,
-          modoContrato: modoContrato || undefined,
           tipoJornada,
           convenioId: convenioId || undefined,
           categoriaId: categoriaId || undefined,
           formaPago,
           banco: banco !== '_otro banco' ? banco : undefined,
           cbu: cbu || undefined,
-          lugarPago: lugarPago || undefined,
           domicilio: domicilio || undefined,
-          localidad: localidad || undefined,
           codigoPostal: codigoPostal || undefined,
           conyuge: conyuge !== '' ? parseInt(conyuge, 10) : undefined,
           hijos: hijos !== '' ? parseInt(hijos, 10) : undefined,
-          adherentes: adherentes !== '' ? parseInt(adherentes, 10) : undefined,
           obraSocialId: obraSocialId || undefined,
           provinciaId: provinciaId || undefined,
           modalidadContratacionId: modalidadContratacionId || undefined,
@@ -978,7 +925,7 @@ function NuevoEmpleadoDialog({
       }),
     onSuccess: () => {
       toast.success('Empleado creado');
-      queryClient.invalidateQueries({ queryKey: ['import-empleados', clientId, profileId] });
+      queryClient.invalidateQueries({ queryKey: ['import-empleados', clientId] });
       queryClient.invalidateQueries({ queryKey: ['empleados', clientId] });
       onClose();
     },
@@ -1027,10 +974,6 @@ function NuevoEmpleadoDialog({
                   <Input value={domicilio} onChange={(ev) => setDomicilio(ev.target.value)} />
                 </div>
                 <div className="space-y-1">
-                  <Label>Localidad</Label>
-                  <Input value={localidad} onChange={(ev) => setLocalidad(ev.target.value)} />
-                </div>
-                <div className="space-y-1">
                   <Label>Provincia</Label>
                   <Select value={provinciaId || '_ninguna'} onValueChange={(v) => setProvinciaId(v === '_ninguna' ? '' : v)}>
                     <SelectTrigger><SelectValue placeholder="Sin provincia" /></SelectTrigger>
@@ -1053,10 +996,6 @@ function NuevoEmpleadoDialog({
                 <div className="space-y-1">
                   <Label>Hijos</Label>
                   <Input type="number" min={0} value={hijos} onChange={(ev) => setHijos(ev.target.value)} placeholder="0" />
-                </div>
-                <div className="space-y-1">
-                  <Label>Adherentes</Label>
-                  <Input type="number" min={0} value={adherentes} onChange={(ev) => setAdherentes(ev.target.value)} placeholder="0" />
                 </div>
               </Seccion>
             </TabsContent>
@@ -1086,10 +1025,6 @@ function NuevoEmpleadoDialog({
                       <SelectItem value="reducida">Reducida</SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
-                <div className="space-y-1">
-                  <Label>Modo contrato</Label>
-                  <Input value={modoContrato} onChange={(ev) => setModoContrato(ev.target.value)} placeholder="Tiempo indeterminado" />
                 </div>
               </Seccion>
               <Seccion title="Convenio y categoría">
@@ -1138,10 +1073,6 @@ function NuevoEmpleadoDialog({
               </Seccion>
               <Seccion title="Datos de pago">
                 <div className="space-y-1">
-                  <Label>Lugar de pago</Label>
-                  <Input value={lugarPago} onChange={(ev) => setLugarPago(ev.target.value)} maxLength={80} placeholder="Ej. CABA" />
-                </div>
-                <div className="space-y-1">
                   <Label>Forma de pago</Label>
                   <Select value={formaPago} onValueChange={(v) => setFormaPago(v as typeof formaPago)}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
@@ -1163,7 +1094,7 @@ function NuevoEmpleadoDialog({
                     </SelectContent>
                   </Select>
                 </div>
-                {formaPago === 'acreditacion' && (
+                {(formaPago === 'deposito' || formaPago === 'transferencia') && (
                   <div className="space-y-1">
                     <Label>CBU / cuenta</Label>
                     <Input value={cbu} onChange={(ev) => setCbu(ev.target.value)} maxLength={22} className="font-mono" placeholder="22 dígitos" />
@@ -1277,7 +1208,6 @@ function NuevoEmpleadoDialog({
 
 export function SueldosEmpleados({
   clientId,
-  profileId,
   onVerRecibos,
 }: SueldosEmpleadosProps) {
   const queryClient = useQueryClient();
@@ -1288,9 +1218,9 @@ export function SueldosEmpleados({
   const [detalleRow, setDetalleRow] = useState<EmpleadoRow | null>(null);
 
   const importEmpleadosQuery = useQuery({
-    queryKey: ['import-empleados', clientId, profileId],
-    queryFn: () => listImportEmpleados({ data: { clientId, profileId } }),
-    enabled: !!clientId && !!profileId,
+    queryKey: ['import-empleados', clientId],
+    queryFn: () => listImportEmpleados({ data: { clientId } }),
+    enabled: !!clientId,
   });
   const { data: rows = [], isLoading } = importEmpleadosQuery;
 
@@ -1321,17 +1251,17 @@ export function SueldosEmpleados({
   };
 
   const { data: convenios = [] } = useQuery({
-    queryKey: ['convenios', clientId, profileId],
-    queryFn: () => listConvenios({ data: { clientId, profileId } }),
-    enabled: !!clientId && !!profileId,
+    queryKey: ['convenios', clientId],
+    queryFn: () => listConvenios({ data: { clientId } }),
+    enabled: !!clientId,
   });
 
   const sincronizar = useMutation({
     mutationFn: () =>
-      sincronizarConveniosEmpleados({ data: { clientId, profileId } }),
+      sincronizarConveniosEmpleados({ data: { clientId } }),
     onSuccess: (result) => {
       toast.success(result.mensaje);
-      queryClient.invalidateQueries({ queryKey: ['import-empleados', clientId, profileId] });
+      queryClient.invalidateQueries({ queryKey: ['import-empleados', clientId] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Error al sincronizar'),
   });
@@ -1351,7 +1281,7 @@ export function SueldosEmpleados({
       setPendingLiqFinal({ nombre, fechaBaja: variables.fechaBaja });
       setDialogBaja(null);
       setFechaBajaInput('');
-      queryClient.invalidateQueries({ queryKey: ['import-empleados', clientId, profileId] });
+      queryClient.invalidateQueries({ queryKey: ['import-empleados', clientId] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Error'),
   });
@@ -1361,7 +1291,7 @@ export function SueldosEmpleados({
       updateEmpleado({ data: { id, clientId, fechaBaja: null, activo: true } }),
     onSuccess: () => {
       toast.success('Empleado reactivado');
-      queryClient.invalidateQueries({ queryKey: ['import-empleados', clientId, profileId] });
+      queryClient.invalidateQueries({ queryKey: ['import-empleados', clientId] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Error'),
   });
@@ -1372,26 +1302,26 @@ export function SueldosEmpleados({
     onSuccess: () => {
       toast.success('Empleado eliminado');
       queryClient.invalidateQueries({
-        queryKey: ['import-empleados', clientId, profileId],
+        queryKey: ['import-empleados', clientId],
       });
     },
     onError: (e) => toast.error(e.message),
   });
 
   const { data: employerConfig } = useQuery({
-    queryKey: ['payroll-employer-config', clientId, profileId],
-    queryFn: () => getPayrollEmployerConfig({ data: { clientId, profileId } }),
-    enabled: !!clientId && !!profileId,
+    queryKey: ['payroll-employer-config', clientId],
+    queryFn: () => getPayrollEmployerConfig({ data: { clientId } }),
+    enabled: !!clientId,
   });
   const plantillaEmpleadoId = employerConfig?.plantillaEmpleadoId ?? null;
 
   const setPlantilla = useMutation({
     mutationFn: (empleadoId: string | null) =>
-      setPlantillaEmpleado({ data: { clientId, profileId, empleadoId } }),
+      setPlantillaEmpleado({ data: { clientId, empleadoId } }),
     onSuccess: (_, empleadoId) => {
       toast.success(empleadoId ? 'Plantilla base actualizada' : 'Plantilla base eliminada');
-      queryClient.invalidateQueries({ queryKey: ['payroll-employer-config', clientId, profileId] });
-      queryClient.invalidateQueries({ queryKey: ['plantilla-manual-sos', clientId, profileId] });
+      queryClient.invalidateQueries({ queryKey: ['payroll-employer-config', clientId] });
+      queryClient.invalidateQueries({ queryKey: ['plantilla-manual-sos', clientId] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Error'),
   });
@@ -1537,7 +1467,7 @@ export function SueldosEmpleados({
             paginaRows.map((r) => {
               const e = r.empleado;
               const baja = e.fechaBaja != null;
-              const esManual = e.origen === 'manual';
+              const esManual = e.fuente === 'manual';
               return (
                 <div
                   key={e.id}
@@ -1588,7 +1518,7 @@ export function SueldosEmpleados({
                   >
                     {r.categoriaNombre
                       ? formatTitleCaseDisplay(r.categoriaNombre)
-                      : formatTitleCaseDisplay(e.categoria)}
+                      : formatTitleCaseDisplay(e.categoriaTexto)}
                   </span>
 
                   {/* Estado */}
@@ -1744,7 +1674,6 @@ export function SueldosEmpleados({
         open={open}
         onClose={() => setOpen(false)}
         clientId={clientId}
-        profileId={profileId}
         convenios={convenios}
       />
 
@@ -1753,7 +1682,6 @@ export function SueldosEmpleados({
         open={detalleRow !== null}
         onClose={() => setDetalleRow(null)}
         clientId={clientId}
-        profileId={profileId}
         convenios={convenios}
         onSaved={() => setDetalleRow(null)}
       />
@@ -1792,7 +1720,6 @@ export function SueldosEmpleados({
       {showLiqFinalPost && (
         <GenerarLiqFinalDialog
           clientId={clientId}
-          profileId={profileId}
           periodo={showLiqFinalPost.periodo}
           onClose={() => setShowLiqFinalPost(null)}
         />

@@ -31,7 +31,9 @@ import {
   getLiqFinalPreview,
   generarLiqFinalMasivo,
 } from '@/actions/sueldos';
-import { getClient } from '@/actions/profile';
+import { getCliente } from '@/actions/client';
+import { dateAPeriodo } from '@/lib/periodo';
+import { tipoReciboLabel, quincenaLabel } from '@/lib/sueldos-labels';
 import { legajoParaMostrar } from '@/lib/legajo';
 import { toTitleCase } from '@/lib/format-name';
 import { Button } from '@/components/ui/button';
@@ -46,7 +48,6 @@ const MESES = Array.from({ length: 12 }, (_, i) => ({
 
 interface SueldosReciboProps {
   clientId: string;
-  profileId: string;
   initialEmpleadoId?: string;
   /** Período en formato YYYY-MM para pre-setear los filtros al navegar desde "Nuevo recibo" */
   initialPeriodo?: string;
@@ -76,26 +77,6 @@ interface SueldosReciboProps {
   }) => void;
 }
 
-function tipoReciboLabel(tipo: string | null): string {
-  if (!tipo) return 'Sueldo';
-  const byTipo: Record<string, string> = {
-    sueldo: 'Sueldo',
-    anticipo: 'Anticipo',
-    SAC: 'SAC',
-    vacaciones: 'Vacaciones',
-    despido: 'Liquidación final',
-    comisiones: 'Comisiones',
-    desempleo: 'Fondo de desempleo',
-    varios: 'Varios',
-  };
-  return byTipo[tipo] ?? tipo;
-}
-
-function quincenaLabel(q: string | null): string {
-  if (q === '1') return '1ra quincena';
-  if (q === '2') return '2da quincena';
-  return 'Mes completo';
-}
 
 function moneyFmt(v: string | number | null | undefined): string {
   if (v === null || v === undefined || v === '') return '—';
@@ -157,7 +138,11 @@ function dateFmt(d: Date | string | null | undefined): string {
   if (d === null || d === undefined || d === '') return '—';
   const date = d instanceof Date ? d : new Date(d);
   if (Number.isNaN(date.getTime())) return '—';
-  return format(date, 'dd/MM/yyyy');
+  // Las columnas `date` llegan como 'YYYY-MM-DD' y `new Date()` las interpreta
+  // como UTC: formatear en local restaría un día en AR (UTC-3).
+  const dia = String(date.getUTCDate()).padStart(2, '0');
+  const mes = String(date.getUTCMonth() + 1).padStart(2, '0');
+  return `${dia}/${mes}/${date.getUTCFullYear()}`;
 }
 
 function formaPagoLabel(v: string | null | undefined): string {
@@ -165,15 +150,16 @@ function formaPagoLabel(v: string | null | undefined): string {
   const s = String(v).trim().toLowerCase();
   /** Códigos SOS / import (1–4), por si el dato llega sin normalizar del servidor. */
   if (s === '1' || s === 'efectivo') return 'Efectivo';
-  if (s === '2' || s === 'acreditacion' || s === 'acreditación') {
-    return 'Acreditación';
+  if (s === '2' || s === 'deposito' || s === 'depósito') {
+    return 'Depósito en cuenta';
   }
   if (s === '3' || s === 'cheque') return 'Cheque';
   if (s === '4' || s === 'otro' || s === 'otros') return 'Otro';
   const by: Record<string, string> = {
     efectivo: 'Efectivo',
+    deposito: 'Depósito en cuenta',
+    transferencia: 'Transferencia',
     cheque: 'Cheque',
-    acreditacion: 'Acreditación',
   };
   return by[s] ?? String(v);
 }
@@ -215,8 +201,9 @@ function pickCabecera(liquidacion: Record<string, unknown>) {
     valorCabeceraLegible(liquidacion.forma_pago) ??
     null;
   const cbuVal = valorCabeceraLegible(liquidacion.cbu);
-  /** Si falta fecha de pago pero hay fecha de liquidación, mostrar esa. */
-  const fechaPagoParaMostrar = fechaPagoRaw ?? fechaLiqRaw;
+  /** Si falta fecha de pago pero hay fecha de liquidación, mostrar esa.
+   *  Las columnas `date` de Drizzle llegan como string 'YYYY-MM-DD'. */
+  const fechaPagoParaMostrar = strU(fechaPagoRaw) ?? strU(fechaLiqRaw) ?? null;
   return {
     lugarPago: lugar,
     banco: bancoVal,
@@ -327,7 +314,8 @@ function clasificarTipo(tipo: string | null | undefined): ConceptoTipo {
  */
 function columnaConcepto(d: {
   tipoColumna?: ConceptoTipo;
-  detalle?: { tipoLiquidacion?: string | null };
+  /** `recibo_concepto.tipo` (antes `tipoLiquidacion` en la línea del recibo). */
+  detalle?: { tipo?: string | null };
   concepto?: { tipo?: string | null } | null;
 }): ConceptoTipo {
   if (
@@ -338,7 +326,7 @@ function columnaConcepto(d: {
   ) {
     return d.tipoColumna;
   }
-  const tl = d.detalle?.tipoLiquidacion;
+  const tl = d.detalle?.tipo;
   if (
     tl === 'remunerativo' ||
     tl === 'no_remunerativo' ||
@@ -370,7 +358,7 @@ function DocCell({
   );
 }
 
-export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialPeriodo, onEditRecibo }: SueldosReciboProps) {
+export function SueldosRecibo({ clientId, initialEmpleadoId, initialPeriodo, onEditRecibo }: SueldosReciboProps) {
   const [maxAno, maxMes] = getPeriodoMaxLiquidable().split('-');
   const [ano, setAno] = useState(() => {
     const p = initialPeriodo ?? getPeriodoMesAnterior();
@@ -426,15 +414,15 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
   }, []);
 
   const { data: clientData } = useQuery({
-    queryKey: ['client', profileId],
-    queryFn: () => getClient({ data: { id: profileId } }),
-    enabled: !!profileId,
+    queryKey: ['client', clientId],
+    queryFn: () => getCliente({ data: { id: clientId } }),
+    enabled: !!clientId,
   });
 
   const { data: empleadosRaw = [] } = useQuery({
-    queryKey: ['import-empleados', clientId, profileId],
-    queryFn: () => listImportEmpleados({ data: { clientId, profileId } }),
-    enabled: !!clientId && !!profileId,
+    queryKey: ['import-empleados', clientId],
+    queryFn: () => listImportEmpleados({ data: { clientId } }),
+    enabled: !!clientId,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -445,26 +433,25 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
   );
 
   const { data: recibosRaw = [], isLoading: loadingList } = useQuery({
-    queryKey: ['liquidaciones-filtros', clientId, profileId, ano, periodoSeleccion, empleadoId],
+    queryKey: ['liquidaciones-filtros', clientId, ano, periodoSeleccion, empleadoId],
     queryFn: () =>
       listLiquidacionesByFiltros({
         data: {
           clientId,
-          profileId,
           ...(periodo ? { periodo } : {}),
           ...(semestre && ano ? { ano, semestre } : {}),
           ...(empleadoId ? { importEmpleadoId: empleadoId } : {}),
         },
       }),
-    enabled: !!clientId && !!profileId && hayFiltro,
+    enabled: !!clientId && hayFiltro,
     refetchOnMount: 'always',
   });
 
   // Filtros client-side: quincena y tipo de recibo
   const recibos = useMemo(() => {
     let list = recibosRaw;
-    if (quincenaFiltro) list = list.filter((r) => r.liquidacion.quincena === quincenaFiltro);
-    if (tipoFiltro) list = list.filter((r) => (r.liquidacion.tipo ?? 'sueldo') === tipoFiltro);
+    if (quincenaFiltro) list = list.filter((r) => String(r.liquidacion.quincena) === quincenaFiltro);
+    if (tipoFiltro) list = list.filter((r) => r.liquidacion.tipo === tipoFiltro);
     return list;
   }, [recibosRaw, quincenaFiltro, tipoFiltro]);
 
@@ -476,9 +463,9 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
   });
 
   const { data: employerConfig } = useQuery({
-    queryKey: ['payroll-employer-config', clientId, profileId],
-    queryFn: () => getPayrollEmployerConfig({ data: { clientId, profileId } }),
-    enabled: !!clientId && !!profileId,
+    queryKey: ['payroll-employer-config', clientId],
+    queryFn: () => getPayrollEmployerConfig({ data: { clientId } }),
+    enabled: !!clientId,
   });
   const firmaEmpleadorUrl = employerConfig?.firmaEmpleadorUrl ?? null;
 
@@ -627,14 +614,15 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__all">Todos los tipos</SelectItem>
-                <SelectItem value="sueldo">Sueldo</SelectItem>
-                <SelectItem value="SAC">SAC</SelectItem>
+                <SelectItem value="mensual">Sueldo</SelectItem>
+                <SelectItem value="quincenal">Quincenal</SelectItem>
+                <SelectItem value="sac">SAC</SelectItem>
                 <SelectItem value="vacaciones">Vacaciones</SelectItem>
                 <SelectItem value="anticipo">Anticipo</SelectItem>
-                <SelectItem value="despido">Liquidación final</SelectItem>
+                <SelectItem value="liquidacion_final">Liquidación final</SelectItem>
                 <SelectItem value="comisiones">Comisiones</SelectItem>
-                <SelectItem value="desempleo">Fondo de desempleo</SelectItem>
-                <SelectItem value="varios">Varios</SelectItem>
+                <SelectItem value="fondo_desempleo">Fondo de desempleo</SelectItem>
+                <SelectItem value="otros">Varios</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -747,8 +735,8 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
                         )}
                       </div>
                       <div className="font-[family-name:var(--ff-mono)] text-[12px] text-[#9B9CA3] whitespace-nowrap">
-                        {r.liquidacion.periodo}
-                        {r.liquidacion.tipo && r.liquidacion.tipo !== 'sueldo' ? (
+                        {dateAPeriodo(r.liquidacion.periodo)}
+                        {r.liquidacion.tipo && r.liquidacion.tipo !== 'mensual' ? (
                           <div className="text-[11px]">{tipoReciboLabel(r.liquidacion.tipo)}</div>
                         ) : null}
                         {r.liquidacion.quincena ? (
@@ -783,14 +771,18 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
                                 reciboId: r.liquidacion.id,
                                 importEmpleadoId: r.empleado.id,
                                 empleadoNombre: r.empleado.nombre,
-                                periodo: r.liquidacion.periodo,
-                                tipoRecibo: r.liquidacion.tipo ?? 'sueldo',
-                                quincena: r.liquidacion.quincena,
-                                fechaLiquidacion: r.liquidacion.fecha ? (r.liquidacion.fecha instanceof Date ? r.liquidacion.fecha.toISOString().slice(0, 10) : String(r.liquidacion.fecha).slice(0, 10)) : null,
-                                fechaPago: r.liquidacion.fechaPago ? (r.liquidacion.fechaPago instanceof Date ? r.liquidacion.fechaPago.toISOString().slice(0, 10) : String(r.liquidacion.fechaPago).slice(0, 10)) : null,
+                                // El formulario habla 'YYYY-MM'; en BD el período es un `date`.
+                                periodo: dateAPeriodo(r.liquidacion.periodo),
+                                tipoRecibo: r.liquidacion.tipo,
+                                quincena: String(r.liquidacion.quincena),
+                                // Las columnas `date` ya llegan como string 'YYYY-MM-DD'.
+                                fechaLiquidacion: r.liquidacion.fecha?.slice(0, 10) ?? null,
+                                fechaPago: r.liquidacion.fechaPago?.slice(0, 10) ?? null,
                                 obraSocialId: r.liquidacion.obraSocialId,
-                                periodoCargas: r.liquidacion.periodoCargas,
-                                fechaDepositoCargas: r.liquidacion.fechaDepositoCargas ? (r.liquidacion.fechaDepositoCargas instanceof Date ? r.liquidacion.fechaDepositoCargas.toISOString().slice(0, 10) : String(r.liquidacion.fechaDepositoCargas).slice(0, 10)) : null,
+                                periodoCargas: r.liquidacion.periodoCargas
+                                  ? dateAPeriodo(r.liquidacion.periodoCargas)
+                                  : null,
+                                fechaDepositoCargas: r.liquidacion.fechaDepositoCargas?.slice(0, 10) ?? null,
                                 observacionInterna: r.liquidacion.observacionInterna,
                                 observacionRecibo: r.liquidacion.observacionRecibo,
                                 situacionRevista1Id: r.liquidacion.situacionRevista1Id,
@@ -827,7 +819,6 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
       {showSacDialog && ano && (esMesSAC) && (
         <GenerarSacDialog
           clientId={clientId}
-          profileId={profileId}
           periodo={`${ano}-${mes}`}
           onClose={() => setShowSacDialog(false)}
         />
@@ -837,7 +828,6 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
       {showLiqFinalDialog && ano && mes && (
         <GenerarLiqFinalDialog
           clientId={clientId}
-          profileId={profileId}
           periodo={`${ano}-${mes}`}
           onClose={() => setShowLiqFinalDialog(false)}
         />
@@ -848,7 +838,6 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
         open={showImprimir}
         onOpenChange={setShowImprimir}
         clientId={clientId}
-        profileId={profileId}
         clientData={clientData ?? null}
         firmaEmpleadorUrl={firmaEmpleadorUrl}
         empleados={empleados}
@@ -886,8 +875,12 @@ function moneyFmtSac(v: number): string {
  *  Si ingresó antes del inicio del semestre devuelve 180 (semestre completo).
  *  Si ingresó dentro del semestre devuelve los días desde el ingreso hasta el último día del semestre.
  */
-function sugerirDiasSemestre(fechaIngreso: Date | null, periodo: string): number {
-  if (!fechaIngreso) return 180;
+/** `fechaIngreso` es una columna `date`: llega como string 'YYYY-MM-DD'. */
+function sugerirDiasSemestre(fechaIngresoStr: string | null, periodo: string): number {
+  if (!fechaIngresoStr) return 180;
+  const [iy, im, id] = fechaIngresoStr.slice(0, 10).split('-').map(Number);
+  const fechaIngreso = new Date(iy!, (im ?? 1) - 1, id ?? 1);
+  if (Number.isNaN(fechaIngreso.getTime())) return 180;
   const [yearStr, monthStr] = periodo.split('-');
   const year = parseInt(yearStr!, 10);
   const month = parseInt(monthStr!, 10);
@@ -908,12 +901,10 @@ function calcularSacBase(mejorMonto: number, dias: number): number {
 
 function GenerarSacDialog({
   clientId,
-  profileId,
   periodo,
   onClose,
 }: {
   clientId: string;
-  profileId: string;
   periodo: string;
   onClose: () => void;
 }) {
@@ -923,8 +914,8 @@ function GenerarSacDialog({
   const [diasMap, setDiasMap] = useState<Record<string, number>>({});
 
   const { data: preview = [], isLoading } = useQuery({
-    queryKey: ['sac-preview', clientId, profileId, periodo],
-    queryFn: () => getSacPreview({ data: { clientId, profileId, periodo } }),
+    queryKey: ['sac-preview', clientId, periodo],
+    queryFn: () => getSacPreview({ data: { clientId, periodo } }),
   });
 
   // Pre-seleccionar y auto-sugerir días al cargar
@@ -952,7 +943,7 @@ function GenerarSacDialog({
           sacBase: calcularSacBase(p.mejorMonto, diasMap[p.empleadoId] ?? 180),
           dias: diasMap[p.empleadoId] ?? 180,
         }));
-      return generarSacsMasivo({ data: { clientId, profileId, periodo, items } });
+      return generarSacsMasivo({ data: { clientId, periodo, items } });
     },
     onSuccess: (result) => {
       toast.success(`${result.generados} recibos SAC generados correctamente.`);
@@ -1129,12 +1120,10 @@ function diasDesdefechaBaja(fecha: string): number {
 
 export function GenerarLiqFinalDialog({
   clientId,
-  profileId,
   periodo,
   onClose,
 }: {
   clientId: string;
-  profileId: string;
   periodo: string;
   onClose: () => void;
 }) {
@@ -1144,8 +1133,8 @@ export function GenerarLiqFinalDialog({
   const [fechaBajaMap, setFechaBajaMap] = useState<Record<string, string>>({});
 
   const { data: preview = [], isLoading } = useQuery({
-    queryKey: ['liq-final-preview', clientId, profileId, periodo],
-    queryFn: () => getLiqFinalPreview({ data: { clientId, profileId, periodo } }),
+    queryKey: ['liq-final-preview', clientId, periodo],
+    queryFn: () => getLiqFinalPreview({ data: { clientId, periodo } }),
   });
 
   // Pre-seleccionar empleados sin liq. final y asignar fecha de baja por defecto
@@ -1165,7 +1154,6 @@ export function GenerarLiqFinalDialog({
       generarLiqFinalMasivo({
         data: {
           clientId,
-          profileId,
           periodo,
           items: seleccionados.map((p) => {
             const fecha = fechaBajaMap[p.empleadoId] ?? defaultFecha;
@@ -1181,7 +1169,7 @@ export function GenerarLiqFinalDialog({
       toast.success(`${result.generados} recibos de Liquidación Final generados.`);
       queryClient.invalidateQueries({ queryKey: ['liquidaciones-filtros'] });
       queryClient.invalidateQueries({ queryKey: ['import-recibos'] });
-      queryClient.invalidateQueries({ queryKey: ['import-empleados', clientId, profileId] });
+      queryClient.invalidateQueries({ queryKey: ['import-empleados', clientId] });
       onClose();
     },
     onError: (err) => toast.error((err as Error).message ?? 'Error al generar las liquidaciones finales.'),
@@ -1312,7 +1300,7 @@ export function GenerarLiqFinalDialog({
 type DetalleType = NonNullable<
   Awaited<ReturnType<typeof getReciboDetalle>>
 >;
-type ClientData = Awaited<ReturnType<typeof getClient>>;
+type ClientData = Awaited<ReturnType<typeof getCliente>>;
 
 function ReciboDocumento({
   detalle,
@@ -1339,7 +1327,7 @@ function ReciboDocumento({
   const basicoLiquidacionNum = Number(liquidacion.basico ?? 0);
   const basicoDetalleNum = basicoDesdeDetalle(detalles);
   const esGerente =
-    esCategoriaGerente(categoria?.nombre) || esCategoriaGerente(empleado.categoria);
+    esCategoriaGerente(categoria?.nombre) || esCategoriaGerente(empleado.categoriaTexto);
   const mostrarBasicoEscalaGerente =
     esGerente &&
     Number.isFinite(basicoCalculadoNum) &&
@@ -1357,7 +1345,7 @@ function ReciboDocumento({
       : basicoCalculado;
 
   // Clasificar conceptos por tipo (solo los activos)
-  const conceptosActivos = detalles.filter((d) => d.detalle.activoEnRecibo);
+  const conceptosActivos = detalles.filter((d) => d.detalle.activo);
   const haberesCon = conceptosActivos.filter(
     (d) => columnaConcepto(d) === 'remunerativo'
   );
@@ -1411,15 +1399,15 @@ function ReciboDocumento({
           {/* Empresa (izquierda) */}
           <div className="flex flex-col justify-center gap-1 border-r border-border px-5 py-4">
             <span className="text-xl font-bold leading-tight">
-              {toTitleCase(clientData?.name) || '—'}
+              {toTitleCase(clientData?.razonSocial) || '—'}
             </span>
-            {clientData?.address && (
+            {clientData?.domicilio && (
               <span className="text-sm text-muted-foreground">
-                {clientData.address}
+                {clientData.domicilio}
               </span>
             )}
             <span className="text-sm font-medium text-muted-foreground">
-              CUIT: {clientData?.identityNumber ?? '—'}
+              CUIT: {clientData?.cuit ?? '—'}
             </span>
           </div>
           {/* Título + grilla pago (derecha) */}
@@ -1433,7 +1421,7 @@ function ReciboDocumento({
               </span>
             </div>
             <div className="grid grid-cols-3 divide-x divide-border">
-              <DocCell label="Período a pagar" value={liquidacion.periodo} />
+              <DocCell label="Período a pagar" value={dateAPeriodo(liquidacion.periodo)} />
               <DocCell label="Fecha de pago" value={dateFmt(cab.fechaPagoParaMostrar)} />
               <DocCell label="Lugar de pago" value={cab.lugarPago ?? '—'} />
               <DocCell
@@ -1457,7 +1445,7 @@ function ReciboDocumento({
 
         {/* ── FILA 1 EMPLEADO: Categoría | Tipo de liquidación ───────────── */}
         <div className="grid grid-cols-2 divide-x divide-border border-b border-border">
-          <DocCell label="Categoría" value={empleado.categoria ? toTitleCase(empleado.categoria) : (categoria?.nombre ?? '—')} />
+          <DocCell label="Categoría" value={empleado.categoriaTexto ? toTitleCase(empleado.categoriaTexto) : (categoria?.nombre ?? '—')} />
           <DocCell
             label="Tipo de liquidación"
             value={`${tipoReciboLabel(liquidacion.tipo)} — ${quincenaLabel(liquidacion.quincena)}`}
@@ -1468,9 +1456,7 @@ function ReciboDocumento({
         <div className="grid grid-cols-[100px_1fr_120px_160px_140px] divide-x divide-border border-b border-border">
           <DocCell
             label="Legajo"
-            value={legajoParaMostrar(
-              empleado.legajo ?? detalle.importLegajo ?? null
-            )}
+            value={legajoParaMostrar(empleado.legajo)}
           />
           <DocCell
             label="Apellido y Nombres"

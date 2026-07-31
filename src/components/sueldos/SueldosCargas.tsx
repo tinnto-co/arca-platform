@@ -59,7 +59,6 @@ import { EmpleadorConfigDialog } from '@/components/sueldos/EmpleadorConfigDialo
 
 interface SueldosCargasProps {
   clientId: string;
-  profileId: string;
 }
 
 const MONTHS = [
@@ -91,15 +90,6 @@ function getYearOptions(): string[] {
   return [current - 1, current, current + 1].map(String);
 }
 
-function formatPesos(value: string | number | null | undefined): string {
-  if (value == null) return '—';
-  return new Intl.NumberFormat('es-AR', {
-    style: 'currency',
-    currency: 'ARS',
-    maximumFractionDigits: 0,
-  }).format(parseFloat(String(value)));
-}
-
 function formatDateTime(date: Date | string | null | undefined): string {
   if (!date) return '—';
   return new Intl.DateTimeFormat('es-AR', {
@@ -125,17 +115,15 @@ function triggerDownload(contenido: string, filename: string) {
 
 function ValidacionPanel({
   clientId,
-  profileId,
   periodo,
 }: {
   clientId: string;
-  profileId: string;
   periodo: string;
 }) {
   const { data: validacion, isLoading } = useQuery({
-    queryKey: ['lsd-validacion', profileId, periodo],
-    queryFn: () => validarLsd({ data: { clientId, profileId, periodo } }),
-    enabled: !!(clientId && profileId),
+    queryKey: ['lsd-validacion', clientId, periodo],
+    queryFn: () => validarLsd({ data: { clientId, periodo } }),
+    enabled: !!clientId,
   });
 
   if (isLoading || !validacion) return null;
@@ -223,30 +211,28 @@ function IssueRow({
 type OverrideRow = {
   reciboId: string;
   empleadoNombre: string;
-  rem4y8Override: string | null;
-  rem9Override: string | null;
+  remuneracion4Y8Override: string | null;
+  remuneracion9Override: string | null;
   rem4y8Sugerido: string | null;
   rem9Sugerido: string | null;
-  contribucionAdicionalOS: string | null;
+  contribucionAdicionalOs: string | null;
   importeADetraerLey27430: string | null;
   importeMaternidadArt13: string | null;
 };
 
 function LsdOverridesDialog({
   clientId,
-  profileId,
   row,
   onClose,
 }: {
   clientId: string;
-  profileId: string;
   row: OverrideRow;
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
-  const [rem4y8, setRem4y8] = useState(row.rem4y8Override ?? row.rem4y8Sugerido ?? '');
-  const [rem9, setRem9] = useState(row.rem9Override ?? row.rem9Sugerido ?? '');
-  const [aporteOS, setAporteOS] = useState(row.contribucionAdicionalOS ?? '');
+  const [rem4y8, setRem4y8] = useState(row.remuneracion4Y8Override ?? row.rem4y8Sugerido ?? '');
+  const [rem9, setRem9] = useState(row.remuneracion9Override ?? row.rem9Sugerido ?? '');
+  const [aporteOS, setAporteOS] = useState(row.contribucionAdicionalOs ?? '');
   const [detraer, setDetraer] = useState(row.importeADetraerLey27430 ?? '');
   const [maternidad, setMaternidad] = useState(row.importeMaternidadArt13 ?? '');
 
@@ -260,11 +246,10 @@ function LsdOverridesDialog({
       updateReciboLsdOverrides({
         data: {
           clientId,
-          profileId,
           reciboId: row.reciboId,
-          rem4y8Override: rem4y8 === '' ? null : parseMonto(rem4y8),
-          rem9Override: rem9 === '' ? null : parseMonto(rem9),
-          contribucionAdicionalOS: aporteOS === '' ? null : parseMonto(aporteOS),
+          remuneracion4Y8Override: rem4y8 === '' ? null : parseMonto(rem4y8),
+          remuneracion9Override: rem9 === '' ? null : parseMonto(rem9),
+          contribucionAdicionalOs: aporteOS === '' ? null : parseMonto(aporteOS),
           importeADetraerLey27430: detraer === '' ? null : parseMonto(detraer),
           importeMaternidadArt13: maternidad === '' ? null : parseMonto(maternidad),
         },
@@ -327,26 +312,24 @@ function LsdOverridesDialog({
 
 function HistorialPresentaciones({
   clientId,
-  profileId,
   periodo,
 }: {
   clientId: string;
-  profileId: string;
   periodo: string;
 }) {
   const [reDescargando, setReDescargando] = useState<string | null>(null);
 
   const { data: presentaciones = [], isLoading } = useQuery({
-    queryKey: ['lsd-presentaciones', profileId, periodo],
-    queryFn: () => listLsdPresentaciones({ data: { clientId, profileId, periodo } }),
-    enabled: !!(clientId && profileId),
+    queryKey: ['lsd-presentaciones', clientId, periodo],
+    queryFn: () => listLsdPresentaciones({ data: { clientId, periodo } }),
+    enabled: !!clientId,
   });
 
   const handleReDescargar = async (id: string) => {
     setReDescargando(id);
     try {
       const pres = await getLsdPresentacionContenido({
-        data: { clientId, profileId, presentacionId: id },
+        data: { clientId, presentacionId: id },
       });
       triggerDownload(pres.contenido, pres.filename);
       toast.success(`Presentación nro ${pres.nroPresentacion} descargada`);
@@ -449,13 +432,11 @@ function HistorialPresentaciones({
 
 function GenerarPresentacionDialog({
   clientId,
-  profileId,
   periodo,
   nroPresentacion,
   onClose,
 }: {
   clientId: string;
-  profileId: string;
   periodo: string;
   nroPresentacion: number;
   onClose: () => void;
@@ -466,9 +447,9 @@ function GenerarPresentacionDialog({
   const [showEmpleadorConfig, setShowEmpleadorConfig] = useState(false);
 
   const { data: preview, isLoading: loadingPreview, error } = useQuery({
-    queryKey: ['lsd-preview', profileId, periodo],
-    queryFn: () => previewLsd({ data: { clientId, profileId, periodo } }),
-    enabled: !!(clientId && profileId),
+    queryKey: ['lsd-preview', clientId, periodo],
+    queryFn: () => previewLsd({ data: { clientId, periodo } }),
+    enabled: !!clientId,
   });
 
   const allCuils = useMemo(
@@ -494,9 +475,9 @@ function GenerarPresentacionDialog({
   };
 
   const { data: validacion } = useQuery({
-    queryKey: ['lsd-validacion', profileId, periodo],
-    queryFn: () => validarLsd({ data: { clientId, profileId, periodo } }),
-    enabled: !!(clientId && profileId),
+    queryKey: ['lsd-validacion', clientId, periodo],
+    queryFn: () => validarLsd({ data: { clientId, periodo } }),
+    enabled: !!clientId,
   });
 
   const { mutate: generar, isPending: isGenerating } = useMutation({
@@ -504,7 +485,6 @@ function GenerarPresentacionDialog({
       generarArchivoLsd({
         data: {
           clientId,
-          profileId,
           periodo,
           cuils: isFiltered ? [...effectiveCuils] : undefined,
         },
@@ -514,7 +494,7 @@ function GenerarPresentacionDialog({
       toast.success(
         `Presentación nro ${result.nroPresentacion} generada — ${result.empleados} empleados, ${result.conceptos} conceptos`
       );
-      queryClient.invalidateQueries({ queryKey: ['lsd-presentaciones', profileId, periodo] });
+      queryClient.invalidateQueries({ queryKey: ['lsd-presentaciones', clientId, periodo] });
       onClose();
     },
     onError: (err) => {
@@ -523,7 +503,7 @@ function GenerarPresentacionDialog({
   });
 
   const { mutate: generarConceptos, isPending: isGeneratingConceptos } = useMutation({
-    mutationFn: () => generarConceptosLsd({ data: { clientId, profileId, periodo } }),
+    mutationFn: () => generarConceptosLsd({ data: { clientId, periodo } }),
     onSuccess: (result) => {
       triggerDownload(result.contenido, result.filename);
       toast.success(`Conceptos LSD descargados — ${result.conceptos} conceptos`);
@@ -551,7 +531,7 @@ function GenerarPresentacionDialog({
 
           <div className="flex-1 overflow-y-auto space-y-4 pr-1">
             {/* Panel de validación */}
-            <ValidacionPanel clientId={clientId} profileId={profileId} periodo={periodo} />
+            <ValidacionPanel clientId={clientId} periodo={periodo} />
 
             {/* Error de carga */}
             {error && (
@@ -602,7 +582,7 @@ function GenerarPresentacionDialog({
             <EmpleadorConfigDialog
               open={showEmpleadorConfig}
               onOpenChange={setShowEmpleadorConfig}
-              clientId={profileId}
+              clientId={clientId}
               empresaNombre={preview?.employer.nombre ?? ''}
             />
 
@@ -706,11 +686,11 @@ function GenerarPresentacionDialog({
                               onClick={() => setEditingOverride({
                                 reciboId: emp.reciboId,
                                 empleadoNombre: emp.empleadoNombre,
-                                rem4y8Override: emp.rem4y8Override,
-                                rem9Override: emp.rem9Override,
+                                remuneracion4Y8Override: emp.remuneracion4Y8Override,
+                                remuneracion9Override: emp.remuneracion9Override,
                                 rem4y8Sugerido: emp.rem4y8Sugerido ?? null,
                                 rem9Sugerido: emp.rem9Sugerido ?? null,
-                                contribucionAdicionalOS: emp.contribucionAdicionalOS,
+                                contribucionAdicionalOs: emp.contribucionAdicionalOs,
                                 importeADetraerLey27430: emp.importeADetraerLey27430,
                                 importeMaternidadArt13: emp.importeMaternidadArt13,
                               })}
@@ -765,7 +745,6 @@ function GenerarPresentacionDialog({
       {editingOverride && (
         <LsdOverridesDialog
           clientId={clientId}
-          profileId={profileId}
           row={editingOverride}
           onClose={() => setEditingOverride(null)}
         />
@@ -776,7 +755,7 @@ function GenerarPresentacionDialog({
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function SueldosCargas({ clientId, profileId }: SueldosCargasProps) {
+export function SueldosCargas({ clientId }: SueldosCargasProps) {
   const def = getPeriodoDefecto();
   const [year, setYear] = useState(def.year);
   const [month, setMonth] = useState(def.month);
@@ -786,9 +765,9 @@ export function SueldosCargas({ clientId, profileId }: SueldosCargasProps) {
   const mesNombre = MONTHS.find((m) => m.value === month)?.label ?? '';
 
   const { data: presentaciones = [] } = useQuery({
-    queryKey: ['lsd-presentaciones', profileId, periodo],
-    queryFn: () => listLsdPresentaciones({ data: { clientId, profileId, periodo } }),
-    enabled: !!(clientId && profileId),
+    queryKey: ['lsd-presentaciones', clientId, periodo],
+    queryFn: () => listLsdPresentaciones({ data: { clientId, periodo } }),
+    enabled: !!clientId,
   });
 
   const nroPresentacionSiguiente = (presentaciones[presentaciones.length - 1]?.nroPresentacion ?? 0) + 1;
@@ -860,7 +839,6 @@ export function SueldosCargas({ clientId, profileId }: SueldosCargasProps) {
 
         <HistorialPresentaciones
           clientId={clientId}
-          profileId={profileId}
           periodo={periodo}
         />
       </div>
@@ -876,7 +854,6 @@ export function SueldosCargas({ clientId, profileId }: SueldosCargasProps) {
       {showGenerarDialog && (
         <GenerarPresentacionDialog
           clientId={clientId}
-          profileId={profileId}
           periodo={periodo}
           nroPresentacion={nroPresentacionSiguiente}
           onClose={() => setShowGenerarDialog(false)}

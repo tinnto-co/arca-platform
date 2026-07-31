@@ -18,7 +18,6 @@ import {
 
 interface SueldosConceptosProps {
   clientId: string;
-  profileId: string;
 }
 
 type ConceptoRow = Awaited<ReturnType<typeof listTodosConceptosSos>>[number];
@@ -27,13 +26,13 @@ function ConceptoDialog({ row }: { row: ConceptoRow }) {
   const meta = {
     baseColumna: row.baseColumna,
     divCantidad: row.divCantidad,
-    divHsNorm: row.divHsNorm != null ? (row.divHsNorm ? 1 : 0) : null,
-    tieneCantidad: row.tieneCantidad,
-    tienePct: row.tienePct,
-    tieneImporte: row.tieneImporte,
-    tieneImpConceptoNro: row.tieneImpConceptoNro,
-    tieneImpMin: row.tieneImpMin,
-    tieneImpMax: row.tieneImpMax,
+    divHsNorm: row.divHsNorm,
+    tieneCantidad: row.usaCantidad,
+    tienePct: row.usaPct,
+    tieneImporte: row.usaImporte,
+    tieneImpConceptoNro: row.usaConceptoRef,
+    tieneImpMin: row.usaImporteMin,
+    tieneImpMax: row.usaImporteMax,
   };
   const formula = formulaLegibleSos(meta);
   const leyenda = leyendaRelacionadaFormulaSos(meta);
@@ -52,7 +51,7 @@ function ConceptoDialog({ row }: { row: ConceptoRow }) {
         <DialogHeader>
           <DialogTitle className="text-base">
             <span className="font-mono text-muted-foreground mr-2">
-              {row.numeroSos}
+              {row.numero}
             </span>
             {row.nombre}
             {row.codigoAfip && (
@@ -192,7 +191,7 @@ export function SueldosConceptos({
                 className="text-[13.5px] font-semibold tabular-nums"
                 style={{ color: '#12131A' }}
               >
-                {row.numeroSos}
+                {row.numero}
               </span>
               {/* CÓD. AFIP */}
               <span

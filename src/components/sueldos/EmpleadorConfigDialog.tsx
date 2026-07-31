@@ -52,6 +52,7 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 const NONE = '__none__';
+const ORDEN_CLN = ['C', 'L', 'N'] as const;
 
 function CatalogSelect({
   value,
@@ -161,7 +162,9 @@ export function EmpleadorConfigDialog({ open, onOpenChange, clientId, empresaNom
   });
 
   useEffect(() => {
-    if (config) reset(config);
+    if (!config) return;
+    const orden = ORDEN_CLN.find((o) => o === config.ordenCLN) ?? null;
+    reset({ ...config, ordenCLN: orden });
   }, [config, reset]);
 
   const mutation = useMutation({
