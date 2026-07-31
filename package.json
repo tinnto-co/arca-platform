@@ -30,7 +30,8 @@
     "sueldos:seed-gastronomico-categorias": "bun run src/scripts/seed-gastronomico-categorias.ts",
     "sueldos:seed-gastronomico-escalas": "bun run src/scripts/seed-gastronomico-escalas.ts",
     "db:seed-catalogos-afip": "bun run src/scripts/seed-catalogos-afip.ts",
-    "db:seed-inflation-index": "bun run src/scripts/seed-inflation-index.ts"
+    "db:seed-inflation-index": "bun run src/scripts/seed-inflation-index.ts",
+    "db:seed-axi-epresis": "bun run src/scripts/seed-axi-epresis-scenario.ts"
   },
   "keywords": [],
   "author": "",

@@ -49,6 +49,14 @@ export const INFLATION_NATURE_LABELS: Record<InflationNature, string> = {
     'Resultado financiero / por tenencia (se determina por diferencia)',
 };
 
+/** Etiqueta corta, para columnas de tabla. */
+export const INFLATION_NATURE_SHORT_LABELS: Record<InflationNature, string> = {
+  monetaria: 'Monetaria',
+  no_monetaria_costo: 'No monetaria a costo',
+  no_monetaria_valor_corriente: 'No monetaria a valor corriente',
+  resultado_por_diferencia: 'Resultado por diferencia',
+};
+
 /** Solo `no_monetaria_costo` lleva coeficiente. */
 export function shouldReexpress(nature: InflationNature): boolean {
   return nature === 'no_monetaria_costo';

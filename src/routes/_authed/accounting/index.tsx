@@ -41,6 +41,8 @@ import {
   Inbox,
   AlertTriangle,
   Boxes,
+  TrendingUp,
+  Sparkles,
   CheckCircle2,
   XCircle,
   FileBarChart,
@@ -207,6 +209,8 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
+import { IndicesInflacion } from '@/components/accounting/IndicesInflacion';
+import { AjustePorInflacion } from '@/components/accounting/AjustePorInflacion';
 
 const TAB_IDS = [
   'plan',
@@ -218,6 +222,8 @@ const TAB_IDS = [
   'contabilizar',
   'pendientes',
   'bienes',
+  'indices',
+  'ajuste',
   'estados',
   'auditoria',
 ] as const;
@@ -307,6 +313,13 @@ function TabBar({
     { id: 'contabilizar', label: 'Contabilizar', icon: Zap, ready: true },
     { id: 'pendientes', label: 'Pendientes', icon: Inbox, ready: true },
     { id: 'bienes', label: 'Bienes de uso', icon: Boxes, ready: true },
+    { id: 'indices', label: 'Índices', icon: TrendingUp, ready: true },
+    {
+      id: 'ajuste',
+      label: 'Ajuste por inflación',
+      icon: Sparkles,
+      ready: true,
+    },
     {
       id: 'estados',
       label: 'Estados Contables',
@@ -322,14 +335,15 @@ function TabBar({
     },
   ];
   return (
-    <div className="flex gap-1 mb-5 border-b border-[var(--arca-border)]">
+    // Con 13 solapas la barra desborda: scrollea sola en vez de arrastrar la página.
+    <div className="flex gap-1 mb-5 border-b border-[var(--arca-border)] overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {tabs
         .filter((tab) => !tab.ownerOnly || isOwner)
         .map((tab) => (
           <button
             key={tab.id}
             onClick={() => onChange(tab.id)}
-            className="flex items-center gap-1.5 px-3 py-2 text-[12.5px] font-medium transition-colors duration-[120ms] border-b-2 -mb-px"
+            className="flex items-center gap-1.5 px-3 py-2 text-[12.5px] font-medium transition-colors duration-[120ms] border-b-2 -mb-px shrink-0 whitespace-nowrap"
             style={{
               color:
                 active === tab.id ? 'var(--arca-ink)' : 'var(--arca-ink-3)',
@@ -484,6 +498,16 @@ function AccountingPage() {
           clientName={
             clients.find((c) => c.id === effectiveClientId)?.name ?? ''
           }
+        />
+      ) : tab === 'indices' ? (
+        <IndicesInflacion isOwner={isOwner} />
+      ) : tab === 'ajuste' ? (
+        <AjustePorInflacion
+          clientId={effectiveClientId}
+          clientName={
+            clients.find((c) => c.id === effectiveClientId)?.name ?? ''
+          }
+          isOwner={isOwner}
         />
       ) : tab === 'estados' ? (
         <EstadosContables
@@ -7496,6 +7520,13 @@ function EstadosContables({
   const [view, setView] = useState<
     'esp' | 'er' | 'cmv' | 'anexo' | 'notas' | 'export'
   >('esp');
+  /**
+   * Los EECC se presentan ajustados por inflación (RT 6). "Histórico" excluye el
+   * asiento de ajuste y queda como papel de trabajo.
+   */
+  const [valuation, setValuation] = useState<'ajustado' | 'historico'>(
+    'ajustado'
+  );
   const [selectedFyId, setSelectedFyId] = useState('');
 
   const { data: fiscalYears = [] } = useQuery({
@@ -7592,9 +7623,33 @@ function EstadosContables({
               ))}
             </SelectContent>
           </Select>
-          <span className="text-[10.5px] px-2 py-1 rounded-full bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
-            Valores históricos
-          </span>
+          <div className="inline-flex rounded-[8px] border border-[var(--arca-border)] p-0.5 bg-[var(--arca-surface-2)]">
+            {(
+              [
+                ['ajustado', 'Ajustado por inflación'],
+                ['historico', 'Valores históricos'],
+              ] as ['ajustado' | 'historico', string][]
+            ).map(([k, label]) => (
+              <button
+                key={k}
+                onClick={() => setValuation(k)}
+                title={
+                  k === 'ajustado'
+                    ? 'Incluye el asiento de ajuste por inflación (RT 6). Es como se presentan los EECC.'
+                    : 'Excluye el asiento de ajuste. Queda como papel de trabajo.'
+                }
+                className="px-2.5 h-6 text-[11.5px] font-medium rounded-[6px] transition-colors"
+                style={{
+                  background:
+                    valuation === k ? 'var(--arca-surface)' : 'transparent',
+                  color:
+                    valuation === k ? 'var(--arca-ink)' : 'var(--arca-ink-3)',
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <div className="flex-1" />
           {approved ? (
             <>
@@ -7657,6 +7712,7 @@ function EstadosContables({
           clientId={clientId}
           clientName={clientName}
           selectedFy={selectedFy}
+          valuation={valuation}
         />
       )}
       {view === 'er' && (
@@ -7664,6 +7720,7 @@ function EstadosContables({
           clientId={clientId}
           clientName={clientName}
           selectedFy={selectedFy}
+          valuation={valuation}
         />
       )}
       {view === 'cmv' && (
@@ -7721,10 +7778,12 @@ function EspView({
   clientId,
   clientName,
   selectedFy,
+  valuation,
 }: {
   clientId: string;
   clientName: string;
   selectedFy: FyOption | undefined;
+  valuation: 'ajustado' | 'historico';
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [drill, setDrill] = useState<LedgerDrill | null>(null);
@@ -7732,8 +7791,11 @@ function EspView({
   const effectiveFyId = selectedFy?.id ?? '';
 
   const { data, isLoading } = useQuery({
-    queryKey: ['accounting', 'esp', clientId, effectiveFyId],
-    queryFn: () => getESP({ data: { clientId, fiscalYearId: effectiveFyId } }),
+    queryKey: ['accounting', 'esp', clientId, effectiveFyId, valuation],
+    queryFn: () =>
+      getESP({
+        data: { clientId, fiscalYearId: effectiveFyId, view: valuation },
+      }),
     enabled: !!effectiveFyId,
   });
 
@@ -7777,7 +7839,9 @@ function EspView({
               : ''}
           </div>
           <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
-            Expresado en valores históricos (sin ajuste por inflación · RT 6).
+            {valuation === 'ajustado'
+              ? 'Expresado en moneda homogénea de cierre (ajuste por inflación · RT 6).'
+              : 'Expresado en valores históricos, sin ajuste por inflación. Papel de trabajo.'}
           </div>
         </div>
 
@@ -7966,10 +8030,12 @@ function ErView({
   clientId,
   clientName,
   selectedFy,
+  valuation,
 }: {
   clientId: string;
   clientName: string;
   selectedFy: FyOption | undefined;
+  valuation: 'ajustado' | 'historico';
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [drill, setDrill] = useState<LedgerDrill | null>(null);
@@ -7977,8 +8043,11 @@ function ErView({
   const effectiveFyId = selectedFy?.id ?? '';
 
   const { data, isLoading } = useQuery({
-    queryKey: ['accounting', 'er', clientId, effectiveFyId],
-    queryFn: () => getER({ data: { clientId, fiscalYearId: effectiveFyId } }),
+    queryKey: ['accounting', 'er', clientId, effectiveFyId, valuation],
+    queryFn: () =>
+      getER({
+        data: { clientId, fiscalYearId: effectiveFyId, view: valuation },
+      }),
     enabled: !!effectiveFyId,
   });
 
@@ -8016,7 +8085,9 @@ function ErView({
               : ''}
           </div>
           <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
-            Expresado en valores históricos (sin ajuste por inflación · RT 6).
+            {valuation === 'ajustado'
+              ? 'Expresado en moneda homogénea de cierre (ajuste por inflación · RT 6).'
+              : 'Expresado en valores históricos, sin ajuste por inflación. Papel de trabajo.'}
           </div>
         </div>
 

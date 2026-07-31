@@ -13,10 +13,68 @@ import {
   parentCodeOf,
   validateBaseChart,
 } from '@/lib/accounting-base-chart';
+import { defaultInflationNature } from '@/lib/accounting-inflation';
 
 export interface SeedResult {
   inserted: number;
   skipped: number;
+  /** Cuentas preexistentes a las que se les completó la naturaleza frente al AXI. */
+  backfilled: number;
+}
+
+/**
+ * Completa los atributos de ajuste por inflación en cuentas que se sembraron
+ * antes de que existieran (`inflation_nature`, `inflation_target_id`).
+ *
+ * Sin esto, los planes ya sembrados quedan sin clasificar y el ajuste cae en el
+ * default por rubro — que para el Capital social es incorrecto: su reexpresión
+ * tiene que ir a Ajuste de capital, no a sí mismo.
+ *
+ * Solo toca lo que está en NULL: nunca pisa una clasificación que el contador
+ * haya cambiado a mano.
+ */
+async function backfillInflationAttributes(orgId: string): Promise<number> {
+  const rows = await db
+    .select({
+      id: account.id,
+      code: account.code,
+      accountGroup: account.accountGroup,
+      inflationNature: account.inflationNature,
+      inflationTargetId: account.inflationTargetId,
+    })
+    .from(account)
+    .where(eq(account.organizationId, orgId));
+
+  const byCode = new Map(rows.map((r) => [r.code, r]));
+  const baseByCode = new Map(BASE_CHART.map((a) => [a.code, a]));
+  let touched = 0;
+
+  for (const row of rows) {
+    const seed = baseByCode.get(row.code);
+    const patch: {
+      inflationNature?: string;
+      inflationTargetId?: string | null;
+    } = {};
+
+    if (!row.inflationNature) {
+      // Cuenta del plan base → lo que declara el seed; cuenta propia de una
+      // empresa → el default de su rubro.
+      patch.inflationNature =
+        seed?.inflationNature ?? defaultInflationNature(row.accountGroup);
+    }
+    if (!row.inflationTargetId && seed?.inflationTargetCode) {
+      const target = byCode.get(seed.inflationTargetCode);
+      if (target) patch.inflationTargetId = target.id;
+    }
+
+    if (Object.keys(patch).length === 0) continue;
+    await db
+      .update(account)
+      .set(patch as never)
+      .where(eq(account.id, row.id));
+    touched++;
+  }
+  return touched;
 }
 
 export async function seedBaseChartForOrg(orgId: string): Promise<SeedResult> {
@@ -39,7 +97,11 @@ export async function seedBaseChartForOrg(orgId: string): Promise<SeedResult> {
 
   const toInsert = BASE_CHART.filter((a) => !existingCodes.has(a.code));
   if (toInsert.length === 0) {
-    return { inserted: 0, skipped: BASE_CHART.length };
+    return {
+      inserted: 0,
+      skipped: BASE_CHART.length,
+      backfilled: await backfillInflationAttributes(orgId),
+    };
   }
 
   // 1ra pasada: insertar sin parentId (los códigos vienen ordenados padre→hijo,
@@ -92,5 +154,9 @@ export async function seedBaseChartForOrg(orgId: string): Promise<SeedResult> {
       .where(eq(account.id, selfId));
   }
 
-  return { inserted: inserted.length, skipped: existing.length };
+  return {
+    inserted: inserted.length,
+    skipped: existing.length,
+    backfilled: await backfillInflationAttributes(orgId),
+  };
 }

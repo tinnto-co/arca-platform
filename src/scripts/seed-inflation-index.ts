@@ -97,10 +97,13 @@ function parseSeries(wb: XLSX.WorkBook): SeriesRow[] {
     const rawDate = row?.[0];
     const rawValue = row?.[1];
     if (!(rawDate instanceof Date)) continue; // encabezados y filas sueltas
+    // El índice viene como número; el mes sin publicar viene como "*".
     const value =
       typeof rawValue === 'number'
         ? rawValue
-        : Number(String(rawValue ?? '').replace(',', '.'));
+        : typeof rawValue === 'string'
+          ? Number(rawValue.replace(',', '.'))
+          : NaN;
     if (!Number.isFinite(value) || value <= 0) {
       skippedPending++; // el mes todavía no publicado viene con "*"
       continue;

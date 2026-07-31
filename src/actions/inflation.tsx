@@ -81,20 +81,15 @@ export interface InflationIndexList {
 }
 
 /**
- * Lista la serie de índices. Si se pasa `year`, devuelve solo ese año (pero la
- * variación mensual se calcula contra diciembre del año anterior, para que
- * enero no quede sin variación).
+ * Serie completa de una fuente. Son ~400 filas, así que se devuelve entera y el
+ * filtrado por año se hace en el cliente: eso permite calcular coeficientes
+ * contra cualquier mes de cierre sin ir de nuevo al servidor.
  */
 export const listInflationIndexes = createServerFn({ method: 'GET' })
-  .inputValidator(
-    z.object({
-      source: sourceSchema,
-      year: z.number().int().min(1900).max(2200).optional(),
-    })
-  )
+  .inputValidator(z.object({ source: sourceSchema }))
   .handler(async (ctx): Promise<InflationIndexList> => {
     await getSessionWithOrg();
-    const { source, year } = ctx.data;
+    const { source } = ctx.data;
 
     const all = await db
       .select()
@@ -138,7 +133,7 @@ export const listInflationIndexes = createServerFn({ method: 'GET' })
 
     const last = all[all.length - 1];
     return {
-      rows: year ? rows.filter((r) => r.year === year) : rows,
+      rows,
       years,
       sources: sourceCounts.map((s) => ({
         source: s.source,

@@ -5620,13 +5620,14 @@ interface EspBalance {
 }
 
 /**
- * Saldos por cuenta de un ejercicio EXCLUYENDO los asientos de cierre/apertura
- * (auto_closing/auto_opening). Así el ESP refleja la posición patrimonial pre-cierre
- * (si no, un ejercicio cerrado daría todo en cero) y el resultado se computa de las
- * cuentas de resultado.
- */
-/**
  * Saldos por cuenta de un ejercicio.
+ *
+ * Se excluye el asiento de cierre (`auto_closing`): si no, un ejercicio cerrado
+ * daría todo en cero y el resultado se computa igual desde las cuentas de
+ * resultado. El asiento de apertura (`auto_opening`) **sí** entra: lo genera el
+ * cierre del ejercicio anterior con el id del ejercicio nuevo, y es el que trae
+ * el patrimonio inicial. Sin él, todo ejercicio a partir del segundo mostraría
+ * un ESP sin saldos de arranque.
  *
  * `view='ajustado'` (default) incluye el asiento de ajuste por inflación, que es
  * como se presentan los EECC. `view='historico'` lo excluye y devuelve los
@@ -5639,8 +5640,8 @@ async function computeEspBalances(
 ): Promise<EspBalance[]> {
   const excluded =
     view === 'historico'
-      ? sql`${journalEntry.origin} NOT IN ('auto_closing','auto_opening','auto_inflation')`
-      : sql`${journalEntry.origin} NOT IN ('auto_closing','auto_opening')`;
+      ? sql`${journalEntry.origin} NOT IN ('auto_closing','auto_inflation')`
+      : sql`${journalEntry.origin} <> 'auto_closing'`;
   const rows = await db
     .select({
       accountId: account.id,
