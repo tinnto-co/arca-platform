@@ -384,7 +384,9 @@ function applySubtotalCascade(
     // garantizando que todo el cascade de haberes refleje la jornada completa.
     if (n >= 1 && n <= 99) {
       let osContrib = effectiveMonto;
-      if (n === 1) {
+      if (n === 1 || n === 2) {
+        // Concepto 1 (sueldo básico mensual) y concepto 2 (horas normales, jornaleros):
+        // para OS, anclar al básico de jornada completa (osBase) si está disponible.
         sueldoBase_os = osBase > 0 ? osBase : effectiveMonto;
         osContrib = sueldoBase_os;
       } else if (c.baseColumna === 'sueldo' && sueldoBase_os > 0 && sueldoBase_os !== sueldoBase) {

@@ -1206,7 +1206,7 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
       )
       .limit(1);
 
-    if (!emp) return { basico: 0, esValorHoraCat: false, tipoJornada: 'full_time' as const, fechaAlta: null as string | null, fechaIngreso: null as string | null };
+    if (!emp) return { basico: 0, esValorHoraCat: false, tipoJornada: 'full_time' as const, horasMensualesNormales: null as number | null, fechaAlta: null as string | null, fechaIngreso: null as string | null };
 
     const empleado = emp.liquidacion_import_empleado;
 
@@ -1240,7 +1240,7 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
     if (!Number.isNaN(override) && override > 0) {
       const fechaAltaStr = empleado.fechaAlta ? empleado.fechaAlta.toISOString().slice(0, 10) : null;
       const fechaIngresoStr = empleado.fechaIngreso ? empleado.fechaIngreso.toISOString().slice(0, 10) : null;
-      return { basico: override, categoriaNombre, esExcluidoConvenio, esValorHoraCat, tipoJornada: empleado.tipoJornada ?? 'full_time', sinEscalaParaPeriodo: false, fallbackPeriodoLabel: null, periodoEscalaLabel: null, fechaAlta: fechaAltaStr, fechaIngreso: fechaIngresoStr };
+      return { basico: override, categoriaNombre, esExcluidoConvenio, esValorHoraCat, tipoJornada: empleado.tipoJornada ?? 'full_time', horasMensualesNormales: empleado.horasMensualesNormales ?? null, sinEscalaParaPeriodo: false, fallbackPeriodoLabel: null, periodoEscalaLabel: null, fechaAlta: fechaAltaStr, fechaIngreso: fechaIngresoStr };
     }
 
     // 2° prioridad: escala configurada para el período exacto
@@ -1276,6 +1276,7 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
         esExcluidoConvenio,
         esValorHoraCat,
         tipoJornada,
+        horasMensualesNormales: empleado.horasMensualesNormales ?? null,
         sinEscalaParaPeriodo: false,
         fallbackPeriodoLabel: null,
         periodoEscalaLabel: escalaPeriodo.periodoLabel,
@@ -1286,7 +1287,7 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
 
     const fechaAltaStr2 = empleado.fechaAlta ? empleado.fechaAlta.toISOString().slice(0, 10) : null;
     const fechaIngresoStr2 = empleado.fechaIngreso ? empleado.fechaIngreso.toISOString().slice(0, 10) : null;
-    if (!categoriaId) return { basico: 0, categoriaNombre: null, esExcluidoConvenio: false, esValorHoraCat: false, tipoJornada, fechaAlta: fechaAltaStr2, fechaIngreso: fechaIngresoStr2 };
+    if (!categoriaId) return { basico: 0, categoriaNombre: null, esExcluidoConvenio: false, esValorHoraCat: false, tipoJornada, horasMensualesNormales: empleado.horasMensualesNormales ?? null, fechaAlta: fechaAltaStr2, fechaIngreso: fechaIngresoStr2 };
 
     // 3° prioridad: escala más reciente anterior al período (fallback)
     let basico = 0;
@@ -1318,6 +1319,7 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
       esExcluidoConvenio,
       esValorHoraCat,
       tipoJornada,
+      horasMensualesNormales: empleado.horasMensualesNormales ?? null,
       sinEscalaParaPeriodo,
       fallbackPeriodoLabel,
       periodoEscalaLabel,
@@ -3126,6 +3128,7 @@ async function calcularUnaLiquidacion(
       formaPago: liquidacionImportEmpleado.formaPago,
       cbu: liquidacionImportEmpleado.cbu,
       banco: liquidacionImportEmpleado.banco,
+      horasMensualesNormales: liquidacionImportEmpleado.horasMensualesNormales,
     })
     .from(liquidacionImportEmpleado)
     .innerJoin(client, eq(liquidacionImportEmpleado.clientId, client.id))
@@ -3169,6 +3172,22 @@ async function calcularUnaLiquidacion(
 
   const basico = await getBasicoVigenteInternal(categoriaIdResuelta, periodo);
   const añosAntiguedad = differenceInYears(periodoDate, emp.fechaAlta ?? periodoDate);
+
+  // Determinar si la categoría es de jornaleros (valor por hora) para usar la base OS correcta.
+  let esValorHoraCategoria = false;
+  {
+    const [cat] = await db
+      .select({ esValorHora: payrollConvenioCategoria.esValorHora })
+      .from(payrollConvenioCategoria)
+      .where(eq(payrollConvenioCategoria.id, categoriaIdResuelta))
+      .limit(1);
+    esValorHoraCategoria = cat?.esValorHora ?? false;
+  }
+  // Base OS: para jornaleros usa valor_hora × horas_mensuales_normales (jornada completa),
+  // independientemente de cuántas horas se carguen en el recibo (ej: quincenal = 60hs).
+  const basicoJornadaCompleta = esValorHoraCategoria
+    ? roundMoney(basico * (emp.horasMensualesNormales ?? 120))
+    : basico;
 
   const conceptos = await db
     .select()
@@ -3265,6 +3284,10 @@ async function calcularUnaLiquidacion(
     );
   }
 
+  // SOS codes cuya base es "jornada completa" (os_base / os_norem_base en conceptosCompletosSos).
+  // Extraído aquí para no recrear el Set en cada iteración.
+  const OS_SOS_CODES = new Set([203, 204, 221, 222, 502]);
+
   for (const con of conceptosOrdenados) {
     if (!con.activo) continue;
     const input = inputMap.get(con.id);
@@ -3312,7 +3335,18 @@ async function calcularUnaLiquidacion(
       // de conceptos posteriores (Antigüedad, Presentismo) usen la base correcta.
       if (monto > 0) context.basico = monto;
     } else {
-      const evalResult = evaluatePayrollFormulaStrict(con.formula, context);
+      // Para jornaleros, los conceptos de Obra Social (SOS 203, 204, 221, 222, 502) deben
+      // calcular sobre la jornada completa (valor_hora × horasMensualesNormales), no sobre
+      // las horas liquidadas en el período (ej: quincenal = 60hs).
+      // Usamos con.numeroSos porque payrollConcepto.baseColumna es un enum que no incluye
+      // 'os_base'/'os_norem_base' — esos valores viven en conceptosCompletosSos.baseColumna.
+      const ctxParaFormula =
+        esValorHoraCategoria &&
+        con.numeroSos != null &&
+        OS_SOS_CODES.has(con.numeroSos)
+          ? { ...context, basico: basicoJornadaCompleta }
+          : context;
+      const evalResult = evaluatePayrollFormulaStrict(con.formula, ctxParaFormula);
       monto = evalResult.value;
       calcError = evalResult.ok ? undefined : evalResult.error;
       monto = roundMoney(monto);

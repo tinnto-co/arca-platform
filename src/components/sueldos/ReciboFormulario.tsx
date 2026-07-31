@@ -7,7 +7,7 @@ import z from 'zod';
 import { useQuery } from '@tanstack/react-query';
 import { format, differenceInYears, endOfMonth, addMonths } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { FilePlus2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { FilePlus2, ChevronLeft, ChevronRight, ChevronsUpDown, Check } from 'lucide-react';
 import { legajoParaMostrar } from '@/lib/legajo';
 import { getPeriodoMaxLiquidable, getPeriodoMesAnterior } from '@/lib/payroll-period-rules';
 import { listImportEmpleadosConConfig, listSituaciones } from '@/actions/sueldos';
@@ -30,7 +30,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 
 const TIPOS_RECIBO = [
   { value: 'sueldo', label: 'Sueldo' },
@@ -175,6 +189,7 @@ export function ReciboFormulario({
   initialValues,
 }: ReciboFormularioProps) {
   const [step, setStep] = useState(1);
+  const [openEmpleado, setOpenEmpleado] = useState(false);
 
   const { data: empleados = [] } = useQuery({
     queryKey: ['import-empleados-config', clientId, profileId],
@@ -373,29 +388,73 @@ export function ReciboFormulario({
                           Solo se muestran empleados activos. Los deshabilitados
                           aún no tienen convenio configurado.
                         </FormDescription>
-                        <Select onValueChange={field.onChange} value={field.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Seleccione empleado" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {empleados.map((r) => {
-                              const leg = legajoParaMostrar(r.empleado.legajo);
-                              const disabled = !r.empleado.convenioId;
-                              return (
-                                <SelectItem
-                                  key={r.empleado.id}
-                                  value={r.empleado.id}
-                                  disabled={disabled}
-                                >
-                                  {leg} — {r.empleado.nombre}
-                                  {disabled ? ' (sin configurar)' : ''}
-                                </SelectItem>
-                              );
-                            })}
-                          </SelectContent>
-                        </Select>
+                        <Popover open={openEmpleado} onOpenChange={setOpenEmpleado}>
+                          <PopoverTrigger asChild>
+                            <FormControl>
+                              <Button
+                                variant="outline"
+                                role="combobox"
+                                aria-expanded={openEmpleado}
+                                className={cn(
+                                  'w-full justify-between font-normal',
+                                  !field.value && 'text-muted-foreground'
+                                )}
+                              >
+                                {field.value
+                                  ? (() => {
+                                      const r = empleados.find((e) => e.empleado.id === field.value);
+                                      return r
+                                        ? `${legajoParaMostrar(r.empleado.legajo)} — ${r.empleado.nombre}`
+                                        : 'Seleccione empleado';
+                                    })()
+                                  : 'Seleccione empleado'}
+                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                              </Button>
+                            </FormControl>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                            <Command filter={(value, search) => {
+                              const r = empleados.find((e) => e.empleado.id === value);
+                              if (!r) return 0;
+                              const leg = legajoParaMostrar(r.empleado.legajo).toLowerCase();
+                              const nombre = r.empleado.nombre.toLowerCase();
+                              const q = search.toLowerCase();
+                              return leg.includes(q) || nombre.includes(q) ? 1 : 0;
+                            }}>
+                              <CommandInput placeholder="Buscar por nombre o legajo…" />
+                              <CommandList>
+                                <CommandEmpty>Sin resultados.</CommandEmpty>
+                                <CommandGroup>
+                                  {empleados.map((r) => {
+                                    const leg = legajoParaMostrar(r.empleado.legajo);
+                                    const disabled = !r.empleado.convenioId;
+                                    return (
+                                      <CommandItem
+                                        key={r.empleado.id}
+                                        value={r.empleado.id}
+                                        disabled={disabled}
+                                        onSelect={(val) => {
+                                          field.onChange(val);
+                                          setOpenEmpleado(false);
+                                        }}
+                                        className={cn(disabled && 'opacity-50 cursor-not-allowed')}
+                                      >
+                                        <Check
+                                          className={cn(
+                                            'mr-2 h-4 w-4',
+                                            field.value === r.empleado.id ? 'opacity-100' : 'opacity-0'
+                                          )}
+                                        />
+                                        {leg} — {r.empleado.nombre}
+                                        {disabled ? ' (sin configurar)' : ''}
+                                      </CommandItem>
+                                    );
+                                  })}
+                                </CommandGroup>
+                              </CommandList>
+                            </Command>
+                          </PopoverContent>
+                        </Popover>
                         <FormMessage />
                       </FormItem>
                     )}

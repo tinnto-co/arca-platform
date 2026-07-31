@@ -254,9 +254,13 @@ export function SueldosSimulador({
   const tipoJornada = basicoData?.tipoJornada ?? 'full_time';
   const esExcluidoConvenio = basicoData?.esExcluidoConvenio ?? false;
   const esValorHoraCat = basicoData?.esValorHoraCat ?? false;
-  // La base OS (conceptos 203, 502, etc.) siempre calcula sobre el básico de escala al 100%,
-  // independientemente del porcentaje que tenga seteado el concepto 1 o el 411.
-  const basicoJornadaCompleta = basicoEscala;
+  // La base OS (conceptos 203, 502, etc.) siempre calcula sobre el básico de escala al 100%.
+  // Para jornaleros (esValorHoraCat), basicoEscala es el valor/hora, por lo que hay que
+  // multiplicar por las horas mensuales normales para obtener el equivalente mensual completo.
+  const horasMensualesNormales = basicoData?.horasMensualesNormales ?? 120;
+  const basicoJornadaCompleta = esValorHoraCat
+    ? basicoEscala * horasMensualesNormales
+    : basicoEscala;
   const categoriaEscala = basicoData?.categoriaNombre ?? null;
   const sinEscalaParaPeriodo = basicoData?.sinEscalaParaPeriodo ?? false;
   const fallbackPeriodoLabel = basicoData?.fallbackPeriodoLabel ?? null;
