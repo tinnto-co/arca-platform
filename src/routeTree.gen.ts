@@ -34,13 +34,14 @@ import { Route as AuthedAnalyticsIndexRouteImport } from './routes/_authed/analy
 import { Route as AuthedAlertsIndexRouteImport } from './routes/_authed/alerts/index'
 import { Route as AuthedAdminIndexRouteImport } from './routes/_authed/admin/index'
 import { Route as AuthedAccountingIndexRouteImport } from './routes/_authed/accounting/index'
+import { Route as ApiDocumentsDocumentIdRouteImport } from './routes/api/documents/$documentId'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiAfipDiscoverProfilesRouteImport } from './routes/api/afip/discover-profiles'
 import { Route as AuthedProductsIdRouteImport } from './routes/_authed/products/$id'
 import { Route as AuthedChatIdRouteImport } from './routes/_authed/chat/$id'
 import { Route as ClientPortalSolicitudesIndexRouteImport } from './routes/_client/portal/solicitudes/index'
 import { Route as AuthedSueldosProfileIdIndexRouteImport } from './routes/_authed/sueldos/$profileId/index'
 import { Route as AuthedClientsClientIdIndexRouteImport } from './routes/_authed/clients/$clientId/index'
-import { Route as AuthedClientsClientIdProfileIdIndexRouteImport } from './routes/_authed/clients/$clientId/$profileId/index'
 
 const NoOrganizationRoute = NoOrganizationRouteImport.update({
   id: '/no-organization',
@@ -166,9 +167,19 @@ const AuthedAccountingIndexRoute = AuthedAccountingIndexRouteImport.update({
   path: '/accounting/',
   getParentRoute: () => AuthedRouteRoute,
 } as any)
+const ApiDocumentsDocumentIdRoute = ApiDocumentsDocumentIdRouteImport.update({
+  id: '/api/documents/$documentId',
+  path: '/api/documents/$documentId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAfipDiscoverProfilesRoute = ApiAfipDiscoverProfilesRouteImport.update({
+  id: '/api/afip/discover-profiles',
+  path: '/api/afip/discover-profiles',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthedProductsIdRoute = AuthedProductsIdRouteImport.update({
@@ -199,12 +210,6 @@ const AuthedClientsClientIdIndexRoute =
     path: '/clients/$clientId/',
     getParentRoute: () => AuthedRouteRoute,
   } as any)
-const AuthedClientsClientIdProfileIdIndexRoute =
-  AuthedClientsClientIdProfileIdIndexRouteImport.update({
-    id: '/clients/$clientId/$profileId/',
-    path: '/clients/$clientId/$profileId/',
-    getParentRoute: () => AuthedRouteRoute,
-  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthedIndexRoute
@@ -215,7 +220,9 @@ export interface FileRoutesByFullPath {
   '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/chat/$id': typeof AuthedChatIdRoute
   '/products/$id': typeof AuthedProductsIdRoute
+  '/api/afip/discover-profiles': typeof ApiAfipDiscoverProfilesRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/documents/$documentId': typeof ApiDocumentsDocumentIdRoute
   '/accounting/': typeof AuthedAccountingIndexRoute
   '/admin/': typeof AuthedAdminIndexRoute
   '/alerts/': typeof AuthedAlertsIndexRoute
@@ -236,7 +243,6 @@ export interface FileRoutesByFullPath {
   '/clients/$clientId/': typeof AuthedClientsClientIdIndexRoute
   '/sueldos/$profileId/': typeof AuthedSueldosProfileIdIndexRoute
   '/portal/solicitudes/': typeof ClientPortalSolicitudesIndexRoute
-  '/clients/$clientId/$profileId/': typeof AuthedClientsClientIdProfileIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof AuthedIndexRoute
@@ -247,7 +253,9 @@ export interface FileRoutesByTo {
   '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/chat/$id': typeof AuthedChatIdRoute
   '/products/$id': typeof AuthedProductsIdRoute
+  '/api/afip/discover-profiles': typeof ApiAfipDiscoverProfilesRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/documents/$documentId': typeof ApiDocumentsDocumentIdRoute
   '/accounting': typeof AuthedAccountingIndexRoute
   '/admin': typeof AuthedAdminIndexRoute
   '/alerts': typeof AuthedAlertsIndexRoute
@@ -268,7 +276,6 @@ export interface FileRoutesByTo {
   '/clients/$clientId': typeof AuthedClientsClientIdIndexRoute
   '/sueldos/$profileId': typeof AuthedSueldosProfileIdIndexRoute
   '/portal/solicitudes': typeof ClientPortalSolicitudesIndexRoute
-  '/clients/$clientId/$profileId': typeof AuthedClientsClientIdProfileIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -282,7 +289,9 @@ export interface FileRoutesById {
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/chat/$id': typeof AuthedChatIdRoute
   '/_authed/products/$id': typeof AuthedProductsIdRoute
+  '/api/afip/discover-profiles': typeof ApiAfipDiscoverProfilesRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/documents/$documentId': typeof ApiDocumentsDocumentIdRoute
   '/_authed/accounting/': typeof AuthedAccountingIndexRoute
   '/_authed/admin/': typeof AuthedAdminIndexRoute
   '/_authed/alerts/': typeof AuthedAlertsIndexRoute
@@ -303,7 +312,6 @@ export interface FileRoutesById {
   '/_authed/clients/$clientId/': typeof AuthedClientsClientIdIndexRoute
   '/_authed/sueldos/$profileId/': typeof AuthedSueldosProfileIdIndexRoute
   '/_client/portal/solicitudes/': typeof ClientPortalSolicitudesIndexRoute
-  '/_authed/clients/$clientId/$profileId/': typeof AuthedClientsClientIdProfileIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -316,7 +324,9 @@ export interface FileRouteTypes {
     | '/invite/$invitationId'
     | '/chat/$id'
     | '/products/$id'
+    | '/api/afip/discover-profiles'
     | '/api/auth/$'
+    | '/api/documents/$documentId'
     | '/accounting/'
     | '/admin/'
     | '/alerts/'
@@ -337,7 +347,6 @@ export interface FileRouteTypes {
     | '/clients/$clientId/'
     | '/sueldos/$profileId/'
     | '/portal/solicitudes/'
-    | '/clients/$clientId/$profileId/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -348,7 +357,9 @@ export interface FileRouteTypes {
     | '/invite/$invitationId'
     | '/chat/$id'
     | '/products/$id'
+    | '/api/afip/discover-profiles'
     | '/api/auth/$'
+    | '/api/documents/$documentId'
     | '/accounting'
     | '/admin'
     | '/alerts'
@@ -369,7 +380,6 @@ export interface FileRouteTypes {
     | '/clients/$clientId'
     | '/sueldos/$profileId'
     | '/portal/solicitudes'
-    | '/clients/$clientId/$profileId'
   id:
     | '__root__'
     | '/_authed'
@@ -382,7 +392,9 @@ export interface FileRouteTypes {
     | '/_authed/'
     | '/_authed/chat/$id'
     | '/_authed/products/$id'
+    | '/api/afip/discover-profiles'
     | '/api/auth/$'
+    | '/api/documents/$documentId'
     | '/_authed/accounting/'
     | '/_authed/admin/'
     | '/_authed/alerts/'
@@ -403,7 +415,6 @@ export interface FileRouteTypes {
     | '/_authed/clients/$clientId/'
     | '/_authed/sueldos/$profileId/'
     | '/_client/portal/solicitudes/'
-    | '/_authed/clients/$clientId/$profileId/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -414,7 +425,9 @@ export interface RootRouteChildren {
   ApiAgentRoute: typeof ApiAgentRoute
   ApiCopilotkitRoute: typeof ApiCopilotkitRoute
   InviteInvitationIdRoute: typeof InviteInvitationIdRoute
+  ApiAfipDiscoverProfilesRoute: typeof ApiAfipDiscoverProfilesRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiDocumentsDocumentIdRoute: typeof ApiDocumentsDocumentIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -594,11 +607,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAccountingIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
+    '/api/documents/$documentId': {
+      id: '/api/documents/$documentId'
+      path: '/api/documents/$documentId'
+      fullPath: '/api/documents/$documentId'
+      preLoaderRoute: typeof ApiDocumentsDocumentIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
       fullPath: '/api/auth/$'
       preLoaderRoute: typeof ApiAuthSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/afip/discover-profiles': {
+      id: '/api/afip/discover-profiles'
+      path: '/api/afip/discover-profiles'
+      fullPath: '/api/afip/discover-profiles'
+      preLoaderRoute: typeof ApiAfipDiscoverProfilesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authed/products/$id': {
@@ -636,13 +663,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedClientsClientIdIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
-    '/_authed/clients/$clientId/$profileId/': {
-      id: '/_authed/clients/$clientId/$profileId/'
-      path: '/clients/$clientId/$profileId'
-      fullPath: '/clients/$clientId/$profileId/'
-      preLoaderRoute: typeof AuthedClientsClientIdProfileIdIndexRouteImport
-      parentRoute: typeof AuthedRouteRoute
-    }
   }
 }
 
@@ -668,7 +688,6 @@ interface AuthedRouteRouteChildren {
   AuthedVencimientosIndexRoute: typeof AuthedVencimientosIndexRoute
   AuthedClientsClientIdIndexRoute: typeof AuthedClientsClientIdIndexRoute
   AuthedSueldosProfileIdIndexRoute: typeof AuthedSueldosProfileIdIndexRoute
-  AuthedClientsClientIdProfileIdIndexRoute: typeof AuthedClientsClientIdProfileIdIndexRoute
 }
 
 const AuthedRouteRouteChildren: AuthedRouteRouteChildren = {
@@ -693,8 +712,6 @@ const AuthedRouteRouteChildren: AuthedRouteRouteChildren = {
   AuthedVencimientosIndexRoute: AuthedVencimientosIndexRoute,
   AuthedClientsClientIdIndexRoute: AuthedClientsClientIdIndexRoute,
   AuthedSueldosProfileIdIndexRoute: AuthedSueldosProfileIdIndexRoute,
-  AuthedClientsClientIdProfileIdIndexRoute:
-    AuthedClientsClientIdProfileIdIndexRoute,
 }
 
 const AuthedRouteRouteWithChildren = AuthedRouteRoute._addFileChildren(
@@ -723,7 +740,9 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAgentRoute: ApiAgentRoute,
   ApiCopilotkitRoute: ApiCopilotkitRoute,
   InviteInvitationIdRoute: InviteInvitationIdRoute,
+  ApiAfipDiscoverProfilesRoute: ApiAfipDiscoverProfilesRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiDocumentsDocumentIdRoute: ApiDocumentsDocumentIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
