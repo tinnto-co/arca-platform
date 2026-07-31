@@ -4,11 +4,12 @@ import { Button } from './ui/button';
 
 interface Props {
   onFileSelected?: (file: File | null) => void;
+  /** Lo maneja el padre (es él quien procesa el archivo). */
+  isProcessing?: boolean;
 }
 
-export function DragDrop({ onFileSelected }: Props) {
+export function DragDrop({ onFileSelected, isProcessing = false }: Props) {
   const [file, setFile] = useState<File | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
 
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {

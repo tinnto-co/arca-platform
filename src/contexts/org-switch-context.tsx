@@ -5,7 +5,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { ArrowRight, Building, Loader2 } from 'lucide-react';
+import { Building } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 export interface OrgSwitchVisual {

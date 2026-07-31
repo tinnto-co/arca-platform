@@ -1,16 +1,9 @@
-import {
-  useState,
-  useEffect,
-  useRef,
-  useImperativeHandle,
-  forwardRef,
-} from 'react';
+import { useState, useEffect, useImperativeHandle, forwardRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toTitleCase } from '@/lib/format-name';
 import {
   Search,
   Download,
-  FileText,
   Calendar as CalendarIcon,
   ArrowUpDown,
   ArrowUp,
@@ -55,13 +48,16 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination';
-import {
-  getInvoices,
-  getInvoice,
-  getInvoicesByProfile,
-} from '@/actions/invoice';
-import { getRepresentatives, getRepresentativeClients } from '@/actions/client';
+import { getComprobantes, getComprobante } from '@/actions/comprobante';
+import { getClientes } from '@/actions/client';
 import { cn } from '@/lib/utils';
+
+/** Fila de la grilla, tal cual la devuelve `getComprobantes`. */
+type ComprobanteRow = Awaited<
+  ReturnType<typeof getComprobantes>
+>['comprobantes'][number];
+/** Detalle completo (incluye el desglose por alícuota). */
+type ComprobanteDetalle = Awaited<ReturnType<typeof getComprobante>>;
 
 const ExcelJS = ExcelJSRaw as unknown as {
   Workbook: new () => {
@@ -143,57 +139,44 @@ export const INVOICE_TYPE_LABELS: Record<string, string> = {
 };
 
 const TYPE_LABELS = INVOICE_TYPE_LABELS;
-const DIRECTION_LABELS: Record<string, string> = {
-  outbound: 'Emitida',
-  inbound: 'Recibida',
-  Outbound: 'Emitida',
-  Inbound: 'Recibida',
+/** `comprobante.direccion` es un enum de BD: sólo estos dos valores existen. */
+const DIRECTION_LABELS: Record<ComprobanteRow['direccion'], string> = {
+  emitido: 'Emitida',
+  recibido: 'Recibida',
 };
 
 function getTypeLabel(type: string): string {
   return TYPE_LABELS[type] ?? `Tipo ${type}`;
 }
-function getDirectionLabel(direction: string): string {
-  return (
-    DIRECTION_LABELS[direction] ??
-    DIRECTION_LABELS[direction?.toLowerCase()] ??
-    (direction || '—')
-  );
+function getDirectionLabel(direction: ComprobanteRow['direccion']): string {
+  return DIRECTION_LABELS[direction] ?? direction;
 }
 
-interface InvoiceData {
-  id: string;
-  direction: string;
-  emitionDate: Date | string;
-  type: string;
-  recipientName: string;
-  recipientIdentityNumber: string;
-  recipientIdentityType: string;
-  emitterName: string;
-  emitterIdentityNumber: string;
-  emitterIdentityType: string;
-  currency: string;
-  currencyRate: string;
-  salePoint: string;
-  authorizationNumber: string;
-  idFrom: string;
-  idTo: string;
-  amount: string;
-  clientId: string | null;
-  clientName: string | null;
-  clientEmail: string | null;
-  profileName: string | null;
-  createdAt: Date | string;
-  updatedAt: Date | string;
+/** Número de comprobante formateado 0001-00000123. */
+function formatNumero(puntoVenta: number, numero: number): string {
+  return `${String(puntoVenta).padStart(4, '0')}-${String(numero).padStart(8, '0')}`;
 }
 
 interface InvoicesTableProps {
-  clientId?: string;
+  /** Cliente (entidad fiscal) al que se acotan los comprobantes. */
+  clienteId?: string;
+  /** @deprecated Alias histórico de `clienteId` (antes era el id del perfil). */
   profileId?: string;
+  /**
+   * @deprecated Antes era el id del representante (login AFIP). Los comprobantes
+   * ya no se filtran por login: sólo marca que la tabla está embebida en el
+   * detalle de un cliente (oculta el selector y notifica filtros al padre).
+   */
+  clientId?: string;
   /** Cuando se pasan, el período lo controla el padre (ej. pestaña Facturas del detalle de cliente). */
   controlledDateFrom?: string;
   controlledDateTo?: string;
-  /** Filtros controlados por el padre (módulo Facturas): se ocultan los selects de perfil/tipo/dirección en la tabla. */
+  /**
+   * Filtros controlados por el padre (módulo Facturas): se ocultan los selects
+   * de cliente/tipo/dirección en la tabla. `controlledProfileFilter` es el id
+   * del cliente ('all' = sin filtro); `controlledDirectionFilter` es
+   * 'emitido' | 'recibido' | 'all'.
+   */
   controlledProfileFilter?: string;
   controlledTypeFilter?: string;
   controlledDirectionFilter?: string;
@@ -218,6 +201,7 @@ export interface InvoicesTableRef {
 const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
   function InvoicesTable(
     {
+      clienteId: clienteIdProp,
       clientId,
       profileId,
       controlledDateFrom,
@@ -232,9 +216,14 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
     }: InvoicesTableProps = {},
     ref
   ) {
+    /** Cliente fijado por el padre (prop nueva o cualquiera de sus alias). */
+    const fixedClienteId = clienteIdProp ?? profileId;
+    /** La tabla está embebida en el detalle de un cliente. */
+    const isEmbedded = fixedClienteId !== undefined || clientId !== undefined;
+
     const [searchTerm, setSearchTerm] = useState('');
     const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
-    const [clientFilter, setClientFilter] = useState<string>(clientId || 'all');
+    const [clientFilter, setClientFilter] = useState<string>('all');
     const [profileFilter, setProfileFilter] = useState<string>('all');
     const [dateRange, setDateRange] = useState<DateRange | undefined>(
       undefined
@@ -248,8 +237,8 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
       controlledDirectionFilter !== undefined;
     const [typeFilter, setTypeFilter] = useState<string>('all');
     const [directionFilter, setDirectionFilter] = useState<string>('all');
-    const [sortBy, setSortBy] = useState<'amount' | 'emitionDate' | undefined>(
-      'emitionDate'
+    const [sortBy, setSortBy] = useState<'total' | 'fechaEmision' | undefined>(
+      'fechaEmision'
     );
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | undefined>(
       'desc'
@@ -270,32 +259,19 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
     };
 
     const [viewDialogOpen, setViewDialogOpen] = useState(false);
-    const [selectedInvoice, setSelectedInvoice] = useState<InvoiceData | null>(
-      null
-    );
-    const [invoiceDetails, setInvoiceDetails] = useState<any>(null);
+    const [invoiceDetails, setInvoiceDetails] =
+      useState<ComprobanteDetalle | null>(null);
     const [exportingExcel, setExportingExcel] = useState(false);
 
     const pageSize = 10;
 
     useEffect(() => {
-      if (clientId) {
-        setClientFilter(clientId);
-        setCurrentPage(1);
-      }
-    }, [clientId]);
-
-    useEffect(() => {
-      if (profileId) {
-        setCurrentPage(1);
-      }
-    }, [profileId]);
-
-    // When client changes, reset profile filter
-    useEffect(() => {
-      setProfileFilter('all');
       setCurrentPage(1);
-    }, [clientFilter, clientId]);
+    }, [fixedClienteId]);
+
+    useEffect(() => {
+      setCurrentPage(1);
+    }, [clientFilter]);
 
     useEffect(() => {
       const timer = setTimeout(() => {
@@ -349,31 +325,42 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
 
     // Notificar al padre (módulo Facturas) cuando cambian los filtros para actualizar totales Ventas/Compras
     useEffect(() => {
-      if (clientId && onFiltersChange) {
+      if (isEmbedded && onFiltersChange) {
         onFiltersChange({ profileFilter, typeFilter, directionFilter });
       }
-    }, [clientId, onFiltersChange, profileFilter, typeFilter, directionFilter]);
+    }, [isEmbedded, onFiltersChange, profileFilter, typeFilter, directionFilter]);
 
     const effectiveSearchTerm =
       controlledSearchTerm !== undefined
         ? controlledSearchTerm
         : debouncedSearchTerm;
 
-    const { data: representatives = [] } = useQuery({
-      queryKey: ['representatives'],
-      queryFn: () => getRepresentatives(),
+    const { data: clientes = [] } = useQuery({
+      queryKey: ['clientes'],
+      queryFn: () => getClientes(),
+      enabled: !isEmbedded,
     });
 
-    const representativeForClients =
-      clientId ?? (clientFilter !== 'all' ? clientFilter : undefined);
-    const { data: representativeClients = [] } = useQuery({
-      queryKey: ['representativeClients', representativeForClients],
-      queryFn: () =>
-        getRepresentativeClients({
-          data: { representativeId: representativeForClients! },
-        }),
-      enabled: !!representativeForClients,
-    });
+    /**
+     * Cliente por el que se filtra: prop del padre > filtro controlado >
+     * selector propio. Los comprobantes cuelgan del cliente, así que sin
+     * cliente resuelto en modo embebido no se consulta nada (mostrar los
+     * comprobantes de toda la organización sería incorrecto).
+     */
+    const clienteFiltro =
+      fixedClienteId ??
+      (profileFilter !== 'all' ? profileFilter : undefined) ??
+      (clientFilter !== 'all' ? clientFilter : undefined);
+
+    /** Sólo los dos valores del enum de BD llegan al server function. */
+    const direccionFiltro =
+      directionFilter === 'emitido' || directionFilter === 'recibido'
+        ? directionFilter
+        : undefined;
+    const tipoFiltro =
+      typeFilter !== 'all' && Number.isFinite(Number(typeFilter))
+        ? Number(typeFilter)
+        : undefined;
 
     /** Con filtros controlados por el padre, undefined = Sin período = sin filtro (todas las facturas). */
     const dateFrom = isFiltersControlled
@@ -392,86 +379,60 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
           : '';
 
     const { data: invoicesData, isLoading } = useQuery({
-      queryKey: profileId
-        ? [
-            'profileInvoices',
-            profileId,
-            currentPage,
-            dateFrom,
-            dateTo,
-            typeFilter,
-            directionFilter,
-            effectiveSearchTerm,
-            sortBy,
-            sortOrder,
-          ]
-        : [
-            'invoices',
-            currentPage,
-            clientFilter,
-            profileFilter,
-            dateFrom,
-            dateTo,
-            typeFilter,
-            directionFilter,
-            effectiveSearchTerm,
-            sortBy,
-            sortOrder,
-          ],
+      queryKey: [
+        'comprobantes',
+        currentPage,
+        clienteFiltro ?? 'all',
+        dateFrom,
+        dateTo,
+        tipoFiltro ?? 'all',
+        direccionFiltro ?? 'all',
+        effectiveSearchTerm,
+        sortBy,
+        sortOrder,
+      ],
       queryFn: () =>
-        profileId
-          ? getInvoicesByProfile({
-              data: {
-                profileId,
-                page: currentPage,
-                limit: pageSize,
-              },
-            })
-          : getInvoices({
-              data: {
-                page: currentPage,
-                limit: pageSize,
-                clientFilter: clientFilter === 'all' ? undefined : clientFilter,
-                profileFilter:
-                  profileFilter === 'all' ? undefined : profileFilter,
-                dateFrom: dateFrom || undefined,
-                dateTo: dateTo || undefined,
-                typeFilter: typeFilter === 'all' ? undefined : typeFilter,
-                directionFilter:
-                  directionFilter === 'all' ? undefined : directionFilter,
-                search: effectiveSearchTerm || undefined,
-                sortBy: sortBy,
-                sortOrder: sortBy ? sortOrder : undefined,
-              },
-            }),
-      enabled: !profileId || !!profileId,
+        getComprobantes({
+          data: {
+            page: currentPage,
+            limit: pageSize,
+            clienteId: clienteFiltro,
+            dateFrom: dateFrom || undefined,
+            dateTo: dateTo || undefined,
+            tipo: tipoFiltro,
+            direccion: direccionFiltro,
+            search: effectiveSearchTerm || undefined,
+            sortBy: sortBy,
+            sortOrder: sortBy ? sortOrder : undefined,
+          },
+        }),
+      enabled: !isEmbedded || !!clienteFiltro,
     });
 
-    const handleViewInvoice = async (invoice: InvoiceData) => {
-      setSelectedInvoice(invoice);
+    const handleViewInvoice = async (invoice: ComprobanteRow) => {
+      setInvoiceDetails(null);
       setViewDialogOpen(true);
       try {
-        const details = await getInvoice({ data: { id: invoice.id } });
+        const details = await getComprobante({ data: { id: invoice.id } });
         setInvoiceDetails(details);
       } catch (error) {
-        toast.error('Error al cargar los detalles de la factura');
+        toast.error('Error al cargar los detalles del comprobante');
         console.error(error);
       }
     };
 
-    // Deep-link: si viene openInvoiceId, abrir el detalle de esa factura al montar.
+    // Deep-link: si viene openInvoiceId, abrir el detalle de ese comprobante al montar.
     useEffect(() => {
       if (!openInvoiceId) return;
       let cancelled = false;
       void (async () => {
         try {
-          const details = await getInvoice({ data: { id: openInvoiceId } });
+          const details = await getComprobante({ data: { id: openInvoiceId } });
           if (cancelled || !details) return;
-          setSelectedInvoice(details as unknown as InvoiceData);
           setInvoiceDetails(details);
           setViewDialogOpen(true);
         } catch {
-          toast.error('No se pudo abrir la factura');
+          toast.error('No se pudo abrir el comprobante');
         }
       })();
       return () => {
@@ -479,42 +440,25 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
       };
     }, [openInvoiceId]);
 
-    const handleDownloadAttachment = (url: string, filename: string) => {
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      link.target = '_blank';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    };
-
     const handleExportExcel = async () => {
       setExportingExcel(true);
       try {
         const exportLimit = 50000;
-        const data = profileId
-          ? await getInvoicesByProfile({
-              data: { profileId, page: 1, limit: exportLimit },
-            })
-          : await getInvoices({
-              data: {
-                page: 1,
-                limit: exportLimit,
-                clientFilter: clientFilter === 'all' ? undefined : clientFilter,
-                profileFilter:
-                  profileFilter === 'all' ? undefined : profileFilter,
-                dateFrom: dateFrom || undefined,
-                dateTo: dateTo || undefined,
-                typeFilter: typeFilter === 'all' ? undefined : typeFilter,
-                directionFilter:
-                  directionFilter === 'all' ? undefined : directionFilter,
-                search: effectiveSearchTerm || undefined,
-                sortBy: sortBy ?? undefined,
-                sortOrder: sortBy ? (sortOrder ?? undefined) : undefined,
-              },
-            });
-        const invoices: InvoiceData[] = data.invoices ?? [];
+        const data = await getComprobantes({
+          data: {
+            page: 1,
+            limit: exportLimit,
+            clienteId: clienteFiltro,
+            dateFrom: dateFrom || undefined,
+            dateTo: dateTo || undefined,
+            tipo: tipoFiltro,
+            direccion: direccionFiltro,
+            search: effectiveSearchTerm || undefined,
+            sortBy: sortBy ?? undefined,
+            sortOrder: sortBy ? (sortOrder ?? undefined) : undefined,
+          },
+        });
+        const invoices = data.comprobantes ?? [];
         if (invoices.length === 0) {
           toast.info('No hay facturas para exportar con los filtros actuales.');
           return;
@@ -535,22 +479,20 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
           'Dirección',
           'Fecha',
           'Pto.Vta',
-          'Número desde',
-          'Número hasta',
+          'Número',
           'Cliente',
-          'Email cliente',
-          'Perfil',
-          'Emisor',
-          'CUIT/DNI emisor',
-          'Destinatario',
-          'CUIT/DNI destinatario',
+          'Contraparte',
+          'Doc. contraparte',
+          'Provincia contraparte',
+          'Neto gravado',
+          'IVA',
           'Moneda',
           'Cotización',
-          'Monto',
-          'Nº autorización',
+          'Total',
+          'CAE',
         ];
         const widths = [
-          28, 12, 12, 12, 10, 14, 14, 22, 22, 22, 28, 16, 28, 16, 8, 12, 16, 18,
+          28, 12, 12, 12, 10, 14, 22, 28, 18, 20, 16, 16, 8, 12, 16, 18,
         ];
         headers.forEach((h, i) => {
           const col = i + 1;
@@ -563,28 +505,22 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
         invoices.forEach((inv, idx) => {
           const row = ws.getRow(idx + 2);
           const cells = [
-            getTypeLabel(inv.type),
-            inv.type,
-            getDirectionLabel(inv.direction),
-            formatDate(inv.emitionDate),
-            inv.salePoint ?? '—',
-            inv.idFrom ?? '—',
-            inv.idTo ?? '—',
-            inv.clientName ?? '—',
-            inv.clientEmail ?? '—',
-            inv.profileName ?? '—',
-            inv.emitterName ?? '—',
-            inv.emitterIdentityNumber
-              ? `${inv.emitterIdentityType ?? ''} ${inv.emitterIdentityNumber}`.trim()
-              : '—',
-            inv.recipientName ?? '—',
-            inv.recipientIdentityNumber
-              ? `${inv.recipientIdentityType ?? ''} ${inv.recipientIdentityNumber}`.trim()
-              : '—',
-            inv.currency ?? '—',
-            inv.currencyRate ?? '—',
-            formatCurrency(inv.amount, inv.currency),
-            inv.authorizationNumber ?? '—',
+            inv.tipoDescripcion ?? getTypeLabel(String(inv.tipo)),
+            String(inv.tipo),
+            getDirectionLabel(inv.direccion),
+            formatDateOnlyString(inv.fechaEmision),
+            inv.puntoVenta,
+            formatNumero(inv.puntoVenta, inv.numero),
+            inv.clienteRazonSocial ?? '—',
+            inv.contraparteNombre ?? '—',
+            `${inv.contraparteDocTipo} ${inv.contraparteDocNro}`.trim(),
+            inv.contraparteProvincia ?? '—',
+            formatCurrency(inv.netoGravado, inv.moneda),
+            formatCurrency(inv.ivaTotal, inv.moneda),
+            inv.moneda ?? '—',
+            inv.cotizacion ?? '—',
+            formatCurrency(inv.total, inv.moneda),
+            inv.cae ?? '—',
           ];
           cells.forEach((val, i) => {
             const cell = row.getCell(i + 1);
@@ -603,10 +539,10 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
           dateFrom && dateTo
             ? `${dateFrom}_${dateTo}`
             : new Date().toISOString().slice(0, 10);
-        a.download = `facturas_${sanitizeFilename(profileId ? 'perfil' : clientFilter === 'all' ? 'todas' : clientFilter)}_${dateStr}.xlsx`;
+        a.download = `comprobantes_${sanitizeFilename(clienteFiltro ?? 'todos')}_${dateStr}.xlsx`;
         a.click();
         URL.revokeObjectURL(url);
-        toast.success(`Exportadas ${invoices.length} factura(s).`);
+        toast.success(`Exportados ${invoices.length} comprobante(s).`);
       } catch (e) {
         console.error(e);
         toast.error('Error al exportar Excel.');
@@ -623,15 +559,6 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
     const formatDateOnlyString = (isoDate: string): string => {
       const [y, m, d] = isoDate.split('-');
       return d && m && y ? `${d}/${m}/${y}` : isoDate;
-    };
-
-    const formatDate = (date: Date | string) => {
-      const dateObj = typeof date === 'string' ? new Date(date) : date;
-      return dateObj.toLocaleDateString('es-ES', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-      });
     };
 
     const formatCurrency = (amount: string, currency: string) => {
@@ -755,16 +682,16 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
     };
 
     const handleSortByDate = () => {
-      if (sortBy === 'emitionDate') {
+      if (sortBy === 'fechaEmision') {
         setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc');
       } else {
-        setSortBy('emitionDate');
+        setSortBy('fechaEmision');
         setSortOrder('desc');
       }
     };
 
     const handleSortByAmount = () => {
-      if (sortBy === 'amount') {
+      if (sortBy === 'total') {
         if (sortOrder === 'desc') {
           setSortOrder('asc');
         } else if (sortOrder === 'asc') {
@@ -772,33 +699,14 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
           setSortOrder(undefined);
         }
       } else {
-        setSortBy('amount');
+        setSortBy('total');
         setSortOrder('desc');
       }
     };
 
-    const getDirectionBadge = (direction: string) => {
-      const directionMap: Record<
-        string,
-        {
-          variant: 'default' | 'secondary' | 'destructive' | 'outline';
-          label: string;
-        }
-      > = {
-        outbound: { variant: 'secondary', label: 'Emitida' },
-        inbound: { variant: 'secondary', label: 'Recibida' },
-      };
-
-      const directionKey = direction || '';
-      const directionInfo = directionMap[directionKey] ||
-        directionMap[directionKey.toLowerCase()] || {
-          variant: 'outline' as const,
-          label: direction || 'Desconocida',
-        };
-      return (
-        <Badge variant={directionInfo.variant}>{directionInfo.label}</Badge>
-      );
-    };
+    const getDirectionBadge = (direccion: ComprobanteRow['direccion']) => (
+      <Badge variant="secondary">{getDirectionLabel(direccion)}</Badge>
+    );
 
     const totalPages = invoicesData?.totalPages || 1;
 
@@ -842,7 +750,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
               <div className="relative">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-[var(--arca-ink-3)]" />
                 <Input
-                  placeholder="Buscar mediante emisor o receptor..."
+                  placeholder="Buscar por contraparte (nombre o CUIT)..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-8 w-full md:w-80"
@@ -850,7 +758,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
               </div>
             )}
 
-            {!clientId && !profileId && (
+            {!isEmbedded && (
               <SearchableSelect
                 value={clientFilter}
                 onValueChange={setClientFilter}
@@ -858,36 +766,10 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                 searchPlaceholder="Buscar cliente..."
                 options={[
                   { value: 'all', label: 'Todos los clientes' },
-                  ...representatives.map((rep) => ({
-                    value: rep.id,
-                    label: toTitleCase(rep.name),
+                  ...clientes.map((c) => ({
+                    value: c.id,
+                    label: toTitleCase(c.razonSocial),
                   })),
-                ]}
-                width={192}
-              />
-            )}
-
-            {!isFiltersControlled && !profileId && representativeForClients && (
-              <SearchableSelect
-                value={profileFilter}
-                onValueChange={(v) => {
-                  setProfileFilter(v);
-                  setCurrentPage(1);
-                }}
-                placeholder="Perfil"
-                searchPlaceholder="Buscar perfil..."
-                options={[
-                  { value: 'all', label: 'Todos los perfiles' },
-                  ...representativeClients.map(
-                    (p: {
-                      id: string;
-                      name?: string;
-                      identityNumber?: string;
-                    }) => ({
-                      value: p.id,
-                      label: toTitleCase(p.name) || p.identityNumber || p.id,
-                    })
-                  ),
                 ]}
                 width={192}
               />
@@ -920,8 +802,8 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                 searchPlaceholder="Buscar dirección..."
                 options={[
                   { value: 'all', label: 'Todas las direcciones' },
-                  { value: 'Outbound', label: 'Emitida' },
-                  { value: 'Inbound', label: 'Recibida' },
+                  { value: 'emitido', label: 'Emitida' },
+                  { value: 'recibido', label: 'Recibida' },
                 ]}
                 width={224}
               />
@@ -1021,24 +903,24 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                   type="checkbox"
                   className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-navy-900)]"
                   checked={
-                    (invoicesData?.invoices ?? []).length > 0 &&
-                    (invoicesData?.invoices ?? []).every((inv) =>
+                    (invoicesData?.comprobantes ?? []).length > 0 &&
+                    (invoicesData?.comprobantes ?? []).every((inv) =>
                       selectedIds.has(inv.id)
                     )
                   }
                   ref={(el) => {
                     if (el)
                       el.indeterminate =
-                        (invoicesData?.invoices ?? []).some((inv) =>
+                        (invoicesData?.comprobantes ?? []).some((inv) =>
                           selectedIds.has(inv.id)
                         ) &&
-                        !(invoicesData?.invoices ?? []).every((inv) =>
+                        !(invoicesData?.comprobantes ?? []).every((inv) =>
                           selectedIds.has(inv.id)
                         );
                   }}
                   onChange={() =>
                     toggleAllInvoices(
-                      (invoicesData?.invoices ?? []).map((inv) => inv.id)
+                      (invoicesData?.comprobantes ?? []).map((inv) => inv.id)
                     )
                   }
                 />
@@ -1046,14 +928,14 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
               <TableHead className="w-[10%] px-2 py-2 align-top">
                 Tipo
               </TableHead>
-              <TableHead className="w-[14%] px-2 py-2 align-top">
+              <TableHead className="w-[16%] px-2 py-2 align-top">
                 Cliente
               </TableHead>
-              <TableHead className="w-[17%] px-2 py-2 align-top">
-                Emisor
+              <TableHead className="w-[20%] px-2 py-2 align-top">
+                Contraparte
               </TableHead>
-              <TableHead className="w-[17%] px-2 py-2 align-top">
-                Destinatario
+              <TableHead className="w-[12%] px-2 py-2 align-top">
+                Comprobante
               </TableHead>
               <TableHead className="w-[9%] px-2 py-2 align-middle">
                 <button
@@ -1061,9 +943,9 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                   onClick={handleSortByDate}
                 >
                   Fecha
-                  {sortBy === 'emitionDate' && sortOrder === 'asc' ? (
+                  {sortBy === 'fechaEmision' && sortOrder === 'asc' ? (
                     <ArrowUp className="ml-1 h-3 w-3" />
-                  ) : sortBy === 'emitionDate' && sortOrder === 'desc' ? (
+                  ) : sortBy === 'fechaEmision' && sortOrder === 'desc' ? (
                     <ArrowDown className="ml-1 h-3 w-3" />
                   ) : (
                     <ArrowUpDown className="ml-1 h-3 w-3 opacity-50 group-hover:opacity-100 transition-opacity" />
@@ -1076,16 +958,16 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                   onClick={handleSortByAmount}
                 >
                   Monto
-                  {sortBy === 'amount' && sortOrder === 'asc' ? (
+                  {sortBy === 'total' && sortOrder === 'asc' ? (
                     <ArrowUp className="ml-1 h-3 w-3" />
-                  ) : sortBy === 'amount' && sortOrder === 'desc' ? (
+                  ) : sortBy === 'total' && sortOrder === 'desc' ? (
                     <ArrowDown className="ml-1 h-3 w-3" />
                   ) : (
                     <ArrowUpDown className="ml-1 h-3 w-3 opacity-50 group-hover:opacity-100 transition-opacity" />
                   )}
                 </button>
               </TableHead>
-              <TableHead className="w-[14%] px-2 py-2 align-middle">
+              <TableHead className="w-[12%] px-2 py-2 align-middle">
                 Dirección
               </TableHead>
             </TableRow>
@@ -1094,17 +976,17 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
             {isLoading ? (
               <TableRow>
                 <TableCell colSpan={8} className="h-24 text-center">
-                  Cargando facturas...
+                  Cargando comprobantes...
                 </TableCell>
               </TableRow>
-            ) : invoicesData?.invoices.length === 0 ? (
+            ) : (invoicesData?.comprobantes.length ?? 0) === 0 ? (
               <TableRow>
                 <TableCell colSpan={8} className="h-24 text-center">
-                  No se encontraron facturas.
+                  No se encontraron comprobantes.
                 </TableCell>
               </TableRow>
             ) : (
-              invoicesData?.invoices.map((invoice) => (
+              invoicesData?.comprobantes.map((invoice) => (
                 <TableRow
                   key={invoice.id}
                   onClick={() => handleViewInvoice(invoice)}
@@ -1125,71 +1007,52 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                     />
                   </TableCell>
                   <TableCell className="w-[10%] px-2 py-2 align-top">
-                    <div className="truncate">{getTypeBadge(invoice.type)}</div>
+                    <div className="truncate">
+                      {getTypeBadge(String(invoice.tipo))}
+                    </div>
                   </TableCell>
-                  <TableCell className="w-[15%] px-2 py-2 align-top">
-                    {(() => {
-                      const name = invoice.profileName || (invoice.clientName && invoice.clientName !== '—' ? invoice.clientName : null);
-                      return name ? (
-                        <div className="space-y-0.5">
-                          <div className="font-medium truncate text-xs" title={name}>
-                            {name}
-                          </div>
-                          {invoice.clientEmail && (
-                            <div className="text-xs text-[var(--arca-ink-3)] truncate" title={invoice.clientEmail}>
-                              {invoice.clientEmail}
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-[var(--arca-ink-3)] text-xs">
-                          Sin cliente
-                        </span>
-                      );
-                    })()}
+                  <TableCell className="w-[16%] px-2 py-2 align-top">
+                    {invoice.clienteRazonSocial ? (
+                      <div
+                        className="font-medium truncate text-xs"
+                        title={invoice.clienteRazonSocial}
+                      >
+                        {invoice.clienteRazonSocial}
+                      </div>
+                    ) : (
+                      <span className="text-[var(--arca-ink-3)] text-xs">
+                        Sin cliente
+                      </span>
+                    )}
                   </TableCell>
-                  <TableCell className="w-[18%] px-2 py-2 align-top">
+                  <TableCell className="w-[20%] px-2 py-2 align-top">
                     <div className="space-y-0.5">
                       <div
                         className="font-medium truncate text-xs"
-                        title={invoice.emitterName}
+                        title={invoice.contraparteNombre ?? ''}
                       >
-                        {invoice.emitterName}
+                        {invoice.contraparteNombre ?? 'Sin identificar'}
                       </div>
                       <div
                         className="text-xs text-[var(--arca-ink-3)] truncate"
-                        title={`${invoice.emitterIdentityType}: ${invoice.emitterIdentityNumber}`}
+                        title={`${invoice.contraparteDocTipo}: ${invoice.contraparteDocNro}`}
                       >
-                        {invoice.emitterIdentityType}:{' '}
-                        {invoice.emitterIdentityNumber}
+                        {invoice.contraparteDocTipo}:{' '}
+                        {invoice.contraparteDocNro}
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="w-[18%] px-2 py-2 align-top">
-                    <div className="space-y-0.5">
-                      <div
-                        className="font-medium truncate text-xs"
-                        title={invoice.recipientName}
-                      >
-                        {invoice.recipientName}
-                      </div>
-                      <div
-                        className="text-xs text-[var(--arca-ink-3)] truncate"
-                        title={`${invoice.recipientIdentityType}: ${invoice.recipientIdentityNumber}`}
-                      >
-                        {invoice.recipientIdentityType}:{' '}
-                        {invoice.recipientIdentityNumber}
-                      </div>
-                    </div>
+                  <TableCell className="w-[12%] px-2 py-2 align-top whitespace-nowrap tabular-nums">
+                    {formatNumero(invoice.puntoVenta, invoice.numero)}
                   </TableCell>
                   <TableCell className="w-[9%] px-2 py-2 align-middle whitespace-nowrap">
-                    {formatDate(invoice.emitionDate)}
+                    {formatDateOnlyString(invoice.fechaEmision)}
                   </TableCell>
-                  <TableCell className="w-[15%] px-2 py-2 align-middle whitespace-nowrap font-medium">
-                    {formatCurrency(invoice.amount, invoice.currency)}
+                  <TableCell className="w-[14%] px-2 py-2 align-middle whitespace-nowrap font-medium">
+                    {formatCurrency(invoice.total, invoice.moneda)}
                   </TableCell>
-                  <TableCell className="w-[15%] px-2 py-2 align-middle whitespace-nowrap">
-                    {getDirectionBadge(invoice.direction.toLowerCase())}
+                  <TableCell className="w-[12%] px-2 py-2 align-middle whitespace-nowrap">
+                    {getDirectionBadge(invoice.direccion)}
                   </TableCell>
                 </TableRow>
               ))
@@ -1283,11 +1146,16 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
           <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="text-2xl">
-                Detalles de la Factura
+                Detalles del Comprobante
               </DialogTitle>
             </DialogHeader>
 
-            {selectedInvoice && (
+            {!invoiceDetails ? (
+              <div className="flex items-center gap-2 py-8 text-sm text-[var(--arca-ink-3)]">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Cargando detalles…
+              </div>
+            ) : (
               <div className="space-y-6">
                 {/* Basic Info */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-muted/30 rounded-lg">
@@ -1296,7 +1164,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                       Tipo
                     </label>
                     <div className="mt-1 w-full overflow-hidden">
-                      {getTypeBadge(selectedInvoice.type)}
+                      {getTypeBadge(String(invoiceDetails.tipo))}
                     </div>
                   </div>
                   <div className="min-w-0">
@@ -1304,9 +1172,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                       Dirección
                     </label>
                     <div className="mt-1">
-                      {getDirectionBadge(
-                        selectedInvoice.direction.toLowerCase()
-                      )}
+                      {getDirectionBadge(invoiceDetails.direccion)}
                     </div>
                   </div>
                   <div className="min-w-0">
@@ -1314,7 +1180,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                       Fecha de Emisión
                     </label>
                     <p className="text-sm font-medium">
-                      {formatDate(selectedInvoice.emitionDate)}
+                      {formatDateOnlyString(invoiceDetails.fechaEmision)}
                     </p>
                   </div>
                   <div className="min-w-0">
@@ -1323,8 +1189,8 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                     </label>
                     <p className="text-lg font-bold break-words">
                       {formatCurrency(
-                        selectedInvoice.amount,
-                        selectedInvoice.currency
+                        invoiceDetails.total,
+                        invoiceDetails.moneda
                       )}
                     </p>
                   </div>
@@ -1333,10 +1199,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                       Provincia (Convenio Multilateral)
                     </label>
                     <p className="text-sm font-medium">
-                      {console.log(invoiceDetails)}
-                      {invoiceDetails?.receiptProvince
-                        ? invoiceDetails.receiptProvince
-                        : 'sin datos'}
+                      {invoiceDetails.contraparteProvincia ?? 'sin datos'}
                     </p>
                   </div>
                 </div>
@@ -1344,7 +1207,10 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                 {/* Emitter Info */}
                 <div className="p-4 border rounded-lg">
                   <h3 className="text-lg font-semibold mb-4">
-                    Información del Emisor
+                    {invoiceDetails.direccion === 'emitido'
+                      ? 'Destinatario'
+                      : 'Emisor'}{' '}
+                    (contraparte)
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
@@ -1352,7 +1218,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                         Nombre
                       </label>
                       <p className="text-sm font-medium">
-                        {selectedInvoice.emitterName}
+                        {invoiceDetails.contraparteNombre ?? 'Sin identificar'}
                       </p>
                     </div>
                     <div>
@@ -1360,339 +1226,173 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                         Identificación
                       </label>
                       <p className="text-sm font-medium">
-                        {selectedInvoice.emitterIdentityType}:{' '}
-                        {selectedInvoice.emitterIdentityNumber}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Recipient Info */}
-                <div className="p-4 border rounded-lg">
-                  <h3 className="text-lg font-semibold mb-4">
-                    Información del Destinatario
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
-                        Nombre
-                      </label>
-                      <p className="text-sm font-medium">
-                        {selectedInvoice.recipientName}
-                      </p>
-                    </div>
-                    <div>
-                      <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
-                        Identificación
-                      </label>
-                      <p className="text-sm font-medium">
-                        {selectedInvoice.recipientIdentityType}:{' '}
-                        {selectedInvoice.recipientIdentityNumber}
+                        {invoiceDetails.contraparteDocTipo}:{' '}
+                        {invoiceDetails.contraparteDocNro}
                       </p>
                     </div>
                   </div>
                 </div>
 
                 {/* Client Info */}
-                {(selectedInvoice.clientName ||
-                  selectedInvoice.profileName) && (
+                {invoiceDetails.clienteRazonSocial && (
                   <div className="p-4 border rounded-lg">
-                    <h3 className="text-lg font-semibold mb-4">
-                      Cliente / Perfil
-                    </h3>
+                    <h3 className="text-lg font-semibold mb-4">Cliente</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {selectedInvoice.clientName && (
-                        <div>
-                          <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
-                            Cliente
-                          </label>
-                          <p className="text-sm font-medium">
-                            {selectedInvoice.clientName}
-                          </p>
-                        </div>
-                      )}
-                      {selectedInvoice.profileName && (
-                        <div>
-                          <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
-                            Perfil
-                          </label>
-                          <p className="text-sm font-medium">
-                            {selectedInvoice.profileName}
-                          </p>
-                        </div>
-                      )}
-                      {selectedInvoice.clientEmail && (
-                        <div>
-                          <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
-                            Email
-                          </label>
-                          <p className="text-sm font-medium">
-                            {selectedInvoice.clientEmail}
-                          </p>
-                        </div>
-                      )}
+                      <div>
+                        <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
+                          Razón social
+                        </label>
+                        <p className="text-sm font-medium">
+                          {invoiceDetails.clienteRazonSocial}
+                        </p>
+                      </div>
                     </div>
                   </div>
                 )}
 
-                {/* Invoice Details */}
-                {invoiceDetails && (
-                  <div className="p-4 border rounded-lg">
-                    <h3 className="text-lg font-semibold mb-4">
-                      Detalles de la Factura
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
-                          Número de Autorización
-                        </label>
-                        <p className="text-sm font-medium">
-                          {invoiceDetails.authorizationNumber}
-                        </p>
-                      </div>
-                      <div>
-                        <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
-                          Punto de Venta
-                        </label>
-                        <p className="text-sm font-medium">
-                          {invoiceDetails.salePoint}
-                        </p>
-                      </div>
-                      <div>
-                        <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
-                          Rango de IDs
-                        </label>
-                        <p className="text-sm font-medium">
-                          {invoiceDetails.idFrom} - {invoiceDetails.idTo}
-                        </p>
-                      </div>
-                      <div>
-                        <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
-                          Moneda
-                        </label>
-                        <p className="text-sm font-medium">
-                          {invoiceDetails.currency} (Tasa:{' '}
-                          {invoiceDetails.currencyRate})
-                        </p>
-                      </div>
+                {/* Detalle del comprobante */}
+                <div className="p-4 border rounded-lg">
+                  <h3 className="text-lg font-semibold mb-4">
+                    Datos del comprobante
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
+                        CAE
+                      </label>
+                      <p className="text-sm font-medium">
+                        {invoiceDetails.cae ?? '—'}
+                      </p>
                     </div>
+                    <div>
+                      <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
+                        Punto de Venta
+                      </label>
+                      <p className="text-sm font-medium">
+                        {String(invoiceDetails.puntoVenta).padStart(4, '0')}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
+                        Número
+                      </label>
+                      <p className="text-sm font-medium">
+                        {formatNumero(
+                          invoiceDetails.puntoVenta,
+                          invoiceDetails.numero
+                        )}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-semibold text-[var(--arca-ink-3)] mb-1 block">
+                        Moneda
+                      </label>
+                      <p className="text-sm font-medium">
+                        {invoiceDetails.moneda} (Tasa:{' '}
+                        {invoiceDetails.cotizacion})
+                      </p>
+                    </div>
+                  </div>
 
-                    {/* Tax Breakdown */}
-                    <div className="mt-4 pt-4 border-t">
-                      <h4 className="text-md font-semibold mb-3">
-                        Desglose de Impuestos
-                      </h4>
+                  {/* Desglose por alícuota */}
+                  <div className="mt-4 pt-4 border-t">
+                    <h4 className="text-md font-semibold mb-3">
+                      Desglose de IVA por alícuota
+                    </h4>
+                    {invoiceDetails.alicuotas.length === 0 ? (
+                      <p className="text-sm text-[var(--arca-ink-3)]">
+                        El comprobante no discrimina IVA.
+                      </p>
+                    ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                        <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-[var(--arca-ink-3)]">
-                            Monto IVA 0%:
-                          </span>
-                          <span className="font-medium">
-                            {formatCurrency(
-                              invoiceDetails.amountIVA0,
-                              invoiceDetails.currency
-                            )}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-[var(--arca-ink-3)]">
-                            IVA 2.5%:
-                          </span>
-                          <span className="font-medium">
-                            {formatCurrency(
-                              invoiceDetails.IVA25,
-                              invoiceDetails.currency
-                            )}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-[var(--arca-ink-3)]">
-                            Monto IVA 2.5%:
-                          </span>
-                          <span className="font-medium">
-                            {formatCurrency(
-                              invoiceDetails.amountIVA25,
-                              invoiceDetails.currency
-                            )}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-[var(--arca-ink-3)]">
-                            IVA 5%:
-                          </span>
-                          <span className="font-medium">
-                            {formatCurrency(
-                              invoiceDetails.IVA5,
-                              invoiceDetails.currency
-                            )}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-[var(--arca-ink-3)]">
-                            Monto IVA 5%:
-                          </span>
-                          <span className="font-medium">
-                            {formatCurrency(
-                              invoiceDetails.amountIVA5,
-                              invoiceDetails.currency
-                            )}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-[var(--arca-ink-3)]">
-                            IVA 10.5%:
-                          </span>
-                          <span className="font-medium">
-                            {formatCurrency(
-                              invoiceDetails.IVA105,
-                              invoiceDetails.currency
-                            )}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-[var(--arca-ink-3)]">
-                            Monto IVA 10.5%:
-                          </span>
-                          <span className="font-medium">
-                            {formatCurrency(
-                              invoiceDetails.amountIVA105,
-                              invoiceDetails.currency
-                            )}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-[var(--arca-ink-3)]">
-                            IVA 21%:
-                          </span>
-                          <span className="font-medium">
-                            {formatCurrency(
-                              invoiceDetails.IVA21,
-                              invoiceDetails.currency
-                            )}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-[var(--arca-ink-3)]">
-                            Monto IVA 21%:
-                          </span>
-                          <span className="font-medium">
-                            {formatCurrency(
-                              invoiceDetails.amountIVA21,
-                              invoiceDetails.currency
-                            )}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-[var(--arca-ink-3)]">
-                            IVA 27%:
-                          </span>
-                          <span className="font-medium">
-                            {formatCurrency(
-                              invoiceDetails.IVA27,
-                              invoiceDetails.currency
-                            )}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-[var(--arca-ink-3)]">
-                            Monto IVA 27%:
-                          </span>
-                          <span className="font-medium">
-                            {formatCurrency(
-                              invoiceDetails.amountIVA27,
-                              invoiceDetails.currency
-                            )}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center py-2 border-b font-semibold">
-                          <span>Total IVA:</span>
-                          <span>
-                            {formatCurrency(
-                              invoiceDetails.totalIVA,
-                              invoiceDetails.currency
-                            )}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-[var(--arca-ink-3)]">
-                            Monto Gravado:
-                          </span>
-                          <span className="font-medium">
-                            {formatCurrency(
-                              invoiceDetails.amountTaxed,
-                              invoiceDetails.currency
-                            )}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center py-2 border-b">
-                          <span className="text-[var(--arca-ink-3)]">
-                            Monto No Gravado:
-                          </span>
-                          <span className="font-medium">
-                            {formatCurrency(
-                              invoiceDetails.amountNoTaxed,
-                              invoiceDetails.currency
-                            )}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center py-2">
-                          <span className="text-[var(--arca-ink-3)]">
-                            Monto Exento:
-                          </span>
-                          <span className="font-medium">
-                            {formatCurrency(
-                              invoiceDetails.amountExempt,
-                              invoiceDetails.currency
-                            )}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Attachments */}
-                {invoiceDetails?.attachments &&
-                  invoiceDetails.attachments.length > 0 && (
-                    <div className="p-4 border rounded-lg">
-                      <h3 className="text-lg font-semibold mb-4">
-                        Archivos Adjuntos
-                      </h3>
-                      <div className="space-y-2">
-                        {invoiceDetails.attachments.map((attachment: any) => (
+                        {invoiceDetails.alicuotas.map((a) => (
                           <div
-                            key={attachment.id}
-                            className="flex items-center justify-between p-3 border rounded-md"
+                            key={a.alicuota}
+                            className="flex justify-between items-center py-2 border-b"
                           >
-                            <div className="flex items-center gap-2">
-                              <FileText className="h-4 w-4 text-[var(--arca-ink-3)]" />
-                              <div>
-                                <p className="text-sm font-medium">
-                                  {attachment.documentName}
-                                </p>
-                                <p className="text-xs text-[var(--arca-ink-3)]">
-                                  {attachment.documentType}
-                                </p>
-                              </div>
-                            </div>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() =>
-                                handleDownloadAttachment(
-                                  attachment.documentUrl,
-                                  attachment.documentName
-                                )
-                              }
-                            >
-                              <Download className="h-4 w-4 mr-2" />
-                              Descargar
-                            </Button>
+                            <span className="text-[var(--arca-ink-3)]">
+                              Neto / IVA {a.alicuota}%:
+                            </span>
+                            <span className="font-medium">
+                              {formatCurrency(a.neto, invoiceDetails.moneda)}
+                              {' / '}
+                              {formatCurrency(a.iva, invoiceDetails.moneda)}
+                            </span>
                           </div>
                         ))}
                       </div>
+                    )}
+                  </div>
+
+                  {/* Totales de la cabecera */}
+                  <div className="mt-4 pt-4 border-t">
+                    <h4 className="text-md font-semibold mb-3">Totales</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-[var(--arca-ink-3)]">
+                          Neto gravado:
+                        </span>
+                        <span className="font-medium">
+                          {formatCurrency(
+                            invoiceDetails.netoGravado,
+                            invoiceDetails.moneda
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-[var(--arca-ink-3)]">
+                          Neto no gravado:
+                        </span>
+                        <span className="font-medium">
+                          {formatCurrency(
+                            invoiceDetails.netoNoGravado,
+                            invoiceDetails.moneda
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-[var(--arca-ink-3)]">
+                          Exento:
+                        </span>
+                        <span className="font-medium">
+                          {formatCurrency(
+                            invoiceDetails.exento,
+                            invoiceDetails.moneda
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b">
+                        <span className="text-[var(--arca-ink-3)]">
+                          Otros tributos:
+                        </span>
+                        <span className="font-medium">
+                          {formatCurrency(
+                            invoiceDetails.otrosTributos,
+                            invoiceDetails.moneda
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b font-semibold">
+                        <span>Total IVA:</span>
+                        <span>
+                          {formatCurrency(
+                            invoiceDetails.ivaTotal,
+                            invoiceDetails.moneda
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b font-semibold">
+                        <span>Total:</span>
+                        <span>
+                          {formatCurrency(
+                            invoiceDetails.total,
+                            invoiceDetails.moneda
+                          )}
+                        </span>
+                      </div>
                     </div>
-                  )}
+                  </div>
+                </div>
               </div>
             )}
           </DialogContent>

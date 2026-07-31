@@ -18,8 +18,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  getRepresentativeDebts,
-  updateDebtStatus,
+  getCredencialDeudas,
+  updateDeudaEstado,
   scrapSingleJob,
 } from '@/actions/client';
 import { cn } from '@/lib/utils';
@@ -53,21 +53,10 @@ const formatLastUpdateAt = (iso: string | Date) =>
   });
 
 // ─── Types ────────────────────────────────────────────────────────────
-type DebtStatus = 'open' | 'in_plan' | 'paid' | 'disputed';
+type DebtStatus = 'abierta' | 'plan_pago' | 'pagada' | 'prescripta';
 
-interface Debt {
-  id: string;
-  tax: string;
-  concept: string;
-  period: string;
-  dueDate: Date | string;
-  detectedAt: Date | string;
-  balance: number | string;
-  compensatoryInterest: number | string;
-  punitiveInterest: number | string;
-  status: DebtStatus;
-  isIntimated: boolean;
-}
+/** Fila de `deuda` (aplanada) tal como la devuelve `getCredencialDeudas`. */
+type Debt = Awaited<ReturnType<typeof getCredencialDeudas>>[number]['deuda'];
 
 // ─── Status pill ─────────────────────────────────────────────────────
 function StatusPill({
@@ -77,7 +66,7 @@ function StatusPill({
   status: DebtStatus;
   isOverdue: boolean;
 }) {
-  if (isOverdue && status === 'open') {
+  if (isOverdue && status === 'abierta') {
     return (
       <span className="inline-flex items-center px-[9px] py-[3px] rounded-full text-[12px] font-semibold bg-[#fce8e6] text-[#c0392b] whitespace-nowrap">
         Vencida
@@ -85,12 +74,12 @@ function StatusPill({
     );
   }
   const map: Record<DebtStatus, { label: string; cls: string }> = {
-    open: { label: 'Abierta', cls: 'bg-[#fef3cd] text-[#8a6d00]' },
-    in_plan: { label: 'En plan', cls: 'bg-[#F2F1EB] text-[#3E404A]' },
-    paid: { label: 'Pagada', cls: 'bg-[#E6EFE8] text-[#2f7d55]' },
-    disputed: { label: 'Disputada', cls: 'bg-[#E7E8F2] text-[#3B3F6B]' },
+    abierta: { label: 'Abierta', cls: 'bg-[#fef3cd] text-[#8a6d00]' },
+    plan_pago: { label: 'En plan', cls: 'bg-[#F2F1EB] text-[#3E404A]' },
+    pagada: { label: 'Pagada', cls: 'bg-[#E6EFE8] text-[#2f7d55]' },
+    prescripta: { label: 'Prescripta', cls: 'bg-[#E7E8F2] text-[#3B3F6B]' },
   };
-  const { label, cls } = map[status] ?? map.open;
+  const { label, cls } = map[status] ?? map.abierta;
   return (
     <span
       className={cn(
@@ -148,25 +137,35 @@ export function DeudasTab({
   }, [filterImpuesto, filterConcepto, sortKey, sortDir, selectedClientId]);
 
   // ── Query ──
-  const { data: debts = [], isLoading } = useQuery({
-    queryKey: ['representativeDebts', representativeId, selectedClientId],
+  // AFIP devuelve las deudas por login (credencial), no por cliente: se traen
+  // todas las del login y se filtran acá por la empresa seleccionada.
+  const { data: deudasDelLogin = [], isLoading } = useQuery({
+    queryKey: ['representativeDebts', representativeId],
     queryFn: () =>
-      getRepresentativeDebts({
-        data: { representativeId, clientId: selectedClientId || undefined },
-      }),
+      getCredencialDeudas({ data: { credencialId: representativeId } }),
     enabled: !!representativeId,
   });
+
+  const debts = useMemo(
+    () =>
+      deudasDelLogin
+        .filter(
+          (row) => !selectedClientId || row.deuda.clienteId === selectedClientId
+        )
+        .map((row) => row.deuda),
+    [deudasDelLogin, selectedClientId]
+  );
 
   // ── Mutation ──
   const updateMutation = useMutation({
     mutationFn: (vars: {
       id: string;
-      status: DebtStatus;
-      isIntimated: boolean;
-    }) => updateDebtStatus({ data: vars }),
+      estado: DebtStatus;
+      intimada: boolean;
+    }) => updateDeudaEstado({ data: vars }),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ['representativeDebts', representativeId, selectedClientId],
+        queryKey: ['representativeDebts', representativeId],
       });
     },
     onError: (err) => {
@@ -200,11 +199,11 @@ export function DeudasTab({
     let totalPunitiveInterest = 0;
     let overdueCount = 0;
 
-    for (const d of debts as Debt[]) {
-      totalBalance += Number(d.balance ?? 0);
-      totalCompensatoryInterest += Number(d.compensatoryInterest ?? 0);
-      totalPunitiveInterest += Number(d.punitiveInterest ?? 0);
-      if (new Date(d.dueDate) < today) overdueCount++;
+    for (const d of debts) {
+      totalBalance += Number(d.saldo ?? 0);
+      totalCompensatoryInterest += Number(d.interesResarcitorio ?? 0);
+      totalPunitiveInterest += Number(d.interesPunitorio ?? 0);
+      if (d.venceAt && new Date(d.venceAt) < today) overdueCount++;
     }
 
     return {
@@ -222,9 +221,9 @@ export function DeudasTab({
   const debtFilterOptions = useMemo(() => {
     const impuestos = new Set<string>();
     const conceptos = new Set<string>();
-    for (const d of debts as Debt[]) {
-      if (d.tax) impuestos.add(d.tax);
-      if (d.concept) conceptos.add(d.concept);
+    for (const d of debts) {
+      if (d.impuesto) impuestos.add(d.impuesto);
+      if (d.concepto) conceptos.add(d.concepto);
     }
     return {
       impuestos: Array.from(impuestos).sort(),
@@ -234,9 +233,9 @@ export function DeudasTab({
 
   // ── Filtered & sorted debts ──
   const filteredDebts = useMemo(() => {
-    return (debts as Debt[]).filter((d) => {
-      if (filterImpuesto && d.tax !== filterImpuesto) return false;
-      if (filterConcepto && d.concept !== filterConcepto) return false;
+    return debts.filter((d) => {
+      if (filterImpuesto && d.impuesto !== filterImpuesto) return false;
+      if (filterConcepto && d.concepto !== filterConcepto) return false;
       return true;
     });
   }, [debts, filterImpuesto, filterConcepto]);
@@ -248,20 +247,20 @@ export function DeudasTab({
       let av: string | number = 0;
       let bv: string | number = 0;
       if (sortKey === 'tax') {
-        av = a.tax ?? '';
-        bv = b.tax ?? '';
+        av = a.impuesto ?? '';
+        bv = b.impuesto ?? '';
       } else if (sortKey === 'concept') {
-        av = a.concept ?? '';
-        bv = b.concept ?? '';
+        av = a.concepto ?? '';
+        bv = b.concepto ?? '';
       } else if (sortKey === 'period') {
-        av = a.period ?? '';
-        bv = b.period ?? '';
+        av = a.periodo ?? '';
+        bv = b.periodo ?? '';
       } else if (sortKey === 'dueDate') {
-        av = new Date(a.dueDate).getTime();
-        bv = new Date(b.dueDate).getTime();
+        av = a.venceAt ? new Date(a.venceAt).getTime() : 0;
+        bv = b.venceAt ? new Date(b.venceAt).getTime() : 0;
       } else if (sortKey === 'detectedAt') {
-        av = new Date(a.detectedAt).getTime();
-        bv = new Date(b.detectedAt).getTime();
+        av = a.detectadaAt ? new Date(a.detectadaAt).getTime() : 0;
+        bv = b.detectadaAt ? new Date(b.detectadaAt).getTime() : 0;
       }
       if (av === bv) return 0;
       return av > bv ? dir : -dir;
@@ -314,7 +313,9 @@ export function DeudasTab({
   const handleUpdateDeudas = async () => {
     setScrapingSection('deudas');
     try {
-      await scrapSingleJob({ data: { representativeId, jobType: 'deuda' } });
+      await scrapSingleJob({
+        data: { credencialId: representativeId, jobType: 'deuda' },
+      });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['representativeDebts'] }),
         queryClient.invalidateQueries({ queryKey: ['lastDeudaJob'] }),
@@ -576,15 +577,15 @@ export function DeudasTab({
           </div>
         ) : paginated.length === 0 ? (
           <div className="flex items-center justify-center h-28 text-[13.5px] text-[#9B9CA3]">
-            {(debts as Debt[]).length === 0
+            {debts.length === 0
               ? 'No hay deudas registradas para este cliente.'
               : 'No hay deudas que coincidan con los filtros aplicados.'}
           </div>
         ) : (
           paginated.map((debt) => {
-            const isOverdue = new Date(debt.dueDate) < today;
-            const compInt = Number(debt.compensatoryInterest ?? 0);
-            const punitInt = Number(debt.punitiveInterest ?? 0);
+            const isOverdue = !!debt.venceAt && new Date(debt.venceAt) < today;
+            const compInt = Number(debt.interesResarcitorio ?? 0);
+            const punitInt = Number(debt.interesPunitorio ?? 0);
 
             return (
               <div
@@ -597,32 +598,32 @@ export function DeudasTab({
               >
                 {/* IMPUESTO */}
                 <div className="text-[13.5px] font-semibold text-[#12131A] truncate pr-2">
-                  {debt.tax || '—'}
+                  {debt.impuesto || '—'}
                 </div>
 
                 {/* CONCEPTO */}
                 <div className="text-[13.5px] text-[#3E404A] truncate pr-2">
-                  {debt.concept || '—'}
+                  {debt.concepto || '—'}
                 </div>
 
                 {/* PERÍODO */}
                 <div className="text-[13px] text-[#3E404A] tabular-nums">
-                  {debt.period || '—'}
+                  {debt.periodo || '—'}
                 </div>
 
                 {/* VENCIMIENTO */}
                 <div className="text-[13px] text-[#3E404A] tabular-nums">
-                  {debt.dueDate ? formatDate(debt.dueDate) : '—'}
+                  {debt.venceAt ? formatDate(debt.venceAt) : '—'}
                 </div>
 
                 {/* ACTUALIZ. */}
                 <div className="text-[13px] text-[#9B9CA3] tabular-nums">
-                  {debt.detectedAt ? formatDate(debt.detectedAt) : '—'}
+                  {debt.detectadaAt ? formatDate(debt.detectadaAt) : '—'}
                 </div>
 
                 {/* SALDO */}
                 <div className="text-right text-[13.5px] font-bold text-[#12131A] tabular-nums">
-                  {formatARS(debt.balance)}
+                  {formatARS(debt.saldo)}
                 </div>
 
                 {/* INT. COMP. */}
@@ -647,7 +648,7 @@ export function DeudasTab({
 
                 {/* ESTADO */}
                 <div>
-                  <StatusPill status={debt.status} isOverdue={isOverdue} />
+                  <StatusPill status={debt.estado} isOverdue={isOverdue} />
                 </div>
 
                 {/* GESTIÓN */}
@@ -656,12 +657,12 @@ export function DeudasTab({
                   onClick={(e) => e.stopPropagation()}
                 >
                   <Select
-                    value={debt.status}
+                    value={debt.estado}
                     onValueChange={(v) =>
                       updateMutation.mutate({
                         id: debt.id,
-                        status: v as DebtStatus,
-                        isIntimated: debt.isIntimated,
+                        estado: v as DebtStatus,
+                        intimada: debt.intimada,
                       })
                     }
                   >
@@ -669,28 +670,28 @@ export function DeudasTab({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="open">Abierta</SelectItem>
-                      <SelectItem value="in_plan">En plan</SelectItem>
-                      <SelectItem value="paid">Pagada</SelectItem>
-                      <SelectItem value="disputed">Disputada</SelectItem>
+                      <SelectItem value="abierta">Abierta</SelectItem>
+                      <SelectItem value="plan_pago">En plan</SelectItem>
+                      <SelectItem value="pagada">Pagada</SelectItem>
+                      <SelectItem value="prescripta">Prescripta</SelectItem>
                     </SelectContent>
                   </Select>
                   <button
                     className={cn(
                       'text-[11.5px] font-semibold text-left underline underline-offset-2 transition-colors',
-                      debt.isIntimated
+                      debt.intimada
                         ? 'text-[#c0392b] hover:text-[#a93226]'
                         : 'text-[#9B9CA3] hover:text-[#6E7079]'
                     )}
                     onClick={() =>
                       updateMutation.mutate({
                         id: debt.id,
-                        status: debt.status,
-                        isIntimated: !debt.isIntimated,
+                        estado: debt.estado,
+                        intimada: !debt.intimada,
                       })
                     }
                   >
-                    {debt.isIntimated ? 'Intimada' : 'No intimada'}
+                    {debt.intimada ? 'Intimada' : 'No intimada'}
                   </button>
                 </div>
               </div>

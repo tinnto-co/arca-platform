@@ -1,6 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { Separator } from '../ui/separator';
 
 interface PageHeaderProps {
   icon?: LucideIcon;

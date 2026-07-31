@@ -35,7 +35,6 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
 import { authClient } from '@/lib/auth-client';
-import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate } from '@tanstack/react-router';
 import { CreateRepresentativeDialog } from './create-client-dialog';
@@ -133,10 +132,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   const { data: openAlerts = [] } = useQuery({
     queryKey: ['alerts', 'open', '', '', ''],
-    queryFn: () => listAlerts({ data: { status: 'open', limit: 99 } }),
+    queryFn: () => listAlerts({ data: { estado: 'abierta', limit: 99 } }),
     staleTime: 60_000,
   });
-  const openAlertsCount = (openAlerts as unknown[]).length;
+  const openAlertsCount = openAlerts.length;
 
   const { data: orgModules = [] } = useQuery({
     queryKey: ['orgModules'],

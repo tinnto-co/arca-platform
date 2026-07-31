@@ -72,7 +72,7 @@ import {
   type JobsResponse,
   type JobLogRow,
 } from '@/actions/job';
-import { getRepresentatives } from '@/actions/client';
+import { getCredenciales } from '@/actions/client';
 import { JobsErrorSummary } from '@/components/jobs-error-summary';
 
 export function JobsTable() {
@@ -135,9 +135,9 @@ export function JobsTable() {
 
   const pageSize = 20;
 
-  const { data: representatives = [] } = useQuery({
-    queryKey: ['representatives'],
-    queryFn: () => getRepresentatives(),
+  const { data: credenciales = [] } = useQuery({
+    queryKey: ['credenciales'],
+    queryFn: () => getCredenciales(),
   });
 
   const { data, isLoading } = useQuery<JobsResponse>({
@@ -147,7 +147,7 @@ export function JobsTable() {
         data: {
           page: currentPage,
           limit: pageSize,
-          representativeId: clientFilter === 'all' ? undefined : clientFilter,
+          credencialId: clientFilter === 'all' ? undefined : clientFilter,
           status: statusFilter === 'all' ? undefined : statusFilter,
           type: typeFilter === 'all' ? undefined : typeFilter,
           date,
@@ -168,8 +168,10 @@ export function JobsTable() {
       const term = searchTerm.toLowerCase();
       return (
         job.id.toLowerCase().includes(term) ||
-        (job.representativeName ?? '').toLowerCase().includes(term) ||
-        job.clients.some((c) => c.name.toLowerCase().includes(term)) ||
+        (job.credencialNombre ?? '').toLowerCase().includes(term) ||
+        job.clientes.some((c) =>
+          c.razonSocial.toLowerCase().includes(term)
+        ) ||
         job.type.toLowerCase().includes(term)
       );
     })
@@ -329,10 +331,17 @@ export function JobsTable() {
     setLogsOpen(true);
   };
 
+  // Un job corre sobre una credencial, que puede dar acceso a varios clientes:
+  // se navega al primero y si no hay ninguno no hay adónde ir.
   const handleGoToClient = (job: JobRow) => {
+    const clienteId = job.clientes[0]?.id;
+    if (!clienteId) {
+      toast.error('La credencial de este job no tiene clientes asociados');
+      return;
+    }
     void navigate({
       to: '/clients/$clientId',
-      params: { clientId: job.representativeId },
+      params: { clientId: clienteId },
     });
   };
 
@@ -394,7 +403,7 @@ export function JobsTable() {
           <div className="relative flex-[2] min-w-[200px]">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-[var(--arca-ink-3)]" />
             <Input
-              placeholder="Buscar por ID, representante, empresa o tipo..."
+              placeholder="Buscar por ID, credencial, empresa o tipo..."
               value={searchTerm}
               onChange={(e) => setFilter({ search: e.target.value })}
               className="pl-8 w-full"
@@ -419,16 +428,16 @@ export function JobsTable() {
           <div className="flex-[2] min-w-[180px]">
             <SearchableSelect
               options={[
-                { value: 'all', label: 'Todos los representantes' },
-                ...representatives.map((c) => ({
+                { value: 'all', label: 'Todas las credenciales' },
+                ...credenciales.map((c) => ({
                   value: c.id,
-                  label: c.name ?? 'Sin nombre',
+                  label: c.nombre ?? c.cuit,
                 })),
               ]}
               value={clientFilter}
               onValueChange={(value) => setFilter({ clientId: value })}
-              placeholder="Filtrar por representante"
-              searchPlaceholder="Buscar representante..."
+              placeholder="Filtrar por credencial"
+              searchPlaceholder="Buscar credencial..."
               width="100%"
             />
           </div>
@@ -504,7 +513,7 @@ export function JobsTable() {
       </div>
 
       <JobsErrorSummary
-        representativeId={clientFilter === 'all' ? undefined : clientFilter}
+        credencialId={clientFilter === 'all' ? undefined : clientFilter}
         type={typeFilter === 'all' ? undefined : (typeFilter as JobType)}
         date={date || undefined}
         fromTime={fromTime || undefined}
@@ -532,7 +541,7 @@ export function JobsTable() {
                 />
               </TableHead>
               <TableHead className="w-[90px]">ID</TableHead>
-              <TableHead>Representante</TableHead>
+              <TableHead>Credencial</TableHead>
               <TableHead>Tipo</TableHead>
               <TableHead>Estado</TableHead>
               <TableHead>Creado</TableHead>
@@ -573,23 +582,23 @@ export function JobsTable() {
                     </code>
                   </TableCell>
                   <TableCell>
-                    {job.representativeName ? (
+                    {job.credencialNombre ? (
                       <div className="flex flex-col">
                         <span className="font-medium">
-                          {job.representativeName}
+                          {job.credencialNombre}
                         </span>
-                        {job.clients.length > 0 && (
+                        {job.clientes.length > 0 && (
                           <span
                             className="max-w-[260px] truncate text-xs text-[var(--arca-ink-3)]"
-                            title={job.clients.map((c) => c.name).join(', ')}
+                            title={job.clientes.map((c) => c.razonSocial).join(', ')}
                           >
-                            {job.clients.map((c) => c.name).join(', ')}
+                            {job.clientes.map((c) => c.razonSocial).join(', ')}
                           </span>
                         )}
                       </div>
                     ) : (
                       <span className="text-[var(--arca-ink-3)] text-sm">
-                        Representante desconocido
+                        Credencial desconocida
                       </span>
                     )}
                   </TableCell>
@@ -737,18 +746,17 @@ export function JobsTable() {
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div className="space-y-1.5">
                   <p className="text-xs font-medium text-[var(--arca-ink-3)]">
-                    Representante
+                    Credencial
                   </p>
                   <p className="text-sm font-semibold">
-                    {selectedJob.representativeName ??
-                      'Representante desconocido'}
+                    {selectedJob.credencialNombre ?? 'Credencial desconocida'}
                   </p>
                   <p className="text-xs text-[var(--arca-ink-3)] font-mono">
-                    {selectedJob.representativeId}
+                    {selectedJob.credencialId}
                   </p>
-                  {selectedJob.clients.length > 0 && (
+                  {selectedJob.clientes.length > 0 && (
                     <p className="text-xs text-[var(--arca-ink-3)]">
-                      {selectedJob.clients.map((c) => c.name).join(', ')}
+                      {selectedJob.clientes.map((c) => c.razonSocial).join(', ')}
                     </p>
                   )}
                 </div>

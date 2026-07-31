@@ -19,20 +19,24 @@ export function ActiveJobsIndicator() {
 
   if (activeJobs.length === 0) return null;
 
-  const clientCount = new Set(activeJobs.map((j) => j.representativeId)).size;
+  // Un job corre sobre una credencial de AFIP, no sobre un cliente.
+  const credencialCount = new Set(activeJobs.map((j) => j.credencialId)).size;
 
   const countsByType = new Map<JobType, number>();
   for (const j of activeJobs) {
     countsByType.set(j.type, (countsByType.get(j.type) ?? 0) + 1);
   }
 
-  // Link al detalle: si hay un solo job, filtra por su representante y estado;
-  // si es un solo cliente con varios jobs, filtra por representante.
+  // Link al detalle: si hay un solo job, filtra por su credencial y estado;
+  // si es una sola credencial con varios jobs, filtra solo por credencial.
   const jobsSearch =
     activeJobs.length === 1
-      ? { clientId: activeJobs[0].representativeId, status: activeJobs[0].status }
-      : clientCount === 1
-        ? { clientId: activeJobs[0].representativeId }
+      ? {
+          clientId: activeJobs[0].credencialId,
+          status: activeJobs[0].status,
+        }
+      : credencialCount === 1
+        ? { clientId: activeJobs[0].credencialId }
         : {};
 
   return (
@@ -44,8 +48,8 @@ export function ActiveJobsIndicator() {
         >
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
           {activeJobs.length} actualización
-          {activeJobs.length > 1 ? 'es' : ''} en curso · {clientCount} cliente
-          {clientCount > 1 ? 's' : ''}
+          {activeJobs.length > 1 ? 'es' : ''} en curso · {credencialCount} credencial
+          {credencialCount > 1 ? 'es' : ''}
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-64 p-3">

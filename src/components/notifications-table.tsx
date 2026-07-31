@@ -62,21 +62,15 @@ import {
   deleteNotification,
   getNotification,
 } from '@/actions/notification';
-import { getRepresentatives } from '@/actions/client';
+import { getCredenciales } from '@/actions/client';
 import { userQuery } from '../lib/user-query';
 
-interface NotificationData {
-  id: string;
-  externalId: string;
-  message: string;
-  expirationDate: Date;
-  publicationDate: Date;
-  clientId: string | null;
-  clientName: string | null;
-  clientEmail: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-}
+/** Fila de la grilla, tal cual la devuelve `getNotifications`. */
+type NotificationRow = Awaited<
+  ReturnType<typeof getNotifications>
+>['notifications'][number];
+/** Detalle completo (incluye los adjuntos). */
+type NotificationDetalle = Awaited<ReturnType<typeof getNotification>>;
 
 export function NotificationsTable() {
   const queryClient = useQueryClient();
@@ -89,21 +83,22 @@ export function NotificationsTable() {
     string | null
   >(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [clientFilter, setClientFilter] = useState<string>('all');
+  const [credencialFilter, setCredencialFilter] = useState<string>('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [selectedNotification, setSelectedNotification] =
-    useState<NotificationData | null>(null);
-  const [notificationDetails, setNotificationDetails] = useState<any>(null);
+    useState<NotificationRow | null>(null);
+  const [notificationDetails, setNotificationDetails] =
+    useState<NotificationDetalle | null>(null);
 
   const pageSize = 10;
 
-  // Get representatives for filter dropdown
-  const { data: representatives = [] } = useQuery({
-    queryKey: ['representatives'],
-    queryFn: () => getRepresentatives(),
+  // Las notificaciones cuelgan del login de AFIP (credencial), no del cliente.
+  const { data: credenciales = [] } = useQuery({
+    queryKey: ['credenciales'],
+    queryFn: () => getCredenciales(),
   });
 
   // Get notifications
@@ -112,7 +107,7 @@ export function NotificationsTable() {
       'notifications',
       orgKey,
       currentPage,
-      clientFilter,
+      credencialFilter,
       dateFrom,
       dateTo,
       searchTerm,
@@ -122,7 +117,8 @@ export function NotificationsTable() {
         data: {
           page: currentPage,
           limit: pageSize,
-          clientFilter: clientFilter === 'all' ? undefined : clientFilter,
+          credencialFilter:
+            credencialFilter === 'all' ? undefined : credencialFilter,
           dateFrom: dateFrom || undefined,
           dateTo: dateTo || undefined,
           search: searchTerm || undefined,
@@ -146,7 +142,7 @@ export function NotificationsTable() {
   });
 
   // View notification details
-  const handleViewNotification = async (notification: NotificationData) => {
+  const handleViewNotification = async (notification: NotificationRow) => {
     setSelectedNotification(notification);
     setViewDialogOpen(true);
 
@@ -180,7 +176,8 @@ export function NotificationsTable() {
     document.body.removeChild(link);
   };
 
-  const formatDate = (date: Date | string) => {
+  const formatDate = (date: Date | string | null) => {
+    if (!date) return '-';
     const dateObj = typeof date === 'string' ? new Date(date) : date;
     return dateObj.toLocaleDateString('es-ES', {
       year: 'numeric',
@@ -208,15 +205,15 @@ export function NotificationsTable() {
             />
           </div>
 
-          <Select value={clientFilter} onValueChange={setClientFilter}>
+          <Select value={credencialFilter} onValueChange={setCredencialFilter}>
             <SelectTrigger className="w-full md:w-48">
-              <SelectValue placeholder="Filtrar por cliente" />
+              <SelectValue placeholder="Filtrar por login AFIP" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Todos los clientes</SelectItem>
-              {representatives.map((rep) => (
-                <SelectItem key={rep.id} value={rep.id}>
-                  {rep.name}
+              <SelectItem value="all">Todos los logins</SelectItem>
+              {credenciales.map((cred) => (
+                <SelectItem key={cred.id} value={cred.id}>
+                  {cred.nombre ?? cred.cuit}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -270,13 +267,16 @@ export function NotificationsTable() {
               notificationsData?.notifications.map((notification) => (
                 <TableRow key={notification.id}>
                   <TableCell>
-                    {notification.clientName ? (
+                    {notification.clienteRazonSocial ??
+                    notification.credencialNombre ? (
                       <div>
                         <div className="font-medium">
-                          {notification.clientName}
+                          {notification.clienteRazonSocial ??
+                            notification.credencialNombre}
                         </div>
                         <div className="text-sm text-muted-foreground">
-                          {notification.clientEmail}
+                          {notification.clienteCuit ??
+                            notification.credencialEmail}
                         </div>
                       </div>
                     ) : (
@@ -285,15 +285,11 @@ export function NotificationsTable() {
                   </TableCell>
                   <TableCell>
                     <div className="max-w-xs truncate">
-                      {notification.message}
+                      {notification.mensaje}
                     </div>
                   </TableCell>
-                  <TableCell>
-                    {formatDate(notification.publicationDate)}
-                  </TableCell>
-                  <TableCell>
-                    {formatDate(notification.expirationDate)}
-                  </TableCell>
+                  <TableCell>{formatDate(notification.publicadaAt)}</TableCell>
+                  <TableCell>{formatDate(notification.venceAt)}</TableCell>
 
                   <TableCell className="text-right">
                     <DropdownMenu>
@@ -392,7 +388,9 @@ export function NotificationsTable() {
                 <div>
                   <label className="text-sm font-medium">Cliente</label>
                   <p className="text-sm text-muted-foreground">
-                    {selectedNotification.clientName || 'Sin cliente'}
+                    {selectedNotification.clienteRazonSocial ??
+                      selectedNotification.credencialNombre ??
+                      'Sin cliente'}
                   </p>
                 </div>
                 <div>
@@ -400,7 +398,7 @@ export function NotificationsTable() {
                     Fecha de Publicaci?n
                   </label>
                   <p className="text-sm text-muted-foreground">
-                    {formatDate(selectedNotification.publicationDate)}
+                    {formatDate(selectedNotification.publicadaAt)}
                   </p>
                 </div>
                 <div>
@@ -408,7 +406,7 @@ export function NotificationsTable() {
                     Fecha de Expiraci?n
                   </label>
                   <p className="text-sm text-muted-foreground">
-                    {formatDate(selectedNotification.expirationDate)}
+                    {formatDate(selectedNotification.venceAt)}
                   </p>
                 </div>
               </div>
@@ -416,51 +414,51 @@ export function NotificationsTable() {
               <div>
                 <label className="text-sm font-medium">Mensaje</label>
                 <p className="text-sm text-muted-foreground mt-1 p-3 bg-muted rounded-md">
-                  {selectedNotification.message}
+                  {selectedNotification.mensaje}
                 </p>
               </div>
 
-              {/* Attachments */}
-              {notificationDetails?.attachments &&
-                notificationDetails.attachments.length > 0 && (
+              {/* Adjuntos — se sirven desde R2 vía el endpoint autenticado. */}
+              {notificationDetails?.adjuntos &&
+                notificationDetails.adjuntos.length > 0 && (
                   <div>
                     <label className="text-sm font-medium">
                       Archivos Adjuntos
                     </label>
                     <div className="space-y-2 mt-2">
-                      {notificationDetails.attachments.map(
-                        (attachment: any) => (
-                          <div
-                            key={attachment.id}
-                            className="flex items-center justify-between p-3 border rounded-md"
-                          >
-                            <div className="flex items-center gap-2">
-                              <FileText className="h-4 w-4 text-muted-foreground" />
-                              <div>
-                                <p className="text-sm font-medium">
-                                  {attachment.documentName}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  {attachment.documentType}
-                                </p>
-                              </div>
+                      {notificationDetails.adjuntos.map((adjunto) => (
+                        <div
+                          key={adjunto.id}
+                          className="flex items-center justify-between p-3 border rounded-md"
+                        >
+                          <div className="flex items-center gap-2">
+                            <FileText className="h-4 w-4 text-muted-foreground" />
+                            <div>
+                              <p className="text-sm font-medium">
+                                {adjunto.nombre}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {adjunto.mimeType}
+                              </p>
                             </div>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() =>
-                                handleDownloadAttachment(
-                                  attachment.documentUrl,
-                                  attachment.documentName
-                                )
-                              }
-                            >
-                              <Download className="h-4 w-4 mr-2" />
-                              Descargar
-                            </Button>
                           </div>
-                        )
-                      )}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={!adjunto.url}
+                            onClick={() =>
+                              adjunto.url &&
+                              handleDownloadAttachment(
+                                adjunto.url,
+                                adjunto.nombre ?? 'adjunto'
+                              )
+                            }
+                          >
+                            <Download className="h-4 w-4 mr-2" />
+                            Descargar
+                          </Button>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}

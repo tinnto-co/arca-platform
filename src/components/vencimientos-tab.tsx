@@ -19,8 +19,16 @@ import {
   SelectItem,
   SelectTrigger,
 } from '@/components/ui/select';
-import { getRepresentativeDueDates, scrapSingleJob } from '@/actions/client';
+import {
+  getCredencialVencimientos,
+  scrapSingleJob,
+} from '@/actions/client';
 import { cn } from '@/lib/utils';
+
+/** Fila de `vencimiento` tal como la devuelve `getCredencialVencimientos`. */
+type VencimientoRow = Awaited<
+  ReturnType<typeof getCredencialVencimientos>
+>[number];
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
@@ -40,14 +48,16 @@ const formatDueDate = (date: string | Date) =>
     year: 'numeric',
   });
 
-const getStatus = (dd: any): 'completado' | 'vencido' | 'proximo' | 'futuro' => {
+const getStatus = (
+  dd: VencimientoRow
+): 'completado' | 'vencido' | 'proximo' | 'futuro' => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const dueDate = new Date(dd.dueDate);
+  const dueDate = new Date(dd.venceAt);
   dueDate.setHours(0, 0, 0, 0);
   const next7 = new Date(today);
   next7.setDate(today.getDate() + 7);
-  if (dd.completedAt) return 'completado';
+  if (dd.completadoAt) return 'completado';
   if (dueDate < today) return 'vencido';
   if (dueDate <= next7) return 'proximo';
   return 'futuro';
@@ -94,8 +104,11 @@ export function VencimientosTab({
   const { data: dueDates = [], isLoading } = useQuery({
     queryKey: ['representativeDueDates', representativeId, selectedClientId],
     queryFn: () =>
-      getRepresentativeDueDates({
-        data: { representativeId, clientId: selectedClientId || undefined },
+      getCredencialVencimientos({
+        data: {
+          credencialId: representativeId,
+          clienteId: selectedClientId || undefined,
+        },
       }),
     enabled: !!representativeId,
   });
@@ -118,8 +131,8 @@ export function VencimientosTab({
     let nextDueDateValue: Date | null = null;
     let nextDueDateTax = '';
 
-    for (const dd of dueDates as any[]) {
-      const due = new Date(dd.dueDate);
+    for (const dd of dueDates) {
+      const due = new Date(dd.venceAt);
       due.setHours(0, 0, 0, 0);
 
       if (due >= today) {
@@ -127,9 +140,9 @@ export function VencimientosTab({
         if (due <= next30Days) next30Count++;
         if (nextDueDateValue === null || due < nextDueDateValue) {
           nextDueDateValue = due;
-          nextDueDateTax = dd.tax ?? '';
+          nextDueDateTax = dd.impuesto ?? '';
         }
-      } else if (!dd.completedAt) {
+      } else if (!dd.completadoAt) {
         overdueCount++;
       }
     }
@@ -140,16 +153,17 @@ export function VencimientosTab({
   // ── Unique impuesto options ──
   const impuestoOptions = useMemo(() => {
     const set = new Set<string>();
-    for (const dd of dueDates as any[]) {
-      if (dd.tax) set.add(dd.tax);
+    for (const dd of dueDates) {
+      if (dd.impuesto) set.add(dd.impuesto);
     }
     return Array.from(set).sort();
   }, [dueDates]);
 
   // ── Filtered list ──
   const filteredDueDates = useMemo(() => {
-    return (dueDates as any[]).filter((dd) => {
-      if (filterImpuesto !== '__all__' && dd.tax !== filterImpuesto) return false;
+    return dueDates.filter((dd) => {
+      if (filterImpuesto !== '__all__' && dd.impuesto !== filterImpuesto)
+        return false;
       if (filterEstado !== '__all__') {
         const status = getStatus(dd);
         if (status === 'completado') return false; // completado is not filterable by the estado dropdown
@@ -195,7 +209,9 @@ export function VencimientosTab({
   const handleUpdateVencimientos = async () => {
     setScrapingSection('vencimientos');
     try {
-      await scrapSingleJob({ data: { representativeId, jobType: 'vencimientos' } });
+      await scrapSingleJob({
+        data: { credencialId: representativeId, jobType: 'vencimientos' },
+      });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['representativeDueDates'] }),
         queryClient.invalidateQueries({ queryKey: ['lastVencimientosJob'] }),
@@ -245,15 +261,15 @@ export function VencimientosTab({
   };
 
   // ── Due date color ──
-  const getDueDateColor = (dd: any): string => {
+  const getDueDateColor = (dd: VencimientoRow): string => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const dueDate = new Date(dd.dueDate);
+    const dueDate = new Date(dd.venceAt);
     dueDate.setHours(0, 0, 0, 0);
     const next7 = new Date(today);
     next7.setDate(today.getDate() + 7);
-    if (!dd.completedAt && dueDate < today) return 'text-[#c0392b]';
-    if (!dd.completedAt && dueDate <= next7) return 'text-[#12131A]';
+    if (!dd.completadoAt && dueDate < today) return 'text-[#c0392b]';
+    if (!dd.completadoAt && dueDate <= next7) return 'text-[#12131A]';
     return 'text-[#3E404A]';
   };
 
@@ -463,7 +479,7 @@ export function VencimientosTab({
           <span className="text-[#3E404A] font-medium">·</span>{' '}
           {filteredDueDates.length} mostrados{' '}
           <span className="text-[#3E404A] font-medium">·</span>{' '}
-          {(dueDates as any[]).length} totales
+          {dueDates.length} totales
         </span>
       </div>
 
@@ -497,7 +513,7 @@ export function VencimientosTab({
             No se encontraron vencimientos.
           </div>
         ) : (
-          paginatedDueDates.map((dd: any) => {
+          paginatedDueDates.map((dd) => {
             const status = getStatus(dd);
             return (
               <div
@@ -509,37 +525,37 @@ export function VencimientosTab({
               >
                 {/* Impuesto */}
                 <div className="text-[14px] font-semibold text-[#12131A] truncate pr-2">
-                  {dd.tax || '—'}
+                  {dd.impuesto || '—'}
                 </div>
 
                 {/* Concepto */}
                 <div className="text-[14px] text-[#3E404A] truncate pr-2">
-                  {dd.concept || '—'}
+                  {dd.concepto || '—'}
                 </div>
 
                 {/* Subconcepto */}
                 <div className="font-[family-name:var(--ff-mono)] text-[13px] text-[#6E7079] truncate pr-2">
-                  {dd.subConcept || '—'}
+                  {dd.subConcepto || '—'}
                 </div>
 
                 {/* Período */}
                 <div className="text-[13.5px] text-[#3E404A] tabular-nums truncate pr-2">
-                  {dd.period || '—'}
+                  {dd.periodo || '—'}
                 </div>
 
                 {/* Cuota */}
                 <div className="text-[13.5px] text-[#3E404A] tabular-nums text-center">
-                  {dd.quotaNumber ?? '—'}
+                  {dd.cuota ?? '—'}
                 </div>
 
                 {/* Vencimiento */}
                 <div className={cn('text-[13.5px] tabular-nums truncate pr-2', getDueDateColor(dd))}>
-                  {formatDueDate(dd.dueDate)}
+                  {formatDueDate(dd.venceAt)}
                 </div>
 
                 {/* Detalle */}
                 <div className="text-[13px] text-[#6E7079] truncate pr-2">
-                  {dd.detail || '—'}
+                  {dd.detalle || '—'}
                 </div>
 
                 {/* Estado */}

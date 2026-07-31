@@ -3,14 +3,20 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { Loader2, Eye, EyeOff, Check, Search, Building2, User, Plus, PenLine } from 'lucide-react';
+import {
+  Loader2,
+  Eye,
+  EyeOff,
+  Check,
+  Search,
+  Building2,
+  User,
+  Plus,
+  PenLine,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
-import {
-  Dialog,
-  DialogContent,
-  DialogTrigger,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog';
 import {
   Form,
   FormControl,
@@ -22,12 +28,8 @@ import {
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { createRepresentativeWithClients } from '@/actions/client';
-
-const SCRAPPER_URL =
-  process.env.SCRAPPER_JOBS_URL ||
-  process.env.BACKEND_API_URL ||
-  'http://localhost:3002';
+import { createCredencialWithClientes } from '@/actions/client';
+import { consumeSseStream, friendlyError } from '@/lib/sse';
 
 const credentialsSchema = z.object({
   cuit: z.string().min(11, 'El CUIT debe tener al menos 11 dígitos'),
@@ -50,29 +52,17 @@ interface DiscoveredProfile {
   name: string;
 }
 
-function friendlyError(msg: string): string {
-  const technical = [
-    'detached Frame',
-    'Target closed',
-    'Session closed',
-    'Protocol error',
-    'Navigation timeout',
-    'Execution context was destroyed',
-    'net::ERR_',
-  ];
-  if (technical.some((t) => msg.includes(t))) {
-    return 'Hubo un problema de conexión con AFIP. Por favor intentá de nuevo en unos minutos.';
-  }
-  return msg;
-}
-
 interface CreateRepresentativeDialogProps {
   children: React.ReactNode;
 }
 
-export function CreateRepresentativeDialog({ children }: CreateRepresentativeDialogProps) {
+export function CreateRepresentativeDialog({
+  children,
+}: CreateRepresentativeDialogProps) {
   const [open, setOpen] = useState(false);
-  const [step, setStep] = useState<'credentials' | 'select-clients'>('credentials');
+  const [step, setStep] = useState<'credentials' | 'select-clients'>(
+    'credentials'
+  );
   const [discovering, setDiscovering] = useState(false);
   const [creating, setCreating] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -81,10 +71,17 @@ export function CreateRepresentativeDialog({ children }: CreateRepresentativeDia
   const [showManualAdd, setShowManualAdd] = useState(false);
 
   // Discovery results
-  const [representativeName, setRepresentativeName] = useState<string | null>(null);
+  const [representativeName, setRepresentativeName] = useState<string | null>(
+    null
+  );
   const [profiles, setProfiles] = useState<DiscoveredProfile[]>([]);
   const [selectedCuits, setSelectedCuits] = useState<Set<string>>(new Set());
-  const [credentials, setCredentials] = useState<{ cuit: string; password: string; email?: string; phone?: string } | null>(null);
+  const [credentials, setCredentials] = useState<{
+    cuit: string;
+    password: string;
+    email?: string;
+    phone?: string;
+  } | null>(null);
 
   const queryClient = useQueryClient();
 
@@ -120,56 +117,35 @@ export function CreateRepresentativeDialog({ children }: CreateRepresentativeDia
     setProgressMessage('Conectando...');
 
     try {
-      const response = await fetch(`${SCRAPPER_URL}/api/discovery/profiles`, {
+      const response = await fetch('/api/afip/discover-profiles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cuit: values.cuit, password: values.password }),
       });
 
-      if (!response.ok && !response.headers.get('content-type')?.includes('text/event-stream')) {
-        const json = await response.json().catch(() => ({ error: 'Error desconocido' }));
-        throw new Error(json.error || `Error ${response.status}`);
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error('No se pudo leer la respuesta');
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        let eventType = '';
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            eventType = line.slice(7).trim();
-          } else if (line.startsWith('data: ') && eventType) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              if (eventType === 'progress') {
-                setProgressMessage(data.message);
-              } else if (eventType === 'result') {
-                setRepresentativeName(data.representativeName || null);
-                setProfiles(data.profiles || []);
-                setSelectedCuits(new Set((data.profiles || []).map((p: DiscoveredProfile) => p.cuit)));
-                setCredentials({ cuit: values.cuit, password: values.password, email: values.email, phone: values.phone });
-                setStep('select-clients');
-                setOpen(true);
-              } else if (eventType === 'error') {
-                setOpen(true);
-                setError(friendlyError(data.error));
-              }
-            } catch {}
-            eventType = '';
-          }
-        }
-      }
+      await consumeSseStream<{
+        representativeName?: string;
+        profiles?: DiscoveredProfile[];
+      }>(response, {
+        onProgress: (message) => setProgressMessage(message),
+        onResult: (data) => {
+          setRepresentativeName(data.representativeName || null);
+          setProfiles(data.profiles || []);
+          setSelectedCuits(new Set((data.profiles || []).map((p) => p.cuit)));
+          setCredentials({
+            cuit: values.cuit,
+            password: values.password,
+            email: values.email,
+            phone: values.phone,
+          });
+          setStep('select-clients');
+          setOpen(true);
+        },
+        onError: (message) => {
+          setOpen(true);
+          setError(message);
+        },
+      });
     } catch (err: any) {
       setError(friendlyError(err?.message || 'Error al descubrir perfiles'));
     } finally {
@@ -185,7 +161,12 @@ export function CreateRepresentativeDialog({ children }: CreateRepresentativeDia
       setError('Completá CUIT y contraseña antes de continuar');
       return;
     }
-    setCredentials({ cuit: values.cuit, password: values.password, email: values.email, phone: values.phone });
+    setCredentials({
+      cuit: values.cuit,
+      password: values.password,
+      email: values.email,
+      phone: values.phone,
+    });
     setProfiles([]);
     setSelectedCuits(new Set());
     setStep('select-clients');
@@ -226,20 +207,22 @@ export function CreateRepresentativeDialog({ children }: CreateRepresentativeDia
     setError(null);
 
     try {
-      await createRepresentativeWithClients({
+      await createCredencialWithClientes({
         data: {
           cuit: credentials.cuit,
           password: credentials.password,
-          name: representativeName || undefined,
+          nombre: representativeName || undefined,
           email: credentials.email || undefined,
-          phone: credentials.phone || undefined,
-          clients: profiles
+          telefono: credentials.phone || undefined,
+          clientes: profiles
             .filter((p) => selectedCuits.has(p.cuit))
-            .map((p) => ({ cuit: p.cuit, name: p.name })),
+            .map((p) => ({ cuit: p.cuit, razonSocial: p.name })),
         },
       });
 
-      queryClient.invalidateQueries({ queryKey: ['representativesWithClients'] });
+      queryClient.invalidateQueries({
+        queryKey: ['representativesWithClients'],
+      });
       queryClient.invalidateQueries({ queryKey: ['clients'] });
       toast.success('Representante y clientes creados exitosamente');
       reset();
@@ -264,15 +247,21 @@ export function CreateRepresentativeDialog({ children }: CreateRepresentativeDia
         {step === 'credentials' ? (
           <>
             <div className="space-y-1 pb-2">
-              <h2 className="text-lg font-semibold">Agregar representante AFIP</h2>
+              <h2 className="text-lg font-semibold">
+                Agregar representante AFIP
+              </h2>
               <p className="text-sm text-muted-foreground">
-                Ingresá las credenciales de la persona física que se loguea en AFIP.
-                Vamos a verificar el acceso y descubrir los clientes asociados.
+                Ingresá las credenciales de la persona física que se loguea en
+                AFIP. Vamos a verificar el acceso y descubrir los clientes
+                asociados.
               </p>
             </div>
 
             <Form {...form}>
-              <form onSubmit={form.handleSubmit(onDiscover)} className="space-y-4">
+              <form
+                onSubmit={form.handleSubmit(onDiscover)}
+                className="space-y-4"
+              >
                 <FormField
                   control={form.control}
                   name="cuit"
@@ -280,7 +269,11 @@ export function CreateRepresentativeDialog({ children }: CreateRepresentativeDia
                     <FormItem>
                       <FormLabel>CUIT del representante</FormLabel>
                       <FormControl>
-                        <Input placeholder="20123456789" {...field} disabled={discovering} />
+                        <Input
+                          placeholder="20123456789"
+                          {...field}
+                          disabled={discovering}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -307,7 +300,11 @@ export function CreateRepresentativeDialog({ children }: CreateRepresentativeDia
                             onClick={() => setShowPassword(!showPassword)}
                             tabIndex={-1}
                           >
-                            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            {showPassword ? (
+                              <EyeOff className="h-4 w-4" />
+                            ) : (
+                              <Eye className="h-4 w-4" />
+                            )}
                           </button>
                         </div>
                       </FormControl>
@@ -322,9 +319,18 @@ export function CreateRepresentativeDialog({ children }: CreateRepresentativeDia
                     name="email"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Email <span className="text-muted-foreground font-normal">(opcional)</span></FormLabel>
+                        <FormLabel>
+                          Email{' '}
+                          <span className="text-muted-foreground font-normal">
+                            (opcional)
+                          </span>
+                        </FormLabel>
                         <FormControl>
-                          <Input placeholder="email@ejemplo.com" {...field} disabled={discovering} />
+                          <Input
+                            placeholder="email@ejemplo.com"
+                            {...field}
+                            disabled={discovering}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -335,9 +341,18 @@ export function CreateRepresentativeDialog({ children }: CreateRepresentativeDia
                     name="phone"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Teléfono <span className="text-muted-foreground font-normal">(opcional)</span></FormLabel>
+                        <FormLabel>
+                          Teléfono{' '}
+                          <span className="text-muted-foreground font-normal">
+                            (opcional)
+                          </span>
+                        </FormLabel>
                         <FormControl>
-                          <Input placeholder="11 1234-5678" {...field} disabled={discovering} />
+                          <Input
+                            placeholder="11 1234-5678"
+                            {...field}
+                            disabled={discovering}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -355,7 +370,9 @@ export function CreateRepresentativeDialog({ children }: CreateRepresentativeDia
                   {discovering ? (
                     <span className="flex items-center gap-2">
                       <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-                      <span className="truncate">{progressMessage || 'Conectando...'}</span>
+                      <span className="truncate">
+                        {progressMessage || 'Conectando...'}
+                      </span>
                     </span>
                   ) : (
                     <>
@@ -385,7 +402,10 @@ export function CreateRepresentativeDialog({ children }: CreateRepresentativeDia
               {representativeName && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <User className="h-3.5 w-3.5" />
-                  Representante: <span className="font-medium text-foreground">{representativeName}</span>
+                  Representante:{' '}
+                  <span className="font-medium text-foreground">
+                    {representativeName}
+                  </span>
                 </div>
               )}
               <p className="text-sm text-muted-foreground">
@@ -402,7 +422,9 @@ export function CreateRepresentativeDialog({ children }: CreateRepresentativeDia
                   onClick={toggleAll}
                   className="text-xs text-primary hover:underline"
                 >
-                  {selectedCuits.size === profiles.length ? 'Deseleccionar todos' : 'Seleccionar todos'}
+                  {selectedCuits.size === profiles.length
+                    ? 'Deseleccionar todos'
+                    : 'Seleccionar todos'}
                 </button>
               )}
 
@@ -423,9 +445,13 @@ export function CreateRepresentativeDialog({ children }: CreateRepresentativeDia
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                        <span className="font-medium text-sm truncate">{p.name}</span>
+                        <span className="font-medium text-sm truncate">
+                          {p.name}
+                        </span>
                       </div>
-                      <span className="text-xs text-muted-foreground font-mono">{p.cuit}</span>
+                      <span className="text-xs text-muted-foreground font-mono">
+                        {p.cuit}
+                      </span>
                     </div>
                   </label>
                 ))}
@@ -440,7 +466,10 @@ export function CreateRepresentativeDialog({ children }: CreateRepresentativeDia
               {/* Manual add form */}
               {showManualAdd ? (
                 <Form {...manualForm}>
-                  <form onSubmit={manualForm.handleSubmit(addManualClient)} className="rounded-lg border border-dashed p-3 space-y-3">
+                  <form
+                    onSubmit={manualForm.handleSubmit(addManualClient)}
+                    className="rounded-lg border border-dashed p-3 space-y-3"
+                  >
                     <div className="grid grid-cols-2 gap-2">
                       <FormField
                         control={manualForm.control}
@@ -449,7 +478,11 @@ export function CreateRepresentativeDialog({ children }: CreateRepresentativeDia
                           <FormItem>
                             <FormLabel className="text-xs">CUIT</FormLabel>
                             <FormControl>
-                              <Input placeholder="30123456789" className="h-8 text-sm" {...field} />
+                              <Input
+                                placeholder="30123456789"
+                                className="h-8 text-sm"
+                                {...field}
+                              />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -460,9 +493,15 @@ export function CreateRepresentativeDialog({ children }: CreateRepresentativeDia
                         name="name"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel className="text-xs">Nombre / Razón social</FormLabel>
+                            <FormLabel className="text-xs">
+                              Nombre / Razón social
+                            </FormLabel>
                             <FormControl>
-                              <Input placeholder="Empresa SRL" className="h-8 text-sm" {...field} />
+                              <Input
+                                placeholder="Empresa SRL"
+                                className="h-8 text-sm"
+                                {...field}
+                              />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -473,7 +512,15 @@ export function CreateRepresentativeDialog({ children }: CreateRepresentativeDia
                       <Button type="submit" size="sm" className="flex-1">
                         <Plus className="mr-1 h-3 w-3" /> Agregar
                       </Button>
-                      <Button type="button" variant="ghost" size="sm" onClick={() => { setShowManualAdd(false); manualForm.reset(); }}>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setShowManualAdd(false);
+                          manualForm.reset();
+                        }}
+                      >
                         Cancelar
                       </Button>
                     </div>
@@ -500,7 +547,10 @@ export function CreateRepresentativeDialog({ children }: CreateRepresentativeDia
             <div className="flex gap-2 pt-2">
               <Button
                 variant="outline"
-                onClick={() => { setStep('credentials'); setError(null); }}
+                onClick={() => {
+                  setStep('credentials');
+                  setError(null);
+                }}
                 disabled={creating}
                 className="flex-1"
               >
@@ -519,7 +569,8 @@ export function CreateRepresentativeDialog({ children }: CreateRepresentativeDia
                 ) : (
                   <>
                     <Check className="mr-2 h-4 w-4" />
-                    Crear ({selectedCuits.size} {selectedCuits.size === 1 ? 'cliente' : 'clientes'})
+                    Crear ({selectedCuits.size}{' '}
+                    {selectedCuits.size === 1 ? 'cliente' : 'clientes'})
                   </>
                 )}
               </Button>

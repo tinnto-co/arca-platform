@@ -33,10 +33,14 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { getRepresentative, updateRepresentative } from '@/actions/client';
+import {
+  getCliente,
+  updateCliente,
+  updateCredencialPassword,
+} from '@/actions/client';
 
 const clientSchema = z.object({
-  name: z.string().min(1, 'El nombre es requerido'),
+  razonSocial: z.string().min(1, 'La razón social es requerida'),
   email: z
     .string()
     .optional()
@@ -45,9 +49,8 @@ const clientSchema = z.object({
       { message: 'Email inválido' }
     )
     .or(z.literal('')),
-  phone: z.string().optional().or(z.literal('')),
-  address: z.string().optional().or(z.literal('')),
-  image: z.string().optional(),
+  telefono: z.string().optional().or(z.literal('')),
+  domicilio: z.string().optional().or(z.literal('')),
   // Contraseña de AFIP: vacío = no se cambia.
   password: z.string().optional(),
   regimenFiscal: z.enum(['local', 'multilateral', 'sin_definir']),
@@ -56,7 +59,13 @@ const clientSchema = z.object({
 type ClientFormValues = z.infer<typeof clientSchema>;
 
 interface EditRepresentativeDialogProps {
-  representativeId: string;
+  /** Cliente que se edita: razón social, contacto y régimen de IIBB. */
+  clienteId: string;
+  /**
+   * Login de AFIP cuya clave se puede actualizar desde este diálogo. Sin él,
+   * la sección de contraseña no se muestra.
+   */
+  credencialId?: string;
   children?: React.ReactNode;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -90,7 +99,8 @@ function SectionCard({
 }
 
 export function EditRepresentativeDialog({
-  representativeId,
+  clienteId,
+  credencialId,
   children,
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
@@ -109,45 +119,44 @@ export function EditRepresentativeDialog({
 
   const initializedRef = React.useRef<string | null>(null);
 
-  const { data: representative, isLoading: loadingRepresentative } = useQuery({
-    queryKey: ['representative', representativeId],
-    queryFn: () => getRepresentative({ data: { id: representativeId } }),
-    enabled: open && !!representativeId,
+  const { data: clienteData, isLoading: loadingRepresentative } = useQuery({
+    queryKey: ['cliente', clienteId],
+    queryFn: () => getCliente({ data: { id: clienteId } }),
+    enabled: open && !!clienteId,
   });
 
   const form = useForm<ClientFormValues>({
     resolver: zodResolver(clientSchema) as Resolver<ClientFormValues>,
     defaultValues: {
-      name: '',
+      razonSocial: '',
       email: '',
-      phone: '',
-      address: '',
-      image: '',
+      telefono: '',
+      domicilio: '',
       password: '',
       regimenFiscal: 'sin_definir',
     },
   });
 
   React.useEffect(() => {
-    if (representative && initializedRef.current !== representativeId) {
-      initializedRef.current = representativeId;
-      const regimenFiscal = representative.convenioMultilateral
-        ? 'multilateral'
-        : representative.regimenLocal
-          ? 'local'
-          : 'sin_definir';
+    if (clienteData && initializedRef.current !== clienteId) {
+      initializedRef.current = clienteId;
+      const regimenFiscal =
+        clienteData.iibbRegimen === 'convenio_multilateral'
+          ? 'multilateral'
+          : clienteData.iibbRegimen === 'local'
+            ? 'local'
+            : 'sin_definir';
       form.reset({
-        name: representative.name ?? '',
-        email: representative.email || '',
-        phone: representative.phone || '',
-        address: representative.address || '',
-        image: representative.image ?? '',
+        razonSocial: clienteData.razonSocial,
+        email: clienteData.email || '',
+        telefono: clienteData.telefono || '',
+        domicilio: clienteData.domicilio || '',
         // Nunca precargamos la contraseña actual (no exponer el secreto).
         password: '',
         regimenFiscal,
       });
     }
-  }, [representative, representativeId, form]);
+  }, [clienteData, clienteId, form]);
 
   React.useEffect(() => {
     if (!open) {
@@ -157,17 +166,39 @@ export function EditRepresentativeDialog({
   }, [open]);
 
   const updateMutation = useMutation({
-    mutationFn: (data: any) => updateRepresentative({ data }),
+    mutationFn: async (values: ClientFormValues) => {
+      await updateCliente({
+        data: {
+          id: clienteId,
+          razonSocial: values.razonSocial,
+          email: values.email ?? '',
+          telefono: values.telefono ?? '',
+          domicilio: values.domicilio ?? '',
+          // `condicionIva` y `notas` no se mandan a propósito: este formulario
+          // no los edita y `updateCliente` ahora sólo pisa lo que recibe.
+          iibbRegimen:
+            values.regimenFiscal === 'multilateral'
+              ? 'convenio_multilateral'
+              : values.regimenFiscal === 'local'
+                ? 'local'
+                : '',
+        },
+      });
+
+      if (credencialId && values.password) {
+        await updateCredencialPassword({
+          data: { id: credencialId, password: values.password },
+        });
+      }
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['representatives'] });
       void queryClient.invalidateQueries({
         queryKey: ['representativesWithClients'],
       });
       void queryClient.invalidateQueries({ queryKey: ['clients'] });
-      void queryClient.invalidateQueries({
-        queryKey: ['representative', representativeId],
-      });
-      toast.success('Representante actualizado exitosamente');
+      void queryClient.invalidateQueries({ queryKey: ['cliente', clienteId] });
+      toast.success('Cliente actualizado exitosamente');
       setOpen(false);
     },
     onError: (error) => {
@@ -179,13 +210,7 @@ export function EditRepresentativeDialog({
   const onSubmit = async (values: ClientFormValues) => {
     setLoading(true);
     try {
-      const { regimenFiscal, ...rest } = values;
-      await updateMutation.mutateAsync({
-        id: representativeId,
-        ...rest,
-        convenioMultilateral: regimenFiscal === 'multilateral',
-        regimenLocal: regimenFiscal === 'local',
-      });
+      await updateMutation.mutateAsync(values);
     } finally {
       setLoading(false);
     }
@@ -248,6 +273,26 @@ export function EditRepresentativeDialog({
                 >
                   <FormField
                     control={form.control}
+                    name="razonSocial"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className={labelClass}>
+                          Razón social
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="Razón social del cliente"
+                            className={inputClass}
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
                     name="email"
                     render={({ field }) => (
                       <FormItem>
@@ -270,7 +315,7 @@ export function EditRepresentativeDialog({
 
                   <FormField
                     control={form.control}
-                    name="phone"
+                    name="telefono"
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel className={labelClass}>
@@ -292,7 +337,7 @@ export function EditRepresentativeDialog({
 
                   <FormField
                     control={form.control}
-                    name="address"
+                    name="domicilio"
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel className={labelClass}>
@@ -304,27 +349,6 @@ export function EditRepresentativeDialog({
                             className={inputClass}
                             {...field}
                             value={field.value ?? ''}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="image"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className={labelClass}>
-                          Imagen (URL)
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            type="url"
-                            placeholder="https://ejemplo.com/imagen.jpg"
-                            className={inputClass}
-                            {...field}
                           />
                         </FormControl>
                         <FormMessage />
@@ -390,7 +414,8 @@ export function EditRepresentativeDialog({
                   />
                 </SectionCard>
 
-                {/* SECTION: Representante */}
+                {/* SECTION: Credencial de AFIP */}
+                {credencialId && (
                 <SectionCard
                   icon={
                     <GitCompareArrows
@@ -399,26 +424,8 @@ export function EditRepresentativeDialog({
                       strokeWidth={2}
                     />
                   }
-                  label="Representante"
+                  label="Credencial de AFIP"
                 >
-                  <FormField
-                    control={form.control}
-                    name="name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className={labelClass}>Nombre</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="Nombre del representante"
-                            className={inputClass}
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
                   <FormField
                     control={form.control}
                     name="password"
@@ -464,6 +471,7 @@ export function EditRepresentativeDialog({
                     )}
                   />
                 </SectionCard>
+                )}
               </div>
 
               {/* Footer */}
