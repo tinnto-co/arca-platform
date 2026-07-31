@@ -31,6 +31,8 @@ import {
   getSessionWithOrg,
   getMemberRole,
   assertCanWrite,
+  ensureClientBelongsToOrg,
+  loadFiscalYearForOrg,
 } from '@/actions/helpers';
 import {
   and,
@@ -86,22 +88,6 @@ function assertOwner(role: string): void {
       'Solo el Owner del estudio puede modificar el plan de cuentas'
     );
   }
-}
-
-/** Valida que una empresa (client) pertenezca al estudio del usuario. */
-async function ensureClientBelongsToOrg(
-  clientId: string,
-  orgId: string
-): Promise<void> {
-  const [row] = await db
-    .select({ id: client.id })
-    .from(client)
-    .innerJoin(representative, eq(representative.id, client.representativeId))
-    .where(
-      and(eq(client.id, clientId), eq(representative.organizationId, orgId))
-    )
-    .limit(1);
-  if (!row) throw new Error('Empresa no encontrada o no autorizada');
 }
 
 type AccountRow = typeof account.$inferSelect;
@@ -1152,27 +1138,6 @@ export const importChartOfAccounts = createServerFn({ method: 'POST' })
 
 type FiscalYearRow = typeof fiscalYear.$inferSelect;
 type PeriodRow = typeof accountingPeriod.$inferSelect;
-
-/** Valida que un ejercicio pertenezca al estudio del usuario y lo devuelve. */
-async function loadFiscalYearForOrg(
-  fiscalYearId: string,
-  orgId: string
-): Promise<FiscalYearRow> {
-  const [row] = await db
-    .select({ fy: fiscalYear })
-    .from(fiscalYear)
-    .innerJoin(client, eq(client.id, fiscalYear.clientId))
-    .innerJoin(representative, eq(representative.id, client.representativeId))
-    .where(
-      and(
-        eq(fiscalYear.id, fiscalYearId),
-        eq(representative.organizationId, orgId)
-      )
-    )
-    .limit(1);
-  if (!row) throw new Error('Ejercicio no encontrado o no autorizado');
-  return row.fy;
-}
 
 /** Valida que un período pertenezca al estudio y devuelve {period, fy}. */
 async function loadPeriodForOrg(
@@ -5660,10 +5625,22 @@ interface EspBalance {
  * (si no, un ejercicio cerrado daría todo en cero) y el resultado se computa de las
  * cuentas de resultado.
  */
+/**
+ * Saldos por cuenta de un ejercicio.
+ *
+ * `view='ajustado'` (default) incluye el asiento de ajuste por inflación, que es
+ * como se presentan los EECC. `view='historico'` lo excluye y devuelve los
+ * valores históricos, que quedan como papel de trabajo.
+ */
 async function computeEspBalances(
   orgId: string,
-  fyId: string
+  fyId: string,
+  view: 'ajustado' | 'historico' = 'ajustado'
 ): Promise<EspBalance[]> {
+  const excluded =
+    view === 'historico'
+      ? sql`${journalEntry.origin} NOT IN ('auto_closing','auto_opening','auto_inflation')`
+      : sql`${journalEntry.origin} NOT IN ('auto_closing','auto_opening')`;
   const rows = await db
     .select({
       accountId: account.id,
@@ -5684,7 +5661,7 @@ async function computeEspBalances(
         eq(journalEntry.fiscalYearId, fyId),
         eq(journalEntry.isVoided, false),
         eq(account.organizationId, orgId),
-        sql`${journalEntry.origin} NOT IN ('auto_closing','auto_opening')`
+        excluded
       )
     )
     .groupBy(account.id, account.code, account.name, account.accountGroup);
@@ -5742,7 +5719,11 @@ const ESP_SECTIONS = ACCOUNT_GROUP_SECTIONS.filter(
 /** Estado de Situación Patrimonial comparativo (actual vs anterior). (US 6.1.1/6.1.2) */
 export const getESP = createServerFn({ method: 'GET' })
   .inputValidator(
-    z.object({ clientId: z.string().uuid(), fiscalYearId: z.string().uuid() })
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid(),
+      view: z.enum(['ajustado', 'historico']).default('ajustado'),
+    })
   )
   .handler(async (ctx): Promise<EspResult> => {
     const { orgId } = await getSessionWithOrg();
@@ -5761,8 +5742,10 @@ export const getESP = createServerFn({ method: 'GET' })
       )
       .limit(1);
 
-    const curBal = await computeEspBalances(orgId, fy.id);
-    const priBal = priorFy ? await computeEspBalances(orgId, priorFy.id) : [];
+    const curBal = await computeEspBalances(orgId, fy.id, ctx.data.view);
+    const priBal = priorFy
+      ? await computeEspBalances(orgId, priorFy.id, ctx.data.view)
+      : [];
     const curMap = new Map(curBal.map((b) => [b.accountId, b]));
     const priMap = new Map(priBal.map((b) => [b.accountId, b]));
 
@@ -5942,7 +5925,11 @@ const ER_COMPONENTS: {
 /** Estado de Resultados comparativo (actual vs anterior). (US 6.2.1/6.2.2) */
 export const getER = createServerFn({ method: 'GET' })
   .inputValidator(
-    z.object({ clientId: z.string().uuid(), fiscalYearId: z.string().uuid() })
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid(),
+      view: z.enum(['ajustado', 'historico']).default('ajustado'),
+    })
   )
   .handler(async (ctx): Promise<ErResult> => {
     const { orgId } = await getSessionWithOrg();
@@ -5961,8 +5948,10 @@ export const getER = createServerFn({ method: 'GET' })
       )
       .limit(1);
 
-    const curBal = await computeEspBalances(orgId, fy.id);
-    const priBal = priorFy ? await computeEspBalances(orgId, priorFy.id) : [];
+    const curBal = await computeEspBalances(orgId, fy.id, ctx.data.view);
+    const priBal = priorFy
+      ? await computeEspBalances(orgId, priorFy.id, ctx.data.view)
+      : [];
     const curMap = new Map(curBal.map((b) => [b.accountId, b]));
     const priMap = new Map(priBal.map((b) => [b.accountId, b]));
 

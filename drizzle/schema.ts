@@ -1553,10 +1553,27 @@ export const accountExpenseFunctionEnum = pgEnum("account_expense_function", [
   "other",
 ]);
 
-/** Preparado para ajuste por inflación RT 6 (V1.5). No se usa funcionalmente en V1. */
+/**
+ * Cómo trata el ajuste por inflación (RT 6) a una cuenta.
+ *
+ * - `monetaria`: no se reexpresa; es la que **genera** el RECPAM.
+ * - `no_monetaria_costo`: se reexpresa por coeficiente.
+ * - `no_monetaria_valor_corriente`: no se reexpresa porque ya está medida en
+ *   moneda de cierre (moneda extranjera al TC de cierre, títulos a cotización).
+ * - `resultado_por_diferencia`: resultados financieros y por tenencia; quedan en
+ *   el residuo junto con el RECPAM.
+ *
+ * `no_monetaria` queda por compatibilidad con los datos previos a la migración
+ * 0017; se trata como `no_monetaria_costo`. No usar en código nuevo.
+ *
+ * Ver `src/lib/accounting-inflation.ts` y `docs/balances/09_AJUSTE_POR_INFLACION.md`.
+ */
 export const accountInflationNatureEnum = pgEnum("account_inflation_nature", [
   "monetaria",
   "no_monetaria",
+  "no_monetaria_costo",
+  "no_monetaria_valor_corriente",
+  "resultado_por_diferencia",
 ]);
 
 /** Preparado para Estado de Flujo de Efectivo (V1.5). No se usa funcionalmente en V1. */
@@ -1583,6 +1600,8 @@ export const journalEntryOriginEnum = pgEnum("journal_entry_origin", [
   "auto_payroll",
   "auto_closing",
   "auto_opening",
+  /** Asiento de ajuste por inflación RT 6 (AXI). Uno por ejercicio. */
+  "auto_inflation",
   "import_excel",
 ]);
 
@@ -1639,6 +1658,13 @@ export const account = pgTable(
     expectedBalance: accountExpectedBalanceEnum("expected_balance"),
     expenseFunction: accountExpenseFunctionEnum("expense_function"),
     inflationNature: accountInflationNatureEnum("inflation_nature"),
+    /**
+     * Cuenta que recibe el ajuste por inflación de esta cuenta, si es distinta de
+     * ella misma. Caso de uso: Capital social → Ajuste de capital (el capital
+     * queda a valor nominal y su reexpresión se acumula aparte). NULL = se ajusta
+     * contra sí misma.
+     */
+    inflationTargetId: uuid("inflation_target_id"),
     cashFlowActivity: accountCashFlowActivityEnum("cash_flow_activity"),
     /** Cuentas críticas del sistema (ej. pending_review, resultado_ejercicio). No se borran, desactivan ni renombran. */
     isSystemAccount: boolean("is_system_account").notNull().default(false),
@@ -1655,6 +1681,11 @@ export const account = pgTable(
       columns: [table.parentId],
       foreignColumns: [table.id],
       name: "account_parent_id_fkey",
+    }).onDelete("set null"),
+    foreignKey({
+      columns: [table.inflationTargetId],
+      foreignColumns: [table.id],
+      name: "account_inflation_target_id_fkey",
     }).onDelete("set null"),
     // Códigos base únicos por estudio.
     uniqueIndex("account_base_org_code_unique")
@@ -2296,3 +2327,146 @@ export const accountantSignature = pgTable("accountant_signature", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+/* ───────── Ajuste por inflación RT 6 (AXI) ───────── */
+
+/** Fuente de la serie de índices de reexpresión. */
+export const inflationIndexSourceEnum = pgEnum("inflation_index_source", [
+  /** Serie oficial FACPCE "Índice RT 6 – Res. JG 539/18" (IPIM empalmado con IPC). */
+  "facpce_rt6",
+  /** IPC nacional nivel general publicado por INDEC. */
+  "indec_ipc",
+  /** Cargado a mano por el estudio (fallback cuando FACPCE publica tarde). */
+  "manual",
+]);
+
+/** Estado del ajuste por inflación de un ejercicio. */
+export const inflationAdjustmentStatusEnum = pgEnum(
+  "inflation_adjustment_status",
+  [
+    /** Preplanilla calculada, todavía sin asiento. */
+    "draft",
+    /** Asiento de ajuste generado e imputado al mayor. */
+    "applied",
+  ],
+);
+
+/**
+ * Serie mensual de índices de precios para el ajuste por inflación.
+ *
+ * Es un dato público y global: NO se scopea por organización ni por cliente.
+ * El coeficiente de reexpresión de un mes se calcula como
+ * `índice(mes de cierre) / índice(mes de origen)`, redondeado a 4 decimales
+ * (RT 6, sección IV.B.6).
+ *
+ * Se carga con `bun run db:seed-inflation-index` desde la planilla de FACPCE.
+ */
+export const inflationIndex = pgTable(
+  "inflation_index",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    source: inflationIndexSourceEnum("source").notNull().default("facpce_rt6"),
+    year: integer("year").notNull(),
+    /** 1-12. */
+    month: integer("month").notNull(),
+    /** Índice de nivel general. Precisión alta: la serie FACPCE trae 4+ decimales. */
+    value: numeric("value", { precision: 20, scale: 6 }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    unique("inflation_index_source_year_month_unique").on(
+      table.source,
+      table.year,
+      table.month,
+    ),
+    index("idx_inflation_index_lookup").on(table.source, table.year, table.month),
+  ],
+);
+
+/**
+ * Ajuste por inflación de un ejercicio: cabecera del papel de trabajo.
+ *
+ * Uno por ejercicio (mientras no esté anulado). Guarda con qué serie y qué mes
+ * de cierre se calculó, el RECPAM resultante y el asiento generado.
+ */
+export const inflationAdjustment = pgTable(
+  "inflation_adjustment",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => client.id, { onDelete: "cascade" }),
+    fiscalYearId: uuid("fiscal_year_id")
+      .notNull()
+      .references(() => fiscalYear.id, { onDelete: "cascade" }),
+    source: inflationIndexSourceEnum("source").notNull().default("facpce_rt6"),
+    /** Mes de cierre del ejercicio (coeficiente = 1). */
+    closingYear: integer("closing_year").notNull(),
+    closingMonth: integer("closing_month").notNull(),
+    /** Mes al que se anticúan los saldos de apertura (cierre anterior). */
+    openingYear: integer("opening_year").notNull(),
+    openingMonth: integer("opening_month").notNull(),
+    status: inflationAdjustmentStatusEnum("status").notNull().default("draft"),
+    /** RECPAM en signo contable: positivo = deudor = pérdida por exposición. */
+    recpamAmount: numeric("recpam_amount", { precision: 18, scale: 2 })
+      .notNull()
+      .default("0"),
+    /** Asiento generado. NULL mientras status='draft'. */
+    journalEntryId: uuid("journal_entry_id").references(() => journalEntry.id, {
+      onDelete: "set null",
+    }),
+    appliedAt: timestamp("applied_at"),
+    appliedBy: text("applied_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    unique("inflation_adjustment_fiscal_year_unique").on(table.fiscalYearId),
+    index("idx_inflation_adjustment_client").on(table.clientId),
+  ],
+);
+
+/**
+ * Preplanilla del ajuste: una fila por cuenta y mes de origen.
+ *
+ * Es el papel de trabajo que pidió el estudio — histórico, coeficiente,
+ * ajustado y diferencia — y la evidencia de cómo se llegó al asiento.
+ */
+export const inflationAdjustmentLine = pgTable(
+  "inflation_adjustment_line",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    adjustmentId: uuid("adjustment_id")
+      .notNull()
+      .references(() => inflationAdjustment.id, { onDelete: "cascade" }),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => account.id, { onDelete: "restrict" }),
+    /** NULL en la fila del saldo de apertura. */
+    year: integer("year"),
+    month: integer("month"),
+    isOpening: boolean("is_opening").notNull().default(false),
+    /** Saldo histórico del mes, signo contable (debe − haber). */
+    historical: numeric("historical", { precision: 18, scale: 2 }).notNull(),
+    coefficient: numeric("coefficient", { precision: 10, scale: 4 }).notNull(),
+    adjusted: numeric("adjusted", { precision: 18, scale: 2 }).notNull(),
+    difference: numeric("difference", { precision: 18, scale: 2 }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_inflation_adjustment_line_adj").on(table.adjustmentId),
+    index("idx_inflation_adjustment_line_account").on(
+      table.adjustmentId,
+      table.accountId,
+    ),
+  ],
+);

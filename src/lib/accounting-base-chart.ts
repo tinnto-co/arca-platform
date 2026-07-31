@@ -17,6 +17,10 @@ import {
   ACCOUNT_GROUP_LABELS,
   PENDING_REVIEW_CODE,
 } from '@/lib/accounting-labels';
+import {
+  defaultInflationNature,
+  type InflationNature,
+} from '@/lib/accounting-inflation';
 
 export interface BaseAccountSeed {
   code: string;
@@ -25,6 +29,18 @@ export interface BaseAccountSeed {
   accountGroup?: string;
   expectedBalance?: 'debit' | 'credit' | 'both';
   expenseFunction?: 'administration' | 'sales' | 'financial' | 'other';
+  /**
+   * Tratamiento frente al ajuste por inflación (RT 6). Si no se especifica, se
+   * deriva del `accountGroup` con `defaultInflationNature()`. Solo se declara
+   * explícitamente donde el default del rubro no aplica a esa cuenta puntual
+   * (ej. moneda extranjera dentro de Caja y Bancos).
+   */
+  inflationNature?: InflationNature;
+  /**
+   * Código de la cuenta que recibe el ajuste, si es distinta de sí misma.
+   * Único caso en el plan base: Capital social → Ajuste de capital.
+   */
+  inflationTargetCode?: string;
   isSystemAccount?: boolean;
   /** Default global de activación de la cuenta base. */
   isActive?: boolean;
@@ -37,6 +53,12 @@ const VALID_EXPENSE_FUNCTION = new Set<string>([
   'sales',
   'financial',
   'other',
+]);
+const VALID_INFLATION_NATURE = new Set<string>([
+  'monetaria',
+  'no_monetaria_costo',
+  'no_monetaria_valor_corriente',
+  'resultado_por_diferencia',
 ]);
 
 const G = (
@@ -62,6 +84,7 @@ const I = (
   type: 'imputable',
   accountGroup,
   expectedBalance,
+  inflationNature: defaultInflationNature(accountGroup),
   ...extra,
 });
 
@@ -81,11 +104,22 @@ export const BASE_CHART: BaseAccountSeed[] = [
   I('1.1.01.002', 'Banco cuenta corriente', 'caja_bancos', 'debit'),
   I('1.1.01.003', 'Recaudaciones a depositar', 'caja_bancos', 'debit'),
   I('1.1.01.004', 'Fondo fijo', 'caja_bancos', 'debit'),
-  I('1.1.01.005', 'Caja en moneda extranjera', 'caja_bancos', 'debit'),
-  I('1.1.01.006', 'Banco moneda extranjera', 'caja_bancos', 'debit'),
+  // Moneda extranjera: se mide al TC de cierre, o sea que ya está en moneda de
+  // cierre y NO se reexpresa (Guía FACPCE). Va en cuenta separada justamente
+  // para poder distinguirla del resto de Caja y Bancos, que sí es monetario.
+  I('1.1.01.005', 'Caja en moneda extranjera', 'caja_bancos', 'debit', {
+    inflationNature: 'no_monetaria_valor_corriente',
+  }),
+  I('1.1.01.006', 'Banco moneda extranjera', 'caja_bancos', 'debit', {
+    inflationNature: 'no_monetaria_valor_corriente',
+  }),
 
   G('1.1.02', 'Inversiones temporarias', 'inversiones_temporarias'),
-  I('1.1.02.001', 'Plazo fijo', 'inversiones_temporarias', 'debit'),
+  // Un plazo fijo en pesos es un crédito de importe nominal fijo: es monetario,
+  // a diferencia del resto del rubro (FCI y títulos van a cotización de cierre).
+  I('1.1.02.001', 'Plazo fijo', 'inversiones_temporarias', 'debit', {
+    inflationNature: 'monetaria',
+  }),
   I(
     '1.1.02.002',
     'Fondos comunes de inversión',
@@ -238,7 +272,11 @@ export const BASE_CHART: BaseAccountSeed[] = [
   G('3', 'Patrimonio Neto'),
 
   G('3.1', 'Capital', 'capital'),
-  I('3.1.001', 'Capital social', 'capital', 'credit'),
+  // El capital se mantiene a valor nominal: su reexpresión no se le imputa a él
+  // sino que se acumula en Ajuste de capital (RT 6 y requisito del estudio).
+  I('3.1.001', 'Capital social', 'capital', 'credit', {
+    inflationTargetCode: '3.1.002',
+  }),
   I('3.1.002', 'Ajuste de capital', 'capital', 'credit'),
 
   G('3.2', 'Aportes irrevocables', 'aportes_irrevocables'),
@@ -362,8 +400,11 @@ export const BASE_CHART: BaseAccountSeed[] = [
     'debit',
     { expenseFunction: 'financial' }
   ),
+  // Contrapartida global del ajuste por inflación. No se reexpresa: es el
+  // residuo que cuadra el asiento (método indirecto).
   I('5.4.004', 'RECPAM', 'gastos_financieros', 'both', {
     expenseFunction: 'financial',
+    inflationNature: 'resultado_por_diferencia',
   }),
 
   G('5.5', 'Impuesto a las ganancias', 'impuesto_ganancias'),
@@ -387,7 +428,9 @@ export function parentCodeOf(code: string): string | null {
  * unicidad de códigos, jerarquía (padre existe, padre es agrupación, sin ciclos),
  * rubros/atributos válidos, y existencia de la cuenta de sistema pending_review.
  */
-export function validateBaseChart(chart: BaseAccountSeed[] = BASE_CHART): string[] {
+export function validateBaseChart(
+  chart: BaseAccountSeed[] = BASE_CHART
+): string[] {
   const errors: string[] = [];
   const byCode = new Map<string, BaseAccountSeed>();
 
@@ -402,7 +445,9 @@ export function validateBaseChart(chart: BaseAccountSeed[] = BASE_CHART): string
 
     // 2. Jerarquía: el padre debe existir y ser una agrupación.
     if (parent !== null && !byCode.has(parent)) {
-      errors.push(`Cuenta ${a.code}: el padre "${parent}" no existe en el plan`);
+      errors.push(
+        `Cuenta ${a.code}: el padre "${parent}" no existe en el plan`
+      );
     } else if (parent !== null && byCode.get(parent)?.type === 'imputable') {
       errors.push(
         `Cuenta ${a.code}: su padre "${parent}" es imputable (debe ser agrupación)`
@@ -423,13 +468,32 @@ export function validateBaseChart(chart: BaseAccountSeed[] = BASE_CHART): string
         `Cuenta ${a.code}: expenseFunction inválido "${a.expenseFunction}"`
       );
     }
+    if (a.inflationNature && !VALID_INFLATION_NATURE.has(a.inflationNature)) {
+      errors.push(
+        `Cuenta ${a.code}: inflationNature inválido "${a.inflationNature}"`
+      );
+    }
+    if (a.inflationTargetCode) {
+      const target = byCode.get(a.inflationTargetCode);
+      if (!target) {
+        errors.push(
+          `Cuenta ${a.code}: inflationTargetCode "${a.inflationTargetCode}" no existe en el plan base`
+        );
+      } else if (target.type !== 'imputable') {
+        errors.push(
+          `Cuenta ${a.code}: inflationTargetCode "${a.inflationTargetCode}" no es imputable`
+        );
+      }
+    }
 
-    // Las imputables requieren rubro y saldo esperado.
+    // Las imputables requieren rubro, saldo esperado y naturaleza frente al AXI.
     if (a.type === 'imputable') {
       if (!a.accountGroup)
         errors.push(`Cuenta imputable ${a.code}: falta accountGroup`);
       if (!a.expectedBalance)
         errors.push(`Cuenta imputable ${a.code}: falta expectedBalance`);
+      if (!a.inflationNature)
+        errors.push(`Cuenta imputable ${a.code}: falta inflationNature`);
     }
 
     // 2b. Sin ciclos (defensivo: la jerarquía por prefijo no debería permitirlos).

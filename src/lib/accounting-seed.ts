@@ -59,6 +59,8 @@ export async function seedBaseChartForOrg(orgId: string): Promise<SeedResult> {
         accountGroup: (a.accountGroup ?? null) as never,
         expectedBalance: (a.expectedBalance ?? null) as never,
         expenseFunction: (a.expenseFunction ?? null) as never,
+        inflationNature: (a.inflationNature ?? null) as never,
+        inflationTargetId: null,
         isSystemAccount: a.isSystemAccount ?? false,
         isActive: a.isActive ?? true,
       }))
@@ -75,6 +77,19 @@ export async function seedBaseChartForOrg(orgId: string): Promise<SeedResult> {
     const selfId = codeToId.get(a.code);
     if (!parentId || !selfId) continue;
     await db.update(account).set({ parentId }).where(eq(account.id, selfId));
+  }
+
+  // 3ra pasada: destino del ajuste por inflación (Capital social → Ajuste de
+  // capital). Va aparte porque la cuenta destino puede insertarse después.
+  for (const a of toInsert) {
+    if (!a.inflationTargetCode) continue;
+    const selfId = codeToId.get(a.code);
+    const targetId = codeToId.get(a.inflationTargetCode);
+    if (!selfId || !targetId) continue;
+    await db
+      .update(account)
+      .set({ inflationTargetId: targetId })
+      .where(eq(account.id, selfId));
   }
 
   return { inserted: inserted.length, skipped: existing.length };
