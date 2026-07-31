@@ -7923,9 +7923,11 @@ function EspView({
               : ''}
           </div>
           <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
-            {valuation === 'ajustado'
-              ? 'Expresado en moneda homogénea de cierre (ajuste por inflación · RT 6).'
-              : 'Expresado en valores históricos, sin ajuste por inflación. Papel de trabajo.'}
+            {valuation === 'historico'
+              ? 'Expresado en valores históricos, sin ajuste por inflación. Papel de trabajo.'
+              : data?.inflationApplied
+                ? 'Expresado en moneda homogénea de cierre (ajuste por inflación · RT 6).'
+                : 'El ajuste por inflación del ejercicio todavía no está generado: los importes son históricos. Generalo en la solapa «Ajuste por inflación».'}
           </div>
         </div>
 
@@ -8742,9 +8744,11 @@ function ErView({
               : ''}
           </div>
           <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
-            {valuation === 'ajustado'
-              ? 'Expresado en moneda homogénea de cierre (ajuste por inflación · RT 6).'
-              : 'Expresado en valores históricos, sin ajuste por inflación. Papel de trabajo.'}
+            {valuation === 'historico'
+              ? 'Expresado en valores históricos, sin ajuste por inflación. Papel de trabajo.'
+              : data?.inflationApplied
+                ? 'Expresado en moneda homogénea de cierre (ajuste por inflación · RT 6).'
+                : 'El ajuste por inflación del ejercicio todavía no está generado: los importes son históricos. Generalo en la solapa «Ajuste por inflación».'}
           </div>
         </div>
 

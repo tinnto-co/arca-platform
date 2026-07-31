@@ -5819,6 +5819,12 @@ export interface EspResult {
   hasPrior: boolean;
   /** Coeficiente con el que se reexpresó la columna anterior. null = quedó histórica. */
   priorCoefficient: number | null;
+  /**
+   * El ajuste por inflación del ejercicio está generado. Si es false y la vista
+   * es 'ajustado', los importes son históricos: el estado no puede decir que
+   * está en moneda homogénea.
+   */
+  inflationApplied: boolean;
 }
 
 /** Contrapartida del ajuste por inflación; se expone en su propia línea del ER. */
@@ -6021,6 +6027,7 @@ export const getESP = createServerFn({ method: 'GET' })
         : true,
       hasPrior: !!priorFy,
       priorCoefficient,
+      inflationApplied: (await loadInflationStatus(fy.id)).applied,
     };
   });
 
@@ -6049,6 +6056,12 @@ export interface ErResult {
   hasPrior: boolean;
   /** Coeficiente con el que se reexpresó la columna anterior. null = quedó histórica. */
   priorCoefficient: number | null;
+  /**
+   * El ajuste por inflación del ejercicio está generado. Si es false y la vista
+   * es 'ajustado', los importes son históricos: el estado no puede decir que
+   * está en moneda homogénea.
+   */
+  inflationApplied: boolean;
 }
 
 /** Líneas de componentes del ER (los subtotales se intercalan al armar). */
@@ -6305,6 +6318,7 @@ export const getER = createServerFn({ method: 'GET' })
         : true,
       hasPrior: !!priorFy,
       priorCoefficient,
+      inflationApplied: (await loadInflationStatus(fy.id)).applied,
     };
   });
 
