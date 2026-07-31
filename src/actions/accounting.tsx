@@ -5821,6 +5821,9 @@ export interface EspResult {
   priorCoefficient: number | null;
 }
 
+/** Contrapartida del ajuste por inflación; se expone en su propia línea del ER. */
+const RECPAM_ACCOUNT_CODE = '5.4.004';
+
 const ESP_SECTIONS = ACCOUNT_GROUP_SECTIONS.filter(
   (s) => s.section !== 'Resultados'
 );
@@ -6166,6 +6169,33 @@ export const getER = createServerFn({ method: 'GET' })
     const comp = new Map(
       ER_COMPONENTS.map((c) => [c.key, { ...c, ...buildComponent(c.groups) }])
     );
+
+    // El RECPAM vive en el rubro "Gastos financieros" del plan de cuentas, pero
+    // en el estado se expone como línea propia: es el resultado del ajuste por
+    // inflación, no un gasto de financiación. Así lo presenta el estudio.
+    const finComp = comp.get('gastos_financieros')!;
+    const recpamAccounts = finComp.accounts.filter(
+      (a) => a.code === RECPAM_ACCOUNT_CODE
+    );
+    if (recpamAccounts.length > 0) {
+      const rest = finComp.accounts.filter(
+        (a) => a.code !== RECPAM_ACCOUNT_CODE
+      );
+      comp.set('gastos_financieros', {
+        ...finComp,
+        accounts: rest,
+        current: r2(rest.reduce((t, a) => t + a.current, 0)),
+        prior: r2(rest.reduce((t, a) => t + a.prior, 0)),
+      });
+      comp.set('recpam', {
+        key: 'recpam',
+        label: 'RECPAM',
+        groups: [],
+        accounts: recpamAccounts,
+        current: r2(recpamAccounts.reduce((t, a) => t + a.current, 0)),
+        prior: r2(recpamAccounts.reduce((t, a) => t + a.prior, 0)),
+      });
+    }
     const compLine = (key: string): ErLine => {
       const c = comp.get(key)!;
       return {
@@ -6187,6 +6217,7 @@ export const getER = createServerFn({ method: 'GET' })
     const admin = comp.get('gastos_administracion')!;
     const comerc = comp.get('gastos_comercializacion')!;
     const fin = comp.get('gastos_financieros')!;
+    const recpam = comp.get('recpam');
     const otros = comp.get('otros_resultados')!;
     const resOperativo = {
       current: r2(
@@ -6194,10 +6225,16 @@ export const getER = createServerFn({ method: 'GET' })
           admin.current +
           comerc.current +
           fin.current +
+          (recpam?.current ?? 0) +
           otros.current
       ),
       prior: r2(
-        resBruto.prior + admin.prior + comerc.prior + fin.prior + otros.prior
+        resBruto.prior +
+          admin.prior +
+          comerc.prior +
+          fin.prior +
+          (recpam?.prior ?? 0) +
+          otros.prior
       ),
     };
     const impuesto = comp.get('impuesto_ganancias')!;
@@ -6226,6 +6263,7 @@ export const getER = createServerFn({ method: 'GET' })
       compLine('gastos_administracion'),
       compLine('gastos_comercializacion'),
       compLine('gastos_financieros'),
+      ...(comp.has('recpam') ? [compLine('recpam')] : []),
       compLine('otros_resultados'),
       subtotal('resultado_operativo', 'Resultado operativo', resOperativo),
       compLine('impuesto_ganancias'),

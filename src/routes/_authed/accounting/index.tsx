@@ -149,6 +149,7 @@ import {
   exportCmvPdf,
   exportCmvExcel,
   exportEeccPackagePdf,
+  exportEstadosExcel,
   exportLibroMayorPdf,
   exportLibroInventariosPdf,
   type MayorExportData,
@@ -9513,6 +9514,30 @@ function ExportView({
 
   const ready = !!esp && !!er && !!anexoII;
 
+  const onEstadosExcel = async () => {
+    if (!esp) {
+      toast.error('Los datos aún se están cargando');
+      return;
+    }
+    setBusy('estados-excel');
+    try {
+      await exportEstadosExcel({
+        empresaName: clientName,
+        fiscalYearNumber: esp.fiscalYearNumber,
+        periodLabel: esp.periodLabel,
+        valuation,
+        eepn: eepn ?? null,
+        efe: efe ?? null,
+        esp,
+      });
+      toast.success('Excel de los estados generado');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Error al generar el Excel');
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const onPackage = async () => {
     if (!esp || !er || !anexoII || !selectedFy) {
       toast.error('Los datos del paquete aún se están cargando');
@@ -9612,6 +9637,8 @@ function ExportView({
         periodLabel: esp.periodLabel,
         esp,
         er,
+        eepn: eepn ?? null,
+        valuation,
       });
       toast.success('Libro Inventarios y Balances generado');
     } catch (e) {
@@ -9625,8 +9652,10 @@ function ExportView({
     key: string;
     title: string;
     desc: string;
-    onClick: () => void;
+    onClick: () => Promise<void>;
     extra?: string;
+    /** Etiqueta del botón; por defecto PDF. */
+    format?: 'PDF' | 'Excel';
   }[] = [
     {
       key: 'package',
@@ -9646,8 +9675,16 @@ function ExportView({
     {
       key: 'inv',
       title: 'Libro Inventarios y Balances',
-      desc: 'Inventario al cierre, ESP, ER y EEPN simplificado. Formato rubricable.',
+      desc: 'Inventario al cierre, ESP, ER y Evolución del Patrimonio Neto. Formato rubricable.',
       onClick: onInventarios,
+    },
+    {
+      key: 'estados-excel',
+      title: 'Estados nuevos en Excel',
+      desc: 'EEPN, Flujo de Efectivo y Nota 3, una hoja por estado. Sigue la valuación elegida arriba.',
+      onClick: onEstadosExcel,
+      extra: 'Para cruzar contra el papel de trabajo.',
+      format: 'Excel',
     },
   ];
 
@@ -9655,7 +9692,7 @@ function ExportView({
     <ArcaCard>
       <div className="px-5 py-3 border-b border-[var(--arca-border)]">
         <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
-          Exportes en PDF
+          Exportes
         </span>
         {pdfGeneratedAt && (
           <div className="text-[11px] text-[var(--arca-ink-3)] mt-0.5">
@@ -9682,12 +9719,14 @@ function ExportView({
               )}
             </div>
             <button
-              onClick={it.onClick}
+              onClick={() => void it.onClick()}
               disabled={!ready || busy !== null}
               className="shrink-0 text-[12px] px-3 h-8 rounded-[6px] bg-[var(--arca-ink)] text-white hover:opacity-90 disabled:opacity-40 flex items-center gap-1.5"
             >
               <Download className="w-3.5 h-3.5" />
-              {busy === it.key ? 'Generando…' : 'Descargar PDF'}
+              {busy === it.key
+                ? 'Generando…'
+                : `Descargar ${it.format ?? 'PDF'}`}
             </button>
           </div>
         ))}

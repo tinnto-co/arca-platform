@@ -2811,6 +2811,9 @@ export interface LibroInventariosData {
   periodLabel: string;
   esp: EspResult;
   er: ErResult;
+  /** Estado real; si falta se cae al resumen de patrimonio del ESP. */
+  eepn?: EepnResult | null;
+  valuation?: 'ajustado' | 'historico';
 }
 
 function InventarioBlock({ esp }: { esp: EspResult }) {
@@ -2906,12 +2909,16 @@ function LibroInventariosDoc({ data }: { data: LibroInventariosData }) {
         <Text
           style={[lm.meta, { fontStyle: 'italic', color: '#999' }] as never}
         >
-          {EECC_DISCLAIMER_HISTORICO}
+          {disclaimerFor(data.valuation)}
         </Text>
         <InventarioBlock esp={data.esp} />
         <EspBlock esp={data.esp} />
         <ErBlock er={data.er} />
-        <InventarioPnBlock esp={data.esp} />
+        {data.eepn && data.eepn.columns.length > 0 ? (
+          <EepnBlock eepn={data.eepn} />
+        ) : (
+          <InventarioPnBlock esp={data.esp} />
+        )}
         <View style={pk.footer} fixed>
           <Text>
             {footerData.empresaName} · Libro Inventarios y Balances · Ejercicio
@@ -2935,5 +2942,168 @@ export async function exportLibroInventariosPdf(
   triggerDownload(
     blob,
     `libro_inventarios_balances_ej${data.fiscalYearNumber}.pdf`
+  );
+}
+
+/* ═════ Excel de los estados nuevos: EEPN, EFE y Nota 3 (AXI-6/7/8) ═════ */
+
+export interface EstadosExcelData {
+  empresaName: string;
+  fiscalYearNumber: number;
+  periodLabel: string;
+  valuation: 'ajustado' | 'historico';
+  eepn: EepnResult | null;
+  efe: EfeResult | null;
+  esp: EspResult;
+}
+
+/**
+ * Un libro con una hoja por estado. Se exporta el paquete completo y no cada
+ * estado por separado porque el contador los cruza entre sí: tenerlos en
+ * pestañas del mismo archivo es lo que hace su papel de trabajo.
+ */
+export async function exportEstadosExcel(
+  data: EstadosExcelData
+): Promise<void> {
+  const wb = new ExcelJS.Workbook();
+  const disclaimer =
+    data.valuation === 'historico'
+      ? 'Valores históricos, sin ajuste por inflación (papel de trabajo).'
+      : 'Moneda homogénea de cierre, con ajuste por inflación (RT 6).';
+
+  /** Encabezado común a todas las hojas. */
+  const header = (ws: XLWorksheet, title: string, cols: number) => {
+    const t = ws.addRow([data.empresaName]);
+    t.getCell(1).font = { bold: true, size: 14 };
+    const s = ws.addRow([
+      `${title} · Ejercicio N°${data.fiscalYearNumber} · ${data.periodLabel}`,
+    ]);
+    s.getCell(1).font = { size: 10 };
+    const d = ws.addRow([disclaimer]);
+    d.getCell(1).font = { size: 9, italic: true };
+    ws.addRow([]);
+    if (ws.columns[0]) ws.columns[0].width = 46;
+    for (let i = 1; i < cols; i++) {
+      if (ws.columns[i]) ws.columns[i].width = 20;
+    }
+  };
+
+  const money = (row: XLRow, from: number, to: number, bold = false) => {
+    for (let c = from; c <= to; c++) {
+      row.getCell(c).numFmt = MONEY_FMT;
+      row.getCell(c).alignment = { horizontal: 'right' };
+      if (bold) row.getCell(c).font = { bold: true };
+    }
+  };
+
+  // ── EEPN ──
+  if (data.eepn && data.eepn.columns.length > 0) {
+    const e = data.eepn;
+    const ws = wb.addWorksheet('EEPN', { views: [{ showGridLines: false }] });
+    const nCols =
+      e.columns.length + 2 + (e.priorFiscalYearNumber !== null ? 1 : 0);
+    header(ws, 'Estado de Evolución del Patrimonio Neto', nCols);
+
+    const head = [
+      'Concepto',
+      ...e.columns.map((c) => c.name),
+      `Ej. N°${e.fiscalYearNumber}`,
+    ];
+    if (e.priorFiscalYearNumber !== null) {
+      head.push(`Ej. N°${e.priorFiscalYearNumber}`);
+    }
+    const hr = ws.addRow(head);
+    for (let c = 1; c <= head.length; c++) hr.getCell(c).font = { bold: true };
+
+    for (const row of e.rows) {
+      const strong = row.kind === 'inicio' || row.kind === 'cierre';
+      const values: (string | number)[] = [row.label];
+      for (const c of e.columns) values.push(row.amounts[c.accountId] ?? 0);
+      values.push(row.total);
+      if (e.priorFiscalYearNumber !== null) {
+        values.push(
+          row.kind === 'cierre' && e.priorTotal !== null ? e.priorTotal : 0
+        );
+      }
+      const r = ws.addRow(values);
+      if (strong) r.getCell(1).font = { bold: true };
+      money(r, 2, values.length, strong);
+    }
+  }
+
+  // ── Flujo de efectivo ──
+  if (data.efe) {
+    const f = data.efe;
+    const ws = wb.addWorksheet('Flujo de efectivo', {
+      views: [{ showGridLines: false }],
+    });
+    header(ws, 'Estado de Flujo de Efectivo — Método directo', 2);
+
+    const line = (label: string, value: number, bold = false) => {
+      const r = ws.addRow([label, value]);
+      if (bold) r.getCell(1).font = { bold: true };
+      money(r, 2, 2, bold);
+    };
+
+    line('Efectivo y equivalentes al inicio del ejercicio', f.efectivoInicio);
+    line('Efectivo y equivalentes al cierre del ejercicio', f.efectivoCierre);
+    line('Aumento (disminución) neto del efectivo', f.variacion, true);
+    ws.addRow([]);
+    const causas = ws.addRow(['Causas de las variaciones del efectivo']);
+    causas.getCell(1).font = { bold: true };
+
+    for (const a of f.activities) {
+      const t = ws.addRow([a.label]);
+      t.getCell(1).font = { bold: true, size: 10 };
+      for (const l of a.lines) line(`    ${l.name}`, l.amount);
+      line(`Flujo neto por ${a.label.toLowerCase()}`, a.total, true);
+    }
+    if (Math.abs(f.recpamEfectivo) >= 0.005) {
+      line(
+        'Resultado por exposición a la inflación del efectivo (RECPAM)',
+        f.recpamEfectivo
+      );
+    }
+    line('Total de las variaciones del efectivo', f.totalCausas, true);
+  }
+
+  // ── Nota 3 ──
+  const rubros = data.esp.sections
+    .flatMap((sec) => sec.rubros)
+    .filter((r) => r.group !== 'resultado_ejercicio')
+    .filter((r) => Math.abs(r.current) >= 0.005 || Math.abs(r.prior) >= 0.005);
+  if (rubros.length > 0) {
+    const ws = wb.addWorksheet('Nota 3', { views: [{ showGridLines: false }] });
+    header(ws, 'Nota 3 — Composición de los principales rubros', 4);
+    const hr = ws.addRow([
+      'Nota',
+      'Concepto',
+      `Ej. N°${data.esp.fiscalYearNumber}`,
+      data.esp.priorFiscalYearNumber !== null
+        ? `Ej. N°${data.esp.priorFiscalYearNumber}`
+        : 'Anterior',
+    ]);
+    for (let c = 1; c <= 4; c++) hr.getCell(c).font = { bold: true };
+    if (ws.columns[0]) ws.columns[0].width = 8;
+    if (ws.columns[1]) ws.columns[1].width = 46;
+
+    rubros.forEach((r, i) => {
+      const t = ws.addRow([`3.${i + 1}`, r.label]);
+      t.getCell(2).font = { bold: true };
+      for (const a of r.accounts) {
+        const row = ws.addRow(['', `    ${a.name}`, a.current, a.prior]);
+        money(row, 3, 4);
+      }
+      const tot = ws.addRow(['', '', r.current, r.prior]);
+      money(tot, 3, 4, true);
+    });
+  }
+
+  const buffer = await wb.xlsx.writeBuffer();
+  triggerDownload(
+    new Blob([buffer as ArrayBuffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    }),
+    `estados_${data.empresaName.replace(/\s+/g, '_')}_ej${data.fiscalYearNumber}.xlsx`
   );
 }
