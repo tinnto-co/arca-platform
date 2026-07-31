@@ -9,7 +9,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { getRepresentative } from '@/actions/client';
+import { getCliente } from '@/actions/client';
 import {
   persistBankStatementMovements,
   resolveClientForCopilot,
@@ -97,10 +97,10 @@ export function ScanPdfConfirmation({
   // Trae el nombre real del cliente para mostrarlo (no para validar — la validación
   // de pertenencia al org se hace server-side en persistBankStatementMovements).
   const { data: clientRow } = useQuery({
-    queryKey: ['client', resolvedClientId],
+    queryKey: ['cliente', resolvedClientId],
     queryFn: () =>
       resolvedClientId
-        ? getRepresentative({ data: { id: resolvedClientId } })
+        ? getCliente({ data: { id: resolvedClientId } })
         : Promise.resolve(null),
     enabled: !!resolvedClientId,
     staleTime: 60_000,
@@ -135,7 +135,7 @@ export function ScanPdfConfirmation({
       try {
         const res: ResolveClientResult = await resolveClientForCopilot({
           data: {
-            clientId: clientIdProp,
+            clienteId: clientIdProp,
             clientName: clientNameProp,
           },
         });
@@ -214,7 +214,7 @@ export function ScanPdfConfirmation({
     try {
       const res = await persistBankStatementMovements({
         data: {
-          clientId: resolvedClientId,
+          clienteId: resolvedClientId,
           banco: preview.banco,
           ingresos: preview.ingresos,
           egresos: preview.egresos,
@@ -225,8 +225,8 @@ export function ScanPdfConfirmation({
       sendRespond({
         confirmed: true,
         success: true,
-        clientId: res.clientId,
-        clientName: res.clientName,
+        clienteId: res.clienteId,
+        clientName: res.clienteNombre,
         banco: res.banco,
         inserted: res.inserted,
         skipped: res.skipped,
@@ -255,7 +255,7 @@ export function ScanPdfConfirmation({
 
   const fileName = attachment?.name ?? null;
   const clientDisplayName =
-    clientRow?.name ?? clientNameProp ?? clientIdProp ?? 'cliente';
+    clientRow?.razonSocial ?? clientNameProp ?? clientIdProp ?? 'cliente';
 
   if (phase === 'no-attachment') {
     return (

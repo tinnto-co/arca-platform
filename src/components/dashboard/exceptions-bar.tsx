@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { AlertTriangle, Bell, Calendar, KeyRound } from 'lucide-react';
+import { Bell } from 'lucide-react';
 import { getExceptionsSummary } from '@/actions/dashboard';
 
 interface ExceptionCardProps {
@@ -64,16 +64,11 @@ export function ExceptionsBar() {
 
   if (!data) return null;
 
-  const {
-    overdueDebtCount,
-    criticalNotificationCount,
-    upcomingDueDateCount,
-    representativeErrorCount,
-  } = data;
+  const { notificacionesUrgentesCount } = data;
 
   const cards = [
     // {
-    //   count: overdueDebtCount,
+    //   count: data.deudasVencidasCount,
     //   label: 'Deudas vencidas',
     //   description: 'deudas abiertas y vencidas',
     //   href: '/clients' as const,
@@ -82,7 +77,7 @@ export function ExceptionsBar() {
     //   icon: <AlertTriangle size={16} />,
     // },
     {
-      count: criticalNotificationCount,
+      count: notificacionesUrgentesCount,
       label: 'Notificaciones críticas',
       description: 'sin resolver',
       href: '/notifications' as const,
@@ -91,7 +86,7 @@ export function ExceptionsBar() {
       icon: <Bell size={16} />,
     },
     // {
-    //   count: upcomingDueDateCount,
+    //   count: data.vencimientosProximosCount,
     //   label: 'Vencimientos próximos',
     //   description: 'en los próximos 3 días',
     //   href: '/vencimientos' as const,
@@ -100,9 +95,9 @@ export function ExceptionsBar() {
     //   icon: <Calendar size={16} />,
     // },
     // {
-    //   count: representativeErrorCount,
+    //   count: data.credencialesConErrorCount,
     //   label: 'Errores de scraping',
-    //   description: 'representantes con fallos',
+    //   description: 'credenciales con fallos',
     //   href: '/clients' as const,
     //   colorVar: 'var(--arca-accent-warn)',
     //   bgVar: 'var(--arca-accent-warn-bg)',

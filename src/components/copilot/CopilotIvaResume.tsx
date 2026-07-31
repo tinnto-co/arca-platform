@@ -5,14 +5,16 @@ import {
   RenderIvaResume,
   type ClientIvaCreditData,
 } from '@/components/render-iva-resume';
+import { dateAPeriodo } from '@/lib/periodo';
 import type { GetIvaPositionForCopilotResult } from '@/actions/copilot';
 
 interface CopilotIvaResumeProps {
   result: GetIvaPositionForCopilotResult;
 }
 
-function periodToDateRange(p: string): { from: Date; to: Date } {
-  const [mm, yyyy] = p.split('/').map(Number);
+/** El período llega como `YYYY-MM-DD` (primer día del mes) desde la BD. */
+function periodToDateRange(periodo: string): { from: Date; to: Date } {
+  const [yyyy, mm] = periodo.split('-').map(Number);
   const from = new Date(yyyy, mm - 1, 1);
   const to = new Date(yyyy, mm, 0, 23, 59, 59);
   return { from, to };
@@ -20,9 +22,9 @@ function periodToDateRange(p: string): { from: Date; to: Date } {
 
 export function CopilotIvaResume({ result }: CopilotIvaResumeProps) {
   const isError = 'error' in result;
-  const perfiles = isError ? [] : result.perfiles;
-  const [selectedProfileId, setSelectedProfileId] = React.useState<string>(
-    perfiles[0]?.profileId ?? ''
+  const clientes = isError ? [] : result.clientes;
+  const [selectedClienteId, setSelectedClienteId] = React.useState<string>(
+    clientes[0]?.clienteId ?? ''
   );
 
   if (isError) {
@@ -40,43 +42,41 @@ export function CopilotIvaResume({ result }: CopilotIvaResumeProps) {
     );
   }
 
-  const selectedProfile =
-    perfiles.find((p) => p.profileId === selectedProfileId) ?? perfiles[0];
+  const selected =
+    clientes.find((c) => c.clienteId === selectedClienteId) ?? clientes[0];
 
-  if (!selectedProfile) {
+  if (!selected) {
     return (
       <div className="rounded-lg border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
-        No hay perfiles para mostrar.
+        No hay clientes para mostrar.
       </div>
     );
   }
 
-  const dateRange = periodToDateRange(result.periodoMostrado);
+  const dateRange = periodToDateRange(result.periodo);
+  // La UI habla "YYYY-MM"; en la BD el período es un `date`.
+  const periodo = dateAPeriodo(result.periodo);
+  const declaracion = selected.declaracionAfip;
 
   const clientIva: ClientIvaCreditData = {
-    cuit: selectedProfile.cuit ?? '',
-    data: selectedProfile.ivaScrape
+    cuit: selected.cuit,
+    data: declaracion
       ? {
-          periodoFiscal: selectedProfile.ivaScrape.periodoFiscal,
-          fechaPresentacion:
-            selectedProfile.ivaScrape.fechaPresentacion ?? undefined,
-          debitoFiscal: selectedProfile.ivaScrape.debitoFiscal,
-          creditoFiscal: selectedProfile.ivaScrape.creditoFiscal,
-          saldoMesPasado: selectedProfile.ivaScrape.saldoMesPasado,
-          saldoArcaMes: selectedProfile.ivaScrape.saldoArcaMes,
-          saldoTecnicoFavorContribuyente:
-            selectedProfile.ivaScrape.saldoTecnicoFavorContribuyente,
+          periodoFiscal: periodo,
+          fechaPresentacion: selected.presentadaAt ?? undefined,
+          debitoFiscal: declaracion.debitoFiscal,
+          creditoFiscal: declaracion.creditoFiscal,
+          saldoMesPasado: declaracion.saldoMesAnterior,
+          saldoArcaMes: declaracion.saldoAfipMes,
+          saldoTecnicoFavorContribuyente: declaracion.saldoTecnicoFavor,
           saldoTecnicoFavorContribuyentePosicionMensual:
-            selectedProfile.ivaScrape
-              .saldoTecnicoFavorContribuyentePosicionMensual,
+            declaracion.saldoTecnicoFavorMensual,
           saldoLibreDisponibilidadPeriodoAnteriorNeto:
-            selectedProfile.ivaScrape
-              .saldoLibreDisponibilidadPeriodoAnteriorNeto,
+            declaracion.saldoLibreDisponibilidadAnteriorNeto,
           totalRetencionesPercepcionesPeriodo:
-            selectedProfile.ivaScrape.totalRetencionesPercepcionesPeriodo,
+            declaracion.retencionesPercepcionesPeriodo,
           saldoLibreDisponibilidadFavorContribuyentePeriodo:
-            selectedProfile.ivaScrape
-              .saldoLibreDisponibilidadFavorContribuyentePeriodo,
+            declaracion.saldoLibreDisponibilidadFavor,
           ok: true,
         }
       : null,
@@ -86,39 +86,44 @@ export function CopilotIvaResume({ result }: CopilotIvaResumeProps) {
     <div className="space-y-3">
       <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs">
         <div className="font-medium text-foreground">
-          IVA · {result.cliente} · {result.periodoMostrado}
+          IVA · {selected.razonSocial} · {periodo}
         </div>
-        <div className="text-muted-foreground">
-          Período scrape AFIP: {result.periodoIvaScrape}
-        </div>
+        {!selected.tieneDatosAFIP && (
+          <div className="text-muted-foreground">
+            Sin declaración de AFIP para el período: los totales salen de los
+            comprobantes.
+          </div>
+        )}
       </div>
 
-      {perfiles.length > 1 && (
+      {clientes.length > 1 && (
         <div className="flex flex-wrap gap-1">
-          {perfiles.map((p) => (
+          {clientes.map((c) => (
             <button
-              key={p.profileId}
+              key={c.clienteId}
               type="button"
-              onClick={() => setSelectedProfileId(p.profileId)}
+              onClick={() => setSelectedClienteId(c.clienteId)}
               className={`rounded-md border px-2 py-1 text-xs transition-colors ${
-                p.profileId === selectedProfileId
+                c.clienteId === selected.clienteId
                   ? 'bg-primary text-primary-foreground border-primary'
                   : 'bg-background text-foreground hover:bg-muted'
               }`}
             >
-              {p.perfil}
+              {c.razonSocial}
             </button>
           ))}
         </div>
       )}
 
       <RenderIvaResume
-        clientId={result.clienteId}
-        clientName={result.cliente}
+        /* El resultado no trae el login de AFIP: sin él no se muestra la fecha
+           del último scrape, pero el resto del resumen se calcula igual. */
+        representativeId=""
+        clientName={selected.razonSocial}
         clientIva={clientIva}
-        selectedProfileId={selectedProfile.profileId}
+        selectedProfileId={selected.clienteId}
         dateRange={dateRange}
-        periodUsedForResumen={result.periodoIvaScrape}
+        periodUsedForResumen={periodo}
       />
     </div>
   );

@@ -64,29 +64,31 @@ export function KpiCardsRow({ from, to }: KpiCardsRowProps) {
   }
 
   const salesChange =
-    stats.previousMonthSales > 0
-      ? ((stats.monthlySales - stats.previousMonthSales) /
-          stats.previousMonthSales) *
+    stats.ventasPeriodoAnterior > 0
+      ? ((stats.ventasDelPeriodo - stats.ventasPeriodoAnterior) /
+          stats.ventasPeriodoAnterior) *
         100
       : 0;
 
   const purchasesChange =
-    stats.previousMonthPurchases > 0
-      ? ((stats.monthlyPurchases - stats.previousMonthPurchases) /
-          stats.previousMonthPurchases) *
+    stats.comprasPeriodoAnterior > 0
+      ? ((stats.comprasDelPeriodo - stats.comprasPeriodoAnterior) /
+          stats.comprasPeriodoAnterior) *
         100
       : 0;
 
-  const resultadoBruto = stats.monthlySales - stats.monthlyPurchases;
+  const resultadoBruto = stats.ventasDelPeriodo - stats.comprasDelPeriodo;
   const margen =
-    stats.monthlySales > 0 ? (resultadoBruto / stats.monthlySales) * 100 : 0;
+    stats.ventasDelPeriodo > 0
+      ? (resultadoBruto / stats.ventasDelPeriodo) * 100
+      : 0;
   const ivaAPagar = resultadoBruto * 0.21;
 
   const { sign: prevSalesSign, integer: prevSalesInt } = formatArsParts(
-    stats.previousMonthSales
+    stats.ventasPeriodoAnterior
   );
   const { sign: prevPurchSign, integer: prevPurchInt } = formatArsParts(
-    stats.previousMonthPurchases
+    stats.comprasPeriodoAnterior
   );
 
   const posColor = 'var(--arca-accent-pos)';
@@ -97,29 +99,29 @@ export function KpiCardsRow({ from, to }: KpiCardsRowProps) {
   const kpis: KpiData[] = [
     {
       label: 'Ventas del período',
-      value: stats.monthlySales,
+      value: stats.ventasDelPeriodo,
       chipColor: salesChange >= 0 ? posColor : negColor,
       chipText:
-        stats.previousMonthSales > 0
+        stats.ventasPeriodoAnterior > 0
           ? `${fmtPct(salesChange)}`
           : 'sin comparación',
       footLabel: 'período anterior',
       footValue:
-        stats.previousMonthSales > 0
+        stats.ventasPeriodoAnterior > 0
           ? `${prevSalesSign} ${prevSalesInt}`
           : undefined,
     },
     {
       label: 'Compras del período',
-      value: stats.monthlyPurchases,
+      value: stats.comprasDelPeriodo,
       chipColor: purchasesChange <= 0 ? posColor : negColor,
       chipText:
-        stats.previousMonthPurchases > 0
+        stats.comprasPeriodoAnterior > 0
           ? `${fmtPct(purchasesChange)}`
           : 'sin comparación',
       footLabel: 'período anterior',
       footValue:
-        stats.previousMonthPurchases > 0
+        stats.comprasPeriodoAnterior > 0
           ? `${prevPurchSign} ${prevPurchInt}`
           : undefined,
     },

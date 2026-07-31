@@ -67,7 +67,7 @@ export function ScheduleCard() {
     staleTime: 60_000,
   });
 
-  const activeReps = reps.filter((r) => !r.hasCredentialAlert);
+  const activeReps = reps.filter((r) => !r.tieneAlertaCredencial);
 
   return (
     <ArcaCard>
@@ -91,7 +91,7 @@ export function ScheduleCard() {
           </div>
         ) : activeReps.length === 0 ? (
           <div className="flex items-center justify-center h-24 text-[13px] text-[var(--arca-ink-4)]">
-            No hay representantes activos
+            No hay credenciales activas
           </div>
         ) : (
           <div className="max-h-[320px] overflow-y-auto">
@@ -99,7 +99,7 @@ export function ScheduleCard() {
               <thead className="sticky top-0 bg-[var(--arca-surface)]">
                 <tr className="border-b border-[var(--arca-border)]">
                   <th className="text-left text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] py-2">
-                    Representante
+                    Credencial
                   </th>
                   <th className="text-center text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] py-2 w-20">
                     Ultimo
@@ -114,7 +114,7 @@ export function ScheduleCard() {
               </thead>
               <tbody>
                 {activeReps.map((rep) => {
-                  const { pending, nextDate } = getModuleSummary(rep.modules);
+                  const { nextDate } = getModuleSummary(rep.modules);
                   // Find the most recent scrape across all modules
                   const lastDates = Object.values(rep.modules)
                     .map((m) => m.lastScrapedAt)
@@ -125,12 +125,12 @@ export function ScheduleCard() {
 
                   return (
                     <tr
-                      key={rep.representativeId}
+                      key={rep.credencialId}
                       className="border-b border-[var(--arca-border)] last:border-0"
                     >
                       <td className="py-2">
                         <div className="font-medium text-[var(--arca-ink)]">
-                          {rep.name || '(sin nombre)'}
+                          {rep.nombre || '(sin nombre)'}
                         </div>
                         <div className="text-[11px] text-[var(--arca-ink-4)] font-mono">
                           {rep.cuit}
@@ -159,7 +159,7 @@ export function ScheduleCard() {
       </div>
 
       <ArcaCardFoot
-        leftText={`${activeReps.length} representante${activeReps.length !== 1 ? 's' : ''} activos`}
+        leftText={`${activeReps.length} credencial${activeReps.length !== 1 ? 'es' : ''} activas`}
         linkText="Ver jobs →"
         linkHref="/jobs"
       />

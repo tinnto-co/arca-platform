@@ -33,35 +33,28 @@ export function CopilotActions() {
   useCopilotAction({
     name: 'getIvaPosition',
     description:
-      'Obtiene la posición IVA completa de un cliente para un período dado. Devuelve datos de todos los perfiles del cliente con totales consolidados. Usalo para cualquier consulta sobre IVA, saldo IVA, débito/crédito fiscal.',
+      'Obtiene la posición IVA completa de un cliente para un período dado. El nombre puede ser el de una empresa o el de un login de AFIP (que agrupa varias empresas): en ese caso devuelve todas las empresas de ese login con totales consolidados. Usalo para cualquier consulta sobre IVA, saldo IVA, débito/crédito fiscal.',
     parameters: [
       {
         name: 'clientName',
         type: 'string',
-        description: 'Nombre del cliente (búsqueda parcial)',
+        description:
+          'Nombre del cliente o del login de AFIP (búsqueda parcial)',
         required: true,
       },
       {
-        name: 'displayMonth',
+        name: 'periodo',
         type: 'string',
         description:
-          'Mes que el usuario quiere ver, en formato MM/YYYY. Ej: "03/2026" para Marzo 2026. Si no se especifica, usa el mes más reciente con datos disponibles.',
-        required: false,
-      },
-      {
-        name: 'profileName',
-        type: 'string',
-        description:
-          'Nombre del perfil si se quiere filtrar a uno en particular',
+          'Período fiscal que el usuario quiere ver, en formato MM/YYYY. Ej: "03/2026" para Marzo 2026. Si no se especifica, usa el último período declarado.',
         required: false,
       },
     ],
-    handler: async ({ clientName, displayMonth, profileName }) => {
+    handler: async ({ clientName, periodo }) => {
       return await getIvaPositionForCopilot({
         data: {
           clientName,
-          displayMonth: displayMonth ?? undefined,
-          profileName: profileName ?? undefined,
+          periodo: periodo ?? undefined,
         },
       });
     },
@@ -187,7 +180,7 @@ export function CopilotActions() {
     handler: async ({ clientId, clientName }) => {
       return await getResumenSaludCliente({
         data: {
-          clientId: clientId ?? undefined,
+          clienteId: clientId ?? undefined,
           clientName: clientName ?? undefined,
         },
       });
@@ -309,7 +302,7 @@ export function CopilotActions() {
       }
       return (
         <ScrapeConfirmation
-          clientId={clientId}
+          clienteId={clientId}
           jobType={jobType as ScrapeJobType}
           respond={respond}
         />

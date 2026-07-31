@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Zap, Check, FileText, AlertTriangle, Upload } from 'lucide-react';
 import { getRecentInvoices } from '@/actions/dashboard';
+import { INVOICE_TYPES } from '@/lib/invoicesTypes';
 import {
   ArcaCard,
   ArcaCardHead,
@@ -48,8 +49,8 @@ export function ActividadFeed({ from, to }: ActividadFeedProps) {
   });
 
   const feedItems: FeedItem[] = recentInvoices.map((inv, i) => {
-    const amount = formatArs(Number(inv.amount || 0));
-    const isOutbound = inv.direction?.toLowerCase() === 'outbound';
+    const amount = formatArs(Number(inv.total || 0));
+    const isOutbound = inv.direccion === 'emitido';
     let kind: FeedKind;
     let icon: ReactNode;
 
@@ -77,24 +78,23 @@ export function ActividadFeed({ from, to }: ActividadFeedProps) {
       icon,
       title: (
         <>
-          <b>{inv.clientName || 'Cliente'}</b>{' '}
+          <b>{inv.clienteNombre || 'Cliente'}</b>{' '}
           {isOutbound ? 'factura emitida' : 'comprobante registrado'} ·{' '}
-          {inv.type || 'Factura'}
+          {INVOICE_TYPES.find((t) => t.clave === String(inv.tipo))?.valor ||
+            'Factura'}
         </>
       ),
-      sub: `${amount} · ${inv.direction === 'outbound' ? 'Venta' : 'Compra'}`,
-      time: inv.emitionDate ? relativeTime(inv.emitionDate) : '-',
+      sub: `${amount} · ${isOutbound ? 'Venta' : 'Compra'}`,
+      time: inv.fechaEmision ? relativeTime(inv.fechaEmision) : '-',
     };
   });
 
   const filtered =
     tab === 'Facturas'
-      ? feedItems.filter(
-          (_, i) => recentInvoices[i]?.direction?.toLowerCase() === 'outbound'
-        )
+      ? feedItems.filter((_, i) => recentInvoices[i]?.direccion === 'emitido')
       : tab === 'Compras'
         ? feedItems.filter(
-            (_, i) => recentInvoices[i]?.direction?.toLowerCase() === 'inbound'
+            (_, i) => recentInvoices[i]?.direccion === 'recibido'
           )
         : feedItems;
 

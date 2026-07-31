@@ -1,11 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
-import { Users, FileText, Bell, AlertCircle } from 'lucide-react';
+import { Users, FileText, Bell } from 'lucide-react';
 import {
   getDashboardStats,
-  getOverdueDebts,
   getPendingNotificationsCount,
 } from '@/actions/dashboard';
-import { ProgressBar, formatArs } from './shared';
+import { ProgressBar } from './shared';
 import type { ReactNode } from 'react';
 
 export type DashboardStats = Awaited<ReturnType<typeof getDashboardStats>>;
@@ -74,25 +73,15 @@ export function MiniKpiCardsRow({
   });
   const stats = statsProp ?? queryStats;
 
-  const { data: overdueDebts = [] } = useQuery({
-    queryKey: ['overdueDebts'],
-    queryFn: () => getOverdueDebts({ data: { limit: 50 } }),
-  });
-
   const { data: pendingNotifications } = useQuery({
     queryKey: ['pendingNotificationsCount'],
     queryFn: () => getPendingNotificationsCount(),
   });
 
-  const totalClients = stats?.totalClients ?? 0;
-  const monthlyInvoices = stats?.monthlyInvoices ?? 0;
-  const totalInvoices = stats?.totalInvoices ?? 0;
+  const totalClients = stats?.totalClientes ?? 0;
+  const monthlyInvoices = stats?.comprobantesDelPeriodo ?? 0;
+  const totalInvoices = stats?.totalComprobantes ?? 0;
   const notifCount = pendingNotifications?.count ?? 0;
-  const overdueCount = overdueDebts.length;
-  const totalOverdue = overdueDebts.reduce(
-    (s, d) => s + Number(d.balance ?? 0),
-    0
-  );
 
   const miniKpis: MiniKpiData[] = [
     {
