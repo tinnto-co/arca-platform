@@ -230,8 +230,10 @@ describe('clasificación por defecto', () => {
     expect(defaultInflationNature('bienes_uso')).toBe('no_monetaria_costo');
     expect(defaultInflationNature('capital')).toBe('no_monetaria_costo');
     expect(defaultInflationNature('ventas')).toBe('no_monetaria_costo');
-    // Ya medidas en moneda de cierre: no se reexpresan.
-    expect(defaultInflationNature('inversiones_temporarias')).toBe(
+    // Monetarias: el estudio las cuenta como equivalentes de efectivo.
+    expect(defaultInflationNature('inversiones_temporarias')).toBe('monetaria');
+    // A VPP, ya en moneda de cierre: no se reexpresan.
+    expect(defaultInflationNature('inversiones_permanentes')).toBe(
       'no_monetaria_valor_corriente'
     );
     // Se determinan por diferencia, junto con el RECPAM.
