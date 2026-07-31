@@ -112,6 +112,7 @@ import {
   sealClosing,
   getESP,
   getER,
+  getEEPN,
   getAnexoII,
   getAuditLog,
   getFinancialStatement,
@@ -7518,7 +7519,7 @@ function EstadosContables({
 }) {
   const qc = useQueryClient();
   const [view, setView] = useState<
-    'esp' | 'er' | 'cmv' | 'anexo' | 'notas' | 'export'
+    'esp' | 'er' | 'eepn' | 'cmv' | 'anexo' | 'notas' | 'export'
   >('esp');
   /**
    * Los EECC se presentan ajustados por inflación (RT 6). "Histórico" excluye el
@@ -7594,6 +7595,7 @@ function EstadosContables({
   const tabs: { k: typeof view; label: string }[] = [
     { k: 'esp', label: 'Estado de Situación Patrimonial' },
     { k: 'er', label: 'Estado de Resultados' },
+    { k: 'eepn', label: 'Evolución del Patrimonio Neto' },
     { k: 'cmv', label: 'Costo de mercadería (CMV)' },
     { k: 'anexo', label: 'Anexo II' },
     { k: 'notas', label: 'Notas' },
@@ -7717,6 +7719,14 @@ function EstadosContables({
       )}
       {view === 'er' && (
         <ErView
+          clientId={clientId}
+          clientName={clientName}
+          selectedFy={selectedFy}
+          valuation={valuation}
+        />
+      )}
+      {view === 'eepn' && (
+        <EepnView
           clientId={clientId}
           clientName={clientName}
           selectedFy={selectedFy}
@@ -8023,6 +8033,225 @@ function EspSectionRows({
         );
       })}
     </>
+  );
+}
+
+/**
+ * Estado de Evolución del Patrimonio Neto.
+ *
+ * Una columna por cuenta de PN, agrupadas por rubro, y filas por causa de
+ * variación (modelo RT 9). La reexpresión del patrimonio inicial se expone
+ * dentro de "Saldos al inicio", no como movimiento del ejercicio, y el Capital
+ * social queda a valor nominal con su ajuste en Ajuste de capital.
+ */
+function EepnView({
+  clientId,
+  clientName,
+  selectedFy,
+  valuation,
+}: {
+  clientId: string;
+  clientName: string;
+  selectedFy: FyOption | undefined;
+  valuation: 'ajustado' | 'historico';
+}) {
+  const effectiveFyId = selectedFy?.id ?? '';
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['accounting', 'eepn', clientId, effectiveFyId, valuation],
+    queryFn: () =>
+      getEEPN({
+        data: { clientId, fiscalYearId: effectiveFyId, view: valuation },
+      }),
+    enabled: !!effectiveFyId,
+  });
+
+  const money = (n: number) =>
+    n === 0
+      ? '—'
+      : n.toLocaleString('es-AR', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
+
+  if (isLoading || !data) {
+    return (
+      <ArcaCard>
+        <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+          {effectiveFyId ? 'Calculando…' : 'Seleccioná un ejercicio.'}
+        </div>
+      </ArcaCard>
+    );
+  }
+
+  if (data.columns.length === 0) {
+    return (
+      <ArcaCard>
+        <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+          El ejercicio no tiene movimientos en cuentas de patrimonio neto.
+        </div>
+      </ArcaCard>
+    );
+  }
+
+  // Cabecera en dos niveles: rubro y, debajo, la cuenta.
+  const groups: { label: string; span: number }[] = [];
+  for (const c of data.columns) {
+    const last = groups[groups.length - 1];
+    if (last?.label === c.groupLabel) last.span++;
+    else groups.push({ label: c.groupLabel, span: 1 });
+  }
+
+  return (
+    <ArcaCard>
+      <div className="px-5 pt-4 pb-3 border-b border-[var(--arca-border)]">
+        <div className="text-[14px] font-semibold text-[var(--arca-ink)]">
+          {clientName}
+        </div>
+        <div className="text-[12px] text-[var(--arca-ink-3)]">
+          Estado de Evolución del Patrimonio Neto · Ejercicio N°
+          {data.fiscalYearNumber} · {data.periodLabel}
+        </div>
+        <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
+          {valuation === 'ajustado'
+            ? 'Expresado en moneda homogénea de cierre (ajuste por inflación · RT 6). La reexpresión del patrimonio inicial se incluye en «Saldos al inicio»; el Capital social se mantiene a valor nominal.'
+            : 'Expresado en valores históricos, sin ajuste por inflación. Papel de trabajo.'}
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-[12.5px] min-w-[720px]">
+          <thead>
+            <tr className="bg-[var(--arca-surface-2)] text-[10.5px] uppercase tracking-wide text-[var(--arca-ink-3)]">
+              <th className="text-left font-semibold px-4 py-1.5" rowSpan={2}>
+                Concepto
+              </th>
+              {groups.map((g, i) => (
+                <th
+                  key={`${g.label}-${i}`}
+                  colSpan={g.span}
+                  className="text-center font-semibold px-3 py-1.5 border-l border-[var(--arca-border)]"
+                >
+                  {g.label}
+                </th>
+              ))}
+              <th
+                className="text-right font-semibold px-4 py-1.5 border-l border-[var(--arca-border)]"
+                rowSpan={2}
+              >
+                Total ej. N°{data.fiscalYearNumber}
+              </th>
+              {data.priorFiscalYearNumber !== null && (
+                <th
+                  className="text-right font-semibold px-4 py-1.5 border-l border-[var(--arca-border)]"
+                  rowSpan={2}
+                >
+                  Total ej. N°{data.priorFiscalYearNumber}
+                </th>
+              )}
+            </tr>
+            <tr className="bg-[var(--arca-surface-2)] text-[10.5px] text-[var(--arca-ink-3)]">
+              {data.columns.map((c) => (
+                <th
+                  key={c.accountId}
+                  className="text-right font-medium px-3 pb-1.5 border-l border-[var(--arca-border)] whitespace-nowrap"
+                  title={`${c.code} · ${c.name}`}
+                >
+                  {c.name}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {data.rows.map((row) => {
+              const strong = row.kind === 'inicio' || row.kind === 'cierre';
+              return (
+                <tr
+                  key={row.key}
+                  className="border-t border-[var(--arca-border)]"
+                  style={
+                    strong ? { background: 'var(--arca-surface-2)' } : undefined
+                  }
+                >
+                  <td
+                    className="px-4 py-1.5 text-[var(--arca-ink)]"
+                    style={strong ? { fontWeight: 600 } : undefined}
+                  >
+                    {row.label}
+                    {row.entryNumber !== undefined && (
+                      <span className="ml-1.5 text-[10.5px] text-[var(--arca-ink-3)]">
+                        · asiento N°{row.entryNumber}
+                      </span>
+                    )}
+                  </td>
+                  {data.columns.map((c) => (
+                    <td
+                      key={c.accountId}
+                      className="px-3 py-1.5 text-right tabular-nums border-l border-[var(--arca-border)] text-[var(--arca-ink-2)]"
+                    >
+                      {money(row.amounts[c.accountId] ?? 0)}
+                    </td>
+                  ))}
+                  <td
+                    className="px-4 py-1.5 text-right tabular-nums border-l border-[var(--arca-border)] text-[var(--arca-ink)]"
+                    style={strong ? { fontWeight: 600 } : undefined}
+                  >
+                    {money(row.total)}
+                  </td>
+                  {data.priorFiscalYearNumber !== null && (
+                    <td className="px-4 py-1.5 text-right tabular-nums border-l border-[var(--arca-border)] text-[var(--arca-ink-2)]">
+                      {row.kind === 'cierre' && data.priorTotal !== null
+                        ? money(data.priorTotal)
+                        : '—'}
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="px-5 py-3 border-t border-[var(--arca-border)] space-y-1">
+        <div
+          className="text-[12px]"
+          style={{
+            color: data.matchesEsp
+              ? 'var(--arca-accent-pos)'
+              : 'var(--arca-accent-neg)',
+          }}
+        >
+          {data.matchesEsp
+            ? `✓ El saldo al cierre coincide con el Patrimonio Neto del ESP ($ ${money(data.espTotal)}).`
+            : `✗ El saldo al cierre no coincide con el ESP ($ ${money(data.espTotal)}). Revisá el ejercicio.`}
+        </div>
+        {valuation === 'ajustado' && !data.inflationApplied && (
+          <div className="text-[11.5px] text-amber-600">
+            El ajuste por inflación del ejercicio todavía no está generado, así
+            que los importes son históricos. Generalo en la solapa «Ajuste por
+            inflación».
+          </div>
+        )}
+        {data.priorFiscalYearNumber !== null &&
+          valuation === 'ajustado' &&
+          (data.priorCoefficient !== null ? (
+            <div className="text-[11.5px] text-[var(--arca-ink-3)]">
+              La columna del ejercicio anterior está reexpresada a moneda de
+              cierre con coeficiente{' '}
+              {data.priorCoefficient.toLocaleString('es-AR', {
+                minimumFractionDigits: 4,
+                maximumFractionDigits: 4,
+              })}
+              .
+            </div>
+          ) : (
+            <div className="text-[11.5px] text-amber-600">
+              No hay índice para reexpresar el ejercicio anterior: la columna
+              comparativa quedó en valores históricos.
+            </div>
+          ))}
+      </div>
+    </ArcaCard>
   );
 }
 

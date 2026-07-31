@@ -26,6 +26,9 @@ import {
   ledgerMappingRuleLine,
   representative,
   user,
+  inflationIndex,
+  inflationAdjustment,
+  inflationAdjustmentLine,
 } from '@/drizzle/schema';
 import {
   getSessionWithOrg,
@@ -1225,9 +1228,7 @@ export const createFiscalYear = createServerFn({ method: 'POST' })
     // ejercicios irregulares: 3, 5, 6, 8, 10, etc., pero nunca más de 12).
     const months = (eY - sY) * 12 + (eM - sM) + 1;
     if (months < 1 || months > 12) {
-      throw new Error(
-        'El ejercicio debe durar entre 1 y 12 meses calendario'
-      );
+      throw new Error('El ejercicio debe durar entre 1 y 12 meses calendario');
     }
 
     // Un solo ejercicio abierto por empresa.
@@ -4676,8 +4677,7 @@ async function computeAnexoIRows(
     // Acumulada al cierre: inicio + del ejercicio − dada de baja.
     const accumEnd = r2(accumStart + amortYear - amortBajas);
     const residualEnd = r2(valorCierre - accumEnd);
-    const rate =
-      r.fa.usefulLifeYears > 0 ? r2(100 / r.fa.usefulLifeYears) : 0;
+    const rate = r.fa.usefulLifeYears > 0 ? r2(100 / r.fa.usefulLifeYears) : 0;
 
     return {
       id: r.fa.id,
@@ -5711,11 +5711,48 @@ export interface EspResult {
   balancedCurrent: boolean;
   balancedPrior: boolean;
   hasPrior: boolean;
+  /** Coeficiente con el que se reexpresó la columna anterior. null = quedó histórica. */
+  priorCoefficient: number | null;
 }
 
 const ESP_SECTIONS = ACCOUNT_GROUP_SECTIONS.filter(
   (s) => s.section !== 'Resultados'
 );
+
+/**
+ * Coeficiente para llevar la columna comparativa a la moneda de cierre actual.
+ *
+ * Los EECC del ejercicio anterior están expresados en moneda de SU cierre. Para
+ * exponerlos al lado de los del ejercicio corriente hay que reexpresarlos, si no
+ * se estarían comparando pesos de distinto poder adquisitivo (RT 6). Como el
+ * ejercicio anterior ya es homogéneo, alcanza con un único coeficiente:
+ * índice del cierre actual sobre índice del cierre anterior.
+ *
+ * Devuelve `null` si falta alguno de los dos índices; en ese caso el comparativo
+ * queda en valores históricos y se avisa en la UI.
+ */
+async function priorColumnCoefficient(
+  currentEnd: Date,
+  priorEnd: Date
+): Promise<number | null> {
+  const load = async (d: Date) => {
+    const [row] = await db
+      .select({ value: inflationIndex.value })
+      .from(inflationIndex)
+      .where(
+        and(
+          eq(inflationIndex.source, 'facpce_rt6'),
+          eq(inflationIndex.year, d.getUTCFullYear()),
+          eq(inflationIndex.month, d.getUTCMonth() + 1)
+        )
+      )
+      .limit(1);
+    return row ? Number(row.value) : null;
+  };
+  const [cur, pri] = await Promise.all([load(currentEnd), load(priorEnd)]);
+  if (!cur || !pri || pri <= 0) return null;
+  return Math.round((cur / pri) * 10000) / 10000;
+}
 
 /** Estado de Situación Patrimonial comparativo (actual vs anterior). (US 6.1.1/6.1.2) */
 export const getESP = createServerFn({ method: 'GET' })
@@ -5744,9 +5781,23 @@ export const getESP = createServerFn({ method: 'GET' })
       .limit(1);
 
     const curBal = await computeEspBalances(orgId, fy.id, ctx.data.view);
-    const priBal = priorFy
+    let priBal = priorFy
       ? await computeEspBalances(orgId, priorFy.id, ctx.data.view)
       : [];
+
+    // El comparativo se reexpresa a la moneda de cierre actual (ver
+    // priorColumnCoefficient). En la vista histórica se deja como está.
+    let priorCoefficient: number | null = null;
+    if (priorFy && ctx.data.view === 'ajustado') {
+      priorCoefficient = await priorColumnCoefficient(
+        fy.endDate,
+        priorFy.endDate
+      );
+      if (priorCoefficient !== null) {
+        const k = priorCoefficient;
+        priBal = priBal.map((b) => ({ ...b, saldo: r2(b.saldo * k) }));
+      }
+    }
     const curMap = new Map(curBal.map((b) => [b.accountId, b]));
     const priMap = new Map(priBal.map((b) => [b.accountId, b]));
 
@@ -5860,6 +5911,7 @@ export const getESP = createServerFn({ method: 'GET' })
         ? Math.abs(totals.activo.prior - totals.pasivoMasPn.prior) < 0.005
         : true,
       hasPrior: !!priorFy,
+      priorCoefficient,
     };
   });
 
@@ -5886,6 +5938,8 @@ export interface ErResult {
   matchesEspCurrent: boolean;
   matchesEspPrior: boolean;
   hasPrior: boolean;
+  /** Coeficiente con el que se reexpresó la columna anterior. null = quedó histórica. */
+  priorCoefficient: number | null;
 }
 
 /** Líneas de componentes del ER (los subtotales se intercalan al armar). */
@@ -5950,9 +6004,23 @@ export const getER = createServerFn({ method: 'GET' })
       .limit(1);
 
     const curBal = await computeEspBalances(orgId, fy.id, ctx.data.view);
-    const priBal = priorFy
+    let priBal = priorFy
       ? await computeEspBalances(orgId, priorFy.id, ctx.data.view)
       : [];
+
+    // El comparativo se reexpresa a la moneda de cierre actual (ver
+    // priorColumnCoefficient). En la vista histórica se deja como está.
+    let priorCoefficient: number | null = null;
+    if (priorFy && ctx.data.view === 'ajustado') {
+      priorCoefficient = await priorColumnCoefficient(
+        fy.endDate,
+        priorFy.endDate
+      );
+      if (priorCoefficient !== null) {
+        const k = priorCoefficient;
+        priBal = priBal.map((b) => ({ ...b, saldo: r2(b.saldo * k) }));
+      }
+    }
     const curMap = new Map(curBal.map((b) => [b.accountId, b]));
     const priMap = new Map(priBal.map((b) => [b.accountId, b]));
 
@@ -6092,6 +6160,7 @@ export const getER = createServerFn({ method: 'GET' })
         ? Math.abs(resEjercicio.prior - espResultadoPrior) < 0.005
         : true,
       hasPrior: !!priorFy,
+      priorCoefficient,
     };
   });
 
@@ -6729,3 +6798,400 @@ export const getFinancialStatementPdf = createServerFn({ method: 'GET' })
       };
     }
   );
+
+/* ── Estado de Evolución del Patrimonio Neto (EEPN) — AXI-6 ── */
+
+/** Rubros que integran el patrimonio neto, en orden de exposición (RT 9). */
+const PN_GROUPS = [
+  'capital',
+  'aportes_irrevocables',
+  'primas_emision',
+  'reservas',
+  'resultados_no_asignados',
+] as const;
+
+export interface EepnColumn {
+  accountId: string;
+  code: string;
+  name: string;
+  group: string;
+  groupLabel: string;
+}
+
+export interface EepnRow {
+  key: string;
+  label: string;
+  kind: 'inicio' | 'movimiento' | 'resultado' | 'cierre';
+  /** Importe por columna (accountId → importe, signo de exposición: positivo = suma al PN). */
+  amounts: Record<string, number>;
+  total: number;
+  /** Solo en filas de movimiento: asiento que lo originó. */
+  entryNumber?: number;
+  entryDate?: string;
+}
+
+export interface EepnResult {
+  fiscalYearNumber: number;
+  priorFiscalYearNumber: number | null;
+  periodLabel: string;
+  columns: EepnColumn[];
+  rows: EepnRow[];
+  /** Total del PN al cierre del ejercicio anterior, reexpresado a moneda de cierre. */
+  priorTotal: number | null;
+  priorCoefficient: number | null;
+  /** Total del PN según el ESP; debe coincidir con el saldo al cierre. */
+  espTotal: number;
+  matchesEsp: boolean;
+  /** El ajuste por inflación del ejercicio está aplicado. */
+  inflationApplied: boolean;
+}
+
+/**
+ * Estado de Evolución del Patrimonio Neto.
+ *
+ * Layout según el modelo RT 9 del CPCECABA: una columna por cuenta de PN
+ * (agrupadas por rubro) y filas por causa de variación.
+ *
+ * Dos particularidades del ajuste por inflación, tomadas del papel de trabajo
+ * del estudio:
+ *
+ * 1. La fila "Saldos al inicio" se expone **en moneda de cierre**: la
+ *    reexpresión del patrimonio inicial se incorpora ahí y no aparece como un
+ *    movimiento del ejercicio. El modelo RT 9 no tiene fila para exponerla.
+ * 2. El Capital social queda a **valor nominal**: su reexpresión no se le imputa
+ *    a él sino a Ajuste de capital (`account.inflationTargetId`). Por eso la
+ *    columna "Ajuste de capital" arranca con el ajuste anterior reexpresado más
+ *    el del capital — las "dos fórmulas" que describió el contador.
+ *
+ * Las variaciones del ejercicio se exponen desglosadas por asiento, con su
+ * descripción: el sistema no infiere si un movimiento es un dividendo o una
+ * constitución de reserva, lo muestra tal como lo cargó el contador.
+ */
+export const getEEPN = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid(),
+      view: z.enum(['ajustado', 'historico']).default('ajustado'),
+    })
+  )
+  .handler(async (ctx): Promise<EepnResult> => {
+    const { orgId } = await getSessionWithOrg();
+    const { clientId, view } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
+
+    const [priorFy] = await db
+      .select()
+      .from(fiscalYear)
+      .where(
+        and(
+          eq(fiscalYear.clientId, clientId),
+          eq(fiscalYear.number, fy.number - 1)
+        )
+      )
+      .limit(1);
+
+    // Cuentas de PN visibles para la empresa.
+    const pnAccounts = await db
+      .select({
+        id: account.id,
+        code: account.code,
+        name: account.name,
+        group: account.accountGroup,
+        inflationTargetId: account.inflationTargetId,
+      })
+      .from(account)
+      .where(
+        and(
+          eq(account.organizationId, orgId),
+          eq(account.type, 'imputable'),
+          inArray(account.accountGroup, PN_GROUPS as unknown as AccountGroup[]),
+          sql`(${account.scope} = 'base' OR ${account.clientId} = ${clientId})`
+        )
+      )
+      .orderBy(asc(account.code));
+    const pnIds = new Set(pnAccounts.map((a) => a.id));
+
+    /** Signo de exposición: el PN es acreedor, así que se invierte. */
+    const expose = (saldo: number) => r2(-saldo);
+
+    // 1. Saldos de apertura (histórico), del asiento de apertura del ejercicio.
+    const openingRows = await db
+      .select({
+        accountId: journalEntryLine.accountId,
+        debit: sql<string>`coalesce(sum(${journalEntryLine.debit}),0)`,
+        credit: sql<string>`coalesce(sum(${journalEntryLine.credit}),0)`,
+      })
+      .from(journalEntryLine)
+      .innerJoin(
+        journalEntry,
+        eq(journalEntry.id, journalEntryLine.journalEntryId)
+      )
+      .where(
+        and(
+          eq(journalEntry.fiscalYearId, fy.id),
+          eq(journalEntry.isVoided, false),
+          eq(journalEntry.origin, 'auto_opening')
+        )
+      )
+      .groupBy(journalEntryLine.accountId);
+
+    const inicio: Record<string, number> = {};
+    for (const r of openingRows) {
+      if (!pnIds.has(r.accountId)) continue;
+      inicio[r.accountId] = expose(parseFloat(r.debit) - parseFloat(r.credit));
+    }
+
+    // 2. Reexpresión del patrimonio inicial → se incorpora a la fila de inicio,
+    //    imputada a la cuenta destino (Capital social → Ajuste de capital).
+    const [adjustment] = await db
+      .select()
+      .from(inflationAdjustment)
+      .where(
+        and(
+          eq(inflationAdjustment.fiscalYearId, fy.id),
+          eq(inflationAdjustment.status, 'applied')
+        )
+      )
+      .limit(1);
+
+    const reexpresionMovimientos: Record<string, number> = {};
+    if (adjustment && view === 'ajustado') {
+      const adjLines = await db
+        .select({
+          accountId: inflationAdjustmentLine.accountId,
+          isOpening: inflationAdjustmentLine.isOpening,
+          difference: inflationAdjustmentLine.difference,
+        })
+        .from(inflationAdjustmentLine)
+        .where(eq(inflationAdjustmentLine.adjustmentId, adjustment.id));
+
+      const targetOf = new Map(
+        pnAccounts.map((a) => [a.id, a.inflationTargetId ?? a.id])
+      );
+      for (const l of adjLines) {
+        if (!pnIds.has(l.accountId)) continue;
+        const target = targetOf.get(l.accountId) ?? l.accountId;
+        const amount = expose(parseFloat(l.difference));
+        if (l.isOpening) {
+          inicio[target] = r2((inicio[target] ?? 0) + amount);
+        } else {
+          reexpresionMovimientos[target] = r2(
+            (reexpresionMovimientos[target] ?? 0) + amount
+          );
+        }
+      }
+    }
+
+    // 3. Movimientos del ejercicio en cuentas de PN, desglosados por asiento.
+    const movementRows = await db
+      .select({
+        entryId: journalEntry.id,
+        number: journalEntry.number,
+        entryDate: journalEntry.entryDate,
+        description: journalEntry.description,
+        accountId: journalEntryLine.accountId,
+        debit: sql<string>`coalesce(sum(${journalEntryLine.debit}),0)`,
+        credit: sql<string>`coalesce(sum(${journalEntryLine.credit}),0)`,
+      })
+      .from(journalEntryLine)
+      .innerJoin(
+        journalEntry,
+        eq(journalEntry.id, journalEntryLine.journalEntryId)
+      )
+      .where(
+        and(
+          eq(journalEntry.fiscalYearId, fy.id),
+          eq(journalEntry.isVoided, false),
+          sql`${journalEntry.origin} NOT IN ('auto_opening','auto_closing','auto_inflation')`,
+          inArray(journalEntryLine.accountId, [...pnIds])
+        )
+      )
+      .groupBy(
+        journalEntry.id,
+        journalEntry.number,
+        journalEntry.entryDate,
+        journalEntry.description,
+        journalEntryLine.accountId
+      )
+      .orderBy(asc(journalEntry.number));
+
+    const movimientos = new Map<
+      string,
+      {
+        number: number;
+        entryDate: Date;
+        description: string | null;
+        amounts: Record<string, number>;
+      }
+    >();
+    for (const r of movementRows) {
+      const amount = expose(parseFloat(r.debit) - parseFloat(r.credit));
+      if (Math.abs(amount) < 0.005) continue;
+      const prev = movimientos.get(r.entryId) ?? {
+        number: r.number,
+        entryDate: r.entryDate,
+        description: r.description,
+        amounts: {},
+      };
+      prev.amounts[r.accountId] = r2((prev.amounts[r.accountId] ?? 0) + amount);
+      movimientos.set(r.entryId, prev);
+    }
+
+    // 4. Resultado del ejercicio: sale del ER ya ajustado.
+    const balances = await computeEspBalances(orgId, fy.id, view);
+    const resultado = r2(
+      balances
+        .filter(
+          (b) =>
+            b.group &&
+            (RESULT_ACCOUNT_GROUPS as readonly string[]).includes(b.group)
+        )
+        .reduce((s, b) => s + expose(b.saldo), 0)
+    );
+
+    // 5. El resultado del ejercicio se expone en la columna de Resultados no
+    //    asignados, que es donde lo lleva el modelo RT 9 (y donde lo acumula el
+    //    papel de trabajo del estudio en la fila de totales).
+    const rnaAccount =
+      pnAccounts.find(
+        (a) =>
+          a.group === 'resultados_no_asignados' && inicio[a.id] !== undefined
+      ) ?? pnAccounts.find((a) => a.group === 'resultados_no_asignados');
+    const resultadoAmounts: Record<string, number> =
+      rnaAccount && Math.abs(resultado) >= 0.005
+        ? { [rnaAccount.id]: resultado }
+        : {};
+
+    // 6. Columnas: solo las cuentas con algún importe.
+    const touched = new Set<string>([
+      ...Object.keys(inicio),
+      ...Object.keys(reexpresionMovimientos),
+      ...Object.keys(resultadoAmounts),
+      ...[...movimientos.values()].flatMap((m) => Object.keys(m.amounts)),
+    ]);
+    const columns: EepnColumn[] = pnAccounts
+      .filter((a) => touched.has(a.id))
+      .map((a) => ({
+        accountId: a.id,
+        code: a.code,
+        name: a.name,
+        group: a.group ?? '',
+        groupLabel: ACCOUNT_GROUP_LABELS[a.group!] ?? a.group ?? '',
+      }));
+
+    const sumRow = (amounts: Record<string, number>) =>
+      r2(columns.reduce((s, c) => s + (amounts[c.accountId] ?? 0), 0));
+
+    const rows: EepnRow[] = [];
+    rows.push({
+      key: 'inicio',
+      label: 'Saldos al inicio del ejercicio',
+      kind: 'inicio',
+      amounts: inicio,
+      total: sumRow(inicio),
+    });
+
+    for (const [entryId, m] of movimientos) {
+      rows.push({
+        key: `mov-${entryId}`,
+        label: m.description ?? `Asiento N° ${m.number}`,
+        kind: 'movimiento',
+        amounts: m.amounts,
+        total: sumRow(m.amounts),
+        entryNumber: m.number,
+        entryDate: m.entryDate.toISOString(),
+      });
+    }
+
+    if (Object.keys(reexpresionMovimientos).length > 0) {
+      rows.push({
+        key: 'reexpresion-movimientos',
+        label: 'Reexpresión de los movimientos del ejercicio',
+        kind: 'movimiento',
+        amounts: reexpresionMovimientos,
+        total: sumRow(reexpresionMovimientos),
+      });
+    }
+
+    rows.push({
+      key: 'resultado',
+      label: 'Resultado del ejercicio',
+      kind: 'resultado',
+      amounts: resultadoAmounts,
+      total: resultado,
+    });
+
+    // 7. Saldos al cierre = inicio + movimientos + resultado.
+    const cierre: Record<string, number> = { ...inicio };
+    const accumulate = (amounts: Record<string, number>) => {
+      for (const [accountId, amount] of Object.entries(amounts)) {
+        cierre[accountId] = r2((cierre[accountId] ?? 0) + amount);
+      }
+    };
+    accumulate(reexpresionMovimientos);
+    for (const m of movimientos.values()) accumulate(m.amounts);
+    accumulate(resultadoAmounts);
+    rows.push({
+      key: 'cierre',
+      label: 'Saldos al cierre del ejercicio',
+      kind: 'cierre',
+      amounts: cierre,
+      total: sumRow(cierre),
+    });
+
+    // 7. Comparativo: PN al cierre del ejercicio anterior, en moneda de cierre.
+    let priorTotal: number | null = null;
+    let priorCoefficient: number | null = null;
+    if (priorFy) {
+      const priorBalances = await computeEspBalances(orgId, priorFy.id, view);
+      const priorPn = r2(
+        priorBalances
+          .filter(
+            (b) =>
+              b.group &&
+              (
+                [...PN_GROUPS, ...RESULT_ACCOUNT_GROUPS] as readonly string[]
+              ).includes(b.group)
+          )
+          .reduce((s, b) => s + expose(b.saldo), 0)
+      );
+      if (view === 'ajustado') {
+        priorCoefficient = await priorColumnCoefficient(
+          fy.endDate,
+          priorFy.endDate
+        );
+      }
+      priorTotal = priorCoefficient ? r2(priorPn * priorCoefficient) : priorPn;
+    }
+
+    const espTotal = r2(
+      balances
+        .filter(
+          (b) =>
+            b.group &&
+            (
+              [...PN_GROUPS, ...RESULT_ACCOUNT_GROUPS] as readonly string[]
+            ).includes(b.group)
+        )
+        .reduce((s, b) => s + expose(b.saldo), 0)
+    );
+
+    const fmtD = (d: Date) =>
+      `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${d.getUTCFullYear()}`;
+
+    const cierreTotal = rows[rows.length - 1].total;
+    return {
+      fiscalYearNumber: fy.number,
+      priorFiscalYearNumber: priorFy?.number ?? null,
+      periodLabel: `${fmtD(fy.startDate)} – ${fmtD(fy.endDate)}`,
+      columns,
+      rows,
+      priorTotal,
+      priorCoefficient,
+      espTotal,
+      matchesEsp: Math.abs(cierreTotal - espTotal) < 0.05,
+      inflationApplied: !!adjustment,
+    };
+  });
