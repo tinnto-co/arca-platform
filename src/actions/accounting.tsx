@@ -5825,6 +5825,12 @@ export interface EspResult {
    * está en moneda homogénea.
    */
   inflationApplied: boolean;
+  /**
+   * El ejercicio anterior tiene su propio ajuste aplicado. Si es false, sus
+   * cifras están en moneda heterogénea y multiplicarlas por un coeficiente no
+   * las homogeneiza: el comparativo es aproximado y hay que decirlo.
+   */
+  priorInflationApplied: boolean;
 }
 
 /** Contrapartida del ajuste por inflación; se expone en su propia línea del ER. */
@@ -6028,6 +6034,9 @@ export const getESP = createServerFn({ method: 'GET' })
       hasPrior: !!priorFy,
       priorCoefficient,
       inflationApplied: (await loadInflationStatus(fy.id)).applied,
+      priorInflationApplied: priorFy
+        ? (await loadInflationStatus(priorFy.id)).applied
+        : true,
     };
   });
 
@@ -6062,6 +6071,12 @@ export interface ErResult {
    * está en moneda homogénea.
    */
   inflationApplied: boolean;
+  /**
+   * El ejercicio anterior tiene su propio ajuste aplicado. Si es false, sus
+   * cifras están en moneda heterogénea y multiplicarlas por un coeficiente no
+   * las homogeneiza: el comparativo es aproximado y hay que decirlo.
+   */
+  priorInflationApplied: boolean;
 }
 
 /** Líneas de componentes del ER (los subtotales se intercalan al armar). */
@@ -6319,6 +6334,9 @@ export const getER = createServerFn({ method: 'GET' })
       hasPrior: !!priorFy,
       priorCoefficient,
       inflationApplied: (await loadInflationStatus(fy.id)).applied,
+      priorInflationApplied: priorFy
+        ? (await loadInflationStatus(priorFy.id)).applied
+        : true,
     };
   });
 
@@ -6994,14 +7012,25 @@ export interface EepnResult {
   periodLabel: string;
   columns: EepnColumn[];
   rows: EepnRow[];
-  /** Total del PN al cierre del ejercicio anterior, reexpresado a moneda de cierre. */
-  priorTotal: number | null;
+  /**
+   * Columna del ejercicio anterior, reexpresada a moneda de cierre. Se expone en
+   * las tres filas que tiene el modelo RT 9: patrimonio al inicio de aquel
+   * ejercicio, su resultado, y su patrimonio al cierre —que es el inicio de
+   * este—. Así lo arma el papel de trabajo del estudio.
+   */
+  prior: { inicio: number; resultado: number; cierre: number } | null;
   priorCoefficient: number | null;
   /** Total del PN según el ESP; debe coincidir con el saldo al cierre. */
   espTotal: number;
   matchesEsp: boolean;
   /** El ajuste por inflación del ejercicio está aplicado. */
   inflationApplied: boolean;
+  /**
+   * El ejercicio anterior tiene su propio ajuste aplicado. Si es false, sus
+   * cifras están en moneda heterogénea y multiplicarlas por un coeficiente no
+   * las homogeneiza: el comparativo es aproximado y hay que decirlo.
+   */
+  priorInflationApplied: boolean;
 }
 
 /**
@@ -7299,29 +7328,63 @@ export const getEEPN = createServerFn({ method: 'GET' })
       total: sumRow(cierre),
     });
 
-    // 7. Comparativo: PN al cierre del ejercicio anterior, en moneda de cierre.
-    let priorTotal: number | null = null;
+    // 7. Comparativo: el ejercicio anterior en sus tres filas, reexpresado.
+    let prior: { inicio: number; resultado: number; cierre: number } | null =
+      null;
     let priorCoefficient: number | null = null;
     if (priorFy) {
       const priorBalances = await computeEspBalances(orgId, priorFy.id, view);
-      const priorPn = r2(
-        priorBalances
-          .filter(
-            (b) =>
-              b.group &&
-              (
-                [...PN_GROUPS, ...RESULT_ACCOUNT_GROUPS] as readonly string[]
-              ).includes(b.group)
+      const sumGroups = (groups: readonly string[]) =>
+        r2(
+          priorBalances
+            .filter((b) => b.group && groups.includes(b.group))
+            .reduce((s, b) => s + expose(b.saldo), 0)
+        );
+      const priorResultado = sumGroups(RESULT_ACCOUNT_GROUPS);
+      const priorCierre = sumGroups([...PN_GROUPS, ...RESULT_ACCOUNT_GROUPS]);
+
+      // El patrimonio al inicio de aquel ejercicio sale de su asiento de
+      // apertura; si no lo tiene (primer ejercicio), se deduce por diferencia.
+      const priorOpeningRows = await db
+        .select({
+          accountId: journalEntryLine.accountId,
+          debit: sql<string>`coalesce(sum(${journalEntryLine.debit}),0)`,
+          credit: sql<string>`coalesce(sum(${journalEntryLine.credit}),0)`,
+        })
+        .from(journalEntryLine)
+        .innerJoin(
+          journalEntry,
+          eq(journalEntry.id, journalEntryLine.journalEntryId)
+        )
+        .where(
+          and(
+            eq(journalEntry.fiscalYearId, priorFy.id),
+            eq(journalEntry.isVoided, false),
+            eq(journalEntry.origin, 'auto_opening')
           )
-          .reduce((s, b) => s + expose(b.saldo), 0)
+        )
+        .groupBy(journalEntryLine.accountId);
+      const priorInicio = r2(
+        priorOpeningRows
+          .filter((r) => pnIds.has(r.accountId))
+          .reduce(
+            (s, r) => s + expose(parseFloat(r.debit) - parseFloat(r.credit)),
+            0
+          )
       );
+
       if (view === 'ajustado') {
         priorCoefficient = await priorColumnCoefficient(
           fy.endDate,
           priorFy.endDate
         );
       }
-      priorTotal = priorCoefficient ? r2(priorPn * priorCoefficient) : priorPn;
+      const k = priorCoefficient ?? 1;
+      prior = {
+        inicio: r2(priorInicio * k),
+        resultado: r2(priorResultado * k),
+        cierre: r2(priorCierre * k),
+      };
     }
 
     const espTotal = r2(
@@ -7346,67 +7409,271 @@ export const getEEPN = createServerFn({ method: 'GET' })
       periodLabel: `${fmtD(fy.startDate)} – ${fmtD(fy.endDate)}`,
       columns,
       rows,
-      priorTotal,
+      prior,
       priorCoefficient,
       espTotal,
       matchesEsp: Math.abs(cierreTotal - espTotal) < 0.05,
       inflationApplied: !!adjustment,
+      priorInflationApplied: priorFy
+        ? (await loadInflationStatus(priorFy.id)).applied
+        : true,
     };
   });
-
 /* ── Estado de Flujo de Efectivo (EFE) — método directo — AXI-7 ── */
 
 export interface EfeLine {
   accountId: string;
   code: string;
   name: string;
-  amount: number;
+  current: number;
+  prior: number;
 }
 
 export interface EfeActivity {
   key: CashFlowActivity;
   label: string;
   lines: EfeLine[];
-  total: number;
+  current: number;
+  prior: number;
 }
 
 export interface EfeResult {
   fiscalYearNumber: number;
+  priorFiscalYearNumber: number | null;
   periodLabel: string;
+  hasPrior: boolean;
+  /** Coeficiente con el que se reexpresó la columna anterior. null = quedó histórica. */
+  priorCoefficient: number | null;
   /** Efectivo al inicio, ya reexpresado a moneda de cierre si la vista es ajustada. */
-  efectivoInicio: number;
+  efectivoInicio: { current: number; prior: number };
   efectivoInicioHistorico: number;
-  /** Coeficiente con el que se reexpresó el efectivo inicial. null = no se reexpresó. */
+  /** Coeficiente con el que se reexpresó el efectivo inicial del ejercicio. */
   coeficienteInicio: number | null;
-  efectivoCierre: number;
-  variacion: number;
+  efectivoCierre: { current: number; prior: number };
+  variacion: { current: number; prior: number };
   activities: EfeActivity[];
   /**
    * Resultado por exposición a la inflación del efectivo: cierra el estado. Es
    * la pérdida (o ganancia) de poder adquisitivo por haber mantenido efectivo.
    */
-  recpamEfectivo: number;
-  totalCausas: number;
+  recpamEfectivo: { current: number; prior: number };
+  totalCausas: { current: number; prior: number };
   cuadra: boolean;
   /** Cuentas que movieron efectivo pero no tienen actividad asignada. */
   sinActividad: { code: string; name: string }[];
   inflationApplied: boolean;
+  /**
+   * El ejercicio anterior tiene su propio ajuste aplicado. Si es false, sus
+   * cifras están en moneda heterogénea y multiplicarlas por un coeficiente no
+   * las homogeneiza: el comparativo es aproximado y hay que decirlo.
+   */
+  priorInflationApplied: boolean;
+}
+
+/** Cifras crudas del EFE de un ejercicio, antes de armar el comparativo. */
+interface EfeComputed {
+  efectivoInicioHistorico: number;
+  efectivoInicio: number;
+  efectivoCierre: number;
+  coeficienteInicio: number | null;
+  /** Flujo de efectivo por cuenta de contrapartida, ya reexpresado. */
+  byAccount: Map<string, number>;
+  sinActividad: Map<string, { code: string; name: string }>;
+  inflationApplied: boolean;
 }
 
 /**
- * Estado de Flujo de Efectivo por método directo.
+ * Calcula el flujo de efectivo de un ejercicio.
  *
- * Toma todos los asientos que tocan una cuenta de efectivo y usa **la
- * contrapartida** para clasificar el movimiento por actividad: si pagué un
- * sueldo, la causa es operativa; si compré una máquina, de inversión. Como todo
- * asiento cuadra, la suma de las contrapartidas con signo invertido es
- * exactamente el movimiento de efectivo — no hay que prorratear nada.
+ * Toma los asientos que tocan una cuenta de efectivo y usa **la contrapartida**
+ * para clasificar el movimiento: si pagué un sueldo la causa es operativa, si
+ * compré una máquina es de inversión. Como todo asiento cuadra, la suma de las
+ * contrapartidas con signo invertido es exactamente el movimiento de efectivo,
+ * así que no hay que prorratear nada.
+ *
+ * Se extrajo del handler para poder correrlo también sobre el ejercicio anterior
+ * y armar la columna comparativa.
+ */
+async function computeEfe(
+  orgId: string,
+  fy: FiscalYearRow,
+  view: 'ajustado' | 'historico',
+  accById: Map<string, AccountLike>,
+  cashIds: Set<string>
+): Promise<EfeComputed> {
+  const ajustado = view === 'ajustado';
+
+  // Efectivo al inicio: del asiento de apertura.
+  const openingRows = await db
+    .select({
+      accountId: journalEntryLine.accountId,
+      debit: sql<string>`coalesce(sum(${journalEntryLine.debit}),0)`,
+      credit: sql<string>`coalesce(sum(${journalEntryLine.credit}),0)`,
+    })
+    .from(journalEntryLine)
+    .innerJoin(
+      journalEntry,
+      eq(journalEntry.id, journalEntryLine.journalEntryId)
+    )
+    .where(
+      and(
+        eq(journalEntry.fiscalYearId, fy.id),
+        eq(journalEntry.isVoided, false),
+        eq(journalEntry.origin, 'auto_opening')
+      )
+    )
+    .groupBy(journalEntryLine.accountId);
+
+  const efectivoInicioHistorico = r2(
+    openingRows
+      .filter((r) => cashIds.has(r.accountId))
+      .reduce((s, r) => s + parseFloat(r.debit) - parseFloat(r.credit), 0)
+  );
+
+  // Efectivo al cierre: saldo del mayor. El efectivo es monetario, así que no
+  // cambia entre la vista histórica y la ajustada.
+  const balances = await computeEspBalances(orgId, fy.id, view);
+  const efectivoCierre = r2(
+    balances
+      .filter((b) => cashIds.has(b.accountId))
+      .reduce((s, b) => s + b.saldo, 0)
+  );
+
+  // Movimientos del ejercicio, por asiento y mes.
+  const lines = await db
+    .select({
+      entryId: journalEntry.id,
+      year: accountingPeriod.year,
+      month: accountingPeriod.month,
+      accountId: journalEntryLine.accountId,
+      debit: sql<string>`coalesce(sum(${journalEntryLine.debit}),0)`,
+      credit: sql<string>`coalesce(sum(${journalEntryLine.credit}),0)`,
+    })
+    .from(journalEntryLine)
+    .innerJoin(
+      journalEntry,
+      eq(journalEntry.id, journalEntryLine.journalEntryId)
+    )
+    .innerJoin(
+      accountingPeriod,
+      eq(accountingPeriod.id, journalEntryLine.periodId)
+    )
+    .where(
+      and(
+        eq(journalEntry.fiscalYearId, fy.id),
+        eq(journalEntry.isVoided, false),
+        sql`${journalEntry.origin} NOT IN ('auto_opening','auto_closing','auto_inflation')`
+      )
+    )
+    .groupBy(
+      journalEntry.id,
+      accountingPeriod.year,
+      accountingPeriod.month,
+      journalEntryLine.accountId
+    );
+
+  // Coeficientes por mes, si la vista es ajustada.
+  const [adjustment] = await db
+    .select()
+    .from(inflationAdjustment)
+    .where(
+      and(
+        eq(inflationAdjustment.fiscalYearId, fy.id),
+        eq(inflationAdjustment.status, 'applied')
+      )
+    )
+    .limit(1);
+
+  const coefficients = new Map<string, number>();
+  let coeficienteInicio: number | null = null;
+  if (ajustado && adjustment) {
+    const idx = await db
+      .select()
+      .from(inflationIndex)
+      .where(eq(inflationIndex.source, adjustment.source));
+    const byKey = new Map(
+      idx.map((r) => [`${r.year}-${r.month}`, Number(r.value)])
+    );
+    const closingIndex = byKey.get(
+      `${adjustment.closingYear}-${adjustment.closingMonth}`
+    );
+    if (closingIndex) {
+      for (const [key, value] of byKey) {
+        if (value > 0) {
+          coefficients.set(
+            key,
+            Math.round((closingIndex / value) * 10000) / 10000
+          );
+        }
+      }
+      coeficienteInicio =
+        coefficients.get(
+          `${adjustment.openingYear}-${adjustment.openingMonth}`
+        ) ?? null;
+    }
+  }
+  const coefOf = (year: number, month: number) =>
+    coefficients.get(`${year}-${month}`) ?? 1;
+
+  // Solo interesan los asientos que tocan efectivo.
+  const entriesWithCash = new Set(
+    lines
+      .filter(
+        (l) =>
+          cashIds.has(l.accountId) &&
+          Math.abs(parseFloat(l.debit) - parseFloat(l.credit)) >= 0.005
+      )
+      .map((l) => l.entryId)
+  );
+
+  const byAccount = new Map<string, number>();
+  const sinActividad = new Map<string, { code: string; name: string }>();
+  for (const l of lines) {
+    if (!entriesWithCash.has(l.entryId)) continue;
+    if (cashIds.has(l.accountId)) continue;
+    const delta = parseFloat(l.debit) - parseFloat(l.credit);
+    if (Math.abs(delta) < 0.005) continue;
+    const flow = -delta * (ajustado ? coefOf(l.year, l.month) : 1);
+    byAccount.set(l.accountId, (byAccount.get(l.accountId) ?? 0) + flow);
+    const acc = accById.get(l.accountId);
+    if (acc && !acc.activity) {
+      sinActividad.set(acc.id, { code: acc.code, name: acc.name });
+    }
+  }
+
+  return {
+    efectivoInicioHistorico,
+    efectivoInicio:
+      ajustado && coeficienteInicio
+        ? r2(efectivoInicioHistorico * coeficienteInicio)
+        : efectivoInicioHistorico,
+    efectivoCierre,
+    coeficienteInicio,
+    byAccount,
+    sinActividad,
+    inflationApplied: !!adjustment,
+  };
+}
+
+interface AccountLike {
+  id: string;
+  code: string;
+  name: string;
+  group: string | null;
+  activity: string | null;
+}
+
+/**
+ * Estado de Flujo de Efectivo por método directo, comparativo.
  *
  * En la vista ajustada cada flujo se reexpresa por el coeficiente de su mes y el
  * efectivo inicial por el del cierre anterior. La diferencia entre la variación
  * real del efectivo y la suma de los flujos reexpresados es el **RECPAM del
  * efectivo**: la pérdida de poder adquisitivo por haber tenido plata quieta. Se
  * expone como una línea propia, que es lo que hace cerrar el estado.
+ *
+ * La columna del ejercicio anterior se calcula igual y después se reexpresa a la
+ * moneda de cierre actual, como en el ESP y el ER.
  */
 export const getEFE = createServerFn({ method: 'GET' })
   .inputValidator(
@@ -7422,6 +7689,17 @@ export const getEFE = createServerFn({ method: 'GET' })
     await ensureClientBelongsToOrg(clientId, orgId);
     const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
     const ajustado = view === 'ajustado';
+
+    const [priorFy] = await db
+      .select()
+      .from(fiscalYear)
+      .where(
+        and(
+          eq(fiscalYear.clientId, clientId),
+          eq(fiscalYear.number, fy.number - 1)
+        )
+      )
+      .limit(1);
 
     const accounts = await db
       .select({
@@ -7439,164 +7717,52 @@ export const getEFE = createServerFn({ method: 'GET' })
           sql`(${account.scope} = 'base' OR ${account.clientId} = ${clientId})`
         )
       );
-    const accById = new Map(accounts.map((a) => [a.id, a]));
+    const accById = new Map<string, AccountLike>(
+      accounts.map((a) => [a.id, a as AccountLike])
+    );
     const cashIds = new Set(
       accounts.filter((a) => isCashGroup(a.group)).map((a) => a.id)
     );
 
-    // Efectivo al inicio: del asiento de apertura.
-    const openingRows = await db
-      .select({
-        accountId: journalEntryLine.accountId,
-        debit: sql<string>`coalesce(sum(${journalEntryLine.debit}),0)`,
-        credit: sql<string>`coalesce(sum(${journalEntryLine.credit}),0)`,
-      })
-      .from(journalEntryLine)
-      .innerJoin(
-        journalEntry,
-        eq(journalEntry.id, journalEntryLine.journalEntryId)
-      )
-      .where(
-        and(
-          eq(journalEntry.fiscalYearId, fy.id),
-          eq(journalEntry.isVoided, false),
-          eq(journalEntry.origin, 'auto_opening')
-        )
-      )
-      .groupBy(journalEntryLine.accountId);
+    const cur = await computeEfe(orgId, fy, view, accById, cashIds);
+    const pri = priorFy
+      ? await computeEfe(orgId, priorFy, view, accById, cashIds)
+      : null;
 
-    const efectivoInicioHistorico = r2(
-      openingRows
-        .filter((r) => cashIds.has(r.accountId))
-        .reduce((s, r) => s + parseFloat(r.debit) - parseFloat(r.credit), 0)
-    );
-
-    // Efectivo al cierre: saldo del mayor (el efectivo es monetario, así que no
-    // cambia entre la vista histórica y la ajustada).
-    const balances = await computeEspBalances(orgId, fy.id, view);
-    const efectivoCierre = r2(
-      balances
-        .filter((b) => cashIds.has(b.accountId))
-        .reduce((s, b) => s + b.saldo, 0)
-    );
-
-    // Movimientos del ejercicio, por asiento y mes.
-    const lines = await db
-      .select({
-        entryId: journalEntry.id,
-        year: accountingPeriod.year,
-        month: accountingPeriod.month,
-        accountId: journalEntryLine.accountId,
-        debit: sql<string>`coalesce(sum(${journalEntryLine.debit}),0)`,
-        credit: sql<string>`coalesce(sum(${journalEntryLine.credit}),0)`,
-      })
-      .from(journalEntryLine)
-      .innerJoin(
-        journalEntry,
-        eq(journalEntry.id, journalEntryLine.journalEntryId)
-      )
-      .innerJoin(
-        accountingPeriod,
-        eq(accountingPeriod.id, journalEntryLine.periodId)
-      )
-      .where(
-        and(
-          eq(journalEntry.fiscalYearId, fy.id),
-          eq(journalEntry.isVoided, false),
-          sql`${journalEntry.origin} NOT IN ('auto_opening','auto_closing','auto_inflation')`
-        )
-      )
-      .groupBy(
-        journalEntry.id,
-        accountingPeriod.year,
-        accountingPeriod.month,
-        journalEntryLine.accountId
+    // El comparativo va a moneda de cierre actual, igual que en el ESP y el ER.
+    let priorCoefficient: number | null = null;
+    if (priorFy && ajustado) {
+      priorCoefficient = await priorColumnCoefficient(
+        fy.endDate,
+        priorFy.endDate
       );
-
-    // Coeficientes por mes, si la vista es ajustada.
-    const [adjustment] = await db
-      .select()
-      .from(inflationAdjustment)
-      .where(
-        and(
-          eq(inflationAdjustment.fiscalYearId, fy.id),
-          eq(inflationAdjustment.status, 'applied')
-        )
-      )
-      .limit(1);
-
-    const coefficients = new Map<string, number>();
-    let coeficienteInicio: number | null = null;
-    if (ajustado && adjustment) {
-      const idx = await db
-        .select()
-        .from(inflationIndex)
-        .where(eq(inflationIndex.source, adjustment.source));
-      const byKey = new Map(
-        idx.map((r) => [`${r.year}-${r.month}`, Number(r.value)])
-      );
-      const closingIndex = byKey.get(
-        `${adjustment.closingYear}-${adjustment.closingMonth}`
-      );
-      if (closingIndex) {
-        for (const [key, value] of byKey) {
-          if (value > 0) {
-            coefficients.set(
-              key,
-              Math.round((closingIndex / value) * 10000) / 10000
-            );
-          }
-        }
-        coeficienteInicio =
-          coefficients.get(
-            `${adjustment.openingYear}-${adjustment.openingMonth}`
-          ) ?? null;
-      }
     }
-    const coefOf = (year: number, month: number) =>
-      coefficients.get(`${year}-${month}`) ?? 1;
-
-    // Solo interesan los asientos que tocan efectivo. La contrapartida define la
-    // actividad; su importe con signo invertido es el flujo de efectivo.
-    const entriesWithCash = new Set(
-      lines
-        .filter(
-          (l) =>
-            cashIds.has(l.accountId) &&
-            Math.abs(parseFloat(l.debit) - parseFloat(l.credit)) >= 0.005
-        )
-        .map((l) => l.entryId)
-    );
-
-    const byAccount = new Map<string, number>();
-    const sinActividad = new Map<string, { code: string; name: string }>();
-    for (const l of lines) {
-      if (!entriesWithCash.has(l.entryId)) continue;
-      if (cashIds.has(l.accountId)) continue;
-      const delta = parseFloat(l.debit) - parseFloat(l.credit);
-      if (Math.abs(delta) < 0.005) continue;
-      const flow = -delta * (ajustado ? coefOf(l.year, l.month) : 1);
-      byAccount.set(l.accountId, (byAccount.get(l.accountId) ?? 0) + flow);
-      const acc = accById.get(l.accountId);
-      if (acc && !acc.activity) {
-        sinActividad.set(acc.id, { code: acc.code, name: acc.name });
-      }
-    }
+    const k = priorCoefficient ?? 1;
+    const pv = (n: number) => (pri ? r2(n * k) : 0);
 
     const activities: EfeActivity[] = CASH_FLOW_ACTIVITY_ORDER.map((key) => {
+      const ids = new Set<string>([
+        ...cur.byAccount.keys(),
+        ...(pri ? pri.byAccount.keys() : []),
+      ]);
       const rows: EfeLine[] = [];
-      for (const [accountId, amount] of byAccount) {
+      for (const accountId of ids) {
         const acc = accById.get(accountId);
         if (!acc) continue;
         const activity =
-          acc.activity ?? defaultCashFlowActivity(acc.group) ?? 'operating';
+          (acc.activity as CashFlowActivity | null) ??
+          defaultCashFlowActivity(acc.group) ??
+          'operating';
         if (activity !== key) continue;
-        if (Math.abs(amount) < 0.005) continue;
+        const c = r2(cur.byAccount.get(accountId) ?? 0);
+        const p = pv(pri?.byAccount.get(accountId) ?? 0);
+        if (Math.abs(c) < 0.005 && Math.abs(p) < 0.005) continue;
         rows.push({
           accountId,
           code: acc.code,
           name: acc.name,
-          amount: r2(amount),
+          current: c,
+          prior: p,
         });
       }
       rows.sort((a, b) => a.code.localeCompare(b.code));
@@ -7604,36 +7770,57 @@ export const getEFE = createServerFn({ method: 'GET' })
         key,
         label: CASH_FLOW_ACTIVITY_LABELS[key],
         lines: rows,
-        total: r2(rows.reduce((s, r) => s + r.amount, 0)),
+        current: r2(rows.reduce((s, r) => s + r.current, 0)),
+        prior: r2(rows.reduce((s, r) => s + r.prior, 0)),
       };
     });
 
-    const efectivoInicio =
-      ajustado && coeficienteInicio
-        ? r2(efectivoInicioHistorico * coeficienteInicio)
-        : efectivoInicioHistorico;
-    const variacion = r2(efectivoCierre - efectivoInicio);
-    const flujos = r2(activities.reduce((s, a) => s + a.total, 0));
+    const efectivoInicio = {
+      current: cur.efectivoInicio,
+      prior: pv(pri?.efectivoInicio ?? 0),
+    };
+    const efectivoCierre = {
+      current: cur.efectivoCierre,
+      prior: pv(pri?.efectivoCierre ?? 0),
+    };
+    const variacion = {
+      current: r2(efectivoCierre.current - efectivoInicio.current),
+      prior: r2(efectivoCierre.prior - efectivoInicio.prior),
+    };
+    const flujos = {
+      current: r2(activities.reduce((s, a) => s + a.current, 0)),
+      prior: r2(activities.reduce((s, a) => s + a.prior, 0)),
+    };
     // Cierra por diferencia: es el efecto de la inflación sobre el efectivo.
-    const recpamEfectivo = ajustado ? r2(variacion - flujos) : 0;
-    const totalCausas = r2(flujos + recpamEfectivo);
+    const recpamEfectivo = {
+      current: ajustado ? r2(variacion.current - flujos.current) : 0,
+      prior: ajustado && pri ? r2(variacion.prior - flujos.prior) : 0,
+    };
+    const totalCausas = {
+      current: r2(flujos.current + recpamEfectivo.current),
+      prior: r2(flujos.prior + recpamEfectivo.prior),
+    };
 
     const fmtD = (d: Date) =>
       `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${d.getUTCFullYear()}`;
 
     return {
       fiscalYearNumber: fy.number,
+      priorFiscalYearNumber: priorFy?.number ?? null,
       periodLabel: `${fmtD(fy.startDate)} – ${fmtD(fy.endDate)}`,
+      hasPrior: !!priorFy,
+      priorCoefficient,
       efectivoInicio,
-      efectivoInicioHistorico,
-      coeficienteInicio,
+      efectivoInicioHistorico: cur.efectivoInicioHistorico,
+      coeficienteInicio: cur.coeficienteInicio,
       efectivoCierre,
       variacion,
       activities,
       recpamEfectivo,
       totalCausas,
-      cuadra: Math.abs(totalCausas - variacion) < 0.05,
-      sinActividad: [...sinActividad.values()],
-      inflationApplied: !!adjustment,
+      cuadra: Math.abs(totalCausas.current - variacion.current) < 0.05,
+      sinActividad: [...cur.sinActividad.values()],
+      inflationApplied: cur.inflationApplied,
+      priorInflationApplied: pri ? pri.inflationApplied : true,
     };
   });

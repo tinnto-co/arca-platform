@@ -113,6 +113,7 @@ import {
   getESP,
   getER,
   getEEPN,
+  type EepnRow,
   getEFE,
   getAnexoII,
   getAuditLog,
@@ -8017,6 +8018,13 @@ function EspView({
                   emisión está bloqueada hasta corregir.
                 </div>
               )}
+              <div className="mt-1">
+                <PriorNotAdjustedNote
+                  hasPrior={data.hasPrior}
+                  priorInflationApplied={data.priorInflationApplied}
+                  valuation={valuation}
+                />
+              </div>
             </div>
           </div>
         )}
@@ -8276,21 +8284,54 @@ function Nota3View({
   );
 }
 
-/** Fila del EFE: concepto a la izquierda, importe a la derecha. */
+/** Fila del EFE: concepto a la izquierda, ejercicio actual y anterior a la derecha. */
+/**
+ * Aviso cuando el ejercicio anterior no tiene su propio ajuste aplicado: sus
+ * cifras están en moneda heterogénea y multiplicarlas por un coeficiente no las
+ * homogeneiza. El comparativo sirve de referencia, pero no es exacto.
+ */
+function PriorNotAdjustedNote({
+  hasPrior,
+  priorInflationApplied,
+  valuation,
+}: {
+  hasPrior: boolean;
+  priorInflationApplied: boolean;
+  valuation: 'ajustado' | 'historico';
+}) {
+  if (!hasPrior || priorInflationApplied || valuation !== 'ajustado') {
+    return null;
+  }
+  return (
+    <div className="text-[11.5px] text-amber-600">
+      El ejercicio anterior no tiene su ajuste por inflación generado, así que
+      la columna comparativa parte de valores históricos. Generá el ajuste de
+      ese ejercicio para que el comparativo sea exacto.
+    </div>
+  );
+}
+
 function EfeRow({
   label,
   value,
   strong,
   indent,
+  hasPrior,
 }: {
   label: string;
-  value: number;
+  value: { current: number; prior: number };
   strong?: boolean;
   indent?: boolean;
+  hasPrior: boolean;
 }) {
+  const fmt = (n: number) =>
+    n.toLocaleString('es-AR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
   return (
     <div
-      className="flex items-center justify-between gap-4 px-5 py-1.5 border-b border-[var(--arca-border)] last:border-b-0"
+      className="grid grid-cols-[1fr_170px_170px] gap-4 px-5 py-1.5 border-b border-[var(--arca-border)] last:border-b-0"
       style={strong ? { background: 'var(--arca-surface-2)' } : undefined}
     >
       <span
@@ -8303,14 +8344,16 @@ function EfeRow({
         {label}
       </span>
       <span
-        className="text-[12.5px] tabular-nums text-[var(--arca-ink)]"
+        className="text-[12.5px] tabular-nums text-right text-[var(--arca-ink)]"
         style={{ fontWeight: strong ? 600 : 400 }}
       >
-        ${' '}
-        {value.toLocaleString('es-AR', {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })}
+        $ {fmt(value.current)}
+      </span>
+      <span
+        className="text-[12.5px] tabular-nums text-right text-[var(--arca-ink-3)]"
+        style={{ fontWeight: strong ? 600 : 400 }}
+      >
+        {hasPrior ? `$ ${fmt(value.prior)}` : '—'}
       </span>
     </div>
   );
@@ -8370,18 +8413,31 @@ function EfeView({
         </div>
       </div>
 
+      <div className="grid grid-cols-[1fr_170px_170px] gap-4 px-5 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+        <div>Concepto</div>
+        <div className="text-right">Ej. N°{data.fiscalYearNumber}</div>
+        <div className="text-right">
+          {data.priorFiscalYearNumber !== null
+            ? `Ej. N°${data.priorFiscalYearNumber}`
+            : 'Anterior'}
+        </div>
+      </div>
+
       <EfeRow
         label="Efectivo al inicio del ejercicio"
         value={data.efectivoInicio}
+        hasPrior={data.hasPrior}
       />
       <EfeRow
         label="Efectivo al cierre del ejercicio"
         value={data.efectivoCierre}
+        hasPrior={data.hasPrior}
       />
       <EfeRow
         label="Aumento (disminución) neto del efectivo"
         value={data.variacion}
         strong
+        hasPrior={data.hasPrior}
       />
 
       <div className="px-5 py-2 text-[10.5px] uppercase tracking-wide font-semibold text-[var(--arca-ink-3)] bg-[var(--arca-surface-2)] border-y border-[var(--arca-border)]">
@@ -8402,30 +8458,36 @@ function EfeView({
               <EfeRow
                 key={l.accountId}
                 label={l.name}
-                value={l.amount}
+                value={l}
                 indent
+                hasPrior={data.hasPrior}
               />
             ))
           )}
           <EfeRow
             label={`Flujo neto por ${a.label.toLowerCase()}`}
-            value={a.total}
+            value={a}
             strong
+            hasPrior={data.hasPrior}
           />
         </div>
       ))}
 
-      {valuation === 'ajustado' && Math.abs(data.recpamEfectivo) >= 0.005 && (
-        <EfeRow
-          label="Resultado por exposición a la inflación del efectivo (RECPAM)"
-          value={data.recpamEfectivo}
-        />
-      )}
+      {valuation === 'ajustado' &&
+        (Math.abs(data.recpamEfectivo.current) >= 0.005 ||
+          Math.abs(data.recpamEfectivo.prior) >= 0.005) && (
+          <EfeRow
+            label="Resultado por exposición a la inflación del efectivo (RECPAM)"
+            value={data.recpamEfectivo}
+            hasPrior={data.hasPrior}
+          />
+        )}
 
       <EfeRow
         label="Total de las variaciones del efectivo"
         value={data.totalCausas}
         strong
+        hasPrior={data.hasPrior}
       />
 
       <div className="px-5 py-3 border-t border-[var(--arca-border)] space-y-1">
@@ -8439,7 +8501,7 @@ function EfeView({
         >
           {data.cuadra
             ? '✓ Las causas explican la variación del efectivo.'
-            : `✗ Las causas ($ ${money(data.totalCausas)}) no explican la variación ($ ${money(data.variacion)}).`}
+            : `✗ Las causas ($ ${money(data.totalCausas.current)}) no explican la variación ($ ${money(data.variacion.current)}).`}
         </div>
         {valuation === 'ajustado' && data.coeficienteInicio !== null && (
           <div className="text-[11.5px] text-[var(--arca-ink-3)]">
@@ -8449,7 +8511,7 @@ function EfeView({
               maximumFractionDigits: 4,
             })}
             : $ {money(data.efectivoInicioHistorico)} históricos → ${' '}
-            {money(data.efectivoInicio)}.
+            {money(data.efectivoInicio.current)}.
           </div>
         )}
         {valuation === 'ajustado' && !data.inflationApplied && (
@@ -8458,6 +8520,11 @@ function EfeView({
             que los flujos son históricos.
           </div>
         )}
+        <PriorNotAdjustedNote
+          hasPrior={data.hasPrior}
+          priorInflationApplied={data.priorInflationApplied}
+          valuation={valuation}
+        />
         {data.sinActividad.length > 0 && (
           <div className="text-[11.5px] text-amber-600">
             {data.sinActividad.length} cuenta(s) sin actividad asignada; se usó
@@ -8523,6 +8590,16 @@ function EepnView({
       </ArcaCard>
     );
   }
+
+  // La columna del ejercicio anterior solo tiene valor en las tres filas que el
+  // modelo RT 9 expone: inicio, resultado y cierre.
+  const priorFor = (kind: EepnRow['kind']) => {
+    if (!data.prior) return 0;
+    if (kind === 'inicio') return data.prior.inicio;
+    if (kind === 'resultado') return data.prior.resultado;
+    if (kind === 'cierre') return data.prior.cierre;
+    return 0;
+  };
 
   // Cabecera en dos niveles: rubro y, debajo, la cuenta.
   const groups: { label: string; span: number }[] = [];
@@ -8630,9 +8707,7 @@ function EepnView({
                   </td>
                   {data.priorFiscalYearNumber !== null && (
                     <td className="px-4 py-1.5 text-right tabular-nums border-l border-[var(--arca-border)] text-[var(--arca-ink-2)]">
-                      {row.kind === 'cierre' && data.priorTotal !== null
-                        ? money(data.priorTotal)
-                        : '—'}
+                      {money(priorFor(row.kind))}
                     </td>
                   )}
                 </tr>
@@ -8662,6 +8737,11 @@ function EepnView({
             inflación».
           </div>
         )}
+        <PriorNotAdjustedNote
+          hasPrior={data.priorFiscalYearNumber !== null}
+          priorInflationApplied={data.priorInflationApplied}
+          valuation={valuation}
+        />
         {data.priorFiscalYearNumber !== null &&
           valuation === 'ajustado' &&
           (data.priorCoefficient !== null ? (
@@ -8871,6 +8951,13 @@ function ErView({
                   bloqueada hasta corregir.
                 </div>
               )}
+              <div className="mt-1">
+                <PriorNotAdjustedNote
+                  hasPrior={data.hasPrior}
+                  priorInflationApplied={data.priorInflationApplied}
+                  valuation={valuation}
+                />
+              </div>
             </div>
           </div>
         )}

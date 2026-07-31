@@ -37,6 +37,25 @@ import { seedBaseChartForOrg } from '@/lib/accounting-seed';
 const DEMO_CUIT = '30999999991';
 const DEMO_NAME = 'E-PRESIS SA (demo AXI)';
 const FY_NUMBER = 4;
+/**
+ * Ejercicio anterior, para que la columna comparativa tenga contra qué comparar.
+ *
+ * La planilla del estudio no trae los importes históricos del ejercicio 3 —solo
+ * los reexpresados—, así que se arma uno con cifras redondas cuyo patrimonio al
+ * cierre es exactamente el de apertura del ejercicio 4 (117.316.852,04). Eso
+ * hace que el comparativo del EEPN, reexpresado por 1,3261, tenga que dar
+ * 155.573.877,49: el número que sí figura en el balance real.
+ */
+const PRIOR_FY_NUMBER = 3;
+const PRIOR = {
+  pnInicial: 40000000,
+  capital: 500000,
+  ajusteCapital: 4546140.83,
+  rnaInicial: 34953859.17, // 40.000.000 − capital − ajuste de capital
+  ventas: 500000000,
+  compras: 300000000,
+  sueldos: 122683147.96, // deja resultado 77.316.852,04
+};
 
 /** Cuentas del plan base usadas por el escenario. */
 const C = {
@@ -103,6 +122,147 @@ const APERTURA = {
 
 const money = (n: number) => n.toFixed(2);
 
+/**
+ * Siembra el ejercicio 3 (01/04/2024 – 31/03/2025) con cifras redondas. No
+ * pretende replicar el ejercicio real —la planilla no trae sus históricos— sino
+ * dejar el encadenamiento correcto: su patrimonio al cierre es el de apertura
+ * del ejercicio 4.
+ */
+async function seedPriorFiscalYear(clientId: string, orgId: string) {
+  const [fy] = await db
+    .insert(fiscalYear)
+    .values({
+      clientId,
+      number: PRIOR_FY_NUMBER,
+      startDate: new Date('2024-04-01T00:00:00Z'),
+      endDate: new Date('2025-03-31T00:00:00Z'),
+      status: 'open',
+    })
+    .returning();
+
+  const meses: [number, number][] = Array.from({ length: 12 }, (_, i) => {
+    const d = new Date(Date.UTC(2024, 3 + i, 1));
+    return [d.getUTCFullYear(), d.getUTCMonth() + 1];
+  });
+  const periods = await db
+    .insert(accountingPeriod)
+    .values(
+      meses.map(([year, month]) => ({
+        fiscalYearId: fy.id,
+        clientId,
+        year,
+        month,
+        status: 'open' as const,
+      }))
+    )
+    .returning();
+
+  const codes = Object.values(C);
+  const accounts = await db
+    .select()
+    .from(account)
+    .where(
+      and(
+        eq(account.organizationId, orgId),
+        eq(account.scope, 'base'),
+        inArray(account.code, [...codes])
+      )
+    );
+  const byCode = new Map(accounts.map((a) => [a.code, a.id]));
+  const id = (code: string) => byCode.get(code)!;
+
+  // Apertura.
+  const [opening] = await db
+    .insert(journalEntry)
+    .values({
+      clientId,
+      fiscalYearId: fy.id,
+      periodId: periods[0].id,
+      number: 1,
+      entryDate: new Date('2024-04-01T00:00:00Z'),
+      description: 'Asiento de apertura del ejercicio',
+      origin: 'auto_opening',
+    })
+    .returning();
+  const openLine = (
+    code: string,
+    debit: number,
+    credit: number,
+    desc: string,
+    order: number
+  ) => ({
+    journalEntryId: opening.id,
+    accountId: id(code),
+    clientId,
+    periodId: periods[0].id,
+    debit: money(debit),
+    credit: money(credit),
+    description: desc,
+    lineOrder: order,
+  });
+  await db
+    .insert(journalEntryLine)
+    .values([
+      openLine(C.banco, PRIOR.pnInicial, 0, 'Saldo inicial de bancos', 0),
+      openLine(C.capital, 0, PRIOR.capital, 'Capital social', 1),
+      openLine(C.ajusteCapital, 0, PRIOR.ajusteCapital, 'Ajuste de capital', 2),
+      openLine(C.rna, 0, PRIOR.rnaInicial, 'Resultados no asignados', 3),
+    ]);
+
+  // Doce meses iguales; el último absorbe el redondeo.
+  const split = (total: number, i: number) => {
+    const cuota = Math.floor((total / 12) * 100) / 100;
+    return i < 11 ? cuota : r2(total - cuota * 11);
+  };
+  const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+
+  for (let i = 0; i < 12; i++) {
+    const p = periods[i];
+    const lastDay = new Date(Date.UTC(meses[i][0], meses[i][1], 0));
+    const [entry] = await db
+      .insert(journalEntry)
+      .values({
+        clientId,
+        fiscalYearId: fy.id,
+        periodId: p.id,
+        number: i + 2,
+        entryDate: lastDay,
+        description: `Operaciones ${String(meses[i][1]).padStart(2, '0')}/${meses[i][0]}`,
+        origin: 'manual',
+      })
+      .returning();
+    const v = split(PRIOR.ventas, i);
+    const c = split(PRIOR.compras, i);
+    const su = split(PRIOR.sueldos, i);
+    const line = (
+      code: string,
+      debit: number,
+      credit: number,
+      desc: string,
+      order: number
+    ) => ({
+      journalEntryId: entry.id,
+      accountId: id(code),
+      clientId,
+      periodId: p.id,
+      debit: money(debit),
+      credit: money(credit),
+      description: desc,
+      lineOrder: order,
+    });
+    await db
+      .insert(journalEntryLine)
+      .values([
+        line(C.banco, v, 0, 'Cobro de ventas', 0),
+        line(C.ventas, 0, v, 'Ventas del mes', 1),
+        line(C.cmv, c, 0, 'Compras del mes', 2),
+        line(C.banco, 0, c, 'Pago a proveedores', 3),
+        line(C.sueldos, su, 0, 'Sueldos y jornales', 4),
+        line(C.banco, 0, su, 'Pago de sueldos', 5),
+      ]);
+  }
+}
+
 async function main() {
   const url = process.env.DATABASE_URL ?? '';
   if (!url.includes('localhost') && !url.includes('127.0.0.1')) {
@@ -168,6 +328,24 @@ async function main() {
     await db.delete(fiscalYear).where(eq(fiscalYear.id, previous[0].id));
     console.log('Ejercicio demo anterior eliminado.');
   }
+
+  // Ejercicio anterior (3), para la columna comparativa.
+  const previousPrior = await db
+    .select()
+    .from(fiscalYear)
+    .where(
+      and(
+        eq(fiscalYear.clientId, demo.id),
+        eq(fiscalYear.number, PRIOR_FY_NUMBER)
+      )
+    );
+  if (previousPrior.length > 0) {
+    await db
+      .delete(journalEntry)
+      .where(eq(journalEntry.fiscalYearId, previousPrior[0].id));
+    await db.delete(fiscalYear).where(eq(fiscalYear.id, previousPrior[0].id));
+  }
+  await seedPriorFiscalYear(demo.id, orgId);
 
   const [fy] = await db
     .insert(fiscalYear)

@@ -2281,8 +2281,16 @@ function EepnBlock({ eepn }: { eepn: EepnResult | null }) {
             <Text style={pk.cNum}>{fmtMoney(r.total)}</Text>
             {eepn.priorFiscalYearNumber !== null && (
               <Text style={pk.cNum}>
-                {r.kind === 'cierre' && eepn.priorTotal !== null
-                  ? fmtMoney(eepn.priorTotal)
+                {eepn.prior
+                  ? fmtMoney(
+                      r.kind === 'inicio'
+                        ? eepn.prior.inicio
+                        : r.kind === 'resultado'
+                          ? eepn.prior.resultado
+                          : r.kind === 'cierre'
+                            ? eepn.prior.cierre
+                            : 0
+                    )
                   : '—'}
               </Text>
             )}
@@ -2293,61 +2301,75 @@ function EepnBlock({ eepn }: { eepn: EepnResult | null }) {
   );
 }
 
-/** Estado de Flujo de Efectivo, método directo. */
+/** Estado de Flujo de Efectivo, método directo, comparativo. */
 function EfeBlock({ efe }: { efe: EfeResult | null }) {
   if (!efe) return null;
+  const priorLabel =
+    efe.priorFiscalYearNumber !== null
+      ? `Ej. N°${efe.priorFiscalYearNumber}`
+      : 'Anterior';
+  const row = (
+    label: string,
+    v: { current: number; prior: number },
+    style: Record<string, unknown> = pk.row,
+    indent = true
+  ) => (
+    <View style={style as never} key={label}>
+      <Text style={indent ? pk.cLabelIndent : pk.cLabel}>{label}</Text>
+      <Text style={pk.cNum}>{fmtMoney(v.current)}</Text>
+      <Text style={pk.cNum}>{efe.hasPrior ? fmtMoney(v.prior) : '—'}</Text>
+    </View>
+  );
   return (
     <View break>
       <Text style={pk.sectionTitle}>
         Estado de Flujo de Efectivo — Método directo
       </Text>
-      <View style={pk.row}>
-        <Text style={pk.cLabelIndent}>
-          Efectivo y equivalentes al inicio del ejercicio
-        </Text>
-        <Text style={pk.cNum}>{fmtMoney(efe.efectivoInicio)}</Text>
+      <View style={pk.colHead}>
+        <Text style={pk.cLabel}>Concepto</Text>
+        <Text style={pk.cNum}>Ej. N°{efe.fiscalYearNumber}</Text>
+        <Text style={pk.cNum}>{priorLabel}</Text>
       </View>
-      <View style={pk.row}>
-        <Text style={pk.cLabelIndent}>
-          Efectivo y equivalentes al cierre del ejercicio
-        </Text>
-        <Text style={pk.cNum}>{fmtMoney(efe.efectivoCierre)}</Text>
-      </View>
-      <View style={pk.totalRow}>
-        <Text style={pk.cLabel}>Aumento (disminución) neto del efectivo</Text>
-        <Text style={pk.cNum}>{fmtMoney(efe.variacion)}</Text>
-      </View>
+      {row(
+        'Efectivo y equivalentes al inicio del ejercicio',
+        efe.efectivoInicio
+      )}
+      {row(
+        'Efectivo y equivalentes al cierre del ejercicio',
+        efe.efectivoCierre
+      )}
+      {row(
+        'Aumento (disminución) neto del efectivo',
+        efe.variacion,
+        pk.totalRow,
+        false
+      )}
 
       <Text style={pk.subTitle}>Causas de las variaciones del efectivo</Text>
       {efe.activities.map((a) => (
         <View key={a.key}>
           <Text style={pk.subTitle}>{a.label}</Text>
-          {a.lines.map((l) => (
-            <View key={l.accountId} style={pk.row}>
-              <Text style={pk.cLabelIndent}>{l.name}</Text>
-              <Text style={pk.cNum}>{fmtMoney(l.amount)}</Text>
-            </View>
-          ))}
-          <View style={pk.totalRow}>
-            <Text style={pk.cLabel}>
-              Flujo neto por {a.label.toLowerCase()}
-            </Text>
-            <Text style={pk.cNum}>{fmtMoney(a.total)}</Text>
-          </View>
+          {a.lines.map((l) => row(l.name, l))}
+          {row(
+            `Flujo neto por ${a.label.toLowerCase()}`,
+            a,
+            pk.totalRow,
+            false
+          )}
         </View>
       ))}
-      {Math.abs(efe.recpamEfectivo) >= 0.005 && (
-        <View style={pk.row}>
-          <Text style={pk.cLabelIndent}>
-            Resultado por exposición a la inflación del efectivo (RECPAM)
-          </Text>
-          <Text style={pk.cNum}>{fmtMoney(efe.recpamEfectivo)}</Text>
-        </View>
+      {(Math.abs(efe.recpamEfectivo.current) >= 0.005 ||
+        Math.abs(efe.recpamEfectivo.prior) >= 0.005) &&
+        row(
+          'Resultado por exposición a la inflación del efectivo (RECPAM)',
+          efe.recpamEfectivo
+        )}
+      {row(
+        'Total de las variaciones del efectivo',
+        efe.totalCausas,
+        pk.grandRow,
+        false
       )}
-      <View style={pk.grandRow}>
-        <Text style={pk.cLabel}>Total de las variaciones del efectivo</Text>
-        <Text style={pk.cNum}>{fmtMoney(efe.totalCausas)}</Text>
-      </View>
     </View>
   );
 }
@@ -3022,7 +3044,15 @@ export async function exportEstadosExcel(
       values.push(row.total);
       if (e.priorFiscalYearNumber !== null) {
         values.push(
-          row.kind === 'cierre' && e.priorTotal !== null ? e.priorTotal : 0
+          e.prior
+            ? row.kind === 'inicio'
+              ? e.prior.inicio
+              : row.kind === 'resultado'
+                ? e.prior.resultado
+                : row.kind === 'cierre'
+                  ? e.prior.cierre
+                  : 0
+            : 0
         );
       }
       const r = ws.addRow(values);
@@ -3037,12 +3067,25 @@ export async function exportEstadosExcel(
     const ws = wb.addWorksheet('Flujo de efectivo', {
       views: [{ showGridLines: false }],
     });
-    header(ws, 'Estado de Flujo de Efectivo — Método directo', 2);
+    header(ws, 'Estado de Flujo de Efectivo — Método directo', 3);
 
-    const line = (label: string, value: number, bold = false) => {
-      const r = ws.addRow([label, value]);
+    const hr = ws.addRow([
+      'Concepto',
+      `Ej. N°${f.fiscalYearNumber}`,
+      f.priorFiscalYearNumber !== null
+        ? `Ej. N°${f.priorFiscalYearNumber}`
+        : 'Anterior',
+    ]);
+    for (let c = 1; c <= 3; c++) hr.getCell(c).font = { bold: true };
+
+    const line = (
+      label: string,
+      value: { current: number; prior: number },
+      bold = false
+    ) => {
+      const r = ws.addRow([label, value.current, value.prior]);
       if (bold) r.getCell(1).font = { bold: true };
-      money(r, 2, 2, bold);
+      money(r, 2, 3, bold);
     };
 
     line('Efectivo y equivalentes al inicio del ejercicio', f.efectivoInicio);
@@ -3055,10 +3098,13 @@ export async function exportEstadosExcel(
     for (const a of f.activities) {
       const t = ws.addRow([a.label]);
       t.getCell(1).font = { bold: true, size: 10 };
-      for (const l of a.lines) line(`    ${l.name}`, l.amount);
-      line(`Flujo neto por ${a.label.toLowerCase()}`, a.total, true);
+      for (const l of a.lines) line(`    ${l.name}`, l);
+      line(`Flujo neto por ${a.label.toLowerCase()}`, a, true);
     }
-    if (Math.abs(f.recpamEfectivo) >= 0.005) {
+    if (
+      Math.abs(f.recpamEfectivo.current) >= 0.005 ||
+      Math.abs(f.recpamEfectivo.prior) >= 0.005
+    ) {
       line(
         'Resultado por exposición a la inflación del efectivo (RECPAM)',
         f.recpamEfectivo
