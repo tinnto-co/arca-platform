@@ -2595,6 +2595,51 @@ function ClosingWizard({
             </div>
           )}
 
+          {stage === 'refundicion' &&
+            !done.refundicion &&
+            (!wiz.inflation.applied || wiz.inflation.stale) && (
+              <div
+                className="flex items-start gap-2.5 px-4 py-3 mb-3 rounded-[12px] border text-[12.5px]"
+                style={{
+                  background: '#fffbeb',
+                  borderColor: '#fde68a',
+                  color: '#b45309',
+                }}
+              >
+                <AlertTriangle
+                  className="w-4 h-4 mt-px shrink-0"
+                  strokeWidth={1.9}
+                />
+                <div>
+                  <div className="font-semibold">
+                    {wiz.inflation.applied
+                      ? 'El ajuste por inflación quedó desactualizado'
+                      : 'Falta el ajuste por inflación'}
+                  </div>
+                  <div className="mt-0.5">
+                    {wiz.inflation.applied
+                      ? 'Se cargaron asientos después de generarlo. Regeneralo en la solapa «Ajuste por inflación» antes de refundir.'
+                      : 'El ajuste va antes de la refundición: después las cuentas de resultado quedan refundidas y el balance saldría en valores históricos. Generalo en la solapa «Ajuste por inflación».'}
+                  </div>
+                </div>
+              </div>
+            )}
+
+          {stage === 'refundicion' &&
+            !done.refundicion &&
+            wiz.inflation.applied &&
+            !wiz.inflation.stale && (
+              <div className="px-4 py-2 mb-3 text-[12px] text-[var(--arca-ink-3)]">
+                ✓ Ajuste por inflación aplicado
+                {wiz.inflation.journalEntryNumber
+                  ? ` · Asiento N°${wiz.inflation.journalEntryNumber}`
+                  : ''}
+                {wiz.inflation.recpam !== null
+                  ? ` · RECPAM $ ${fmtMoney(-wiz.inflation.recpam)}`
+                  : ''}
+              </div>
+            )}
+
           {stage === 'refundicion' && wiz.refundicion.preview && (
             <StageEntry
               title="Refundición de cuentas de resultado"
@@ -9662,6 +9707,8 @@ const AUDIT_EVENT_LABELS: Record<AuditEventType, string> = {
   account_created: 'Cuenta creada',
   account_deactivated: 'Cuenta desactivada',
   financial_statement_approved: 'EECC aprobados',
+  inflation_adjustment_applied: 'Ajuste por inflación aplicado',
+  inflation_adjustment_voided: 'Ajuste por inflación anulado',
 };
 
 function describeAuditEvent(e: AuditLogEntry): string {

@@ -1622,6 +1622,8 @@ export const accountingLogEventTypeEnum = pgEnum("accounting_log_event_type", [
   "account_created",
   "account_deactivated",
   "financial_statement_approved",
+  "inflation_adjustment_applied",
+  "inflation_adjustment_voided",
 ]);
 
 /**

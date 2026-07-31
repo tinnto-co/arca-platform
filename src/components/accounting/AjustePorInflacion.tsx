@@ -41,6 +41,7 @@ import {
   applyInflationAdjustment,
   getInflationAdjustment,
   listFiscalYearsForInflation,
+  regenerateInflationAdjustment,
   voidInflationAdjustment,
   type InflationAdjustmentPreview,
 } from '@/actions/inflation';
@@ -142,6 +143,20 @@ export function AjustePorInflacion({
         `Asiento N° ${res.number} generado. RECPAM ${fmtMoney(-res.recpam)}.`
       );
       setConfirmApply(false);
+      invalidate();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const regenerateMut = useMutation({
+    mutationFn: () =>
+      regenerateInflationAdjustment({
+        data: { clientId, fiscalYearId: effectiveFyId, source: 'facpce_rt6' },
+      }),
+    onSuccess: (res) => {
+      toast.success(
+        `Ajuste regenerado. Asiento N° ${res.number}, RECPAM ${fmtMoney(-res.recpam)}.`
+      );
       invalidate();
     },
     onError: (e: Error) => toast.error(e.message),
@@ -302,12 +317,18 @@ export function AjustePorInflacion({
                   <span
                     className="text-[9.5px] px-1.5 py-px rounded-full font-semibold uppercase tracking-wide"
                     style={
-                      applied
-                        ? { background: '#dcfce7', color: '#15803d' }
-                        : { background: '#f1f5f9', color: '#475569' }
+                      applied && preview.stale
+                        ? { background: '#fef3c7', color: '#b45309' }
+                        : applied
+                          ? { background: '#dcfce7', color: '#15803d' }
+                          : { background: '#f1f5f9', color: '#475569' }
                     }
                   >
-                    {applied ? 'Aplicado' : 'Borrador'}
+                    {applied
+                      ? preview.stale
+                        ? 'Desactualizado'
+                        : 'Aplicado'
+                      : 'Borrador'}
                   </span>
                 )}
               </div>
@@ -443,6 +464,40 @@ export function AjustePorInflacion({
         >
           No hay índice cargado para: {preview.missingIndexes.join(', ')}. Cargá
           la serie en la solapa «Índices» y volvé acá.
+        </Banner>
+      )}
+
+      {preview && !blocked && preview.stale && (
+        <Banner
+          tone="warn"
+          icon={AlertTriangle}
+          title="El ajuste quedó desactualizado"
+        >
+          Se cargaron o modificaron asientos después de generarlo, así que la
+          preplanilla ya no refleja el mayor.{' '}
+          {Math.abs((preview.appliedRecpam ?? 0) - preview.recpam) >= 0.01 ? (
+            <>
+              El RECPAM del asiento es {fmtMoney(-(preview.appliedRecpam ?? 0))}{' '}
+              y el que corresponde hoy es {fmtMoney(-preview.recpam)}: los
+              Estados Contables están usando el valor viejo.
+            </>
+          ) : (
+            <>
+              En este caso el RECPAM no cambia —los movimientos nuevos caen en
+              meses con coeficiente 1— pero el detalle del ajuste sí, y conviene
+              regenerarlo para que el papel de trabajo cierre.
+            </>
+          )}
+          {isOwner && (
+            <button
+              onClick={() => regenerateMut.mutate()}
+              disabled={regenerateMut.isPending}
+              className="ml-2 inline-flex items-center gap-1 h-6 px-2 text-[11.5px] font-semibold rounded-[6px] border border-current disabled:opacity-60"
+            >
+              <RotateCcw className="w-3 h-3" strokeWidth={2.2} />
+              {regenerateMut.isPending ? 'Regenerando…' : 'Regenerar ajuste'}
+            </button>
+          )}
         </Banner>
       )}
 

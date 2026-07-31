@@ -16,6 +16,7 @@ import { and, eq, inArray, sql, desc, asc } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import {
   account,
+  accountingLog,
   accountingPeriod,
   fiscalYear,
   inflationAdjustment,
@@ -366,6 +367,13 @@ export interface InflationAdjustmentPreview {
   balanced: boolean;
   /** Cuentas con movimientos pero sin naturaleza asignada. */
   accountsWithoutNature: { code: string; name: string }[];
+  /**
+   * El ajuste aplicado ya no coincide con el mayor: entraron o cambiaron asientos
+   * después de generarlo. Los estados contables estarían usando un RECPAM viejo.
+   */
+  stale: boolean;
+  /** RECPAM con el que se generó el asiento. null si todavía no se aplicó. */
+  appliedRecpam: number | null;
 }
 
 /**
@@ -536,6 +544,9 @@ async function buildPreview(
       recpam: 0,
       balanced: true,
       accountsWithoutNature: [],
+      stale: false,
+      appliedRecpam:
+        adj?.status === 'applied' ? Number(adj.recpamAmount) : null,
     };
   }
 
@@ -596,9 +607,36 @@ async function buildPreview(
     recpamAccountId: recpamAccount.id,
   });
 
+  // ¿El asiento aplicado sigue reflejando el mayor? Se comparan el RECPAM (que es
+  // el residuo de todo el ajuste, así que cambia ante cualquier movimiento en una
+  // partida no monetaria), la cantidad de filas y el total reexpresado. Si algo
+  // difiere, el ajuste quedó viejo.
+  let stale = false;
+  const appliedRecpam =
+    adj?.status === 'applied' ? Number(adj.recpamAmount) : null;
+  if (adj?.status === 'applied') {
+    const persisted = await db
+      .select({
+        count: sql<number>`count(*)::int`,
+        total: sql<string>`coalesce(sum(abs(${inflationAdjustmentLine.difference})),0)`,
+      })
+      .from(inflationAdjustmentLine)
+      .where(eq(inflationAdjustmentLine.adjustmentId, adj.id));
+    const currentTotal = result.lines.reduce(
+      (acc, l) => acc + Math.abs(l.difference),
+      0
+    );
+    stale =
+      Math.abs((appliedRecpam ?? 0) - result.recpam) >= 0.01 ||
+      persisted[0].count !== result.lines.length ||
+      Math.abs(Number(persisted[0].total) - currentTotal) >= 0.01;
+  }
+
   const label = (id: string) => accById.get(id);
   return {
     ...base,
+    stale,
+    appliedRecpam,
     lines: result.lines,
     byAccount: result.byAccount.map((s) => ({
       ...s,
@@ -662,7 +700,24 @@ export const applyInflationAdjustment = createServerFn({ method: 'POST' })
       assertOwner(role);
       const { clientId, fiscalYearId, source } = ctx.data;
       await ensureClientBelongsToOrg(clientId, orgId);
+      return applyAdjustment(orgId, userId, clientId, fiscalYearId, source);
+    }
+  );
 
+/**
+ * Genera el asiento de ajuste. Es una función interna y no la server function
+ * porque `regenerateInflationAdjustment` la necesita: invocar una server function
+ * desde otra no funciona del lado del servidor (el handler espera un request).
+ */
+async function applyAdjustment(
+  orgId: string,
+  userId: string,
+  clientId: string,
+  fiscalYearId: string,
+  source: IndexSource
+): Promise<{ journalEntryId: string; number: number; recpam: number }> {
+  {
+    {
       const fy = await loadFiscalYearForOrg(fiscalYearId, orgId);
       if (fy.status === 'closed') {
         throw new Error(
@@ -779,10 +834,25 @@ export const applyInflationAdjustment = createServerFn({ method: 'POST' })
           );
         }
 
+        await tx.insert(accountingLog).values({
+          clientId,
+          fiscalYearId,
+          eventType: 'inflation_adjustment_applied',
+          eventData: {
+            journalEntryNumber: number,
+            recpam: preview.recpam,
+            source,
+            closing: preview.closing,
+            lineas: preview.entryLines.length,
+          },
+          userId,
+        });
+
         return { journalEntryId: je.id, number, recpam: preview.recpam };
       });
     }
-  );
+  }
+}
 
 /** Anula el asiento de ajuste y borra la preplanilla congelada. */
 export const voidInflationAdjustment = createServerFn({ method: 'POST' })
@@ -800,7 +870,18 @@ export const voidInflationAdjustment = createServerFn({ method: 'POST' })
     assertOwner(role);
     const { clientId, fiscalYearId, reason } = ctx.data;
     await ensureClientBelongsToOrg(clientId, orgId);
+    return voidAdjustment(orgId, userId, clientId, fiscalYearId, reason);
+  });
 
+/** Anula el asiento y borra la preplanilla. Ver la nota de `applyAdjustment`. */
+async function voidAdjustment(
+  orgId: string,
+  userId: string,
+  clientId: string,
+  fiscalYearId: string,
+  reason?: string
+): Promise<{ ok: true }> {
+  {
     const fy = await loadFiscalYearForOrg(fiscalYearId, orgId);
     if (fy.status === 'closed') {
       throw new Error('El ejercicio está cerrado. Reabrilo para anular.');
@@ -831,10 +912,61 @@ export const voidInflationAdjustment = createServerFn({ method: 'POST' })
       await tx
         .delete(inflationAdjustment)
         .where(eq(inflationAdjustment.id, adj.id));
+
+      await tx.insert(accountingLog).values({
+        clientId,
+        fiscalYearId,
+        eventType: 'inflation_adjustment_voided',
+        eventData: {
+          recpam: Number(adj.recpamAmount),
+          journalEntryId: adj.journalEntryId,
+          reason: reason ?? null,
+        },
+        userId,
+      });
     });
 
     return { ok: true };
-  });
+  }
+}
+
+/**
+ * Regenera el ajuste: anula el asiento anterior y aplica uno nuevo con el mayor
+ * actual. Es lo que hay que hacer cuando el ajuste queda desactualizado porque
+ * entraron asientos después de generarlo.
+ *
+ * Va en una sola server function y no en dos llamadas desde el cliente para que
+ * no pueda quedar a mitad de camino: sin ajuste y sin aviso.
+ */
+export const regenerateInflationAdjustment = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid(),
+      source: sourceSchema,
+    })
+  )
+  .handler(
+    async (
+      ctx
+    ): Promise<{ journalEntryId: string; number: number; recpam: number }> => {
+      const { orgId, userId } = await getSessionWithOrg();
+      const role = await getMemberRole();
+      assertCanWrite(role);
+      assertOwner(role);
+      const { clientId, fiscalYearId, source } = ctx.data;
+      await ensureClientBelongsToOrg(clientId, orgId);
+
+      await voidAdjustment(
+        orgId,
+        userId,
+        clientId,
+        fiscalYearId,
+        'Regeneración: el ajuste no coincidía con el mayor'
+      );
+      return applyAdjustment(orgId, userId, clientId, fiscalYearId, source);
+    }
+  );
 
 /**
  * Naturaleza frente al AXI de las cuentas de una empresa, para la pantalla de

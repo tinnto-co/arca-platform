@@ -43,6 +43,7 @@ import {
   desc,
   eq,
   gte,
+  gt,
   inArray,
   isNull,
   lt,
@@ -1675,6 +1676,8 @@ export const AUDIT_EVENT_TYPES = [
   'account_created',
   'account_deactivated',
   'financial_statement_approved',
+  'inflation_adjustment_applied',
+  'inflation_adjustment_voided',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
@@ -5273,6 +5276,85 @@ export interface ClosingWizardState {
   apertura: ClosingStageView & {
     nextFy: { number: number; startDate: string; endDate: string } | null;
   };
+  /** Ajuste por inflación: tiene que estar aplicado y al día antes de refundir. */
+  inflation: {
+    applied: boolean;
+    stale: boolean;
+    recpam: number | null;
+    journalEntryNumber: number | null;
+  };
+}
+
+/**
+ * Estado del ajuste por inflación de un ejercicio, para el wizard de cierre.
+ *
+ * Ajustar tiene que pasar ANTES de la refundición: la refundición manda los
+ * saldos de las cuentas de resultado a "Resultado del ejercicio", así que si se
+ * cierra sin ajustar, el balance queda en valores históricos sin que nadie lo
+ * advierta.
+ *
+ * `stale` significa que el asiento existe pero ya no coincide con el mayor
+ * porque entraron o cambiaron asientos después de generarlo.
+ */
+async function loadInflationStatus(fyId: string): Promise<{
+  applied: boolean;
+  stale: boolean;
+  recpam: number | null;
+  journalEntryNumber: number | null;
+}> {
+  const [adj] = await db
+    .select()
+    .from(inflationAdjustment)
+    .where(
+      and(
+        eq(inflationAdjustment.fiscalYearId, fyId),
+        eq(inflationAdjustment.status, 'applied')
+      )
+    )
+    .limit(1);
+  if (!adj) {
+    return {
+      applied: false,
+      stale: false,
+      recpam: null,
+      journalEntryNumber: null,
+    };
+  }
+
+  let journalEntryNumber: number | null = null;
+  if (adj.journalEntryId) {
+    const [je] = await db
+      .select({ number: journalEntry.number })
+      .from(journalEntry)
+      .where(eq(journalEntry.id, adj.journalEntryId))
+      .limit(1);
+    journalEntryNumber = je?.number ?? null;
+  }
+
+  // El asiento del ajuste debe ser el último movimiento no-cierre del ejercicio:
+  // si después se cargó cualquier otro asiento, el ajuste quedó viejo.
+  let stale = false;
+  if (adj.appliedAt) {
+    const [{ posteriores }] = await db
+      .select({ posteriores: sql<number>`count(*)::int` })
+      .from(journalEntry)
+      .where(
+        and(
+          eq(journalEntry.fiscalYearId, fyId),
+          eq(journalEntry.isVoided, false),
+          gt(journalEntry.createdAt, adj.appliedAt),
+          sql`${journalEntry.origin} NOT IN ('auto_closing','auto_inflation')`
+        )
+      );
+    stale = posteriores > 0;
+  }
+
+  return {
+    applied: true,
+    stale,
+    recpam: Number(adj.recpamAmount),
+    journalEntryNumber,
+  };
 }
 
 /** Estado del wizard de cierre por etapa (con previews editables). (US 5.3.x) */
@@ -5386,6 +5468,7 @@ export const getClosingWizard = createServerFn({ method: 'GET' })
           endDate: nd.end.toISOString(),
         },
       },
+      inflation: await loadInflationStatus(fy.id),
     };
   });
 
@@ -5439,6 +5522,22 @@ export const approveClosingStage = createServerFn({ method: 'POST' })
 
     if (stage === 'refundicion' && refDone)
       throw new Error('La refundición ya fue registrada');
+
+    // El ajuste por inflación va antes de la refundición: después, las cuentas de
+    // resultado quedan refundidas y el balance saldría en valores históricos.
+    if (stage === 'refundicion') {
+      const inflation = await loadInflationStatus(fy.id);
+      if (!inflation.applied) {
+        throw new Error(
+          'Falta generar el ajuste por inflación del ejercicio. Hacelo en la solapa «Ajuste por inflación» antes de refundir.'
+        );
+      }
+      if (inflation.stale) {
+        throw new Error(
+          'El ajuste por inflación quedó desactualizado: se cargaron asientos después de generarlo. Regeneralo antes de refundir.'
+        );
+      }
+    }
     if (stage === 'cierre') {
       if (!refDone) throw new Error('Primero registrá la refundición');
       if (cierreDone)
