@@ -21,6 +21,10 @@ import {
   defaultInflationNature,
   type InflationNature,
 } from '@/lib/accounting-inflation';
+import {
+  defaultCashFlowActivity,
+  type CashFlowActivity,
+} from '@/lib/accounting-cashflow';
 
 export interface BaseAccountSeed {
   code: string;
@@ -41,6 +45,12 @@ export interface BaseAccountSeed {
    * Único caso en el plan base: Capital social → Ajuste de capital.
    */
   inflationTargetCode?: string;
+  /**
+   * Actividad para el Estado de Flujo de Efectivo. Se deriva del `accountGroup`
+   * si no se declara. `null` en las cuentas de efectivo: son la variación que el
+   * estado explica, no una causa.
+   */
+  cashFlowActivity?: CashFlowActivity | null;
   isSystemAccount?: boolean;
   /** Default global de activación de la cuenta base. */
   isActive?: boolean;
@@ -53,6 +63,11 @@ const VALID_EXPENSE_FUNCTION = new Set<string>([
   'sales',
   'financial',
   'other',
+]);
+const VALID_CASH_FLOW_ACTIVITY = new Set<string>([
+  'operating',
+  'investing',
+  'financing',
 ]);
 const VALID_INFLATION_NATURE = new Set<string>([
   'monetaria',
@@ -85,6 +100,7 @@ const I = (
   accountGroup,
   expectedBalance,
   inflationNature: defaultInflationNature(accountGroup),
+  cashFlowActivity: defaultCashFlowActivity(accountGroup),
   ...extra,
 });
 
@@ -466,6 +482,14 @@ export function validateBaseChart(
     if (a.expenseFunction && !VALID_EXPENSE_FUNCTION.has(a.expenseFunction)) {
       errors.push(
         `Cuenta ${a.code}: expenseFunction inválido "${a.expenseFunction}"`
+      );
+    }
+    if (
+      a.cashFlowActivity &&
+      !VALID_CASH_FLOW_ACTIVITY.has(a.cashFlowActivity)
+    ) {
+      errors.push(
+        `Cuenta ${a.code}: cashFlowActivity inválido "${a.cashFlowActivity}"`
       );
     }
     if (a.inflationNature && !VALID_INFLATION_NATURE.has(a.inflationNature)) {

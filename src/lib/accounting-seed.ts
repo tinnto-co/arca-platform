@@ -14,6 +14,7 @@ import {
   validateBaseChart,
 } from '@/lib/accounting-base-chart';
 import { defaultInflationNature } from '@/lib/accounting-inflation';
+import { defaultCashFlowActivity } from '@/lib/accounting-cashflow';
 
 export interface SeedResult {
   inserted: number;
@@ -41,6 +42,7 @@ async function backfillInflationAttributes(orgId: string): Promise<number> {
       accountGroup: account.accountGroup,
       inflationNature: account.inflationNature,
       inflationTargetId: account.inflationTargetId,
+      cashFlowActivity: account.cashFlowActivity,
     })
     .from(account)
     .where(eq(account.organizationId, orgId));
@@ -54,6 +56,7 @@ async function backfillInflationAttributes(orgId: string): Promise<number> {
     const patch: {
       inflationNature?: string;
       inflationTargetId?: string | null;
+      cashFlowActivity?: string | null;
     } = {};
 
     if (!row.inflationNature) {
@@ -61,6 +64,13 @@ async function backfillInflationAttributes(orgId: string): Promise<number> {
       // empresa → el default de su rubro.
       patch.inflationNature =
         seed?.inflationNature ?? defaultInflationNature(row.accountGroup);
+    }
+    if (!row.cashFlowActivity) {
+      const activity =
+        seed !== undefined
+          ? (seed.cashFlowActivity ?? null)
+          : defaultCashFlowActivity(row.accountGroup);
+      if (activity) patch.cashFlowActivity = activity;
     }
     if (!row.inflationTargetId && seed?.inflationTargetCode) {
       const target = byCode.get(seed.inflationTargetCode);
@@ -122,6 +132,7 @@ export async function seedBaseChartForOrg(orgId: string): Promise<SeedResult> {
         expectedBalance: (a.expectedBalance ?? null) as never,
         expenseFunction: (a.expenseFunction ?? null) as never,
         inflationNature: (a.inflationNature ?? null) as never,
+        cashFlowActivity: (a.cashFlowActivity ?? null) as never,
         inflationTargetId: null,
         isSystemAccount: a.isSystemAccount ?? false,
         isActive: a.isActive ?? true,

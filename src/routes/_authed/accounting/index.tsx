@@ -113,6 +113,7 @@ import {
   getESP,
   getER,
   getEEPN,
+  getEFE,
   getAnexoII,
   getAuditLog,
   getFinancialStatement,
@@ -7519,7 +7520,15 @@ function EstadosContables({
 }) {
   const qc = useQueryClient();
   const [view, setView] = useState<
-    'esp' | 'er' | 'eepn' | 'cmv' | 'anexo' | 'notas' | 'export'
+    | 'esp'
+    | 'er'
+    | 'eepn'
+    | 'efe'
+    | 'nota3'
+    | 'cmv'
+    | 'anexo'
+    | 'notas'
+    | 'export'
   >('esp');
   /**
    * Los EECC se presentan ajustados por inflación (RT 6). "Histórico" excluye el
@@ -7596,6 +7605,8 @@ function EstadosContables({
     { k: 'esp', label: 'Estado de Situación Patrimonial' },
     { k: 'er', label: 'Estado de Resultados' },
     { k: 'eepn', label: 'Evolución del Patrimonio Neto' },
+    { k: 'efe', label: 'Flujo de Efectivo' },
+    { k: 'nota3', label: 'Composición de rubros' },
     { k: 'cmv', label: 'Costo de mercadería (CMV)' },
     { k: 'anexo', label: 'Anexo II' },
     { k: 'notas', label: 'Notas' },
@@ -7727,6 +7738,22 @@ function EstadosContables({
       )}
       {view === 'eepn' && (
         <EepnView
+          clientId={clientId}
+          clientName={clientName}
+          selectedFy={selectedFy}
+          valuation={valuation}
+        />
+      )}
+      {view === 'efe' && (
+        <EfeView
+          clientId={clientId}
+          clientName={clientName}
+          selectedFy={selectedFy}
+          valuation={valuation}
+        />
+      )}
+      {view === 'nota3' && (
+        <Nota3View
           clientId={clientId}
           clientName={clientName}
           selectedFy={selectedFy}
@@ -8044,6 +8071,360 @@ function EspSectionRows({
  * dentro de "Saldos al inicio", no como movimiento del ejercicio, y el Capital
  * social queda a valor nominal con su ajuste en Ajuste de capital.
  */
+/**
+ * Estado de Flujo de Efectivo, método directo.
+ *
+ * Explica la variación del efectivo del ejercicio agrupando las causas por
+ * actividad. En la vista ajustada, la línea de RECPAM del efectivo es la que
+ * cierra el estado: es la pérdida de poder adquisitivo por haber mantenido
+ * efectivo, y sin ella los flujos reexpresados no llegan a la variación real.
+ */
+/**
+ * Nota 3 — Composición de los principales rubros.
+ *
+ * Es el detalle por cuenta de cada rubro del ESP, comparativo. Se arma con los
+ * mismos datos del Estado de Situación Patrimonial, así que no puede diferir de
+ * él: si un rubro cambia, la nota cambia sola.
+ */
+function Nota3View({
+  clientId,
+  clientName,
+  selectedFy,
+  valuation,
+}: {
+  clientId: string;
+  clientName: string;
+  selectedFy: FyOption | undefined;
+  valuation: 'ajustado' | 'historico';
+}) {
+  const effectiveFyId = selectedFy?.id ?? '';
+  const { data, isLoading } = useQuery({
+    queryKey: ['accounting', 'esp', clientId, effectiveFyId, valuation],
+    queryFn: () =>
+      getESP({
+        data: { clientId, fiscalYearId: effectiveFyId, view: valuation },
+      }),
+    enabled: !!effectiveFyId,
+  });
+
+  const money = (n: number) =>
+    n.toLocaleString('es-AR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
+  if (isLoading || !data) {
+    return (
+      <ArcaCard>
+        <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+          {effectiveFyId ? 'Calculando…' : 'Seleccioná un ejercicio.'}
+        </div>
+      </ArcaCard>
+    );
+  }
+
+  // Se numeran 3.1, 3.2, … solo los rubros con saldo, en el orden del ESP. El
+  // rubro "Resultado del ejercicio" no se detalla acá: su composición es el
+  // Estado de Resultados y el Anexo II.
+  const rubros = data.sections
+    .flatMap((sec) => sec.rubros.map((r) => ({ ...r, section: sec.label })))
+    .filter((r) => r.group !== 'resultado_ejercicio')
+    .filter((r) => Math.abs(r.current) >= 0.005 || Math.abs(r.prior) >= 0.005);
+
+  return (
+    <ArcaCard>
+      <div className="px-5 pt-4 pb-3 border-b border-[var(--arca-border)]">
+        <div className="text-[14px] font-semibold text-[var(--arca-ink)]">
+          {clientName}
+        </div>
+        <div className="text-[12px] text-[var(--arca-ink-3)]">
+          Nota 3 · Composición de los principales rubros · Ejercicio N°
+          {data.fiscalYearNumber} · {data.periodLabel}
+        </div>
+        <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
+          {valuation === 'ajustado'
+            ? 'Valores ajustados por inflación (RT 6), en moneda homogénea de cierre.'
+            : 'Valores históricos, sin ajuste por inflación. Papel de trabajo.'}
+        </div>
+      </div>
+
+      {rubros.length === 0 ? (
+        <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+          El ejercicio no tiene rubros con saldo.
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-[52px_1fr_170px_170px] gap-3 px-5 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+            <div>Nota</div>
+            <div>Concepto</div>
+            <div className="text-right">Ej. N°{data.fiscalYearNumber}</div>
+            <div className="text-right">
+              {data.priorFiscalYearNumber !== null
+                ? `Ej. N°${data.priorFiscalYearNumber}`
+                : 'Anterior'}
+            </div>
+          </div>
+
+          {rubros.map((r, i) => (
+            <div key={r.group}>
+              <div className="grid grid-cols-[52px_1fr_170px_170px] gap-3 px-5 pt-3 pb-1 text-[12.5px]">
+                <div className="tabular-nums text-[var(--arca-ink-3)]">
+                  3.{i + 1}
+                </div>
+                <div className="font-semibold text-[var(--arca-ink)]">
+                  {r.label}
+                </div>
+                <div />
+                <div />
+              </div>
+              {r.accounts.map((a) => (
+                <div
+                  key={a.accountId}
+                  className="grid grid-cols-[52px_1fr_170px_170px] gap-3 px-5 py-1 text-[12.5px]"
+                >
+                  <div />
+                  <div className="text-[var(--arca-ink-2)] pl-3">{a.name}</div>
+                  <div className="text-right tabular-nums text-[var(--arca-ink-2)]">
+                    {money(a.current)}
+                  </div>
+                  <div className="text-right tabular-nums text-[var(--arca-ink-3)]">
+                    {data.hasPrior ? money(a.prior) : '—'}
+                  </div>
+                </div>
+              ))}
+              <div className="grid grid-cols-[52px_1fr_170px_170px] gap-3 px-5 py-1.5 border-b border-[var(--arca-border)] text-[12.5px] font-semibold">
+                <div />
+                <div />
+                <div className="text-right tabular-nums border-t border-[var(--arca-ink-3)] pt-1">
+                  {money(r.current)}
+                </div>
+                <div className="text-right tabular-nums border-t border-[var(--arca-ink-3)] pt-1 text-[var(--arca-ink-3)]">
+                  {data.hasPrior ? money(r.prior) : '—'}
+                </div>
+              </div>
+            </div>
+          ))}
+
+          <div className="px-5 py-3 text-[11.5px] text-[var(--arca-ink-3)]">
+            La nota se arma con el detalle por cuenta del Estado de Situación
+            Patrimonial, así que siempre coincide con él.
+            {data.hasPrior && data.priorCoefficient !== null && (
+              <>
+                {' '}
+                La columna del ejercicio anterior está reexpresada a moneda de
+                cierre con coeficiente{' '}
+                {data.priorCoefficient.toLocaleString('es-AR', {
+                  minimumFractionDigits: 4,
+                  maximumFractionDigits: 4,
+                })}
+                .
+              </>
+            )}
+          </div>
+        </>
+      )}
+    </ArcaCard>
+  );
+}
+
+/** Fila del EFE: concepto a la izquierda, importe a la derecha. */
+function EfeRow({
+  label,
+  value,
+  strong,
+  indent,
+}: {
+  label: string;
+  value: number;
+  strong?: boolean;
+  indent?: boolean;
+}) {
+  return (
+    <div
+      className="flex items-center justify-between gap-4 px-5 py-1.5 border-b border-[var(--arca-border)] last:border-b-0"
+      style={strong ? { background: 'var(--arca-surface-2)' } : undefined}
+    >
+      <span
+        className="text-[12.5px] text-[var(--arca-ink)]"
+        style={{
+          fontWeight: strong ? 600 : 400,
+          paddingLeft: indent ? 14 : 0,
+        }}
+      >
+        {label}
+      </span>
+      <span
+        className="text-[12.5px] tabular-nums text-[var(--arca-ink)]"
+        style={{ fontWeight: strong ? 600 : 400 }}
+      >
+        ${' '}
+        {value.toLocaleString('es-AR', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}
+      </span>
+    </div>
+  );
+}
+
+function EfeView({
+  clientId,
+  clientName,
+  selectedFy,
+  valuation,
+}: {
+  clientId: string;
+  clientName: string;
+  selectedFy: FyOption | undefined;
+  valuation: 'ajustado' | 'historico';
+}) {
+  const effectiveFyId = selectedFy?.id ?? '';
+  const { data, isLoading } = useQuery({
+    queryKey: ['accounting', 'efe', clientId, effectiveFyId, valuation],
+    queryFn: () =>
+      getEFE({
+        data: { clientId, fiscalYearId: effectiveFyId, view: valuation },
+      }),
+    enabled: !!effectiveFyId,
+  });
+
+  const money = (n: number) =>
+    n.toLocaleString('es-AR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
+  if (isLoading || !data) {
+    return (
+      <ArcaCard>
+        <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+          {effectiveFyId ? 'Calculando…' : 'Seleccioná un ejercicio.'}
+        </div>
+      </ArcaCard>
+    );
+  }
+
+  return (
+    <ArcaCard>
+      <div className="px-5 pt-4 pb-3 border-b border-[var(--arca-border)]">
+        <div className="text-[14px] font-semibold text-[var(--arca-ink)]">
+          {clientName}
+        </div>
+        <div className="text-[12px] text-[var(--arca-ink-3)]">
+          Estado de Flujo de Efectivo · Método directo · Ejercicio N°
+          {data.fiscalYearNumber} · {data.periodLabel}
+        </div>
+        <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
+          {valuation === 'ajustado'
+            ? 'Expresado en moneda homogénea de cierre (ajuste por inflación · RT 6).'
+            : 'Expresado en valores históricos, sin ajuste por inflación. Papel de trabajo.'}
+        </div>
+      </div>
+
+      <EfeRow
+        label="Efectivo al inicio del ejercicio"
+        value={data.efectivoInicio}
+      />
+      <EfeRow
+        label="Efectivo al cierre del ejercicio"
+        value={data.efectivoCierre}
+      />
+      <EfeRow
+        label="Aumento (disminución) neto del efectivo"
+        value={data.variacion}
+        strong
+      />
+
+      <div className="px-5 py-2 text-[10.5px] uppercase tracking-wide font-semibold text-[var(--arca-ink-3)] bg-[var(--arca-surface-2)] border-y border-[var(--arca-border)]">
+        Causas de las variaciones del efectivo
+      </div>
+
+      {data.activities.map((a) => (
+        <div key={a.key}>
+          <div className="px-5 pt-2.5 pb-1 text-[11.5px] font-semibold text-[var(--arca-ink-2)]">
+            {a.label}
+          </div>
+          {a.lines.length === 0 ? (
+            <div className="px-5 pb-1.5 pl-[34px] text-[12px] text-[var(--arca-ink-3)] italic">
+              Sin movimientos
+            </div>
+          ) : (
+            a.lines.map((l) => (
+              <EfeRow
+                key={l.accountId}
+                label={l.name}
+                value={l.amount}
+                indent
+              />
+            ))
+          )}
+          <EfeRow
+            label={`Flujo neto por ${a.label.toLowerCase()}`}
+            value={a.total}
+            strong
+          />
+        </div>
+      ))}
+
+      {valuation === 'ajustado' && Math.abs(data.recpamEfectivo) >= 0.005 && (
+        <EfeRow
+          label="Resultado por exposición a la inflación del efectivo (RECPAM)"
+          value={data.recpamEfectivo}
+        />
+      )}
+
+      <EfeRow
+        label="Total de las variaciones del efectivo"
+        value={data.totalCausas}
+        strong
+      />
+
+      <div className="px-5 py-3 border-t border-[var(--arca-border)] space-y-1">
+        <div
+          className="text-[12px]"
+          style={{
+            color: data.cuadra
+              ? 'var(--arca-accent-pos)'
+              : 'var(--arca-accent-neg)',
+          }}
+        >
+          {data.cuadra
+            ? '✓ Las causas explican la variación del efectivo.'
+            : `✗ Las causas ($ ${money(data.totalCausas)}) no explican la variación ($ ${money(data.variacion)}).`}
+        </div>
+        {valuation === 'ajustado' && data.coeficienteInicio !== null && (
+          <div className="text-[11.5px] text-[var(--arca-ink-3)]">
+            El efectivo al inicio se reexpresó con coeficiente{' '}
+            {data.coeficienteInicio.toLocaleString('es-AR', {
+              minimumFractionDigits: 4,
+              maximumFractionDigits: 4,
+            })}
+            : $ {money(data.efectivoInicioHistorico)} históricos → ${' '}
+            {money(data.efectivoInicio)}.
+          </div>
+        )}
+        {valuation === 'ajustado' && !data.inflationApplied && (
+          <div className="text-[11.5px] text-amber-600">
+            El ajuste por inflación del ejercicio todavía no está generado, así
+            que los flujos son históricos.
+          </div>
+        )}
+        {data.sinActividad.length > 0 && (
+          <div className="text-[11.5px] text-amber-600">
+            {data.sinActividad.length} cuenta(s) sin actividad asignada; se usó
+            la clasificación por defecto del rubro:{' '}
+            {data.sinActividad
+              .slice(0, 6)
+              .map((a) => a.code)
+              .join(', ')}
+            {data.sinActividad.length > 6 && '…'}
+          </div>
+        )}
+      </div>
+    </ArcaCard>
+  );
+}
+
 function EepnView({
   clientId,
   clientName,

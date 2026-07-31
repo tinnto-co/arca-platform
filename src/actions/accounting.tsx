@@ -77,6 +77,13 @@ import {
 } from '@/lib/accounting-depreciation';
 import { parentCodeOf } from '@/lib/accounting-base-chart';
 import {
+  CASH_FLOW_ACTIVITY_LABELS,
+  CASH_FLOW_ACTIVITY_ORDER,
+  defaultCashFlowActivity,
+  isCashGroup,
+  type CashFlowActivity,
+} from '@/lib/accounting-cashflow';
+import {
   planChartImport,
   type ExistingAccount,
   type PlannedAccount,
@@ -7192,6 +7199,290 @@ export const getEEPN = createServerFn({ method: 'GET' })
       priorCoefficient,
       espTotal,
       matchesEsp: Math.abs(cierreTotal - espTotal) < 0.05,
+      inflationApplied: !!adjustment,
+    };
+  });
+
+/* ── Estado de Flujo de Efectivo (EFE) — método directo — AXI-7 ── */
+
+export interface EfeLine {
+  accountId: string;
+  code: string;
+  name: string;
+  amount: number;
+}
+
+export interface EfeActivity {
+  key: CashFlowActivity;
+  label: string;
+  lines: EfeLine[];
+  total: number;
+}
+
+export interface EfeResult {
+  fiscalYearNumber: number;
+  periodLabel: string;
+  /** Efectivo al inicio, ya reexpresado a moneda de cierre si la vista es ajustada. */
+  efectivoInicio: number;
+  efectivoInicioHistorico: number;
+  /** Coeficiente con el que se reexpresó el efectivo inicial. null = no se reexpresó. */
+  coeficienteInicio: number | null;
+  efectivoCierre: number;
+  variacion: number;
+  activities: EfeActivity[];
+  /**
+   * Resultado por exposición a la inflación del efectivo: cierra el estado. Es
+   * la pérdida (o ganancia) de poder adquisitivo por haber mantenido efectivo.
+   */
+  recpamEfectivo: number;
+  totalCausas: number;
+  cuadra: boolean;
+  /** Cuentas que movieron efectivo pero no tienen actividad asignada. */
+  sinActividad: { code: string; name: string }[];
+  inflationApplied: boolean;
+}
+
+/**
+ * Estado de Flujo de Efectivo por método directo.
+ *
+ * Toma todos los asientos que tocan una cuenta de efectivo y usa **la
+ * contrapartida** para clasificar el movimiento por actividad: si pagué un
+ * sueldo, la causa es operativa; si compré una máquina, de inversión. Como todo
+ * asiento cuadra, la suma de las contrapartidas con signo invertido es
+ * exactamente el movimiento de efectivo — no hay que prorratear nada.
+ *
+ * En la vista ajustada cada flujo se reexpresa por el coeficiente de su mes y el
+ * efectivo inicial por el del cierre anterior. La diferencia entre la variación
+ * real del efectivo y la suma de los flujos reexpresados es el **RECPAM del
+ * efectivo**: la pérdida de poder adquisitivo por haber tenido plata quieta. Se
+ * expone como una línea propia, que es lo que hace cerrar el estado.
+ */
+export const getEFE = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid(),
+      view: z.enum(['ajustado', 'historico']).default('ajustado'),
+    })
+  )
+  .handler(async (ctx): Promise<EfeResult> => {
+    const { orgId } = await getSessionWithOrg();
+    const { clientId, view } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
+    const ajustado = view === 'ajustado';
+
+    const accounts = await db
+      .select({
+        id: account.id,
+        code: account.code,
+        name: account.name,
+        group: account.accountGroup,
+        activity: account.cashFlowActivity,
+      })
+      .from(account)
+      .where(
+        and(
+          eq(account.organizationId, orgId),
+          eq(account.type, 'imputable'),
+          sql`(${account.scope} = 'base' OR ${account.clientId} = ${clientId})`
+        )
+      );
+    const accById = new Map(accounts.map((a) => [a.id, a]));
+    const cashIds = new Set(
+      accounts.filter((a) => isCashGroup(a.group)).map((a) => a.id)
+    );
+
+    // Efectivo al inicio: del asiento de apertura.
+    const openingRows = await db
+      .select({
+        accountId: journalEntryLine.accountId,
+        debit: sql<string>`coalesce(sum(${journalEntryLine.debit}),0)`,
+        credit: sql<string>`coalesce(sum(${journalEntryLine.credit}),0)`,
+      })
+      .from(journalEntryLine)
+      .innerJoin(
+        journalEntry,
+        eq(journalEntry.id, journalEntryLine.journalEntryId)
+      )
+      .where(
+        and(
+          eq(journalEntry.fiscalYearId, fy.id),
+          eq(journalEntry.isVoided, false),
+          eq(journalEntry.origin, 'auto_opening')
+        )
+      )
+      .groupBy(journalEntryLine.accountId);
+
+    const efectivoInicioHistorico = r2(
+      openingRows
+        .filter((r) => cashIds.has(r.accountId))
+        .reduce((s, r) => s + parseFloat(r.debit) - parseFloat(r.credit), 0)
+    );
+
+    // Efectivo al cierre: saldo del mayor (el efectivo es monetario, así que no
+    // cambia entre la vista histórica y la ajustada).
+    const balances = await computeEspBalances(orgId, fy.id, view);
+    const efectivoCierre = r2(
+      balances
+        .filter((b) => cashIds.has(b.accountId))
+        .reduce((s, b) => s + b.saldo, 0)
+    );
+
+    // Movimientos del ejercicio, por asiento y mes.
+    const lines = await db
+      .select({
+        entryId: journalEntry.id,
+        year: accountingPeriod.year,
+        month: accountingPeriod.month,
+        accountId: journalEntryLine.accountId,
+        debit: sql<string>`coalesce(sum(${journalEntryLine.debit}),0)`,
+        credit: sql<string>`coalesce(sum(${journalEntryLine.credit}),0)`,
+      })
+      .from(journalEntryLine)
+      .innerJoin(
+        journalEntry,
+        eq(journalEntry.id, journalEntryLine.journalEntryId)
+      )
+      .innerJoin(
+        accountingPeriod,
+        eq(accountingPeriod.id, journalEntryLine.periodId)
+      )
+      .where(
+        and(
+          eq(journalEntry.fiscalYearId, fy.id),
+          eq(journalEntry.isVoided, false),
+          sql`${journalEntry.origin} NOT IN ('auto_opening','auto_closing','auto_inflation')`
+        )
+      )
+      .groupBy(
+        journalEntry.id,
+        accountingPeriod.year,
+        accountingPeriod.month,
+        journalEntryLine.accountId
+      );
+
+    // Coeficientes por mes, si la vista es ajustada.
+    const [adjustment] = await db
+      .select()
+      .from(inflationAdjustment)
+      .where(
+        and(
+          eq(inflationAdjustment.fiscalYearId, fy.id),
+          eq(inflationAdjustment.status, 'applied')
+        )
+      )
+      .limit(1);
+
+    const coefficients = new Map<string, number>();
+    let coeficienteInicio: number | null = null;
+    if (ajustado && adjustment) {
+      const idx = await db
+        .select()
+        .from(inflationIndex)
+        .where(eq(inflationIndex.source, adjustment.source));
+      const byKey = new Map(
+        idx.map((r) => [`${r.year}-${r.month}`, Number(r.value)])
+      );
+      const closingIndex = byKey.get(
+        `${adjustment.closingYear}-${adjustment.closingMonth}`
+      );
+      if (closingIndex) {
+        for (const [key, value] of byKey) {
+          if (value > 0) {
+            coefficients.set(
+              key,
+              Math.round((closingIndex / value) * 10000) / 10000
+            );
+          }
+        }
+        coeficienteInicio =
+          coefficients.get(
+            `${adjustment.openingYear}-${adjustment.openingMonth}`
+          ) ?? null;
+      }
+    }
+    const coefOf = (year: number, month: number) =>
+      coefficients.get(`${year}-${month}`) ?? 1;
+
+    // Solo interesan los asientos que tocan efectivo. La contrapartida define la
+    // actividad; su importe con signo invertido es el flujo de efectivo.
+    const entriesWithCash = new Set(
+      lines
+        .filter(
+          (l) =>
+            cashIds.has(l.accountId) &&
+            Math.abs(parseFloat(l.debit) - parseFloat(l.credit)) >= 0.005
+        )
+        .map((l) => l.entryId)
+    );
+
+    const byAccount = new Map<string, number>();
+    const sinActividad = new Map<string, { code: string; name: string }>();
+    for (const l of lines) {
+      if (!entriesWithCash.has(l.entryId)) continue;
+      if (cashIds.has(l.accountId)) continue;
+      const delta = parseFloat(l.debit) - parseFloat(l.credit);
+      if (Math.abs(delta) < 0.005) continue;
+      const flow = -delta * (ajustado ? coefOf(l.year, l.month) : 1);
+      byAccount.set(l.accountId, (byAccount.get(l.accountId) ?? 0) + flow);
+      const acc = accById.get(l.accountId);
+      if (acc && !acc.activity) {
+        sinActividad.set(acc.id, { code: acc.code, name: acc.name });
+      }
+    }
+
+    const activities: EfeActivity[] = CASH_FLOW_ACTIVITY_ORDER.map((key) => {
+      const rows: EfeLine[] = [];
+      for (const [accountId, amount] of byAccount) {
+        const acc = accById.get(accountId);
+        if (!acc) continue;
+        const activity =
+          acc.activity ?? defaultCashFlowActivity(acc.group) ?? 'operating';
+        if (activity !== key) continue;
+        if (Math.abs(amount) < 0.005) continue;
+        rows.push({
+          accountId,
+          code: acc.code,
+          name: acc.name,
+          amount: r2(amount),
+        });
+      }
+      rows.sort((a, b) => a.code.localeCompare(b.code));
+      return {
+        key,
+        label: CASH_FLOW_ACTIVITY_LABELS[key],
+        lines: rows,
+        total: r2(rows.reduce((s, r) => s + r.amount, 0)),
+      };
+    });
+
+    const efectivoInicio =
+      ajustado && coeficienteInicio
+        ? r2(efectivoInicioHistorico * coeficienteInicio)
+        : efectivoInicioHistorico;
+    const variacion = r2(efectivoCierre - efectivoInicio);
+    const flujos = r2(activities.reduce((s, a) => s + a.total, 0));
+    // Cierra por diferencia: es el efecto de la inflación sobre el efectivo.
+    const recpamEfectivo = ajustado ? r2(variacion - flujos) : 0;
+    const totalCausas = r2(flujos + recpamEfectivo);
+
+    const fmtD = (d: Date) =>
+      `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${d.getUTCFullYear()}`;
+
+    return {
+      fiscalYearNumber: fy.number,
+      periodLabel: `${fmtD(fy.startDate)} – ${fmtD(fy.endDate)}`,
+      efectivoInicio,
+      efectivoInicioHistorico,
+      coeficienteInicio,
+      efectivoCierre,
+      variacion,
+      activities,
+      recpamEfectivo,
+      totalCausas,
+      cuadra: Math.abs(totalCausas - variacion) < 0.05,
+      sinActividad: [...sinActividad.values()],
       inflationApplied: !!adjustment,
     };
   });
