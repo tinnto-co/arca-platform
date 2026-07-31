@@ -7802,6 +7802,7 @@ function EstadosContables({
           selectedFy={selectedFy}
           notes={fs?.notes ?? []}
           isOwner={isOwner}
+          valuation={valuation}
           pdfGeneratedAt={fs?.pdfGeneratedAt ?? null}
           pdfGeneratedByName={fs?.pdfGeneratedByName ?? null}
           onPdfSaved={invalidateFs}
@@ -9400,6 +9401,7 @@ function ExportView({
   selectedFy,
   notes,
   isOwner,
+  valuation,
   pdfGeneratedAt,
   pdfGeneratedByName,
   onPdfSaved,
@@ -9410,6 +9412,7 @@ function ExportView({
   selectedFy: FyOption | undefined;
   notes: FsNote[];
   isOwner: boolean;
+  valuation: 'ajustado' | 'historico';
   pdfGeneratedAt: string | null;
   pdfGeneratedByName: string | null;
   onPdfSaved: () => void;
@@ -9418,13 +9421,27 @@ function ExportView({
   const [busy, setBusy] = useState<string | null>(null);
 
   const { data: esp } = useQuery({
-    queryKey: ['accounting', 'esp', clientId, fyId],
-    queryFn: () => getESP({ data: { clientId, fiscalYearId: fyId } }),
+    queryKey: ['accounting', 'esp', clientId, fyId, valuation],
+    queryFn: () =>
+      getESP({ data: { clientId, fiscalYearId: fyId, view: valuation } }),
     enabled: !!fyId,
   });
   const { data: er } = useQuery({
-    queryKey: ['accounting', 'er', clientId, fyId],
-    queryFn: () => getER({ data: { clientId, fiscalYearId: fyId } }),
+    queryKey: ['accounting', 'er', clientId, fyId, valuation],
+    queryFn: () =>
+      getER({ data: { clientId, fiscalYearId: fyId, view: valuation } }),
+    enabled: !!fyId,
+  });
+  const { data: eepn } = useQuery({
+    queryKey: ['accounting', 'eepn', clientId, fyId, valuation],
+    queryFn: () =>
+      getEEPN({ data: { clientId, fiscalYearId: fyId, view: valuation } }),
+    enabled: !!fyId,
+  });
+  const { data: efe } = useQuery({
+    queryKey: ['accounting', 'efe', clientId, fyId, valuation],
+    queryFn: () =>
+      getEFE({ data: { clientId, fiscalYearId: fyId, view: valuation } }),
     enabled: !!fyId,
   });
   const { data: anexoI } = useQuery({
@@ -9466,6 +9483,9 @@ function ExportView({
         generatedLabel: new Date().toLocaleDateString('es-AR'),
         esp,
         er,
+        eepn: eepn ?? null,
+        efe: efe ?? null,
+        valuation,
         anexoII,
         anexoI: anexoI
           ? { categories: anexoI.categories, grandTotals: anexoI.grandTotals }
@@ -9566,7 +9586,7 @@ function ExportView({
     {
       key: 'package',
       title: 'Paquete contable completo (EECC)',
-      desc: 'Carátula, ESP, ER, notas, Anexo I, Anexo II y espacios de firma. Listo para imprimir.',
+      desc: 'Carátula, ESP, ER, EEPN, Flujo de Efectivo, Nota 3, Anexo I, Anexo II, notas y espacios de firma. Sigue la valuación elegida arriba.',
       onClick: onPackage,
       extra: isOwner
         ? 'Se guarda asociado al ejercicio.'
