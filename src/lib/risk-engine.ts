@@ -1,308 +1,314 @@
+/**
+ * Motor de riesgo: puntúa a cada cliente de 0 a 100 en un período.
+ *
+ * Todo se mide sobre el `cliente` (la empresa), no sobre el login de AFIP. La
+ * única excepción son los errores de scraping, que son un problema de la
+ * credencial: se cuentan las alertas abiertas de los logins que administran a
+ * ese cliente.
+ */
 import { db } from '@/lib/db';
 import {
-  client,
-  representative,
-  alert,
-  debt,
-  notification,
-  dueDate,
-  invoice,
-  ivaScrape,
-  clientRiskSnapshot,
+  cliente,
+  clienteCredencial,
+  alerta,
+  deuda,
+  notificacion,
+  vencimiento,
+  comprobante,
+  ivaDeclaracion,
+  riesgoSnapshot,
+  riesgoNivel,
 } from '@/drizzle/schema';
-import { eq, and, lt, isNull, gte, lte, sql } from 'drizzle-orm';
+import { eq, and, lt, isNull, gte, lte, inArray, sql } from 'drizzle-orm';
 
 export interface RiskFactors {
-  overdueDebtCount: number;
-  overdueDebtScore: number;
-  criticalNotificationCount: number;
-  criticalNotificationScore: number;
-  upcomingDueDateCount: number;
-  upcomingDueDateScore: number;
-  monthsWithoutInvoices: number;
-  monthsWithoutInvoicesScore: number;
-  ivaStatus: string;
+  deudasVencidas: number;
+  deudasVencidasScore: number;
+  notificacionesUrgentes: number;
+  notificacionesUrgentesScore: number;
+  vencimientosProximos: number;
+  vencimientosProximosScore: number;
+  mesesSinComprobantes: number;
+  mesesSinComprobantesScore: number;
+  ivaEstado: 'ok' | 'incompleta' | 'sin_declarar';
   ivaScore: number;
-  hasScraperError: boolean;
-  scraperErrorScore: number;
+  tieneErrorScraping: boolean;
+  errorScrapingScore: number;
 }
 
 export interface RiskScoreResult {
   score: number;
-  riskLevel: 'low' | 'medium' | 'high' | 'critical';
-  factors: RiskFactors;
+  nivel: (typeof riesgoNivel.enumValues)[number];
+  factores: RiskFactors;
+}
+
+/** `YYYY-MM-DD` en hora local: las columnas `date` de la BD son strings. */
+function aFecha(d: Date): string {
+  const mes = String(d.getMonth() + 1).padStart(2, '0');
+  const dia = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mes}-${dia}`;
 }
 
 /**
- * Compute risk score (0–100) for a single profile in a given period (YYYY-MM).
+ * Puntaje de riesgo (0–100) de un cliente en un período ("YYYY-MM").
  *
- * Weights:
- *  overdue debt         30%
- *  critical notifications 20%
- *  upcoming due dates   15%
- *  months without invoices 15%
- *  IVA status           10%
- *  scraper errors       10%
+ * Pesos:
+ *  deudas vencidas          30%
+ *  notificaciones urgentes  20%
+ *  vencimientos próximos    15%
+ *  meses sin comprobantes   15%
+ *  estado del IVA           10%
+ *  errores de scraping      10%
  *
- * Risk levels: low < 25, medium 25–50, high 50–75, critical > 75
+ * Niveles: bajo < 25, medio 25–50, alto 50–75, crítico > 75
  */
 export async function calculateRiskScore(
-  profileId: string,
-  period: string
+  clienteId: string,
+  periodo: string
 ): Promise<RiskScoreResult> {
-  // Resolve the representative (agrupador) linked to this client (empresa).
-  const profileRow = await db
-    .select({ id: client.id, representativeId: client.representativeId })
-    .from(client)
-    .where(eq(client.id, profileId))
-    .limit(1)
-    .then((rows) => rows[0]);
+  const [row] = await db
+    .select({ id: cliente.id })
+    .from(cliente)
+    .where(eq(cliente.id, clienteId))
+    .limit(1);
+  if (!row) throw new Error(`Cliente ${clienteId} no encontrado`);
 
-  if (!profileRow) throw new Error(`Profile ${profileId} not found`);
-
-  const representativeId = profileRow.representativeId;
   const now = new Date();
-  const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+  const hoy = aFecha(now);
+  const en30Dias = aFecha(new Date(now.getTime() + 30 * 86400000));
 
-  // Parse period: YYYY-MM → Date for the first of that month
-  const [yearStr, monthStr] = period.split('-');
-  const periodStart = new Date(Number(yearStr), Number(monthStr) - 1, 1);
+  const [anio, mes] = periodo.split('-').map(Number);
+  const inicioPeriodo = new Date(anio, mes - 1, 1);
+
+  // Los errores de scraping son de la credencial, no de la empresa.
+  const credenciales = await db
+    .select({ id: clienteCredencial.credencialId })
+    .from(clienteCredencial)
+    .where(eq(clienteCredencial.clienteId, clienteId));
+  const credencialIds = credenciales.map((c) => c.id);
 
   const [
-    overdueDebtCount,
-    criticalNotificationCount,
-    upcomingDueDateCount,
-    hasScraperError,
-    ivaRow,
+    deudasVencidas,
+    notificacionesUrgentes,
+    vencimientosProximos,
+    tieneErrorScraping,
+    declaracion,
   ] = await Promise.all([
-    // 1. Overdue open debts (30% weight)
-    representativeId
-      ? db
-          .select({ n: sql<number>`COUNT(*)` })
-          .from(debt)
-          .where(
-            and(
-              eq(debt.representativeId, representativeId),
-              eq(debt.status, 'open'),
-              lt(debt.dueDate, now)
-            )
-          )
-          .then((r) => Number(r[0]?.n ?? 0))
-      : Promise.resolve(0),
-
-    // 2. Critical unresolved notifications for this profile (20% weight)
     db
       .select({ n: sql<number>`COUNT(*)` })
-      .from(notification)
+      .from(deuda)
       .where(
         and(
-          eq(notification.clientId, profileId),
-          eq(notification.severity, 'critical'),
-          isNull(notification.resolvedAt)
+          eq(deuda.clienteId, clienteId),
+          eq(deuda.estado, 'abierta'),
+          lt(deuda.venceAt, hoy)
         )
       )
       .then((r) => Number(r[0]?.n ?? 0)),
 
-    // 3. Upcoming due dates not completed within 30 days (15% weight)
-    representativeId
-      ? db
-          .select({ n: sql<number>`COUNT(*)` })
-          .from(dueDate)
-          .where(
-            and(
-              eq(dueDate.representativeId, representativeId),
-              isNull(dueDate.completedAt),
-              gte(dueDate.dueDate, now),
-              lte(dueDate.dueDate, in30Days)
-            )
-          )
-          .then((r) => Number(r[0]?.n ?? 0))
-      : Promise.resolve(0),
-
-    // 4. Scraper errors on the representative (10% weight) — check open scraper_error alerts
-    representativeId
-      ? db
-          .select({ n: sql<number>`COUNT(*)` })
-          .from(alert)
-          .where(
-            and(
-              eq(alert.representativeId, representativeId),
-              eq(alert.type, 'scraper_error'),
-              eq(alert.status, 'open')
-            )
-          )
-          .then((r) => Number(r[0]?.n ?? 0) > 0)
-      : Promise.resolve(false),
-
-    // 5. IVA scrape for the period (10% weight)
     db
-      .select({ ok: ivaScrape.ok })
-      .from(ivaScrape)
+      .select({ n: sql<number>`COUNT(*)` })
+      .from(notificacion)
       .where(
         and(
-          eq(ivaScrape.clientId, profileId),
-          eq(ivaScrape.periodoFiscal, period)
+          eq(notificacion.clienteId, clienteId),
+          eq(notificacion.severidad, 'urgente'),
+          isNull(notificacion.resueltaAt)
+        )
+      )
+      .then((r) => Number(r[0]?.n ?? 0)),
+
+    db
+      .select({ n: sql<number>`COUNT(*)` })
+      .from(vencimiento)
+      .where(
+        and(
+          eq(vencimiento.clienteId, clienteId),
+          isNull(vencimiento.completadoAt),
+          gte(vencimiento.venceAt, hoy),
+          lte(vencimiento.venceAt, en30Dias)
+        )
+      )
+      .then((r) => Number(r[0]?.n ?? 0)),
+
+    credencialIds.length === 0
+      ? Promise.resolve(false)
+      : db
+          .select({ n: sql<number>`COUNT(*)` })
+          .from(alerta)
+          .where(
+            and(
+              inArray(alerta.credencialId, credencialIds),
+              eq(alerta.tipo, 'error_scraping'),
+              eq(alerta.estado, 'abierta')
+            )
+          )
+          .then((r) => Number(r[0]?.n ?? 0) > 0),
+
+    db
+      .select({ debitoFiscal: ivaDeclaracion.debitoFiscal })
+      .from(ivaDeclaracion)
+      .where(
+        and(
+          eq(ivaDeclaracion.clienteId, clienteId),
+          eq(ivaDeclaracion.periodo, `${periodo}-01`)
         )
       )
       .limit(1)
       .then((r) => r[0] ?? null),
   ]);
 
-  // 6. Months without invoices in the 3 months before the period (15% weight)
-  const monthsWithoutInvoices = await countMonthsWithoutInvoices(
-    profileId,
-    periodStart
+  const mesesSinComprobantes = await contarMesesSinComprobantes(
+    clienteId,
+    inicioPeriodo
   );
 
-  // --- Compute component scores ---
+  // Deudas vencidas: 0→0, 1→15, 2→20, ≥3→30
+  let deudasVencidasScore = 0;
+  if (deudasVencidas >= 3) deudasVencidasScore = 30;
+  else if (deudasVencidas === 2) deudasVencidasScore = 20;
+  else if (deudasVencidas === 1) deudasVencidasScore = 15;
 
-  // Overdue debt: 0→0, 1→15, 2→20, ≥3→30
-  let overdueDebtScore = 0;
-  if (overdueDebtCount >= 3) overdueDebtScore = 30;
-  else if (overdueDebtCount === 2) overdueDebtScore = 20;
-  else if (overdueDebtCount === 1) overdueDebtScore = 15;
+  // Notificaciones urgentes: 0→0, 1→10, 2→15, ≥3→20
+  let notificacionesUrgentesScore = 0;
+  if (notificacionesUrgentes >= 3) notificacionesUrgentesScore = 20;
+  else if (notificacionesUrgentes === 2) notificacionesUrgentesScore = 15;
+  else if (notificacionesUrgentes === 1) notificacionesUrgentesScore = 10;
 
-  // Critical notifications: 0→0, 1→10, 2→15, ≥3→20
-  let criticalNotificationScore = 0;
-  if (criticalNotificationCount >= 3) criticalNotificationScore = 20;
-  else if (criticalNotificationCount === 2) criticalNotificationScore = 15;
-  else if (criticalNotificationCount === 1) criticalNotificationScore = 10;
+  // Vencimientos próximos: 0→0, 1-2→5, 3-5→10, ≥6→15
+  let vencimientosProximosScore = 0;
+  if (vencimientosProximos >= 6) vencimientosProximosScore = 15;
+  else if (vencimientosProximos >= 3) vencimientosProximosScore = 10;
+  else if (vencimientosProximos >= 1) vencimientosProximosScore = 5;
 
-  // Upcoming due dates: 0→0, 1-2→5, 3-5→10, ≥6→15
-  let upcomingDueDateScore = 0;
-  if (upcomingDueDateCount >= 6) upcomingDueDateScore = 15;
-  else if (upcomingDueDateCount >= 3) upcomingDueDateScore = 10;
-  else if (upcomingDueDateCount >= 1) upcomingDueDateScore = 5;
+  // Meses sin comprobantes: 0→0, 1→5, 2→10, 3→15
+  let mesesSinComprobantesScore = 0;
+  if (mesesSinComprobantes >= 3) mesesSinComprobantesScore = 15;
+  else if (mesesSinComprobantes === 2) mesesSinComprobantesScore = 10;
+  else if (mesesSinComprobantes === 1) mesesSinComprobantesScore = 5;
 
-  // Months without invoices: 0→0, 1→5, 2→10, 3→15
-  let monthsWithoutInvoicesScore = 0;
-  if (monthsWithoutInvoices >= 3) monthsWithoutInvoicesScore = 15;
-  else if (monthsWithoutInvoices === 2) monthsWithoutInvoicesScore = 10;
-  else if (monthsWithoutInvoices === 1) monthsWithoutInvoicesScore = 5;
-
-  // IVA: missing→10, error→5, ok→0
-  let ivaStatus = 'missing';
+  // IVA: sin declarar→10, declarada pero sin débito scrapeado→5, completa→0.
+  // `iva_declaracion` no tiene bandera de éxito: el débito nulo es el síntoma
+  // de que el F2051 se scrapeó a medias.
+  let ivaEstado: RiskFactors['ivaEstado'] = 'sin_declarar';
   let ivaScore = 10;
-  if (ivaRow !== null) {
-    if (ivaRow.ok) {
-      ivaStatus = 'ok';
+  if (declaracion !== null) {
+    if (declaracion.debitoFiscal !== null) {
+      ivaEstado = 'ok';
       ivaScore = 0;
     } else {
-      ivaStatus = 'error';
+      ivaEstado = 'incompleta';
       ivaScore = 5;
     }
   }
 
-  // Scraper errors: open alerts→10, none→0
-  const scraperErrorScore = hasScraperError ? 10 : 0;
+  const errorScrapingScore = tieneErrorScraping ? 10 : 0;
 
   const score = Math.min(
     100,
-    overdueDebtScore +
-      criticalNotificationScore +
-      upcomingDueDateScore +
-      monthsWithoutInvoicesScore +
+    deudasVencidasScore +
+      notificacionesUrgentesScore +
+      vencimientosProximosScore +
+      mesesSinComprobantesScore +
       ivaScore +
-      scraperErrorScore
+      errorScrapingScore
   );
 
-  let riskLevel: 'low' | 'medium' | 'high' | 'critical';
-  if (score > 75) riskLevel = 'critical';
-  else if (score > 50) riskLevel = 'high';
-  else if (score >= 25) riskLevel = 'medium';
-  else riskLevel = 'low';
+  let nivel: RiskScoreResult['nivel'];
+  if (score > 75) nivel = 'critico';
+  else if (score > 50) nivel = 'alto';
+  else if (score >= 25) nivel = 'medio';
+  else nivel = 'bajo';
 
   return {
     score,
-    riskLevel,
-    factors: {
-      overdueDebtCount,
-      overdueDebtScore,
-      criticalNotificationCount,
-      criticalNotificationScore,
-      upcomingDueDateCount,
-      upcomingDueDateScore,
-      monthsWithoutInvoices,
-      monthsWithoutInvoicesScore,
-      ivaStatus,
+    nivel,
+    factores: {
+      deudasVencidas,
+      deudasVencidasScore,
+      notificacionesUrgentes,
+      notificacionesUrgentesScore,
+      vencimientosProximos,
+      vencimientosProximosScore,
+      mesesSinComprobantes,
+      mesesSinComprobantesScore,
+      ivaEstado,
       ivaScore,
-      hasScraperError,
-      scraperErrorScore,
+      tieneErrorScraping,
+      errorScrapingScore,
     },
   };
 }
 
-/**
- * Count how many of the 3 months preceding `periodStart` had zero invoices for the profile.
- */
-async function countMonthsWithoutInvoices(
-  profileId: string,
-  periodStart: Date
+/** Cuántos de los 3 meses previos al período no tuvieron ningún comprobante. */
+async function contarMesesSinComprobantes(
+  clienteId: string,
+  inicioPeriodo: Date
 ): Promise<number> {
-  let missing = 0;
+  let sinMovimiento = 0;
   for (let i = 1; i <= 3; i++) {
-    const monthStart = new Date(
-      periodStart.getFullYear(),
-      periodStart.getMonth() - i,
+    const desde = new Date(
+      inicioPeriodo.getFullYear(),
+      inicioPeriodo.getMonth() - i,
       1
     );
-    const monthEnd = new Date(
-      periodStart.getFullYear(),
-      periodStart.getMonth() - i + 1,
+    const hasta = new Date(
+      inicioPeriodo.getFullYear(),
+      inicioPeriodo.getMonth() - i + 1,
       1
     );
     const n = await db
       .select({ n: sql<number>`COUNT(*)` })
-      .from(invoice)
+      .from(comprobante)
       .where(
         and(
-          eq(invoice.clientId, profileId),
-          gte(invoice.emitionDate, monthStart),
-          lt(invoice.emitionDate, monthEnd)
+          eq(comprobante.clienteId, clienteId),
+          gte(comprobante.fechaEmision, aFecha(desde)),
+          lt(comprobante.fechaEmision, aFecha(hasta))
         )
       )
       .then((r) => Number(r[0]?.n ?? 0));
-    if (n === 0) missing++;
+    if (n === 0) sinMovimiento++;
   }
-  return missing;
+  return sinMovimiento;
 }
 
 /**
- * Generate (or update) risk snapshots for all clients in an organization.
- * Uses upsert on (client_id, period) so re-running is safe.
+ * Genera (o actualiza) los snapshots de riesgo de todos los clientes de una
+ * organización. El upsert sobre (cliente_id, periodo) hace que re-correrlo sea
+ * seguro.
  */
 export async function generateRiskSnapshots(
   orgId: string,
-  period: string
+  periodo: string
 ): Promise<{ processed: number; errors: number }> {
-  const profiles = await db
-    .select({ id: client.id })
-    .from(client)
-    .innerJoin(representative, eq(client.representativeId, representative.id))
-    .where(eq(representative.organizationId, orgId));
+  const clientes = await db
+    .select({ id: cliente.id })
+    .from(cliente)
+    .where(and(eq(cliente.orgId, orgId), eq(cliente.estado, 'activo')));
 
   let processed = 0;
   let errors = 0;
 
-  for (const p of profiles) {
+  for (const c of clientes) {
     try {
-      const result = await calculateRiskScore(p.id, period);
+      const result = await calculateRiskScore(c.id, periodo);
 
       await db
-        .insert(clientRiskSnapshot)
+        .insert(riesgoSnapshot)
         .values({
-          clientId: p.id,
-          period,
+          clienteId: c.id,
+          periodo: `${periodo}-01`,
           score: String(result.score),
-          riskLevel: result.riskLevel,
-          factors: result.factors,
+          nivel: result.nivel,
+          factores: result.factores,
         })
         .onConflictDoUpdate({
-          target: [clientRiskSnapshot.clientId, clientRiskSnapshot.period],
+          target: [riesgoSnapshot.clienteId, riesgoSnapshot.periodo],
           set: {
             score: String(result.score),
-            riskLevel: result.riskLevel,
-            factors: result.factors,
+            nivel: result.nivel,
+            factores: result.factores,
           },
         });
 

@@ -10,9 +10,17 @@ declare module 'xlsx' {
     book_append_sheet: (wb: WorkBook, ws: WorkSheet, name: string) => void;
     sheet_to_json: <T = unknown>(
       sheet: WorkSheet,
-      opts?: { header?: 1 }
+      opts?: { header?: 1; raw?: boolean; defval?: unknown; blankrows?: boolean }
     ) => T[];
   };
+  export function read(
+    data: unknown,
+    opts?: {
+      type?: 'array' | 'base64' | 'binary' | 'buffer' | 'file' | 'string';
+      cellDates?: boolean;
+      raw?: boolean;
+    }
+  ): WorkBook;
   export function readFile(path: string): WorkBook;
   export function writeFile(wb: WorkBook, filename: string): void;
 }

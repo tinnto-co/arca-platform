@@ -19,14 +19,14 @@ import {
   EXPENSE_FUNCTION_LABELS,
 } from '@/lib/accounting-labels';
 
-export type AccountType = 'group' | 'imputable';
-export type ExpectedBalance = 'debit' | 'credit' | 'both';
+export type AccountType = 'grupo' | 'imputable';
+export type ExpectedBalance = 'deudor' | 'acreedor' | 'ambos';
 export type ExpenseFunction =
-  | 'administration'
-  | 'sales'
-  | 'financial'
-  | 'other';
-export type ImportTarget = 'base' | 'custom';
+  | 'administracion'
+  | 'comercializacion'
+  | 'financiero'
+  | 'otro';
+export type ImportTarget = 'base' | 'propia';
 
 /** Fila cruda parseada del Excel. */
 export interface ImportRow {
@@ -209,7 +209,7 @@ export function planChartImport(opts: PlanImportOptions): ImportDiff {
       err('El rango "9.x" / ".900+" está reservado para cuentas propias');
       continue;
     }
-    if (target === 'custom' && !isReservedCode(r.code)) {
+    if (target === 'propia' && !isReservedCode(r.code)) {
       err('Las cuentas propias deben ir en el rango reservado "9.x" o ".900+"');
       continue;
     }
@@ -243,7 +243,7 @@ export function planChartImport(opts: PlanImportOptions): ImportDiff {
         err(`Falta la agrupación padre "${parentCode}" (agregala al archivo)`);
         continue;
       }
-      if (parent.type !== 'group') {
+      if (parent.type !== 'grupo') {
         err(`El padre "${parentCode}" no es una agrupación`);
         continue;
       }
