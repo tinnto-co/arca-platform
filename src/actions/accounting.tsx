@@ -1206,6 +1206,13 @@ export const createFiscalYear = createServerFn({ method: 'POST' })
       clientId: z.string().uuid(),
       startDate: z.string(), // YYYY-MM-DD
       endDate: z.string(),
+      /**
+       * Ejercicio cargado solo para la columna comparativa, con los saldos del
+       * balance ya presentado. No se lleva contablemente.
+       */
+      referenceOnly: z.boolean().default(false),
+      /** Los saldos que se van a cargar ya están ajustados por inflación. */
+      statementsAdjusted: z.boolean().default(true),
     })
   )
   .handler(async (ctx) => {
@@ -1239,21 +1246,25 @@ export const createFiscalYear = createServerFn({ method: 'POST' })
       throw new Error('El ejercicio debe durar entre 1 y 12 meses calendario');
     }
 
-    // Un solo ejercicio abierto por empresa.
-    const [openFy] = await db
-      .select({ id: fiscalYear.id })
-      .from(fiscalYear)
-      .where(
-        and(
-          eq(fiscalYear.clientId, clientId),
-          inArray(fiscalYear.status, ['open', 'closing'])
+    // Un solo ejercicio abierto por empresa. Los de referencia no cuentan: no
+    // se llevan contablemente, solo guardan los saldos del balance anterior.
+    if (!ctx.data.referenceOnly) {
+      const [openFy] = await db
+        .select({ id: fiscalYear.id })
+        .from(fiscalYear)
+        .where(
+          and(
+            eq(fiscalYear.clientId, clientId),
+            inArray(fiscalYear.status, ['open', 'closing']),
+            eq(fiscalYear.referenceOnly, false)
+          )
         )
-      )
-      .limit(1);
-    if (openFy) {
-      throw new Error(
-        'Ya hay un ejercicio abierto para esta empresa. Cerralo antes de crear uno nuevo'
-      );
+        .limit(1);
+      if (openFy) {
+        throw new Error(
+          'Ya hay un ejercicio abierto para esta empresa. Cerralo antes de crear uno nuevo'
+        );
+      }
     }
 
     const [{ maxNum }] = await db
@@ -1272,6 +1283,8 @@ export const createFiscalYear = createServerFn({ method: 'POST' })
         endDate: end,
         status: 'open',
         number,
+        referenceOnly: ctx.data.referenceOnly,
+        statementsAdjusted: ctx.data.statementsAdjusted,
       })
       .returning();
 
@@ -4812,16 +4825,7 @@ export const getAnexoI = createServerFn({ method: 'GET' })
       number: number;
       grandTotals: ReturnType<typeof emptyTotals>;
     } | null = null;
-    const [priorFy] = await db
-      .select()
-      .from(fiscalYear)
-      .where(
-        and(
-          eq(fiscalYear.clientId, clientId),
-          eq(fiscalYear.number, fy.number - 1)
-        )
-      )
-      .limit(1);
+    const priorFy = await loadPriorFiscalYear(clientId, fy);
     if (priorFy) {
       const priorRows = await computeAnexoIRows(clientId, priorFy);
       prior = {
@@ -5296,6 +5300,20 @@ export interface ClosingWizardState {
  * `stale` significa que el asiento existe pero ya no coincide con el mayor
  * porque entraron o cambiaron asientos después de generarlo.
  */
+/**
+ * ¿La columna comparativa de este ejercicio es exacta?
+ *
+ * Lo es si el ejercicio tiene su propio ajuste aplicado, o si se cargó como
+ * referencia declarando que los saldos ya venían ajustados —que es lo normal al
+ * transcribir un balance presentado, porque ya viene en moneda de su cierre—.
+ */
+function priorFiguresAreHomogeneous(
+  fy: FiscalYearRow,
+  adjustmentApplied: boolean
+): boolean {
+  return adjustmentApplied || (fy.referenceOnly && fy.statementsAdjusted);
+}
+
 async function loadInflationStatus(fyId: string): Promise<{
   applied: boolean;
   stale: boolean;
@@ -5841,6 +5859,33 @@ const ESP_SECTIONS = ACCOUNT_GROUP_SECTIONS.filter(
 );
 
 /**
+ * Ejercicio inmediatamente anterior: el que termina más cerca del inicio de
+ * este.
+ *
+ * Se busca por fecha y no por `number - 1` porque el número se asigna por orden
+ * de creación. Un estudio que carga primero el ejercicio corriente y después
+ * transcribe el anterior como referencia lo tendría numerado al revés, y el
+ * comparativo no lo encontraría.
+ */
+async function loadPriorFiscalYear(
+  clientId: string,
+  fy: FiscalYearRow
+): Promise<FiscalYearRow | null> {
+  const [row] = await db
+    .select()
+    .from(fiscalYear)
+    .where(
+      and(
+        eq(fiscalYear.clientId, clientId),
+        lt(fiscalYear.endDate, fy.startDate)
+      )
+    )
+    .orderBy(desc(fiscalYear.endDate))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
  * Coeficiente para llevar la columna comparativa a la moneda de cierre actual.
  *
  * Los EECC del ejercicio anterior están expresados en moneda de SU cierre. Para
@@ -5890,16 +5935,7 @@ export const getESP = createServerFn({ method: 'GET' })
     await ensureClientBelongsToOrg(clientId, orgId);
     const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
 
-    const [priorFy] = await db
-      .select()
-      .from(fiscalYear)
-      .where(
-        and(
-          eq(fiscalYear.clientId, clientId),
-          eq(fiscalYear.number, fy.number - 1)
-        )
-      )
-      .limit(1);
+    const priorFy = await loadPriorFiscalYear(clientId, fy);
 
     const curBal = await computeEspBalances(orgId, fy.id, ctx.data.view);
     let priBal = priorFy
@@ -6035,7 +6071,10 @@ export const getESP = createServerFn({ method: 'GET' })
       priorCoefficient,
       inflationApplied: (await loadInflationStatus(fy.id)).applied,
       priorInflationApplied: priorFy
-        ? (await loadInflationStatus(priorFy.id)).applied
+        ? priorFiguresAreHomogeneous(
+            priorFy,
+            (await loadInflationStatus(priorFy.id)).applied
+          )
         : true,
     };
   });
@@ -6129,16 +6168,7 @@ export const getER = createServerFn({ method: 'GET' })
     await ensureClientBelongsToOrg(clientId, orgId);
     const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
 
-    const [priorFy] = await db
-      .select()
-      .from(fiscalYear)
-      .where(
-        and(
-          eq(fiscalYear.clientId, clientId),
-          eq(fiscalYear.number, fy.number - 1)
-        )
-      )
-      .limit(1);
+    const priorFy = await loadPriorFiscalYear(clientId, fy);
 
     const curBal = await computeEspBalances(orgId, fy.id, ctx.data.view);
     let priBal = priorFy
@@ -6335,7 +6365,10 @@ export const getER = createServerFn({ method: 'GET' })
       priorCoefficient,
       inflationApplied: (await loadInflationStatus(fy.id)).applied,
       priorInflationApplied: priorFy
-        ? (await loadInflationStatus(priorFy.id)).applied
+        ? priorFiguresAreHomogeneous(
+            priorFy,
+            (await loadInflationStatus(priorFy.id)).applied
+          )
         : true,
     };
   });
@@ -6443,16 +6476,7 @@ export const getAnexoII = createServerFn({ method: 'GET' })
     await ensureClientBelongsToOrg(clientId, orgId);
     const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
 
-    const [priorFy] = await db
-      .select()
-      .from(fiscalYear)
-      .where(
-        and(
-          eq(fiscalYear.clientId, clientId),
-          eq(fiscalYear.number, fy.number - 1)
-        )
-      )
-      .limit(1);
+    const priorFy = await loadPriorFiscalYear(clientId, fy);
 
     const curBal = await computeExpenseBalances(orgId, fy.id);
     const priBal = priorFy
@@ -6571,16 +6595,7 @@ export const getCMV = createServerFn({ method: 'GET' })
     // Comparativo con el ejercicio anterior (número − 1), si tiene CMV cargado.
     let priorFiscalYearNumber: number | null = null;
     let priorTotal: number | null = null;
-    const [priorFy] = await db
-      .select()
-      .from(fiscalYear)
-      .where(
-        and(
-          eq(fiscalYear.clientId, clientId),
-          eq(fiscalYear.number, fy.number - 1)
-        )
-      )
-      .limit(1);
+    const priorFy = await loadPriorFiscalYear(clientId, fy);
     if (priorFy) {
       priorFiscalYearNumber = priorFy.number;
       const [pr] = await db
@@ -7068,16 +7083,7 @@ export const getEEPN = createServerFn({ method: 'GET' })
     await ensureClientBelongsToOrg(clientId, orgId);
     const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
 
-    const [priorFy] = await db
-      .select()
-      .from(fiscalYear)
-      .where(
-        and(
-          eq(fiscalYear.clientId, clientId),
-          eq(fiscalYear.number, fy.number - 1)
-        )
-      )
-      .limit(1);
+    const priorFy = await loadPriorFiscalYear(clientId, fy);
 
     // Cuentas de PN visibles para la empresa.
     const pnAccounts = await db
@@ -7415,7 +7421,10 @@ export const getEEPN = createServerFn({ method: 'GET' })
       matchesEsp: Math.abs(cierreTotal - espTotal) < 0.05,
       inflationApplied: !!adjustment,
       priorInflationApplied: priorFy
-        ? (await loadInflationStatus(priorFy.id)).applied
+        ? priorFiguresAreHomogeneous(
+            priorFy,
+            (await loadInflationStatus(priorFy.id)).applied
+          )
         : true,
     };
   });
@@ -7690,16 +7699,7 @@ export const getEFE = createServerFn({ method: 'GET' })
     const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
     const ajustado = view === 'ajustado';
 
-    const [priorFy] = await db
-      .select()
-      .from(fiscalYear)
-      .where(
-        and(
-          eq(fiscalYear.clientId, clientId),
-          eq(fiscalYear.number, fy.number - 1)
-        )
-      )
-      .limit(1);
+    const priorFy = await loadPriorFiscalYear(clientId, fy);
 
     const accounts = await db
       .select({
@@ -7821,6 +7821,9 @@ export const getEFE = createServerFn({ method: 'GET' })
       cuadra: Math.abs(totalCausas.current - variacion.current) < 0.05,
       sinActividad: [...cur.sinActividad.values()],
       inflationApplied: cur.inflationApplied,
-      priorInflationApplied: pri ? pri.inflationApplied : true,
+      priorInflationApplied:
+        pri && priorFy
+          ? priorFiguresAreHomogeneous(priorFy, pri.inflationApplied)
+          : true,
     };
   });

@@ -1744,6 +1744,20 @@ export const fiscalYear = pgTable(
     status: fiscalYearStatusEnum("status").notNull().default("open"),
     /** N° de ejercicio (1, 2, 3...). */
     number: integer("number").notNull(),
+    /**
+     * Ejercicio cargado solo como referencia para la columna comparativa, con
+     * los saldos del balance ya presentado. No se lleva contablemente: no exige
+     * cierre ni ajuste por inflación, y no cuenta como el ejercicio abierto de
+     * la empresa.
+     */
+    referenceOnly: boolean("reference_only").notNull().default(false),
+    /**
+     * Los saldos cargados ya están expresados en moneda de cierre de ese
+     * ejercicio. Es lo normal cuando se transcriben de un balance presentado,
+     * porque ya viene ajustado. Si son históricos sin ajustar, el comparativo
+     * es aproximado y los estados lo advierten.
+     */
+    statementsAdjusted: boolean("statements_adjusted").notNull().default(true),
     closedAt: timestamp("closed_at"),
     closedBy: text("closed_by").references(() => user.id, { onDelete: "set null" }),
     reopenedAt: timestamp("reopened_at"),

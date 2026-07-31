@@ -1736,12 +1736,17 @@ function Ejercicios({
     queryFn: () => getFiscalYears({ data: { clientId } }),
   });
 
+  // Por defecto se muestra el ejercicio que se está llevando, no uno de
+  // referencia: esos solo guardan los saldos de un balance anterior.
   const effectiveFyId =
     selectedFyId !== ''
       ? selectedFyId
-      : (fiscalYears.find((y) => y.status === 'open')?.id ??
+      : (fiscalYears.find((y) => y.status === 'open' && !y.referenceOnly)?.id ??
+        fiscalYears.find((y) => !y.referenceOnly)?.id ??
         fiscalYears[0]?.id ??
         '');
+  const selectedFyIsReference =
+    fiscalYears.find((y) => y.id === effectiveFyId)?.referenceOnly ?? false;
 
   const { data: detail } = useQuery({
     queryKey: ['accounting', 'fy-detail', effectiveFyId],
@@ -1833,10 +1838,22 @@ function Ejercicios({
               <span className="text-[var(--arca-ink-3)]">
                 {fmtFecha(y.startDate)} – {fmtFecha(y.endDate)}
               </span>
-              <FyStatusBadge status={y.status} />
-              <span className="text-[11px] text-[var(--arca-ink-3)]">
-                {y.periodsClosed}/{y.periodsTotal} cerrados
-              </span>
+              {y.referenceOnly ? (
+                <span
+                  className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                  style={{ background: '#eef2ff', color: '#4338ca' }}
+                  title="Cargado solo para la columna comparativa. No se cierra ni se ajusta."
+                >
+                  Referencia
+                </span>
+              ) : (
+                <>
+                  <FyStatusBadge status={y.status} />
+                  <span className="text-[11px] text-[var(--arca-ink-3)]">
+                    {y.periodsClosed}/{y.periodsTotal} cerrados
+                  </span>
+                </>
+              )}
             </button>
           );
         })}
@@ -1876,13 +1893,29 @@ function Ejercicios({
         </ArcaCard>
       )}
 
-      {/* Checklist de cierre de ejercicio (US 5.1.1) */}
-      {detail && effectiveFyId && (
+      {/* Checklist de cierre de ejercicio (US 5.1.1). Los ejercicios de
+          referencia no se cierran: solo guardan los saldos del balance anterior. */}
+      {detail && effectiveFyId && !selectedFyIsReference && (
         <CierreChecklist
           clientId={clientId}
           fiscalYearId={effectiveFyId}
           isOwner={isOwner}
         />
+      )}
+
+      {detail && selectedFyIsReference && (
+        <ArcaCard className="mt-4">
+          <div className="px-5 py-4 text-[12.5px] text-[var(--arca-ink-2)]">
+            <div className="font-semibold text-[var(--arca-ink)]">
+              Ejercicio de referencia
+            </div>
+            <div className="mt-0.5 text-[var(--arca-ink-3)]">
+              Se cargó para alimentar la columna comparativa de los Estados
+              Contables. No se cierra ni se ajusta por inflación: alcanza con
+              cargar en «Asientos» los saldos del balance ya presentado.
+            </div>
+          </div>
+        </ArcaCard>
       )}
 
       {/* Log auditable */}
@@ -2896,16 +2929,28 @@ function CreateFiscalYearDialog({
 }) {
   const [start, setStart] = useState('');
   const [months, setMonths] = useState(12);
+  const [referenceOnly, setReferenceOnly] = useState(false);
+  const [statementsAdjusted, setStatementsAdjusted] = useState(true);
   const startFirst = firstOfMonth(start);
   const end = computeEnd(start, months);
 
   const mut = useMutation({
     mutationFn: () =>
       createFiscalYear({
-        data: { clientId, startDate: startFirst, endDate: end },
+        data: {
+          clientId,
+          startDate: startFirst,
+          endDate: end,
+          referenceOnly,
+          statementsAdjusted: referenceOnly ? statementsAdjusted : true,
+        },
       }),
     onSuccess: () => {
-      toast.success(`Ejercicio creado con sus ${months} períodos`);
+      toast.success(
+        referenceOnly
+          ? 'Ejercicio de referencia creado. Cargá los saldos del balance anterior en Asientos.'
+          : `Ejercicio creado con sus ${months} períodos`
+      );
       onSaved();
     },
     onError: (e: Error) => toast.error(e.message),
@@ -2966,6 +3011,48 @@ function CreateFiscalYearDialog({
               </span>
             </div>
           )}
+
+          <div className="rounded-[8px] border border-[var(--arca-border)] px-3 py-2.5 space-y-2">
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={referenceOnly}
+                onChange={(e) => setReferenceOnly(e.target.checked)}
+                className="mt-0.5 accent-[var(--arca-navy-900)]"
+              />
+              <span>
+                <span className="text-[12.5px] font-medium text-[var(--arca-ink)]">
+                  Solo para el comparativo
+                </span>
+                <span className="block text-[11.5px] text-[var(--arca-ink-3)]">
+                  Para transcribir los saldos de un balance ya presentado. No
+                  hay que cerrarlo ni ajustarlo, y no ocupa el lugar del
+                  ejercicio abierto de la empresa.
+                </span>
+              </span>
+            </label>
+
+            {referenceOnly && (
+              <label className="flex items-start gap-2 cursor-pointer pl-6">
+                <input
+                  type="checkbox"
+                  checked={statementsAdjusted}
+                  onChange={(e) => setStatementsAdjusted(e.target.checked)}
+                  className="mt-0.5 accent-[var(--arca-navy-900)]"
+                />
+                <span>
+                  <span className="text-[12.5px] text-[var(--arca-ink)]">
+                    Los saldos ya están ajustados por inflación
+                  </span>
+                  <span className="block text-[11.5px] text-[var(--arca-ink-3)]">
+                    Es lo normal: un balance presentado ya viene en moneda de su
+                    cierre. Destildalo solo si vas a cargar valores históricos
+                    sin ajustar.
+                  </span>
+                </span>
+              </label>
+            )}
+          </div>
         </div>
 
         <DialogFooter>
