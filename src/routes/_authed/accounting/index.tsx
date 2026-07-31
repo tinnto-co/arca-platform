@@ -8490,7 +8490,8 @@ function EfeView({
           {clientName}
         </div>
         <div className="text-[12px] text-[var(--arca-ink-3)]">
-          Estado de Flujo de Efectivo · Método directo · Ejercicio N°
+          Estado de Flujo de Efectivo y sus Equivalentes · Método directo,
+          forma completa · Ejercicio N°
           {data.fiscalYearNumber} · {data.periodLabel}
         </div>
         <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
@@ -8748,8 +8749,12 @@ function EepnView({
               {data.columns.map((c) => (
                 <th
                   key={c.accountId}
-                  className="text-right font-medium px-3 pb-1.5 border-l border-[var(--arca-border)] whitespace-nowrap"
-                  title={`${c.code} · ${c.name}`}
+                  className={`text-right px-3 pb-1.5 border-l border-[var(--arca-border)] whitespace-nowrap ${
+                    c.isSubtotal
+                      ? 'font-semibold text-[var(--arca-ink-2)]'
+                      : 'font-medium'
+                  }`}
+                  title={c.isSubtotal ? c.groupLabel : `${c.code} · ${c.name}`}
                 >
                   {c.name}
                 </th>
@@ -8782,6 +8787,9 @@ function EepnView({
                     <td
                       key={c.accountId}
                       className="px-3 py-1.5 text-right tabular-nums border-l border-[var(--arca-border)] text-[var(--arca-ink-2)]"
+                      style={
+                        c.isSubtotal || strong ? { fontWeight: 600 } : undefined
+                      }
                     >
                       {money(row.amounts[c.accountId] ?? 0)}
                     </td>

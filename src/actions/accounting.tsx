@@ -7002,11 +7002,17 @@ const PN_GROUPS = [
 ] as const;
 
 export interface EepnColumn {
+  /** Id de la cuenta, o `subtotal:<rubro>` en las columnas de subtotal. */
   accountId: string;
   code: string;
   name: string;
   group: string;
   groupLabel: string;
+  /**
+   * Cierra un rubro de más de una cuenta con su total, como el "Total" de
+   * Capital Social del modelo RT 9 y de la planilla del estudio.
+   */
+  isSubtotal: boolean;
 }
 
 export interface EepnRow {
@@ -7264,7 +7270,7 @@ export const getEEPN = createServerFn({ method: 'GET' })
       ...Object.keys(resultadoAmounts),
       ...[...movimientos.values()].flatMap((m) => Object.keys(m.amounts)),
     ]);
-    const columns: EepnColumn[] = pnAccounts
+    const accountColumns: EepnColumn[] = pnAccounts
       .filter((a) => touched.has(a.id))
       .map((a) => ({
         accountId: a.id,
@@ -7272,17 +7278,54 @@ export const getEEPN = createServerFn({ method: 'GET' })
         name: a.name,
         group: a.group ?? '',
         groupLabel: ACCOUNT_GROUP_LABELS[a.group!] ?? a.group ?? '',
+        isSubtotal: false,
       }));
 
+    // Cada rubro de más de una cuenta cierra con su subtotal. Los importes se
+    // calculan acá, y no en cada vista, para que la pantalla, el PDF y el Excel
+    // no puedan diferir entre sí.
+    const columns: EepnColumn[] = [];
+    const subtotalMembers = new Map<string, string[]>();
+    for (let i = 0; i < accountColumns.length; i++) {
+      const col = accountColumns[i];
+      columns.push(col);
+      const next = accountColumns[i + 1];
+      if (next?.group === col.group) continue; // el rubro sigue
+      const members = accountColumns
+        .filter((c) => c.group === col.group)
+        .map((c) => c.accountId);
+      if (members.length < 2) continue;
+      const key = `subtotal:${col.group}`;
+      subtotalMembers.set(key, members);
+      columns.push({
+        accountId: key,
+        code: '',
+        name: 'Total',
+        group: col.group,
+        groupLabel: col.groupLabel,
+        isSubtotal: true,
+      });
+    }
+
+    /** Agrega a una fila los importes de las columnas de subtotal. */
+    const withSubtotals = (amounts: Record<string, number>) => {
+      const out = { ...amounts };
+      for (const [key, members] of subtotalMembers) {
+        out[key] = r2(members.reduce((s, id) => s + (amounts[id] ?? 0), 0));
+      }
+      return out;
+    };
+
+    // Suma solo las cuentas: incluir los subtotales duplicaría los importes.
     const sumRow = (amounts: Record<string, number>) =>
-      r2(columns.reduce((s, c) => s + (amounts[c.accountId] ?? 0), 0));
+      r2(accountColumns.reduce((s, c) => s + (amounts[c.accountId] ?? 0), 0));
 
     const rows: EepnRow[] = [];
     rows.push({
       key: 'inicio',
       label: 'Saldos al inicio del ejercicio',
       kind: 'inicio',
-      amounts: inicio,
+      amounts: withSubtotals(inicio),
       total: sumRow(inicio),
     });
 
@@ -7291,7 +7334,7 @@ export const getEEPN = createServerFn({ method: 'GET' })
         key: `mov-${entryId}`,
         label: m.description ?? `Asiento N° ${m.number}`,
         kind: 'movimiento',
-        amounts: m.amounts,
+        amounts: withSubtotals(m.amounts),
         total: sumRow(m.amounts),
         entryNumber: m.number,
         entryDate: m.entryDate.toISOString(),
@@ -7303,7 +7346,7 @@ export const getEEPN = createServerFn({ method: 'GET' })
         key: 'reexpresion-movimientos',
         label: 'Reexpresión de los movimientos del ejercicio',
         kind: 'movimiento',
-        amounts: reexpresionMovimientos,
+        amounts: withSubtotals(reexpresionMovimientos),
         total: sumRow(reexpresionMovimientos),
       });
     }
@@ -7312,7 +7355,7 @@ export const getEEPN = createServerFn({ method: 'GET' })
       key: 'resultado',
       label: 'Resultado del ejercicio',
       kind: 'resultado',
-      amounts: resultadoAmounts,
+      amounts: withSubtotals(resultadoAmounts),
       total: resultado,
     });
 
@@ -7330,7 +7373,7 @@ export const getEEPN = createServerFn({ method: 'GET' })
       key: 'cierre',
       label: 'Saldos al cierre del ejercicio',
       kind: 'cierre',
-      amounts: cierre,
+      amounts: withSubtotals(cierre),
       total: sumRow(cierre),
     });
 

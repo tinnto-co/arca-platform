@@ -2258,7 +2258,7 @@ function EepnBlock({ eepn }: { eepn: EepnResult | null }) {
         <Text style={pk.cLabel}>Concepto</Text>
         {eepn.columns.map((c) => (
           <Text key={c.accountId} style={colStyle}>
-            {c.name}
+            {c.isSubtotal ? `Total ${c.groupLabel}` : c.name}
           </Text>
         ))}
         <Text style={pk.cNum}>Ej. N°{eepn.fiscalYearNumber}</Text>
@@ -2323,7 +2323,7 @@ function EfeBlock({ efe }: { efe: EfeResult | null }) {
   return (
     <View break>
       <Text style={pk.sectionTitle}>
-        Estado de Flujo de Efectivo — Método directo
+        Estado de Flujo de Efectivo y sus Equivalentes — Método directo, forma completa
       </Text>
       <View style={pk.colHead}>
         <Text style={pk.cLabel}>Concepto</Text>
@@ -3028,7 +3028,9 @@ export async function exportEstadosExcel(
 
     const head = [
       'Concepto',
-      ...e.columns.map((c) => c.name),
+      ...e.columns.map((c) =>
+        c.isSubtotal ? `Total ${c.groupLabel}` : c.name
+      ),
       `Ej. N°${e.fiscalYearNumber}`,
     ];
     if (e.priorFiscalYearNumber !== null) {
@@ -3058,6 +3060,9 @@ export async function exportEstadosExcel(
       const r = ws.addRow(values);
       if (strong) r.getCell(1).font = { bold: true };
       money(r, 2, values.length, strong);
+      e.columns.forEach((c, i) => {
+        if (c.isSubtotal) r.getCell(i + 2).font = { bold: true };
+      });
     }
   }
 
@@ -3067,7 +3072,11 @@ export async function exportEstadosExcel(
     const ws = wb.addWorksheet('Flujo de efectivo', {
       views: [{ showGridLines: false }],
     });
-    header(ws, 'Estado de Flujo de Efectivo — Método directo', 3);
+    header(
+      ws,
+      'Estado de Flujo de Efectivo y sus Equivalentes — Método directo, forma completa',
+      3
+    );
 
     const hr = ws.addRow([
       'Concepto',
