@@ -1351,6 +1351,306 @@ export interface PeriodView {
  * Detalle de un ejercicio: sus 12 períodos con estado, cantidad de asientos,
  * monto movido, y cuál es el período abierto actual. (US 1.2.2)
  */
+/* ═════════ Saldos de un ejercicio de referencia (columna comparativa) ═════════ */
+
+export interface ReferenceBalanceRow {
+  accountId: string;
+  code: string;
+  name: string;
+  group: string | null;
+  groupLabel: string;
+  /** Lado natural de la cuenta: define el signo de lo que se tipea. */
+  side: 'debit' | 'credit';
+  /** Saldo al inicio del ejercicio, como figura en el balance. */
+  inicio: number;
+  /** Saldo al cierre del ejercicio. */
+  cierre: number;
+}
+
+export interface ReferenceBalancesView {
+  fiscalYearNumber: number;
+  periodLabel: string;
+  /** Ya hay saldos cargados: guardar los reemplaza. */
+  loaded: boolean;
+  rows: ReferenceBalanceRow[];
+}
+
+/** Signo contable de un importe tipeado, según el lado natural de la cuenta. */
+function signedForSide(amount: number, side: 'debit' | 'credit'): number {
+  return side === 'credit' ? -amount : amount;
+}
+
+/**
+ * Devuelve el plan de cuentas imputable de la empresa con los saldos ya
+ * cargados, para transcribir un balance ya presentado sin armar los asientos a
+ * mano.
+ *
+ * Solo aplica a ejercicios marcados como de referencia: son los únicos cuyo
+ * libro diario existe nada más que para alimentar el comparativo, así que se
+ * puede reemplazar entero sin pisarle trabajo a nadie.
+ */
+export const getReferenceBalances = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid(),
+    })
+  )
+  .handler(async (ctx): Promise<ReferenceBalancesView> => {
+    const { orgId } = await getSessionWithOrg();
+    const { clientId } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
+    if (!fy.referenceOnly) {
+      throw new Error(
+        'Los saldos se transcriben solo en ejercicios de referencia. Este ejercicio se liquida normalmente: cargá sus asientos en el Libro Diario.'
+      );
+    }
+
+    const accounts = await db
+      .select({
+        id: account.id,
+        code: account.code,
+        name: account.name,
+        group: account.accountGroup,
+        expectedBalance: account.expectedBalance,
+      })
+      .from(account)
+      .where(
+        and(
+          eq(account.organizationId, orgId),
+          eq(account.type, 'imputable'),
+          eq(account.isActive, true),
+          sql`(${account.scope} = 'base' OR ${account.clientId} = ${clientId})`
+        )
+      )
+      .orderBy(asc(account.code));
+
+    // Saldos ya cargados: la apertura es la columna «inicio», y el cierre sale
+    // de sumarle el asiento de movimientos.
+    const lines = await db
+      .select({
+        accountId: journalEntryLine.accountId,
+        origin: journalEntry.origin,
+        debit: sql<string>`coalesce(sum(${journalEntryLine.debit}),0)`,
+        credit: sql<string>`coalesce(sum(${journalEntryLine.credit}),0)`,
+      })
+      .from(journalEntryLine)
+      .innerJoin(
+        journalEntry,
+        eq(journalEntry.id, journalEntryLine.journalEntryId)
+      )
+      .where(
+        and(
+          eq(journalEntry.fiscalYearId, fy.id),
+          eq(journalEntry.isVoided, false)
+        )
+      )
+      .groupBy(journalEntryLine.accountId, journalEntry.origin);
+
+    const inicioBy = new Map<string, number>();
+    const cierreBy = new Map<string, number>();
+    for (const l of lines) {
+      const v = parseFloat(l.debit) - parseFloat(l.credit);
+      if (l.origin === 'auto_opening') {
+        inicioBy.set(l.accountId, (inicioBy.get(l.accountId) ?? 0) + v);
+      }
+      cierreBy.set(l.accountId, (cierreBy.get(l.accountId) ?? 0) + v);
+    }
+
+    const rows: ReferenceBalanceRow[] = accounts.map((a) => {
+      const side: 'debit' | 'credit' =
+        a.expectedBalance === 'credit' ? 'credit' : 'debit';
+      // Se devuelve el importe tal como se tipea (positivo del lado natural),
+      // que es como figura impreso en el balance.
+      const unsign = (v: number) => r2(signedForSide(v, side));
+      return {
+        accountId: a.id,
+        code: a.code,
+        name: a.name,
+        group: a.group,
+        groupLabel: a.group ? ACCOUNT_GROUP_LABELS[a.group] : '',
+        side,
+        inicio: unsign(inicioBy.get(a.id) ?? 0),
+        cierre: unsign(cierreBy.get(a.id) ?? 0),
+      };
+    });
+
+    const fmtD = (d: Date) =>
+      `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${d.getUTCFullYear()}`;
+
+    return {
+      fiscalYearNumber: fy.number,
+      periodLabel: `${fmtD(fy.startDate)} – ${fmtD(fy.endDate)}`,
+      loaded: lines.length > 0,
+      rows,
+    };
+  });
+
+/**
+ * Transcribe un balance ya presentado en dos asientos: la apertura del
+ * ejercicio y, como diferencia contra el cierre, sus movimientos.
+ *
+ * Se arma como diferencia y no como dos fotos porque así el libro diario del
+ * ejercicio de referencia queda igual que el de cualquier otro —apertura más
+ * movimientos— y los estados lo leen sin ningún caso especial.
+ */
+export const saveReferenceBalances = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid(),
+      rows: z.array(
+        z.object({
+          accountId: z.string().uuid(),
+          inicio: z.number(),
+          cierre: z.number(),
+        })
+      ),
+    })
+  )
+  .handler(async (ctx) => {
+    const { session, orgId } = await getSessionWithOrg();
+    const { clientId, rows } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    assertCanWrite(await getMemberRole());
+    const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
+    if (!fy.referenceOnly) {
+      throw new Error(
+        'Los saldos se transcriben solo en ejercicios de referencia.'
+      );
+    }
+
+    const accounts = await db
+      .select({
+        id: account.id,
+        code: account.code,
+        expectedBalance: account.expectedBalance,
+      })
+      .from(account)
+      .where(
+        and(
+          eq(account.organizationId, orgId),
+          eq(account.type, 'imputable'),
+          sql`(${account.scope} = 'base' OR ${account.clientId} = ${clientId})`
+        )
+      );
+    const byId = new Map(accounts.map((a) => [a.id, a]));
+
+    // Signo contable de cada columna.
+    const inicio = new Map<string, number>();
+    const movimiento = new Map<string, number>();
+    for (const r of rows) {
+      const a = byId.get(r.accountId);
+      if (!a) continue;
+      const side: 'debit' | 'credit' =
+        a.expectedBalance === 'credit' ? 'credit' : 'debit';
+      const ini = r2(signedForSide(r.inicio, side));
+      const cie = r2(signedForSide(r.cierre, side));
+      if (Math.abs(ini) >= 0.005) inicio.set(r.accountId, ini);
+      // El movimiento del ejercicio es lo que va del inicio al cierre.
+      const mov = r2(cie - ini);
+      if (Math.abs(mov) >= 0.005) movimiento.set(r.accountId, mov);
+    }
+
+    const sum = (m: Map<string, number>) =>
+      r2([...m.values()].reduce((s, v) => s + v, 0));
+    const diffInicio = sum(inicio);
+    const diffCierre = r2(diffInicio + sum(movimiento));
+    if (Math.abs(diffInicio) >= 0.005) {
+      throw new Error(
+        `La columna «saldo al inicio» no cuadra: hay una diferencia de $ ${diffInicio.toFixed(2)} entre Debe y Haber.`
+      );
+    }
+    if (Math.abs(diffCierre) >= 0.005) {
+      throw new Error(
+        `La columna «saldo al cierre» no cuadra: hay una diferencia de $ ${diffCierre.toFixed(2)} entre Debe y Haber.`
+      );
+    }
+    if (inicio.size === 0 && movimiento.size === 0) {
+      throw new Error('No hay ningún saldo cargado.');
+    }
+
+    const periods = await db
+      .select()
+      .from(accountingPeriod)
+      .where(eq(accountingPeriod.fiscalYearId, fy.id))
+      .orderBy(asc(accountingPeriod.year), asc(accountingPeriod.month));
+    const firstPeriod = periods[0];
+    const lastPeriod = periods[periods.length - 1];
+    if (!firstPeriod || !lastPeriod) {
+      throw new Error('El ejercicio no tiene períodos generados.');
+    }
+
+    await db.transaction(async (tx) => {
+      // El libro diario de un ejercicio de referencia existe solo para esto,
+      // así que se reemplaza entero en vez de intentar conciliar contra lo que
+      // hubiera cargado antes.
+      const previous = await tx
+        .select({ id: journalEntry.id })
+        .from(journalEntry)
+        .where(eq(journalEntry.fiscalYearId, fy.id));
+      if (previous.length > 0) {
+        const ids = previous.map((p) => p.id);
+        await tx
+          .delete(journalEntryLine)
+          .where(inArray(journalEntryLine.journalEntryId, ids));
+        await tx.delete(journalEntry).where(inArray(journalEntry.id, ids));
+      }
+
+      let number = 1;
+      const write = async (
+        amounts: Map<string, number>,
+        entryDate: Date,
+        periodId: string,
+        origin: 'auto_opening' | 'manual',
+        description: string
+      ) => {
+        if (amounts.size === 0) return;
+        const [je] = await tx
+          .insert(journalEntry)
+          .values({
+            clientId,
+            fiscalYearId: fy.id,
+            periodId,
+            number: number++,
+            entryDate,
+            description,
+            origin,
+            createdBy: session.user.id,
+          })
+          .returning({ id: journalEntry.id });
+        await tx.insert(journalEntryLine).values(
+          [...amounts].map(([accountId, v]) => ({
+            journalEntryId: je.id,
+            clientId,
+            accountId,
+            periodId,
+            debit: (v > 0 ? v : 0).toFixed(2),
+            credit: (v < 0 ? -v : 0).toFixed(2),
+          }))
+        );
+      };
+
+      await write(
+        inicio,
+        fy.startDate,
+        firstPeriod.id,
+        'auto_opening',
+        'Saldos al inicio — balance del ejercicio anterior'
+      );
+      await write(
+        movimiento,
+        fy.endDate,
+        lastPeriod.id,
+        'manual',
+        'Movimientos del ejercicio — balance del ejercicio anterior'
+      );
+    });
+
+    return { cuentas: inicio.size + movimiento.size };
+  });
+
 export const getFiscalYearDetail = createServerFn({ method: 'GET' })
   .inputValidator(z.object({ fiscalYearId: z.string().uuid() }))
   .handler(async (ctx) => {

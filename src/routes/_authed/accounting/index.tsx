@@ -50,6 +50,7 @@ import {
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { ArcaCard } from '@/components/dashboard/shared';
+import { SaldosReferencia } from '@/components/accounting/SaldosReferencia';
 import {
   Select,
   SelectContent,
@@ -238,6 +239,24 @@ const accountingSearchSchema = z.object({
   clientId: z.string().uuid().optional(),
   tab: z.enum(TAB_IDS).optional(),
 });
+
+/**
+ * Ejercicio que se muestra cuando el usuario todavía no eligió ninguno.
+ *
+ * Los de referencia quedan afuera: existen solo para alimentar la columna
+ * comparativa y están en estado «abierto», así que sin esto se llevaban el
+ * lugar del ejercicio que la empresa está liquidando de verdad.
+ */
+function defaultFiscalYearId(
+  years: { id: string; status: string; referenceOnly?: boolean }[]
+): string {
+  return (
+    years.find((y) => y.status === 'open' && !y.referenceOnly)?.id ??
+    years.find((y) => !y.referenceOnly)?.id ??
+    years[0]?.id ??
+    ''
+  );
+}
 
 export const Route = createFileRoute('/_authed/accounting/')({
   validateSearch: accountingSearchSchema,
@@ -1739,12 +1758,7 @@ function Ejercicios({
   // Por defecto se muestra el ejercicio que se está llevando, no uno de
   // referencia: esos solo guardan los saldos de un balance anterior.
   const effectiveFyId =
-    selectedFyId !== ''
-      ? selectedFyId
-      : (fiscalYears.find((y) => y.status === 'open' && !y.referenceOnly)?.id ??
-        fiscalYears.find((y) => !y.referenceOnly)?.id ??
-        fiscalYears[0]?.id ??
-        '');
+    selectedFyId !== '' ? selectedFyId : defaultFiscalYearId(fiscalYears);
   const selectedFyIsReference =
     fiscalYears.find((y) => y.id === effectiveFyId)?.referenceOnly ?? false;
 
@@ -1904,18 +1918,25 @@ function Ejercicios({
       )}
 
       {detail && selectedFyIsReference && (
-        <ArcaCard className="mt-4">
-          <div className="px-5 py-4 text-[12.5px] text-[var(--arca-ink-2)]">
-            <div className="font-semibold text-[var(--arca-ink)]">
-              Ejercicio de referencia
+        <>
+          <ArcaCard className="mt-4">
+            <div className="px-5 py-4 text-[12.5px] text-[var(--arca-ink-2)]">
+              <div className="font-semibold text-[var(--arca-ink)]">
+                Ejercicio de referencia
+              </div>
+              <div className="mt-0.5 text-[var(--arca-ink-3)]">
+                Se cargó para alimentar la columna comparativa de los Estados
+                Contables. No se cierra ni se ajusta por inflación: alcanza con
+                transcribir abajo los saldos del balance ya presentado.
+              </div>
             </div>
-            <div className="mt-0.5 text-[var(--arca-ink-3)]">
-              Se cargó para alimentar la columna comparativa de los Estados
-              Contables. No se cierra ni se ajusta por inflación: alcanza con
-              cargar en «Asientos» los saldos del balance ya presentado.
-            </div>
-          </div>
-        </ArcaCard>
+          </ArcaCard>
+          <SaldosReferencia
+            clientId={clientId}
+            fiscalYearId={effectiveFyId}
+            canWrite={isOwner}
+          />
+        </>
       )}
 
       {/* Log auditable */}
@@ -2970,7 +2991,7 @@ function CreateFiscalYearDialog({
     onSuccess: () => {
       toast.success(
         referenceOnly
-          ? 'Ejercicio de referencia creado. Cargá los saldos del balance anterior en Asientos.'
+          ? 'Ejercicio de referencia creado. Transcribí abajo los saldos del balance anterior.'
           : `Ejercicio creado con sus ${months} períodos`
       );
       onSaved();
@@ -4143,11 +4164,7 @@ function Mayor({
     queryFn: () => getFiscalYears({ data: { clientId } }),
   });
   const effectiveFyId =
-    fiscalYearId !== ''
-      ? fiscalYearId
-      : (fiscalYears.find((y) => y.status === 'open')?.id ??
-        fiscalYears[0]?.id ??
-        '');
+    fiscalYearId !== '' ? fiscalYearId : defaultFiscalYearId(fiscalYears);
 
   const { data: chart } = useQuery({
     queryKey: ['accounting', 'chart', clientId],
@@ -4684,11 +4701,7 @@ function Balance({
     queryFn: () => getFiscalYears({ data: { clientId } }),
   });
   const effectiveFyId =
-    fiscalYearId !== ''
-      ? fiscalYearId
-      : (fiscalYears.find((y) => y.status === 'open')?.id ??
-        fiscalYears[0]?.id ??
-        '');
+    fiscalYearId !== '' ? fiscalYearId : defaultFiscalYearId(fiscalYears);
 
   const { data, isLoading } = useQuery({
     queryKey: ['accounting', 'trial-balance', clientId, effectiveFyId, asOf],
@@ -7218,11 +7231,7 @@ function AnexoIView({
     queryKey: ['accounting', 'fiscal-years', clientId],
     queryFn: () => getFiscalYears({ data: { clientId } }),
   });
-  const effectiveFyId =
-    selectedFyId ||
-    fiscalYears.find((y) => y.status === 'open')?.id ||
-    fiscalYears[0]?.id ||
-    '';
+  const effectiveFyId = selectedFyId || defaultFiscalYearId(fiscalYears);
 
   const { data, isLoading } = useQuery({
     queryKey: ['accounting', 'anexo-i', clientId, effectiveFyId],
@@ -7699,11 +7708,7 @@ function EstadosContables({
     queryKey: ['accounting', 'fiscal-years', clientId],
     queryFn: () => getFiscalYears({ data: { clientId } }),
   });
-  const effectiveFyId =
-    selectedFyId ||
-    fiscalYears.find((y) => y.status === 'open')?.id ||
-    fiscalYears[0]?.id ||
-    '';
+  const effectiveFyId = selectedFyId || defaultFiscalYearId(fiscalYears);
   const selectedFy = fiscalYears.find((y) => y.id === effectiveFyId);
 
   const { data: fs } = useQuery({
