@@ -2216,6 +2216,11 @@ function CierreChecklist({
                 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600"
                 strokeWidth={2}
               />
+            ) : c.status === 'warn' ? (
+              <AlertTriangle
+                className="w-4 h-4 shrink-0 mt-0.5 text-amber-600"
+                strokeWidth={2}
+              />
             ) : (
               <XCircle
                 className="w-4 h-4 shrink-0 mt-0.5 text-red-600"
@@ -2232,7 +2237,9 @@ function CierreChecklist({
                   color:
                     c.status === 'pass'
                       ? 'var(--arca-ink-3)'
-                      : 'oklch(0.55 0.18 25)',
+                      : c.status === 'warn'
+                        ? 'oklch(0.58 0.13 75)'
+                        : 'oklch(0.55 0.18 25)',
                 }}
               >
                 {c.detail}
@@ -2244,9 +2251,11 @@ function CierreChecklist({
 
       <div className="flex items-center justify-between gap-3 px-5 py-3 border-t border-[var(--arca-border)]">
         <span className="text-[12px] text-[var(--arca-ink-3)]">
-          {data.canClose
-            ? 'Todas las validaciones pasan. Podés iniciar el cierre.'
-            : 'Resolvé los puntos en rojo para habilitar el cierre.'}
+          {!data.canClose
+            ? 'Resolvé los puntos en rojo para habilitar el cierre.'
+            : data.checks.some((c: YearEndCheck) => c.status === 'warn')
+              ? 'Podés iniciar el cierre. Revisá antes los puntos en ámbar: no bloquean, pero conviene resolverlos.'
+              : 'Todas las validaciones pasan. Podés iniciar el cierre.'}
         </span>
         {isOwner ? (
           <button
@@ -2575,6 +2584,11 @@ function ClosingWizard({
                         className="w-4 h-4 mt-0.5 text-emerald-600 shrink-0"
                         strokeWidth={2}
                       />
+                    ) : c.status === 'warn' ? (
+                      <AlertTriangle
+                        className="w-4 h-4 mt-0.5 text-amber-600 shrink-0"
+                        strokeWidth={2}
+                      />
                     ) : (
                       <XCircle
                         className="w-4 h-4 mt-0.5 text-red-600 shrink-0"
@@ -2583,7 +2597,15 @@ function ClosingWizard({
                     )}
                     <div>
                       <div className="text-[12.5px]">{c.label}</div>
-                      <div className="text-[11.5px] text-[var(--arca-ink-3)]">
+                      <div
+                        className="text-[11.5px]"
+                        style={{
+                          color:
+                            c.status === 'warn'
+                              ? 'oklch(0.58 0.13 75)'
+                              : 'var(--arca-ink-3)',
+                        }}
+                      >
                         {c.detail}
                       </div>
                     </div>

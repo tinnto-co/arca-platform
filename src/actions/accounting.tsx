@@ -4853,10 +4853,27 @@ export const getAnexoI = createServerFn({ method: 'GET' })
 
 /* ════════════════════ Cierre de ejercicio — checklist (US 5.1.1) ════════════════════ */
 
+/**
+ * Resultado del ejercicio en moneda de cierre: positivo = ganancia.
+ *
+ * Los saldos vienen en signo contable (debe − haber), así que los ingresos son
+ * negativos y los gastos positivos: la ganancia es la suma cambiada de signo.
+ */
+async function fiscalYearResult(orgId: string, fyId: string): Promise<number> {
+  const RESULT = new Set<string>(RESULT_ACCOUNT_GROUPS);
+  const balances = await computeEspBalances(orgId, fyId);
+  return r2(
+    -balances
+      .filter((b) => b.group && RESULT.has(b.group))
+      .reduce((s, b) => s + b.saldo, 0)
+  );
+}
+
 export interface YearEndCheck {
-  key: 'periods' | 'pending_review' | 'balance' | 'rules';
+  key: 'periods' | 'pending_review' | 'balance' | 'rules' | 'income_tax';
   label: string;
-  status: 'pass' | 'fail';
+  /** `warn` avisa pero no bloquea el cierre: es criterio del contador. */
+  status: 'pass' | 'fail' | 'warn';
   detail: string;
 }
 export interface YearEndChecklist {
@@ -4884,6 +4901,12 @@ export const getYearEndChecklist = createServerFn({ method: 'GET' })
     const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
 
     const checks: YearEndCheck[] = [];
+    /** Importe con separadores, para que los detalles se puedan leer. */
+    const money = (n: number) =>
+      n.toLocaleString('es-AR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
 
     // 1) Todos los períodos cerrados.
     const periods = await db
@@ -4958,8 +4981,8 @@ export const getYearEndChecklist = createServerFn({ method: 'GET' })
       status: Math.abs(diff) < 0.005 ? 'pass' : 'fail',
       detail:
         Math.abs(diff) < 0.005
-          ? `Debe = Haber = $ ${totalDebit.toFixed(2)}`
-          : `Diferencia de $ ${diff.toFixed(2)} entre Debe y Haber`,
+          ? `Debe = Haber = $ ${money(totalDebit)}`
+          : `Diferencia de $ ${money(diff)} entre Debe y Haber`,
     });
 
     // 4) Reglas de mapeo activas con condiciones consistentes.
@@ -4995,11 +5018,64 @@ export const getYearEndChecklist = createServerFn({ method: 'GET' })
           : `Reglas con condición inválida: ${badRules.map((r) => r.name).join(', ')}`,
     });
 
+    // 5) Provisión del impuesto a las ganancias. Solo avisa: si corresponde
+    //    provisionar, cuánto y con qué ajustes es criterio del contador, y el
+    //    sistema no tiene cómo saberlo. Lo que sí puede es que no se pase por
+    //    alto, que es el error caro.
+    const taxAccounts = await db
+      .select({ id: account.id })
+      .from(account)
+      .where(
+        and(
+          eq(account.organizationId, orgId),
+          eq(account.accountGroup, 'impuesto_ganancias'),
+          sql`(${account.scope} = 'base' OR ${account.clientId} = ${clientId})`
+        )
+      );
+    const taxIds = taxAccounts.map((a) => a.id);
+    const [tax] = taxIds.length
+      ? await db
+          .select({
+            total: sql<string>`coalesce(sum(${journalEntryLine.debit} - ${journalEntryLine.credit}),0)`,
+          })
+          .from(journalEntryLine)
+          .innerJoin(
+            journalEntry,
+            eq(journalEntry.id, journalEntryLine.journalEntryId)
+          )
+          .where(
+            and(
+              eq(journalEntry.fiscalYearId, fy.id),
+              eq(journalEntry.isVoided, false),
+              inArray(journalEntryLine.accountId, taxIds)
+            )
+          )
+      : [{ total: '0' }];
+    const provision = r2(parseFloat(tax?.total ?? '0'));
+
+    // Sin ganancia no hay impuesto que provisionar, así que no se avisa: un
+    // aviso que salta cuando no corresponde enseña a ignorarlo.
+    const resultado = await fiscalYearResult(orgId, fy.id);
+    const hayGanancia = resultado > 0.005;
+    checks.push({
+      key: 'income_tax',
+      label: 'Provisión del impuesto a las ganancias',
+      status:
+        Math.abs(provision) >= 0.005 || !hayGanancia ? 'pass' : 'warn',
+      detail:
+        Math.abs(provision) >= 0.005
+          ? `Provisionado $ ${money(provision)}`
+          : hayGanancia
+            ? `El ejercicio cierra con ganancia de $ ${money(resultado)} y no tiene provisión cargada. Si corresponde, asentala antes de refundir.`
+            : 'El ejercicio no cierra con ganancia: no hay impuesto que provisionar',
+    });
+
     return {
       fiscalYearNumber: fy.number,
       fiscalYearStatus: fy.status,
+      // Los avisos no bloquean: solo los chequeos que el sistema puede afirmar.
       canClose:
-        fy.status === 'open' && checks.every((c) => c.status === 'pass'),
+        fy.status === 'open' && checks.every((c) => c.status !== 'fail'),
       checks,
     };
   });
