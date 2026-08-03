@@ -18,6 +18,7 @@ import {
   account,
   accountingLog,
   accountingPeriod,
+  fixedAsset,
   fiscalYear,
   inflationAdjustment,
   inflationAdjustmentLine,
@@ -40,6 +41,7 @@ import {
   type InflationAccountInput,
   type InflationNature,
 } from '@/lib/accounting-inflation';
+import { depreciationCoefficients } from '@/lib/accounting-fixed-asset-inflation';
 import { nextEntryNumber } from '@/lib/accounting-posting-db';
 
 /** Código de la cuenta que absorbe la contrapartida del ajuste. */
@@ -368,6 +370,17 @@ export interface InflationAdjustmentPreview {
   /** Cuentas con movimientos pero sin naturaleza asignada. */
   accountsWithoutNature: { code: string; name: string }[];
   /**
+   * Cuentas de amortización donde el mayor y el registro de bienes de uso no
+   * dicen lo mismo. El coeficiente sale del registro, así que si difieren el
+   * ajuste se está aplicando sobre un importe que el registro no explica.
+   */
+  depreciationMismatch: {
+    code: string;
+    name: string;
+    ledger: number;
+    register: number;
+  }[];
+  /**
    * El ajuste aplicado ya no coincide con el mayor: entraron o cambiaron asientos
    * después de generarlo. Los estados contables estarían usando un RECPAM viejo.
    */
@@ -467,13 +480,41 @@ async function buildPreview(
       accountingPeriod.month
     );
 
+  // Registro de bienes de uso: hace falta acá, y no más abajo, porque el mes de
+  // alta de un bien comprado en el ejercicio también necesita índice.
+  const assets = await db
+    .select({
+      id: fixedAsset.id,
+      name: fixedAsset.name,
+      acquisitionDate: fixedAsset.acquisitionDate,
+      originalValue: fixedAsset.originalValue,
+      residualValue: fixedAsset.residualValue,
+      usefulLifeYears: fixedAsset.usefulLifeYears,
+      disposalDate: fixedAsset.disposalDate,
+      accumDeprAccountId: fixedAsset.accumDeprAccountId,
+      deprExpenseAccountId: fixedAsset.deprExpenseAccountId,
+    })
+    .from(fixedAsset)
+    .where(eq(fixedAsset.clientId, clientId));
+
   // Índices necesarios: el mes de apertura + todos los meses con movimiento +
-  // el mes de cierre.
+  // el mes de cierre + el mes de alta de los bienes incorporados en el ejercicio.
   const neededKeys = new Set<string>([
     monthKey(opening.year, opening.month),
     monthKey(closing.year, closing.month),
   ]);
   for (const m of movementRows) neededKeys.add(monthKey(m.year, m.month));
+  for (const a of assets) {
+    if (a.acquisitionDate < fy.startDate || a.acquisitionDate > fy.endDate) {
+      continue;
+    }
+    neededKeys.add(
+      monthKey(
+        a.acquisitionDate.getUTCFullYear(),
+        a.acquisitionDate.getUTCMonth() + 1
+      )
+    );
+  }
 
   const indexRows = await db
     .select()
@@ -544,11 +585,48 @@ async function buildPreview(
       recpam: 0,
       balanced: true,
       accountsWithoutNature: [],
+      depreciationMismatch: [],
       stale: false,
       appliedRecpam:
         adj?.status === 'applied' ? Number(adj.recpamAmount) : null,
     };
   }
+
+  // Las amortizaciones de bienes de uso no van por el mes de su asiento sino
+  // por el coeficiente del bien que amortizan. Sale del registro de bienes,
+  // porque el mayor no dice a qué bien corresponde cada línea.
+  const openingIndex = indexes[monthKey(opening.year, opening.month)];
+  const depreciation =
+    assets.length > 0 && openingIndex
+      ? depreciationCoefficients({
+          assets: assets.map((a) => ({
+            id: a.id,
+            name: a.name,
+            acquisitionDate: a.acquisitionDate,
+            originalValue: parseFloat(a.originalValue),
+            residualValue: parseFloat(a.residualValue ?? '0'),
+            usefulLifeYears: a.usefulLifeYears,
+            disposalDate: a.disposalDate,
+            accumDeprAccountId: a.accumDeprAccountId,
+            deprExpenseAccountId: a.deprExpenseAccountId,
+          })),
+          fiscalYearStart: fy.startDate,
+          fiscalYearEnd: fy.endDate,
+          openingCoefficient: reexpressionCoefficient(
+            closingIndex,
+            openingIndex
+          ),
+          coefficientForMonth: (year, month) => {
+            const idx = indexes[monthKey(year, month)];
+            if (!idx) {
+              throw new Error(
+                `Falta el índice de ${monthKey(year, month)} para anticuar la amortización de bienes de uso.`
+              );
+            }
+            return reexpressionCoefficient(closingIndex, idx);
+          },
+        })
+      : null;
 
   // Armado del input del motor.
   const touched = new Set<string>([
@@ -581,6 +659,7 @@ async function buildPreview(
       nature,
       targetAccountId: a.inflationTargetId,
       opening: op ? parseFloat(op.debit) - parseFloat(op.credit) : 0,
+      monthlyCoefficient: depreciation?.byAccount.get(id) ?? null,
       monthly: movementRows
         .filter((r) => r.accountId === id)
         .map((r) => ({
@@ -590,6 +669,33 @@ async function buildPreview(
         }))
         .sort((x, y) => x.year - y.year || x.month - y.month),
     });
+  }
+
+  // Contraste mayor contra registro. La igualdad entre el promedio ponderado y
+  // el cálculo bien por bien solo vale si los dos totales coinciden.
+  const depreciationMismatch: {
+    code: string;
+    name: string;
+    ledger: number;
+    register: number;
+  }[] = [];
+  if (depreciation) {
+    for (const [accountId, register] of depreciation.registerDepreciation) {
+      const a = accById.get(accountId);
+      if (!a) continue;
+      const ledger = movementRows
+        .filter((r) => r.accountId === accountId)
+        .reduce((s, r) => s + parseFloat(r.debit) - parseFloat(r.credit), 0);
+      // El signo depende de si la cuenta es el gasto (deudor) o la acumulada
+      // (acreedora): se compara el valor absoluto.
+      if (Math.abs(Math.abs(ledger) - register) < 0.05) continue;
+      depreciationMismatch.push({
+        code: a.code,
+        name: a.name,
+        ledger: Math.round(Math.abs(ledger) * 100) / 100,
+        register,
+      });
+    }
   }
 
   const recpamAccount = accounts.find((a) => a.code === RECPAM_CODE);
@@ -652,6 +758,7 @@ async function buildPreview(
     recpam: result.recpam,
     balanced: result.balanced,
     accountsWithoutNature,
+    depreciationMismatch,
   };
 }
 

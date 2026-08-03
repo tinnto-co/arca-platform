@@ -200,6 +200,16 @@ export interface InflationAccountInput {
   opening?: number;
   /** Movimientos netos del ejercicio, agrupados por mes. */
   monthly?: MonthlyMovement[];
+  /**
+   * Coeficiente único para los movimientos del ejercicio, en lugar del de cada
+   * mes. El saldo de apertura no se ve afectado: sigue yendo por el coeficiente
+   * del cierre anterior.
+   *
+   * Lo usan las amortizaciones de bienes de uso, que llevan el coeficiente del
+   * bien que amortizan y no el del mes en que se asentaron —ver
+   * `accounting-fixed-asset-inflation.ts`.
+   */
+  monthlyCoefficient?: number | null;
 }
 
 export interface InflationEngineInput {
@@ -339,12 +349,13 @@ export function computeInflationAdjustment(
 
     for (const mv of acc.monthly ?? []) {
       if (Math.abs(mv.amount) < 0.005) continue;
-      const coef = reexpress
-        ? reexpressionCoefficient(
+      const coef = !reexpress
+        ? 1
+        : (acc.monthlyCoefficient ??
+          reexpressionCoefficient(
             closingIndex,
             indexFor(indexes, mv.year, mv.month)
-          )
-        : 1;
+          ));
       const rawAdj = mv.amount * coef;
       rawHistorical += mv.amount;
       rawAdjusted += rawAdj;

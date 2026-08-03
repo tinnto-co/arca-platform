@@ -517,6 +517,24 @@ export function AjustePorInflacion({
         </Banner>
       )}
 
+      {preview && !blocked && preview.depreciationMismatch.length > 0 && (
+        <Banner
+          tone="warn"
+          icon={AlertTriangle}
+          title="La amortización del mayor no coincide con el registro de bienes de uso"
+        >
+          El coeficiente de la amortización sale del registro de bienes, así que
+          si los totales difieren el ajuste queda mal.{' '}
+          {preview.depreciationMismatch
+            .map(
+              (d) =>
+                `${d.code}: mayor ${fmtMoney(d.ledger)} vs registro ${fmtMoney(d.register)}`
+            )
+            .join(' · ')}
+          . Revisá el asiento de amortización o las altas del registro.
+        </Banner>
+      )}
+
       {preview && !blocked && !preview.balanced && (
         <Banner tone="error" icon={AlertTriangle} title="El asiento no cuadra">
           Debe y Haber no coinciden. No se puede generar el asiento hasta
