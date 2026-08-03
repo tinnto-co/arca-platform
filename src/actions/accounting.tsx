@@ -4900,6 +4900,9 @@ export const getYearEndChecklist = createServerFn({ method: 'GET' })
     await ensureClientBelongsToOrg(clientId, orgId);
     const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
 
+    // Cada título nombra el tema y el detalle dice cómo está. Escribirlos como
+    // afirmación ("Los 12 períodos están cerrados") los hace contradecir a su
+    // propio detalle cuando el chequeo falla.
     const checks: YearEndCheck[] = [];
     /** Importe con separadores, para que los detalles se puedan leer. */
     const money = (n: number) =>
@@ -4920,7 +4923,7 @@ export const getYearEndChecklist = createServerFn({ method: 'GET' })
     const open = periods.filter((p) => p.status !== 'closed');
     checks.push({
       key: 'periods',
-      label: 'Los 12 períodos del ejercicio están cerrados',
+      label: 'Cierre de los 12 períodos del ejercicio',
       status: open.length === 0 ? 'pass' : 'fail',
       detail:
         open.length === 0
@@ -4947,7 +4950,7 @@ export const getYearEndChecklist = createServerFn({ method: 'GET' })
       );
     checks.push({
       key: 'pending_review',
-      label: 'No hay asientos en pendiente de revisión',
+      label: 'Asientos pendientes de revisión',
       status: (pend ?? 0) === 0 ? 'pass' : 'fail',
       detail:
         (pend ?? 0) === 0
@@ -4977,7 +4980,7 @@ export const getYearEndChecklist = createServerFn({ method: 'GET' })
     const diff = r2(totalDebit - totalCredit);
     checks.push({
       key: 'balance',
-      label: 'El ejercicio balancea (Debe = Haber)',
+      label: 'Balance del ejercicio (Debe = Haber)',
       status: Math.abs(diff) < 0.005 ? 'pass' : 'fail',
       detail:
         Math.abs(diff) < 0.005
@@ -5010,7 +5013,7 @@ export const getYearEndChecklist = createServerFn({ method: 'GET' })
     });
     checks.push({
       key: 'rules',
-      label: 'Reglas de mapeo con condiciones consistentes',
+      label: 'Consistencia de las reglas de mapeo',
       status: badRules.length === 0 ? 'pass' : 'fail',
       detail:
         badRules.length === 0
