@@ -6,6 +6,8 @@ import {
   representative,
   representativeUserAccess,
   organizationModule,
+  client,
+  fiscalYear,
 } from '@/drizzle/schema';
 import { and, eq } from 'drizzle-orm';
 
@@ -106,4 +108,41 @@ export async function isModuleEnabled(
     .limit(1);
 
   return row?.enabled ?? false;
+}
+
+/** Valida que una empresa (client) pertenezca al estudio del usuario. */
+export async function ensureClientBelongsToOrg(
+  clientId: string,
+  orgId: string
+): Promise<void> {
+  const [row] = await db
+    .select({ id: client.id })
+    .from(client)
+    .innerJoin(representative, eq(representative.id, client.representativeId))
+    .where(
+      and(eq(client.id, clientId), eq(representative.organizationId, orgId))
+    )
+    .limit(1);
+  if (!row) throw new Error('Empresa no encontrada o no autorizada');
+}
+
+/** Carga un ejercicio validando que pertenezca al estudio del usuario. */
+export async function loadFiscalYearForOrg(
+  fiscalYearId: string,
+  orgId: string
+): Promise<typeof fiscalYear.$inferSelect> {
+  const [row] = await db
+    .select({ fy: fiscalYear })
+    .from(fiscalYear)
+    .innerJoin(client, eq(client.id, fiscalYear.clientId))
+    .innerJoin(representative, eq(representative.id, client.representativeId))
+    .where(
+      and(
+        eq(fiscalYear.id, fiscalYearId),
+        eq(representative.organizationId, orgId)
+      )
+    )
+    .limit(1);
+  if (!row) throw new Error('Ejercicio no encontrado o no autorizado');
+  return row.fy;
 }

@@ -12,21 +12,15 @@
  */
 import { db } from '@/lib/db';
 import {
-  account,
-  accountOverride,
   accountingLog,
-  accountingPeriod,
   client,
-  fiscalYear,
   invoice,
   journalEntry,
   journalEntryLine,
-  ledgerMappingRule,
-  ledgerMappingRuleLine,
   organizationModule,
   representative,
 } from '@/drizzle/schema';
-import { and, asc, eq, inArray, gte, lte, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import {
   buildEntryLines,
   computeInvoiceAmounts,
@@ -34,7 +28,13 @@ import {
   selectRuleForInvoice,
   type RuleLike,
 } from '@/lib/accounting-invoice-posting';
-import { PENDING_REVIEW_CODE } from '@/lib/accounting-labels';
+import {
+  assertPostableAccounts,
+  loadActiveMappingRules,
+  loadPendingReviewAccountId,
+  nextEntryNumber,
+  resolvePeriodForDate,
+} from '@/lib/accounting-posting-db';
 
 export interface InvoiceBatchResult {
   startedAt: string;
@@ -77,135 +77,6 @@ const pad2 = (n: number): string => String(n).padStart(2, '0');
 const invoiceDateStr = (d: Date): string =>
   `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
 
-async function loadPendingReviewAccountId(orgId: string): Promise<string> {
-  const [acc] = await db
-    .select({ id: account.id })
-    .from(account)
-    .where(
-      and(
-        eq(account.organizationId, orgId),
-        eq(account.scope, 'base'),
-        eq(account.code, PENDING_REVIEW_CODE)
-      )
-    )
-    .limit(1);
-  if (!acc)
-    throw new Error('Falta la cuenta de sistema "Pendiente de revisión"');
-  return acc.id;
-}
-
-async function loadActiveInvoiceRules(clientId: string): Promise<RuleLike[]> {
-  const rules = await db
-    .select()
-    .from(ledgerMappingRule)
-    .where(
-      and(
-        eq(ledgerMappingRule.clientId, clientId),
-        eq(ledgerMappingRule.sourceModule, 'invoice'),
-        eq(ledgerMappingRule.isActive, true)
-      )
-    )
-    .orderBy(asc(ledgerMappingRule.priority), asc(ledgerMappingRule.name));
-  if (rules.length === 0) return [];
-
-  const lines = await db
-    .select()
-    .from(ledgerMappingRuleLine)
-    .where(
-      inArray(
-        ledgerMappingRuleLine.ruleId,
-        rules.map((r) => r.id)
-      )
-    )
-    .orderBy(asc(ledgerMappingRuleLine.lineOrder));
-  const byRule = new Map<string, typeof lines>();
-  for (const l of lines) {
-    const arr = byRule.get(l.ruleId) ?? [];
-    arr.push(l);
-    byRule.set(l.ruleId, arr);
-  }
-
-  return rules.map(
-    (r): RuleLike => ({
-      id: r.id,
-      name: r.name,
-      ruleType: r.ruleType as 'default' | 'conditional',
-      condition: (r.condition ?? null) as Record<string, unknown> | null,
-      priority: r.priority,
-      lines: (byRule.get(r.id) ?? []).map((l) => ({
-        accountId: l.accountId,
-        side: l.side as 'debit' | 'credit',
-        amountBasis: l.amountBasis as RuleLike['lines'][number]['amountBasis'],
-        fixedAmount: l.fixedAmount,
-        description: l.description,
-      })),
-    })
-  );
-}
-
-async function resolvePeriodForDate(clientId: string, dateStr: string) {
-  const date = new Date(`${dateStr}T00:00:00Z`);
-  if (isNaN(date.getTime())) throw new Error('Fecha inválida');
-  const [fy] = await db
-    .select()
-    .from(fiscalYear)
-    .where(
-      and(
-        eq(fiscalYear.clientId, clientId),
-        lte(fiscalYear.startDate, date),
-        gte(fiscalYear.endDate, date)
-      )
-    )
-    .limit(1);
-  if (!fy) throw new Error('no_fy');
-  const [period] = await db
-    .select()
-    .from(accountingPeriod)
-    .where(
-      and(
-        eq(accountingPeriod.fiscalYearId, fy.id),
-        eq(accountingPeriod.year, date.getUTCFullYear()),
-        eq(accountingPeriod.month, date.getUTCMonth() + 1)
-      )
-    )
-    .limit(1);
-  if (!period) throw new Error('no_period');
-  return { fy, period, date };
-}
-
-async function assertPostableAccounts(
-  clientId: string,
-  orgId: string,
-  accountIds: string[]
-) {
-  const ids = [...new Set(accountIds)];
-  const accs = await db
-    .select()
-    .from(account)
-    .where(and(eq(account.organizationId, orgId), inArray(account.id, ids)));
-  const overrides = await db
-    .select()
-    .from(accountOverride)
-    .where(
-      and(
-        eq(accountOverride.clientId, clientId),
-        inArray(accountOverride.accountId, ids)
-      )
-    );
-  const ovMap = new Map(overrides.map((o) => [o.accountId, o]));
-  const byId = new Map(accs.map((a) => [a.id, a]));
-  for (const id of ids) {
-    const a = byId.get(id);
-    if (!a) throw new Error('Cuenta inexistente o de otro estudio');
-    if (a.scope === 'custom' && a.clientId !== clientId)
-      throw new Error('Cuenta custom de otra empresa');
-    if (a.type !== 'imputable')
-      throw new Error(`La cuenta ${a.code} es de agrupación`);
-    const active = ovMap.get(id)?.isActive ?? a.isActive;
-    if (!active) throw new Error(`La cuenta ${a.code} está inactiva`);
-  }
-}
-
 async function hasAutoEntry(clientId: string, invoiceId: string) {
   const [row] = await db
     .select({ id: journalEntry.id })
@@ -229,25 +100,28 @@ async function insertAutoInvoiceEntry(params: {
   date: Date;
   inv: InvoiceRow;
   ruleId: string | null;
-  lines: { accountId: string; debit: number; credit: number; description: string | null }[];
+  lines: {
+    accountId: string;
+    debit: number;
+    credit: number;
+    description: string | null;
+  }[];
   usedPendingReview: boolean;
   reason: string | null;
 }) {
-  const { clientId, fyId, periodId, date, inv, ruleId, lines, usedPendingReview, reason } =
-    params;
+  const {
+    clientId,
+    fyId,
+    periodId,
+    date,
+    inv,
+    ruleId,
+    lines,
+    usedPendingReview,
+    reason,
+  } = params;
   await db.transaction(async (tx) => {
-    const [{ maxNum }] = await tx
-      .select({
-        maxNum: sql<number>`coalesce(max(${journalEntry.number}),0)::int`,
-      })
-      .from(journalEntry)
-      .where(
-        and(
-          eq(journalEntry.clientId, clientId),
-          eq(journalEntry.fiscalYearId, fyId)
-        )
-      );
-    const number = (maxNum ?? 0) + 1;
+    const number = await nextEntryNumber(tx, clientId, fyId);
     const dir = normalizeDirection(inv.direction);
     const who = dir === 'purchase' ? inv.emitterName : inv.recipientName;
     const label =
@@ -362,7 +236,7 @@ export async function runPendingInvoiceBatch(opts?: {
     let rules: RuleLike[];
     try {
       prId = await loadPendingReviewAccountId(orgId);
-      rules = await loadActiveInvoiceRules(clientId);
+      rules = await loadActiveMappingRules(clientId, 'invoice');
     } catch (e) {
       result.errors.push({
         clientId,

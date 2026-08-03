@@ -26,11 +26,16 @@ import {
   ledgerMappingRuleLine,
   representative,
   user,
+  inflationIndex,
+  inflationAdjustment,
+  inflationAdjustmentLine,
 } from '@/drizzle/schema';
 import {
   getSessionWithOrg,
   getMemberRole,
   assertCanWrite,
+  ensureClientBelongsToOrg,
+  loadFiscalYearForOrg,
 } from '@/actions/helpers';
 import {
   and,
@@ -38,6 +43,7 @@ import {
   desc,
   eq,
   gte,
+  gt,
   inArray,
   isNull,
   lt,
@@ -72,6 +78,13 @@ import {
 } from '@/lib/accounting-depreciation';
 import { parentCodeOf } from '@/lib/accounting-base-chart';
 import {
+  CASH_FLOW_ACTIVITY_LABELS,
+  CASH_FLOW_ACTIVITY_ORDER,
+  defaultCashFlowActivity,
+  isCashGroup,
+  type CashFlowActivity,
+} from '@/lib/accounting-cashflow';
+import {
   planChartImport,
   type ExistingAccount,
   type PlannedAccount,
@@ -86,22 +99,6 @@ function assertOwner(role: string): void {
       'Solo el Owner del estudio puede modificar el plan de cuentas'
     );
   }
-}
-
-/** Valida que una empresa (client) pertenezca al estudio del usuario. */
-async function ensureClientBelongsToOrg(
-  clientId: string,
-  orgId: string
-): Promise<void> {
-  const [row] = await db
-    .select({ id: client.id })
-    .from(client)
-    .innerJoin(representative, eq(representative.id, client.representativeId))
-    .where(
-      and(eq(client.id, clientId), eq(representative.organizationId, orgId))
-    )
-    .limit(1);
-  if (!row) throw new Error('Empresa no encontrada o no autorizada');
 }
 
 type AccountRow = typeof account.$inferSelect;
@@ -1153,27 +1150,6 @@ export const importChartOfAccounts = createServerFn({ method: 'POST' })
 type FiscalYearRow = typeof fiscalYear.$inferSelect;
 type PeriodRow = typeof accountingPeriod.$inferSelect;
 
-/** Valida que un ejercicio pertenezca al estudio del usuario y lo devuelve. */
-async function loadFiscalYearForOrg(
-  fiscalYearId: string,
-  orgId: string
-): Promise<FiscalYearRow> {
-  const [row] = await db
-    .select({ fy: fiscalYear })
-    .from(fiscalYear)
-    .innerJoin(client, eq(client.id, fiscalYear.clientId))
-    .innerJoin(representative, eq(representative.id, client.representativeId))
-    .where(
-      and(
-        eq(fiscalYear.id, fiscalYearId),
-        eq(representative.organizationId, orgId)
-      )
-    )
-    .limit(1);
-  if (!row) throw new Error('Ejercicio no encontrado o no autorizado');
-  return row.fy;
-}
-
 /** Valida que un período pertenezca al estudio y devuelve {period, fy}. */
 async function loadPeriodForOrg(
   periodId: string,
@@ -1260,9 +1236,7 @@ export const createFiscalYear = createServerFn({ method: 'POST' })
     // ejercicios irregulares: 3, 5, 6, 8, 10, etc., pero nunca más de 12).
     const months = (eY - sY) * 12 + (eM - sM) + 1;
     if (months < 1 || months > 12) {
-      throw new Error(
-        'El ejercicio debe durar entre 1 y 12 meses calendario'
-      );
+      throw new Error('El ejercicio debe durar entre 1 y 12 meses calendario');
     }
 
     // Un solo ejercicio abierto por empresa.
@@ -1702,6 +1676,8 @@ export const AUDIT_EVENT_TYPES = [
   'account_created',
   'account_deactivated',
   'financial_statement_approved',
+  'inflation_adjustment_applied',
+  'inflation_adjustment_voided',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
@@ -4711,8 +4687,7 @@ async function computeAnexoIRows(
     // Acumulada al cierre: inicio + del ejercicio − dada de baja.
     const accumEnd = r2(accumStart + amortYear - amortBajas);
     const residualEnd = r2(valorCierre - accumEnd);
-    const rate =
-      r.fa.usefulLifeYears > 0 ? r2(100 / r.fa.usefulLifeYears) : 0;
+    const rate = r.fa.usefulLifeYears > 0 ? r2(100 / r.fa.usefulLifeYears) : 0;
 
     return {
       id: r.fa.id,
@@ -5301,6 +5276,85 @@ export interface ClosingWizardState {
   apertura: ClosingStageView & {
     nextFy: { number: number; startDate: string; endDate: string } | null;
   };
+  /** Ajuste por inflación: tiene que estar aplicado y al día antes de refundir. */
+  inflation: {
+    applied: boolean;
+    stale: boolean;
+    recpam: number | null;
+    journalEntryNumber: number | null;
+  };
+}
+
+/**
+ * Estado del ajuste por inflación de un ejercicio, para el wizard de cierre.
+ *
+ * Ajustar tiene que pasar ANTES de la refundición: la refundición manda los
+ * saldos de las cuentas de resultado a "Resultado del ejercicio", así que si se
+ * cierra sin ajustar, el balance queda en valores históricos sin que nadie lo
+ * advierta.
+ *
+ * `stale` significa que el asiento existe pero ya no coincide con el mayor
+ * porque entraron o cambiaron asientos después de generarlo.
+ */
+async function loadInflationStatus(fyId: string): Promise<{
+  applied: boolean;
+  stale: boolean;
+  recpam: number | null;
+  journalEntryNumber: number | null;
+}> {
+  const [adj] = await db
+    .select()
+    .from(inflationAdjustment)
+    .where(
+      and(
+        eq(inflationAdjustment.fiscalYearId, fyId),
+        eq(inflationAdjustment.status, 'applied')
+      )
+    )
+    .limit(1);
+  if (!adj) {
+    return {
+      applied: false,
+      stale: false,
+      recpam: null,
+      journalEntryNumber: null,
+    };
+  }
+
+  let journalEntryNumber: number | null = null;
+  if (adj.journalEntryId) {
+    const [je] = await db
+      .select({ number: journalEntry.number })
+      .from(journalEntry)
+      .where(eq(journalEntry.id, adj.journalEntryId))
+      .limit(1);
+    journalEntryNumber = je?.number ?? null;
+  }
+
+  // El asiento del ajuste debe ser el último movimiento no-cierre del ejercicio:
+  // si después se cargó cualquier otro asiento, el ajuste quedó viejo.
+  let stale = false;
+  if (adj.appliedAt) {
+    const [{ posteriores }] = await db
+      .select({ posteriores: sql<number>`count(*)::int` })
+      .from(journalEntry)
+      .where(
+        and(
+          eq(journalEntry.fiscalYearId, fyId),
+          eq(journalEntry.isVoided, false),
+          gt(journalEntry.createdAt, adj.appliedAt),
+          sql`${journalEntry.origin} NOT IN ('auto_closing','auto_inflation')`
+        )
+      );
+    stale = posteriores > 0;
+  }
+
+  return {
+    applied: true,
+    stale,
+    recpam: Number(adj.recpamAmount),
+    journalEntryNumber,
+  };
 }
 
 /** Estado del wizard de cierre por etapa (con previews editables). (US 5.3.x) */
@@ -5414,6 +5468,7 @@ export const getClosingWizard = createServerFn({ method: 'GET' })
           endDate: nd.end.toISOString(),
         },
       },
+      inflation: await loadInflationStatus(fy.id),
     };
   });
 
@@ -5467,6 +5522,22 @@ export const approveClosingStage = createServerFn({ method: 'POST' })
 
     if (stage === 'refundicion' && refDone)
       throw new Error('La refundición ya fue registrada');
+
+    // El ajuste por inflación va antes de la refundición: después, las cuentas de
+    // resultado quedan refundidas y el balance saldría en valores históricos.
+    if (stage === 'refundicion') {
+      const inflation = await loadInflationStatus(fy.id);
+      if (!inflation.applied) {
+        throw new Error(
+          'Falta generar el ajuste por inflación del ejercicio. Hacelo en la solapa «Ajuste por inflación» antes de refundir.'
+        );
+      }
+      if (inflation.stale) {
+        throw new Error(
+          'El ajuste por inflación quedó desactualizado: se cargaron asientos después de generarlo. Regeneralo antes de refundir.'
+        );
+      }
+    }
     if (stage === 'cierre') {
       if (!refDone) throw new Error('Primero registrá la refundición');
       if (cierreDone)
@@ -5655,15 +5726,28 @@ interface EspBalance {
 }
 
 /**
- * Saldos por cuenta de un ejercicio EXCLUYENDO los asientos de cierre/apertura
- * (auto_closing/auto_opening). Así el ESP refleja la posición patrimonial pre-cierre
- * (si no, un ejercicio cerrado daría todo en cero) y el resultado se computa de las
- * cuentas de resultado.
+ * Saldos por cuenta de un ejercicio.
+ *
+ * Se excluye el asiento de cierre (`auto_closing`): si no, un ejercicio cerrado
+ * daría todo en cero y el resultado se computa igual desde las cuentas de
+ * resultado. El asiento de apertura (`auto_opening`) **sí** entra: lo genera el
+ * cierre del ejercicio anterior con el id del ejercicio nuevo, y es el que trae
+ * el patrimonio inicial. Sin él, todo ejercicio a partir del segundo mostraría
+ * un ESP sin saldos de arranque.
+ *
+ * `view='ajustado'` (default) incluye el asiento de ajuste por inflación, que es
+ * como se presentan los EECC. `view='historico'` lo excluye y devuelve los
+ * valores históricos, que quedan como papel de trabajo.
  */
 async function computeEspBalances(
   orgId: string,
-  fyId: string
+  fyId: string,
+  view: 'ajustado' | 'historico' = 'ajustado'
 ): Promise<EspBalance[]> {
+  const excluded =
+    view === 'historico'
+      ? sql`${journalEntry.origin} NOT IN ('auto_closing','auto_inflation')`
+      : sql`${journalEntry.origin} <> 'auto_closing'`;
   const rows = await db
     .select({
       accountId: account.id,
@@ -5684,7 +5768,7 @@ async function computeEspBalances(
         eq(journalEntry.fiscalYearId, fyId),
         eq(journalEntry.isVoided, false),
         eq(account.organizationId, orgId),
-        sql`${journalEntry.origin} NOT IN ('auto_closing','auto_opening')`
+        excluded
       )
     )
     .groupBy(account.id, account.code, account.name, account.accountGroup);
@@ -5733,16 +5817,60 @@ export interface EspResult {
   balancedCurrent: boolean;
   balancedPrior: boolean;
   hasPrior: boolean;
+  /** Coeficiente con el que se reexpresó la columna anterior. null = quedó histórica. */
+  priorCoefficient: number | null;
 }
+
+/** Contrapartida del ajuste por inflación; se expone en su propia línea del ER. */
+const RECPAM_ACCOUNT_CODE = '5.4.004';
 
 const ESP_SECTIONS = ACCOUNT_GROUP_SECTIONS.filter(
   (s) => s.section !== 'Resultados'
 );
 
+/**
+ * Coeficiente para llevar la columna comparativa a la moneda de cierre actual.
+ *
+ * Los EECC del ejercicio anterior están expresados en moneda de SU cierre. Para
+ * exponerlos al lado de los del ejercicio corriente hay que reexpresarlos, si no
+ * se estarían comparando pesos de distinto poder adquisitivo (RT 6). Como el
+ * ejercicio anterior ya es homogéneo, alcanza con un único coeficiente:
+ * índice del cierre actual sobre índice del cierre anterior.
+ *
+ * Devuelve `null` si falta alguno de los dos índices; en ese caso el comparativo
+ * queda en valores históricos y se avisa en la UI.
+ */
+async function priorColumnCoefficient(
+  currentEnd: Date,
+  priorEnd: Date
+): Promise<number | null> {
+  const load = async (d: Date) => {
+    const [row] = await db
+      .select({ value: inflationIndex.value })
+      .from(inflationIndex)
+      .where(
+        and(
+          eq(inflationIndex.source, 'facpce_rt6'),
+          eq(inflationIndex.year, d.getUTCFullYear()),
+          eq(inflationIndex.month, d.getUTCMonth() + 1)
+        )
+      )
+      .limit(1);
+    return row ? Number(row.value) : null;
+  };
+  const [cur, pri] = await Promise.all([load(currentEnd), load(priorEnd)]);
+  if (!cur || !pri || pri <= 0) return null;
+  return Math.round((cur / pri) * 10000) / 10000;
+}
+
 /** Estado de Situación Patrimonial comparativo (actual vs anterior). (US 6.1.1/6.1.2) */
 export const getESP = createServerFn({ method: 'GET' })
   .inputValidator(
-    z.object({ clientId: z.string().uuid(), fiscalYearId: z.string().uuid() })
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid(),
+      view: z.enum(['ajustado', 'historico']).default('ajustado'),
+    })
   )
   .handler(async (ctx): Promise<EspResult> => {
     const { orgId } = await getSessionWithOrg();
@@ -5761,8 +5889,24 @@ export const getESP = createServerFn({ method: 'GET' })
       )
       .limit(1);
 
-    const curBal = await computeEspBalances(orgId, fy.id);
-    const priBal = priorFy ? await computeEspBalances(orgId, priorFy.id) : [];
+    const curBal = await computeEspBalances(orgId, fy.id, ctx.data.view);
+    let priBal = priorFy
+      ? await computeEspBalances(orgId, priorFy.id, ctx.data.view)
+      : [];
+
+    // El comparativo se reexpresa a la moneda de cierre actual (ver
+    // priorColumnCoefficient). En la vista histórica se deja como está.
+    let priorCoefficient: number | null = null;
+    if (priorFy && ctx.data.view === 'ajustado') {
+      priorCoefficient = await priorColumnCoefficient(
+        fy.endDate,
+        priorFy.endDate
+      );
+      if (priorCoefficient !== null) {
+        const k = priorCoefficient;
+        priBal = priBal.map((b) => ({ ...b, saldo: r2(b.saldo * k) }));
+      }
+    }
     const curMap = new Map(curBal.map((b) => [b.accountId, b]));
     const priMap = new Map(priBal.map((b) => [b.accountId, b]));
 
@@ -5876,6 +6020,7 @@ export const getESP = createServerFn({ method: 'GET' })
         ? Math.abs(totals.activo.prior - totals.pasivoMasPn.prior) < 0.005
         : true,
       hasPrior: !!priorFy,
+      priorCoefficient,
     };
   });
 
@@ -5902,6 +6047,8 @@ export interface ErResult {
   matchesEspCurrent: boolean;
   matchesEspPrior: boolean;
   hasPrior: boolean;
+  /** Coeficiente con el que se reexpresó la columna anterior. null = quedó histórica. */
+  priorCoefficient: number | null;
 }
 
 /** Líneas de componentes del ER (los subtotales se intercalan al armar). */
@@ -5942,7 +6089,11 @@ const ER_COMPONENTS: {
 /** Estado de Resultados comparativo (actual vs anterior). (US 6.2.1/6.2.2) */
 export const getER = createServerFn({ method: 'GET' })
   .inputValidator(
-    z.object({ clientId: z.string().uuid(), fiscalYearId: z.string().uuid() })
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid(),
+      view: z.enum(['ajustado', 'historico']).default('ajustado'),
+    })
   )
   .handler(async (ctx): Promise<ErResult> => {
     const { orgId } = await getSessionWithOrg();
@@ -5961,8 +6112,24 @@ export const getER = createServerFn({ method: 'GET' })
       )
       .limit(1);
 
-    const curBal = await computeEspBalances(orgId, fy.id);
-    const priBal = priorFy ? await computeEspBalances(orgId, priorFy.id) : [];
+    const curBal = await computeEspBalances(orgId, fy.id, ctx.data.view);
+    let priBal = priorFy
+      ? await computeEspBalances(orgId, priorFy.id, ctx.data.view)
+      : [];
+
+    // El comparativo se reexpresa a la moneda de cierre actual (ver
+    // priorColumnCoefficient). En la vista histórica se deja como está.
+    let priorCoefficient: number | null = null;
+    if (priorFy && ctx.data.view === 'ajustado') {
+      priorCoefficient = await priorColumnCoefficient(
+        fy.endDate,
+        priorFy.endDate
+      );
+      if (priorCoefficient !== null) {
+        const k = priorCoefficient;
+        priBal = priBal.map((b) => ({ ...b, saldo: r2(b.saldo * k) }));
+      }
+    }
     const curMap = new Map(curBal.map((b) => [b.accountId, b]));
     const priMap = new Map(priBal.map((b) => [b.accountId, b]));
 
@@ -6002,6 +6169,33 @@ export const getER = createServerFn({ method: 'GET' })
     const comp = new Map(
       ER_COMPONENTS.map((c) => [c.key, { ...c, ...buildComponent(c.groups) }])
     );
+
+    // El RECPAM vive en el rubro "Gastos financieros" del plan de cuentas, pero
+    // en el estado se expone como línea propia: es el resultado del ajuste por
+    // inflación, no un gasto de financiación. Así lo presenta el estudio.
+    const finComp = comp.get('gastos_financieros')!;
+    const recpamAccounts = finComp.accounts.filter(
+      (a) => a.code === RECPAM_ACCOUNT_CODE
+    );
+    if (recpamAccounts.length > 0) {
+      const rest = finComp.accounts.filter(
+        (a) => a.code !== RECPAM_ACCOUNT_CODE
+      );
+      comp.set('gastos_financieros', {
+        ...finComp,
+        accounts: rest,
+        current: r2(rest.reduce((t, a) => t + a.current, 0)),
+        prior: r2(rest.reduce((t, a) => t + a.prior, 0)),
+      });
+      comp.set('recpam', {
+        key: 'recpam',
+        label: 'RECPAM',
+        groups: [],
+        accounts: recpamAccounts,
+        current: r2(recpamAccounts.reduce((t, a) => t + a.current, 0)),
+        prior: r2(recpamAccounts.reduce((t, a) => t + a.prior, 0)),
+      });
+    }
     const compLine = (key: string): ErLine => {
       const c = comp.get(key)!;
       return {
@@ -6023,6 +6217,7 @@ export const getER = createServerFn({ method: 'GET' })
     const admin = comp.get('gastos_administracion')!;
     const comerc = comp.get('gastos_comercializacion')!;
     const fin = comp.get('gastos_financieros')!;
+    const recpam = comp.get('recpam');
     const otros = comp.get('otros_resultados')!;
     const resOperativo = {
       current: r2(
@@ -6030,10 +6225,16 @@ export const getER = createServerFn({ method: 'GET' })
           admin.current +
           comerc.current +
           fin.current +
+          (recpam?.current ?? 0) +
           otros.current
       ),
       prior: r2(
-        resBruto.prior + admin.prior + comerc.prior + fin.prior + otros.prior
+        resBruto.prior +
+          admin.prior +
+          comerc.prior +
+          fin.prior +
+          (recpam?.prior ?? 0) +
+          otros.prior
       ),
     };
     const impuesto = comp.get('impuesto_ganancias')!;
@@ -6062,6 +6263,7 @@ export const getER = createServerFn({ method: 'GET' })
       compLine('gastos_administracion'),
       compLine('gastos_comercializacion'),
       compLine('gastos_financieros'),
+      ...(comp.has('recpam') ? [compLine('recpam')] : []),
       compLine('otros_resultados'),
       subtotal('resultado_operativo', 'Resultado operativo', resOperativo),
       compLine('impuesto_ganancias'),
@@ -6102,6 +6304,7 @@ export const getER = createServerFn({ method: 'GET' })
         ? Math.abs(resEjercicio.prior - espResultadoPrior) < 0.005
         : true,
       hasPrior: !!priorFy,
+      priorCoefficient,
     };
   });
 
@@ -6739,3 +6942,684 @@ export const getFinancialStatementPdf = createServerFn({ method: 'GET' })
       };
     }
   );
+
+/* ── Estado de Evolución del Patrimonio Neto (EEPN) — AXI-6 ── */
+
+/** Rubros que integran el patrimonio neto, en orden de exposición (RT 9). */
+const PN_GROUPS = [
+  'capital',
+  'aportes_irrevocables',
+  'primas_emision',
+  'reservas',
+  'resultados_no_asignados',
+] as const;
+
+export interface EepnColumn {
+  accountId: string;
+  code: string;
+  name: string;
+  group: string;
+  groupLabel: string;
+}
+
+export interface EepnRow {
+  key: string;
+  label: string;
+  kind: 'inicio' | 'movimiento' | 'resultado' | 'cierre';
+  /** Importe por columna (accountId → importe, signo de exposición: positivo = suma al PN). */
+  amounts: Record<string, number>;
+  total: number;
+  /** Solo en filas de movimiento: asiento que lo originó. */
+  entryNumber?: number;
+  entryDate?: string;
+}
+
+export interface EepnResult {
+  fiscalYearNumber: number;
+  priorFiscalYearNumber: number | null;
+  periodLabel: string;
+  columns: EepnColumn[];
+  rows: EepnRow[];
+  /** Total del PN al cierre del ejercicio anterior, reexpresado a moneda de cierre. */
+  priorTotal: number | null;
+  priorCoefficient: number | null;
+  /** Total del PN según el ESP; debe coincidir con el saldo al cierre. */
+  espTotal: number;
+  matchesEsp: boolean;
+  /** El ajuste por inflación del ejercicio está aplicado. */
+  inflationApplied: boolean;
+}
+
+/**
+ * Estado de Evolución del Patrimonio Neto.
+ *
+ * Layout según el modelo RT 9 del CPCECABA: una columna por cuenta de PN
+ * (agrupadas por rubro) y filas por causa de variación.
+ *
+ * Dos particularidades del ajuste por inflación, tomadas del papel de trabajo
+ * del estudio:
+ *
+ * 1. La fila "Saldos al inicio" se expone **en moneda de cierre**: la
+ *    reexpresión del patrimonio inicial se incorpora ahí y no aparece como un
+ *    movimiento del ejercicio. El modelo RT 9 no tiene fila para exponerla.
+ * 2. El Capital social queda a **valor nominal**: su reexpresión no se le imputa
+ *    a él sino a Ajuste de capital (`account.inflationTargetId`). Por eso la
+ *    columna "Ajuste de capital" arranca con el ajuste anterior reexpresado más
+ *    el del capital — las "dos fórmulas" que describió el contador.
+ *
+ * Las variaciones del ejercicio se exponen desglosadas por asiento, con su
+ * descripción: el sistema no infiere si un movimiento es un dividendo o una
+ * constitución de reserva, lo muestra tal como lo cargó el contador.
+ */
+export const getEEPN = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid(),
+      view: z.enum(['ajustado', 'historico']).default('ajustado'),
+    })
+  )
+  .handler(async (ctx): Promise<EepnResult> => {
+    const { orgId } = await getSessionWithOrg();
+    const { clientId, view } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
+
+    const [priorFy] = await db
+      .select()
+      .from(fiscalYear)
+      .where(
+        and(
+          eq(fiscalYear.clientId, clientId),
+          eq(fiscalYear.number, fy.number - 1)
+        )
+      )
+      .limit(1);
+
+    // Cuentas de PN visibles para la empresa.
+    const pnAccounts = await db
+      .select({
+        id: account.id,
+        code: account.code,
+        name: account.name,
+        group: account.accountGroup,
+        inflationTargetId: account.inflationTargetId,
+      })
+      .from(account)
+      .where(
+        and(
+          eq(account.organizationId, orgId),
+          eq(account.type, 'imputable'),
+          inArray(account.accountGroup, PN_GROUPS as unknown as AccountGroup[]),
+          sql`(${account.scope} = 'base' OR ${account.clientId} = ${clientId})`
+        )
+      )
+      .orderBy(asc(account.code));
+    const pnIds = new Set(pnAccounts.map((a) => a.id));
+
+    /** Signo de exposición: el PN es acreedor, así que se invierte. */
+    const expose = (saldo: number) => r2(-saldo);
+
+    // 1. Saldos de apertura (histórico), del asiento de apertura del ejercicio.
+    const openingRows = await db
+      .select({
+        accountId: journalEntryLine.accountId,
+        debit: sql<string>`coalesce(sum(${journalEntryLine.debit}),0)`,
+        credit: sql<string>`coalesce(sum(${journalEntryLine.credit}),0)`,
+      })
+      .from(journalEntryLine)
+      .innerJoin(
+        journalEntry,
+        eq(journalEntry.id, journalEntryLine.journalEntryId)
+      )
+      .where(
+        and(
+          eq(journalEntry.fiscalYearId, fy.id),
+          eq(journalEntry.isVoided, false),
+          eq(journalEntry.origin, 'auto_opening')
+        )
+      )
+      .groupBy(journalEntryLine.accountId);
+
+    const inicio: Record<string, number> = {};
+    for (const r of openingRows) {
+      if (!pnIds.has(r.accountId)) continue;
+      inicio[r.accountId] = expose(parseFloat(r.debit) - parseFloat(r.credit));
+    }
+
+    // 2. Reexpresión del patrimonio inicial → se incorpora a la fila de inicio,
+    //    imputada a la cuenta destino (Capital social → Ajuste de capital).
+    const [adjustment] = await db
+      .select()
+      .from(inflationAdjustment)
+      .where(
+        and(
+          eq(inflationAdjustment.fiscalYearId, fy.id),
+          eq(inflationAdjustment.status, 'applied')
+        )
+      )
+      .limit(1);
+
+    const reexpresionMovimientos: Record<string, number> = {};
+    if (adjustment && view === 'ajustado') {
+      const adjLines = await db
+        .select({
+          accountId: inflationAdjustmentLine.accountId,
+          isOpening: inflationAdjustmentLine.isOpening,
+          difference: inflationAdjustmentLine.difference,
+        })
+        .from(inflationAdjustmentLine)
+        .where(eq(inflationAdjustmentLine.adjustmentId, adjustment.id));
+
+      const targetOf = new Map(
+        pnAccounts.map((a) => [a.id, a.inflationTargetId ?? a.id])
+      );
+      for (const l of adjLines) {
+        if (!pnIds.has(l.accountId)) continue;
+        const target = targetOf.get(l.accountId) ?? l.accountId;
+        const amount = expose(parseFloat(l.difference));
+        if (l.isOpening) {
+          inicio[target] = r2((inicio[target] ?? 0) + amount);
+        } else {
+          reexpresionMovimientos[target] = r2(
+            (reexpresionMovimientos[target] ?? 0) + amount
+          );
+        }
+      }
+    }
+
+    // 3. Movimientos del ejercicio en cuentas de PN, desglosados por asiento.
+    const movementRows = await db
+      .select({
+        entryId: journalEntry.id,
+        number: journalEntry.number,
+        entryDate: journalEntry.entryDate,
+        description: journalEntry.description,
+        accountId: journalEntryLine.accountId,
+        debit: sql<string>`coalesce(sum(${journalEntryLine.debit}),0)`,
+        credit: sql<string>`coalesce(sum(${journalEntryLine.credit}),0)`,
+      })
+      .from(journalEntryLine)
+      .innerJoin(
+        journalEntry,
+        eq(journalEntry.id, journalEntryLine.journalEntryId)
+      )
+      .where(
+        and(
+          eq(journalEntry.fiscalYearId, fy.id),
+          eq(journalEntry.isVoided, false),
+          sql`${journalEntry.origin} NOT IN ('auto_opening','auto_closing','auto_inflation')`,
+          inArray(journalEntryLine.accountId, [...pnIds])
+        )
+      )
+      .groupBy(
+        journalEntry.id,
+        journalEntry.number,
+        journalEntry.entryDate,
+        journalEntry.description,
+        journalEntryLine.accountId
+      )
+      .orderBy(asc(journalEntry.number));
+
+    const movimientos = new Map<
+      string,
+      {
+        number: number;
+        entryDate: Date;
+        description: string | null;
+        amounts: Record<string, number>;
+      }
+    >();
+    for (const r of movementRows) {
+      const amount = expose(parseFloat(r.debit) - parseFloat(r.credit));
+      if (Math.abs(amount) < 0.005) continue;
+      const prev = movimientos.get(r.entryId) ?? {
+        number: r.number,
+        entryDate: r.entryDate,
+        description: r.description,
+        amounts: {},
+      };
+      prev.amounts[r.accountId] = r2((prev.amounts[r.accountId] ?? 0) + amount);
+      movimientos.set(r.entryId, prev);
+    }
+
+    // 4. Resultado del ejercicio: sale del ER ya ajustado.
+    const balances = await computeEspBalances(orgId, fy.id, view);
+    const resultado = r2(
+      balances
+        .filter(
+          (b) =>
+            b.group &&
+            (RESULT_ACCOUNT_GROUPS as readonly string[]).includes(b.group)
+        )
+        .reduce((s, b) => s + expose(b.saldo), 0)
+    );
+
+    // 5. El resultado del ejercicio se expone en la columna de Resultados no
+    //    asignados, que es donde lo lleva el modelo RT 9 (y donde lo acumula el
+    //    papel de trabajo del estudio en la fila de totales).
+    const rnaAccount =
+      pnAccounts.find(
+        (a) =>
+          a.group === 'resultados_no_asignados' && inicio[a.id] !== undefined
+      ) ?? pnAccounts.find((a) => a.group === 'resultados_no_asignados');
+    const resultadoAmounts: Record<string, number> =
+      rnaAccount && Math.abs(resultado) >= 0.005
+        ? { [rnaAccount.id]: resultado }
+        : {};
+
+    // 6. Columnas: solo las cuentas con algún importe.
+    const touched = new Set<string>([
+      ...Object.keys(inicio),
+      ...Object.keys(reexpresionMovimientos),
+      ...Object.keys(resultadoAmounts),
+      ...[...movimientos.values()].flatMap((m) => Object.keys(m.amounts)),
+    ]);
+    const columns: EepnColumn[] = pnAccounts
+      .filter((a) => touched.has(a.id))
+      .map((a) => ({
+        accountId: a.id,
+        code: a.code,
+        name: a.name,
+        group: a.group ?? '',
+        groupLabel: ACCOUNT_GROUP_LABELS[a.group!] ?? a.group ?? '',
+      }));
+
+    const sumRow = (amounts: Record<string, number>) =>
+      r2(columns.reduce((s, c) => s + (amounts[c.accountId] ?? 0), 0));
+
+    const rows: EepnRow[] = [];
+    rows.push({
+      key: 'inicio',
+      label: 'Saldos al inicio del ejercicio',
+      kind: 'inicio',
+      amounts: inicio,
+      total: sumRow(inicio),
+    });
+
+    for (const [entryId, m] of movimientos) {
+      rows.push({
+        key: `mov-${entryId}`,
+        label: m.description ?? `Asiento N° ${m.number}`,
+        kind: 'movimiento',
+        amounts: m.amounts,
+        total: sumRow(m.amounts),
+        entryNumber: m.number,
+        entryDate: m.entryDate.toISOString(),
+      });
+    }
+
+    if (Object.keys(reexpresionMovimientos).length > 0) {
+      rows.push({
+        key: 'reexpresion-movimientos',
+        label: 'Reexpresión de los movimientos del ejercicio',
+        kind: 'movimiento',
+        amounts: reexpresionMovimientos,
+        total: sumRow(reexpresionMovimientos),
+      });
+    }
+
+    rows.push({
+      key: 'resultado',
+      label: 'Resultado del ejercicio',
+      kind: 'resultado',
+      amounts: resultadoAmounts,
+      total: resultado,
+    });
+
+    // 7. Saldos al cierre = inicio + movimientos + resultado.
+    const cierre: Record<string, number> = { ...inicio };
+    const accumulate = (amounts: Record<string, number>) => {
+      for (const [accountId, amount] of Object.entries(amounts)) {
+        cierre[accountId] = r2((cierre[accountId] ?? 0) + amount);
+      }
+    };
+    accumulate(reexpresionMovimientos);
+    for (const m of movimientos.values()) accumulate(m.amounts);
+    accumulate(resultadoAmounts);
+    rows.push({
+      key: 'cierre',
+      label: 'Saldos al cierre del ejercicio',
+      kind: 'cierre',
+      amounts: cierre,
+      total: sumRow(cierre),
+    });
+
+    // 7. Comparativo: PN al cierre del ejercicio anterior, en moneda de cierre.
+    let priorTotal: number | null = null;
+    let priorCoefficient: number | null = null;
+    if (priorFy) {
+      const priorBalances = await computeEspBalances(orgId, priorFy.id, view);
+      const priorPn = r2(
+        priorBalances
+          .filter(
+            (b) =>
+              b.group &&
+              (
+                [...PN_GROUPS, ...RESULT_ACCOUNT_GROUPS] as readonly string[]
+              ).includes(b.group)
+          )
+          .reduce((s, b) => s + expose(b.saldo), 0)
+      );
+      if (view === 'ajustado') {
+        priorCoefficient = await priorColumnCoefficient(
+          fy.endDate,
+          priorFy.endDate
+        );
+      }
+      priorTotal = priorCoefficient ? r2(priorPn * priorCoefficient) : priorPn;
+    }
+
+    const espTotal = r2(
+      balances
+        .filter(
+          (b) =>
+            b.group &&
+            (
+              [...PN_GROUPS, ...RESULT_ACCOUNT_GROUPS] as readonly string[]
+            ).includes(b.group)
+        )
+        .reduce((s, b) => s + expose(b.saldo), 0)
+    );
+
+    const fmtD = (d: Date) =>
+      `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${d.getUTCFullYear()}`;
+
+    const cierreTotal = rows[rows.length - 1].total;
+    return {
+      fiscalYearNumber: fy.number,
+      priorFiscalYearNumber: priorFy?.number ?? null,
+      periodLabel: `${fmtD(fy.startDate)} – ${fmtD(fy.endDate)}`,
+      columns,
+      rows,
+      priorTotal,
+      priorCoefficient,
+      espTotal,
+      matchesEsp: Math.abs(cierreTotal - espTotal) < 0.05,
+      inflationApplied: !!adjustment,
+    };
+  });
+
+/* ── Estado de Flujo de Efectivo (EFE) — método directo — AXI-7 ── */
+
+export interface EfeLine {
+  accountId: string;
+  code: string;
+  name: string;
+  amount: number;
+}
+
+export interface EfeActivity {
+  key: CashFlowActivity;
+  label: string;
+  lines: EfeLine[];
+  total: number;
+}
+
+export interface EfeResult {
+  fiscalYearNumber: number;
+  periodLabel: string;
+  /** Efectivo al inicio, ya reexpresado a moneda de cierre si la vista es ajustada. */
+  efectivoInicio: number;
+  efectivoInicioHistorico: number;
+  /** Coeficiente con el que se reexpresó el efectivo inicial. null = no se reexpresó. */
+  coeficienteInicio: number | null;
+  efectivoCierre: number;
+  variacion: number;
+  activities: EfeActivity[];
+  /**
+   * Resultado por exposición a la inflación del efectivo: cierra el estado. Es
+   * la pérdida (o ganancia) de poder adquisitivo por haber mantenido efectivo.
+   */
+  recpamEfectivo: number;
+  totalCausas: number;
+  cuadra: boolean;
+  /** Cuentas que movieron efectivo pero no tienen actividad asignada. */
+  sinActividad: { code: string; name: string }[];
+  inflationApplied: boolean;
+}
+
+/**
+ * Estado de Flujo de Efectivo por método directo.
+ *
+ * Toma todos los asientos que tocan una cuenta de efectivo y usa **la
+ * contrapartida** para clasificar el movimiento por actividad: si pagué un
+ * sueldo, la causa es operativa; si compré una máquina, de inversión. Como todo
+ * asiento cuadra, la suma de las contrapartidas con signo invertido es
+ * exactamente el movimiento de efectivo — no hay que prorratear nada.
+ *
+ * En la vista ajustada cada flujo se reexpresa por el coeficiente de su mes y el
+ * efectivo inicial por el del cierre anterior. La diferencia entre la variación
+ * real del efectivo y la suma de los flujos reexpresados es el **RECPAM del
+ * efectivo**: la pérdida de poder adquisitivo por haber tenido plata quieta. Se
+ * expone como una línea propia, que es lo que hace cerrar el estado.
+ */
+export const getEFE = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid(),
+      view: z.enum(['ajustado', 'historico']).default('ajustado'),
+    })
+  )
+  .handler(async (ctx): Promise<EfeResult> => {
+    const { orgId } = await getSessionWithOrg();
+    const { clientId, view } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
+    const ajustado = view === 'ajustado';
+
+    const accounts = await db
+      .select({
+        id: account.id,
+        code: account.code,
+        name: account.name,
+        group: account.accountGroup,
+        activity: account.cashFlowActivity,
+      })
+      .from(account)
+      .where(
+        and(
+          eq(account.organizationId, orgId),
+          eq(account.type, 'imputable'),
+          sql`(${account.scope} = 'base' OR ${account.clientId} = ${clientId})`
+        )
+      );
+    const accById = new Map(accounts.map((a) => [a.id, a]));
+    const cashIds = new Set(
+      accounts.filter((a) => isCashGroup(a.group)).map((a) => a.id)
+    );
+
+    // Efectivo al inicio: del asiento de apertura.
+    const openingRows = await db
+      .select({
+        accountId: journalEntryLine.accountId,
+        debit: sql<string>`coalesce(sum(${journalEntryLine.debit}),0)`,
+        credit: sql<string>`coalesce(sum(${journalEntryLine.credit}),0)`,
+      })
+      .from(journalEntryLine)
+      .innerJoin(
+        journalEntry,
+        eq(journalEntry.id, journalEntryLine.journalEntryId)
+      )
+      .where(
+        and(
+          eq(journalEntry.fiscalYearId, fy.id),
+          eq(journalEntry.isVoided, false),
+          eq(journalEntry.origin, 'auto_opening')
+        )
+      )
+      .groupBy(journalEntryLine.accountId);
+
+    const efectivoInicioHistorico = r2(
+      openingRows
+        .filter((r) => cashIds.has(r.accountId))
+        .reduce((s, r) => s + parseFloat(r.debit) - parseFloat(r.credit), 0)
+    );
+
+    // Efectivo al cierre: saldo del mayor (el efectivo es monetario, así que no
+    // cambia entre la vista histórica y la ajustada).
+    const balances = await computeEspBalances(orgId, fy.id, view);
+    const efectivoCierre = r2(
+      balances
+        .filter((b) => cashIds.has(b.accountId))
+        .reduce((s, b) => s + b.saldo, 0)
+    );
+
+    // Movimientos del ejercicio, por asiento y mes.
+    const lines = await db
+      .select({
+        entryId: journalEntry.id,
+        year: accountingPeriod.year,
+        month: accountingPeriod.month,
+        accountId: journalEntryLine.accountId,
+        debit: sql<string>`coalesce(sum(${journalEntryLine.debit}),0)`,
+        credit: sql<string>`coalesce(sum(${journalEntryLine.credit}),0)`,
+      })
+      .from(journalEntryLine)
+      .innerJoin(
+        journalEntry,
+        eq(journalEntry.id, journalEntryLine.journalEntryId)
+      )
+      .innerJoin(
+        accountingPeriod,
+        eq(accountingPeriod.id, journalEntryLine.periodId)
+      )
+      .where(
+        and(
+          eq(journalEntry.fiscalYearId, fy.id),
+          eq(journalEntry.isVoided, false),
+          sql`${journalEntry.origin} NOT IN ('auto_opening','auto_closing','auto_inflation')`
+        )
+      )
+      .groupBy(
+        journalEntry.id,
+        accountingPeriod.year,
+        accountingPeriod.month,
+        journalEntryLine.accountId
+      );
+
+    // Coeficientes por mes, si la vista es ajustada.
+    const [adjustment] = await db
+      .select()
+      .from(inflationAdjustment)
+      .where(
+        and(
+          eq(inflationAdjustment.fiscalYearId, fy.id),
+          eq(inflationAdjustment.status, 'applied')
+        )
+      )
+      .limit(1);
+
+    const coefficients = new Map<string, number>();
+    let coeficienteInicio: number | null = null;
+    if (ajustado && adjustment) {
+      const idx = await db
+        .select()
+        .from(inflationIndex)
+        .where(eq(inflationIndex.source, adjustment.source));
+      const byKey = new Map(
+        idx.map((r) => [`${r.year}-${r.month}`, Number(r.value)])
+      );
+      const closingIndex = byKey.get(
+        `${adjustment.closingYear}-${adjustment.closingMonth}`
+      );
+      if (closingIndex) {
+        for (const [key, value] of byKey) {
+          if (value > 0) {
+            coefficients.set(
+              key,
+              Math.round((closingIndex / value) * 10000) / 10000
+            );
+          }
+        }
+        coeficienteInicio =
+          coefficients.get(
+            `${adjustment.openingYear}-${adjustment.openingMonth}`
+          ) ?? null;
+      }
+    }
+    const coefOf = (year: number, month: number) =>
+      coefficients.get(`${year}-${month}`) ?? 1;
+
+    // Solo interesan los asientos que tocan efectivo. La contrapartida define la
+    // actividad; su importe con signo invertido es el flujo de efectivo.
+    const entriesWithCash = new Set(
+      lines
+        .filter(
+          (l) =>
+            cashIds.has(l.accountId) &&
+            Math.abs(parseFloat(l.debit) - parseFloat(l.credit)) >= 0.005
+        )
+        .map((l) => l.entryId)
+    );
+
+    const byAccount = new Map<string, number>();
+    const sinActividad = new Map<string, { code: string; name: string }>();
+    for (const l of lines) {
+      if (!entriesWithCash.has(l.entryId)) continue;
+      if (cashIds.has(l.accountId)) continue;
+      const delta = parseFloat(l.debit) - parseFloat(l.credit);
+      if (Math.abs(delta) < 0.005) continue;
+      const flow = -delta * (ajustado ? coefOf(l.year, l.month) : 1);
+      byAccount.set(l.accountId, (byAccount.get(l.accountId) ?? 0) + flow);
+      const acc = accById.get(l.accountId);
+      if (acc && !acc.activity) {
+        sinActividad.set(acc.id, { code: acc.code, name: acc.name });
+      }
+    }
+
+    const activities: EfeActivity[] = CASH_FLOW_ACTIVITY_ORDER.map((key) => {
+      const rows: EfeLine[] = [];
+      for (const [accountId, amount] of byAccount) {
+        const acc = accById.get(accountId);
+        if (!acc) continue;
+        const activity =
+          acc.activity ?? defaultCashFlowActivity(acc.group) ?? 'operating';
+        if (activity !== key) continue;
+        if (Math.abs(amount) < 0.005) continue;
+        rows.push({
+          accountId,
+          code: acc.code,
+          name: acc.name,
+          amount: r2(amount),
+        });
+      }
+      rows.sort((a, b) => a.code.localeCompare(b.code));
+      return {
+        key,
+        label: CASH_FLOW_ACTIVITY_LABELS[key],
+        lines: rows,
+        total: r2(rows.reduce((s, r) => s + r.amount, 0)),
+      };
+    });
+
+    const efectivoInicio =
+      ajustado && coeficienteInicio
+        ? r2(efectivoInicioHistorico * coeficienteInicio)
+        : efectivoInicioHistorico;
+    const variacion = r2(efectivoCierre - efectivoInicio);
+    const flujos = r2(activities.reduce((s, a) => s + a.total, 0));
+    // Cierra por diferencia: es el efecto de la inflación sobre el efectivo.
+    const recpamEfectivo = ajustado ? r2(variacion - flujos) : 0;
+    const totalCausas = r2(flujos + recpamEfectivo);
+
+    const fmtD = (d: Date) =>
+      `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${d.getUTCFullYear()}`;
+
+    return {
+      fiscalYearNumber: fy.number,
+      periodLabel: `${fmtD(fy.startDate)} – ${fmtD(fy.endDate)}`,
+      efectivoInicio,
+      efectivoInicioHistorico,
+      coeficienteInicio,
+      efectivoCierre,
+      variacion,
+      activities,
+      recpamEfectivo,
+      totalCausas,
+      cuadra: Math.abs(totalCausas - variacion) < 0.05,
+      sinActividad: [...sinActividad.values()],
+      inflationApplied: !!adjustment,
+    };
+  });

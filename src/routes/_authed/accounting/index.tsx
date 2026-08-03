@@ -1,4 +1,5 @@
 import { createFileRoute, redirect, Link } from '@tanstack/react-router';
+import { z } from 'zod';
 import { listOrgModules } from '@/actions/admin';
 import { useMemo, useState, useEffect, Fragment } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -40,6 +41,8 @@ import {
   Inbox,
   AlertTriangle,
   Boxes,
+  TrendingUp,
+  Sparkles,
   CheckCircle2,
   XCircle,
   FileBarChart,
@@ -109,6 +112,8 @@ import {
   sealClosing,
   getESP,
   getER,
+  getEEPN,
+  getEFE,
   getAnexoII,
   getAuditLog,
   getFinancialStatement,
@@ -144,6 +149,7 @@ import {
   exportCmvPdf,
   exportCmvExcel,
   exportEeccPackagePdf,
+  exportEstadosExcel,
   exportLibroMayorPdf,
   exportLibroInventariosPdf,
   type MayorExportData,
@@ -206,8 +212,34 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
+import { IndicesInflacion } from '@/components/accounting/IndicesInflacion';
+import { AjustePorInflacion } from '@/components/accounting/AjustePorInflacion';
+
+const TAB_IDS = [
+  'plan',
+  'ejercicios',
+  'asientos',
+  'mayor',
+  'balance',
+  'reglas',
+  'contabilizar',
+  'pendientes',
+  'bienes',
+  'indices',
+  'ajuste',
+  'estados',
+  'auditoria',
+] as const;
+type Tab = (typeof TAB_IDS)[number];
+
+/** Permite entrar directo a una empresa/solapa (ej. desde el cierre de sueldos). */
+const accountingSearchSchema = z.object({
+  clientId: z.string().uuid().optional(),
+  tab: z.enum(TAB_IDS).optional(),
+});
 
 export const Route = createFileRoute('/_authed/accounting/')({
+  validateSearch: accountingSearchSchema,
   beforeLoad: async () => {
     const modules = await listOrgModules();
     const enabled =
@@ -256,18 +288,6 @@ function OriginBadge({ scope }: { scope: 'base' | 'custom' }) {
 }
 
 /* ─── Tab bar ─── */
-type Tab =
-  | 'plan'
-  | 'ejercicios'
-  | 'asientos'
-  | 'mayor'
-  | 'balance'
-  | 'reglas'
-  | 'contabilizar'
-  | 'pendientes'
-  | 'bienes'
-  | 'estados'
-  | 'auditoria';
 
 function TabBar({
   active,
@@ -296,6 +316,13 @@ function TabBar({
     { id: 'contabilizar', label: 'Contabilizar', icon: Zap, ready: true },
     { id: 'pendientes', label: 'Pendientes', icon: Inbox, ready: true },
     { id: 'bienes', label: 'Bienes de uso', icon: Boxes, ready: true },
+    { id: 'indices', label: 'Índices', icon: TrendingUp, ready: true },
+    {
+      id: 'ajuste',
+      label: 'Ajuste por inflación',
+      icon: Sparkles,
+      ready: true,
+    },
     {
       id: 'estados',
       label: 'Estados Contables',
@@ -311,14 +338,15 @@ function TabBar({
     },
   ];
   return (
-    <div className="flex gap-1 mb-5 border-b border-[var(--arca-border)]">
+    // Con 13 solapas la barra desborda: scrollea sola en vez de arrastrar la página.
+    <div className="flex gap-1 mb-5 border-b border-[var(--arca-border)] overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {tabs
         .filter((tab) => !tab.ownerOnly || isOwner)
         .map((tab) => (
           <button
             key={tab.id}
             onClick={() => onChange(tab.id)}
-            className="flex items-center gap-1.5 px-3 py-2 text-[12.5px] font-medium transition-colors duration-[120ms] border-b-2 -mb-px"
+            className="flex items-center gap-1.5 px-3 py-2 text-[12.5px] font-medium transition-colors duration-[120ms] border-b-2 -mb-px shrink-0 whitespace-nowrap"
             style={{
               color:
                 active === tab.id ? 'var(--arca-ink)' : 'var(--arca-ink-3)',
@@ -346,8 +374,15 @@ function TabBar({
 
 /* ─── Page ─── */
 function AccountingPage() {
-  const [tab, setTab] = useState<Tab>('plan');
-  const [clientId, setClientId] = useState<string>('');
+  const search = Route.useSearch();
+  // Guarda en runtime: el search viene de la URL, puede traer cualquier cosa.
+  const [tab, setTab] = useState<Tab>(() => {
+    const t = String(search.tab ?? '');
+    return (TAB_IDS as readonly string[]).includes(t) ? (t as Tab) : 'plan';
+  });
+  const [clientId, setClientId] = useState<string>(() =>
+    String(search.clientId ?? '')
+  );
 
   const { data: clients = [] } = useQuery({
     queryKey: ['accounting', 'clients'],
@@ -466,6 +501,16 @@ function AccountingPage() {
           clientName={
             clients.find((c) => c.id === effectiveClientId)?.name ?? ''
           }
+        />
+      ) : tab === 'indices' ? (
+        <IndicesInflacion isOwner={isOwner} />
+      ) : tab === 'ajuste' ? (
+        <AjustePorInflacion
+          clientId={effectiveClientId}
+          clientName={
+            clients.find((c) => c.id === effectiveClientId)?.name ?? ''
+          }
+          isOwner={isOwner}
         />
       ) : tab === 'estados' ? (
         <EstadosContables
@@ -2550,6 +2595,51 @@ function ClosingWizard({
               </div>
             </div>
           )}
+
+          {stage === 'refundicion' &&
+            !done.refundicion &&
+            (!wiz.inflation.applied || wiz.inflation.stale) && (
+              <div
+                className="flex items-start gap-2.5 px-4 py-3 mb-3 rounded-[12px] border text-[12.5px]"
+                style={{
+                  background: '#fffbeb',
+                  borderColor: '#fde68a',
+                  color: '#b45309',
+                }}
+              >
+                <AlertTriangle
+                  className="w-4 h-4 mt-px shrink-0"
+                  strokeWidth={1.9}
+                />
+                <div>
+                  <div className="font-semibold">
+                    {wiz.inflation.applied
+                      ? 'El ajuste por inflación quedó desactualizado'
+                      : 'Falta el ajuste por inflación'}
+                  </div>
+                  <div className="mt-0.5">
+                    {wiz.inflation.applied
+                      ? 'Se cargaron asientos después de generarlo. Regeneralo en la solapa «Ajuste por inflación» antes de refundir.'
+                      : 'El ajuste va antes de la refundición: después las cuentas de resultado quedan refundidas y el balance saldría en valores históricos. Generalo en la solapa «Ajuste por inflación».'}
+                  </div>
+                </div>
+              </div>
+            )}
+
+          {stage === 'refundicion' &&
+            !done.refundicion &&
+            wiz.inflation.applied &&
+            !wiz.inflation.stale && (
+              <div className="px-4 py-2 mb-3 text-[12px] text-[var(--arca-ink-3)]">
+                ✓ Ajuste por inflación aplicado
+                {wiz.inflation.journalEntryNumber
+                  ? ` · Asiento N°${wiz.inflation.journalEntryNumber}`
+                  : ''}
+                {wiz.inflation.recpam !== null
+                  ? ` · RECPAM $ ${fmtMoney(-wiz.inflation.recpam)}`
+                  : ''}
+              </div>
+            )}
 
           {stage === 'refundicion' && wiz.refundicion.preview && (
             <StageEntry
@@ -4814,6 +4904,14 @@ const AMOUNT_BASES = [
 /** Letras de comprobante soportadas por la condición (clave "type"). */
 const INVOICE_TYPE_OPTIONS = ['A', 'B', 'C', 'M', 'E'];
 
+/** Tipos de concepto de sueldos que puede filtrar una regla condicional. */
+const PAYROLL_CONCEPT_TIPO_OPTIONS = [
+  { value: 'remunerativo', label: 'Remunerativo' },
+  { value: 'no_remunerativo', label: 'No remunerativo' },
+  { value: 'descuento', label: 'Descuento' },
+  { value: 'retencion', label: 'Retención' },
+];
+
 /** Normaliza el valor de dirección leído de una condición guardada. */
 function normalizeCondDirection(raw: unknown): '' | 'sale' | 'purchase' {
   const v = typeof raw === 'string' ? raw.toLowerCase().trim() : '';
@@ -5075,6 +5173,10 @@ function RuleEditorDialog({
     ''
   );
   const [condTypes, setCondTypes] = useState<string[]>([]);
+  /** Sueldos: tipos de concepto a los que aplica la regla. */
+  const [condConceptTipos, setCondConceptTipos] = useState<string[]>([]);
+  /** Sueldos: códigos SOS exactos, separados por coma (ej. "101, 102"). */
+  const [condSosCodes, setCondSosCodes] = useState('');
   const [priority, setPriority] = useState('100');
   const [lines, setLines] = useState<RuleLineDraft[]>([
     emptyRuleLine('debit'),
@@ -5098,6 +5200,22 @@ function RuleEditorDialog({
       setCondTypes(
         typeArr.map((t) => String(t).trim().toUpperCase()).filter(Boolean)
       );
+      const rawTipo = cond.tipo;
+      const tipoArr = Array.isArray(rawTipo)
+        ? rawTipo
+        : rawTipo != null
+          ? [rawTipo]
+          : [];
+      setCondConceptTipos(
+        tipoArr.map((t) => String(t).trim().toLowerCase()).filter(Boolean)
+      );
+      const rawSos = cond.sosCode ?? cond.codigo;
+      const sosArr = Array.isArray(rawSos)
+        ? rawSos
+        : rawSos != null
+          ? [rawSos]
+          : [];
+      setCondSosCodes(sosArr.map((c) => String(c).trim()).join(', '));
     }
     setPriority(String(existing.rule.priority));
     setLines(
@@ -5136,6 +5254,15 @@ function RuleEditorDialog({
         const c: Record<string, unknown> = {};
         if (condDirection) c.direction = condDirection;
         if (condTypes.length) c.type = condTypes;
+        condition = Object.keys(c).length ? c : undefined;
+      } else if (ruleType === 'conditional' && sourceModule === 'payroll') {
+        const c: Record<string, unknown> = {};
+        const codes = condSosCodes
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+        if (codes.length) c.sosCode = codes;
+        if (condConceptTipos.length) c.tipo = condConceptTipos;
         condition = Object.keys(c).length ? c : undefined;
       }
       const payloadLines = lines.map((l) => ({
@@ -5369,10 +5496,83 @@ function RuleEditorDialog({
             </>
           )}
           {ruleType === 'conditional' && sourceModule === 'payroll' && (
-            <div className="col-span-2 text-[11.5px] text-[var(--arca-ink-3)] rounded-[8px] border border-dashed border-[var(--arca-border)] px-3 py-2">
-              Las condiciones por dirección y tipo aplican solo a facturas. El
-              mapeo automático de sueldos aún no está disponible.
-            </div>
+            <>
+              <Field
+                label={
+                  <>
+                    Tipo de concepto
+                    <HelpTip text="Marcá los tipos de concepto a los que aplica la regla. Si no marcás ninguno, no filtra por tipo." />
+                  </>
+                }
+                full
+              >
+                <div className="flex flex-wrap gap-1.5">
+                  {PAYROLL_CONCEPT_TIPO_OPTIONS.map((t) => {
+                    const on = condConceptTipos.includes(t.value);
+                    return (
+                      <button
+                        type="button"
+                        key={t.value}
+                        onClick={() =>
+                          setCondConceptTipos((prev) =>
+                            prev.includes(t.value)
+                              ? prev.filter((x) => x !== t.value)
+                              : [...prev, t.value]
+                          )
+                        }
+                        className={`h-8 px-2.5 text-[12.5px] font-medium rounded-[8px] border transition-colors ${
+                          on
+                            ? 'bg-[var(--arca-navy-900)] text-white border-[var(--arca-navy-900)]'
+                            : 'border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]'
+                        }`}
+                      >
+                        {t.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </Field>
+              <Field
+                label={
+                  <>
+                    Códigos SOS
+                    <HelpTip text="Códigos de concepto exactos, separados por coma (ej. 101, 102). Dejalo vacío para no filtrar por código. La regla aplica solo si el concepto cumple código Y tipo." />
+                  </>
+                }
+                full
+              >
+                <input
+                  value={condSosCodes}
+                  onChange={(e) => setCondSosCodes(e.target.value)}
+                  placeholder="101, 102"
+                  className={`${INPUT_CLASS} w-full h-9`}
+                />
+                <p className="mt-1 text-[11px] text-[var(--arca-ink-3)]">
+                  {condSosCodes.trim() || condConceptTipos.length ? (
+                    <>
+                      Aplica a conceptos
+                      {condConceptTipos.length
+                        ? ` ${condConceptTipos
+                            .map(
+                              (t) =>
+                                PAYROLL_CONCEPT_TIPO_OPTIONS.find(
+                                  (o) => o.value === t
+                                )?.label ?? t
+                            )
+                            .join(', ')
+                            .toLowerCase()}`
+                        : ''}
+                      {condSosCodes.trim()
+                        ? ` con código ${condSosCodes.trim()}`
+                        : ''}
+                      .
+                    </>
+                  ) : (
+                    'Sin filtros: esta regla condicional aplicaría a cualquier concepto.'
+                  )}
+                </p>
+              </Field>
+            </>
           )}
         </div>
 
@@ -7366,8 +7566,23 @@ function EstadosContables({
 }) {
   const qc = useQueryClient();
   const [view, setView] = useState<
-    'esp' | 'er' | 'cmv' | 'anexo' | 'notas' | 'export'
+    | 'esp'
+    | 'er'
+    | 'eepn'
+    | 'efe'
+    | 'nota3'
+    | 'cmv'
+    | 'anexo'
+    | 'notas'
+    | 'export'
   >('esp');
+  /**
+   * Los EECC se presentan ajustados por inflación (RT 6). "Histórico" excluye el
+   * asiento de ajuste y queda como papel de trabajo.
+   */
+  const [valuation, setValuation] = useState<'ajustado' | 'historico'>(
+    'ajustado'
+  );
   const [selectedFyId, setSelectedFyId] = useState('');
 
   const { data: fiscalYears = [] } = useQuery({
@@ -7435,6 +7650,9 @@ function EstadosContables({
   const tabs: { k: typeof view; label: string }[] = [
     { k: 'esp', label: 'Estado de Situación Patrimonial' },
     { k: 'er', label: 'Estado de Resultados' },
+    { k: 'eepn', label: 'Evolución del Patrimonio Neto' },
+    { k: 'efe', label: 'Flujo de Efectivo' },
+    { k: 'nota3', label: 'Composición de rubros' },
     { k: 'cmv', label: 'Costo de mercadería (CMV)' },
     { k: 'anexo', label: 'Anexo II' },
     { k: 'notas', label: 'Notas' },
@@ -7464,9 +7682,33 @@ function EstadosContables({
               ))}
             </SelectContent>
           </Select>
-          <span className="text-[10.5px] px-2 py-1 rounded-full bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
-            Valores históricos
-          </span>
+          <div className="inline-flex rounded-[8px] border border-[var(--arca-border)] p-0.5 bg-[var(--arca-surface-2)]">
+            {(
+              [
+                ['ajustado', 'Ajustado por inflación'],
+                ['historico', 'Valores históricos'],
+              ] as ['ajustado' | 'historico', string][]
+            ).map(([k, label]) => (
+              <button
+                key={k}
+                onClick={() => setValuation(k)}
+                title={
+                  k === 'ajustado'
+                    ? 'Incluye el asiento de ajuste por inflación (RT 6). Es como se presentan los EECC.'
+                    : 'Excluye el asiento de ajuste. Queda como papel de trabajo.'
+                }
+                className="px-2.5 h-6 text-[11.5px] font-medium rounded-[6px] transition-colors"
+                style={{
+                  background:
+                    valuation === k ? 'var(--arca-surface)' : 'transparent',
+                  color:
+                    valuation === k ? 'var(--arca-ink)' : 'var(--arca-ink-3)',
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <div className="flex-1" />
           {approved ? (
             <>
@@ -7529,6 +7771,7 @@ function EstadosContables({
           clientId={clientId}
           clientName={clientName}
           selectedFy={selectedFy}
+          valuation={valuation}
         />
       )}
       {view === 'er' && (
@@ -7536,6 +7779,31 @@ function EstadosContables({
           clientId={clientId}
           clientName={clientName}
           selectedFy={selectedFy}
+          valuation={valuation}
+        />
+      )}
+      {view === 'eepn' && (
+        <EepnView
+          clientId={clientId}
+          clientName={clientName}
+          selectedFy={selectedFy}
+          valuation={valuation}
+        />
+      )}
+      {view === 'efe' && (
+        <EfeView
+          clientId={clientId}
+          clientName={clientName}
+          selectedFy={selectedFy}
+          valuation={valuation}
+        />
+      )}
+      {view === 'nota3' && (
+        <Nota3View
+          clientId={clientId}
+          clientName={clientName}
+          selectedFy={selectedFy}
+          valuation={valuation}
         />
       )}
       {view === 'cmv' && (
@@ -7580,6 +7848,7 @@ function EstadosContables({
           selectedFy={selectedFy}
           notes={fs?.notes ?? []}
           isOwner={isOwner}
+          valuation={valuation}
           pdfGeneratedAt={fs?.pdfGeneratedAt ?? null}
           pdfGeneratedByName={fs?.pdfGeneratedByName ?? null}
           onPdfSaved={invalidateFs}
@@ -7593,10 +7862,12 @@ function EspView({
   clientId,
   clientName,
   selectedFy,
+  valuation,
 }: {
   clientId: string;
   clientName: string;
   selectedFy: FyOption | undefined;
+  valuation: 'ajustado' | 'historico';
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [drill, setDrill] = useState<LedgerDrill | null>(null);
@@ -7604,8 +7875,11 @@ function EspView({
   const effectiveFyId = selectedFy?.id ?? '';
 
   const { data, isLoading } = useQuery({
-    queryKey: ['accounting', 'esp', clientId, effectiveFyId],
-    queryFn: () => getESP({ data: { clientId, fiscalYearId: effectiveFyId } }),
+    queryKey: ['accounting', 'esp', clientId, effectiveFyId, valuation],
+    queryFn: () =>
+      getESP({
+        data: { clientId, fiscalYearId: effectiveFyId, view: valuation },
+      }),
     enabled: !!effectiveFyId,
   });
 
@@ -7649,7 +7923,9 @@ function EspView({
               : ''}
           </div>
           <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
-            Expresado en valores históricos (sin ajuste por inflación · RT 6).
+            {valuation === 'ajustado'
+              ? 'Expresado en moneda homogénea de cierre (ajuste por inflación · RT 6).'
+              : 'Expresado en valores históricos, sin ajuste por inflación. Papel de trabajo.'}
           </div>
         </div>
 
@@ -7834,14 +8110,589 @@ function EspSectionRows({
   );
 }
 
-function ErView({
+/**
+ * Estado de Evolución del Patrimonio Neto.
+ *
+ * Una columna por cuenta de PN, agrupadas por rubro, y filas por causa de
+ * variación (modelo RT 9). La reexpresión del patrimonio inicial se expone
+ * dentro de "Saldos al inicio", no como movimiento del ejercicio, y el Capital
+ * social queda a valor nominal con su ajuste en Ajuste de capital.
+ */
+/**
+ * Estado de Flujo de Efectivo, método directo.
+ *
+ * Explica la variación del efectivo del ejercicio agrupando las causas por
+ * actividad. En la vista ajustada, la línea de RECPAM del efectivo es la que
+ * cierra el estado: es la pérdida de poder adquisitivo por haber mantenido
+ * efectivo, y sin ella los flujos reexpresados no llegan a la variación real.
+ */
+/**
+ * Nota 3 — Composición de los principales rubros.
+ *
+ * Es el detalle por cuenta de cada rubro del ESP, comparativo. Se arma con los
+ * mismos datos del Estado de Situación Patrimonial, así que no puede diferir de
+ * él: si un rubro cambia, la nota cambia sola.
+ */
+function Nota3View({
   clientId,
   clientName,
   selectedFy,
+  valuation,
 }: {
   clientId: string;
   clientName: string;
   selectedFy: FyOption | undefined;
+  valuation: 'ajustado' | 'historico';
+}) {
+  const effectiveFyId = selectedFy?.id ?? '';
+  const { data, isLoading } = useQuery({
+    queryKey: ['accounting', 'esp', clientId, effectiveFyId, valuation],
+    queryFn: () =>
+      getESP({
+        data: { clientId, fiscalYearId: effectiveFyId, view: valuation },
+      }),
+    enabled: !!effectiveFyId,
+  });
+
+  const money = (n: number) =>
+    n.toLocaleString('es-AR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
+  if (isLoading || !data) {
+    return (
+      <ArcaCard>
+        <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+          {effectiveFyId ? 'Calculando…' : 'Seleccioná un ejercicio.'}
+        </div>
+      </ArcaCard>
+    );
+  }
+
+  // Se numeran 3.1, 3.2, … solo los rubros con saldo, en el orden del ESP. El
+  // rubro "Resultado del ejercicio" no se detalla acá: su composición es el
+  // Estado de Resultados y el Anexo II.
+  const rubros = data.sections
+    .flatMap((sec) => sec.rubros.map((r) => ({ ...r, section: sec.label })))
+    .filter((r) => r.group !== 'resultado_ejercicio')
+    .filter((r) => Math.abs(r.current) >= 0.005 || Math.abs(r.prior) >= 0.005);
+
+  return (
+    <ArcaCard>
+      <div className="px-5 pt-4 pb-3 border-b border-[var(--arca-border)]">
+        <div className="text-[14px] font-semibold text-[var(--arca-ink)]">
+          {clientName}
+        </div>
+        <div className="text-[12px] text-[var(--arca-ink-3)]">
+          Nota 3 · Composición de los principales rubros · Ejercicio N°
+          {data.fiscalYearNumber} · {data.periodLabel}
+        </div>
+        <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
+          {valuation === 'ajustado'
+            ? 'Valores ajustados por inflación (RT 6), en moneda homogénea de cierre.'
+            : 'Valores históricos, sin ajuste por inflación. Papel de trabajo.'}
+        </div>
+      </div>
+
+      {rubros.length === 0 ? (
+        <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+          El ejercicio no tiene rubros con saldo.
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-[52px_1fr_170px_170px] gap-3 px-5 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+            <div>Nota</div>
+            <div>Concepto</div>
+            <div className="text-right">Ej. N°{data.fiscalYearNumber}</div>
+            <div className="text-right">
+              {data.priorFiscalYearNumber !== null
+                ? `Ej. N°${data.priorFiscalYearNumber}`
+                : 'Anterior'}
+            </div>
+          </div>
+
+          {rubros.map((r, i) => (
+            <div key={r.group}>
+              <div className="grid grid-cols-[52px_1fr_170px_170px] gap-3 px-5 pt-3 pb-1 text-[12.5px]">
+                <div className="tabular-nums text-[var(--arca-ink-3)]">
+                  3.{i + 1}
+                </div>
+                <div className="font-semibold text-[var(--arca-ink)]">
+                  {r.label}
+                </div>
+                <div />
+                <div />
+              </div>
+              {r.accounts.map((a) => (
+                <div
+                  key={a.accountId}
+                  className="grid grid-cols-[52px_1fr_170px_170px] gap-3 px-5 py-1 text-[12.5px]"
+                >
+                  <div />
+                  <div className="text-[var(--arca-ink-2)] pl-3">{a.name}</div>
+                  <div className="text-right tabular-nums text-[var(--arca-ink-2)]">
+                    {money(a.current)}
+                  </div>
+                  <div className="text-right tabular-nums text-[var(--arca-ink-3)]">
+                    {data.hasPrior ? money(a.prior) : '—'}
+                  </div>
+                </div>
+              ))}
+              <div className="grid grid-cols-[52px_1fr_170px_170px] gap-3 px-5 py-1.5 border-b border-[var(--arca-border)] text-[12.5px] font-semibold">
+                <div />
+                <div />
+                <div className="text-right tabular-nums border-t border-[var(--arca-ink-3)] pt-1">
+                  {money(r.current)}
+                </div>
+                <div className="text-right tabular-nums border-t border-[var(--arca-ink-3)] pt-1 text-[var(--arca-ink-3)]">
+                  {data.hasPrior ? money(r.prior) : '—'}
+                </div>
+              </div>
+            </div>
+          ))}
+
+          <div className="px-5 py-3 text-[11.5px] text-[var(--arca-ink-3)]">
+            La nota se arma con el detalle por cuenta del Estado de Situación
+            Patrimonial, así que siempre coincide con él.
+            {data.hasPrior && data.priorCoefficient !== null && (
+              <>
+                {' '}
+                La columna del ejercicio anterior está reexpresada a moneda de
+                cierre con coeficiente{' '}
+                {data.priorCoefficient.toLocaleString('es-AR', {
+                  minimumFractionDigits: 4,
+                  maximumFractionDigits: 4,
+                })}
+                .
+              </>
+            )}
+          </div>
+        </>
+      )}
+    </ArcaCard>
+  );
+}
+
+/** Fila del EFE: concepto a la izquierda, importe a la derecha. */
+function EfeRow({
+  label,
+  value,
+  strong,
+  indent,
+}: {
+  label: string;
+  value: number;
+  strong?: boolean;
+  indent?: boolean;
+}) {
+  return (
+    <div
+      className="flex items-center justify-between gap-4 px-5 py-1.5 border-b border-[var(--arca-border)] last:border-b-0"
+      style={strong ? { background: 'var(--arca-surface-2)' } : undefined}
+    >
+      <span
+        className="text-[12.5px] text-[var(--arca-ink)]"
+        style={{
+          fontWeight: strong ? 600 : 400,
+          paddingLeft: indent ? 14 : 0,
+        }}
+      >
+        {label}
+      </span>
+      <span
+        className="text-[12.5px] tabular-nums text-[var(--arca-ink)]"
+        style={{ fontWeight: strong ? 600 : 400 }}
+      >
+        ${' '}
+        {value.toLocaleString('es-AR', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}
+      </span>
+    </div>
+  );
+}
+
+function EfeView({
+  clientId,
+  clientName,
+  selectedFy,
+  valuation,
+}: {
+  clientId: string;
+  clientName: string;
+  selectedFy: FyOption | undefined;
+  valuation: 'ajustado' | 'historico';
+}) {
+  const effectiveFyId = selectedFy?.id ?? '';
+  const { data, isLoading } = useQuery({
+    queryKey: ['accounting', 'efe', clientId, effectiveFyId, valuation],
+    queryFn: () =>
+      getEFE({
+        data: { clientId, fiscalYearId: effectiveFyId, view: valuation },
+      }),
+    enabled: !!effectiveFyId,
+  });
+
+  const money = (n: number) =>
+    n.toLocaleString('es-AR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
+  if (isLoading || !data) {
+    return (
+      <ArcaCard>
+        <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+          {effectiveFyId ? 'Calculando…' : 'Seleccioná un ejercicio.'}
+        </div>
+      </ArcaCard>
+    );
+  }
+
+  return (
+    <ArcaCard>
+      <div className="px-5 pt-4 pb-3 border-b border-[var(--arca-border)]">
+        <div className="text-[14px] font-semibold text-[var(--arca-ink)]">
+          {clientName}
+        </div>
+        <div className="text-[12px] text-[var(--arca-ink-3)]">
+          Estado de Flujo de Efectivo · Método directo · Ejercicio N°
+          {data.fiscalYearNumber} · {data.periodLabel}
+        </div>
+        <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
+          {valuation === 'ajustado'
+            ? 'Expresado en moneda homogénea de cierre (ajuste por inflación · RT 6).'
+            : 'Expresado en valores históricos, sin ajuste por inflación. Papel de trabajo.'}
+        </div>
+      </div>
+
+      <EfeRow
+        label="Efectivo al inicio del ejercicio"
+        value={data.efectivoInicio}
+      />
+      <EfeRow
+        label="Efectivo al cierre del ejercicio"
+        value={data.efectivoCierre}
+      />
+      <EfeRow
+        label="Aumento (disminución) neto del efectivo"
+        value={data.variacion}
+        strong
+      />
+
+      <div className="px-5 py-2 text-[10.5px] uppercase tracking-wide font-semibold text-[var(--arca-ink-3)] bg-[var(--arca-surface-2)] border-y border-[var(--arca-border)]">
+        Causas de las variaciones del efectivo
+      </div>
+
+      {data.activities.map((a) => (
+        <div key={a.key}>
+          <div className="px-5 pt-2.5 pb-1 text-[11.5px] font-semibold text-[var(--arca-ink-2)]">
+            {a.label}
+          </div>
+          {a.lines.length === 0 ? (
+            <div className="px-5 pb-1.5 pl-[34px] text-[12px] text-[var(--arca-ink-3)] italic">
+              Sin movimientos
+            </div>
+          ) : (
+            a.lines.map((l) => (
+              <EfeRow
+                key={l.accountId}
+                label={l.name}
+                value={l.amount}
+                indent
+              />
+            ))
+          )}
+          <EfeRow
+            label={`Flujo neto por ${a.label.toLowerCase()}`}
+            value={a.total}
+            strong
+          />
+        </div>
+      ))}
+
+      {valuation === 'ajustado' && Math.abs(data.recpamEfectivo) >= 0.005 && (
+        <EfeRow
+          label="Resultado por exposición a la inflación del efectivo (RECPAM)"
+          value={data.recpamEfectivo}
+        />
+      )}
+
+      <EfeRow
+        label="Total de las variaciones del efectivo"
+        value={data.totalCausas}
+        strong
+      />
+
+      <div className="px-5 py-3 border-t border-[var(--arca-border)] space-y-1">
+        <div
+          className="text-[12px]"
+          style={{
+            color: data.cuadra
+              ? 'var(--arca-accent-pos)'
+              : 'var(--arca-accent-neg)',
+          }}
+        >
+          {data.cuadra
+            ? '✓ Las causas explican la variación del efectivo.'
+            : `✗ Las causas ($ ${money(data.totalCausas)}) no explican la variación ($ ${money(data.variacion)}).`}
+        </div>
+        {valuation === 'ajustado' && data.coeficienteInicio !== null && (
+          <div className="text-[11.5px] text-[var(--arca-ink-3)]">
+            El efectivo al inicio se reexpresó con coeficiente{' '}
+            {data.coeficienteInicio.toLocaleString('es-AR', {
+              minimumFractionDigits: 4,
+              maximumFractionDigits: 4,
+            })}
+            : $ {money(data.efectivoInicioHistorico)} históricos → ${' '}
+            {money(data.efectivoInicio)}.
+          </div>
+        )}
+        {valuation === 'ajustado' && !data.inflationApplied && (
+          <div className="text-[11.5px] text-amber-600">
+            El ajuste por inflación del ejercicio todavía no está generado, así
+            que los flujos son históricos.
+          </div>
+        )}
+        {data.sinActividad.length > 0 && (
+          <div className="text-[11.5px] text-amber-600">
+            {data.sinActividad.length} cuenta(s) sin actividad asignada; se usó
+            la clasificación por defecto del rubro:{' '}
+            {data.sinActividad
+              .slice(0, 6)
+              .map((a) => a.code)
+              .join(', ')}
+            {data.sinActividad.length > 6 && '…'}
+          </div>
+        )}
+      </div>
+    </ArcaCard>
+  );
+}
+
+function EepnView({
+  clientId,
+  clientName,
+  selectedFy,
+  valuation,
+}: {
+  clientId: string;
+  clientName: string;
+  selectedFy: FyOption | undefined;
+  valuation: 'ajustado' | 'historico';
+}) {
+  const effectiveFyId = selectedFy?.id ?? '';
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['accounting', 'eepn', clientId, effectiveFyId, valuation],
+    queryFn: () =>
+      getEEPN({
+        data: { clientId, fiscalYearId: effectiveFyId, view: valuation },
+      }),
+    enabled: !!effectiveFyId,
+  });
+
+  const money = (n: number) =>
+    n === 0
+      ? '—'
+      : n.toLocaleString('es-AR', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
+
+  if (isLoading || !data) {
+    return (
+      <ArcaCard>
+        <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+          {effectiveFyId ? 'Calculando…' : 'Seleccioná un ejercicio.'}
+        </div>
+      </ArcaCard>
+    );
+  }
+
+  if (data.columns.length === 0) {
+    return (
+      <ArcaCard>
+        <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+          El ejercicio no tiene movimientos en cuentas de patrimonio neto.
+        </div>
+      </ArcaCard>
+    );
+  }
+
+  // Cabecera en dos niveles: rubro y, debajo, la cuenta.
+  const groups: { label: string; span: number }[] = [];
+  for (const c of data.columns) {
+    const last = groups[groups.length - 1];
+    if (last?.label === c.groupLabel) last.span++;
+    else groups.push({ label: c.groupLabel, span: 1 });
+  }
+
+  return (
+    <ArcaCard>
+      <div className="px-5 pt-4 pb-3 border-b border-[var(--arca-border)]">
+        <div className="text-[14px] font-semibold text-[var(--arca-ink)]">
+          {clientName}
+        </div>
+        <div className="text-[12px] text-[var(--arca-ink-3)]">
+          Estado de Evolución del Patrimonio Neto · Ejercicio N°
+          {data.fiscalYearNumber} · {data.periodLabel}
+        </div>
+        <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
+          {valuation === 'ajustado'
+            ? 'Expresado en moneda homogénea de cierre (ajuste por inflación · RT 6). La reexpresión del patrimonio inicial se incluye en «Saldos al inicio»; el Capital social se mantiene a valor nominal.'
+            : 'Expresado en valores históricos, sin ajuste por inflación. Papel de trabajo.'}
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-[12.5px] min-w-[720px]">
+          <thead>
+            <tr className="bg-[var(--arca-surface-2)] text-[10.5px] uppercase tracking-wide text-[var(--arca-ink-3)]">
+              <th className="text-left font-semibold px-4 py-1.5" rowSpan={2}>
+                Concepto
+              </th>
+              {groups.map((g, i) => (
+                <th
+                  key={`${g.label}-${i}`}
+                  colSpan={g.span}
+                  className="text-center font-semibold px-3 py-1.5 border-l border-[var(--arca-border)]"
+                >
+                  {g.label}
+                </th>
+              ))}
+              <th
+                className="text-right font-semibold px-4 py-1.5 border-l border-[var(--arca-border)]"
+                rowSpan={2}
+              >
+                Total ej. N°{data.fiscalYearNumber}
+              </th>
+              {data.priorFiscalYearNumber !== null && (
+                <th
+                  className="text-right font-semibold px-4 py-1.5 border-l border-[var(--arca-border)]"
+                  rowSpan={2}
+                >
+                  Total ej. N°{data.priorFiscalYearNumber}
+                </th>
+              )}
+            </tr>
+            <tr className="bg-[var(--arca-surface-2)] text-[10.5px] text-[var(--arca-ink-3)]">
+              {data.columns.map((c) => (
+                <th
+                  key={c.accountId}
+                  className="text-right font-medium px-3 pb-1.5 border-l border-[var(--arca-border)] whitespace-nowrap"
+                  title={`${c.code} · ${c.name}`}
+                >
+                  {c.name}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {data.rows.map((row) => {
+              const strong = row.kind === 'inicio' || row.kind === 'cierre';
+              return (
+                <tr
+                  key={row.key}
+                  className="border-t border-[var(--arca-border)]"
+                  style={
+                    strong ? { background: 'var(--arca-surface-2)' } : undefined
+                  }
+                >
+                  <td
+                    className="px-4 py-1.5 text-[var(--arca-ink)]"
+                    style={strong ? { fontWeight: 600 } : undefined}
+                  >
+                    {row.label}
+                    {row.entryNumber !== undefined && (
+                      <span className="ml-1.5 text-[10.5px] text-[var(--arca-ink-3)]">
+                        · asiento N°{row.entryNumber}
+                      </span>
+                    )}
+                  </td>
+                  {data.columns.map((c) => (
+                    <td
+                      key={c.accountId}
+                      className="px-3 py-1.5 text-right tabular-nums border-l border-[var(--arca-border)] text-[var(--arca-ink-2)]"
+                    >
+                      {money(row.amounts[c.accountId] ?? 0)}
+                    </td>
+                  ))}
+                  <td
+                    className="px-4 py-1.5 text-right tabular-nums border-l border-[var(--arca-border)] text-[var(--arca-ink)]"
+                    style={strong ? { fontWeight: 600 } : undefined}
+                  >
+                    {money(row.total)}
+                  </td>
+                  {data.priorFiscalYearNumber !== null && (
+                    <td className="px-4 py-1.5 text-right tabular-nums border-l border-[var(--arca-border)] text-[var(--arca-ink-2)]">
+                      {row.kind === 'cierre' && data.priorTotal !== null
+                        ? money(data.priorTotal)
+                        : '—'}
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="px-5 py-3 border-t border-[var(--arca-border)] space-y-1">
+        <div
+          className="text-[12px]"
+          style={{
+            color: data.matchesEsp
+              ? 'var(--arca-accent-pos)'
+              : 'var(--arca-accent-neg)',
+          }}
+        >
+          {data.matchesEsp
+            ? `✓ El saldo al cierre coincide con el Patrimonio Neto del ESP ($ ${money(data.espTotal)}).`
+            : `✗ El saldo al cierre no coincide con el ESP ($ ${money(data.espTotal)}). Revisá el ejercicio.`}
+        </div>
+        {valuation === 'ajustado' && !data.inflationApplied && (
+          <div className="text-[11.5px] text-amber-600">
+            El ajuste por inflación del ejercicio todavía no está generado, así
+            que los importes son históricos. Generalo en la solapa «Ajuste por
+            inflación».
+          </div>
+        )}
+        {data.priorFiscalYearNumber !== null &&
+          valuation === 'ajustado' &&
+          (data.priorCoefficient !== null ? (
+            <div className="text-[11.5px] text-[var(--arca-ink-3)]">
+              La columna del ejercicio anterior está reexpresada a moneda de
+              cierre con coeficiente{' '}
+              {data.priorCoefficient.toLocaleString('es-AR', {
+                minimumFractionDigits: 4,
+                maximumFractionDigits: 4,
+              })}
+              .
+            </div>
+          ) : (
+            <div className="text-[11.5px] text-amber-600">
+              No hay índice para reexpresar el ejercicio anterior: la columna
+              comparativa quedó en valores históricos.
+            </div>
+          ))}
+      </div>
+    </ArcaCard>
+  );
+}
+
+function ErView({
+  clientId,
+  clientName,
+  selectedFy,
+  valuation,
+}: {
+  clientId: string;
+  clientName: string;
+  selectedFy: FyOption | undefined;
+  valuation: 'ajustado' | 'historico';
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [drill, setDrill] = useState<LedgerDrill | null>(null);
@@ -7849,8 +8700,11 @@ function ErView({
   const effectiveFyId = selectedFy?.id ?? '';
 
   const { data, isLoading } = useQuery({
-    queryKey: ['accounting', 'er', clientId, effectiveFyId],
-    queryFn: () => getER({ data: { clientId, fiscalYearId: effectiveFyId } }),
+    queryKey: ['accounting', 'er', clientId, effectiveFyId, valuation],
+    queryFn: () =>
+      getER({
+        data: { clientId, fiscalYearId: effectiveFyId, view: valuation },
+      }),
     enabled: !!effectiveFyId,
   });
 
@@ -7888,7 +8742,9 @@ function ErView({
               : ''}
           </div>
           <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
-            Expresado en valores históricos (sin ajuste por inflación · RT 6).
+            {valuation === 'ajustado'
+              ? 'Expresado en moneda homogénea de cierre (ajuste por inflación · RT 6).'
+              : 'Expresado en valores históricos, sin ajuste por inflación. Papel de trabajo.'}
           </div>
         </div>
 
@@ -8591,6 +9447,7 @@ function ExportView({
   selectedFy,
   notes,
   isOwner,
+  valuation,
   pdfGeneratedAt,
   pdfGeneratedByName,
   onPdfSaved,
@@ -8601,6 +9458,7 @@ function ExportView({
   selectedFy: FyOption | undefined;
   notes: FsNote[];
   isOwner: boolean;
+  valuation: 'ajustado' | 'historico';
   pdfGeneratedAt: string | null;
   pdfGeneratedByName: string | null;
   onPdfSaved: () => void;
@@ -8609,13 +9467,27 @@ function ExportView({
   const [busy, setBusy] = useState<string | null>(null);
 
   const { data: esp } = useQuery({
-    queryKey: ['accounting', 'esp', clientId, fyId],
-    queryFn: () => getESP({ data: { clientId, fiscalYearId: fyId } }),
+    queryKey: ['accounting', 'esp', clientId, fyId, valuation],
+    queryFn: () =>
+      getESP({ data: { clientId, fiscalYearId: fyId, view: valuation } }),
     enabled: !!fyId,
   });
   const { data: er } = useQuery({
-    queryKey: ['accounting', 'er', clientId, fyId],
-    queryFn: () => getER({ data: { clientId, fiscalYearId: fyId } }),
+    queryKey: ['accounting', 'er', clientId, fyId, valuation],
+    queryFn: () =>
+      getER({ data: { clientId, fiscalYearId: fyId, view: valuation } }),
+    enabled: !!fyId,
+  });
+  const { data: eepn } = useQuery({
+    queryKey: ['accounting', 'eepn', clientId, fyId, valuation],
+    queryFn: () =>
+      getEEPN({ data: { clientId, fiscalYearId: fyId, view: valuation } }),
+    enabled: !!fyId,
+  });
+  const { data: efe } = useQuery({
+    queryKey: ['accounting', 'efe', clientId, fyId, valuation],
+    queryFn: () =>
+      getEFE({ data: { clientId, fiscalYearId: fyId, view: valuation } }),
     enabled: !!fyId,
   });
   const { data: anexoI } = useQuery({
@@ -8642,6 +9514,30 @@ function ExportView({
 
   const ready = !!esp && !!er && !!anexoII;
 
+  const onEstadosExcel = async () => {
+    if (!esp) {
+      toast.error('Los datos aún se están cargando');
+      return;
+    }
+    setBusy('estados-excel');
+    try {
+      await exportEstadosExcel({
+        empresaName: clientName,
+        fiscalYearNumber: esp.fiscalYearNumber,
+        periodLabel: esp.periodLabel,
+        valuation,
+        eepn: eepn ?? null,
+        efe: efe ?? null,
+        esp,
+      });
+      toast.success('Excel de los estados generado');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Error al generar el Excel');
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const onPackage = async () => {
     if (!esp || !er || !anexoII || !selectedFy) {
       toast.error('Los datos del paquete aún se están cargando');
@@ -8657,6 +9553,9 @@ function ExportView({
         generatedLabel: new Date().toLocaleDateString('es-AR'),
         esp,
         er,
+        eepn: eepn ?? null,
+        efe: efe ?? null,
+        valuation,
         anexoII,
         anexoI: anexoI
           ? { categories: anexoI.categories, grandTotals: anexoI.grandTotals }
@@ -8738,6 +9637,8 @@ function ExportView({
         periodLabel: esp.periodLabel,
         esp,
         er,
+        eepn: eepn ?? null,
+        valuation,
       });
       toast.success('Libro Inventarios y Balances generado');
     } catch (e) {
@@ -8751,13 +9652,15 @@ function ExportView({
     key: string;
     title: string;
     desc: string;
-    onClick: () => void;
+    onClick: () => Promise<void>;
     extra?: string;
+    /** Etiqueta del botón; por defecto PDF. */
+    format?: 'PDF' | 'Excel';
   }[] = [
     {
       key: 'package',
       title: 'Paquete contable completo (EECC)',
-      desc: 'Carátula, ESP, ER, notas, Anexo I, Anexo II y espacios de firma. Listo para imprimir.',
+      desc: 'Carátula, ESP, ER, EEPN, Flujo de Efectivo, Nota 3, Anexo I, Anexo II, notas y espacios de firma. Sigue la valuación elegida arriba.',
       onClick: onPackage,
       extra: isOwner
         ? 'Se guarda asociado al ejercicio.'
@@ -8772,8 +9675,16 @@ function ExportView({
     {
       key: 'inv',
       title: 'Libro Inventarios y Balances',
-      desc: 'Inventario al cierre, ESP, ER y EEPN simplificado. Formato rubricable.',
+      desc: 'Inventario al cierre, ESP, ER y Evolución del Patrimonio Neto. Formato rubricable.',
       onClick: onInventarios,
+    },
+    {
+      key: 'estados-excel',
+      title: 'Estados nuevos en Excel',
+      desc: 'EEPN, Flujo de Efectivo y Nota 3, una hoja por estado. Sigue la valuación elegida arriba.',
+      onClick: onEstadosExcel,
+      extra: 'Para cruzar contra el papel de trabajo.',
+      format: 'Excel',
     },
   ];
 
@@ -8781,7 +9692,7 @@ function ExportView({
     <ArcaCard>
       <div className="px-5 py-3 border-b border-[var(--arca-border)]">
         <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
-          Exportes en PDF
+          Exportes
         </span>
         {pdfGeneratedAt && (
           <div className="text-[11px] text-[var(--arca-ink-3)] mt-0.5">
@@ -8808,12 +9719,14 @@ function ExportView({
               )}
             </div>
             <button
-              onClick={it.onClick}
+              onClick={() => void it.onClick()}
               disabled={!ready || busy !== null}
               className="shrink-0 text-[12px] px-3 h-8 rounded-[6px] bg-[var(--arca-ink)] text-white hover:opacity-90 disabled:opacity-40 flex items-center gap-1.5"
             >
               <Download className="w-3.5 h-3.5" />
-              {busy === it.key ? 'Generando…' : 'Descargar PDF'}
+              {busy === it.key
+                ? 'Generando…'
+                : `Descargar ${it.format ?? 'PDF'}`}
             </button>
           </div>
         ))}
@@ -8833,6 +9746,8 @@ const AUDIT_EVENT_LABELS: Record<AuditEventType, string> = {
   account_created: 'Cuenta creada',
   account_deactivated: 'Cuenta desactivada',
   financial_statement_approved: 'EECC aprobados',
+  inflation_adjustment_applied: 'Ajuste por inflación aplicado',
+  inflation_adjustment_voided: 'Ajuste por inflación anulado',
 };
 
 function describeAuditEvent(e: AuditLogEntry): string {

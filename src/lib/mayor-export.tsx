@@ -20,6 +20,8 @@ import type {
   AnexoIIResult,
   AnexoICategory,
   FsNote,
+  EepnResult,
+  EfeResult,
 } from '@/actions/accounting';
 
 interface XLBorderLine {
@@ -1081,9 +1083,12 @@ async function anexoIWorkbookBuffer(
       ]);
       styleDataRow(row);
     }
-    styleDataRow(ws.addRow(totalsCells(`Subtotal ${cat.category}`, cat.totals)), {
-      bold: true,
-    });
+    styleDataRow(
+      ws.addRow(totalsCells(`Subtotal ${cat.category}`, cat.totals)),
+      {
+        bold: true,
+      }
+    );
   }
 
   styleDataRow(ws.addRow(totalsCells('TOTALES $', data.grandTotals)), {
@@ -1240,7 +1245,11 @@ const ax = StyleSheet.create({
     textAlign: 'right',
   },
   // Membrete
-  mbEmpresa: { fontSize: 12, fontFamily: 'Helvetica-Bold', textAlign: 'center' },
+  mbEmpresa: {
+    fontSize: 12,
+    fontFamily: 'Helvetica-Bold',
+    textAlign: 'center',
+  },
   mbLine: { fontSize: 8.5, marginTop: 1 },
   mbEjercicio: {
     fontSize: 9,
@@ -1257,7 +1266,12 @@ const ax = StyleSheet.create({
   },
   prior: { marginTop: 8, fontSize: 8, color: '#555', fontStyle: 'italic' },
   note: { marginTop: 10, fontSize: 8, fontFamily: 'Helvetica-Bold' },
-  sign: { marginTop: 34, alignItems: 'center', alignSelf: 'flex-end', width: 200 },
+  sign: {
+    marginTop: 34,
+    alignItems: 'center',
+    alignSelf: 'flex-end',
+    width: 200,
+  },
   signImg: { width: 110, height: 44, objectFit: 'contain' },
   signLine: { width: 160, borderTop: '0.5pt solid #333', marginTop: 24 },
   signName: { fontSize: 8.5, fontFamily: 'Helvetica-Bold', marginTop: 2 },
@@ -1498,7 +1512,9 @@ function AnexoIDoc({ data }: { data: AnexoIExportData }) {
                   ? ` (${m.accountant.universidad})`
                   : ''}
               </Text>
-              {m.accountant.tomo || m.accountant.folio || m.accountant.consejo ? (
+              {m.accountant.tomo ||
+              m.accountant.folio ||
+              m.accountant.consejo ? (
                 <Text style={ax.signMeta}>
                   {m.accountant.tomo ? `Tomo ${m.accountant.tomo} ` : ''}
                   {m.accountant.folio ? `Folio ${m.accountant.folio} ` : ''}
@@ -1579,7 +1595,9 @@ function MembreteHeader({
       <Text style={ax.mbEmpresa}>{empresaName}</Text>
       {m?.domicilio ? <Text style={ax.mbLine}>{m.domicilio}</Text> : null}
       {m?.actividadPrincipal ? (
-        <Text style={ax.mbLine}>Actividad Principal: {m.actividadPrincipal}</Text>
+        <Text style={ax.mbLine}>
+          Actividad Principal: {m.actividadPrincipal}
+        </Text>
       ) : null}
       {m?.fechaInscripcion ? (
         <Text style={ax.mbLine}>
@@ -1609,7 +1627,11 @@ function MembreteHeader({
 }
 
 /** Bloque de firma del contador reutilizable. */
-function SignatureBlock({ ac }: { ac: AnexoIAccountantData | null | undefined }) {
+function SignatureBlock({
+  ac,
+}: {
+  ac: AnexoIAccountantData | null | undefined;
+}) {
   if (!ac || !(ac.nombre || ac.tomo || ac.firmaImagen)) return null;
   return (
     <View style={ax.sign}>
@@ -1759,14 +1781,24 @@ export async function exportCmvExcel(data: CmvExportData): Promise<void> {
     r.getCell(2).alignment = { horizontal: 'right' };
     if (bold) {
       r.getCell(2).font = { bold: true };
-      r.getCell(2).border = { top: { style: 'thin', color: { argb: 'FF333333' } } };
-      r.getCell(1).border = { top: { style: 'thin', color: { argb: 'FF333333' } } };
+      r.getCell(2).border = {
+        top: { style: 'thin', color: { argb: 'FF333333' } },
+      };
+      r.getCell(1).border = {
+        top: { style: 'thin', color: { argb: 'FF333333' } },
+      };
     }
     return r;
   };
-  line('Existencia de mercaderías al inicio del ejercicio', data.existenciaInicial);
+  line(
+    'Existencia de mercaderías al inicio del ejercicio',
+    data.existenciaInicial
+  );
   line('Compras / gastos del ejercicio', data.comprasGastos);
-  line('Existencia de mercaderías al cierre del ejercicio', data.existenciaFinal);
+  line(
+    'Existencia de mercaderías al cierre del ejercicio',
+    data.existenciaFinal
+  );
   line('TOTAL COSTO DE VENTAS', data.total, true);
 
   if (data.priorTotal != null) {
@@ -1779,10 +1811,14 @@ export async function exportCmvExcel(data: CmvExportData): Promise<void> {
     pr.getCell(2).alignment = { horizontal: 'right' };
   }
   ws.addRow([]);
-  banner('Las Notas y Anexos forman parte integrante de este Estado.', {
-    bold: true,
-    size: 9,
-  }, false);
+  banner(
+    'Las Notas y Anexos forman parte integrante de este Estado.',
+    {
+      bold: true,
+      size: 9,
+    },
+    false
+  );
 
   const ac = m?.accountant;
   if (ac && (ac.nombre || ac.tomo || ac.consejo)) {
@@ -1791,7 +1827,11 @@ export async function exportCmvExcel(data: CmvExportData): Promise<void> {
     for (const l of [
       ac.nombre,
       `${ac.titulo}${ac.universidad ? ` (${ac.universidad})` : ''}`,
-      [ac.tomo ? `Tomo ${ac.tomo}` : '', ac.folio ? `Folio ${ac.folio}` : '', ac.consejo]
+      [
+        ac.tomo ? `Tomo ${ac.tomo}` : '',
+        ac.folio ? `Folio ${ac.folio}` : '',
+        ac.consejo,
+      ]
         .filter(Boolean)
         .join(' '),
     ].filter(Boolean)) {
@@ -1814,8 +1854,16 @@ export async function exportCmvExcel(data: CmvExportData): Promise<void> {
 
 /* ═══════════════ Paquete EECC + Libros legales — PDF (Fase 7) ═══════════════ */
 
-const EECC_DISCLAIMER =
+const EECC_DISCLAIMER_HISTORICO =
   'Estados Contables expresados en valores históricos, sin ajuste por inflación (RT 6).';
+
+const EECC_DISCLAIMER_AJUSTADO =
+  'Estados Contables expresados en moneda homogénea de cierre, con ajuste por inflación (RT 6).';
+
+const disclaimerFor = (valuation: 'ajustado' | 'historico' | undefined) =>
+  valuation === 'historico'
+    ? EECC_DISCLAIMER_HISTORICO
+    : EECC_DISCLAIMER_AJUSTADO;
 
 export interface EeccPackageData {
   empresaName: string;
@@ -1825,6 +1873,10 @@ export interface EeccPackageData {
   generatedLabel: string;
   esp: EspResult;
   er: ErResult;
+  eepn: EepnResult | null;
+  efe: EfeResult | null;
+  /** Con qué valuación se generaron los estados. Define el disclaimer. */
+  valuation?: 'ajustado' | 'historico';
   anexoI: {
     categories: AnexoICategory[];
     grandTotals: AnexoICategory['totals'];
@@ -1867,8 +1919,17 @@ const pk = StyleSheet.create({
     color: '#1a1a1a',
   },
   cover: { flexGrow: 1, justifyContent: 'center', alignItems: 'center' },
-  coverKicker: { fontSize: 9, color: '#888', letterSpacing: 2, marginBottom: 8 },
-  coverEmpresa: { fontSize: 24, fontFamily: 'Helvetica-Bold', textAlign: 'center' },
+  coverKicker: {
+    fontSize: 9,
+    color: '#888',
+    letterSpacing: 2,
+    marginBottom: 8,
+  },
+  coverEmpresa: {
+    fontSize: 24,
+    fontFamily: 'Helvetica-Bold',
+    textAlign: 'center',
+  },
   coverCuit: { fontSize: 11, color: '#555', marginTop: 4 },
   coverTitle: {
     fontSize: 15,
@@ -1938,10 +1999,21 @@ const pk = StyleSheet.create({
   cLabelIndent: { width: '56%', paddingLeft: 10 },
   cNum: { width: '22%', textAlign: 'right' },
   ok: { fontSize: 8, color: '#0a7d33', marginTop: 6 },
-  bad: { fontSize: 8, color: '#b00020', marginTop: 6, fontFamily: 'Helvetica-Bold' },
+  bad: {
+    fontSize: 8,
+    color: '#b00020',
+    marginTop: 6,
+    fontFamily: 'Helvetica-Bold',
+  },
   noteTitle: { fontSize: 10.5, fontFamily: 'Helvetica-Bold', marginTop: 10 },
   noteP: { fontSize: 9, marginTop: 2.5, lineHeight: 1.35, color: '#222' },
-  noteLi: { fontSize: 9, marginTop: 1.5, marginLeft: 10, lineHeight: 1.3, color: '#222' },
+  noteLi: {
+    fontSize: 9,
+    marginTop: 1.5,
+    marginLeft: 10,
+    lineHeight: 1.3,
+    color: '#222',
+  },
   noteH: { fontSize: 9.5, fontFamily: 'Helvetica-Bold', marginTop: 5 },
   empty: { fontSize: 8.5, color: '#999', fontStyle: 'italic', marginTop: 4 },
   signWrap: {
@@ -2007,7 +2079,11 @@ const ax6 = StyleSheet.create({
   cat: { fontSize: 8, fontFamily: 'Helvetica-Bold', marginTop: 5 },
 });
 
-function PageFooter({ data }: { data: { empresaName: string; fiscalYearNumber: number } }) {
+function PageFooter({
+  data,
+}: {
+  data: { empresaName: string; fiscalYearNumber: number };
+}) {
   return (
     <View style={pk.footer} fixed>
       <Text>
@@ -2114,7 +2190,8 @@ function EspBlock({ esp }: { esp: EspResult }) {
       </View>
       {esp.balancedCurrent ? (
         <Text style={pk.ok}>
-          Activo = Pasivo + Patrimonio Neto ({fmtMoney(esp.totals.activo.current)})
+          Activo = Pasivo + Patrimonio Neto (
+          {fmtMoney(esp.totals.activo.current)})
         </Text>
       ) : (
         <Text style={pk.bad}>
@@ -2154,6 +2231,173 @@ function ErBlock({ er }: { er: ErResult }) {
           </View>
         );
       })}
+    </View>
+  );
+}
+
+/**
+ * Estado de Evolución del Patrimonio Neto. Una columna por cuenta de PN más el
+ * total; el comparativo del ejercicio anterior va solo en la fila de cierre,
+ * que es como lo expone el modelo RT 9.
+ */
+function EepnBlock({ eepn }: { eepn: EepnResult | null }) {
+  if (!eepn || eepn.columns.length === 0) return null;
+  // Con muchas columnas el ancho por cuenta se achica para que entre en A4.
+  const colWidth = `${Math.max(9, 46 / (eepn.columns.length + 1))}%`;
+  const colStyle = {
+    width: colWidth,
+    textAlign: 'right' as const,
+    paddingLeft: 4,
+  };
+  return (
+    <View break>
+      <Text style={pk.sectionTitle}>
+        Estado de Evolución del Patrimonio Neto
+      </Text>
+      <View style={pk.colHead}>
+        <Text style={pk.cLabel}>Concepto</Text>
+        {eepn.columns.map((c) => (
+          <Text key={c.accountId} style={colStyle}>
+            {c.name}
+          </Text>
+        ))}
+        <Text style={pk.cNum}>Ej. N°{eepn.fiscalYearNumber}</Text>
+        {eepn.priorFiscalYearNumber !== null && (
+          <Text style={pk.cNum}>Ej. N°{eepn.priorFiscalYearNumber}</Text>
+        )}
+      </View>
+      {eepn.rows.map((r) => {
+        const strong = r.kind === 'inicio' || r.kind === 'cierre';
+        return (
+          <View key={r.key} style={strong ? pk.totalRow : pk.row}>
+            <Text style={strong ? pk.cLabel : pk.cLabelIndent}>{r.label}</Text>
+            {eepn.columns.map((c) => (
+              <Text key={c.accountId} style={colStyle}>
+                {r.amounts[c.accountId]
+                  ? fmtMoney(r.amounts[c.accountId])
+                  : '—'}
+              </Text>
+            ))}
+            <Text style={pk.cNum}>{fmtMoney(r.total)}</Text>
+            {eepn.priorFiscalYearNumber !== null && (
+              <Text style={pk.cNum}>
+                {r.kind === 'cierre' && eepn.priorTotal !== null
+                  ? fmtMoney(eepn.priorTotal)
+                  : '—'}
+              </Text>
+            )}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+/** Estado de Flujo de Efectivo, método directo. */
+function EfeBlock({ efe }: { efe: EfeResult | null }) {
+  if (!efe) return null;
+  return (
+    <View break>
+      <Text style={pk.sectionTitle}>
+        Estado de Flujo de Efectivo — Método directo
+      </Text>
+      <View style={pk.row}>
+        <Text style={pk.cLabelIndent}>
+          Efectivo y equivalentes al inicio del ejercicio
+        </Text>
+        <Text style={pk.cNum}>{fmtMoney(efe.efectivoInicio)}</Text>
+      </View>
+      <View style={pk.row}>
+        <Text style={pk.cLabelIndent}>
+          Efectivo y equivalentes al cierre del ejercicio
+        </Text>
+        <Text style={pk.cNum}>{fmtMoney(efe.efectivoCierre)}</Text>
+      </View>
+      <View style={pk.totalRow}>
+        <Text style={pk.cLabel}>Aumento (disminución) neto del efectivo</Text>
+        <Text style={pk.cNum}>{fmtMoney(efe.variacion)}</Text>
+      </View>
+
+      <Text style={pk.subTitle}>Causas de las variaciones del efectivo</Text>
+      {efe.activities.map((a) => (
+        <View key={a.key}>
+          <Text style={pk.subTitle}>{a.label}</Text>
+          {a.lines.map((l) => (
+            <View key={l.accountId} style={pk.row}>
+              <Text style={pk.cLabelIndent}>{l.name}</Text>
+              <Text style={pk.cNum}>{fmtMoney(l.amount)}</Text>
+            </View>
+          ))}
+          <View style={pk.totalRow}>
+            <Text style={pk.cLabel}>
+              Flujo neto por {a.label.toLowerCase()}
+            </Text>
+            <Text style={pk.cNum}>{fmtMoney(a.total)}</Text>
+          </View>
+        </View>
+      ))}
+      {Math.abs(efe.recpamEfectivo) >= 0.005 && (
+        <View style={pk.row}>
+          <Text style={pk.cLabelIndent}>
+            Resultado por exposición a la inflación del efectivo (RECPAM)
+          </Text>
+          <Text style={pk.cNum}>{fmtMoney(efe.recpamEfectivo)}</Text>
+        </View>
+      )}
+      <View style={pk.grandRow}>
+        <Text style={pk.cLabel}>Total de las variaciones del efectivo</Text>
+        <Text style={pk.cNum}>{fmtMoney(efe.totalCausas)}</Text>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Nota 3 — Composición de los principales rubros. Sale del mismo detalle por
+ * cuenta del ESP, así que no puede diferir de él.
+ */
+function Nota3Block({ esp }: { esp: EspResult }) {
+  const rubros = esp.sections
+    .flatMap((sec) => sec.rubros)
+    .filter((r) => r.group !== 'resultado_ejercicio')
+    .filter((r) => Math.abs(r.current) >= 0.005 || Math.abs(r.prior) >= 0.005);
+  if (rubros.length === 0) return null;
+  const priorLabel = esp.hasPrior
+    ? `Ej. N°${esp.priorFiscalYearNumber}`
+    : 'Anterior';
+  return (
+    <View break>
+      <Text style={pk.sectionTitle}>
+        Nota 3 — Composición de los principales rubros
+      </Text>
+      <View style={pk.colHead}>
+        <Text style={pk.cLabel}>Concepto</Text>
+        <Text style={pk.cNum}>Ej. N°{esp.fiscalYearNumber}</Text>
+        <Text style={pk.cNum}>{priorLabel}</Text>
+      </View>
+      {rubros.map((r, i) => (
+        <View key={r.group}>
+          <Text style={pk.subTitle}>
+            3.{i + 1} — {r.label}
+          </Text>
+          {r.accounts.map((a) => (
+            <View key={a.accountId} style={pk.row}>
+              <Text style={pk.cLabelIndent}>{a.name}</Text>
+              <Text style={pk.cNum}>{fmtMoney(a.current)}</Text>
+              <Text style={pk.cNum}>
+                {esp.hasPrior ? fmtMoney(a.prior) : '—'}
+              </Text>
+            </View>
+          ))}
+          <View style={pk.totalRow}>
+            <Text style={pk.cLabel} />
+            <Text style={pk.cNum}>{fmtMoney(r.current)}</Text>
+            <Text style={pk.cNum}>
+              {esp.hasPrior ? fmtMoney(r.prior) : '—'}
+            </Text>
+          </View>
+        </View>
+      ))}
     </View>
   );
 }
@@ -2249,11 +2493,7 @@ function AnexoCMVBlock({ cmv }: { cmv: CmvBlockData | null }) {
   );
 }
 
-function AnexoIBlock({
-  anexoI,
-}: {
-  anexoI: EeccPackageData['anexoI'];
-}) {
+function AnexoIBlock({ anexoI }: { anexoI: EeccPackageData['anexoI'] }) {
   return (
     <View>
       <Text style={pk.sectionTitle}>Anexo I · Bienes de uso</Text>
@@ -2317,11 +2557,19 @@ function AnexoIBlock({
             <Text style={ax6.cNum}>
               {fmtMoney(anexoI.grandTotals.valorCierre)}
             </Text>
-            <Text style={ax6.cNum}>{fmtMoney(anexoI.grandTotals.accumStart)}</Text>
-            <Text style={ax6.cNum}>{fmtMoney(anexoI.grandTotals.amortBajas)}</Text>
+            <Text style={ax6.cNum}>
+              {fmtMoney(anexoI.grandTotals.accumStart)}
+            </Text>
+            <Text style={ax6.cNum}>
+              {fmtMoney(anexoI.grandTotals.amortBajas)}
+            </Text>
             <Text style={ax6.cNum}>—</Text>
-            <Text style={ax6.cNum}>{fmtMoney(anexoI.grandTotals.amortYear)}</Text>
-            <Text style={ax6.cNum}>{fmtMoney(anexoI.grandTotals.accumEnd)}</Text>
+            <Text style={ax6.cNum}>
+              {fmtMoney(anexoI.grandTotals.amortYear)}
+            </Text>
+            <Text style={ax6.cNum}>
+              {fmtMoney(anexoI.grandTotals.accumEnd)}
+            </Text>
             <Text style={ax6.cNum}>
               {fmtMoney(anexoI.grandTotals.residualEnd)}
             </Text>
@@ -2389,7 +2637,7 @@ function EeccPackageDoc({ data }: { data: EeccPackageData }) {
             Ejercicio Económico N°{data.fiscalYearNumber}
           </Text>
           <Text style={pk.coverMeta}>{data.periodLabel}</Text>
-          <Text style={pk.coverDisc}>{EECC_DISCLAIMER}</Text>
+          <Text style={pk.coverDisc}>{disclaimerFor(data.valuation)}</Text>
           <Text style={pk.coverGen}>Generado el {data.generatedLabel}</Text>
         </View>
         <PageFooter data={data} />
@@ -2399,6 +2647,9 @@ function EeccPackageDoc({ data }: { data: EeccPackageData }) {
       <Page size="A4" style={pk.page} wrap>
         <EspBlock esp={data.esp} />
         <ErBlock er={data.er} />
+        <EepnBlock eepn={data.eepn} />
+        <EfeBlock efe={data.efe} />
+        <Nota3Block esp={data.esp} />
         <AnexoIIBlock a2={data.anexoII} />
         <AnexoIBlock anexoI={data.anexoI} />
         <AnexoCMVBlock cmv={data.cmv} />
@@ -2514,7 +2765,9 @@ function LibroMayorDoc({ data }: { data: MayorExportData }) {
                 {r.description ?? r.lineDescription ?? ''}
               </Text>
               <Text style={lm.cMoney}>{r.debit ? fmtMoney(r.debit) : ''}</Text>
-              <Text style={lm.cMoney}>{r.credit ? fmtMoney(r.credit) : ''}</Text>
+              <Text style={lm.cMoney}>
+                {r.credit ? fmtMoney(r.credit) : ''}
+              </Text>
               <Text style={lm.cMoney}>{saldoLabel(r.balance)}</Text>
             </View>
           ))}
@@ -2558,6 +2811,9 @@ export interface LibroInventariosData {
   periodLabel: string;
   esp: EspResult;
   er: ErResult;
+  /** Estado real; si falta se cae al resumen de patrimonio del ESP. */
+  eepn?: EepnResult | null;
+  valuation?: 'ajustado' | 'historico';
 }
 
 function InventarioBlock({ esp }: { esp: EspResult }) {
@@ -2608,7 +2864,7 @@ function InventarioBlock({ esp }: { esp: EspResult }) {
   );
 }
 
-function EepnBlock({ esp }: { esp: EspResult }) {
+function InventarioPnBlock({ esp }: { esp: EspResult }) {
   const pn = esp.sections.find((s) => s.macro === 'pn');
   const rubros = pn?.rubros ?? [];
   return (
@@ -2650,13 +2906,19 @@ function LibroInventariosDoc({ data }: { data: LibroInventariosData }) {
           CUIT {data.cuit} · Libro Inventarios y Balances · Ejercicio N°
           {data.fiscalYearNumber} · {data.periodLabel}
         </Text>
-        <Text style={[lm.meta, { fontStyle: 'italic', color: '#999' }] as never}>
-          {EECC_DISCLAIMER}
+        <Text
+          style={[lm.meta, { fontStyle: 'italic', color: '#999' }] as never}
+        >
+          {disclaimerFor(data.valuation)}
         </Text>
         <InventarioBlock esp={data.esp} />
         <EspBlock esp={data.esp} />
         <ErBlock er={data.er} />
-        <EepnBlock esp={data.esp} />
+        {data.eepn && data.eepn.columns.length > 0 ? (
+          <EepnBlock eepn={data.eepn} />
+        ) : (
+          <InventarioPnBlock esp={data.esp} />
+        )}
         <View style={pk.footer} fixed>
           <Text>
             {footerData.empresaName} · Libro Inventarios y Balances · Ejercicio
@@ -2680,5 +2942,168 @@ export async function exportLibroInventariosPdf(
   triggerDownload(
     blob,
     `libro_inventarios_balances_ej${data.fiscalYearNumber}.pdf`
+  );
+}
+
+/* ═════ Excel de los estados nuevos: EEPN, EFE y Nota 3 (AXI-6/7/8) ═════ */
+
+export interface EstadosExcelData {
+  empresaName: string;
+  fiscalYearNumber: number;
+  periodLabel: string;
+  valuation: 'ajustado' | 'historico';
+  eepn: EepnResult | null;
+  efe: EfeResult | null;
+  esp: EspResult;
+}
+
+/**
+ * Un libro con una hoja por estado. Se exporta el paquete completo y no cada
+ * estado por separado porque el contador los cruza entre sí: tenerlos en
+ * pestañas del mismo archivo es lo que hace su papel de trabajo.
+ */
+export async function exportEstadosExcel(
+  data: EstadosExcelData
+): Promise<void> {
+  const wb = new ExcelJS.Workbook();
+  const disclaimer =
+    data.valuation === 'historico'
+      ? 'Valores históricos, sin ajuste por inflación (papel de trabajo).'
+      : 'Moneda homogénea de cierre, con ajuste por inflación (RT 6).';
+
+  /** Encabezado común a todas las hojas. */
+  const header = (ws: XLWorksheet, title: string, cols: number) => {
+    const t = ws.addRow([data.empresaName]);
+    t.getCell(1).font = { bold: true, size: 14 };
+    const s = ws.addRow([
+      `${title} · Ejercicio N°${data.fiscalYearNumber} · ${data.periodLabel}`,
+    ]);
+    s.getCell(1).font = { size: 10 };
+    const d = ws.addRow([disclaimer]);
+    d.getCell(1).font = { size: 9, italic: true };
+    ws.addRow([]);
+    if (ws.columns[0]) ws.columns[0].width = 46;
+    for (let i = 1; i < cols; i++) {
+      if (ws.columns[i]) ws.columns[i].width = 20;
+    }
+  };
+
+  const money = (row: XLRow, from: number, to: number, bold = false) => {
+    for (let c = from; c <= to; c++) {
+      row.getCell(c).numFmt = MONEY_FMT;
+      row.getCell(c).alignment = { horizontal: 'right' };
+      if (bold) row.getCell(c).font = { bold: true };
+    }
+  };
+
+  // ── EEPN ──
+  if (data.eepn && data.eepn.columns.length > 0) {
+    const e = data.eepn;
+    const ws = wb.addWorksheet('EEPN', { views: [{ showGridLines: false }] });
+    const nCols =
+      e.columns.length + 2 + (e.priorFiscalYearNumber !== null ? 1 : 0);
+    header(ws, 'Estado de Evolución del Patrimonio Neto', nCols);
+
+    const head = [
+      'Concepto',
+      ...e.columns.map((c) => c.name),
+      `Ej. N°${e.fiscalYearNumber}`,
+    ];
+    if (e.priorFiscalYearNumber !== null) {
+      head.push(`Ej. N°${e.priorFiscalYearNumber}`);
+    }
+    const hr = ws.addRow(head);
+    for (let c = 1; c <= head.length; c++) hr.getCell(c).font = { bold: true };
+
+    for (const row of e.rows) {
+      const strong = row.kind === 'inicio' || row.kind === 'cierre';
+      const values: (string | number)[] = [row.label];
+      for (const c of e.columns) values.push(row.amounts[c.accountId] ?? 0);
+      values.push(row.total);
+      if (e.priorFiscalYearNumber !== null) {
+        values.push(
+          row.kind === 'cierre' && e.priorTotal !== null ? e.priorTotal : 0
+        );
+      }
+      const r = ws.addRow(values);
+      if (strong) r.getCell(1).font = { bold: true };
+      money(r, 2, values.length, strong);
+    }
+  }
+
+  // ── Flujo de efectivo ──
+  if (data.efe) {
+    const f = data.efe;
+    const ws = wb.addWorksheet('Flujo de efectivo', {
+      views: [{ showGridLines: false }],
+    });
+    header(ws, 'Estado de Flujo de Efectivo — Método directo', 2);
+
+    const line = (label: string, value: number, bold = false) => {
+      const r = ws.addRow([label, value]);
+      if (bold) r.getCell(1).font = { bold: true };
+      money(r, 2, 2, bold);
+    };
+
+    line('Efectivo y equivalentes al inicio del ejercicio', f.efectivoInicio);
+    line('Efectivo y equivalentes al cierre del ejercicio', f.efectivoCierre);
+    line('Aumento (disminución) neto del efectivo', f.variacion, true);
+    ws.addRow([]);
+    const causas = ws.addRow(['Causas de las variaciones del efectivo']);
+    causas.getCell(1).font = { bold: true };
+
+    for (const a of f.activities) {
+      const t = ws.addRow([a.label]);
+      t.getCell(1).font = { bold: true, size: 10 };
+      for (const l of a.lines) line(`    ${l.name}`, l.amount);
+      line(`Flujo neto por ${a.label.toLowerCase()}`, a.total, true);
+    }
+    if (Math.abs(f.recpamEfectivo) >= 0.005) {
+      line(
+        'Resultado por exposición a la inflación del efectivo (RECPAM)',
+        f.recpamEfectivo
+      );
+    }
+    line('Total de las variaciones del efectivo', f.totalCausas, true);
+  }
+
+  // ── Nota 3 ──
+  const rubros = data.esp.sections
+    .flatMap((sec) => sec.rubros)
+    .filter((r) => r.group !== 'resultado_ejercicio')
+    .filter((r) => Math.abs(r.current) >= 0.005 || Math.abs(r.prior) >= 0.005);
+  if (rubros.length > 0) {
+    const ws = wb.addWorksheet('Nota 3', { views: [{ showGridLines: false }] });
+    header(ws, 'Nota 3 — Composición de los principales rubros', 4);
+    const hr = ws.addRow([
+      'Nota',
+      'Concepto',
+      `Ej. N°${data.esp.fiscalYearNumber}`,
+      data.esp.priorFiscalYearNumber !== null
+        ? `Ej. N°${data.esp.priorFiscalYearNumber}`
+        : 'Anterior',
+    ]);
+    for (let c = 1; c <= 4; c++) hr.getCell(c).font = { bold: true };
+    if (ws.columns[0]) ws.columns[0].width = 8;
+    if (ws.columns[1]) ws.columns[1].width = 46;
+
+    rubros.forEach((r, i) => {
+      const t = ws.addRow([`3.${i + 1}`, r.label]);
+      t.getCell(2).font = { bold: true };
+      for (const a of r.accounts) {
+        const row = ws.addRow(['', `    ${a.name}`, a.current, a.prior]);
+        money(row, 3, 4);
+      }
+      const tot = ws.addRow(['', '', r.current, r.prior]);
+      money(tot, 3, 4, true);
+    });
+  }
+
+  const buffer = await wb.xlsx.writeBuffer();
+  triggerDownload(
+    new Blob([buffer as ArrayBuffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    }),
+    `estados_${data.empresaName.replace(/\s+/g, '_')}_ej${data.fiscalYearNumber}.xlsx`
   );
 }
