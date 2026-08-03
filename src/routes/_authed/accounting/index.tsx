@@ -2730,6 +2730,13 @@ function ClosingWizard({
               } $ ${fmtMoney(Math.abs(wiz.resultado.net))}`}
               preview={wiz.refundicion.preview}
               done={done.refundicion}
+              blockedReason={
+                !wiz.inflation.applied
+                  ? 'Generá el ajuste por inflación antes de refundir'
+                  : wiz.inflation.stale
+                    ? 'Regenerá el ajuste por inflación: quedó desactualizado'
+                    : undefined
+              }
               doneLabel={
                 wiz.refundicion.entryNumber
                   ? `Registrado · Asiento N°${wiz.refundicion.entryNumber}`
@@ -2868,6 +2875,7 @@ function StageEntry({
   onApprove,
   onContinue,
   hideContinue,
+  blockedReason,
 }: {
   title: string;
   subtitle?: string;
@@ -2879,6 +2887,8 @@ function StageEntry({
   onApprove: (lines: EditLine[]) => void;
   onContinue?: () => void;
   hideContinue?: boolean;
+  /** Motivo por el que todavía no se puede registrar; deshabilita el botón. */
+  blockedReason?: string;
 }) {
   const [lines, setLines] = useState<EditLine[]>([]);
   const [balanced, setBalanced] = useState(preview.balanced);
@@ -2938,8 +2948,11 @@ function StageEntry({
               onClick={() =>
                 onApprove(lines.length ? lines : toEditLines(preview))
               }
-              disabled={pending || !balanced}
-              title={balanced ? undefined : 'El asiento no balancea'}
+              disabled={pending || !balanced || !!blockedReason}
+              title={
+                blockedReason ??
+                (balanced ? undefined : 'El asiento no balancea')
+              }
               className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
             >
               {pending ? 'Registrando…' : 'Aprobar y registrar'}

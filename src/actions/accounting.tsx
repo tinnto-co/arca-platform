@@ -77,6 +77,7 @@ import {
   accumulatedDepreciation,
 } from '@/lib/accounting-depreciation';
 import { parentCodeOf } from '@/lib/accounting-base-chart';
+import { nextEntryNumber } from '@/lib/accounting-posting-db';
 import {
   buildClosingEntries,
   type ClosingEntryPreview,
@@ -5852,44 +5853,101 @@ export const approveClosingStage = createServerFn({ method: 'POST' })
       };
 
       if (stage === 'apertura') {
-        // Crea el próximo ejercicio (si no existe) + asiento de apertura.
         const nd = nextFyDates(fy.endDate);
         const sY = nd.start.getUTCFullYear();
         const sM = nd.start.getUTCMonth();
-        const [nfy] = await tx
-          .insert(fiscalYear)
-          .values({
-            clientId,
-            startDate: nd.start,
-            endDate: nd.end,
-            status: 'open',
-            number: fy.number + 1,
-          })
-          .returning();
-        const periods = Array.from({ length: 12 }, (_, i) => {
-          const d = new Date(Date.UTC(sY, sM + i, 1));
-          return {
-            fiscalYearId: nfy.id,
-            clientId,
-            year: d.getUTCFullYear(),
-            month: d.getUTCMonth() + 1,
-            status: 'open' as const,
-          };
-        });
-        const inserted = await tx
-          .insert(accountingPeriod)
-          .values(periods)
-          .returning();
-        const first = inserted.find((p) => p.month === sM + 1)!;
+
+        // El ejercicio siguiente puede existir ya, porque se creó a mano o
+        // porque alguien reintentó esta etapa. Reusarlo en vez de insertar sin
+        // mirar: si no, quedan dos ejercicios con las mismas fechas y los
+        // saldos se arrastran dos veces. El asistente esconde el botón cuando
+        // la apertura ya está hecha, pero eso protege la pantalla, no el dato.
+        const [existing] = await tx
+          .select()
+          .from(fiscalYear)
+          .where(
+            and(
+              eq(fiscalYear.clientId, clientId),
+              eq(fiscalYear.startDate, nd.start)
+            )
+          )
+          .limit(1);
+
+        let nfy = existing;
+        let first: { id: string };
+
+        if (nfy) {
+          const [already] = await tx
+            .select({ number: journalEntry.number })
+            .from(journalEntry)
+            .where(
+              and(
+                eq(journalEntry.fiscalYearId, nfy.id),
+                eq(journalEntry.origin, 'auto_opening'),
+                eq(journalEntry.isVoided, false)
+              )
+            )
+            .limit(1);
+          if (already) {
+            throw new Error(
+              `El Ejercicio N°${nfy.number} ya tiene su asiento de apertura (N°${already.number}). Anulalo antes de volver a registrarla.`
+            );
+          }
+          const [p] = await tx
+            .select({ id: accountingPeriod.id })
+            .from(accountingPeriod)
+            .where(
+              and(
+                eq(accountingPeriod.fiscalYearId, nfy.id),
+                eq(accountingPeriod.year, sY),
+                eq(accountingPeriod.month, sM + 1)
+              )
+            )
+            .limit(1);
+          if (!p) {
+            throw new Error(
+              `El Ejercicio N°${nfy.number} no tiene generado el período ${sM + 1}/${sY}.`
+            );
+          }
+          first = p;
+        } else {
+          [nfy] = await tx
+            .insert(fiscalYear)
+            .values({
+              clientId,
+              startDate: nd.start,
+              endDate: nd.end,
+              status: 'open',
+              number: fy.number + 1,
+            })
+            .returning();
+          const periods = Array.from({ length: 12 }, (_, i) => {
+            const d = new Date(Date.UTC(sY, sM + i, 1));
+            return {
+              fiscalYearId: nfy.id,
+              clientId,
+              year: d.getUTCFullYear(),
+              month: d.getUTCMonth() + 1,
+              status: 'open' as const,
+            };
+          });
+          const inserted = await tx
+            .insert(accountingPeriod)
+            .values(periods)
+            .returning();
+          first = inserted.find((p) => p.month === sM + 1)!;
+        }
+
+        const number = await nextEntryNumber(tx, clientId, nfy.id);
         await insertEntry(
           nfy.id,
           first.id,
           nd.start,
-          1,
+          number,
           'auto_opening',
           `Asiento de apertura · Ejercicio N°${nfy.number}`
         );
-        return { entryNumber: 1, nextFyNumber: nfy.number };
+        return { entryNumber: number, nextFyNumber: nfy.number };
       }
 
       // Refundición / cierre: número consecutivo del ejercicio.
