@@ -5130,17 +5130,33 @@ export const getAnexoI = createServerFn({ method: 'GET' })
     }
     const suggestionLines = [...debitMap.values(), ...creditMap.values()];
 
-    // Comparativo con el ejercicio anterior (número - 1), si existe.
+    // Comparativo con el ejercicio anterior, si existe. El modelo de EECC lo
+    // expone como una columna «Neto al cierre del ejercicio anterior» con un
+    // importe por rubro, no como un total suelto al pie: por eso se devuelve
+    // desagregado por bien y por categoría.
     let prior: {
       number: number;
       grandTotals: ReturnType<typeof emptyTotals>;
+      /** Neto al cierre del ejercicio anterior, por id de bien. */
+      residualByAsset: Record<string, number>;
+      /** Ídem, por categoría. */
+      residualByCategory: Record<string, number>;
     } | null = null;
     const priorFy = await loadPriorFiscalYear(clientId, fy);
     if (priorFy) {
       const priorRows = await computeAnexoIRows(clientId, priorFy);
+      const priorGrouped = groupAnexoI(priorRows);
+      const residualByAsset: Record<string, number> = {};
+      const residualByCategory: Record<string, number> = {};
+      for (const cat of priorGrouped.categories) {
+        residualByCategory[cat.category] = cat.totals.residualEnd;
+        for (const a of cat.assets) residualByAsset[a.id] = a.residualEnd;
+      }
       prior = {
         number: priorFy.number,
-        grandTotals: groupAnexoI(priorRows).grandTotals,
+        grandTotals: priorGrouped.grandTotals,
+        residualByAsset,
+        residualByCategory,
       };
     }
 

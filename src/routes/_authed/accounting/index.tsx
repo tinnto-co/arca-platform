@@ -7232,10 +7232,20 @@ function AnexoIView({
   clientId,
   canWrite,
   clientName,
+  fiscalYearId,
+  readOnly = false,
 }: {
   clientId: string;
   canWrite: boolean;
   clientName: string;
+  /**
+   * Ejercicio impuesto desde afuera. Lo usa la solapa de Estados Contables,
+   * que ya tiene su propio selector: dos selectores en pantalla se
+   * desincronizan y el contador termina mirando ejercicios distintos.
+   */
+  fiscalYearId?: string;
+  /** Sin edición ni sugerencia de asiento: el anexo como parte del balance. */
+  readOnly?: boolean;
 }) {
   const [selectedFyId, setSelectedFyId] = useState('');
   const [editor, setEditor] = useState<EditorState | null>(null);
@@ -7244,7 +7254,8 @@ function AnexoIView({
     queryKey: ['accounting', 'fiscal-years', clientId],
     queryFn: () => getFiscalYears({ data: { clientId } }),
   });
-  const effectiveFyId = selectedFyId || defaultFiscalYearId(fiscalYears);
+  const effectiveFyId =
+    fiscalYearId ?? (selectedFyId || defaultFiscalYearId(fiscalYears));
 
   const { data, isLoading } = useQuery({
     queryKey: ['accounting', 'anexo-i', clientId, effectiveFyId],
@@ -7340,24 +7351,33 @@ function AnexoIView({
     <div className="space-y-4">
       <ArcaCard>
         <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-[var(--arca-border)]">
-          <span className="text-[12px] text-[var(--arca-ink-3)]">
-            Ejercicio
-          </span>
-          <Select
-            value={effectiveFyId}
-            onValueChange={(v) => setSelectedFyId(v)}
-          >
-            <SelectTrigger size="sm" className="w-44 text-[12.5px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {fiscalYears.map((y) => (
-                <SelectItem key={y.id} value={y.id}>
-                  N°{y.number} ({y.status === 'open' ? 'abierto' : 'cerrado'})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {fiscalYearId ? (
+            <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+              Anexo I · Bienes de uso
+            </span>
+          ) : (
+            <>
+              <span className="text-[12px] text-[var(--arca-ink-3)]">
+                Ejercicio
+              </span>
+              <Select
+                value={effectiveFyId}
+                onValueChange={(v) => setSelectedFyId(v)}
+              >
+                <SelectTrigger size="sm" className="w-44 text-[12.5px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {fiscalYears.map((y) => (
+                    <SelectItem key={y.id} value={y.id}>
+                      N°{y.number} (
+                      {y.status === 'open' ? 'abierto' : 'cerrado'})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </>
+          )}
           <div className="flex-1" />
           {data && data.categories.length > 0 && (
             <>
@@ -7433,11 +7453,21 @@ function AnexoIView({
                     Acum. al cierre
                   </th>
                   <th
-                    className="px-3 py-2 pr-4 text-right align-bottom border-b border-[var(--arca-border)]"
+                    className="px-3 py-2 text-right align-bottom border-b border-[var(--arca-border)]"
                     rowSpan={3}
                   >
                     Neto al cierre
                   </th>
+                  {data.prior && (
+                    <th
+                      className="px-3 py-2 pr-4 text-right align-bottom border-l border-b border-[var(--arca-border)]"
+                      rowSpan={3}
+                    >
+                      Neto al cierre
+                      <br />
+                      ej. N°{data.prior.number}
+                    </th>
+                  )}
                 </tr>
                 <tr className="text-[9.5px] uppercase tracking-wide text-[var(--arca-ink-3)] bg-[var(--arca-surface-2)]">
                   <th
@@ -7466,7 +7496,11 @@ function AnexoIView({
               </thead>
               <tbody>
                 {data.categories.map((cat) => (
-                  <AnexoICategoryRows key={cat.category} cat={cat} />
+                  <AnexoICategoryRows
+                    key={cat.category}
+                    cat={cat}
+                    prior={data.prior}
+                  />
                 ))}
                 <tr className="border-t-2 border-[var(--arca-ink-2)] font-semibold">
                   <td className="py-2.5 pl-4 whitespace-nowrap">
@@ -7499,21 +7533,17 @@ function AnexoIView({
                   <td className={`${ANEXO_NUM_TD} ${ANEXO_GROUP_BORDER}`}>
                     {fmtMoney(data.grandTotals.accumEnd)}
                   </td>
-                  <td className={`${ANEXO_NUM_TD} pr-4`}>
+                  <td className={ANEXO_NUM_TD}>
                     {fmtMoney(data.grandTotals.residualEnd)}
                   </td>
-                </tr>
-                {data.prior && (
-                  <tr className="text-[var(--arca-ink-3)] text-[11px]">
-                    <td className="py-1.5 pl-4 italic" colSpan={10}>
-                      Neto al cierre · Ejercicio anterior (N°
-                      {data.prior.number})
-                    </td>
-                    <td className={`${ANEXO_NUM_TD} pr-4 italic`}>
+                  {data.prior && (
+                    <td
+                      className={`${ANEXO_NUM_TD} pr-4 border-l border-[var(--arca-border)]`}
+                    >
                       {fmtMoney(data.prior.grandTotals.residualEnd)}
                     </td>
-                  </tr>
-                )}
+                  )}
+                </tr>
               </tbody>
             </table>
           </div>
@@ -7521,7 +7551,7 @@ function AnexoIView({
       </ArcaCard>
 
       {/* Sugerencia de asiento de amortización (US 4.2.2) */}
-      {data && data.suggestion.lines.length > 0 && (
+      {!readOnly && data && data.suggestion.lines.length > 0 && (
         <ArcaCard>
           <div className="px-4 py-3 border-b border-[var(--arca-border)] flex items-center gap-2">
             <Lightbulb
@@ -7602,15 +7632,19 @@ function AnexoIView({
 
 function AnexoICategoryRows({
   cat,
+  prior,
 }: {
   cat: Awaited<ReturnType<typeof getAnexoI>>['categories'][number];
+  prior: Awaited<ReturnType<typeof getAnexoI>>['prior'];
 }) {
+  /** Un bien incorporado en el ejercicio no tenía neto al cierre anterior. */
+  const priorAsset = (id: string) => prior?.residualByAsset[id] ?? 0;
   return (
     <>
       <tr className="bg-[var(--arca-surface-2)]">
         <td
           className="py-1.5 pl-4 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--arca-ink-2)]"
-          colSpan={11}
+          colSpan={prior ? 12 : 11}
         >
           {FIXED_ASSET_CATEGORY_LABELS[cat.category] ?? cat.category}
         </td>
@@ -7654,6 +7688,13 @@ function AnexoICategoryRows({
           <td className={`${ANEXO_NUM_TD} pr-4 font-medium`}>
             {fmtMoney(a.residualEnd)}
           </td>
+          {prior && (
+            <td
+              className={`${ANEXO_NUM_TD} pr-4 border-l border-[var(--arca-border)]`}
+            >
+              {fmtMoney(priorAsset(a.id))}
+            </td>
+          )}
         </tr>
       ))}
       <tr className="border-b border-[var(--arca-border)] font-medium bg-[var(--arca-surface-2)]/40">
@@ -7673,9 +7714,14 @@ function AnexoICategoryRows({
         <td className={`${ANEXO_NUM_TD} ${ANEXO_GROUP_BORDER}`}>
           {fmtMoney(cat.totals.accumEnd)}
         </td>
-        <td className={`${ANEXO_NUM_TD} pr-4`}>
-          {fmtMoney(cat.totals.residualEnd)}
-        </td>
+        <td className={ANEXO_NUM_TD}>{fmtMoney(cat.totals.residualEnd)}</td>
+        {prior && (
+          <td
+            className={`${ANEXO_NUM_TD} pr-4 border-l border-[var(--arca-border)]`}
+          >
+            {fmtMoney(prior.residualByCategory[cat.category] ?? 0)}
+          </td>
+        )}
       </tr>
     </>
   );
@@ -7704,6 +7750,7 @@ function EstadosContables({
     | 'efe'
     | 'nota3'
     | 'cmv'
+    | 'anexoI'
     | 'anexo'
     | 'notas'
     | 'export'
@@ -7782,6 +7829,7 @@ function EstadosContables({
     { k: 'efe', label: 'Flujo de Efectivo' },
     { k: 'nota3', label: 'Composición de rubros' },
     { k: 'cmv', label: 'Costo de mercadería (CMV)' },
+    { k: 'anexoI', label: 'Anexo I' },
     { k: 'anexo', label: 'Anexo II' },
     { k: 'notas', label: 'Notas' },
     { k: 'export', label: 'Exportar' },
@@ -7940,6 +7988,16 @@ function EstadosContables({
           clientName={clientName}
           selectedFy={selectedFy}
           canEdit={isOwner && !approved}
+        />
+      )}
+      {view === 'anexoI' && (
+        <AnexoIView
+          key={effectiveFyId}
+          clientId={clientId}
+          clientName={clientName}
+          canWrite={false}
+          fiscalYearId={effectiveFyId}
+          readOnly
         />
       )}
       {view === 'anexo' && (
