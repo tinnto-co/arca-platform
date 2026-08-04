@@ -29,6 +29,7 @@ const files = [
   "schema-dominio7.sql",
   "schema-rls.sql",
   "schema-rls-portal.sql",
+  "schema-rls-scrapper.sql",
 ];
 for (const f of files) {
   console.log(`→ Aplicando ${f}...`);

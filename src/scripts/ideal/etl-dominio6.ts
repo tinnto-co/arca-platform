@@ -10,6 +10,10 @@ import { createHash } from "node:crypto";
 const SRC_URL = process.env.DATABASE_URL;
 if (!SRC_URL) throw new Error("Falta DATABASE_URL (source .env)");
 if (SRC_URL.includes("5.78.132.83")) throw new Error("ORIGINAL_DB prohibida");
+// La fuente es NEW_DB. Con .env apuntando ya a BD_IDEAL, correr esto sin
+// pisar DATABASE_URL trunca el destino y lo recarga consigo mismo: lo vacia.
+if (SRC_URL.includes("localhost") || SRC_URL.includes("127.0.0.1"))
+  throw new Error("DATABASE_URL apunta a BD_IDEAL: la fuente seria el propio destino. Correr con DATABASE_URL=\"$MIGRATION_URL\"");
 
 const IDEAL_URL =
   process.env.IDEAL_DATABASE_URL ?? "postgres://arca:arca@localhost:5460/arca_ideal";
