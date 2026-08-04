@@ -146,7 +146,8 @@ function RouteComponent() {
   }
 
   return (
-    <div className="overflow-x-hidden bg-[#F7F6F2] min-h-screen max-w-[1380px] mx-auto px-[44px] pt-[34px] pb-[72px] space-y-6">
+    // overflow-x-clip (no -hidden): clip no crea scroll container y deja funcionar los sticky headers internos
+    <div className="overflow-x-clip bg-[#F7F6F2] min-h-screen max-w-[1380px] mx-auto px-[44px] pt-[34px] pb-[72px] space-y-6">
       {aiAgentEnabled && selectedOption && (
         <CopilotReadableEntity
           description="Estado actual del módulo Sueldos visible en pantalla. Usá clientId al invocar acciones de payroll. mesLiquidable es el único período sobre el que se pueden calcular liquidaciones."

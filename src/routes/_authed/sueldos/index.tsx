@@ -20,6 +20,8 @@ import { SueldosEmpleados } from '@/components/sueldos/SueldosEmpleados';
 import { SueldosConvenios } from '@/components/sueldos/SueldosConvenios';
 import { SueldosConceptos } from '@/components/sueldos/SueldosConceptos';
 import { SueldosSimulador } from '@/components/sueldos/SueldosSimulador';
+import { NuevoReciboView } from '@/components/sueldos/nuevo-recibo/NuevoReciboView';
+import { useLocalStorageState } from '@/lib/use-local-storage-state';
 import { SueldosRecibo } from '@/components/sueldos/SueldosRecibo';
 import { SueldosFirmaDigital } from '@/components/sueldos/SueldosFirmaDigital';
 import { SueldosCargas } from '@/components/sueldos/SueldosCargas';
@@ -72,6 +74,11 @@ function RouteComponent() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [editReciboData, setEditReciboData] = useState<EditReciboData | undefined>(undefined);
   const [reciboFiltroEmpleadoId, setReciboFiltroEmpleadoId] = useState('');
+  const [vistaNuevoRecibo, setVistaNuevoRecibo] = useLocalStorageState<
+    'nueva' | 'clasica'
+  >('arca:sueldos:vista-nuevo-recibo', 'nueva');
+  // Editar desde la tab Recibo abre siempre la vista clásica.
+  const usaVistaNueva = vistaNuevoRecibo === 'nueva' && !editReciboData;
 
   const { data: clients = [] } = useQuery({
     queryKey: ['clients', 'sueldos'],
@@ -100,7 +107,7 @@ function RouteComponent() {
   };
 
   return (
-    <div className="space-y-0 overflow-x-hidden">
+    <div className="space-y-0 overflow-x-clip">
       {/* Header */}
       <div className="px-4 md:px-[3rem] pt-4 md:pt-[3rem] pb-0">
         {aiAgentEnabled && selectedOption && (
@@ -238,12 +245,32 @@ function RouteComponent() {
               <SueldosConceptos clientId={clientId} />
             </TabsContent>
             <TabsContent value="simulador" className="mt-0">
-              <SueldosSimulador
-                clientId={clientId}
-                onConfirmRecibo={() => setTab('recibo')}
-                initialData={editReciboData}
-                onReset={() => setEditReciboData(undefined)}
-              />
+              {!editReciboData && (
+                <div className="flex justify-end mb-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setVistaNuevoRecibo(usaVistaNueva ? 'clasica' : 'nueva')
+                    }
+                    className="h-[28px] px-3 rounded-[9px] text-[12px] font-medium border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] cursor-pointer"
+                  >
+                    {usaVistaNueva ? 'Vista clásica' : 'Vista nueva'}
+                  </button>
+                </div>
+              )}
+              {usaVistaNueva ? (
+                <NuevoReciboView
+                  clientId={clientId}
+                  onConfirmRecibo={() => setTab('recibo')}
+                />
+              ) : (
+                <SueldosSimulador
+                  clientId={clientId}
+                  onConfirmRecibo={() => setTab('recibo')}
+                  initialData={editReciboData}
+                  onReset={() => setEditReciboData(undefined)}
+                />
+              )}
             </TabsContent>
             <TabsContent value="recibo" className="mt-0">
               <SueldosRecibo
