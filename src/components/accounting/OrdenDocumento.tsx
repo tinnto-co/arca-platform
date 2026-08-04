@@ -13,7 +13,7 @@
  */
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { RotateCcw } from 'lucide-react';
+import { GripVertical, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { saveFinancialStatementNotes, type FsNote } from '@/actions/accounting';
 import { ArcaCard } from '@/components/dashboard/shared';
@@ -50,6 +50,9 @@ export function OrdenDocumento({
   );
   const [labels, setLabels] =
     useState<Record<string, string>>(initialLabels);
+  /** Fila que se está arrastrando y fila sobre la que caería. */
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [overIdx, setOverIdx] = useState<number | null>(null);
 
   const secciones = resolveDocumentLayout(layout, notes, labels);
   const orden = secciones.map((s) => s.entry);
@@ -81,6 +84,15 @@ export function OrdenDocumento({
     if (j < 0 || j >= orden.length) return;
     const next = [...orden];
     [next[idx], next[j]] = [next[j], next[idx]];
+    setLayout(next);
+  };
+
+  /** Reubica una fila en otra posición, corriendo el resto. */
+  const moveTo = (from: number, to: number) => {
+    if (from === to || to < 0 || to >= orden.length) return;
+    const next = [...orden];
+    const [x] = next.splice(from, 1);
+    next.splice(to, 0, x);
     setLayout(next);
   };
 
@@ -127,7 +139,46 @@ export function OrdenDocumento({
           const key = sec.entry as SystemSectionKey;
           const renombrable = canEdit && RENOMBRABLES.includes(key);
           return (
-            <div key={sec.entry} className="flex items-center gap-3 px-5 py-2">
+            <div
+              key={sec.entry}
+              onDragOver={(e) => {
+                if (dragIdx === null) return;
+                e.preventDefault();
+                setOverIdx(idx);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (dragIdx !== null) moveTo(dragIdx, idx);
+                setDragIdx(null);
+                setOverIdx(null);
+              }}
+              className="flex items-center gap-3 px-5 py-2 transition-colors"
+              style={{
+                opacity: dragIdx === idx ? 0.4 : 1,
+                background:
+                  overIdx === idx && dragIdx !== null && dragIdx !== idx
+                    ? 'var(--arca-surface-2)'
+                    : undefined,
+                boxShadow:
+                  overIdx === idx && dragIdx !== null && dragIdx !== idx
+                    ? 'inset 0 2px 0 var(--arca-navy-900)'
+                    : undefined,
+              }}
+            >
+              {canEdit && (
+                <span
+                  draggable
+                  onDragStart={() => setDragIdx(idx)}
+                  onDragEnd={() => {
+                    setDragIdx(null);
+                    setOverIdx(null);
+                  }}
+                  title="Arrastrar para reordenar"
+                  className="cursor-grab active:cursor-grabbing text-[var(--arca-ink-3)] shrink-0"
+                >
+                  <GripVertical className="w-4 h-4" strokeWidth={1.8} />
+                </span>
+              )}
               <span className="w-6 text-[11px] text-[var(--arca-ink-3)] tabular-nums shrink-0">
                 {idx + 1}
               </span>
@@ -177,8 +228,9 @@ export function OrdenDocumento({
       </div>
 
       <div className="px-5 py-3 border-t border-[var(--arca-border)] text-[11.5px] text-[var(--arca-ink-3)]">
-        Los anexos se pueden renombrar: dejalos en blanco para usar el nombre
-        propuesto. Una sección sin datos no se imprime, esté donde esté.
+        Arrastrá desde el asa o usá las flechas. Los anexos se pueden
+        renombrar: dejalos en blanco para usar el nombre propuesto. Una sección
+        sin datos no se imprime, esté donde esté.
       </div>
     </ArcaCard>
   );
