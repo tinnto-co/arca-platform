@@ -3163,14 +3163,20 @@ function LibroInventariosDoc({ data }: { data: LibroInventariosData }) {
         >
           {disclaimerFor(data.valuation, data.norma)}
         </Text>
+        {/* El salto lo decide el documento: el paquete de EECC abre una
+            página por sección y el libro encadena, salvo el patrimonio. */}
         <InventarioBlock esp={data.esp} />
-        <EspBlock esp={data.esp} />
-        <ErBlock er={data.er} />
-        {data.eepn && data.eepn.columns.length > 0 ? (
-          <EepnBlock eepn={data.eepn} />
-        ) : (
-          <InventarioPnBlock esp={data.esp} />
-        )}
+        <View break>
+          <EspBlock esp={data.esp} />
+          <ErBlock er={data.er} />
+        </View>
+        <View break>
+          {data.eepn && data.eepn.columns.length > 0 ? (
+            <EepnBlock eepn={data.eepn} />
+          ) : (
+            <InventarioPnBlock esp={data.esp} />
+          )}
+        </View>
         <View style={pk.footer} fixed>
           <Text>
             {footerData.empresaName} · Libro Inventarios y Balances · Ejercicio
