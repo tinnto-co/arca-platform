@@ -1944,6 +1944,11 @@ export interface EeccPackageData {
    * { caja_bancos: 'Nota 3.1', bienes_uso: 's/Anexo I' }.
    */
   references?: Record<string, string>;
+  /**
+   * Orden de las secciones. Cada entrada es una clave de sección o `note:<id>`.
+   * Sin esto se usa el orden clásico.
+   */
+  sections?: string[];
 }
 
 /** Valores del Anexo CMV para el bloque embebido en el paquete EECC. */
@@ -2700,10 +2705,13 @@ function AnexoIBlock({ anexoI }: { anexoI: EeccPackageData['anexoI'] }) {
 function NotesBlock({
   notes,
   sequence,
+  soloUna = false,
 }: {
   notes: FsNote[];
   /** Números resueltos por posición. Sin esto se numeran por orden de carga. */
   sequence?: NumberedNote[];
+  /** Intercalada entre estados: se imprime sin el título del bloque. */
+  soloUna?: boolean;
 }) {
   // La composición de rubros se imprime en su propio bloque: acá solo van las
   // notas de texto, pero con el número que les tocó en la secuencia completa.
@@ -2717,7 +2725,9 @@ function NotesBlock({
     : notes;
   return (
     <View>
-      <Text style={pk.sectionTitle}>Notas a los Estados Contables</Text>
+      {!soloUna && (
+        <Text style={pk.sectionTitle}>Notas a los Estados Contables</Text>
+      )}
       {ordenadas.length === 0 ? (
         <Text style={pk.empty}>Sin notas cargadas.</Text>
       ) : (
@@ -2759,6 +2769,18 @@ function Signatures() {
   );
 }
 
+/** Orden clásico: estados, notas y anexos al final. */
+const DEFAULT_PACKAGE_SECTIONS: string[] = [
+  'esp',
+  'er',
+  'eepn',
+  'efe',
+  'composicion',
+  'anexo_ii',
+  'anexo_i',
+  'anexo_cmv',
+];
+
 function EeccPackageDoc({ data }: { data: EeccPackageData }) {
   return (
     <Document>
@@ -2778,23 +2800,62 @@ function EeccPackageDoc({ data }: { data: EeccPackageData }) {
         <PageFooter data={data} />
       </Page>
 
-      {/* Cuerpo */}
+      {/* Cuerpo, en el orden que eligió el contador */}
       <Page size="A4" style={pk.page} wrap>
-        <EspBlock esp={data.esp} references={data.references} />
-        <ErBlock er={data.er} references={data.references} />
-        <EepnBlock eepn={data.eepn} />
-        <EfeBlock efe={data.efe} />
-        <Nota3Block
-          esp={data.esp}
-          numero={
-            data.noteSequence?.find((n) => n.entry === 'composicion')?.number ??
-            null
+        {(data.sections ?? DEFAULT_PACKAGE_SECTIONS).map((entry) => {
+          switch (entry) {
+            case 'esp':
+              return (
+                <EspBlock
+                  key={entry}
+                  esp={data.esp}
+                  references={data.references}
+                />
+              );
+            case 'er':
+              return (
+                <ErBlock
+                  key={entry}
+                  er={data.er}
+                  references={data.references}
+                />
+              );
+            case 'eepn':
+              return <EepnBlock key={entry} eepn={data.eepn} />;
+            case 'efe':
+              return <EfeBlock key={entry} efe={data.efe} />;
+            case 'composicion':
+              return (
+                <Nota3Block
+                  key={entry}
+                  esp={data.esp}
+                  numero={
+                    data.noteSequence?.find((n) => n.entry === 'composicion')
+                      ?.number ?? null
+                  }
+                />
+              );
+            case 'anexo_ii':
+              return <AnexoIIBlock key={entry} a2={data.anexoII} />;
+            case 'anexo_i':
+              return <AnexoIBlock key={entry} anexoI={data.anexoI} />;
+            case 'anexo_cmv':
+              return <AnexoCMVBlock key={entry} cmv={data.cmv} />;
+            default: {
+              // Una nota suelta: se imprime sola, en la posición que le tocó.
+              const note = data.notes.find((n) => `note:${n.id}` === entry);
+              if (!note) return null;
+              return (
+                <NotesBlock
+                  key={entry}
+                  notes={[note]}
+                  sequence={data.noteSequence}
+                  soloUna
+                />
+              );
+            }
           }
-        />
-        <AnexoIIBlock a2={data.anexoII} />
-        <AnexoIBlock anexoI={data.anexoI} />
-        <AnexoCMVBlock cmv={data.cmv} />
-        <NotesBlock notes={data.notes} sequence={data.noteSequence} />
+        })}
         <Signatures />
         <PageFooter data={data} />
       </Page>

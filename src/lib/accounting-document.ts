@@ -214,3 +214,87 @@ function sectionLabelShort(
 ): string {
   return sectionLabel(key, labels).split('·')[0].trim();
 }
+
+/* ──────────────────── Orden completo del documento ──────────────────── */
+
+/**
+ * Orden por defecto: los cuatro estados, las notas y al final los anexos. Es
+ * el que traían los balances antes de que esto se pudiera configurar, y el que
+ * usa el modelo del Consejo.
+ */
+export function defaultDocumentLayout(notes: NoteLike[]): LayoutEntry[] {
+  return [
+    'esp',
+    'er',
+    'eepn',
+    'efe',
+    ...notes.map((n): LayoutEntry => `note:${n.id}`),
+    'composicion',
+    'anexo_i',
+    'anexo_ii',
+    'anexo_cmv',
+  ];
+}
+
+export interface ResolvedSection {
+  entry: LayoutEntry;
+  /** Rótulo tal como se expone, sin el número de nota. */
+  label: string;
+  /** Número de nota, si la sección se numera como tal. */
+  noteNumber: number | null;
+  isNote: boolean;
+  /** Las del sistema no se editan ni se borran, solo se mueven. */
+  isSystem: boolean;
+}
+
+/**
+ * Resuelve el documento completo: qué secciones lo componen, en qué orden y
+ * con qué rótulo.
+ *
+ * Igual que la numeración, tolera un layout viejo: lo que falta se agrega al
+ * final en su orden natural, así que guardar un orden nunca hace desaparecer
+ * una sección del balance.
+ */
+export function resolveDocumentLayout(
+  layout: LayoutEntry[],
+  notes: NoteLike[],
+  labels: Partial<Record<SystemSectionKey, string>> = {}
+): ResolvedSection[] {
+  const numeradas = numberNotes(layout, notes, labels);
+  const numeroDe = (entry: LayoutEntry) =>
+    numeradas.find((n) => n.entry === entry)?.number ?? null;
+  const byId = new Map(notes.map((n) => [n.id, n]));
+  const seen = new Set<string>();
+  const out: ResolvedSection[] = [];
+
+  const push = (entry: LayoutEntry) => {
+    if (seen.has(entry)) return;
+    if (entry.startsWith('note:')) {
+      const note = byId.get(entry.slice(5));
+      if (!note) return;
+      seen.add(entry);
+      out.push({
+        entry,
+        label: note.title || `Nota ${numeroDe(entry) ?? out.length + 1}`,
+        noteNumber: numeroDe(entry),
+        isNote: true,
+        isSystem: false,
+      });
+      return;
+    }
+    const key = entry as SystemSectionKey;
+    if (!SYSTEM_SECTION_ORDER.includes(key)) return;
+    seen.add(entry);
+    out.push({
+      entry,
+      label: sectionLabel(key, labels),
+      noteNumber: numeroDe(entry),
+      isNote: NUMBERED_AS_NOTE.includes(key),
+      isSystem: true,
+    });
+  };
+
+  for (const entry of layout) push(entry);
+  for (const entry of defaultDocumentLayout(notes)) push(entry);
+  return out;
+}

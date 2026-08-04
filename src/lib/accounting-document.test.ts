@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  defaultDocumentLayout,
   defaultNoteLayout,
   noteNumberOf,
   numberNotes,
   referenceForGroup,
+  resolveDocumentLayout,
   sectionLabel,
   type LayoutEntry,
 } from './accounting-document';
@@ -204,5 +206,90 @@ describe('referencias desde los estados', () => {
 
   it('un rubro que la composición no expone no lleva referencia', () => {
     expect(referenceForGroup('capital', ctx)).toBeNull();
+  });
+});
+
+describe('orden completo del documento', () => {
+  it('por defecto: estados, notas y anexos al final', () => {
+    expect(defaultDocumentLayout(notas)).toEqual([
+      'esp',
+      'er',
+      'eepn',
+      'efe',
+      'note:n-1',
+      'note:n-2',
+      'note:n-3',
+      'composicion',
+      'anexo_i',
+      'anexo_ii',
+      'anexo_cmv',
+    ]);
+  });
+
+  it('resuelve rótulos y números de nota juntos', () => {
+    const r = resolveDocumentLayout(defaultDocumentLayout(notas), notas);
+    expect(r.map((x) => [x.entry, x.noteNumber])).toEqual([
+      ['esp', null],
+      ['er', null],
+      ['eepn', null],
+      ['efe', null],
+      ['note:n-1', 1],
+      ['note:n-2', 2],
+      ['note:n-3', 3],
+      ['composicion', 4],
+      ['anexo_i', null],
+      ['anexo_ii', null],
+      ['anexo_cmv', null],
+    ]);
+  });
+
+  it('una nota puede quedar entre dos estados', () => {
+    // Es lo que describió Juan: la nota no está obligada a ir al final.
+    const layout: LayoutEntry[] = [
+      'esp',
+      'note:n-1',
+      'er',
+      'anexo_ii',
+      'note:n-2',
+      'eepn',
+      'composicion',
+      'efe',
+      'anexo_i',
+      'note:n-3',
+      'anexo_cmv',
+    ];
+    const r = resolveDocumentLayout(layout, notas);
+    expect(r.map((x) => x.entry)).toEqual(layout);
+    // Y la numeración sigue el orden del documento, no el de carga.
+    expect(r.filter((x) => x.isNote).map((x) => [x.entry, x.noteNumber])).toEqual(
+      [
+        ['note:n-1', 1],
+        ['note:n-2', 2],
+        ['composicion', 3],
+        ['note:n-3', 4],
+      ]
+    );
+  });
+
+  it('una sección que falta en el layout se agrega al final', () => {
+    const r = resolveDocumentLayout(['efe', 'esp'], notas);
+    expect(r.slice(0, 2).map((x) => x.entry)).toEqual(['efe', 'esp']);
+    expect(r.map((x) => x.entry)).toContain('anexo_i');
+    expect(r.map((x) => x.entry)).toContain('note:n-2');
+  });
+
+  it('usa el rótulo que puso el contador', () => {
+    const r = resolveDocumentLayout(defaultDocumentLayout(notas), notas, {
+      anexo_cmv: 'Anexo I',
+      anexo_i: 'Anexo de Bienes de Uso',
+    });
+    const label = (e: string) => r.find((x) => x.entry === e)?.label;
+    expect(label('anexo_cmv')).toBe('Anexo I');
+    expect(label('anexo_i')).toBe('Anexo de Bienes de Uso');
+  });
+
+  it('no repite una sección aunque el layout la nombre dos veces', () => {
+    const r = resolveDocumentLayout(['esp', 'esp', 'er'], notas);
+    expect(r.filter((x) => x.entry === 'esp')).toHaveLength(1);
   });
 });

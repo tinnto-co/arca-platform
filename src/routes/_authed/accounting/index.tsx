@@ -51,11 +51,13 @@ import {
 import { PageHeader } from '@/components/shared/page-header';
 import { ArcaCard } from '@/components/dashboard/shared';
 import { SaldosReferencia } from '@/components/accounting/SaldosReferencia';
+import { OrdenDocumento } from '@/components/accounting/OrdenDocumento';
 import { frameworkCite } from '@/lib/accounting-labels';
 import {
   defaultNoteLayout,
   numberNotes,
   referenceForGroup,
+  resolveDocumentLayout,
   ANEXO_REFERENCE_BY_GROUP,
   type LayoutEntry,
 } from '@/lib/accounting-document';
@@ -7766,6 +7768,7 @@ function EstadosContables({
     | 'anexoI'
     | 'anexo'
     | 'notas'
+    | 'orden'
     | 'export'
   >('esp');
   /**
@@ -7894,6 +7897,7 @@ function EstadosContables({
     { k: 'anexoI', label: 'Anexo I' },
     { k: 'anexo', label: 'Anexo II' },
     { k: 'notas', label: 'Notas' },
+    { k: 'orden', label: 'Orden del documento' },
     { k: 'export', label: 'Exportar' },
   ];
 
@@ -8076,6 +8080,20 @@ function EstadosContables({
           selectedFy={selectedFy}
         />
       )}
+      {view === 'orden' &&
+        (fs ? (
+          <OrdenDocumento
+            key={effectiveFyId}
+            clientId={clientId}
+            fiscalYearId={effectiveFyId}
+            notes={fs.notes}
+            layout={fs.layout}
+            sectionLabels={fs.sectionLabels}
+            canEdit={isOwner && !approved}
+            onSaved={invalidateFs}
+          />
+        ) : null)}
+
       {view === 'notas' &&
         (fs ? (
           <NotesEditor
@@ -10026,6 +10044,9 @@ function ExportView({
         // El número de cada nota sale de su posición, no del orden de carga.
         noteSequence: numberNotes(layout, notes, sectionLabels),
         references,
+        sections: resolveDocumentLayout(layout, notes, sectionLabels).map(
+          (x) => x.entry
+        ),
         anexoII,
         anexoI: anexoI
           ? {
