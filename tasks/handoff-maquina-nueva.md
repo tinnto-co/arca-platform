@@ -107,9 +107,8 @@ guard de localhost; `--snapshot` / `--comparar` para chequear idempotencia).
 3. Coolify: apuntar `DATABASE_URL` de app y scrapper a la base nueva, cargar las `R2_*` en la
    app, y **arreglar el `PROXY_URL` de producción, que no tiene `session-<id>`** — sin eso la IP
    rota a mitad del scrapeo y AFIP corta la sesión.
-4. Sacar el guard de sólo-localhost del `db.ts` del scrapper.
-5. Sacar el `DEFAULT 'org_estudio_blakg'` de `cliente.organization_id`.
-6. Decidir qué pasa con `src/scripts/**` de la app (~197 errores de TS, apuntan al modelo viejo):
+4. Sacar el `DEFAULT 'org_estudio_blakg'` de `cliente.organization_id`.
+5. Decidir qué pasa con `src/scripts/**` de la app (~197 errores de TS, apuntan al modelo viejo):
    migrarlos o borrarlos.
 
 **Bugs y deudas conocidas:**

@@ -90,8 +90,6 @@ Rama `v2` del repo `arca-scrapper`. Necesita su propio Redis.
   scrapeo y AFIP corta la sesión. Es el bug que arreglamos en la rama.
 - `R2_BUCKET=arca-staging`, `QUEUE_NAME` distinto al de prod (si comparten Redis, se roban jobs).
 - `CREDENTIAL_ENCRYPTION_KEY` igual que la app.
-- Sacar el guard de sólo-localhost de `src/db/db.ts`, que es de desarrollo y aborta contra
-  cualquier host remoto.
 
 ## 5. Qué probaría el estudio (sueldos)
 
