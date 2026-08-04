@@ -4813,6 +4813,14 @@ interface LedgerDrill {
   to: string;
 }
 
+/**
+ * Columna de importes del balance de sumas y saldos. Compartida por
+ * encabezado, filas y totales: cada uno traía su propio ancho y los totales
+ * podían no caer debajo de su columna.
+ */
+const BALANCE_COL_MONEY =
+  'w-28 shrink-0 text-right tabular-nums whitespace-nowrap';
+
 function Balance({
   clientId,
   canWrite,
@@ -4957,10 +4965,10 @@ function Balance({
         <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
           <div className="w-24 shrink-0">Código</div>
           <div className="flex-1 min-w-0">Cuenta</div>
-          <div className="w-28 shrink-0 text-right">Suma Debe</div>
-          <div className="w-28 shrink-0 text-right">Suma Haber</div>
-          <div className="w-28 shrink-0 text-right">Saldo Deudor</div>
-          <div className="w-28 shrink-0 text-right">Saldo Acreedor</div>
+          <div className={BALANCE_COL_MONEY}>Suma Debe</div>
+          <div className={BALANCE_COL_MONEY}>Suma Haber</div>
+          <div className={BALANCE_COL_MONEY}>Saldo Deudor</div>
+          <div className={BALANCE_COL_MONEY}>Saldo Acreedor</div>
         </div>
 
         {isLoading ? (
@@ -4993,16 +5001,12 @@ function Balance({
                 <div className="flex-1 min-w-0 truncate text-[var(--arca-ink)]">
                   {r.name}
                 </div>
-                <div className="w-28 shrink-0 text-right">
-                  {fmtMoney(r.sumaDebe)}
-                </div>
-                <div className="w-28 shrink-0 text-right">
-                  {fmtMoney(r.sumaHaber)}
-                </div>
-                <div className="w-28 shrink-0 text-right">
+                <div className={BALANCE_COL_MONEY}>{fmtMoney(r.sumaDebe)}</div>
+                <div className={BALANCE_COL_MONEY}>{fmtMoney(r.sumaHaber)}</div>
+                <div className={BALANCE_COL_MONEY}>
                   {r.saldoDeudor ? fmtMoney(r.saldoDeudor) : ''}
                 </div>
-                <div className="w-28 shrink-0 text-right">
+                <div className={BALANCE_COL_MONEY}>
                   {r.saldoAcreedor ? fmtMoney(r.saldoAcreedor) : ''}
                 </div>
               </button>
@@ -5013,17 +5017,19 @@ function Balance({
             >
               <div className="w-24 shrink-0" />
               <div className="flex-1 min-w-0">Totales</div>
-              <div className="w-28 shrink-0 text-right">
-                $ {fmtMoney(data.totals.sumaDebe)}
+              {/* Sin el «$» que traía de más: el cuerpo de la tabla va sin
+                  símbolo y era justo lo que hacía desbordar la columna. */}
+              <div className={BALANCE_COL_MONEY}>
+                {fmtMoney(data.totals.sumaDebe)}
               </div>
-              <div className="w-28 shrink-0 text-right">
-                $ {fmtMoney(data.totals.sumaHaber)}
+              <div className={BALANCE_COL_MONEY}>
+                {fmtMoney(data.totals.sumaHaber)}
               </div>
-              <div className="w-28 shrink-0 text-right">
-                $ {fmtMoney(data.totals.saldoDeudor)}
+              <div className={BALANCE_COL_MONEY}>
+                {fmtMoney(data.totals.saldoDeudor)}
               </div>
-              <div className="w-28 shrink-0 text-right">
-                $ {fmtMoney(data.totals.saldoAcreedor)}
+              <div className={BALANCE_COL_MONEY}>
+                {fmtMoney(data.totals.saldoAcreedor)}
               </div>
             </div>
             {data.balanced && (

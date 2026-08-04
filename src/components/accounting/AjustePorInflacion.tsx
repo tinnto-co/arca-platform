@@ -449,6 +449,17 @@ export function AjustePorInflacion({
         )}
       </ArcaCard>
 
+      {/* El cálculo tarda unos segundos y hasta ahora la pantalla quedaba con
+          el cabezal solo, sin nada debajo: parecía rota. Y es justo la
+          pantalla a la que el ESP manda cuando falta generar el ajuste. */}
+      {isLoading && (
+        <ArcaCard>
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            Calculando el ajuste del ejercicio…
+          </div>
+        </ArcaCard>
+      )}
+
       {/* ── Avisos ── */}
       {error && (
         <Banner tone="error" icon={AlertTriangle} title="No se pudo calcular">
