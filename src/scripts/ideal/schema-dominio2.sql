@@ -220,6 +220,20 @@ create index idx_vencimiento_credencial on vencimiento(credencial_id);
 create index idx_vencimiento_vence on vencimiento(vence_at);
 create trigger trg_set_updated_at before update on vencimiento for each row execute function set_updated_at();
 
+-- La obligación (qué impuesto, de qué período, de quién y para cuándo) es la
+-- identidad de la fila; los importes son su estado y cambian de un scrapeo a
+-- otro. Sin esta clave el scrapper dedupeaba comparando campo por campo y
+-- cualquier diferencia de representación (el caso real: la misma fecha guardada
+-- como timestamp a las 03:00Z y a las 06:00Z) volvía a insertar la deuda entera.
+-- `nulls not distinct` porque sub_concepto/periodo/cuota son opcionales y dos
+-- nulls acá son el mismo dato, no dos datos desconocidos.
+create unique index uq_deuda_obligacion on deuda
+  (credencial_id, cuit, establecimiento, impuesto, concepto, sub_concepto, periodo, cuota, vence_at)
+  nulls not distinct;
+create unique index uq_vencimiento_obligacion on vencimiento
+  (credencial_id, cuit, impuesto, concepto, sub_concepto, periodo, cuota, vence_at)
+  nulls not distinct;
+
 comment on table deuda is
   'Deuda del CCMA de AFIP. El sujeto de la deuda es un CUIT, no necesariamente un cliente: AFIP también devuelve la deuda del titular del login.';
 comment on table vencimiento is

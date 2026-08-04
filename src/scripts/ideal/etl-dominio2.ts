@@ -10,6 +10,12 @@ import { docTipo } from "./doc-tipo";
 const SRC_URL = process.env.DATABASE_URL;
 if (!SRC_URL) throw new Error("Falta DATABASE_URL (source .env)");
 if (SRC_URL.includes("5.78.132.83")) throw new Error("ORIGINAL_DB prohibida");
+// La fuente es NEW_DB. Con .env apuntando ya a BD_IDEAL, correr esto sin pisar
+// DATABASE_URL trunca el destino y lo recarga consigo mismo: lo vacia.
+if (SRC_URL.includes("localhost") || SRC_URL.includes("127.0.0.1"))
+  throw new Error(
+    'DATABASE_URL apunta a BD_IDEAL: la fuente seria el propio destino. Correr con DATABASE_URL="$MIGRATION_URL"'
+  );
 
 const IDEAL_URL =
   process.env.IDEAL_DATABASE_URL ?? "postgres://arca:arca@localhost:5460/arca_ideal";
@@ -199,6 +205,40 @@ function sujeto(r: Row): { cliente_id: string | null; cuit: string; org_id: stri
   };
 }
 
+/**
+ * `debt.due_date` es un timestamp naive en el modelo viejo y en el ideal es
+ * `date`. Se lo colapsa acá, con los componentes locales del Date que devolvió
+ * postgres-js, para recuperar el literal original: dejar que lo castee la BD
+ * corre la fecha un día cuando la hora del timestamp cruza el huso.
+ */
+function soloFecha(v: unknown): string | null {
+  if (!v) return null;
+  if (v instanceof Date) {
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${v.getFullYear()}-${p(v.getMonth() + 1)}-${p(v.getDate())}`;
+  }
+  return parseFecha(v);
+}
+
+/**
+ * La misma obligación entró más de una vez porque el dedupe del scrapper viejo
+ * comparaba el timestamp completo y AFIP la devolvía a distinta hora. Con la
+ * fecha ya colapsada quedan filas idénticas: se conserva la última scrapeada,
+ * que es la que tiene los importes vigentes.
+ */
+function dedupe<T extends Row>(tabla: string, filas: T[], clave: (f: T) => string): T[] {
+  const porClave = new Map<string, T>();
+  for (const fila of filas) {
+    const k = clave(fila);
+    const previa = porClave.get(k);
+    if (!previa || (fila.created_at as Date) > (previa.created_at as Date)) porClave.set(k, fila);
+  }
+  if (porClave.size < filas.length) {
+    console.warn(`  ⚠ ${tabla}: ${filas.length - porClave.size} duplicados colapsados`);
+  }
+  return [...porClave.values()];
+}
+
 console.log("→ debt → deuda...");
 const debts = (await src.unsafe(`select * from debt`)) as unknown as Row[];
 const ESTADO_DEUDA: Record<string, string> = {
@@ -207,30 +247,45 @@ const ESTADO_DEUDA: Record<string, string> = {
   payment_plan: "plan_pago",
   prescribed: "prescripta",
 };
-const deudas = debts.map((d) => {
-  const estado = ESTADO_DEUDA[d.status as string];
-  if (!estado) fail(`debt.status no mapeado: ${d.status}`);
-  return {
-    id: d.id,
-    ...sujeto(d),
-    credencial_id: d.representative_id,
-    impuesto: d.tax,
-    concepto: d.concept,
-    sub_concepto: d.sub_concept || null,
-    periodo: d.periodo,
-    cuota: d.quota_number,
-    vence_at: d.due_date,
-    establecimiento: d.establishment || null,
-    saldo: d.balance ?? 0,
-    interes_resarcitorio: d.compensatory_interest ?? 0,
-    interes_punitorio: d.punitive_interest ?? 0,
-    estado,
-    intimada: d.is_intimated ?? false,
-    detectada_at: d.detected_at,
-    created_at: d.created_at,
-    updated_at: d.updated_at,
-  };
-});
+const deudas = dedupe(
+  "deuda",
+  debts.map((d) => {
+    const estado = ESTADO_DEUDA[d.status as string];
+    if (!estado) fail(`debt.status no mapeado: ${d.status}`);
+    return {
+      id: d.id,
+      ...sujeto(d),
+      credencial_id: d.representative_id,
+      impuesto: d.tax,
+      concepto: d.concept,
+      sub_concepto: d.sub_concept || null,
+      periodo: soloFecha(d.periodo),
+      cuota: d.quota_number,
+      vence_at: soloFecha(d.due_date),
+      establecimiento: d.establishment || null,
+      saldo: d.balance ?? 0,
+      interes_resarcitorio: d.compensatory_interest ?? 0,
+      interes_punitorio: d.punitive_interest ?? 0,
+      estado,
+      intimada: d.is_intimated ?? false,
+      detectada_at: d.detected_at,
+      created_at: d.created_at,
+      updated_at: d.updated_at,
+    };
+  }),
+  (d) =>
+    [
+      d.credencial_id,
+      d.cuit,
+      d.establecimiento,
+      d.impuesto,
+      d.concepto,
+      d.sub_concepto,
+      d.periodo,
+      d.cuota,
+      d.vence_at,
+    ].join("|")
+);
 await insertChunked("deuda", deudas);
 console.log(
   `  deuda: ${deudas.length} (${deudas.filter((d) => !d.cliente_id).length} del CUIT del login)`
@@ -238,22 +293,36 @@ console.log(
 
 console.log("→ due_date → vencimiento...");
 const dueDates = (await src.unsafe(`select * from due_date`)) as unknown as Row[];
-const vencimientos = dueDates.map((v) => ({
-  id: v.id,
-  ...sujeto(v),
-  credencial_id: v.representative_id,
-  impuesto: v.tax,
-  concepto: v.concept,
-  sub_concepto: v.sub_concept || null,
-  periodo: v.periodo,
-  cuota: v.quota_number,
-  vence_at: v.due_date,
-  detalle: v.detail || null,
-  completado_at: v.completed_at,
-  completado_por: v.completed_by_user_id,
-  created_at: v.created_at,
-  updated_at: v.updated_at,
-}));
+const vencimientos = dedupe(
+  "vencimiento",
+  dueDates.map((v) => ({
+    id: v.id,
+    ...sujeto(v),
+    credencial_id: v.representative_id,
+    impuesto: v.tax,
+    concepto: v.concept,
+    sub_concepto: v.sub_concept || null,
+    periodo: soloFecha(v.periodo),
+    cuota: v.quota_number,
+    vence_at: soloFecha(v.due_date),
+    detalle: v.detail || null,
+    completado_at: v.completed_at,
+    completado_por: v.completed_by_user_id,
+    created_at: v.created_at,
+    updated_at: v.updated_at,
+  })),
+  (v) =>
+    [
+      v.credencial_id,
+      v.cuit,
+      v.impuesto,
+      v.concepto,
+      v.sub_concepto,
+      v.periodo,
+      v.cuota,
+      v.vence_at,
+    ].join("|")
+);
 await insertChunked("vencimiento", vencimientos);
 console.log(
   `  vencimiento: ${vencimientos.length} (${vencimientos.filter((v) => !v.cliente_id).length} del CUIT del login)`
