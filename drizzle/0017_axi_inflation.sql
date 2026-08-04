@@ -1,8 +1,18 @@
 CREATE TYPE "public"."inflation_adjustment_status" AS ENUM('draft', 'applied');--> statement-breakpoint
 CREATE TYPE "public"."inflation_index_source" AS ENUM('facpce_rt6', 'indec_ipc', 'manual');--> statement-breakpoint
-ALTER TYPE "public"."account_inflation_nature" ADD VALUE 'no_monetaria_costo';--> statement-breakpoint
-ALTER TYPE "public"."account_inflation_nature" ADD VALUE 'no_monetaria_valor_corriente';--> statement-breakpoint
-ALTER TYPE "public"."account_inflation_nature" ADD VALUE 'resultado_por_diferencia';--> statement-breakpoint
+-- El tipo se recrea en vez de sumarle valores con ALTER TYPE ... ADD VALUE.
+-- Drizzle corre todas las migraciones pendientes en UNA transacción, y Postgres
+-- no deja usar un valor de enum agregado en esa misma transacción sin commitear
+-- («unsafe use of new value»). La 0020 usa dos de estos valores, así que con
+-- ADD VALUE la corrida fallaba entera en cualquier entorno que viniera de la
+-- 0016 o anterior. Un tipo creado dentro de la transacción sí puede usarse.
+--
+-- Es seguro porque el enum lo usa una sola columna, sin default ni índices, y
+-- el orden de los valores queda igual que con los ADD VALUE.
+ALTER TYPE "public"."account_inflation_nature" RENAME TO "account_inflation_nature_old";--> statement-breakpoint
+CREATE TYPE "public"."account_inflation_nature" AS ENUM('monetaria', 'no_monetaria', 'no_monetaria_costo', 'no_monetaria_valor_corriente', 'resultado_por_diferencia');--> statement-breakpoint
+ALTER TABLE "accounting_account" ALTER COLUMN "inflation_nature" TYPE "public"."account_inflation_nature" USING "inflation_nature"::text::"public"."account_inflation_nature";--> statement-breakpoint
+DROP TYPE "public"."account_inflation_nature_old";--> statement-breakpoint
 ALTER TYPE "public"."journal_entry_origin" ADD VALUE 'auto_inflation' BEFORE 'import_excel';--> statement-breakpoint
 CREATE TABLE "inflation_adjustment" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
