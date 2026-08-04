@@ -9,9 +9,10 @@
 import { createServerFn } from '@tanstack/react-start';
 import { getRequestHeaders } from '@tanstack/react-start/server';
 import z from 'zod';
-import { db } from '@/lib/db';
+import { db, withUserContext } from '@/lib/db';
+import { setDbContext } from '@/lib/db-context';
 import { auth } from '@/lib/auth';
-import { user as userTable } from '@/drizzle/auth';
+import { user as userTable, organization, member } from '@/drizzle/auth';
 import {
   cliente,
   clienteCredencial,
@@ -23,6 +24,8 @@ import {
   vencimiento,
   notificacion,
   documento,
+  ivaDeclaracion,
+  comprobante,
 } from '@/drizzle/schema';
 import {
   getAuthSession,
@@ -31,7 +34,7 @@ import {
   getMemberRole,
   assertCanWrite,
 } from '@/actions/helpers';
-import { eq, and, isNull, gte, asc, desc, sql } from 'drizzle-orm';
+import { eq, and, isNull, isNotNull, gte, asc, desc, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import * as r2 from '@/lib/r2';
 
@@ -48,27 +51,78 @@ const hoy = () => new Date().toISOString().slice(0, 10);
 
 export const getPortalSession = createServerFn({ method: 'GET' }).handler(
   async () => {
-    const { userId, clienteId, access } = await getClientePortalSession();
-    return { userId, clienteId, access };
+    const { session, userId, clienteId, access } =
+      await getClientePortalSession();
+
+    // La cabecera del portal muestra la identidad en todas las pantallas, así
+    // que viaja con la sesión y no se vuelve a pedir en cada vista.
+    const [datos] = await db
+      .select({
+        razonSocial: cliente.razonSocial,
+        cuit: cliente.cuit,
+        orgId: cliente.orgId,
+      })
+      .from(cliente)
+      .where(eq(cliente.id, clienteId))
+      .limit(1);
+
+    // `organization` está fuera del alcance del rol del portal: se lee con
+    // `app.user_id`, igual que la fila de acceso.
+    const [estudio] = datos
+      ? await withUserContext(userId, (tx) =>
+          tx
+            .select({ nombre: organization.name })
+            .from(organization)
+            .where(eq(organization.id, datos.orgId))
+            .limit(1)
+        )
+      : [];
+
+    return {
+      userId,
+      clienteId,
+      access,
+      usuario: session.user.name,
+      estudio: estudio?.nombre ?? null,
+      cliente: {
+        razonSocial: datos?.razonSocial ?? '',
+        cuit: datos?.cuit ?? '',
+      },
+    };
   }
 );
 
-/** El acceso del usuario a ese cliente, con sus permisos. Tira si no lo tiene. */
+/**
+ * El acceso del usuario a ese cliente, con sus permisos. Tira si no lo tiene.
+ *
+ * Mismo huevo y gallina que `getClientePortalSession`: la fila de acceso se lee
+ * con `app.user_id` porque una sesión de portal no tiene organización, y recién
+ * después se abre el contexto del cliente para que el resto de las consultas del
+ * request salgan por `arca_portal`. Sin esto el RLS devuelve 0 filas y todo el
+ * portal responde "Acceso denegado".
+ */
 async function getAccesoPortal(userId: string, clienteId: string) {
-  const [access] = await db
-    .select()
-    .from(accesoUsuarioCliente)
-    .where(
-      and(
-        eq(accesoUsuarioCliente.userId, userId),
-        eq(accesoUsuarioCliente.clienteId, clienteId)
+  const [access] = await withUserContext(userId, (tx) =>
+    tx
+      .select()
+      .from(accesoUsuarioCliente)
+      .where(
+        and(
+          eq(accesoUsuarioCliente.userId, userId),
+          eq(accesoUsuarioCliente.clienteId, clienteId)
+        )
       )
-    )
-    .limit(1);
+      .limit(1)
+  );
 
   if (!access) throw new Error('Acceso denegado al portal del cliente');
+
+  setDbContext({ clienteId });
   return access;
 }
+
+/** Cuántas deudas de la lista se mandan al inicio: 4 visibles + las del "Ver N más". */
+const DEUDAS_EN_PORTADA = 10;
 
 export const getClientePortalDashboard = createServerFn({ method: 'GET' })
   .inputValidator(z.object({ clienteId: z.string().uuid() }))
@@ -79,6 +133,7 @@ export const getClientePortalDashboard = createServerFn({ method: 'GET' })
     const [clienteData] = await db
       .select({
         id: cliente.id,
+        orgId: cliente.orgId,
         razonSocial: cliente.razonSocial,
         cuit: cliente.cuit,
         condicionIva: cliente.condicionIva,
@@ -90,85 +145,214 @@ export const getClientePortalDashboard = createServerFn({ method: 'GET' })
 
     if (!clienteData) throw new Error('Cliente no encontrado');
 
-    const [proximosVencimientos, deudasAbiertas, sinLeer, solicitudesAbiertas] =
-      await Promise.all([
-        db
-          .select({
-            id: vencimiento.id,
-            impuesto: vencimiento.impuesto,
-            concepto: vencimiento.concepto,
-            venceAt: vencimiento.venceAt,
-            completadoAt: vencimiento.completadoAt,
-          })
-          .from(vencimiento)
-          .where(
-            and(
-              eq(vencimiento.clienteId, ctx.data.clienteId),
-              isNull(vencimiento.completadoAt),
-              gte(vencimiento.venceAt, hoy())
-            )
+    const soloAbierta = and(
+      eq(deuda.clienteId, ctx.data.clienteId),
+      eq(deuda.estado, 'abierta')
+    );
+
+    const [
+      proximosVencimientos,
+      deudasAbiertas,
+      resumenDeuda,
+      resumenNotificaciones,
+      solicitudesAbiertas,
+      presentaciones,
+      ultimasNotificaciones,
+      comprobantesRecientes,
+    ] = await Promise.all([
+      db
+        .select({
+          id: vencimiento.id,
+          impuesto: vencimiento.impuesto,
+          concepto: vencimiento.concepto,
+          venceAt: vencimiento.venceAt,
+        })
+        .from(vencimiento)
+        .where(
+          and(
+            eq(vencimiento.clienteId, ctx.data.clienteId),
+            isNull(vencimiento.completadoAt),
+            gte(vencimiento.venceAt, hoy())
           )
-          .orderBy(asc(vencimiento.venceAt))
-          .limit(3),
+        )
+        .orderBy(asc(vencimiento.venceAt))
+        .limit(3),
 
-        access.puedeVerDeudas
-          ? db
-              .select({
-                id: deuda.id,
-                impuesto: deuda.impuesto,
-                concepto: deuda.concepto,
-                saldo: deuda.saldo,
-                venceAt: deuda.venceAt,
-                estado: deuda.estado,
-              })
-              .from(deuda)
-              .where(
-                and(
-                  eq(deuda.clienteId, ctx.data.clienteId),
-                  eq(deuda.estado, 'abierta')
-                )
-              )
-              .orderBy(desc(deuda.venceAt))
-              .limit(5)
-          : Promise.resolve([]),
+      // Las de mayor saldo primero: es lo que el cliente mira cuando abre.
+      access.puedeVerDeudas
+        ? db
+            .select({
+              id: deuda.id,
+              impuesto: deuda.impuesto,
+              concepto: deuda.concepto,
+              subConcepto: deuda.subConcepto,
+              periodo: deuda.periodo,
+              saldo: deuda.saldo,
+              venceAt: deuda.venceAt,
+              intimada: deuda.intimada,
+            })
+            .from(deuda)
+            .where(soloAbierta)
+            .orderBy(desc(deuda.saldo))
+            .limit(DEUDAS_EN_PORTADA)
+        : Promise.resolve([]),
 
-        db
-          .select({ id: notificacion.id })
-          .from(notificacion)
-          .where(
-            and(
-              eq(notificacion.clienteId, ctx.data.clienteId),
-              eq(notificacion.leida, false),
-              isNull(notificacion.resueltaAt)
-            )
-          ),
+      // El total y los conteos van aparte: la lista está cortada y sumarla
+      // mostraría menos deuda de la que el cliente realmente tiene.
+      access.puedeVerDeudas
+        ? db
+            .select({
+              total: sql<string>`coalesce(sum(${deuda.saldo}), 0)::text`,
+              cantidad: sql<number>`count(*)::int`,
+              vencidas: sql<number>`count(*) filter (where ${deuda.venceAt} < current_date)::int`,
+              ultimaSync: sql<Date | null>`max(${deuda.createdAt})`,
+            })
+            .from(deuda)
+            .where(soloAbierta)
+        : Promise.resolve([]),
 
-        db
-          .select({
-            id: solicitud.id,
-            titulo: solicitud.titulo,
-            tipo: solicitud.tipo,
-            estado: solicitud.estado,
-            venceAt: solicitud.venceAt,
-            createdAt: solicitud.createdAt,
-          })
-          .from(solicitud)
-          .where(
-            and(
-              eq(solicitud.clienteId, ctx.data.clienteId),
-              eq(solicitud.estado, 'abierta')
-            )
+      db
+        .select({
+          sinLeer: sql<number>`count(*) filter (where not ${notificacion.leida} and ${notificacion.resueltaAt} is null)::int`,
+          ultimaSync: sql<Date | null>`max(${notificacion.createdAt})`,
+        })
+        .from(notificacion)
+        .where(eq(notificacion.clienteId, ctx.data.clienteId)),
+
+      db
+        .select({
+          id: solicitud.id,
+          titulo: solicitud.titulo,
+          tipo: solicitud.tipo,
+          venceAt: solicitud.venceAt,
+          createdAt: solicitud.createdAt,
+        })
+        .from(solicitud)
+        .where(
+          and(
+            eq(solicitud.clienteId, ctx.data.clienteId),
+            eq(solicitud.estado, 'abierta')
           )
-          .orderBy(asc(solicitud.venceAt))
-          .limit(10),
-      ]);
+        )
+        .orderBy(asc(solicitud.venceAt))
+        .limit(10),
+
+      // Las tres consultas que siguen alimentan "Actividad reciente". No hay
+      // una tabla de actividad del cliente: se arma con los hechos que ya
+      // existen (presentaciones, notificaciones y comprobantes sincronizados).
+      db
+        .select({
+          periodo: ivaDeclaracion.periodo,
+          presentadaAt: ivaDeclaracion.presentadaAt,
+        })
+        .from(ivaDeclaracion)
+        .where(
+          and(
+            eq(ivaDeclaracion.clienteId, ctx.data.clienteId),
+            isNotNull(ivaDeclaracion.presentadaAt)
+          )
+        )
+        .orderBy(desc(ivaDeclaracion.presentadaAt))
+        .limit(3),
+
+      db
+        .select({
+          id: notificacion.id,
+          mensaje: notificacion.mensaje,
+          publicadaAt: notificacion.publicadaAt,
+        })
+        .from(notificacion)
+        .where(
+          and(
+            eq(notificacion.clienteId, ctx.data.clienteId),
+            isNotNull(notificacion.publicadaAt)
+          )
+        )
+        .orderBy(desc(notificacion.publicadaAt))
+        .limit(3),
+
+      db
+        .select({
+          cantidad: sql<number>`count(*)::int`,
+          ultimo: sql<Date | null>`max(${comprobante.createdAt})`,
+        })
+        .from(comprobante)
+        .where(
+          and(
+            eq(comprobante.clienteId, ctx.data.clienteId),
+            gte(comprobante.createdAt, sql`now() - interval '30 days'`)
+          )
+        ),
+    ]);
+
+    const contador = await getContadorDelEstudio(
+      session.user.id,
+      clienteData.orgId
+    );
+
+    const deudaResumen = resumenDeuda[0];
+    const notis = resumenNotificaciones[0];
+    const compros = comprobantesRecientes[0];
+
+    const actividad = [
+      ...presentaciones.map((p) => ({
+        tipo: 'presentacion' as const,
+        at: p.presentadaAt!,
+        periodo: p.periodo,
+        detalle: null as string | null,
+        cantidad: null as number | null,
+      })),
+      ...ultimasNotificaciones.map((n) => ({
+        tipo: 'notificacion' as const,
+        at: n.publicadaAt!.toISOString(),
+        periodo: null,
+        detalle: n.mensaje.trim(),
+        cantidad: null as number | null,
+      })),
+      ...(compros?.cantidad && compros.ultimo
+        ? [
+            {
+              tipo: 'comprobantes' as const,
+              at: compros.ultimo.toISOString(),
+              periodo: null,
+              detalle: null,
+              cantidad: compros.cantidad,
+            },
+          ]
+        : []),
+    ]
+      .sort((a, b) => (a.at < b.at ? 1 : -1))
+      .slice(0, 4);
+
+    // No hay marca de "último scrapeo" por cliente (la tabla `job` no es
+    // legible desde el portal y sus filas no tienen cliente), así que la fecha
+    // de corte se aproxima con lo último que entró de AFIP.
+    const cortes = [deudaResumen?.ultimaSync, notis?.ultimaSync]
+      .filter((x): x is Date => !!x)
+      .map((x) => x.toISOString());
 
     return {
-      cliente: clienteData,
+      cliente: {
+        id: clienteData.id,
+        razonSocial: clienteData.razonSocial,
+        cuit: clienteData.cuit,
+        condicionIva: clienteData.condicionIva,
+        estado: clienteData.estado,
+      },
+      usuario: session.user.name,
+      contador,
       proximosVencimientos,
       deudasAbiertas: access.puedeVerDeudas ? deudasAbiertas : null,
-      notificacionesSinLeer: sinLeer.length,
+      deudaAbiertaTotal: access.puedeVerDeudas
+        ? (deudaResumen?.total ?? '0')
+        : null,
+      deudasAbiertasCantidad: deudaResumen?.cantidad ?? 0,
+      deudasVencidas: deudaResumen?.vencidas ?? 0,
+      notificacionesSinLeer: notis?.sinLeer ?? 0,
       solicitudesAbiertas,
+      actividad,
+      ultimaPresentacion: presentaciones[0]?.presentadaAt ?? null,
+      datosAfipAt: cortes.sort().at(-1) ?? null,
       permisos: {
         puedeVerDeudas: access.puedeVerDeudas,
         puedeVerIva: access.puedeVerIva,
@@ -178,6 +362,32 @@ export const getClientePortalDashboard = createServerFn({ method: 'GET' })
       },
     };
   });
+
+/**
+ * El contacto del estudio que se muestra en el portal.
+ *
+ * Todavía no existe un contador asignado por cliente, así que se usa el dueño
+ * de la organización. Se lee con `app.user_id` porque `organization`/`member`
+ * están fuera del alcance del rol del portal.
+ */
+async function getContadorDelEstudio(userId: string, orgId: string) {
+  const [row] = await withUserContext(userId, (tx) =>
+    tx
+      .select({
+        estudio: organization.name,
+        nombre: userTable.name,
+        email: userTable.email,
+      })
+      .from(member)
+      .innerJoin(userTable, eq(userTable.id, member.userId))
+      .innerJoin(organization, eq(organization.id, member.organizationId))
+      .where(and(eq(member.organizationId, orgId), eq(member.role, 'owner')))
+      .orderBy(asc(member.createdAt))
+      .limit(1)
+  );
+
+  return row ?? null;
+}
 
 export const getClientePortalDeudas = createServerFn({ method: 'GET' })
   .inputValidator(z.object({ clienteId: z.string().uuid() }))
@@ -354,7 +564,8 @@ export const uploadDocumentoSolicitud = createServerFn({ method: 'POST' })
       .limit(1);
 
     if (!row) throw new Error('Solicitud no encontrada');
-    if (row.estado !== 'abierta') throw new Error('La solicitud no está abierta');
+    if (row.estado !== 'abierta')
+      throw new Error('La solicitud no está abierta');
 
     const access = await getAccesoPortal(userId, row.clienteId);
     if (!access.puedeSubirDocumentos) {
@@ -369,7 +580,8 @@ export const uploadDocumentoSolicitud = createServerFn({ method: 'POST' })
       .from(clienteCredencial)
       .where(eq(clienteCredencial.clienteId, row.clienteId))
       .limit(1);
-    if (!rel) throw new Error('El cliente no tiene una credencial de AFIP asociada');
+    if (!rel)
+      throw new Error('El cliente no tiene una credencial de AFIP asociada');
 
     const buffer = Buffer.from(ctx.data.base64Data, 'base64');
     // El id se genera acá para poder armar la key de R2 antes de insertar.
@@ -621,8 +833,11 @@ export const createPortalUser = createServerFn({ method: 'POST' })
       .limit(1);
     if (existing) throw new Error('Ya existe un usuario con ese email');
 
+    // Sin `headers` a propósito: con sesión, el plugin admin de Better Auth exige
+    // `user.role = 'admin'`, y el contador es owner del estudio, no admin de la
+    // plataforma. La autorización real ya la hicieron `assertCanWrite` y
+    // `assertClienteDeOrg` acá arriba.
     const created = await auth.api.createUser({
-      headers: getRequestHeaders(),
       body: {
         name: ctx.data.name,
         email: ctx.data.email,

@@ -73,7 +73,9 @@ function PortalSolicitudes() {
     mutationFn: (solicitudId: string) =>
       completarSolicitud({ data: { solicitudId } }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['portalRequests', clienteId] });
+      queryClient.invalidateQueries({
+        queryKey: ['portalRequests', clienteId],
+      });
       queryClient.invalidateQueries({
         queryKey: ['portalDashboard', clienteId],
       });
@@ -113,7 +115,9 @@ function PortalSolicitudes() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['portalRequests', clienteId] });
+      queryClient.invalidateQueries({
+        queryKey: ['portalRequests', clienteId],
+      });
       queryClient.invalidateQueries({
         queryKey: ['portalDashboard', clienteId],
       });
@@ -143,7 +147,7 @@ function PortalSolicitudes() {
   }
 
   return (
-    <div className="p-6 md:p-8 max-w-3xl">
+    <div>
       {/* Hidden file input */}
       <input
         ref={fileInputRef}
@@ -276,54 +280,56 @@ function PortalSolicitudes() {
                   {/* Action buttons */}
                   <div className="flex flex-col gap-2 items-end shrink-0">
                     {/* Document upload for open document-type requests */}
-                    {req.estado === 'abierta' && req.tipo === 'documentacion' && (
-                      <>
-                        {hasDocument ? (
-                          <span className="text-[11px] text-[var(--arca-accent-pos)] flex items-center gap-1">
-                            <CheckCircle2 size={12} />
-                            Documento enviado
-                          </span>
-                        ) : (
-                          <button
-                            disabled={
-                              isUploadingThis || uploadMutation.isPending
-                            }
-                            onClick={() => handleUploadClick(req.id)}
-                            className="text-[12px] font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5"
-                            style={{
-                              background: 'var(--arca-surface-2)',
-                              color: 'var(--arca-ink)',
-                              border: '1px solid var(--arca-border-strong)',
-                            }}
-                          >
-                            {isUploadingThis ? (
-                              <Loader2 size={12} className="animate-spin" />
-                            ) : (
-                              <Upload size={12} />
-                            )}
-                            {isUploadingThis
-                              ? 'Subiendo...'
-                              : 'Subir documento'}
-                          </button>
-                        )}
-                      </>
-                    )}
+                    {req.estado === 'abierta' &&
+                      req.tipo === 'documentacion' && (
+                        <>
+                          {hasDocument ? (
+                            <span className="text-[11px] text-[var(--arca-accent-pos)] flex items-center gap-1">
+                              <CheckCircle2 size={12} />
+                              Documento enviado
+                            </span>
+                          ) : (
+                            <button
+                              disabled={
+                                isUploadingThis || uploadMutation.isPending
+                              }
+                              onClick={() => handleUploadClick(req.id)}
+                              className="text-[12px] font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                              style={{
+                                background: 'var(--arca-surface-2)',
+                                color: 'var(--arca-ink)',
+                                border: '1px solid var(--arca-border-strong)',
+                              }}
+                            >
+                              {isUploadingThis ? (
+                                <Loader2 size={12} className="animate-spin" />
+                              ) : (
+                                <Upload size={12} />
+                              )}
+                              {isUploadingThis
+                                ? 'Subiendo...'
+                                : 'Subir documento'}
+                            </button>
+                          )}
+                        </>
+                      )}
 
                     {/* Complete button for open non-document requests */}
-                    {req.estado === 'abierta' && req.tipo !== 'documentacion' && (
-                      <button
-                        disabled={completeMutation.isPending}
-                        onClick={() => completeMutation.mutate(req.id)}
-                        className="text-[12px] font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
-                        style={{
-                          background: 'var(--arca-accent-pos-bg)',
-                          color: 'var(--arca-accent-pos)',
-                          border: '1px solid var(--arca-accent-pos)',
-                        }}
-                      >
-                        Completar
-                      </button>
-                    )}
+                    {req.estado === 'abierta' &&
+                      req.tipo !== 'documentacion' && (
+                        <button
+                          disabled={completeMutation.isPending}
+                          onClick={() => completeMutation.mutate(req.id)}
+                          className="text-[12px] font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                          style={{
+                            background: 'var(--arca-accent-pos-bg)',
+                            color: 'var(--arca-accent-pos)',
+                            border: '1px solid var(--arca-accent-pos)',
+                          }}
+                        >
+                          Completar
+                        </button>
+                      )}
                   </div>
                 </div>
               </li>
