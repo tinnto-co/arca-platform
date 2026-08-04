@@ -7239,6 +7239,30 @@ function DisposeAssetDialog({
   );
 }
 
+/**
+ * Tabla que no entra a lo ancho: la primera columna —la que nombra la partida—
+ * queda congelada mientras el resto scrollea de costado. Se aplica al `<table>`.
+ *
+ * Cada fila tiene que traer su propio fondo opaco: la celda fija hereda el de
+ * su `<tr>` (`bg-inherit`) y, si es transparente, se transparenta encima lo que
+ * pasa por debajo al scrollear. Por eso los `<tr>` de estas tablas llevan
+ * `bg-[var(--arca-surface)]` explícito en vez de quedar sin fondo.
+ */
+const COL_FIJA = [
+  // Solo la primera fila del encabezado: en las cabeceras de dos y tres niveles
+  // la celda de la partida va con `rowSpan`, así que las filas siguientes ya no
+  // tienen celda en la columna 1 y congelarlas correría la que sí está.
+  '[&_thead_tr:first-child_th:first-child]:sticky',
+  '[&_thead_tr:first-child_th:first-child]:left-0',
+  '[&_thead_tr:first-child_th:first-child]:z-20',
+  '[&_thead_tr:first-child_th:first-child]:bg-inherit',
+  '[&_thead_tr:first-child_th:first-child]:shadow-[inset_-1px_0_0_var(--arca-border)]',
+  '[&_tbody_td:first-child]:sticky [&_tbody_td:first-child]:left-0',
+  '[&_tbody_td:first-child]:z-10',
+  '[&_tbody_td:first-child]:bg-inherit',
+  '[&_tbody_td:first-child]:shadow-[inset_-1px_0_0_var(--arca-border)]',
+].join(' ');
+
 /* ════════════════════════ Anexo I (US 4.2.x) ════════════════════════ */
 
 // Clases compartidas por la tabla del Anexo I (vista web).
@@ -7436,9 +7460,11 @@ function AnexoIView({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1000px] text-[11.5px]">
+            <table
+              className={`w-full min-w-[1000px] text-[11.5px] ${COL_FIJA}`}
+            >
               <thead>
-                <tr className="text-[9.5px] uppercase tracking-wide text-[var(--arca-ink-3)]">
+                <tr className="text-[9.5px] uppercase tracking-wide text-[var(--arca-ink-3)] bg-[var(--arca-surface)]">
                   <th
                     className="py-2 pl-4 text-left align-bottom border-b border-[var(--arca-border)]"
                     rowSpan={3}
@@ -7531,7 +7557,7 @@ function AnexoIView({
                     prior={data.prior}
                   />
                 ))}
-                <tr className="border-t-2 border-[var(--arca-ink-2)] font-semibold">
+                <tr className="border-t-2 border-[var(--arca-ink-2)] font-semibold bg-[var(--arca-surface)]">
                   <td className="py-2.5 pl-4 whitespace-nowrap">
                     TOTAL GENERAL
                   </td>
@@ -7681,7 +7707,7 @@ function AnexoICategoryRows({
       {cat.assets.map((a) => (
         <tr
           key={a.id}
-          className="border-b border-[var(--arca-border)] last:border-0 hover:bg-[var(--arca-surface-2)]/50"
+          className="border-b border-[var(--arca-border)] last:border-0 bg-[var(--arca-surface)] hover:bg-[var(--arca-surface-2)]"
         >
           <td className="py-2 pl-4 pr-3">
             {a.name}
@@ -7726,7 +7752,7 @@ function AnexoICategoryRows({
           )}
         </tr>
       ))}
-      <tr className="border-b border-[var(--arca-border)] font-medium bg-[var(--arca-surface-2)]/40">
+      <tr className="border-b border-[var(--arca-border)] font-medium bg-[var(--arca-surface-2)]">
         <td className="py-2 pl-4 pr-3 text-[var(--arca-ink-2)] whitespace-nowrap">
           Subtotal {FIXED_ASSET_CATEGORY_LABELS[cat.category] ?? cat.category}
         </td>
@@ -7903,20 +7929,56 @@ function EstadosContables({
     );
   }
 
-  const tabs: { k: typeof view; label: string }[] = [
-    { k: 'esp', label: 'Estado de Situación Patrimonial' },
-    { k: 'er', label: 'Estado de Resultados' },
-    { k: 'eepn', label: 'Evolución del Patrimonio Neto' },
-    { k: 'efe', label: 'Flujo de Efectivo' },
-    { k: 'nota3', label: 'Composición de rubros' },
-    { k: 'inventario', label: 'Inventario' },
-    { k: 'cmv', label: 'Costo de mercadería (CMV)' },
-    { k: 'anexoI', label: 'Anexo I' },
-    { k: 'anexo', label: 'Anexo II' },
-    { k: 'notas', label: 'Notas' },
-    { k: 'informe', label: 'Informe del auditor' },
-    { k: 'orden', label: 'Orden del documento' },
-    { k: 'export', label: 'Exportar' },
+  /**
+   * Las secciones van agrupadas por el papel que cumplen en el balance: los
+   * estados que se presentan, lo que los respalda, y lo que arma el documento.
+   * El rótulo corto es el del sidebar; el largo, el que se lee al pasar por
+   * encima y el que titula cada estado adentro.
+   */
+  const grupos: {
+    grupo: string;
+    items: { k: typeof view; label: string; title?: string }[];
+  }[] = [
+    {
+      grupo: 'Estados',
+      items: [
+        {
+          k: 'esp',
+          label: 'Situación Patrimonial',
+          title: 'Estado de Situación Patrimonial',
+        },
+        { k: 'er', label: 'Resultados', title: 'Estado de Resultados' },
+        {
+          k: 'eepn',
+          label: 'Evolución del PN',
+          title: 'Estado de Evolución del Patrimonio Neto',
+        },
+        {
+          k: 'efe',
+          label: 'Flujo de Efectivo',
+          title: 'Estado de Flujo de Efectivo',
+        },
+      ],
+    },
+    {
+      grupo: 'Notas y anexos',
+      items: [
+        { k: 'nota3', label: 'Composición de rubros' },
+        { k: 'inventario', label: 'Inventario', title: 'Inventario al cierre' },
+        { k: 'cmv', label: 'Costo de mercadería', title: 'Anexo — CMV' },
+        { k: 'anexoI', label: 'Anexo I', title: 'Anexo I — Bienes de uso' },
+        { k: 'anexo', label: 'Anexo II', title: 'Anexo II' },
+        { k: 'notas', label: 'Notas' },
+      ],
+    },
+    {
+      grupo: 'Documento',
+      items: [
+        { k: 'informe', label: 'Informe del auditor' },
+        { k: 'orden', label: 'Orden del documento' },
+        { k: 'export', label: 'Exportar' },
+      ],
+    },
   ];
 
   return (
@@ -8008,192 +8070,214 @@ function EstadosContables({
         </div>
       </ArcaCard>
 
-      {/* Toggle de vistas */}
-      <div className="inline-flex rounded-[8px] border border-[var(--arca-border)] p-0.5 bg-[var(--arca-surface-2)]">
-        {tabs.map(({ k, label }) => (
-          <button
-            key={k}
-            onClick={() => setView(k)}
-            className="px-3 h-7 text-[12.5px] font-medium rounded-[6px] transition-colors"
-            style={{
-              background: view === k ? 'var(--arca-surface)' : 'transparent',
-              color: view === k ? 'var(--arca-ink)' : 'var(--arca-ink-3)',
-              boxShadow: view === k ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
-            }}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {view === 'esp' && (
-        <EspView
-          clientId={clientId}
-          clientName={clientName}
-          selectedFy={selectedFy}
-          valuation={valuation}
-          norma={norma}
-          refFor={refFor}
-        />
-      )}
-      {view === 'er' && (
-        <ErView
-          clientId={clientId}
-          clientName={clientName}
-          selectedFy={selectedFy}
-          valuation={valuation}
-          norma={norma}
-          refFor={refFor}
-        />
-      )}
-      {view === 'eepn' && (
-        <EepnView
-          clientId={clientId}
-          clientName={clientName}
-          selectedFy={selectedFy}
-          valuation={valuation}
-          norma={norma}
-        />
-      )}
-      {view === 'efe' && (
-        <EfeView
-          clientId={clientId}
-          clientName={clientName}
-          selectedFy={selectedFy}
-          valuation={valuation}
-          norma={norma}
-        />
-      )}
-      {view === 'nota3' && (
-        <Nota3View
-          clientId={clientId}
-          clientName={clientName}
-          selectedFy={selectedFy}
-          valuation={valuation}
-          norma={norma}
-        />
-      )}
-      {view === 'cmv' && (
-        <AnexoCMVView
-          clientId={clientId}
-          clientName={clientName}
-          selectedFy={selectedFy}
-          canEdit={isOwner && !approved}
-        />
-      )}
-      {view === 'inventario' && (
-        <InventarioView
-          clientId={clientId}
-          clientName={clientName}
-          selectedFy={selectedFy}
-          valuation={valuation}
-          norma={norma}
-        />
-      )}
-      {view === 'anexoI' && (
-        <AnexoIView
-          key={effectiveFyId}
-          clientId={clientId}
-          clientName={clientName}
-          canWrite={false}
-          fiscalYearId={effectiveFyId}
-          readOnly
-          conComparativo={anexoIMuestraComparativo(fs?.sectionLabels ?? {})}
-        />
-      )}
-      {view === 'anexo' && (
-        <AnexoIIView
-          clientId={clientId}
-          clientName={clientName}
-          selectedFy={selectedFy}
-        />
-      )}
-      {view === 'informe' &&
-        (fs && selectedFy ? (
-          <InformeAuditor
-            key={effectiveFyId}
-            clientId={clientId}
-            fiscalYearId={effectiveFyId}
-            saved={fs.auditReport}
-            canEdit={isOwner && !approved}
-            onSaved={invalidateFs}
-            vars={{
-              empresa: clientName,
-              cuit: clientCuit,
-              domicilio: membreteEecc?.domicilio ?? '',
-              cierre: fechaLarga(new Date(selectedFy.endDate)),
-              ejercicio: String(selectedFy.number),
-              notas: rangoNotas(fs.notes.length),
-              anexos: rangoAnexos(3),
-              destinatario: 'Señores Socios',
-              contador: membreteEecc?.accountant?.nombre ?? '',
-              matricula: [
-                membreteEecc?.accountant?.tomo &&
-                  `Tomo ${membreteEecc.accountant.tomo}`,
-                membreteEecc?.accountant?.folio &&
-                  `Folio ${membreteEecc.accountant.folio}`,
-                membreteEecc?.accountant?.consejo,
-              ]
-                .filter(Boolean)
-                .join(' '),
-            }}
-          />
-        ) : null)}
-
-      {view === 'orden' &&
-        (fs ? (
-          <OrdenDocumento
-            key={effectiveFyId}
-            clientId={clientId}
-            fiscalYearId={effectiveFyId}
-            notes={fs.notes}
-            layout={fs.layout}
-            sectionLabels={fs.sectionLabels}
-            canEdit={isOwner && !approved}
-            onSaved={invalidateFs}
-          />
-        ) : null)}
-
-      {view === 'notas' &&
-        (fs ? (
-          <NotesEditor
-            key={effectiveFyId}
-            clientId={clientId}
-            fiscalYearId={effectiveFyId}
-            notes={fs.notes}
-            layout={fs.layout}
-            sectionLabels={fs.sectionLabels}
-            approved={approved}
-            canEdit={isOwner}
-            onSaved={invalidateFs}
-          />
-        ) : (
+      {/* Índice del balance a la izquierda; el estado elegido, a la derecha. */}
+      <div className="flex items-start gap-4">
+        <nav className="w-[188px] shrink-0 sticky top-4">
           <ArcaCard>
-            <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
-              Cargando…
+            <div className="py-1.5">
+              {grupos.map(({ grupo, items }) => (
+                <div key={grupo} className="py-1">
+                  <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--arca-ink-3)]">
+                    {grupo}
+                  </div>
+                  {items.map(({ k, label, title }) => (
+                    <button
+                      key={k}
+                      onClick={() => setView(k)}
+                      title={title ?? label}
+                      aria-current={view === k ? 'page' : undefined}
+                      className="w-full text-left px-3 py-1 text-[12.5px] leading-[1.35] border-l-2 transition-colors"
+                      style={{
+                        borderColor:
+                          view === k ? 'var(--arca-ink)' : 'transparent',
+                        background:
+                          view === k ? 'var(--arca-surface-2)' : 'transparent',
+                        color:
+                          view === k ? 'var(--arca-ink)' : 'var(--arca-ink-2)',
+                        fontWeight: view === k ? 600 : 400,
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              ))}
             </div>
           </ArcaCard>
-        ))}
+        </nav>
 
-      {view === 'export' && (
-        <ExportView
-          clientId={clientId}
-          clientName={clientName}
-          clientCuit={clientCuit}
-          selectedFy={selectedFy}
-          notes={fs?.notes ?? []}
-          layout={fs?.layout ?? []}
-          sectionLabels={fs?.sectionLabels ?? {}}
-          auditReport={fs?.auditReport ?? null}
-          references={references}
-          isOwner={isOwner}
-          valuation={valuation}
-          norma={norma}
-          pdfGeneratedAt={fs?.pdfGeneratedAt ?? null}
-          pdfGeneratedByName={fs?.pdfGeneratedByName ?? null}
-          onPdfSaved={invalidateFs}
-        />
-      )}
+        {/* `min-w-0` para que las tablas anchas scrolleen en vez de estirar. */}
+        <div className="flex-1 min-w-0 space-y-4">
+          {view === 'esp' && (
+            <EspView
+              clientId={clientId}
+              clientName={clientName}
+              selectedFy={selectedFy}
+              valuation={valuation}
+              norma={norma}
+              refFor={refFor}
+            />
+          )}
+          {view === 'er' && (
+            <ErView
+              clientId={clientId}
+              clientName={clientName}
+              selectedFy={selectedFy}
+              valuation={valuation}
+              norma={norma}
+              refFor={refFor}
+            />
+          )}
+          {view === 'eepn' && (
+            <EepnView
+              clientId={clientId}
+              clientName={clientName}
+              selectedFy={selectedFy}
+              valuation={valuation}
+              norma={norma}
+            />
+          )}
+          {view === 'efe' && (
+            <EfeView
+              clientId={clientId}
+              clientName={clientName}
+              selectedFy={selectedFy}
+              valuation={valuation}
+              norma={norma}
+            />
+          )}
+          {view === 'nota3' && (
+            <Nota3View
+              clientId={clientId}
+              clientName={clientName}
+              selectedFy={selectedFy}
+              valuation={valuation}
+              norma={norma}
+            />
+          )}
+          {view === 'cmv' && (
+            <AnexoCMVView
+              clientId={clientId}
+              clientName={clientName}
+              selectedFy={selectedFy}
+              canEdit={isOwner && !approved}
+            />
+          )}
+          {view === 'inventario' && (
+            <InventarioView
+              clientId={clientId}
+              clientName={clientName}
+              selectedFy={selectedFy}
+              valuation={valuation}
+              norma={norma}
+            />
+          )}
+          {view === 'anexoI' && (
+            <AnexoIView
+              key={effectiveFyId}
+              clientId={clientId}
+              clientName={clientName}
+              canWrite={false}
+              fiscalYearId={effectiveFyId}
+              readOnly
+              conComparativo={anexoIMuestraComparativo(fs?.sectionLabels ?? {})}
+            />
+          )}
+          {view === 'anexo' && (
+            <AnexoIIView
+              clientId={clientId}
+              clientName={clientName}
+              selectedFy={selectedFy}
+            />
+          )}
+          {view === 'informe' &&
+            (fs && selectedFy ? (
+              <InformeAuditor
+                key={effectiveFyId}
+                clientId={clientId}
+                fiscalYearId={effectiveFyId}
+                saved={fs.auditReport}
+                canEdit={isOwner && !approved}
+                onSaved={invalidateFs}
+                vars={{
+                  empresa: clientName,
+                  cuit: clientCuit,
+                  domicilio: membreteEecc?.domicilio ?? '',
+                  cierre: fechaLarga(new Date(selectedFy.endDate)),
+                  ejercicio: String(selectedFy.number),
+                  notas: rangoNotas(fs.notes.length),
+                  anexos: rangoAnexos(3),
+                  destinatario: 'Señores Socios',
+                  contador: membreteEecc?.accountant?.nombre ?? '',
+                  matricula: [
+                    membreteEecc?.accountant?.tomo &&
+                      `Tomo ${membreteEecc.accountant.tomo}`,
+                    membreteEecc?.accountant?.folio &&
+                      `Folio ${membreteEecc.accountant.folio}`,
+                    membreteEecc?.accountant?.consejo,
+                  ]
+                    .filter(Boolean)
+                    .join(' '),
+                }}
+              />
+            ) : null)}
+
+          {view === 'orden' &&
+            (fs ? (
+              <OrdenDocumento
+                key={effectiveFyId}
+                clientId={clientId}
+                fiscalYearId={effectiveFyId}
+                notes={fs.notes}
+                layout={fs.layout}
+                sectionLabels={fs.sectionLabels}
+                canEdit={isOwner && !approved}
+                onSaved={invalidateFs}
+              />
+            ) : null)}
+
+          {view === 'notas' &&
+            (fs ? (
+              <NotesEditor
+                key={effectiveFyId}
+                clientId={clientId}
+                fiscalYearId={effectiveFyId}
+                notes={fs.notes}
+                layout={fs.layout}
+                sectionLabels={fs.sectionLabels}
+                approved={approved}
+                canEdit={isOwner}
+                onSaved={invalidateFs}
+              />
+            ) : (
+              <ArcaCard>
+                <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+                  Cargando…
+                </div>
+              </ArcaCard>
+            ))}
+
+          {view === 'export' && (
+            <ExportView
+              clientId={clientId}
+              clientName={clientName}
+              clientCuit={clientCuit}
+              selectedFy={selectedFy}
+              notes={fs?.notes ?? []}
+              layout={fs?.layout ?? []}
+              sectionLabels={fs?.sectionLabels ?? {}}
+              auditReport={fs?.auditReport ?? null}
+              references={references}
+              isOwner={isOwner}
+              valuation={valuation}
+              norma={norma}
+              pdfGeneratedAt={fs?.pdfGeneratedAt ?? null}
+              pdfGeneratedByName={fs?.pdfGeneratedByName ?? null}
+              onPdfSaved={invalidateFs}
+            />
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -8563,7 +8647,7 @@ function InventarioView({
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-[12.5px] min-w-[720px]">
+        <table className={`w-full text-[12.5px] min-w-[720px] ${COL_FIJA}`}>
           <thead>
             <tr className="bg-[var(--arca-surface-2)] text-[10.5px] uppercase tracking-wide text-[var(--arca-ink-3)]">
               <th className="text-left font-semibold px-4 py-1.5">Conceptos</th>
@@ -8671,7 +8755,7 @@ function InventarioRow({
   const pad = ['pl-4', 'pl-7', 'pl-10', 'pl-14'][indent];
   return (
     <tr
-      className={`border-t border-[var(--arca-border)] ${
+      className={`border-t border-[var(--arca-border)] bg-[var(--arca-surface)] ${
         topBorder ? 'border-t-2 border-t-[var(--arca-ink-2)]' : ''
       }`}
     >
@@ -9183,7 +9267,7 @@ function EepnView({
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-[12.5px] min-w-[720px]">
+        <table className={`w-full text-[12.5px] min-w-[720px] ${COL_FIJA}`}>
           <thead>
             <tr className="bg-[var(--arca-surface-2)] text-[10.5px] uppercase tracking-wide text-[var(--arca-ink-3)]">
               <th className="text-left font-semibold px-4 py-1.5" rowSpan={2}>
@@ -9236,9 +9320,12 @@ function EepnView({
                 <tr
                   key={row.key}
                   className="border-t border-[var(--arca-border)]"
-                  style={
-                    strong ? { background: 'var(--arca-surface-2)' } : undefined
-                  }
+                  style={{
+                    // Opaco siempre: la columna fija hereda este fondo.
+                    background: strong
+                      ? 'var(--arca-surface-2)'
+                      : 'var(--arca-surface)',
+                  }}
                 >
                   <td
                     className="px-4 py-1.5 text-[var(--arca-ink)]"
