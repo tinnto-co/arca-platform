@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "vite",
+    "dev": "bun --bun vite",
     "build": "NODE_OPTIONS=--max-old-space-size=8192 vite build",
     "preview": "vite preview",
     "start": "bun run server.ts",

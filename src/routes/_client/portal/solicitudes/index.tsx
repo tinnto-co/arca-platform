@@ -13,14 +13,28 @@ import {
   Paperclip,
   Upload,
   Loader2,
+  Eye,
+  Download,
+  FileText,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { useState, useRef } from 'react';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 
 /** Los filtros de la UI: los tres estados del enum, o "" para todas. */
 type EstadoFiltro = '' | 'abierta' | 'completada' | 'cancelada';
+
+/** El documento que se está previsualizando en el sheet lateral. */
+type Preview = { id: string; nombre: string; mimeType: string | null };
 
 export const Route = createFileRoute('/_client/portal/solicitudes/')({
   component: PortalSolicitudes,
@@ -50,6 +64,21 @@ const STATUS_LABELS: Record<
   },
 };
 
+function previewDe(
+  detalle: {
+    documentoId?: string;
+    documentoNombre?: string;
+    documentoMimeType?: string;
+  } | null
+): Preview | null {
+  if (!detalle?.documentoId) return null;
+  return {
+    id: detalle.documentoId,
+    nombre: detalle.documentoNombre ?? 'Documento adjunto',
+    mimeType: detalle.documentoMimeType ?? null,
+  };
+}
+
 function PortalSolicitudes() {
   const { clienteId } = Route.useRouteContext();
   const queryClient = useQueryClient();
@@ -57,6 +86,7 @@ function PortalSolicitudes() {
   const [uploadingRequestId, setUploadingRequestId] = useState<string | null>(
     null
   );
+  const [preview, setPreview] = useState<Preview | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: requests = [], isLoading } = useQuery({
@@ -183,12 +213,12 @@ function PortalSolicitudes() {
             style={{
               background:
                 statusFilter === f.value
-                  ? 'var(--arca-accent-primary)'
+                  ? 'var(--arca-navy-900)'
                   : 'var(--arca-surface)',
               color: statusFilter === f.value ? '#fff' : 'var(--arca-ink-3)',
               borderColor:
                 statusFilter === f.value
-                  ? 'var(--arca-accent-primary)'
+                  ? 'var(--arca-navy-900)'
                   : 'var(--arca-border)',
             }}
           >
@@ -260,19 +290,22 @@ function PortalSolicitudes() {
                           })}
                         </span>
                       )}
-                      {/* Document attachment indicator */}
+                      {/* El adjunto se previsualiza en el panel lateral: el
+                          endpoint valida la sesión y lo streamea desde R2,
+                          sin URL pública. */}
                       {hasDocument && (
-                        <span
-                          className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                        <button
+                          type="button"
+                          onClick={() => setPreview(previewDe(meta))}
+                          className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full hover:underline"
                           style={{
-                            background:
-                              'var(--arca-accent-primary-bg, #e8f0fe)',
-                            color: 'var(--arca-accent-primary)',
+                            background: 'var(--arca-accent-info-bg)',
+                            color: 'var(--arca-accent-info)',
                           }}
                         >
                           <Paperclip size={10} />
                           {meta?.documentoNombre ?? 'Documento adjunto'}
-                        </span>
+                        </button>
                       )}
                     </div>
                   </div>
@@ -284,10 +317,20 @@ function PortalSolicitudes() {
                       req.tipo === 'documentacion' && (
                         <>
                           {hasDocument ? (
-                            <span className="text-[11px] text-[var(--arca-accent-pos)] flex items-center gap-1">
-                              <CheckCircle2 size={12} />
-                              Documento enviado
-                            </span>
+                            <>
+                              <span className="text-[11px] text-[var(--arca-accent-pos)] flex items-center gap-1">
+                                <CheckCircle2 size={12} />
+                                Documento enviado
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setPreview(previewDe(meta))}
+                                className="text-[12px] font-semibold px-3 py-1.5 rounded-lg border border-[var(--arca-border-strong)] bg-[var(--arca-surface-2)] text-[var(--arca-ink)] transition-colors hover:bg-[var(--arca-surface)] flex items-center gap-1.5"
+                              >
+                                <Eye size={12} />
+                                Ver documento
+                              </button>
+                            </>
                           ) : (
                             <button
                               disabled={
@@ -337,6 +380,70 @@ function PortalSolicitudes() {
           })}
         </ul>
       )}
+
+      <Sheet
+        open={!!preview}
+        onOpenChange={(open) => !open && setPreview(null)}
+      >
+        <SheetContent className="w-full gap-0 p-0 sm:max-w-[640px]">
+          <SheetHeader className="border-b border-[var(--arca-border)] pr-12">
+            <SheetTitle className="text-[15px] break-words">
+              {preview?.nombre}
+            </SheetTitle>
+            <SheetDescription className="text-[12px]">
+              Documento que enviaste a tu estudio contable
+            </SheetDescription>
+          </SheetHeader>
+
+          {preview && (
+            <div className="flex-1 overflow-auto bg-[var(--arca-surface-2)]">
+              <PreviewBody doc={preview} />
+            </div>
+          )}
+
+          <SheetFooter className="border-t border-[var(--arca-border)]">
+            <a
+              href={preview ? `/api/documents/${preview.id}?download=1` : '#'}
+              className="flex items-center justify-center gap-1.5 rounded-lg border border-[var(--arca-border-strong)] bg-[var(--arca-surface-2)] px-3 py-2 text-[12px] font-semibold text-[var(--arca-ink)] transition-colors hover:bg-[var(--arca-surface)]"
+            >
+              <Download size={13} />
+              Descargar
+            </a>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+    </div>
+  );
+}
+
+/**
+ * El archivo se pide siempre al endpoint autenticado, que lo streamea desde R2.
+ * Las imágenes y los PDF se muestran en línea; para el resto (zip, txt de AFIP)
+ * el navegador no tiene visor, así que sólo queda descargarlo.
+ */
+function PreviewBody({ doc }: { doc: Preview }) {
+  const src = `/api/documents/${doc.id}`;
+
+  if (doc.mimeType?.startsWith('image/')) {
+    return (
+      <img
+        src={src}
+        alt={doc.nombre}
+        className="h-auto w-full object-contain"
+      />
+    );
+  }
+
+  if (doc.mimeType === 'application/pdf') {
+    return <iframe src={src} title={doc.nombre} className="h-full w-full" />;
+  }
+
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-[var(--arca-ink-3)]">
+      <FileText size={28} className="opacity-30" />
+      <p className="text-[12px]">
+        No podemos mostrar este tipo de archivo acá. Descargalo para abrirlo.
+      </p>
     </div>
   );
 }

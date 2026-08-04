@@ -35,6 +35,7 @@ import {
   assertCanWrite,
 } from '@/actions/helpers';
 import { eq, and, isNull, isNotNull, gte, asc, desc, sql } from 'drizzle-orm';
+import type { PgColumn } from 'drizzle-orm/pg-core';
 import { randomUUID } from 'node:crypto';
 import * as r2 from '@/lib/r2';
 
@@ -48,6 +49,17 @@ export interface SolicitudDetalle {
 }
 
 const hoy = () => new Date().toISOString().slice(0, 10);
+
+/**
+ * `max(<timestamptz>)` de un fragmento `sql` crudo NO vuelve como `Date`: el
+ * driver de drizzle desactiva los parsers de postgres-js y sólo mapea las
+ * columnas que conoce, así que un agregado llega como el texto de Postgres
+ * ("2026-03-03 18:46:51.376+00"), que no es ISO. Se pide el ISO desde la base
+ * y se trata como string en todo el camino.
+ */
+function isoDe(columna: PgColumn) {
+  return sql<string | null>`to_json(max(${columna}))#>>'{}'`;
+}
 
 export const getPortalSession = createServerFn({ method: 'GET' }).handler(
   async () => {
@@ -205,7 +217,7 @@ export const getClientePortalDashboard = createServerFn({ method: 'GET' })
               total: sql<string>`coalesce(sum(${deuda.saldo}), 0)::text`,
               cantidad: sql<number>`count(*)::int`,
               vencidas: sql<number>`count(*) filter (where ${deuda.venceAt} < current_date)::int`,
-              ultimaSync: sql<Date | null>`max(${deuda.createdAt})`,
+              ultimaSync: isoDe(deuda.createdAt),
             })
             .from(deuda)
             .where(soloAbierta)
@@ -214,7 +226,7 @@ export const getClientePortalDashboard = createServerFn({ method: 'GET' })
       db
         .select({
           sinLeer: sql<number>`count(*) filter (where not ${notificacion.leida} and ${notificacion.resueltaAt} is null)::int`,
-          ultimaSync: sql<Date | null>`max(${notificacion.createdAt})`,
+          ultimaSync: isoDe(notificacion.createdAt),
         })
         .from(notificacion)
         .where(eq(notificacion.clienteId, ctx.data.clienteId)),
@@ -274,7 +286,7 @@ export const getClientePortalDashboard = createServerFn({ method: 'GET' })
       db
         .select({
           cantidad: sql<number>`count(*)::int`,
-          ultimo: sql<Date | null>`max(${comprobante.createdAt})`,
+          ultimo: isoDe(comprobante.createdAt),
         })
         .from(comprobante)
         .where(
@@ -313,7 +325,7 @@ export const getClientePortalDashboard = createServerFn({ method: 'GET' })
         ? [
             {
               tipo: 'comprobantes' as const,
-              at: compros.ultimo.toISOString(),
+              at: compros.ultimo,
               periodo: null,
               detalle: null,
               cantidad: compros.cantidad,
@@ -327,9 +339,9 @@ export const getClientePortalDashboard = createServerFn({ method: 'GET' })
     // No hay marca de "último scrapeo" por cliente (la tabla `job` no es
     // legible desde el portal y sus filas no tienen cliente), así que la fecha
     // de corte se aproxima con lo último que entró de AFIP.
-    const cortes = [deudaResumen?.ultimaSync, notis?.ultimaSync]
-      .filter((x): x is Date => !!x)
-      .map((x) => x.toISOString());
+    const cortes = [deudaResumen?.ultimaSync, notis?.ultimaSync].filter(
+      (x): x is string => !!x
+    );
 
     return {
       cliente: {
@@ -519,16 +531,17 @@ export const getClientePortalSolicitudes = createServerFn({ method: 'GET' })
 export const completarSolicitud = createServerFn({ method: 'POST' })
   .inputValidator(z.object({ solicitudId: z.string().uuid() }))
   .handler(async (ctx) => {
-    const session = await getAuthSession();
+    // La sesión va primero: es la que abre el contexto del cliente. Leer la
+    // solicitud antes la deja fuera del alcance del RLS y no devuelve nada.
+    await getClientePortalSession();
 
     const [row] = await db
-      .select({ id: solicitud.id, clienteId: solicitud.clienteId })
+      .select({ id: solicitud.id })
       .from(solicitud)
       .where(eq(solicitud.id, ctx.data.solicitudId))
       .limit(1);
 
     if (!row) throw new Error('Solicitud no encontrada');
-    await getAccesoPortal(session.user.id, row.clienteId);
 
     await db
       .update(solicitud)
@@ -549,8 +562,12 @@ export const uploadDocumentoSolicitud = createServerFn({ method: 'POST' })
     })
   )
   .handler(async (ctx) => {
-    const session = await getAuthSession();
-    const userId = session.user.id;
+    // La sesión va primero: es la que abre el contexto del cliente. Leer la
+    // solicitud antes la deja fuera del alcance del RLS y no devuelve nada.
+    const { userId, access } = await getClientePortalSession();
+    if (!access.puedeSubirDocumentos) {
+      throw new Error('No tenés permiso para subir documentos');
+    }
 
     const [row] = await db
       .select({
@@ -566,11 +583,6 @@ export const uploadDocumentoSolicitud = createServerFn({ method: 'POST' })
     if (!row) throw new Error('Solicitud no encontrada');
     if (row.estado !== 'abierta')
       throw new Error('La solicitud no está abierta');
-
-    const access = await getAccesoPortal(userId, row.clienteId);
-    if (!access.puedeSubirDocumentos) {
-      throw new Error('No tenés permiso para subir documentos');
-    }
 
     // `documento` cuelga del login de AFIP (los documentos nacieron del scraping),
     // así que un archivo subido por el portal se archiva bajo el login con el que
@@ -595,7 +607,21 @@ export const uploadDocumentoSolicitud = createServerFn({ method: 'POST' })
       documentId: documentoId,
       extension: r2.extensionFor(ctx.data.fileName, ctx.data.mimeType),
     });
-    await r2.upload(storageKey, buffer, ctx.data.mimeType);
+    // Que el almacenamiento falle es un problema nuestro, no del cliente: el
+    // detalle queda en el log del server y afuera sale algo accionable. Nunca
+    // se filtra el mensaje interno a la pantalla de un cliente.
+    try {
+      await r2.upload(storageKey, buffer, ctx.data.mimeType);
+    } catch (error) {
+      console.error('[portal] falló la subida a R2', {
+        solicitudId: ctx.data.solicitudId,
+        storageKey,
+        error,
+      });
+      throw new Error(
+        'No pudimos guardar el archivo. Probá de nuevo en unos minutos o escribile a tu contador.'
+      );
+    }
 
     const [doc] = await db
       .insert(documento)

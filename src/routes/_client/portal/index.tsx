@@ -382,7 +382,9 @@ function PortalDashboard() {
               to="/portal/solicitudes"
               className="flex h-[34px] items-center justify-center rounded-[10px] border border-white/[0.14] text-[12.5px] font-medium text-[var(--arca-bg)] transition-colors duration-[120ms] hover:bg-white/[0.06]"
             >
-              Pedir un comprobante
+              Ver lo que te pide el estudio
+              {solicitudesAbiertas.length > 0 &&
+                ` (${solicitudesAbiertas.length})`}
             </Link>
           </div>
           {contador?.email && (

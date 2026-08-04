@@ -54,7 +54,20 @@ export const Route = createFileRoute('/api/documents/$documentId')({
         if (!doc.storageKey)
           return new Response('Documento sin storage_key', { status: 404 });
 
-        const buffer = await r2.download(doc.storageKey);
+        let buffer: Buffer;
+        try {
+          buffer = await r2.download(doc.storageKey);
+        } catch (error) {
+          // El detalle del storage queda en el log: al navegador sólo le llega
+          // que el archivo no está disponible.
+          console.error('[documents] falló la descarga de R2', {
+            documentId: params.documentId,
+            storageKey: doc.storageKey,
+            error,
+          });
+          return new Response('No se pudo leer el archivo', { status: 502 });
+        }
+
         const disposition = new URL(request.url).searchParams.has('download')
           ? 'attachment'
           : 'inline';
