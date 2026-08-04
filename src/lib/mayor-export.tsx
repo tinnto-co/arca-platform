@@ -3068,50 +3068,106 @@ export interface LibroInventariosData {
   valuation?: 'ajustado' | 'historico';
 }
 
+/** Anchos del inventario: concepto + las cuatro columnas de importes. */
+const inv = StyleSheet.create({
+  row: { flexDirection: 'row', paddingVertical: 1.2 },
+  label: { width: '36%' },
+  c: { width: '16%', textAlign: 'right', paddingLeft: 3 },
+});
+
+/**
+ * Inventario al cierre, en el formato de cuatro columnas del balance: cada
+ * nivel de la jerarquía coloca su importe una columna más a la derecha.
+ */
 function InventarioBlock({ esp }: { esp: EspResult }) {
+  const fila = (
+    key: string,
+    label: string,
+    col: 0 | 1 | 2 | 3 | 4,
+    amount?: number,
+    opts: { indent?: number; bold?: boolean } = {}
+  ) => (
+    <View key={key} style={inv.row}>
+      <Text
+        style={[
+          inv.label,
+          { paddingLeft: (opts.indent ?? 0) * 7 },
+          opts.bold ? { fontFamily: 'Helvetica-Bold' } : {},
+        ]}
+      >
+        {label}
+      </Text>
+      {([1, 2, 3, 4] as const).map((n) => (
+        <Text
+          key={n}
+          style={[inv.c, opts.bold ? { fontFamily: 'Helvetica-Bold' } : {}]}
+        >
+          {col === n && amount !== undefined ? fmtMoney(amount) : ''}
+        </Text>
+      ))}
+    </View>
+  );
+
+  const macros = [
+    { macro: 'activo' as const, title: 'Activo', total: esp.totals.activo },
+    { macro: 'pasivo' as const, title: 'Pasivo', total: esp.totals.pasivo },
+    { macro: 'pn' as const, title: 'Patrimonio Neto', total: esp.totals.pn },
+  ];
+
   return (
     <View>
       <Text style={pk.sectionTitle}>Inventario al cierre del ejercicio</Text>
-      <View style={pk.colHead}>
-        <Text style={pk.cLabel}>Cuenta</Text>
-        <Text style={pk.cNum}>Saldo al cierre</Text>
-        <Text style={pk.cNum} />
+      <View style={[pk.colHead, inv.row]}>
+        <Text style={inv.label}>Conceptos</Text>
+        {[1, 2, 3, 4].map((n) => (
+          <Text key={n} style={inv.c}>
+            $
+          </Text>
+        ))}
       </View>
-      {(['activo', 'pasivo', 'pn'] as const).map((macro) => {
+      {macros.map(({ macro, title, total }) => {
         const secs = esp.sections.filter((s) => s.macro === macro);
-        const title =
-          macro === 'activo'
-            ? 'ACTIVO'
-            : macro === 'pasivo'
-              ? 'PASIVO'
-              : 'PATRIMONIO NETO';
         if (secs.every((s) => s.rubros.length === 0)) return null;
         return (
           <View key={macro}>
-            <View style={pk.macroRow}>
-              <Text style={pk.cLabel}>{title}</Text>
-              <Text style={pk.cNum} />
-              <Text style={pk.cNum} />
-            </View>
-            {secs.map((sec) =>
-              sec.rubros.map((r) => (
-                <View key={r.group} wrap={false}>
-                  <Text style={pk.subTitle}>{r.label}</Text>
-                  {r.accounts.map((a) => (
-                    <View key={a.accountId} style={pk.row}>
-                      <Text style={pk.cLabelIndent}>
-                        {a.code} {a.name}
-                      </Text>
-                      <Text style={pk.cNum}>{fmtMoney(a.current)}</Text>
-                      <Text style={pk.cNum} />
-                    </View>
-                  ))}
-                </View>
-              ))
-            )}
+            {fila(macro, title, 0, undefined, { bold: true })}
+            {secs.map((sec) => (
+              <View key={sec.key}>
+                {sec.label !== title
+                  ? fila(sec.key, sec.label, 0, undefined, { indent: 1 })
+                  : null}
+                {sec.rubros.map((r) => (
+                  <View key={r.group} wrap={false}>
+                    {fila(r.group, r.label, 2, r.current, { indent: 2 })}
+                    {r.accounts.map((a) =>
+                      fila(a.accountId, a.name, 1, a.current, { indent: 3 })
+                    )}
+                  </View>
+                ))}
+                {sec.rubros.length > 0 && sec.label !== title
+                  ? fila(
+                      `${sec.key}-total`,
+                      `Total ${sec.label}`,
+                      3,
+                      sec.current,
+                      { indent: 1 }
+                    )
+                  : null}
+              </View>
+            ))}
+            {fila(`${macro}-total`, `Total ${title}`, 4, total.current, {
+              bold: true,
+            })}
           </View>
         );
       })}
+      {fila(
+        'total-general',
+        'Total Pasivo + Patrimonio Neto',
+        4,
+        esp.totals.pasivoMasPn.current,
+        { bold: true }
+      )}
     </View>
   );
 }

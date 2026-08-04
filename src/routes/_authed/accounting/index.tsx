@@ -8457,10 +8457,12 @@ function EspSectionRows({
  * él: si un rubro cambia, la nota cambia sola.
  */
 /**
- * Inventario al cierre: cada cuenta con su saldo, agrupada como el balance.
+ * Inventario al cierre, en el formato de cuatro columnas del balance.
  *
- * Es la misma información que imprime el Libro Inventarios y Balances; estaba
- * solo en el PDF y no había forma de revisarla antes de generarlo.
+ * Cada nivel de la jerarquía coloca su importe una columna más a la derecha:
+ * las cuentas imputables en la primera, el rubro en la segunda, el subtotal de
+ * la sección —corriente / no corriente— en la tercera y los totales mayores en
+ * la cuarta. Es la disposición del inventario que presenta el estudio.
  */
 function InventarioView({
   clientId,
@@ -8497,9 +8499,9 @@ function InventarioView({
   }
 
   const macros = [
-    { macro: 'activo' as const, title: 'ACTIVO' },
-    { macro: 'pasivo' as const, title: 'PASIVO' },
-    { macro: 'pn' as const, title: 'PATRIMONIO NETO' },
+    { macro: 'activo' as const, title: 'Activo', total: data.totals.activo },
+    { macro: 'pasivo' as const, title: 'Pasivo', total: data.totals.pasivo },
+    { macro: 'pn' as const, title: 'Patrimonio Neto', total: data.totals.pn },
   ];
 
   return (
@@ -8520,62 +8522,81 @@ function InventarioView({
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-[12.5px]">
+        <table className="w-full text-[12.5px] min-w-[720px]">
           <thead>
             <tr className="bg-[var(--arca-surface-2)] text-[10.5px] uppercase tracking-wide text-[var(--arca-ink-3)]">
-              <th className="text-left font-semibold px-4 py-1.5">Cuenta</th>
-              <th className="text-right font-semibold px-4 py-1.5 w-48">
-                Saldo al cierre
-              </th>
+              <th className="text-left font-semibold px-4 py-1.5">Conceptos</th>
+              {[1, 2, 3, 4].map((n) => (
+                <th
+                  key={n}
+                  className="text-right font-semibold px-3 py-1.5 w-36 border-l border-[var(--arca-border)]"
+                >
+                  $
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
-            {macros.map(({ macro, title }) => {
+            {macros.map(({ macro, title, total }) => {
               const secs = data.sections.filter((s) => s.macro === macro);
               if (secs.every((s) => s.rubros.length === 0)) return null;
               return (
                 <Fragment key={macro}>
-                  <tr className="bg-[var(--arca-surface-2)]">
-                    <td
-                      className="px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--arca-ink-2)]"
-                      colSpan={2}
-                    >
-                      {title}
-                    </td>
-                  </tr>
-                  {secs.map((sec) =>
-                    sec.rubros.map((r) => (
-                      <Fragment key={r.group}>
-                        <tr className="border-t border-[var(--arca-border)]">
-                          <td className="px-4 py-1.5 pl-6 font-medium text-[var(--arca-ink)]">
-                            {r.label}
-                          </td>
-                          <td className="px-4 py-1.5 text-right tabular-nums font-medium">
-                            $ {fmtMoney(r.current)}
-                          </td>
-                        </tr>
-                        {r.accounts.map((a) => (
-                          <tr
-                            key={a.accountId}
-                            className="text-[11.5px] text-[var(--arca-ink-2)]"
-                          >
-                            <td className="px-4 py-1 pl-10">
-                              <span className="text-[var(--arca-ink-3)] tabular-nums mr-1.5">
-                                {a.code}
-                              </span>
-                              {a.name}
-                            </td>
-                            <td className="px-4 py-1 text-right tabular-nums">
-                              $ {fmtMoney(a.current)}
-                            </td>
-                          </tr>
-                        ))}
-                      </Fragment>
-                    ))
-                  )}
+                  <InventarioRow label={title} bold />
+                  {secs.map((sec) => (
+                    <Fragment key={sec.key}>
+                      {/* En el PN la sección se llama igual que el macro: no
+                          hace falta repetirlo. */}
+                      {sec.label !== title && (
+                        <InventarioRow label={sec.label} indent={1} />
+                      )}
+                      {sec.rubros.map((r) => (
+                        <Fragment key={r.group}>
+                          <InventarioRow
+                            label={r.label}
+                            indent={2}
+                            col={2}
+                            amount={r.current}
+                          />
+                          {r.accounts.map((a) => (
+                            <InventarioRow
+                              key={a.accountId}
+                              label={a.name}
+                              code={a.code}
+                              indent={3}
+                              col={1}
+                              amount={a.current}
+                            />
+                          ))}
+                        </Fragment>
+                      ))}
+                      {/* Una sección sin rubros no aporta un subtotal en cero. */}
+                      {sec.rubros.length > 0 && sec.label !== title && (
+                        <InventarioRow
+                          label={`Total ${sec.label}`}
+                          indent={1}
+                          col={3}
+                          amount={sec.current}
+                        />
+                      )}
+                    </Fragment>
+                  ))}
+                  <InventarioRow
+                    label={`Total ${title}`}
+                    bold
+                    col={4}
+                    amount={total.current}
+                  />
                 </Fragment>
               );
             })}
+            <InventarioRow
+              label="Total Pasivo + Patrimonio Neto"
+              bold
+              col={4}
+              amount={data.totals.pasivoMasPn.current}
+              topBorder
+            />
           </tbody>
         </table>
       </div>
@@ -8584,6 +8605,56 @@ function InventarioView({
         Es el detalle que sale en el Libro Inventarios y Balances, en Exportar.
       </div>
     </ArcaCard>
+  );
+}
+
+/** Una fila del inventario: el importe cae en la columna de su nivel. */
+function InventarioRow({
+  label,
+  code,
+  amount,
+  col,
+  indent = 0,
+  bold = false,
+  topBorder = false,
+}: {
+  label: string;
+  code?: string;
+  amount?: number;
+  /** 1 = cuenta, 2 = rubro, 3 = sección, 4 = total mayor. */
+  col?: 1 | 2 | 3 | 4;
+  indent?: 0 | 1 | 2 | 3;
+  bold?: boolean;
+  topBorder?: boolean;
+}) {
+  const pad = ['pl-4', 'pl-7', 'pl-10', 'pl-14'][indent];
+  return (
+    <tr
+      className={`border-t border-[var(--arca-border)] ${
+        topBorder ? 'border-t-2 border-t-[var(--arca-ink-2)]' : ''
+      }`}
+    >
+      <td
+        className={`${pad} py-1 text-[var(--arca-ink)]`}
+        style={bold ? { fontWeight: 600 } : undefined}
+      >
+        {code && (
+          <span className="text-[var(--arca-ink-3)] tabular-nums mr-1.5 text-[11px]">
+            {code}
+          </span>
+        )}
+        {label}
+      </td>
+      {([1, 2, 3, 4] as const).map((n) => (
+        <td
+          key={n}
+          className="px-3 py-1 text-right tabular-nums border-l border-[var(--arca-border)] text-[var(--arca-ink-2)]"
+          style={bold ? { fontWeight: 600 } : undefined}
+        >
+          {col === n && amount !== undefined ? fmtMoney(amount) : ''}
+        </td>
+      ))}
+    </tr>
   );
 }
 
