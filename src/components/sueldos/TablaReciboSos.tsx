@@ -43,8 +43,10 @@ export interface ConceptoImportado {
   importeMaximo: string | null;
   nombre: string | null;
   codigoAfip: string | null;
-  /** Base de cálculo SOS (ej. 'sueldo', 'sub1_9'). Solo en plantilla manual. */
-  baseColumna?: string | null;
+  /** Modo de cálculo del catálogo (ej. 'pct_sobre_base', 'sueldo_basico'). Solo en plantilla manual. */
+  modo?: string | null;
+  /** `base_calculo.codigo` cuando modo = 'pct_sobre_base' (ej. 'total_remunerativo'). */
+  baseCodigo?: string | null;
   /** Divisor de cantidad del concepto (ej. 30 para sueldo diario). Solo en plantilla manual. */
   divCantidad?: number | null;
   /** Si divide por horas normales mensuales. Solo en plantilla manual. */
@@ -92,7 +94,7 @@ export type EditsMap = Record<
   }
 >;
 
-const EMPTY_EDIT_ROW: EditsMap[string] = {
+export const EMPTY_EDIT_ROW: EditsMap[string] = {
   monto: '',
   montoFijo: '',
   cantidad: '',
@@ -117,6 +119,46 @@ const SUB_BASES = new Set([
 ]);
 
 /**
+ * La grilla replica el formulario de SOS y calcula con sus claves internas
+ * (subtotales por rango). El catálogo nuevo habla en (modo, base_calculo.codigo);
+ * este mapeo traduce en el borde, sin tocar el cascade.
+ */
+const BASE_CODIGO_A_SUB: Record<string, string> = {
+  sueldo_y_adicionales: 'sub1_9',
+  remunerativo_habitual: 'sub1_19',
+  total_remunerativo: 'sub1_199',
+  total_no_remunerativo: 'sub411_469',
+  bruto: 'sub1_199_plus_411_469',
+  base_obra_social: 'os_base',
+  no_remunerativo_con_os: 'os_norem_base',
+};
+
+/** Clave de cálculo interna de la grilla derivada del modo del catálogo. */
+export function baseColumnaDe(c: ConceptoImportado): string | null {
+  switch (c.modo) {
+    case 'pct_sobre_base':
+      return BASE_CODIGO_A_SUB[c.baseCodigo ?? ''] ?? null;
+    case 'sueldo_basico':
+      return 'sueldo';
+    case 'valor_hora':
+      return 'valHora';
+    case 'sac':
+      return 'sac_normal';
+    case 'sac_proporcional':
+      return 'sac_proporcional';
+    case 'dia_vacaciones':
+      return 'bruto_anterior_div25';
+    case 'promedio_anual_concepto':
+      return 'concepto_401_div12';
+    case 'pct_sobre_concepto':
+    case 'importe_manual':
+      return 'importe_fijo';
+    default:
+      return null;
+  }
+}
+
+/**
  * Devuelve true si el row tiene una base de fórmula válida y explícita.
  *
  * Problema con datos importados: cuando SOS no tiene un campo importe_N explícito
@@ -127,7 +169,7 @@ const SUB_BASES = new Set([
  * Se detecta ese fallback cuando: importe ≈ monto Y el multiplicador (cantidad × %/100) ≠ 1.
  * Si el multiplicador es ≈ 1, importe ES el valor unitario y la fórmula es correcta.
  */
-function canApplyFormula(row: EditsMap[string]): boolean {
+export function canApplyFormula(row: EditsMap[string]): boolean {
   const imp = parseDecimalSos(row.importe);
   const impNro = parseDecimalSos(row.importeConceptoNumero);
   const hasCantidad = (row.cantidad ?? '').trim() !== '';
@@ -178,7 +220,7 @@ const MAX_PCT_WARN = 500;
 // Subtotal cascade (standalone — can be called from setField and effects)
 // ---------------------------------------------------------------------------
 
-function applySubtotalCascade(
+export function applySubtotalCascade(
   edits: EditsMap,
   allConcepts: ConceptoImportado[],
   activeCodigos?: Set<string>,
@@ -218,6 +260,7 @@ function applySubtotalCascade(
     if (activeCodigos && !activeCodigos.has(c.codigo)) continue;
 
     const row = next[c.codigo] ?? EMPTY_EDIT_ROW;
+    const bc = baseColumnaDe(c);
     let effectiveMonto = toNum(row.monto);
 
     // Override manual: si el usuario pisó el resultado, respetar sin recalcular.
@@ -231,7 +274,6 @@ function applySubtotalCascade(
       // Acumular subtotales con el valor override y continuar al siguiente concepto
     } else {
 
-    const bc = c.baseColumna;
     if (bc != null && SUB_BASES.has(bc)) {
       const hasPct = (row.porcentaje ?? '').trim() !== '';
       const noUsaPct = c.tienePct === false;
@@ -389,17 +431,17 @@ function applySubtotalCascade(
       if (n === 1) {
         sueldoBase_os = osBase > 0 ? osBase : effectiveMonto;
         osContrib = sueldoBase_os;
-      } else if (c.baseColumna === 'sueldo' && sueldoBase_os > 0 && sueldoBase_os !== sueldoBase) {
+      } else if (bc === 'sueldo' && sueldoBase_os > 0 && sueldoBase_os !== sueldoBase) {
         // Cascadea del básico (ej: antigüedad): reescalar con sueldoBase_os.
         const osPct = (row.porcentaje ?? '').trim() !== '' ? (parseDecimalSos(row.porcentaje) ?? 0) : 0;
         const osCant = !c.tieneCantidad && (row.cantidad ?? '') === '' ? 1 : (parseDecimalSos(row.cantidad) ?? 1);
         if (osPct > 0) osContrib = Math.round(sueldoBase_os * (osPct / 100) * osCant * 100) / 100;
-      } else if (c.baseColumna != null && SUB_BASES.has(c.baseColumna)) {
+      } else if (bc != null && SUB_BASES.has(bc)) {
         // Cascadea desde un sub-rango (ej: presentismo usa sub1_9): usar la versión OS.
         // Solo si existe el paralelo _os para ese sub-rango (sub1_9_os, sub1_19_os, etc.).
-        const osSubName = c.baseColumna + '_os';
+        const osSubName = bc + '_os';
         const osSubVal = subTotals[osSubName]; // undefined si no tiene versión OS
-        const realSubVal = subTotals[c.baseColumna] ?? 0;
+        const realSubVal = subTotals[bc] ?? 0;
         if (osSubVal !== undefined && osSubVal !== realSubVal && realSubVal > 0) {
           const osPct2 = (row.porcentaje ?? '').trim() !== '' ? (parseDecimalSos(row.porcentaje) ?? 0) : (c.tienePct === false ? 100 : 0);
           const osCant2 = !c.tieneCantidad && (row.cantidad ?? '') === '' ? 1 : (parseDecimalSos(row.cantidad) ?? 1);
@@ -555,7 +597,7 @@ function ResultOverrideCell({
     <div className="flex items-center justify-end gap-0.5 group/result">
       {isOverridden ? (
         <>
-          <span className="text-amber-700 tabular-nums">{fmtArs(num)}</span>
+          <span className="text-amber-700 tabular-nums whitespace-nowrap">{fmtArs(num)}</span>
           <button
             type="button"
             onClick={() => onOverride('')}
@@ -567,7 +609,7 @@ function ResultOverrideCell({
         </>
       ) : (
         <>
-          <span className="tabular-nums">{num !== 0 ? fmtArsSign(num) : '—'}</span>
+          <span className="tabular-nums whitespace-nowrap">{num !== 0 ? fmtArsSign(num) : '—'}</span>
           <button
             type="button"
             onClick={startEdit}
@@ -836,7 +878,7 @@ function TableSection({
                     );
                   }
                   // Para SAC (41/42): siempre mostrar Importe (contiene el monto calculado)
-                  const esSac = c.baseColumna === 'sac_normal' || c.baseColumna === 'sac_proporcional';
+                  const esSac = c.modo === 'sac' || c.modo === 'sac_proporcional';
                   return (c.tieneImporte !== false || esSac)
                     ? <EditableCell value={edit?.importe ?? ''} onChange={(v) => setField(c.codigo, 'importe', v)} />
                     : DASH;
@@ -1032,7 +1074,7 @@ export function TablaReciboSos({
     const b = basico ?? 0;
     if (b > 0) {
       for (const c of conceptos) {
-        const bc = c.baseColumna;
+        const bc = baseColumnaDe(c);
         if (bc === 'sueldo' || bc === 'sueldoLegajo') {
           map[c.codigo] = b / Math.max(1, c.divCantidad ?? 1);
         } else if (bc === 'valHora') {
@@ -1162,7 +1204,7 @@ export function TablaReciboSos({
         const hasExplicitPorcentaje = (current.porcentaje ?? '').trim() !== '';
         if (!hasExplicitPorcentaje) continue;
 
-        const bc = c.baseColumna;
+        const bc = baseColumnaDe(c);
         let implicitBase: number | null = null;
         if (bc === 'sueldo' || bc === 'sueldoLegajo') {
           implicitBase = basico / Math.max(1, c.divCantidad ?? 1);
@@ -1223,8 +1265,8 @@ export function TablaReciboSos({
 
         // Determinar si el concepto editado usa una base de subtotal (dinámica)
         const editedConcepto = conceptosRef.current.find((c) => c.codigo === editedCodigo);
-        const isSubBased = editedConcepto?.baseColumna != null &&
-          SUB_BASES.has(editedConcepto.baseColumna);
+        const editedBc = editedConcepto ? baseColumnaDe(editedConcepto) : null;
+        const isSubBased = editedBc != null && SUB_BASES.has(editedBc);
 
         const hasExplicitPorcentaje = (updated.porcentaje ?? '').trim() !== '';
         // Para conceptos sin campo %, usar pct=100 implícitamente (fórmula: cantidad × importe)
@@ -1494,22 +1536,22 @@ export function TablaReciboSos({
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-md border text-[10px]">
+      <div className="rounded-md border text-[10px]">
         <table className="w-full border-collapse table-fixed">
           <thead>
-            <tr className="bg-slate-100 text-slate-600 border-b text-[10px] divide-x divide-slate-300">
-              <th className="px-1 py-1.5 text-center w-[4%]">#</th>
-              <th className="px-1 py-1.5 text-left w-[18%]">Concepto</th>
-              <th className="px-1 py-1.5 text-right w-[7%] !border-l-2 !border-l-slate-400">Cantidad</th>
-              <th className="px-1 py-1.5 text-right w-[5%]">%</th>
-              <th className="px-1 py-1.5 text-right w-[8%]">Imp.&nbsp;N</th>
-              <th className="px-1 py-1.5 text-right w-[8%]">Importe</th>
-              <th className="px-1 py-1.5 text-right w-[7%]">Imp.&nbsp;mín.</th>
-              <th className="px-1 py-1.5 text-right w-[7%]">Imp.&nbsp;máx.</th>
-              <th className="px-1 py-1.5 text-right w-[9%] !border-l-2 !border-l-slate-600">Haberes</th>
-              <th className="px-1 py-1.5 text-right w-[9%]">Desc.</th>
-              <th className="px-1 py-1.5 text-right w-[9%]">Reten.</th>
-              <th className="px-1 py-1.5 text-right w-[9%]">No&nbsp;Rem.</th>
+            <tr className="text-slate-600 text-[10px] divide-x divide-slate-300">
+              <th className="sticky top-0 z-20 bg-slate-100 border-b shadow-sm px-1 py-1.5 text-center w-[4%]">#</th>
+              <th className="sticky top-0 z-20 bg-slate-100 border-b shadow-sm px-1 py-1.5 text-left w-[16%]">Concepto</th>
+              <th className="sticky top-0 z-20 bg-slate-100 border-b shadow-sm px-1 py-1.5 text-right w-[6%] !border-l-2 !border-l-slate-400">Cantidad</th>
+              <th className="sticky top-0 z-20 bg-slate-100 border-b shadow-sm px-1 py-1.5 text-right w-[5%]">%</th>
+              <th className="sticky top-0 z-20 bg-slate-100 border-b shadow-sm px-1 py-1.5 text-right w-[7%]">Imp.&nbsp;N</th>
+              <th className="sticky top-0 z-20 bg-slate-100 border-b shadow-sm px-1 py-1.5 text-right w-[8%]">Importe</th>
+              <th className="sticky top-0 z-20 bg-slate-100 border-b shadow-sm px-1 py-1.5 text-right w-[6%]">Imp.&nbsp;mín.</th>
+              <th className="sticky top-0 z-20 bg-slate-100 border-b shadow-sm px-1 py-1.5 text-right w-[6%]">Imp.&nbsp;máx.</th>
+              <th className="sticky top-0 z-20 bg-slate-100 border-b shadow-sm px-1 py-1.5 text-right w-[10.5%] !border-l-2 !border-l-slate-600">Haberes</th>
+              <th className="sticky top-0 z-20 bg-slate-100 border-b shadow-sm px-1 py-1.5 text-right w-[10.5%]">Desc.</th>
+              <th className="sticky top-0 z-20 bg-slate-100 border-b shadow-sm px-1 py-1.5 text-right w-[10.5%]">Reten.</th>
+              <th className="sticky top-0 z-20 bg-slate-100 border-b shadow-sm px-1 py-1.5 text-right w-[10.5%]">No&nbsp;Rem.</th>
             </tr>
           </thead>
           <tbody>

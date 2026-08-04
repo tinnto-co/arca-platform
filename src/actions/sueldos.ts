@@ -28,6 +28,8 @@ import {
   parametroPeriodo,
   localidad,
   lsdPresentacion,
+  baseCalculo,
+  baseCalculoConcepto,
 } from '@/drizzle/schema';
 import {
   getSessionWithOrg,
@@ -286,14 +288,10 @@ function extractCctCodigo(raw: string | null | undefined): string | null {
   return `${izquierda}/${derecha}`;
 }
 
-import {
-  evaluatePayrollFormulaStrict,
-  roundMoney,
-  type PayrollFormulaContext,
-} from '../lib/payroll-formula';
+import { roundMoney } from '../lib/payroll-formula';
 import { puedeLiquidarPeriodo } from '../lib/payroll-period-rules';
 import * as r2 from '@/lib/r2';
-import { differenceInYears, parseISO } from 'date-fns';
+import { parseISO } from 'date-fns';
 
 // ---------- Convenios ----------
 
@@ -604,7 +602,7 @@ export const listConceptosByPerfil = createServerFn({ method: 'GET' })
         contribucionesLrt: clienteConcepto.contribucionesLrt,
         aportesDiferenciales: clienteConcepto.aportesDiferenciales,
         aportesEspeciales: clienteConcepto.aportesEspeciales,
-        baseColumna: concepto.baseColumna,
+        modo: concepto.modo,
         divCantidad: concepto.divCantidad,
         divHsNorm: concepto.divHsNorm,
         tieneCantidad: concepto.usaCantidad,
@@ -626,8 +624,12 @@ export const listTodosConceptosSos = createServerFn({ method: 'GET' })
   .handler(async () => {
     await getSessionWithOrg();
     return db
-      .select()
+      .select({
+        ...getTableColumns(concepto),
+        baseCodigo: baseCalculo.codigo,
+      })
       .from(concepto)
+      .leftJoin(baseCalculo, eq(concepto.baseCalculoId, baseCalculo.id))
       .where(and(
         gte(concepto.numero, 1),
         lte(concepto.numero, 699)
@@ -942,7 +944,7 @@ async function obtenerCabeceraPagoPlantilla(
     eq(recibo.empleadoId, empleadoId),
     sql`(
       trim(coalesce(${recibo.lugarPago}, '')) <> ''
-      or trim(coalesce(${recibo.formaPago}, '')) <> ''
+      or trim(coalesce(${recibo.formaPago}::text, '')) <> ''
       or trim(coalesce(${recibo.cbu}, '')) <> ''
       or trim(coalesce(${recibo.banco}, '')) <> ''
     )`,
@@ -1354,8 +1356,9 @@ export const listConceptos = createServerFn({ method: 'GET' })
         codigo: clienteConcepto.codigoPropio,
         nombre: clienteConcepto.nombrePropio,
         tipo: clienteConcepto.tipo,
-        baseCalculo: clienteConcepto.baseCalculo,
-        formula: clienteConcepto.formula,
+        modo: clienteConcepto.modo,
+        baseCalculoId: clienteConcepto.baseCalculoId,
+        importeFijo: clienteConcepto.importeFijo,
         orden: clienteConcepto.orden,
         activo: clienteConcepto.habilitado,
         createdAt: clienteConcepto.createdAt,
@@ -1385,20 +1388,23 @@ export const createConcepto = createServerFn({ method: 'POST' })
       numeroSos: z.number().int(),
       codigo: z.string().min(1),
       nombre: z.string().min(1),
-      tipo: z.enum(['remunerativo', 'no_remunerativo', 'descuento']),
-      baseCalculo: z
+      tipo: z.enum(['remunerativo', 'no_remunerativo', 'descuento', 'retencion']).optional(),
+      // Overrides del modo del catálogo. Null/omitido = rigen las reglas del concepto global.
+      modo: z
         .enum([
-          'basico',
-          'bruto',
-          'total_remunerativo',
-          'total_no_remunerativo',
-          'total_descuentos',
-          'neto',
-          'fijo',
-          'custom',
+          'importe_manual',
+          'pct_sobre_base',
+          'pct_sobre_concepto',
+          'sueldo_basico',
+          'valor_hora',
+          'sac',
+          'sac_proporcional',
+          'dia_vacaciones',
+          'promedio_anual_concepto',
         ])
         .optional(),
-      formula: z.string().min(1),
+      baseCalculoId: z.string().uuid().optional(),
+      importeFijo: z.number().optional(),
       orden: z.number().optional(),
     })
   )
@@ -1411,9 +1417,10 @@ export const createConcepto = createServerFn({ method: 'POST' })
     const campos = {
       codigoPropio: ctx.data.codigo,
       nombrePropio: ctx.data.nombre,
-      tipo: ctx.data.tipo,
-      baseCalculo: ctx.data.baseCalculo ?? 'basico',
-      formula: ctx.data.formula,
+      tipo: ctx.data.tipo ?? null,
+      modo: ctx.data.modo ?? null,
+      baseCalculoId: ctx.data.baseCalculoId ?? null,
+      importeFijo: ctx.data.importeFijo != null ? String(ctx.data.importeFijo) : null,
       orden: ctx.data.orden ?? 0,
       habilitado: true,
     };
@@ -1435,20 +1442,23 @@ export const updateConcepto = createServerFn({ method: 'POST' })
       clientId: z.string().uuid(),
       codigo: z.string().min(1).optional(),
       nombre: z.string().min(1).optional(),
-      tipo: z.enum(['remunerativo', 'no_remunerativo', 'descuento']).optional(),
-      baseCalculo: z
+      tipo: z.enum(['remunerativo', 'no_remunerativo', 'descuento', 'retencion']).nullable().optional(),
+      modo: z
         .enum([
-          'basico',
-          'bruto',
-          'total_remunerativo',
-          'total_no_remunerativo',
-          'total_descuentos',
-          'neto',
-          'fijo',
-          'custom',
+          'importe_manual',
+          'pct_sobre_base',
+          'pct_sobre_concepto',
+          'sueldo_basico',
+          'valor_hora',
+          'sac',
+          'sac_proporcional',
+          'dia_vacaciones',
+          'promedio_anual_concepto',
         ])
+        .nullable()
         .optional(),
-      formula: z.string().min(1).optional(),
+      baseCalculoId: z.string().uuid().nullable().optional(),
+      importeFijo: z.number().nullable().optional(),
       orden: z.number().optional(),
       activo: z.boolean().optional(),
     })
@@ -1465,8 +1475,11 @@ export const updateConcepto = createServerFn({ method: 'POST' })
         ...(d.codigo !== undefined ? { codigoPropio: d.codigo } : {}),
         ...(d.nombre !== undefined ? { nombrePropio: d.nombre } : {}),
         ...(d.tipo !== undefined ? { tipo: d.tipo } : {}),
-        ...(d.baseCalculo !== undefined ? { baseCalculo: d.baseCalculo } : {}),
-        ...(d.formula !== undefined ? { formula: d.formula } : {}),
+        ...(d.modo !== undefined ? { modo: d.modo } : {}),
+        ...(d.baseCalculoId !== undefined ? { baseCalculoId: d.baseCalculoId } : {}),
+        ...(d.importeFijo !== undefined
+          ? { importeFijo: d.importeFijo != null ? String(d.importeFijo) : null }
+          : {}),
         ...(d.orden !== undefined ? { orden: d.orden } : {}),
         ...(d.activo !== undefined ? { habilitado: d.activo } : {}),
       })
@@ -2107,6 +2120,13 @@ export const listConceptosPlantillaManualSos = createServerFn({ method: 'GET' })
       }
     }
 
+    // codigo de la base de cálculo (p.ej. 'sueldo_y_adicionales') para que la UI
+    // pueda mostrar/replicar el cálculo sin conocer los uuid.
+    const bases = await db
+      .select({ id: baseCalculo.id, codigo: baseCalculo.codigo })
+      .from(baseCalculo);
+    const baseCodigoPorId = new Map(bases.map((b) => [b.id, b.codigo]));
+
     return rows.map((r) => {
       const codigo = String(r.numero);
       const ref = plantillaMap.get(codigo);
@@ -2122,7 +2142,11 @@ export const listConceptosPlantillaManualSos = createServerFn({ method: 'GET' })
         importeMaximo: ref?.importeMaximo ?? null,
         nombre: r.nombre,
         codigoAfip: r.codigoAfip,
-        baseColumna: r.baseColumna ?? null,
+        modo: r.modo,
+        baseCodigo:
+          r.baseCalculoId != null
+            ? (baseCodigoPorId.get(r.baseCalculoId) ?? null)
+            : null,
         divCantidad: r.divCantidad != null ? Number(r.divCantidad) : null,
         divHsNorm: r.divHsNorm != null ? r.divHsNorm > 0 : null,
         tieneCantidad: r.usaCantidad ?? null,
@@ -3154,11 +3178,12 @@ type DetalleResult = {
   conceptoNombre: string;
   conceptoCodigo: string;
   conceptoTipo: 'remunerativo' | 'no_remunerativo' | 'descuento' | 'retencion';
-  conceptoFormula: string;
+  /** Cómo se determinó el importe (modo del catálogo o del override del cliente). */
+  modo: (typeof concepto.modo.enumValues)[number];
   baseUsada?: number;
   pctUsado?: number;
   calcError?: string;
-  montoSource: 'formula' | 'override' | 'sos_override';
+  montoSource: 'calculo' | 'importe_fijo' | 'override' | 'sos_override';
 };
 
 /** Lógica interna: calcula y persiste una liquidación (empleadoId + periodo, clientId ya autorizado) */
@@ -3205,7 +3230,6 @@ async function calcularUnaLiquidacion(
     .limit(1);
   if (!emp) throw new Error('Empleado no encontrado');
 
-  const periodoDate = parseISO(periodoADate(periodo));
   const convenioIdResuelto = await resolveConvenioIdParaEmpleado(emp, emp.clientId);
   const categoriaIdResuelta = await resolveCategoriaIdParaBasico({
     ...emp,
@@ -3235,14 +3259,11 @@ async function calcularUnaLiquidacion(
   }
 
   const basico = await getBasicoVigenteInternal(categoriaIdResuelta, periodo);
-  const añosAntiguedad = differenceInYears(
-    periodoDate,
-    emp.fechaAlta ? parseISO(emp.fechaAlta) : periodoDate
-  );
 
   // El catálogo de conceptos es global (`concepto`); lo que el cliente configura
-  // (orden, fórmula, mínimos, nombre propio) vive en `cliente_concepto`. Las
+  // (orden, importe fijo, mínimos, nombre propio) vive en `cliente_concepto`. Las
   // líneas del recibo apuntan al catálogo, así que `id` acá es el del concepto.
+  // El modo/base del cliente pisa al del catálogo solo si no es null.
   const conceptos = await db
     .select({
       id: concepto.id,
@@ -3250,12 +3271,14 @@ async function calcularUnaLiquidacion(
       nombre: sql<string>`coalesce(${clienteConcepto.nombrePropio}, ${concepto.nombre})`,
       codigo: sql<string>`coalesce(${clienteConcepto.codigoPropio}, ${concepto.numero}::text)`,
       tipo: sql<
-        (typeof concepto.tipo.enumValues)[number] | null
+        (typeof concepto.tipo.enumValues)[number]
       >`coalesce(${clienteConcepto.tipo}, ${concepto.tipo})`,
-      baseColumna: sql<
-        (typeof concepto.baseColumna.enumValues)[number]
-      >`coalesce(${clienteConcepto.baseColumna}, ${concepto.baseColumna})`,
-      formula: clienteConcepto.formula,
+      modo: sql<
+        (typeof concepto.modo.enumValues)[number]
+      >`coalesce(${clienteConcepto.modo}, ${concepto.modo})`,
+      baseCalculoId: sql<string | null>`coalesce(${clienteConcepto.baseCalculoId}, ${concepto.baseCalculoId})`,
+      importeFijo: clienteConcepto.importeFijo,
+      pctFijo: concepto.pctFijo,
       orden: clienteConcepto.orden,
       activo: clienteConcepto.habilitado,
       impMin: clienteConcepto.importeMin,
@@ -3265,6 +3288,20 @@ async function calcularUnaLiquidacion(
     .innerJoin(concepto, eq(clienteConcepto.conceptoId, concepto.id))
     .where(eq(clienteConcepto.clienteId, clientId))
     .orderBy(clienteConcepto.orden, concepto.numero);
+
+  // Qué conceptos integran cada base de cálculo (membership explícita, ex rangos SOS).
+  const membershipRows = await db
+    .select({
+      baseId: baseCalculoConcepto.baseCalculoId,
+      conceptoId: baseCalculoConcepto.conceptoId,
+    })
+    .from(baseCalculoConcepto);
+  const basesDelConcepto = new Map<string, string[]>();
+  for (const m of membershipRows) {
+    const arr = basesDelConcepto.get(m.conceptoId);
+    if (arr) arr.push(m.baseId);
+    else basesDelConcepto.set(m.conceptoId, [m.baseId]);
+  }
 
   // Leer inputs existentes del recibo (si ya fue calculado antes)
   type InputRow = {
@@ -3324,19 +3361,75 @@ async function calcularUnaLiquidacion(
   let totalDescuentos = 0;
   let totalRetenciones = 0;
 
-  const context: PayrollFormulaContext = {
-    basico,
-    antiguedad: añosAntiguedad,
-    bruto: basico,
-    totalRemunerativo: 0,
-    totalNoRemunerativo: 0,
-    totalDescuentos: 0,
-    neto: 0,
-    horasExtra: 0,
-    presentismo: 0,
-    comisiones: 0,
-    bonos: 0,
-  };
+  // Suma corriente de cada base de cálculo: cuando una línea se liquida, su
+  // monto se agrega a todas las bases que ese concepto integra (membership
+  // explícita en base_calculo_concepto). Un pct_sobre_base toma la suma
+  // acumulada HASTA su posición en el orden del recibo — por eso el orden de
+  // los conceptos importa igual que en el recibo impreso.
+  const sumaPorBase = new Map<string, number>();
+  // Monto liquidado por número de concepto, para pct_sobre_concepto / promedio_anual_concepto.
+  const montoPorNumero = new Map<number, number>();
+
+  // Datos históricos que piden los modos especiales (solo se consultan si hace falta).
+  const modosActivos = new Set(
+    conceptos.filter((c) => c.activo).map((c) => c.modo)
+  );
+  const [anioNum, mesNum] = periodo.split('-').map(Number);
+  const inicioSemestre = mesNum <= 6 ? `${anioNum}-01` : `${anioNum}-07`;
+
+  // SAC: mejor remuneración mensual del semestre (art. 121/122 LCT).
+  let mejorRemSemestre = 0;
+  if (modosActivos.has('sac') || modosActivos.has('sac_proporcional')) {
+    const [row] = await db
+      .select({ max: sql<string | null>`max(${recibo.haberes})` })
+      .from(recibo)
+      .where(
+        and(
+          eq(recibo.empleadoId, empleadoId),
+          gte(recibo.periodo, periodoADate(inicioSemestre)),
+          lte(recibo.periodo, periodoADate(periodo))
+        )
+      );
+    mejorRemSemestre = row?.max != null ? Number(row.max) : 0;
+  }
+
+  // SAC proporcional: meses trabajados dentro del semestre (desde el alta si es posterior al inicio).
+  let mesesSemestre = 6;
+  if (modosActivos.has('sac_proporcional')) {
+    const mesInicioSem = mesNum <= 6 ? 1 : 7;
+    let desde = mesInicioSem;
+    if (emp.fechaAlta) {
+      const altaAnio = Number(emp.fechaAlta.slice(0, 4));
+      const altaMes = Number(emp.fechaAlta.slice(5, 7));
+      if (altaAnio === anioNum && altaMes > mesInicioSem) desde = altaMes;
+      if (altaAnio > anioNum) desde = mesNum + 1; // alta futura: 0 meses
+    }
+    mesesSemestre = Math.min(6, Math.max(0, mesNum - desde + 1));
+  }
+
+  // Día de vacaciones: bruto del mes anterior / 25 (art. 155 LCT).
+  let brutoMesAnterior = 0;
+  if (modosActivos.has('dia_vacaciones')) {
+    const periodoAnterior =
+      mesNum === 1
+        ? `${anioNum - 1}-12`
+        : `${anioNum}-${String(mesNum - 1).padStart(2, '0')}`;
+    const [row] = await db
+      .select({ haberes: recibo.haberes, noRem: recibo.noRemunerativo })
+      .from(recibo)
+      .where(
+        and(
+          eq(recibo.empleadoId, empleadoId),
+          eq(recibo.periodo, periodoADate(periodoAnterior)),
+          eq(recibo.tipo, 'mensual')
+        )
+      )
+      .orderBy(desc(recibo.neto))
+      .limit(1);
+    brutoMesAnterior = row
+      ? Number(row.haberes ?? 0) + Number(row.noRem ?? 0)
+      : 0;
+  }
 
   const conceptosOrdenados = [...conceptos].sort(
     (a, b) => (a.orden ?? 0) - (b.orden ?? 0)
@@ -3378,32 +3471,90 @@ async function calcularUnaLiquidacion(
           ? Number(con.impMax)
           : null;
 
+    // % de la línea: el ingresado en el recibo pisa al fijo del catálogo.
     const porcentaje =
-      input?.porcentaje != null ? Number(input.porcentaje) : 0;
-    context.valor = importeConceptoN;
-    context.cantidad = cantidad ?? 0;
-    context.porcentaje = porcentaje;
+      input?.porcentaje != null
+        ? Number(input.porcentaje)
+        : con.pctFijo != null
+          ? Number(con.pctFijo)
+          : 0;
 
     let monto = 0;
 
     let calcError: string | undefined;
-    let montoSource: DetalleResult['montoSource'] = 'formula';
+    let montoSource: DetalleResult['montoSource'] = 'calculo';
     if (input?.importe != null) {
       monto = Number(input.importe);
       montoSource = 'override';
-    } else if (con.baseColumna === 'valHora') {
-      // Concepto 2 (Horas Normales): monto = valor_hora × horas_ingresadas
-      // basico en el contexto = montoBasico de la escala (valor/hora)
-      monto = roundMoney(basico * (cantidad ?? 0));
-      montoSource = 'formula';
-      // Actualizar context.basico al total liquidado para que las fórmulas
-      // de conceptos posteriores (Antigüedad, Presentismo) usen la base correcta.
-      if (monto > 0) context.basico = monto;
     } else {
-      const evalResult = evaluatePayrollFormulaStrict(con.formula ?? '0', context);
-      monto = evalResult.value;
-      calcError = evalResult.ok ? undefined : evalResult.error;
-      monto = roundMoney(monto);
+      switch (con.modo) {
+        case 'importe_manual':
+          // Sin importe en la línea ni default del cliente, la línea no aparece.
+          if (con.importeFijo != null) {
+            monto = roundMoney(Number(con.importeFijo));
+            montoSource = 'importe_fijo';
+          }
+          break;
+        case 'sueldo_basico':
+          // Concepto 1: el sueldo mensual de la escala/legajo.
+          monto = roundMoney(basico);
+          break;
+        case 'valor_hora':
+          // Concepto 2 (Horas Normales): la escala de la categoría es valor/hora.
+          monto = roundMoney(basico * (cantidad ?? 0));
+          break;
+        case 'pct_sobre_base': {
+          if (con.baseCalculoId == null) {
+            calcError = `Concepto ${con.numeroSos}: pct_sobre_base sin base de cálculo asignada`;
+            break;
+          }
+          // La cantidad multiplica cuando la línea la trae (ej. antigüedad:
+          // base × 1% × años). Sin cantidad, multiplicador 1.
+          const baseMonto = sumaPorBase.get(con.baseCalculoId) ?? 0;
+          monto = roundMoney((porcentaje / 100) * baseMonto * (cantidad ?? 1));
+          break;
+        }
+        case 'pct_sobre_concepto': {
+          if (!importeConceptoN) {
+            calcError = `Concepto ${con.numeroSos}: falta el concepto de referencia`;
+            break;
+          }
+          const refMonto = montoPorNumero.get(importeConceptoN) ?? 0;
+          monto = roundMoney((porcentaje / 100) * refMonto * (cantidad ?? 1));
+          break;
+        }
+        case 'sac': {
+          // Mejor remuneración mensual del semestre / 2 (art. 121 LCT).
+          const candidato = Math.max(mejorRemSemestre, totalRemunerativo);
+          monto = roundMoney(candidato / 2);
+          break;
+        }
+        case 'sac_proporcional': {
+          const candidato = Math.max(mejorRemSemestre, totalRemunerativo);
+          monto = roundMoney((candidato / 2) * (mesesSemestre / 6));
+          break;
+        }
+        case 'dia_vacaciones': {
+          // Bruto del mes anterior / 25 × días (art. 155 LCT). Sin recibo
+          // anterior, usa lo remunerativo liquidado hasta acá en este recibo.
+          const base =
+            brutoMesAnterior > 0
+              ? brutoMesAnterior
+              : totalRemunerativo + totalNoRemunerativo;
+          monto = roundMoney((base / 25) * (cantidad ?? 0));
+          break;
+        }
+        case 'promedio_anual_concepto': {
+          // Línea de referencia / 12 (ex concepto_401_div12: SAC s/vacaciones no gozadas).
+          if (!importeConceptoN) {
+            calcError = `Concepto ${con.numeroSos}: falta el concepto de referencia`;
+            break;
+          }
+          const refMonto = montoPorNumero.get(importeConceptoN) ?? 0;
+          monto = roundMoney(refMonto / 12);
+          break;
+        }
+      }
     }
 
     if (
@@ -3428,38 +3579,38 @@ async function calcularUnaLiquidacion(
       conceptoId: con.id,
       monto,
       cantidad,
-      pct:
-        input?.porcentaje != null ? Number(input.porcentaje) : undefined,
+      pct: porcentaje !== 0 ? porcentaje : undefined,
       importeOverride:
         input?.importe != null ? Number(input.importe) : undefined,
       conceptoNombre: con.nombre,
       conceptoCodigo: con.codigo,
-      // Sin tipo en el catálogo la línea cae en descuentos, igual que en los totales.
-      conceptoTipo: con.tipo ?? 'descuento',
-      conceptoFormula: con.formula ?? '',
+      conceptoTipo: con.tipo,
+      modo: con.modo,
       baseUsada: input?.conceptoRef ?? undefined,
-      pctUsado:
-        input?.porcentaje != null ? Number(input.porcentaje) : undefined,
+      pctUsado: porcentaje !== 0 ? porcentaje : undefined,
       calcError,
       montoSource,
     });
 
+    montoPorNumero.set(con.numeroSos, monto);
+    // La línea integra sus bases de cálculo (solo rem/no-rem tienen membership).
+    for (const baseId of basesDelConcepto.get(con.id) ?? []) {
+      sumaPorBase.set(baseId, (sumaPorBase.get(baseId) ?? 0) + monto);
+    }
+
     if (con.tipo === 'remunerativo') {
       totalRemunerativo += monto;
-      context.totalRemunerativo = totalRemunerativo;
     } else if (con.tipo === 'no_remunerativo') {
       totalNoRemunerativo += monto;
-      context.totalNoRemunerativo = totalNoRemunerativo;
     } else if (con.tipo === 'retencion') {
       totalRetenciones += monto;
     } else {
       totalDescuentos += monto;
-      context.totalDescuentos = totalDescuentos;
     }
   }
 
-  context.bruto = totalRemunerativo + totalNoRemunerativo;
-  const neto = roundMoney(context.bruto - totalDescuentos - totalRetenciones);
+  const bruto = totalRemunerativo + totalNoRemunerativo;
+  const neto = roundMoney(bruto - totalDescuentos - totalRetenciones);
 
   // Persistir: borrar detalles viejos y reinsertar con inputs preservados
   const persistDetalles = async (reciboId: string) => {
@@ -4717,6 +4868,10 @@ export const previewLsd = createServerFn({ method: 'GET' })
         tipoEmpresaNombre: tipoEmpresa.nombre,
       })
       .from(cliente)
+      .leftJoin(
+        clienteEmpleadorConfig,
+        eq(clienteEmpleadorConfig.clienteId, cliente.id)
+      )
       .leftJoin(tipoEmpresa, eq(clienteEmpleadorConfig.tipoEmpresaId, tipoEmpresa.id))
       .where(eq(cliente.id, profileId))
       .limit(1);
@@ -4959,6 +5114,10 @@ export const validarLsd = createServerFn({ method: 'GET' })
     const [employer] = await db
       .select({ codigoLsd: tipoEmpresa.codigo })
       .from(cliente)
+      .leftJoin(
+        clienteEmpleadorConfig,
+        eq(clienteEmpleadorConfig.clienteId, cliente.id)
+      )
       .leftJoin(tipoEmpresa, eq(clienteEmpleadorConfig.tipoEmpresaId, tipoEmpresa.id))
       .where(eq(cliente.id, profileId))
       .limit(1);
@@ -5074,6 +5233,10 @@ export const generarArchivoLsd = createServerFn({ method: 'GET' })
         mipyme: clienteEmpleadorConfig.mipyme,
       })
       .from(cliente)
+      .leftJoin(
+        clienteEmpleadorConfig,
+        eq(clienteEmpleadorConfig.clienteId, cliente.id)
+      )
       .leftJoin(tipoEmpresa, eq(clienteEmpleadorConfig.tipoEmpresaId, tipoEmpresa.id))
       .where(eq(cliente.id, profileId))
       .limit(1);

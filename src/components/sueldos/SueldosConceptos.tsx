@@ -24,7 +24,8 @@ type ConceptoRow = Awaited<ReturnType<typeof listTodosConceptosSos>>[number];
 
 function ConceptoDialog({ row }: { row: ConceptoRow }) {
   const meta = {
-    baseColumna: row.baseColumna,
+    modo: row.modo,
+    baseCodigo: row.baseCodigo,
     divCantidad: row.divCantidad,
     divHsNorm: row.divHsNorm,
     tieneCantidad: row.usaCantidad,

@@ -9,6 +9,10 @@ import postgres from "postgres";
 const SRC_URL = process.env.DATABASE_URL;
 if (!SRC_URL) throw new Error("Falta DATABASE_URL (source .env)");
 if (SRC_URL.includes("5.78.132.83")) throw new Error("ORIGINAL_DB prohibida");
+// La fuente es NEW_DB. Con .env apuntando ya a BD_IDEAL, correr esto sin
+// pisar DATABASE_URL trunca el destino y lo recarga consigo mismo: lo vacia.
+if (SRC_URL.includes("localhost") || SRC_URL.includes("127.0.0.1"))
+  throw new Error("DATABASE_URL apunta a BD_IDEAL: la fuente seria el propio destino. Correr con DATABASE_URL=\"$MIGRATION_URL\"");
 
 const IDEAL_URL =
   process.env.IDEAL_DATABASE_URL ?? "postgres://arca:arca@localhost:5460/arca_ideal";
@@ -49,10 +53,13 @@ const fecha = (v: unknown): string | null =>
   v instanceof Date ? v.toISOString().slice(0, 10) : v ? String(v).slice(0, 10) : null;
 
 // ---------- 0. limpiar destino ----------
+// concepto_afip queda fuera a propósito: es la grilla oficial de AFIP sembrada
+// por schema-dominio3.sql, no un dato migrado. Truncarla la borraría.
 console.log("→ Truncando destino...");
+// base_calculo tampoco se trunca (la siembra el schema); su membership sí.
 await dst.unsafe(`truncate table
   recibo_concepto, recibo, empleado, lsd_presentacion, parametro_periodo,
-  cliente_concepto, concepto, concepto_afip,
+  cliente_concepto, base_calculo_concepto, concepto,
   escala_salarial, convenio_categoria, convenio_fuente, convenio, cliente_cct, cct,
   situacion_revista, condicion_trabajador, modalidad_contratacion, actividad, zona,
   provincia, localidad, nacionalidad, siniestrado, tipo_empresa, obra_social
@@ -118,57 +125,187 @@ await insertChunked(
 
 // ---------- 3. conceptos ----------
 console.log("→ conceptos...");
-const conceptosAfip = (await src.unsafe(`select * from lsd_concepto_afip`)) as unknown as Row[];
-await insertChunked(
-  "concepto_afip",
-  conceptosAfip.map((r) => ({
-    id: r.id,
-    codigo: r.codigo_afip,
-    descripcion: r.descripcion,
-    created_at: r.created_at,
-    updated_at: r.updated_at,
-  }))
-);
+// concepto_afip NO se migra: es la grilla oficial de AFIP y viene sembrada en
+// schema-dominio3.sql. Antes se armaba desde lsd_concepto_afip (35 códigos que
+// el scrapper veía en los clientes) más 43 inventados con el nombre de SOS.
+const afipCatalogo = (await dst`
+  select id, codigo, codigo_hasta, tipo from concepto_afip order by codigo`) as unknown as Row[];
 const afipIdPorCodigo = new Map<string, string>(
-  conceptosAfip.map((r) => [r.codigo_afip as string, r.id as string])
+  afipCatalogo.map((r) => [r.codigo as string, r.id as string])
 );
 
-const BASE_COLUMNA = new Set([
-  "valHora", "sueldoLegajo", "sueldo", "importe_fijo", "ref_concepto",
-  "sub1_9", "sub1_19", "sub1_26", "sub1_39", "sub1_199",
-  "sub411_469", "sub1_199_plus_411_469", "sub411_414_qty",
-  "os_base", "os_norem_base", "sac_normal", "sac_proporcional",
-  "bruto_anterior_div25", "concepto_401_div12",
-]);
+/** Resuelve un código contra la grilla, contemplando los rangos libres. */
+function resolverAfip(codigo: string) {
+  const exacto = afipCatalogo.find((r) => r.codigo === codigo);
+  if (exacto) return exacto;
+  return afipCatalogo.find(
+    (r) => r.codigo_hasta && codigo >= (r.codigo as string) && codigo <= (r.codigo_hasta as string)
+  );
+}
+
+/** SOS inventaba variantes con letra ("560001B") sobre códigos reales de AFIP. */
+function normalizarCodigoAfip(codigo: string): string {
+  const limpio = codigo.trim().toUpperCase();
+  return /^\d{6}[A-Z]+$/.test(limpio) ? limpio.slice(0, 6) : limpio;
+}
+
+// El vocabulario de SOS (base_columna) se traduce a modo + base_calculo.
+// Los rangos "subN_M" pasan a ser bases con nombre; el resto son modos de cálculo.
+const MODO_POR_BASE_COLUMNA: Record<string, { modo: string; base?: string }> = {
+  importe_fijo: { modo: "importe_manual" },
+  ref_concepto: { modo: "pct_sobre_concepto" },
+  sueldo: { modo: "sueldo_basico" },
+  sueldoLegajo: { modo: "sueldo_basico" },
+  valHora: { modo: "valor_hora" },
+  sac_normal: { modo: "sac" },
+  sac_proporcional: { modo: "sac_proporcional" },
+  bruto_anterior_div25: { modo: "dia_vacaciones" },
+  concepto_401_div12: { modo: "promedio_anual_concepto" },
+  sub1_9: { modo: "pct_sobre_base", base: "sueldo_y_adicionales" },
+  sub1_19: { modo: "pct_sobre_base", base: "remunerativo_habitual" },
+  sub1_199: { modo: "pct_sobre_base", base: "total_remunerativo" },
+  sub411_469: { modo: "pct_sobre_base", base: "total_no_remunerativo" },
+  sub1_199_plus_411_469: { modo: "pct_sobre_base", base: "bruto" },
+  sub411_414_qty: { modo: "pct_sobre_base", base: "no_remunerativo_con_os" },
+  os_base: { modo: "pct_sobre_base", base: "base_obra_social" },
+  os_norem_base: { modo: "pct_sobre_base", base: "no_remunerativo_con_os" },
+};
+
+// La metadata del seed de SOS estaba MAL en estos conceptos (verificado contra
+// los recibos reales el 01/08): 211/212 no cierran contra ninguna base — se tipean.
+// NOTA 02/08: 501/503 estuvieron acá apuntados a total_remunerativo, pero el
+// test de aceptación del motor demostró que la declaración SOS original
+// (sub411_469 → total_no_remunerativo) era la correcta: 59/64 y 41/64 de las
+// líneas no-cero cierran exacto con pct × Σ(411-469); con total_remunerativo
+// eran 83+83 mismatches. Se revirtió.
+const CORRECCION_MODO: Record<number, { modo: string; base?: string }> = {
+  211: { modo: "importe_manual" },
+  212: { modo: "importe_manual" },
+  // 30/43 eran las "asignaciones complementarias s/conc. 1 a 26/39" (0 usos):
+  // sus escalones sub1_26/sub1_39 no se migran como base.
+  30: { modo: "importe_manual" },
+  43: { modo: "importe_manual" },
+};
+
+// Qué conceptos integran cada base — por SEMÁNTICA (tipo + naturaleza del
+// concepto), ya no por rango de numeración SOS. Diferencias deliberadas con SOS
+// (todas sobre conceptos con 0 usos en los recibos reales, verificado 01/08):
+// - Las sumas no rem por decreto (491-496, 601-605) y los "otros no rem" del
+//   rango libre (470-484) SÍ integran el total no remunerativo: SOS los dejaba
+//   afuera solo porque su número caía fuera de 411-469.
+// - Los indemnizatorios (401-408), beneficios sociales art. 103 bis (610-618) y
+//   asignaciones familiares (620) NO integran: no son sumas, no son base de nada.
+// - 420/421 (art. 223 bis) quedan fuera de toda canasta: su tipo dice
+//   remunerativo (código AFIP 110000 del seed) pero el 223 bis es una prestación
+//   NO remunerativa — contradicción de origen a resolver con las Guías de ARCA.
+const ANOMALIA_223BIS = (n: number) => n === 420 || n === 421;
+const INDEMNIZATORIO = (n: number) => n >= 401 && n <= 408;
+const BENEFICIO_SOCIAL = (n: number) => n >= 610 && n <= 618;
+const ASIGNACION_FAMILIAR = (n: number) => n === 620;
+
+const esRemunerativo = (n: number, tipo: string) =>
+  tipo === "remunerativo" && !ANOMALIA_223BIS(n);
+const esSumaNoRem = (n: number, tipo: string) =>
+  tipo === "no_remunerativo" && !INDEMNIZATORIO(n) && !BENEFICIO_SOCIAL(n) && !ASIGNACION_FAMILIAR(n);
+const esNoRemConOs = (n: number, tipo: string) =>
+  tipo === "no_remunerativo" && n >= 411 && n <= 414;
+
+const MIEMBROS_POR_BASE: Record<string, (n: number, tipo: string) => boolean> = {
+  // Bases de CCT: lista curada (heredada de comercio vía SOS)
+  sueldo_y_adicionales: (n, t) => esRemunerativo(n, t) && n >= 1 && n <= 9,
+  remunerativo_habitual: (n, t) => esRemunerativo(n, t) && n >= 1 && n <= 19,
+  // Bases de ley: derivan del tipo
+  total_remunerativo: esRemunerativo,
+  total_no_remunerativo: esSumaNoRem,
+  bruto: (n, t) => esRemunerativo(n, t) || esSumaNoRem(n, t),
+  no_remunerativo_con_os: esNoRemConOs,
+  base_obra_social: (n, t) => esRemunerativo(n, t) || esNoRemConOs(n, t),
+};
+
+const baseIdPorCodigo = new Map<string, string>(
+  ((await dst`select id, codigo from base_calculo`) as unknown as Row[]).map((r) => [
+    r.codigo as string,
+    r.id as string,
+  ])
+);
+for (const codigo of Object.keys(MIEMBROS_POR_BASE))
+  if (!baseIdPorCodigo.has(codigo)) fail(`base_calculo "${codigo}" no está sembrada en el schema`);
+
+/** base_columna de SOS (+ corrección puntual) → { modo, base_calculo_id }. */
+function traducirBase(numero: number, baseColumna: string, origen: string) {
+  const t = CORRECCION_MODO[numero] ?? MODO_POR_BASE_COLUMNA[baseColumna];
+  if (!t) fail(`${origen}: base_columna no mapeada "${baseColumna}"`);
+  return {
+    modo: t.modo,
+    base_calculo_id: t.base ? baseIdPorCodigo.get(t.base)! : null,
+  };
+}
 
 const conceptosSos = (await src.unsafe(`select * from conceptos_completos_sos`)) as unknown as Row[];
-// El catálogo global referencia códigos AFIP que lsd_concepto_afip no siempre tiene: se crean.
-const afipFaltantes = new Map<string, Row>();
-for (const c of conceptosSos) {
-  const cod = c.codigo_afip as string;
-  if (!afipIdPorCodigo.has(cod) && !afipFaltantes.has(cod)) {
-    afipFaltantes.set(cod, { codigo: cod, descripcion: c.nombre });
-  }
-}
-if (afipFaltantes.size > 0) {
-  const insertados = await dst`
-    insert into concepto_afip ${dst([...afipFaltantes.values()], "codigo", "descripcion")}
-    returning id, codigo`;
-  for (const r of insertados) afipIdPorCodigo.set(r.codigo, r.id);
-  aviso(`${afipFaltantes.size} códigos AFIP creados desde conceptos_completos_sos (no estaban en lsd_concepto_afip)`);
-}
 
+// Códigos de descuento que son RETENCIÓN: plata que se le saca al empleado para
+// dársela a un tercero, no un aporte a un subsistema de la seguridad social.
+// - 810004 cuota sindical (art. 38 Ley 23.551 — va al gremio, no al F931)
+// - 810005 seguro de vida (compañía aseguradora)
+// - 810008 Ganancias (retención impositiva)
+// - 82xxxx  todo el bloque "otros descuentos" y "de uso libre": ahí viven
+//   préstamos, embargos, mutuales, farmacia. AFIP no dice qué son.
+// El resto de los 810xxx son los aportes del F931 (SIPA, INSSJyP, Obra Social,
+// FSR, RENATEA) y quedan como 'descuento' a secas. Un código nuevo cae del lado
+// correcto sin tocar esta lista: 810xxx → aporte, 82xxxx → retención.
+const RETENCIONES_EXPLICITAS = new Set(["810004", "810005", "810008"]);
+const esRetencion = (cod: string) => cod.startsWith("82") || RETENCIONES_EXPLICITAS.has(cod);
+
+// El tipo (remunerativo / no_remunerativo / descuento) nunca existió en el
+// origen: en SOS estaba implícito en la numeración y el seed de conceptos ni
+// siquiera tenía el campo. Ahora sale derivado del código AFIP, que sí lo dice;
+// 'retencion' es un refinamiento nuestro sobre los descuentos, valor inicial —
+// después se edita por fila, que para eso vive en concepto y no en concepto_afip.
+let conLetra = 0;
+let retenciones = 0;
+const tipoPorConcepto = new Map<string, string>();
+for (const c of conceptosSos) {
+  const original = c.codigo_afip as string;
+  const cod = normalizarCodigoAfip(original);
+  if (cod !== original) conLetra++;
+  const ca = resolverAfip(cod);
+  if (!ca) {
+    fail(
+      `concepto ${c.numero_sos} "${c.nombre}": código AFIP "${c.codigo_afip}" no existe en la grilla del LSD. ` +
+        `Corregirlo en el origen o agregarlo a concepto_afip si AFIP publicó un PDF nuevo.`
+    );
+  }
+  let tipo = ca.tipo as string;
+  if (tipo === "descuento" && esRetencion(cod)) {
+    tipo = "retencion";
+    retenciones++;
+  }
+  tipoPorConcepto.set(c.id as string, tipo);
+}
+if (conLetra > 0) {
+  aviso(`${conLetra} códigos AFIP con sufijo de letra de SOS (ej. "560001B") normalizados a 6 dígitos`);
+}
+console.log(`   ${retenciones} descuentos clasificados como retención (el resto son aportes del F931)`);
+
+const modoCatalogo = new Map<string, { modo: string; base_calculo_id: string | null }>();
 await insertChunked(
   "concepto",
   conceptosSos.map((c) => {
-    if (!BASE_COLUMNA.has(c.base_columna))
-      fail(`concepto ${c.numero_sos}: base_columna no mapeada "${c.base_columna}"`);
+    const numero = Number(c.numero_sos);
+    const t = traducirBase(numero, c.base_columna, `concepto ${numero}`);
+    if (CORRECCION_MODO[numero])
+      aviso(
+        `concepto ${numero} "${c.nombre}": modo corregido a ${t.modo} — el seed de SOS declaraba "${c.base_columna}" (ver CORRECCION_MODO)`
+      );
+    modoCatalogo.set(c.id as string, t);
     return {
       id: c.id,
       numero: c.numero_sos,
       nombre: c.nombre,
-      codigo_afip: c.codigo_afip,
-      base_columna: c.base_columna,
+      codigo_afip: normalizarCodigoAfip(c.codigo_afip as string),
+      tipo: tipoPorConcepto.get(c.id as string),
+      modo: t.modo,
+      base_calculo_id: t.base_calculo_id,
       pct_fijo: c.pct_fijo,
       div_hs_norm: c.div_hs_norm ?? 1,
       div_cantidad: c.div_cantidad ?? 1,
@@ -187,9 +324,27 @@ await insertChunked(
 const conceptoIdPorNumero = new Map<number, string>(
   conceptosSos.map((c) => [Number(c.numero_sos), c.id as string])
 );
+
+// Membership: qué conceptos integran cada base. Solo devengan los tipo
+// remunerativo / no_remunerativo (las funciones lo chequean): un descuento
+// calcula SOBRE la base pero no la integra.
+const membership: Row[] = [];
+for (const [codigo, incluye] of Object.entries(MIEMBROS_POR_BASE)) {
+  const baseId = baseIdPorCodigo.get(codigo)!;
+  for (const c of conceptosSos) {
+    const tipo = tipoPorConcepto.get(c.id as string)!;
+    if (incluye(Number(c.numero_sos), tipo))
+      membership.push({ base_calculo_id: baseId, concepto_id: c.id });
+  }
+}
+await insertChunked("base_calculo_concepto", membership);
+console.log(`   ${membership.length} filas de membership en ${Object.keys(MIEMBROS_POR_BASE).length} bases`);
+// Se indexa por el código normalizado: los lookups vienen de otras tablas que
+// también traen el sufijo de letra de SOS.
 const conceptoIdPorCodigoAfip = new Map<string, string>();
 for (const c of conceptosSos) {
-  if (!conceptoIdPorCodigoAfip.has(c.codigo_afip)) conceptoIdPorCodigoAfip.set(c.codigo_afip, c.id);
+  const cod = normalizarCodigoAfip(c.codigo_afip as string);
+  if (!conceptoIdPorCodigoAfip.has(cod)) conceptoIdPorCodigoAfip.set(cod, c.id as string);
 }
 
 // ---------- 4. cliente_concepto (fusión de 3 tablas) ----------
@@ -232,17 +387,29 @@ for (const r of (await src.unsafe(`select * from payroll_concepto`)) as unknown 
     );
   const conceptoId = conceptoIdPorNumero.get(Number(r.numero_sos));
   if (!conceptoId) fail(`payroll_concepto numero_sos ${r.numero_sos} no está en el catálogo global`);
-  if (!BASE_COLUMNA.has(r.base_columna))
-    fail(`payroll_concepto ${r.id}: base_columna no mapeada "${r.base_columna}"`);
+  const t = traducirBase(Number(r.numero_sos), r.base_columna, `payroll_concepto ${r.id}`);
+  // El override solo se guarda si difiere del catálogo (null = manda el catálogo).
+  const cat = modoCatalogo.get(conceptoId)!;
+  const pisaModo = t.modo !== cat.modo || t.base_calculo_id !== cat.base_calculo_id;
+  // formula era texto libre pero en los datos reales es SIEMPRE una constante
+  // numérica ("100000"): pasa a importe_fijo. Si apareciera una fórmula de
+  // verdad, esto tiene que fallar para decidirla a mano.
+  let importeFijo: number | null = null;
+  if (r.formula != null && String(r.formula).trim() !== "") {
+    const n = Number(String(r.formula).trim());
+    if (!Number.isFinite(n))
+      fail(`payroll_concepto ${r.id} "${r.nombre}": formula "${r.formula}" no es una constante numérica — decidir a mano cómo traducirla`);
+    importeFijo = n;
+  }
   for (const clienteId of destinos) {
     Object.assign(base(clienteId, conceptoId), {
       habilitado: r.activo,
       codigo_propio: r.codigo,
       nombre_propio: r.nombre,
       tipo: r.tipo,
-      base_calculo: r.base_calculo,
-      base_columna: r.base_columna,
-      formula: r.formula,
+      modo: pisaModo ? t.modo : null,
+      base_calculo_id: pisaModo ? t.base_calculo_id : null,
+      importe_fijo: importeFijo,
       orden: r.orden,
       importe_min: r.imp_min,
       importe_max: r.imp_max,
@@ -261,9 +428,21 @@ const FLAGS = [
   "aportes_renatea", "contribuciones_renatea", "contribuciones_aaff", "contribuciones_fne",
   "contribuciones_lrt", "aportes_diferenciales", "aportes_especiales",
 ];
-const afipCodigoPorId = new Map<string, string>(
-  conceptosAfip.map((r) => [r.id as string, r.codigo_afip as string])
+// lsd_concepto_afip (origen) sólo sirve ya para traducir sus ids a un código;
+// el id destino sale del catálogo oficial, que tiene otros uuid.
+const afipCodigoPorIdOrigen = new Map<string, string>(
+  ((await src.unsafe(`select id, codigo_afip from lsd_concepto_afip`)) as unknown as Row[]).map(
+    (r) => [r.id as string, normalizarCodigoAfip(r.codigo_afip as string)]
+  )
 );
+/** id del origen → id del catálogo oficial (contemplando rangos libres). */
+function afipIdDestino(idOrigen: unknown): string | null {
+  const cod = afipCodigoPorIdOrigen.get(idOrigen as string);
+  if (!cod) return null;
+  const ca = resolverAfip(cod);
+  if (!ca) fail(`lsd_concepto_afip: código "${cod}" no existe en la grilla oficial del LSD`);
+  return ca.id as string;
+}
 let perfilSinConcepto = 0;
 for (const r of (await src.unsafe(`select * from lsd_perfil_concepto`)) as unknown as Row[]) {
   if (!clienteById.has(r.client_id)) continue;
@@ -271,7 +450,7 @@ for (const r of (await src.unsafe(`select * from lsd_perfil_concepto`)) as unkno
   let conceptoId = /^\d+$/.test(cod) ? conceptoIdPorNumero.get(Number(cod)) : undefined;
   if (!conceptoId) {
     // El código del contribuyente no es un número SOS: se cae al concepto AFIP declarado.
-    const codAfip = afipCodigoPorId.get(r.concepto_afip_id);
+    const codAfip = afipCodigoPorIdOrigen.get(r.concepto_afip_id as string);
     conceptoId = codAfip ? conceptoIdPorCodigoAfip.get(codAfip) : undefined;
   }
   if (!conceptoId) {
@@ -282,7 +461,7 @@ for (const r of (await src.unsafe(`select * from lsd_perfil_concepto`)) as unkno
   Object.assign(row, {
     codigo_propio: row.codigo_propio ?? cod,
     nombre_propio: row.nombre_propio ?? r.descripcion_contribuyente,
-    concepto_afip_id: r.concepto_afip_id,
+    concepto_afip_id: afipIdDestino(r.concepto_afip_id),
     repetible: r.marca_repetible,
   });
   for (const f of FLAGS) row[f] = r[f];
@@ -301,9 +480,9 @@ await insertChunked(
     nombre_propio: r.nombre_propio ?? null,
     concepto_afip_id: r.concepto_afip_id ?? null,
     tipo: r.tipo ?? null,
-    base_calculo: r.base_calculo ?? null,
-    base_columna: r.base_columna ?? null,
-    formula: r.formula ?? null,
+    modo: r.modo ?? null,
+    base_calculo_id: r.base_calculo_id ?? null,
+    importe_fijo: r.importe_fijo ?? null,
     orden: r.orden ?? null,
     importe_min: r.importe_min ?? null,
     importe_max: r.importe_max ?? null,
@@ -591,7 +770,9 @@ const conceptoRef = (v: unknown): number | null => {
 for (const r of valores) {
   const cod = String(r.codigo);
   const conceptoId =
-    conceptoIdPorNumero.get(Number(cod)) ?? conceptoIdPorCodigoAfip.get(cod) ?? null;
+    conceptoIdPorNumero.get(Number(cod)) ??
+    conceptoIdPorCodigoAfip.get(normalizarCodigoAfip(cod)) ??
+    null;
   if (!conceptoId) {
     sinConcepto++;
     continue;
@@ -664,7 +845,7 @@ console.log("\n=== Verificación ===");
 const tablas = [
   "situacion_revista", "condicion_trabajador", "modalidad_contratacion", "actividad", "zona",
   "provincia", "localidad", "nacionalidad", "siniestrado", "tipo_empresa", "obra_social",
-  "concepto_afip", "concepto", "cliente_concepto",
+  "concepto_afip", "base_calculo", "base_calculo_concepto", "concepto", "cliente_concepto",
   "cct", "convenio", "cliente_cct", "convenio_categoria", "escala_salarial", "convenio_fuente",
   "empleado", "recibo", "recibo_concepto", "lsd_presentacion", "parametro_periodo",
 ];

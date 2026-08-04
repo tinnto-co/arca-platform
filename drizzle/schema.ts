@@ -6,7 +6,7 @@
  *   bunx drizzle-kit pull --config drizzle.ideal.config.ts
  *   bun src/scripts/ideal/gen-schema.ts
  */
-import { pgTable, foreignKey, unique, uuid, text, numeric, timestamp, index, jsonb, check, smallint, boolean, integer, date, uniqueIndex, char, bigint, pgEnum } from "drizzle-orm/pg-core"
+import { pgTable, foreignKey, unique, uuid, text, numeric, timestamp, index, jsonb, check, smallint, boolean, integer, date, uniqueIndex, char, bigint, pgEnum, primaryKey } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 import { user, organization } from "./auth"
 
@@ -29,8 +29,7 @@ export const bienUsoMotivoBaja = pgEnum("bien_uso_motivo_baja", ['venta', 'desus
 export const clienteEstado = pgEnum("cliente_estado", ['activo', 'pausado', 'baja'])
 export const comprobanteClase = pgEnum("comprobante_clase", ['factura', 'nota_credito', 'nota_debito', 'recibo', 'tique'])
 export const comprobanteDireccion = pgEnum("comprobante_direccion", ['emitido', 'recibido'])
-export const conceptoBase = pgEnum("concepto_base", ['basico', 'bruto', 'total_remunerativo', 'total_no_remunerativo', 'total_descuentos', 'neto', 'fijo', 'custom'])
-export const conceptoBaseColumna = pgEnum("concepto_base_columna", ['valHora', 'sueldoLegajo', 'sueldo', 'importe_fijo', 'ref_concepto', 'sub1_9', 'sub1_19', 'sub1_26', 'sub1_39', 'sub1_199', 'sub411_469', 'sub1_199_plus_411_469', 'sub411_414_qty', 'os_base', 'os_norem_base', 'sac_normal', 'sac_proporcional', 'bruto_anterior_div25', 'concepto_401_div12'])
+export const conceptoModoCalculo = pgEnum("concepto_modo_calculo", ['importe_manual', 'pct_sobre_base', 'pct_sobre_concepto', 'sueldo_basico', 'valor_hora', 'sac', 'sac_proporcional', 'dia_vacaciones', 'promedio_anual_concepto'])
 export const conceptoTipo = pgEnum("concepto_tipo", ['remunerativo', 'no_remunerativo', 'descuento', 'retencion'])
 export const conciliacionEstado = pgEnum("conciliacion_estado", ['sugerida', 'confirmada', 'rechazada'])
 export const condicionIva = pgEnum("condicion_iva", ['responsable_inscripto', 'monotributista', 'exento', 'no_alcanzado'])
@@ -775,6 +774,17 @@ export const notificacion = pgTable("notificacion", {
 		}).onDelete("set null"),
 ]);
 
+export const baseCalculo = pgTable("base_calculo", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	codigo: text().notNull(),
+	nombre: text().notNull(),
+	descripcion: text().notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+	unique("base_calculo_codigo_key").on(table.codigo),
+]);
+
 export const clienteConcepto = pgTable("cliente_concepto", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	orgId: text("org_id").notNull(),
@@ -785,9 +795,9 @@ export const clienteConcepto = pgTable("cliente_concepto", {
 	nombrePropio: text("nombre_propio"),
 	conceptoAfipId: uuid("concepto_afip_id"),
 	tipo: conceptoTipo(),
-	baseCalculo: conceptoBase("base_calculo"),
-	baseColumna: conceptoBaseColumna("base_columna"),
-	formula: text(),
+	modo: conceptoModoCalculo(),
+	baseCalculoId: uuid("base_calculo_id"),
+	importeFijo: numeric("importe_fijo", { precision: 15, scale:  2 }),
 	orden: integer(),
 	importeMin: numeric("importe_min", { precision: 15, scale:  2 }),
 	importeMax: numeric("importe_max", { precision: 15, scale:  2 }),
@@ -832,6 +842,11 @@ export const clienteConcepto = pgTable("cliente_concepto", {
 			name: "cliente_concepto_concepto_id_fkey"
 		}).onDelete("cascade"),
 	foreignKey({
+			columns: [table.baseCalculoId],
+			foreignColumns: [baseCalculo.id],
+			name: "cliente_concepto_base_calculo_id_fkey"
+		}),
+	foreignKey({
 			columns: [table.orgId],
 			foreignColumns: [organization.id],
 			name: "cliente_concepto_org_id_fkey"
@@ -844,8 +859,9 @@ export const concepto = pgTable("concepto", {
 	numero: smallint().notNull(),
 	nombre: text().notNull(),
 	codigoAfip: text("codigo_afip").notNull(),
-	tipo: conceptoTipo(),
-	baseColumna: conceptoBaseColumna("base_columna").notNull(),
+	tipo: conceptoTipo().notNull(),
+	modo: conceptoModoCalculo().notNull(),
+	baseCalculoId: uuid("base_calculo_id"),
 	pctFijo: numeric("pct_fijo", { precision: 7, scale:  4 }),
 	divHsNorm: integer("div_hs_norm").default(1).notNull(),
 	divCantidad: integer("div_cantidad").default(1).notNull(),
@@ -860,16 +876,36 @@ export const concepto = pgTable("concepto", {
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
 	foreignKey({
-			columns: [table.codigoAfip],
-			foreignColumns: [conceptoAfip.codigo],
-			name: "concepto_codigo_afip_fkey"
+			columns: [table.baseCalculoId],
+			foreignColumns: [baseCalculo.id],
+			name: "concepto_base_calculo_id_fkey"
 		}),
 	unique("concepto_numero_key").on(table.numero),
+	check("concepto_check", sql`(modo = 'pct_sobre_base'::concepto_modo_calculo) = (base_calculo_id IS NOT NULL)`),
+]);
+
+export const baseCalculoConcepto = pgTable("base_calculo_concepto", {
+	baseCalculoId: uuid("base_calculo_id").notNull(),
+	conceptoId: uuid("concepto_id").notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.baseCalculoId],
+			foreignColumns: [baseCalculo.id],
+			name: "base_calculo_concepto_base_calculo_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.conceptoId],
+			foreignColumns: [concepto.id],
+			name: "base_calculo_concepto_concepto_id_fkey"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.baseCalculoId, table.conceptoId], name: "base_calculo_concepto_pkey" }),
 ]);
 
 export const conceptoAfip = pgTable("concepto_afip", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	codigo: text().notNull(),
+	codigoHasta: text("codigo_hasta"),
+	tipo: conceptoTipo().notNull(),
 	descripcion: text().notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

@@ -111,14 +111,16 @@ export function montoLiquidadoDesdeEditsSos(
     return roundMoney(direct ?? 0);
   }
 
-  const cant = parseDecimalSos(row.cantidad) ?? 0;
+  // Cantidad vacía cuenta como 1 (igual que el motor de cálculo): la cantidad
+  // solo multiplica cuando el concepto la usa (días, años, horas).
+  const cant = parseDecimalSos(row.cantidad) ?? 1;
   const pct = parseDecimalSos(row.porcentaje) ?? 0;
   const impNro = parseDecimalSos(row.importeConceptoNumero);
   const imp = parseDecimalSos(row.importe);
 
-  // Caso: importe directo sin porcentaje ni cantidad (ej. monto fijo override).
-  // Evita calcular 0 x 0 x base = 0 cuando el usuario solo ingresa un importe.
-  if (cant === 0 && pct === 0) {
+  // Caso: importe directo sin porcentaje (ej. monto fijo override).
+  // Evita calcular importe x 0% = 0 cuando el usuario solo ingresa un importe.
+  if (pct === 0) {
     const directAmount = impNro ?? imp;
     if (directAmount !== null) return roundMoney(directAmount);
     return 0;

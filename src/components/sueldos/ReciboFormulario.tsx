@@ -226,15 +226,19 @@ export function ReciboFormulario({
     [empleados, empleadoId]
   );
 
-  const antiguedadAnios = useMemo(() => {
-    const fechaAlta = empleadoSel?.empleado.fechaAlta;
-    if (!fechaAlta) return null;
-    return differenceInYears(now, new Date(fechaAlta));
-  }, [empleadoSel]);
-
-  // Actualizar fechaLiquidacion y fechaDepositoCargas al cambiar año/mes
   const ano = form.watch('ano');
   const mes = form.watch('mes');
+
+  const antiguedadAnios = useMemo(() => {
+    const fechaAlta = empleadoSel?.empleado.fechaAlta;
+    if (!fechaAlta || !ano || !mes) return null;
+    // Antigüedad al cierre del período liquidado, no a la fecha de hoy:
+    // liquidar marzo en agosto no puede sumar el aniversario intermedio.
+    const finPeriodo = endOfMonth(new Date(Number(ano), Number(mes) - 1, 1));
+    return Math.max(0, differenceInYears(finPeriodo, new Date(fechaAlta)));
+  }, [empleadoSel, ano, mes]);
+
+  // Actualizar fechaLiquidacion y fechaDepositoCargas al cambiar año/mes
   const [maxAno, maxMes] = getPeriodoMaxLiquidable().split('-');
   const mesesDisponibles = ano === maxAno
     ? MESES.filter((m) => m.value <= maxMes)
