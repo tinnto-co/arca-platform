@@ -1,0 +1,2 @@
+ALTER TYPE "public"."accounting_log_event_type" ADD VALUE 'inflation_adjustment_applied';--> statement-breakpoint
+ALTER TYPE "public"."accounting_log_event_type" ADD VALUE 'inflation_adjustment_voided';

@@ -454,12 +454,23 @@ async function initializeServer() {
 
   // Start background crons (guarded: a cron failure must never break the server).
   try {
-    const { startAccountingInvoiceCron } = (await import(
-      './src/lib/accounting-cron'
-    )) as { startAccountingInvoiceCron: () => void };
+    const { startAccountingInvoiceCron } =
+      (await import('./src/lib/accounting-cron')) as {
+        startAccountingInvoiceCron: () => void;
+      };
     startAccountingInvoiceCron();
   } catch (error) {
     log.warning(`Accounting batch cron not started: ${String(error)}`);
+  }
+
+  try {
+    const { startInflationIndexCron } =
+      (await import('./src/lib/inflation-index-cron')) as {
+        startInflationIndexCron: () => void;
+      };
+    startInflationIndexCron();
+  } catch (error) {
+    log.warning(`Inflation index cron not started: ${String(error)}`);
   }
 
   // Build static routes with intelligent preloading
