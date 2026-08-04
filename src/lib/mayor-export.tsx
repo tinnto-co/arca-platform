@@ -1939,6 +1939,11 @@ export interface EeccPackageData {
    * el número de cada una y en qué posición cae el bloque del sistema.
    */
   noteSequence?: NumberedNote[];
+  /**
+   * Referencia de cada rubro a su nota o su anexo, por clave de rubro:
+   * { caja_bancos: 'Nota 3.1', bienes_uso: 's/Anexo I' }.
+   */
+  references?: Record<string, string>;
 }
 
 /** Valores del Anexo CMV para el bloque embebido en el paquete EECC. */
@@ -2180,7 +2185,13 @@ function mdLines(md: string): { type: 'h' | 'li' | 'p'; text: string }[] {
     .filter((l) => l.text.length > 0);
 }
 
-function EspBlock({ esp }: { esp: EspResult }) {
+function EspBlock({
+  esp,
+  references = {},
+}: {
+  esp: EspResult;
+  references?: Record<string, string>;
+}) {
   const macros: { macro: 'activo' | 'pasivo' | 'pn'; title: string }[] = [
     { macro: 'activo', title: 'ACTIVO' },
     { macro: 'pasivo', title: 'PASIVO' },
@@ -2217,7 +2228,10 @@ function EspBlock({ esp }: { esp: EspResult }) {
                 )}
                 {sec.rubros.map((r) => (
                   <View key={r.group} style={pk.row}>
-                    <Text style={pk.cLabelIndent}>{r.label}</Text>
+                    <Text style={pk.cLabelIndent}>
+                      {r.label}
+                      {references[r.group] ? ` (${references[r.group]})` : ''}
+                    </Text>
                     <Text style={pk.cNum}>{fmtMoney(r.current)}</Text>
                     <Text style={pk.cNum}>
                       {esp.hasPrior ? fmtMoney(r.prior) : '—'}
@@ -2258,7 +2272,13 @@ function EspBlock({ esp }: { esp: EspResult }) {
   );
 }
 
-function ErBlock({ er }: { er: ErResult }) {
+function ErBlock({
+  er,
+  references = {},
+}: {
+  er: ErResult;
+  references?: Record<string, string>;
+}) {
   const priorLabel = er.hasPrior
     ? `Ej. N°${er.priorFiscalYearNumber}`
     : 'Anterior';
@@ -2278,6 +2298,7 @@ function ErBlock({ er }: { er: ErResult }) {
           <View key={line.key} style={style}>
             <Text style={isSub ? pk.cLabel : pk.cLabelIndent}>
               {line.label}
+              {references[line.key] ? ` (${references[line.key]})` : ''}
             </Text>
             <Text style={pk.cNum}>{fmtMoney(line.current)}</Text>
             <Text style={pk.cNum}>
@@ -2759,8 +2780,8 @@ function EeccPackageDoc({ data }: { data: EeccPackageData }) {
 
       {/* Cuerpo */}
       <Page size="A4" style={pk.page} wrap>
-        <EspBlock esp={data.esp} />
-        <ErBlock er={data.er} />
+        <EspBlock esp={data.esp} references={data.references} />
+        <ErBlock er={data.er} references={data.references} />
         <EepnBlock eepn={data.eepn} />
         <EfeBlock efe={data.efe} />
         <Nota3Block

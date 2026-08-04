@@ -3,6 +3,7 @@ import {
   defaultNoteLayout,
   noteNumberOf,
   numberNotes,
+  referenceForGroup,
   sectionLabel,
   type LayoutEntry,
 } from './accounting-document';
@@ -132,5 +133,76 @@ describe('rótulos de las secciones', () => {
       composicion: 'Composición de rubros',
     });
     expect(r.find((n) => n.isSystem)?.title).toBe('Composición de rubros');
+  });
+});
+
+describe('referencias desde los estados', () => {
+  // Los rubros que expone la composición, en el orden del balance de Admip.
+  const composicion = [
+    'caja_bancos',
+    'creditos_ventas',
+    'otros_creditos_cte',
+    'bienes_cambio',
+    'deudas_fiscales',
+    'deudas_sociales',
+    'deudas_comerciales',
+  ];
+  const ctx = {
+    composicionGroups: composicion,
+    composicionNumber: 3,
+    labels: {},
+  };
+
+  it('subnumera según el orden de la propia nota', () => {
+    expect(referenceForGroup('caja_bancos', ctx)).toBe('Nota 3.1');
+    expect(referenceForGroup('creditos_ventas', ctx)).toBe('Nota 3.2');
+    expect(referenceForGroup('otros_creditos_cte', ctx)).toBe('Nota 3.3');
+    expect(referenceForGroup('bienes_cambio', ctx)).toBe('Nota 3.4');
+    expect(referenceForGroup('deudas_fiscales', ctx)).toBe('Nota 3.5');
+  });
+
+  it('sigue el número de la nota cuando se la mueve', () => {
+    expect(
+      referenceForGroup('caja_bancos', { ...ctx, composicionNumber: 5 })
+    ).toBe('Nota 5.1');
+  });
+
+  it('los rubros con anexo remiten al anexo, no a la nota', () => {
+    expect(referenceForGroup('costo_ventas', ctx)).toBe('s/Anexo CMV');
+    expect(referenceForGroup('bienes_uso', ctx)).toBe('s/Anexo I');
+    expect(referenceForGroup('gastos_administracion', ctx)).toBe('s/Anexo II');
+    expect(referenceForGroup('gastos_comercializacion', ctx)).toBe(
+      's/Anexo II'
+    );
+  });
+
+  it('usa el rótulo que puso el contador', () => {
+    // Admip llama "Anexo de Bienes de Uso" al que nosotros proponemos como I.
+    expect(
+      referenceForGroup('bienes_uso', {
+        ...ctx,
+        labels: { anexo_i: 'Anexo de Bienes de Uso' },
+      })
+    ).toBe('s/Anexo de Bienes de Uso');
+  });
+
+  it('recorta el rótulo largo: en el renglón no entra el subtítulo', () => {
+    expect(referenceForGroup('gastos_administracion', ctx)).not.toContain('·');
+  });
+
+  it('no referencia un anexo que el documento no incluye', () => {
+    expect(
+      referenceForGroup('bienes_uso', { ...ctx, anexosPresentes: ['anexo_ii'] })
+    ).toBeNull();
+  });
+
+  it('sin composición en el documento no inventa referencias', () => {
+    expect(
+      referenceForGroup('caja_bancos', { ...ctx, composicionNumber: null })
+    ).toBeNull();
+  });
+
+  it('un rubro que la composición no expone no lleva referencia', () => {
+    expect(referenceForGroup('capital', ctx)).toBeNull();
   });
 });

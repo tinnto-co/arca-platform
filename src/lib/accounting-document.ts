@@ -54,7 +54,7 @@ export const DEFAULT_SECTION_LABELS: Record<SystemSectionKey, string> = {
   composicion: 'Composición de los principales rubros',
   anexo_i: 'Anexo I · Bienes de uso',
   anexo_ii: 'Anexo II · Gastos por función',
-  anexo_cmv: 'Costo de la mercadería vendida',
+  anexo_cmv: 'Anexo CMV · Costo de la mercadería vendida',
 };
 
 /** Secciones que se numeran como nota. Hoy solo la composición de rubros. */
@@ -154,4 +154,63 @@ export function sectionLabel(
 ): string {
   const custom = labels[key]?.trim();
   return custom && custom.length > 0 ? custom : DEFAULT_SECTION_LABELS[key];
+}
+
+/* ──────────────── Referencias desde los estados a notas y anexos ──────────────── */
+
+/**
+ * Anexo al que remite cada rubro. En el balance del estudio el Estado de
+ * Situación Patrimonial dice «Bienes de Uso … s/Anexo de Bienes de Uso» y el
+ * de Resultados «Gastos de Comercialización (S/Anexo II)».
+ */
+export const ANEXO_REFERENCE_BY_GROUP: Record<string, SystemSectionKey> = {
+  bienes_uso: 'anexo_i',
+  costo_ventas: 'anexo_cmv',
+  gastos_administracion: 'anexo_ii',
+  gastos_comercializacion: 'anexo_ii',
+  gastos_financieros: 'anexo_ii',
+};
+
+export interface ReferenceContext {
+  /** Rubros que expone la composición de rubros, en el orden en que salen. */
+  composicionGroups: string[];
+  /** Número que le tocó a la composición; null si no está en el documento. */
+  composicionNumber: number | null;
+  labels: Partial<Record<SystemSectionKey, string>>;
+  /** Anexos que el documento realmente incluye: sin datos no se referencian. */
+  anexosPresentes?: SystemSectionKey[];
+}
+
+/**
+ * Referencia que se imprime al lado de un rubro: «(Nota 3.1)» o «(s/Anexo II)».
+ *
+ * La subnumeración de la composición no se configura: sale del orden en que la
+ * propia nota expone los rubros, así que nunca puede apuntar a la línea
+ * equivocada. Devuelve null cuando el rubro no tiene a dónde remitir.
+ */
+export function referenceForGroup(
+  group: string,
+  ctx: ReferenceContext
+): string | null {
+  const anexo = ANEXO_REFERENCE_BY_GROUP[group];
+  if (anexo) {
+    const presentes = ctx.anexosPresentes;
+    if (presentes && !presentes.includes(anexo)) return null;
+    return `s/${sectionLabelShort(anexo, ctx.labels)}`;
+  }
+  if (ctx.composicionNumber == null) return null;
+  const i = ctx.composicionGroups.indexOf(group);
+  if (i < 0) return null;
+  return `Nota ${ctx.composicionNumber}.${i + 1}`;
+}
+
+/**
+ * Rótulo corto para la referencia: en el cuerpo del estado no entra
+ * «Anexo I · Bienes de uso», alcanza con «Anexo I».
+ */
+function sectionLabelShort(
+  key: SystemSectionKey,
+  labels: Partial<Record<SystemSectionKey, string>> = {}
+): string {
+  return sectionLabel(key, labels).split('·')[0].trim();
 }

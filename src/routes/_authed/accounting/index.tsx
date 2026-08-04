@@ -55,6 +55,8 @@ import { frameworkCite } from '@/lib/accounting-labels';
 import {
   defaultNoteLayout,
   numberNotes,
+  referenceForGroup,
+  ANEXO_REFERENCE_BY_GROUP,
   type LayoutEntry,
 } from '@/lib/accounting-document';
 import {
@@ -7800,6 +7802,47 @@ function EstadosContables({
   });
   const norma = frameworkCite(membreteEecc?.accountingFramework ?? 'rt54');
 
+  /**
+   * Referencia de cada rubro a su nota o su anexo, como en los balances del
+   * estudio: «Caja y Bancos (Nota 3.1)», «Bienes de Uso (s/Anexo I)». La
+   * subnumeración sale del orden en que la composición expone los rubros, así
+   * que sigue sola al mover la nota.
+   */
+  const { data: espParaRefs } = useQuery({
+    queryKey: ['accounting', 'esp', clientId, effectiveFyId, valuation],
+    queryFn: () =>
+      getESP({ data: { clientId, fiscalYearId: effectiveFyId, view: valuation } }),
+    enabled: !!effectiveFyId,
+  });
+  /**
+   * Referencias de cada rubro, resueltas de una vez: la pantalla las consulta
+   * por rubro y los documentos necesitan el mapa entero.
+   */
+  const references = useMemo<Record<string, string>>(() => {
+    if (!fs) return {};
+    const secuencia = numberNotes(fs.layout, fs.notes, fs.sectionLabels);
+    const grupos = (espParaRefs?.sections ?? [])
+      .flatMap((sec) => sec.rubros)
+      .filter((r) => r.group !== 'resultado_ejercicio')
+      .filter(
+        (r) => Math.abs(r.current) >= 0.005 || Math.abs(r.prior) >= 0.005
+      )
+      .map((r) => r.group);
+    const ctx = {
+      composicionGroups: grupos,
+      composicionNumber:
+        secuencia.find((n) => n.entry === 'composicion')?.number ?? null,
+      labels: fs.sectionLabels,
+    };
+    const out: Record<string, string> = {};
+    for (const g of [...grupos, ...Object.keys(ANEXO_REFERENCE_BY_GROUP)]) {
+      const r = referenceForGroup(g, ctx);
+      if (r) out[g] = r;
+    }
+    return out;
+  }, [fs, espParaRefs]);
+  const refFor = (group: string): string | null => references[group] ?? null;
+
   const invalidateFs = () =>
     qc.invalidateQueries({
       queryKey: ['accounting', 'financial-statement', clientId, effectiveFyId],
@@ -7968,6 +8011,7 @@ function EstadosContables({
           selectedFy={selectedFy}
           valuation={valuation}
           norma={norma}
+          refFor={refFor}
         />
       )}
       {view === 'er' && (
@@ -7977,6 +8021,7 @@ function EstadosContables({
           selectedFy={selectedFy}
           valuation={valuation}
           norma={norma}
+          refFor={refFor}
         />
       )}
       {view === 'eepn' && (
@@ -8061,6 +8106,7 @@ function EstadosContables({
           notes={fs?.notes ?? []}
           layout={fs?.layout ?? []}
           sectionLabels={fs?.sectionLabels ?? {}}
+          references={references}
           isOwner={isOwner}
           valuation={valuation}
           norma={norma}
@@ -8079,7 +8125,10 @@ function EspView({
   selectedFy,
   valuation,
   norma,
+  refFor,
 }: {
+  /** Referencia a la nota o al anexo de cada rubro. */
+  refFor?: (group: string) => string | null;
   clientId: string;
   clientName: string;
   selectedFy: FyOption | undefined;
@@ -8191,6 +8240,7 @@ function EspView({
                           expanded={expanded}
                           onToggle={toggle}
                           onAccount={openLedger}
+                          refFor={refFor ?? (() => null)}
                         />
                       ))}
                       <tr className="border-t border-[var(--arca-ink-3)] font-semibold">
@@ -8265,7 +8315,10 @@ function EspSectionRows({
   expanded,
   onToggle,
   onAccount,
+  refFor,
 }: {
+  /** Referencia a la nota o al anexo de cada rubro, como en el balance. */
+  refFor: (group: string) => string | null;
   section: EspSection;
   hasPrior: boolean;
   expanded: Set<string>;
@@ -8302,6 +8355,11 @@ function EspSectionRows({
                   {isOpen ? '▾' : '▸'}
                 </span>
                 {rubro.label}
+                {refFor(rubro.group) && (
+                  <span className="ml-1.5 text-[11px] text-[var(--arca-ink-3)]">
+                    ({refFor(rubro.group)})
+                  </span>
+                )}
               </td>
               <td className="py-1.5 pr-3 text-right tabular-nums">
                 $ {fmtMoney(rubro.current)}
@@ -8995,7 +9053,10 @@ function ErView({
   selectedFy,
   valuation,
   norma,
+  refFor,
 }: {
+  /** Referencia a la nota o al anexo de cada línea. */
+  refFor?: (group: string) => string | null;
   clientId: string;
   clientName: string;
   selectedFy: FyOption | undefined;
@@ -9127,6 +9188,11 @@ function ErView({
                             </span>
                           )}
                           {line.label}
+                          {refFor?.(line.key) && (
+                            <span className="ml-1.5 text-[11px] text-[var(--arca-ink-3)]">
+                              ({refFor(line.key)})
+                            </span>
+                          )}
                         </td>
                         <td className="py-1.5 pr-3 text-right tabular-nums">
                           $ {fmtMoney(line.current)}
@@ -9837,6 +9903,7 @@ function ExportView({
   notes,
   layout,
   sectionLabels,
+  references,
   isOwner,
   valuation,
   norma,
@@ -9851,6 +9918,8 @@ function ExportView({
   notes: FsNote[];
   layout: LayoutEntry[];
   sectionLabels: Record<string, string>;
+  /** Referencias ya resueltas por rubro, para imprimirlas en los estados. */
+  references: Record<string, string>;
   isOwner: boolean;
   valuation: 'ajustado' | 'historico';
   /** Cómo se cita la norma del ajuste: "RT 54" o "RT 6". */
@@ -9956,6 +10025,7 @@ function ExportView({
         norma,
         // El número de cada nota sale de su posición, no del orden de carga.
         noteSequence: numberNotes(layout, notes, sectionLabels),
+        references,
         anexoII,
         anexoI: anexoI
           ? {
