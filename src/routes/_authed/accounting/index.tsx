@@ -4243,6 +4243,21 @@ function saldoLabel(n: number): string {
   return `$ ${fmtMoney(Math.abs(n))} ${n >= 0 ? 'D' : 'H'}`;
 }
 
+/**
+ * Anchos de las columnas del mayor consolidado. Van en constantes porque los
+ * comparten el encabezado, la fila de cada cuenta y la de totales: cuando cada
+ * uno traía su propio ancho, los totales no caían debajo de su columna.
+ *
+ * Las de importes son anchas a propósito. Con `w-24` un saldo de nueve cifras
+ * partía el «$» en un renglón y el número en el siguiente, y la «D»/«H» del
+ * saldo se iba sola a un tercero.
+ */
+const MAYOR_COL_CODE = 'w-24 shrink-0';
+const MAYOR_COL_MONEY =
+  'w-32 shrink-0 text-right tabular-nums whitespace-nowrap';
+const MAYOR_COL_SALDO =
+  'w-36 shrink-0 text-right tabular-nums whitespace-nowrap';
+
 function Mayor({
   clientId,
   canWrite,
@@ -4574,6 +4589,16 @@ function Mayor({
           </div>
         ) : (
           <div>
+            {/* Sin encabezado, las tres columnas de plata no decían cuál era
+                el Debe, cuál el Haber y cuál el saldo. */}
+            <div className="flex items-center gap-3 px-4 py-1.5 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[10.5px] font-semibold uppercase tracking-wide text-[var(--arca-ink-3)]">
+              <span className="w-4 shrink-0" aria-hidden />
+              <span className={MAYOR_COL_CODE}>Código</span>
+              <span className="flex-1 min-w-0">Cuenta</span>
+              <span className={MAYOR_COL_MONEY}>Debe</span>
+              <span className={MAYOR_COL_MONEY}>Haber</span>
+              <span className={MAYOR_COL_SALDO}>Saldo</span>
+            </div>
             {consol.accounts.map((a) => (
               <ConsolidatedAccountRow
                 key={a.accountId}
@@ -4584,14 +4609,16 @@ function Mayor({
               />
             ))}
             <div className="flex items-center gap-3 px-4 py-3 border-t-2 border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[13px] font-semibold">
-              <span className="flex-1">Totales generales</span>
-              <span className="w-28 text-right">
+              <span className="w-4 shrink-0" aria-hidden />
+              <span className={MAYOR_COL_CODE} />
+              <span className="flex-1 min-w-0">Totales generales</span>
+              <span className={MAYOR_COL_MONEY}>
                 $ {fmtMoney(consol.grandTotalDebit)}
               </span>
-              <span className="w-28 text-right">
+              <span className={MAYOR_COL_MONEY}>
                 $ {fmtMoney(consol.grandTotalCredit)}
               </span>
-              <span className="w-28" />
+              <span className={MAYOR_COL_SALDO} />
             </div>
           </div>
         )}
@@ -4716,27 +4743,29 @@ function ConsolidatedAccountRow({
             strokeWidth={1.8}
           />
         )}
-        <span className="w-24 shrink-0 text-[12px] font-mono text-[var(--arca-ink-3)]">
+        <span
+          className={`${MAYOR_COL_CODE} text-[12px] font-mono text-[var(--arca-ink-3)]`}
+        >
           {acc.code}
         </span>
         <span className="flex-1 min-w-0 truncate text-[13px] font-medium text-[var(--arca-ink)]">
           {acc.name}
         </span>
-        <span className="w-24 shrink-0 text-right text-[12px]">
+        <span className={`${MAYOR_COL_MONEY} text-[12px]`}>
           $ {fmtMoney(acc.totalDebit)}
         </span>
-        <span className="w-24 shrink-0 text-right text-[12px]">
+        <span className={`${MAYOR_COL_MONEY} text-[12px]`}>
           $ {fmtMoney(acc.totalCredit)}
         </span>
-        <span className="w-28 shrink-0 text-right text-[12.5px] font-medium">
+        <span className={`${MAYOR_COL_SALDO} text-[12.5px] font-medium`}>
           {saldoLabel(acc.saldoFinal)}
         </span>
       </button>
       {expanded && (
         <div className="bg-[var(--arca-surface-2)] pl-6">
           <div className="flex items-center gap-3 px-4 py-1.5 text-[11.5px] italic text-[var(--arca-ink-3)]">
-            <div className="flex-1">Saldo inicial</div>
-            <div className="w-28 shrink-0 text-right not-italic">
+            <div className="flex-1 min-w-0">Saldo inicial</div>
+            <div className={`${MAYOR_COL_SALDO} not-italic`}>
               {saldoLabel(acc.saldoInicial)}
             </div>
           </div>
@@ -4755,15 +4784,13 @@ function ConsolidatedAccountRow({
               <div className="flex-1 min-w-0 truncate text-[var(--arca-ink)]">
                 {r.description ?? r.lineDescription ?? ''}
               </div>
-              <div className="w-24 shrink-0 text-right">
+              <div className={MAYOR_COL_MONEY}>
                 {r.debit ? fmtMoney(r.debit) : ''}
               </div>
-              <div className="w-24 shrink-0 text-right">
+              <div className={MAYOR_COL_MONEY}>
                 {r.credit ? fmtMoney(r.credit) : ''}
               </div>
-              <div className="w-28 shrink-0 text-right">
-                {saldoLabel(r.balance)}
-              </div>
+              <div className={MAYOR_COL_SALDO}>{saldoLabel(r.balance)}</div>
             </button>
           ))}
         </div>
