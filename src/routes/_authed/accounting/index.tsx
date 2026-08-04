@@ -1,18 +1,30 @@
 import { createFileRoute, redirect, Link } from '@tanstack/react-router';
 import { z } from 'zod';
 import { listOrgModules } from '@/actions/admin';
-import { useMemo, useState, useEffect, Fragment } from 'react';
+import {
+  useMemo,
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  Fragment,
+} from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
-  BookOpen,
   Plus,
   ChevronRight,
   ChevronDown,
   FileText,
   Scale,
+  BookOpen,
   List,
+  Inbox,
+  TrendingUp,
+  Sparkles,
+  FileBarChart,
+  ScrollText,
   Pencil,
   Trash2,
   RotateCcw,
@@ -38,15 +50,10 @@ import {
   RefreshCw,
   CheckSquare,
   Square,
-  Inbox,
   AlertTriangle,
   Boxes,
-  TrendingUp,
-  Sparkles,
   CheckCircle2,
   XCircle,
-  FileBarChart,
-  ScrollText,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { ArcaCard } from '@/components/dashboard/shared';
@@ -185,6 +192,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import { ImportarPlanDialog } from '@/components/accounting/ImportarPlanDialog';
 import {
@@ -326,6 +334,129 @@ function OriginBadge({ scope }: { scope: 'base' | 'custom' }) {
 
 /* ─── Tab bar ─── */
 
+/**
+ * Las solapas van de más usada a menos usada, y los grupos también. Ese orden
+ * es el que decide qué queda a la vista: cuando no entran todas, el desborde
+ * come desde el final, así que lo que cae en «Más» es lo que menos se abre.
+ *
+ * El criterio, de mayor a menor: lo de todos los días (registrar asientos,
+ * contabilizar comprobantes, resolver pendientes), lo que se consulta seguido
+ * (mayor y balance), lo del cierre —intenso, pero una vez por ejercicio—, la
+ * configuración —que se arma al dar de alta la empresa y después casi no se
+ * toca— y al final el log de auditoría, de solo lectura, que se mira cuando
+ * algo salió mal.
+ *
+ * Los grupos se separan con una línea; no llevan rótulo porque costaría el
+ * renglón que estamos tratando de ahorrar.
+ *
+ * En módulo y no adentro del componente para que la lista sea estable: la
+ * medición del ancho depende de ella y rehacerla en cada render la dispararía
+ * de nuevo cada vez.
+ */
+const SOLAPAS: {
+  id: Tab;
+  label: string;
+  grupo: string;
+  icon: React.ElementType;
+  ready: boolean;
+  ownerOnly?: boolean;
+}[] = [
+  {
+    id: 'asientos',
+    label: 'Asientos',
+    grupo: 'Registración',
+    icon: FileText,
+    ready: true,
+  },
+  {
+    id: 'contabilizar',
+    label: 'Contabilizar',
+    grupo: 'Registración',
+    icon: Zap,
+    ready: true,
+  },
+  // Pendientes trae un contador que reclama atención: no debería esconderse.
+  {
+    id: 'pendientes',
+    label: 'Pendientes',
+    grupo: 'Registración',
+    icon: Inbox,
+    ready: true,
+  },
+  {
+    id: 'mayor',
+    label: 'Mayor',
+    grupo: 'Consulta',
+    icon: BookOpen,
+    ready: true,
+  },
+  {
+    id: 'balance',
+    label: 'Balance',
+    grupo: 'Consulta',
+    icon: Scale,
+    ready: true,
+  },
+  {
+    id: 'estados',
+    label: 'Estados Contables',
+    grupo: 'Cierre',
+    icon: FileBarChart,
+    ready: true,
+  },
+  {
+    id: 'ajuste',
+    label: 'Ajuste por inflación',
+    grupo: 'Cierre',
+    icon: Sparkles,
+    ready: true,
+  },
+  {
+    id: 'bienes',
+    label: 'Bienes de uso',
+    grupo: 'Cierre',
+    icon: Boxes,
+    ready: true,
+  },
+  // La serie la carga el cron mensual: se entra solo si falta un mes.
+  {
+    id: 'indices',
+    label: 'Índices',
+    grupo: 'Cierre',
+    icon: TrendingUp,
+    ready: true,
+  },
+  {
+    id: 'plan',
+    label: 'Plan de cuentas',
+    grupo: 'Configuración',
+    icon: List,
+    ready: true,
+  },
+  {
+    id: 'ejercicios',
+    label: 'Ejercicios',
+    grupo: 'Configuración',
+    icon: CalendarDays,
+    ready: true,
+  },
+  {
+    id: 'reglas',
+    label: 'Reglas',
+    grupo: 'Configuración',
+    icon: Workflow,
+    ready: true,
+  },
+  {
+    id: 'auditoria',
+    label: 'Auditoría',
+    grupo: 'Control',
+    icon: ScrollText,
+    ready: true,
+    ownerOnly: true,
+  },
+];
+
 function TabBar({
   active,
   onChange,
@@ -337,147 +468,193 @@ function TabBar({
   pendingCount?: number;
   isOwner?: boolean;
 }) {
-  /**
-   * Las solapas van en el orden en que se usan: primero se configura, después
-   * se registra, se consulta lo registrado y por último se cierra. Los grupos
-   * se separan con una línea; no llevan rótulo porque el rótulo costaría un
-   * renglón entero y el orden ya se explica solo.
-   */
-  const grupos: {
-    grupo: string;
-    items: {
-      id: Tab;
-      label: string;
-      icon: React.ElementType;
-      ready: boolean;
-      ownerOnly?: boolean;
-    }[];
-  }[] = [
-    {
-      grupo: 'Configuración',
-      items: [
-        { id: 'plan', label: 'Plan de cuentas', icon: List, ready: true },
-        {
-          id: 'ejercicios',
-          label: 'Ejercicios',
-          icon: CalendarDays,
-          ready: true,
-        },
-        { id: 'reglas', label: 'Reglas', icon: Workflow, ready: true },
-      ],
-    },
-    {
-      grupo: 'Registración',
-      items: [
-        { id: 'asientos', label: 'Asientos', icon: FileText, ready: true },
-        { id: 'contabilizar', label: 'Contabilizar', icon: Zap, ready: true },
-        { id: 'pendientes', label: 'Pendientes', icon: Inbox, ready: true },
-        { id: 'bienes', label: 'Bienes de uso', icon: Boxes, ready: true },
-      ],
-    },
-    {
-      grupo: 'Consulta',
-      items: [
-        { id: 'mayor', label: 'Mayor', icon: BookOpen, ready: true },
-        { id: 'balance', label: 'Balance', icon: Scale, ready: true },
-      ],
-    },
-    {
-      grupo: 'Cierre',
-      items: [
-        { id: 'indices', label: 'Índices', icon: TrendingUp, ready: true },
-        {
-          id: 'ajuste',
-          label: 'Ajuste por inflación',
-          icon: Sparkles,
-          ready: true,
-        },
-        {
-          id: 'estados',
-          label: 'Estados Contables',
-          icon: FileBarChart,
-          ready: true,
-        },
-      ],
-    },
-    {
-      grupo: 'Control',
-      items: [
-        {
-          id: 'auditoria',
-          label: 'Auditoría',
-          icon: ScrollText,
-          ready: true,
-          ownerOnly: true,
-        },
-      ],
-    },
-  ];
+  const solapas = useMemo(
+    () => SOLAPAS.filter((t) => !t.ownerOnly || isOwner),
+    [isOwner]
+  );
 
-  const visibles = grupos
-    .map((g) => ({
-      ...g,
-      items: g.items.filter((t) => !t.ownerOnly || isOwner),
-    }))
-    .filter((g) => g.items.length > 0);
+  const barRef = useRef<HTMLDivElement>(null);
+  const medidorRef = useRef<HTMLDivElement>(null);
+  /** Cuántas entran en el renglón; el resto cae en «Más». */
+  const [entran, setEntran] = useState(solapas.length);
+
+  /**
+   * Cuántas solapas entran se resuelve midiendo, no adivinando: los rótulos
+   * son de ancho variable y el ancho útil depende de la ventana.
+   *
+   * Se mide sobre una copia oculta que siempre tiene las trece. Medir sobre
+   * las visibles se realimentaría —esconder una agranda el sobrante, que
+   * vuelve a mostrarla— y la barra quedaría parpadeando.
+   */
+  useLayoutEffect(() => {
+    const bar = barRef.current;
+    const medidor = medidorRef.current;
+    if (!bar || !medidor) return;
+
+    const recalcular = () => {
+      const anchos = Array.from(medidor.children).map(
+        (c) => c.getBoundingClientRect().width
+      );
+      // El último hijo del medidor es el botón «Más».
+      const anchoMas = anchos[anchos.length - 1] ?? 0;
+      const anchoSolapa = anchos.slice(0, solapas.length);
+      const disponible = bar.getBoundingClientRect().width;
+      const GAP = 4;
+      const SEPARADOR = 1 + 12 * 2; // línea + su margen
+
+      const extra = (i: number) =>
+        anchoSolapa[i] +
+        (i === 0 ? 0 : GAP) +
+        (i > 0 && solapas[i].grupo !== solapas[i - 1].grupo ? SEPARADOR : 0);
+
+      const todas = anchoSolapa.reduce((s, _, i) => s + extra(i), 0);
+      if (todas <= disponible) {
+        setEntran(solapas.length);
+        return;
+      }
+
+      // Con «Más» en pantalla hay menos lugar, y la solapa activa tiene que
+      // entrar sí o sí: sin ella no queda ninguna señal de dónde estás.
+      const iActiva = solapas.findIndex((t) => t.id === active);
+      let usado = anchoMas + GAP;
+      let n = 0;
+      for (let i = 0; i < solapas.length; i++) {
+        const reservaActiva =
+          iActiva > -1 && iActiva >= i ? anchoSolapa[iActiva] + GAP : 0;
+        if (usado + extra(i) + reservaActiva > disponible) break;
+        usado += extra(i);
+        n = i + 1;
+      }
+      setEntran(n);
+    };
+
+    recalcular();
+    const ro = new ResizeObserver(recalcular);
+    ro.observe(bar);
+    return () => ro.disconnect();
+  }, [solapas, active]);
+
+  const enBarra = solapas.slice(0, entran);
+  const desbordan = solapas.slice(entran);
+  // La activa se muestra siempre, aunque le tocara caer en el menú. Y si se
+  // promueve a la barra sale del menú: figurar en los dos lados la duplica.
+  const activaEscondida = desbordan.find((t) => t.id === active);
+  const mostradas = activaEscondida ? [...enBarra, activaEscondida] : enBarra;
+  const enMenu = activaEscondida
+    ? desbordan.filter((t) => t.id !== active)
+    : desbordan;
+
+  const claseSolapa =
+    'flex items-center gap-1.5 px-2.5 h-7 rounded-[7px] text-[12.5px] font-medium transition-colors duration-[120ms] shrink-0 whitespace-nowrap';
+  const estiloSolapa = (id: Tab) => ({
+    // El activo se marca con fondo y no con subrayado: el subrayado colgaba
+    // del borde de la barra y dejó de tener dónde apoyarse.
+    background: active === id ? 'var(--arca-ink)' : 'transparent',
+    color: active === id ? 'var(--arca-surface)' : 'var(--arca-ink-3)',
+  });
+
+  const contenido = (tab: (typeof solapas)[number]) => (
+    <>
+      <tab.icon className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
+      {tab.label}
+      {tab.id === 'pendientes' && pendingCount > 0 && (
+        <span className="text-[9px] font-semibold px-1.5 py-px rounded-full bg-amber-100 text-amber-700">
+          {pendingCount}
+        </span>
+      )}
+      {!tab.ready && (
+        <span className="text-[9px] px-1 py-px rounded-full bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
+          pronto
+        </span>
+      )}
+    </>
+  );
 
   return (
     /**
-     * Trece solapas no entran en un renglón. Antes la barra scrolleaba de
-     * costado y la solapa activa podía quedar fuera de la pantalla: se perdía
-     * la única señal de dónde estabas parado. Ahora envuelve, así que están
-     * todas a la vista y no cuesta ancho de contenido —que es justo lo que
-     * necesitan las tablas de los estados—.
+     * Trece solapas no entran en un renglón. Scrollear de costado dejaba la
+     * activa fuera de la pantalla —la única señal de dónde estabas parado— y
+     * envolver costaba un renglón entero. Ahora entran las que entran y el
+     * resto cae en «Más», con la activa siempre presente.
+     *
+     * Sin iconos: eran 260px de los 572 que sobraban, y en un monitor de 1920
+     * alcanzan para que las trece entren sin abrir el menú.
      */
-    <div className="flex flex-wrap items-center gap-x-1 gap-y-1 mb-5 pb-1.5 border-b border-[var(--arca-border)]">
-      {visibles.map(({ grupo, items }, i) => (
-        <Fragment key={grupo}>
-          {i > 0 && (
+    <div
+      ref={barRef}
+      className="relative flex items-center gap-1 mb-5 pb-1.5 border-b border-[var(--arca-border)]"
+    >
+      {mostradas.map((tab, i) => (
+        <Fragment key={tab.id}>
+          {i > 0 && tab.grupo !== mostradas[i - 1].grupo && (
             <span
               aria-hidden
-              className="w-px h-4 mx-1.5 shrink-0 bg-[var(--arca-border)]"
+              className="w-px h-4 mx-3 shrink-0 bg-[var(--arca-border)]"
             />
           )}
-          {/* El grupo salta de renglón entero: partirlo al medio deshace la
-              única señal de que esas solapas van juntas. Igual puede envolver
-              por dentro si la ventana es tan angosta que no entra ni él. */}
-          <div className="flex flex-wrap items-center gap-1">
-            {items.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => onChange(tab.id)}
-                aria-current={active === tab.id ? 'page' : undefined}
-                title={`${grupo} · ${tab.label}`}
-                className="flex items-center gap-1.5 px-2.5 h-7 rounded-[7px] text-[12.5px] font-medium transition-colors duration-[120ms] shrink-0 whitespace-nowrap"
-                style={{
-                  // El activo se marca con fondo y no con subrayado: al envolver
-                  // en dos renglones el subrayado ya no cae sobre el borde de la
-                  // barra y dejaba de leerse como «acá estás».
-                  background:
-                    active === tab.id ? 'var(--arca-ink)' : 'transparent',
-                  color:
-                    active === tab.id
-                      ? 'var(--arca-surface)'
-                      : 'var(--arca-ink-3)',
-                }}
-              >
-                <tab.icon className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
-                {tab.label}
-                {tab.id === 'pendientes' && pendingCount > 0 && (
-                  <span className="text-[9px] font-semibold px-1.5 py-px rounded-full bg-amber-100 text-amber-700">
-                    {pendingCount}
-                  </span>
-                )}
-                {!tab.ready && (
-                  <span className="text-[9px] px-1 py-px rounded-full bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
-                    pronto
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
+          <button
+            onClick={() => onChange(tab.id)}
+            aria-current={active === tab.id ? 'page' : undefined}
+            title={`${tab.grupo} · ${tab.label}`}
+            className={claseSolapa}
+            style={estiloSolapa(tab.id)}
+          >
+            {contenido(tab)}
+          </button>
         </Fragment>
       ))}
+
+      {enMenu.length > 0 && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className={`${claseSolapa} ml-auto text-[var(--arca-ink-3)]`}
+              title="Solapas que no entran en el ancho de la ventana"
+            >
+              Más
+              <ChevronDown className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-48">
+            {enMenu.map((tab, i) => (
+              <Fragment key={tab.id}>
+                {i > 0 && tab.grupo !== enMenu[i - 1].grupo && (
+                  <DropdownMenuSeparator />
+                )}
+                <DropdownMenuItem onSelect={() => onChange(tab.id)}>
+                  <tab.icon
+                    className="w-3.5 h-3.5 shrink-0 text-[var(--arca-ink-3)]"
+                    strokeWidth={2}
+                  />
+                  {tab.label}
+                  {tab.id === 'pendientes' && pendingCount > 0 && (
+                    <span className="ml-auto text-[9px] font-semibold px-1.5 py-px rounded-full bg-amber-100 text-amber-700">
+                      {pendingCount}
+                    </span>
+                  )}
+                </DropdownMenuItem>
+              </Fragment>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+
+      {/* Copia oculta para medir: siempre con las trece y el botón «Más». */}
+      <div
+        ref={medidorRef}
+        aria-hidden
+        className="absolute left-0 top-0 flex items-center invisible pointer-events-none"
+      >
+        {solapas.map((tab) => (
+          <span key={tab.id} className={claseSolapa}>
+            {contenido(tab)}
+          </span>
+        ))}
+        <span className={claseSolapa}>
+          Más
+          <ChevronDown className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
+        </span>
+      </div>
     </div>
   );
 }
@@ -488,7 +665,12 @@ function AccountingPage() {
   // Guarda en runtime: el search viene de la URL, puede traer cualquier cosa.
   const [tab, setTab] = useState<Tab>(() => {
     const t = String(search.tab ?? '');
-    return (TAB_IDS as readonly string[]).includes(t) ? (t as Tab) : 'plan';
+    // Se entra por la primera solapa, que es la más usada. Antes se entraba
+    // por «Plan de cuentas», que quedó entre las que menos se abren: al
+    // ordenar por uso, la de arranque terminaba promovida al extremo derecho.
+    return (TAB_IDS as readonly string[]).includes(t)
+      ? (t as Tab)
+      : SOLAPAS[0].id;
   });
   const [clientId, setClientId] = useState<string>(() =>
     String(search.clientId ?? '')
