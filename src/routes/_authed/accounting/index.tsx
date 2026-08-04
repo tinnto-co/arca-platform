@@ -666,21 +666,26 @@ function TabBar({
         </DropdownMenu>
       )}
 
-      {/* Copia oculta para medir: siempre con las trece y el botón «Más». */}
+      {/* Copia oculta para medir: siempre con las trece y el botón «Más».
+          Va dentro de una caja de 0×0 recortada porque mide más que la barra
+          y, aun siendo absoluta, su desborde le agregaba scroll horizontal a
+          todo el módulo. `w-max` para que las solapas conserven su ancho
+          natural pese a que el contenedor mida cero. */}
       <div
-        ref={medidorRef}
         aria-hidden
-        className="absolute left-0 top-0 flex items-center invisible pointer-events-none"
+        className="absolute left-0 top-0 h-0 w-0 overflow-hidden pointer-events-none"
       >
-        {solapas.map((tab) => (
-          <span key={tab.id} className={claseSolapa}>
-            {contenido(tab)}
+        <div ref={medidorRef} className="flex items-center w-max">
+          {solapas.map((tab) => (
+            <span key={tab.id} className={claseSolapa}>
+              {contenido(tab)}
+            </span>
+          ))}
+          <span className={claseSolapa}>
+            Más
+            <ChevronDown className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
           </span>
-        ))}
-        <span className={claseSolapa}>
-          Más
-          <ChevronDown className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
-        </span>
+        </div>
       </div>
     </div>
   );
@@ -8065,12 +8070,19 @@ function AnexoICategoryRows({
   const priorAsset = (id: string) => prior?.residualByAsset[id] ?? 0;
   return (
     <>
+      {/* La banda del rubro ocupa todo el ancho, así que como celda no tiene
+          hacia dónde quedarse fija y se iba con el scroll: el clasificador se
+          perdía justo cuando hace falta. Se congela el rótulo adentro, y la
+          banda se saca de la columna fija para no arrastrar su borde al
+          extremo derecho. */}
       <tr className="bg-[var(--arca-surface-2)]">
         <td
-          className="py-1.5 pl-4 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--arca-ink-2)]"
+          className="py-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--arca-ink-2)] static! shadow-none!"
           colSpan={prior ? 12 : 11}
         >
-          {FIXED_ASSET_CATEGORY_LABELS[cat.category] ?? cat.category}
+          <span className="sticky left-0 inline-block pl-4">
+            {FIXED_ASSET_CATEGORY_LABELS[cat.category] ?? cat.category}
+          </span>
         </td>
       </tr>
       {cat.assets.map((a) => (
@@ -8444,9 +8456,20 @@ function EstadosContables({
         <nav className="w-[188px] shrink-0 sticky top-4">
           <ArcaCard>
             <div className="py-1.5">
-              {grupos.map(({ grupo, items }) => (
-                <div key={grupo} className="py-1">
-                  <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--arca-ink-3)]">
+              {/* El rótulo del grupo no es una opción más: va separado por una
+                  línea, más chico y espaciado, y las opciones sangradas debajo.
+                  Antes compartía sangrado y color con los ítems y solo se
+                  descubría que no era clickeable al pasarle el cursor. */}
+              {grupos.map(({ grupo, items }, i) => (
+                <div
+                  key={grupo}
+                  className={
+                    i > 0
+                      ? 'pt-2 mt-2 border-t border-[var(--arca-border)]'
+                      : 'pt-0.5'
+                  }
+                >
+                  <div className="px-3 pb-1 text-[9.5px] font-semibold uppercase tracking-[0.1em] text-[var(--arca-ink-3)] cursor-default select-none">
                     {grupo}
                   </div>
                   {items.map(({ k, label, title }) => (
@@ -8455,7 +8478,7 @@ function EstadosContables({
                       onClick={() => setView(k)}
                       title={title ?? label}
                       aria-current={view === k ? 'page' : undefined}
-                      className="w-full text-left px-3 py-1 text-[12.5px] leading-[1.35] border-l-2 transition-colors"
+                      className="w-full text-left pl-5 pr-3 py-1 text-[12.5px] leading-[1.35] border-l-2 transition-colors"
                       style={{
                         borderColor:
                           view === k ? 'var(--arca-ink)' : 'transparent',
