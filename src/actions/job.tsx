@@ -1,7 +1,7 @@
 import { createServerFn } from '@tanstack/react-start';
 import z from 'zod';
-import axios from 'axios';
 import { db } from '@/lib/db';
+import { scrapperPost } from '@/lib/scrapper-api';
 import {
   job,
   jobLog,
@@ -272,9 +272,7 @@ export const getActiveJobsSummary = createServerFn({ method: 'GET' }).handler(
       .orderBy(asc(job.createdAt));
 
     // Un job puede terminar por finished, failed o simplemente actualizarse.
-    const terminadoAt = sql<
-      Date | null
-    >`COALESCE(${job.finishedAt}, ${job.failedAt}, ${job.updatedAt})`;
+    const terminadoAt = sql<Date | null>`COALESCE(${job.finishedAt}, ${job.failedAt}, ${job.updatedAt})`;
 
     const recentlyFinished = await db
       .select({
@@ -344,9 +342,10 @@ export const dispatchAllJobs = createServerFn({ method: 'POST' })
       types.map((type) => ({ type, credencialId: c.id }))
     );
 
-    const { data } = await axios.post(`${JOBS_API_URL}/api/jobs/batch`, {
-      jobs,
-    });
+    const data = await scrapperPost<{ created?: number; errors?: number }>(
+      `${JOBS_API_URL}/api/jobs/batch`,
+      { jobs }
+    );
     const created = data?.created ?? 0;
     const errors = data?.errors ?? 0;
     return { success: errors === 0, dispatched: created, errors };

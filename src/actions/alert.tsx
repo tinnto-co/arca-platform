@@ -1,7 +1,7 @@
 import { createServerFn } from '@tanstack/react-start';
 import z from 'zod';
-import axios from 'axios';
 import { db } from '@/lib/db';
+import { scrapperPost } from '@/lib/scrapper-api';
 import {
   alerta,
   job,
@@ -194,7 +194,7 @@ export const retryAlertJobs = createServerFn({ method: 'POST' })
     if (jobs.length === 0)
       throw new Error('No se encontraron los jobs fallidos');
 
-    await axios.post(`${JOBS_API_URL}/api/jobs/batch`, { jobs });
+    await scrapperPost(`${JOBS_API_URL}/api/jobs/batch`, { jobs });
 
     const now = new Date();
     await db
@@ -238,7 +238,7 @@ export const retryAllRetryable = createServerFn({ method: 'POST' }).handler(
       orgId
     );
     if (jobs.length > 0) {
-      await axios.post(`${JOBS_API_URL}/api/jobs/batch`, { jobs });
+      await scrapperPost(`${JOBS_API_URL}/api/jobs/batch`, { jobs });
     }
 
     const now = new Date();

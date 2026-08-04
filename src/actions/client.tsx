@@ -1,7 +1,7 @@
 import { createServerFn } from '@tanstack/react-start';
 import z from 'zod';
-import axios from 'axios';
 import { db } from '@/lib/db';
+import { scrapperGet, scrapperPost } from '@/lib/scrapper-api';
 import {
   credencialAfip,
   cliente,
@@ -215,7 +215,7 @@ export const createCredencialWithClientes = createServerFn({
     });
 
     try {
-      await axios.post(`${JOBS_API_URL}/api/jobs`, {
+      await scrapperPost(`${JOBS_API_URL}/api/jobs`, {
         type: 'comprobantes',
         credencialId: result.credencial.id,
       });
@@ -245,7 +245,7 @@ export const notifyBackendNewCredencial = createServerFn({
     await assertCredencialDeOrg(ctx.data.credencialId, orgId);
 
     try {
-      await axios.post(`${JOBS_API_URL}/api/jobs`, {
+      await scrapperPost(`${JOBS_API_URL}/api/jobs`, {
         type: 'comprobantes',
         credencialId: ctx.data.credencialId,
       });
@@ -619,10 +619,7 @@ export const updateCredencialPassword = createServerFn({
       .update(credencialAfip)
       .set({ clave: encrypt(ctx.data.password), estado: 'activa' })
       .where(
-        and(
-          eq(credencialAfip.id, ctx.data.id),
-          eq(credencialAfip.orgId, orgId)
-        )
+        and(eq(credencialAfip.id, ctx.data.id), eq(credencialAfip.orgId, orgId))
       )
       .returning({ id: credencialAfip.id });
 
@@ -783,9 +780,11 @@ async function waitForJob(
   orgId: string
 ): Promise<{ status: string; result?: unknown; failedReason?: string | null }> {
   for (let i = 0; i < MAX_POLL_ATTEMPTS; i++) {
-    const { data } = await axios.get(`${baseUrl}/api/jobs/${jobId}`, {
-      params: { orgId },
-    });
+    const data = await scrapperGet<{
+      status: string;
+      result?: unknown;
+      failedReason?: string | null;
+    }>(`${baseUrl}/api/jobs/${jobId}?orgId=${encodeURIComponent(orgId)}`);
     if (data.status === 'finished' || data.status === 'failed') {
       return data;
     }
@@ -841,7 +840,7 @@ export const updateCredencialModules = createServerFn({
     const jobs = pendingTypes.map((type) => ({ type, credencialId }));
 
     try {
-      await axios.post(`${JOBS_API_URL}/api/jobs/batch`, { jobs });
+      await scrapperPost(`${JOBS_API_URL}/api/jobs/batch`, { jobs });
       return {
         success: true,
         message:
@@ -851,12 +850,12 @@ export const updateCredencialModules = createServerFn({
         credencialId,
         skipped,
       };
-    } catch (error: any) {
-      console.error('[updateCredencialModules]', error?.response?.data ?? error);
+    } catch (error) {
+      console.error('[updateCredencialModules]', error);
       throw new Error(
-        error.response?.data?.error ||
-          error.message ||
-          'Error al encolar la actualización'
+        error instanceof Error
+          ? error.message
+          : 'Error al encolar la actualización'
       );
     }
   });
@@ -949,7 +948,7 @@ export const scrapBatchJobs = createServerFn({
     }
 
     try {
-      const { data } = await axios.post<{ created?: number; errors?: number }>(
+      const data = await scrapperPost<{ created?: number; errors?: number }>(
         `${JOBS_API_URL}/api/jobs/batch`,
         { jobs }
       );
@@ -960,15 +959,11 @@ export const scrapBatchJobs = createServerFn({
         skipped,
       };
     } catch (error) {
-      const axiosError = error as {
-        response?: { data?: { error?: string } };
-        message?: string;
-      };
-      console.error('[scrapBatchJobs]', axiosError.response?.data ?? error);
+      console.error('[scrapBatchJobs]', error);
       throw new Error(
-        axiosError.response?.data?.error ??
-          axiosError.message ??
-          'Error al encolar la actualización masiva'
+        error instanceof Error
+          ? error.message
+          : 'Error al encolar la actualización masiva'
       );
     }
   });
@@ -1018,10 +1013,10 @@ export const scrapSingleJob = createServerFn({
       if (existing) {
         jobId = existing.id;
       } else {
-        const { data: created } = await axios.post(`${JOBS_API_URL}/api/jobs`, {
-          type: jobType,
-          credencialId,
-        });
+        const created = await scrapperPost<{ id: string }>(
+          `${JOBS_API_URL}/api/jobs`,
+          { type: jobType, credencialId }
+        );
         jobId = created.id;
       }
 
@@ -1038,12 +1033,12 @@ export const scrapSingleJob = createServerFn({
         credencialId,
         result: result.result ?? {},
       };
-    } catch (error: any) {
-      console.error('[scrapSingleJob]', error?.response?.data ?? error);
+    } catch (error) {
+      console.error('[scrapSingleJob]', error);
       throw new Error(
-        error.response?.data?.error ||
-          error.message ||
-          `Error al ejecutar job ${jobType}`
+        error instanceof Error
+          ? error.message
+          : `Error al ejecutar job ${jobType}`
       );
     }
   });
@@ -1178,9 +1173,7 @@ export const markVencimientoCompletado = createServerFn({
         completadoAt: ctx.data.completed ? new Date() : null,
         completadoPor: ctx.data.completed ? userId : null,
       })
-      .where(
-        and(eq(vencimiento.id, ctx.data.id), eq(vencimiento.orgId, orgId))
-      )
+      .where(and(eq(vencimiento.id, ctx.data.id), eq(vencimiento.orgId, orgId)))
       .returning({ id: vencimiento.id });
 
     if (!updated) throw new Error('Vencimiento no encontrado o sin acceso');

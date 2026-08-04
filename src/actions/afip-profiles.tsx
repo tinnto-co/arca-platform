@@ -7,8 +7,8 @@
  */
 import { createServerFn } from '@tanstack/react-start';
 import z from 'zod';
-import axios from 'axios';
 import { db } from '@/lib/db';
+import { scrapperPost } from '@/lib/scrapper-api';
 import {
   credencialAfip,
   cliente,
@@ -170,12 +170,15 @@ export const addProfileAsCliente = createServerFn({ method: 'POST' })
 
     // Primer scrapeo del perfil recién habilitado.
     try {
-      await axios.post(`${JOBS_API_URL}/api/jobs`, {
+      await scrapperPost(`${JOBS_API_URL}/api/jobs`, {
         type: 'comprobantes',
         credencialId: cred.id,
       });
     } catch (error) {
-      console.error('[addProfileAsCliente] Error encolando job inicial:', error);
+      console.error(
+        '[addProfileAsCliente] Error encolando job inicial:',
+        error
+      );
     }
 
     return created;
