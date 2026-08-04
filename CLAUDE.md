@@ -144,7 +144,30 @@ BETTER_AUTH_SECRET=<secret>
 SCRAPPER_JOBS_URL=http://localhost:3002
 GEMINI_API_KEY=<key>
 CREDENTIAL_ENCRYPTION_KEY=<64-char-hex>  # AES-256-GCM key for encrypting AFIP credentials (generate with: openssl rand -hex 32)
+
+# Cloudflare R2 — file storage (documents, signatures, EECC PDFs)
+R2_ACCOUNT_ID=<account-id>
+R2_ACCESS_KEY_ID=<key-id>
+R2_SECRET_ACCESS_KEY=<secret>
+R2_BUCKET=arca
+R2_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
 ```
+
+## File storage (R2)
+
+**Never store files as base64 in the database.** Uploads go straight to R2 via `src/lib/r2.ts` (Bun's native `S3Client`, no extra deps). The DB stores `storage_key` — the path inside the private bucket — not a URL, because the bucket is private and signed URLs expire. Files reach the browser through authenticated endpoints that stream from R2 (`/api/documents/$id`).
+
+Key layout:
+
+```
+documentos/{orgId}/{clienteId}/{YYYY}/{MM}/{documentId}.{ext}
+documentos/{orgId}/_sin-cliente/{credencialId}/{YYYY}/{MM}/{documentId}.{ext}
+firmas/{orgId}/empleador/{clienteId}.{ext}
+firmas/{orgId}/contador/{firmanteId}.{ext}
+eecc/{orgId}/{clienteId}/{ejercicioId}.pdf
+```
+
+Use the key builders (`documentKey`, `firmaEmpleadorKey`, `firmaContadorKey`, `eeccKey`) instead of composing paths by hand.
 
 ## Conventions
 
