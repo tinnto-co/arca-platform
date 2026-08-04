@@ -1893,16 +1893,17 @@ export async function exportCmvExcel(data: CmvExportData): Promise<void> {
 
 /* ═══════════════ Paquete EECC + Libros legales — PDF (Fase 7) ═══════════════ */
 
-const EECC_DISCLAIMER_HISTORICO =
-  'Estados Contables expresados en valores históricos, sin ajuste por inflación (RT 6).';
-
-const EECC_DISCLAIMER_AJUSTADO =
-  'Estados Contables expresados en moneda homogénea de cierre, con ajuste por inflación (RT 6).';
-
-const disclaimerFor = (valuation: 'ajustado' | 'historico' | undefined) =>
+/**
+ * La norma que se cita depende de la empresa: un ente pequeño aplica RT 54 y
+ * el resto RT 6. El mecanismo del ajuste es el mismo en las dos.
+ */
+const disclaimerFor = (
+  valuation: 'ajustado' | 'historico' | undefined,
+  norma = 'RT 54'
+) =>
   valuation === 'historico'
-    ? EECC_DISCLAIMER_HISTORICO
-    : EECC_DISCLAIMER_AJUSTADO;
+    ? `Estados Contables expresados en valores históricos, sin ajuste por inflación (${norma}).`
+    : `Estados Contables expresados en moneda homogénea de cierre, con ajuste por inflación (${norma}).`;
 
 export interface EeccPackageData {
   empresaName: string;
@@ -1916,6 +1917,8 @@ export interface EeccPackageData {
   efe: EfeResult | null;
   /** Con qué valuación se generaron los estados. Define el disclaimer. */
   valuation?: 'ajustado' | 'historico';
+  /** Cómo se cita la norma del ajuste: "RT 54" o "RT 6". */
+  norma?: string;
   anexoI: {
     categories: AnexoICategory[];
     grandTotals: AnexoICategory['totals'];
@@ -2716,7 +2719,7 @@ function EeccPackageDoc({ data }: { data: EeccPackageData }) {
             Ejercicio Económico N°{data.fiscalYearNumber}
           </Text>
           <Text style={pk.coverMeta}>{data.periodLabel}</Text>
-          <Text style={pk.coverDisc}>{disclaimerFor(data.valuation)}</Text>
+          <Text style={pk.coverDisc}>{disclaimerFor(data.valuation, data.norma)}</Text>
           <Text style={pk.coverGen}>Generado el {data.generatedLabel}</Text>
         </View>
         <PageFooter data={data} />
@@ -2884,6 +2887,8 @@ export async function exportLibroMayorPdf(
 /* ── Libro Inventarios y Balances — US 7.1.3 ── */
 
 export interface LibroInventariosData {
+  /** Cómo se cita la norma del ajuste: "RT 54" o "RT 6". */
+  norma?: string;
   empresaName: string;
   cuit: string;
   fiscalYearNumber: number;
@@ -2988,7 +2993,7 @@ function LibroInventariosDoc({ data }: { data: LibroInventariosData }) {
         <Text
           style={[lm.meta, { fontStyle: 'italic', color: '#999' }] as never}
         >
-          {disclaimerFor(data.valuation)}
+          {disclaimerFor(data.valuation, data.norma)}
         </Text>
         <InventarioBlock esp={data.esp} />
         <EspBlock esp={data.esp} />
@@ -3027,6 +3032,8 @@ export async function exportLibroInventariosPdf(
 /* ═════ Excel de los estados nuevos: EEPN, EFE y Nota 3 (AXI-6/7/8) ═════ */
 
 export interface EstadosExcelData {
+  /** Cómo se cita la norma del ajuste: "RT 54" o "RT 6". */
+  norma?: string;
   empresaName: string;
   fiscalYearNumber: number;
   periodLabel: string;
@@ -3048,7 +3055,7 @@ export async function exportEstadosExcel(
   const disclaimer =
     data.valuation === 'historico'
       ? 'Valores históricos, sin ajuste por inflación (papel de trabajo).'
-      : 'Moneda homogénea de cierre, con ajuste por inflación (RT 6).';
+      : `Moneda homogénea de cierre, con ajuste por inflación (${data.norma ?? 'RT 54'}).`;
 
   /** Encabezado común a todas las hojas. */
   const header = (ws: XLWorksheet, title: string, cols: number) => {

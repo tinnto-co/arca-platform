@@ -31,6 +31,7 @@ export const getClient = createServerFn({
         actividadPrincipal: client.actividadPrincipal,
         fechaInscripcion: client.fechaInscripcion,
         numeroInscripcion: client.numeroInscripcion,
+        accountingFramework: client.accountingFramework,
         createdAt: client.createdAt,
         updatedAt: client.updatedAt,
       })

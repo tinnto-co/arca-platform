@@ -66,6 +66,15 @@ export const representative = pgTable("representative", {
   index('idx_representative_org').on(table.organizationId),
 ]);
 
+/**
+ * Norma contable aplicada. La RT 54 (T.O. RT 59) rige para entes pequeños y es
+ * la que usa el estudio en la mayoría de sus balances; la RT 6 es la general.
+ */
+export const accountingFrameworkEnum = pgEnum("accounting_framework", [
+  "rt54",
+  "rt6",
+]);
+
 export const client = pgTable("client", {
   id: uuid("id").primaryKey().defaultRandom(),
   representativeId: uuid("representative_id").references(() => representative.id, {
@@ -146,6 +155,15 @@ export const client = pgTable("client", {
   fechaInscripcion: timestamp("fecha_inscripcion", { mode: "date" }),
   /** Número de inscripción en la Inspección General de Justicia (IGJ). */
   numeroInscripcion: text("numero_inscripcion"),
+  /**
+   * Norma bajo la que se preparan los Estados Contables. Define cómo se cita
+   * el ajuste por inflación en los estados y en la carátula: un ente pequeño
+   * aplica la RT 54 (T.O. RT 59) y el resto, la RT 6. El mecanismo del ajuste
+   * es el mismo; lo que cambia es la norma que se invoca.
+   */
+  accountingFramework: accountingFrameworkEnum("accounting_framework")
+    .notNull()
+    .default("rt54"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

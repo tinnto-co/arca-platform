@@ -51,6 +51,7 @@ import {
 import { PageHeader } from '@/components/shared/page-header';
 import { ArcaCard } from '@/components/dashboard/shared';
 import { SaldosReferencia } from '@/components/accounting/SaldosReferencia';
+import { frameworkCite } from '@/lib/accounting-labels';
 import {
   Select,
   SelectContent,
@@ -7786,6 +7787,14 @@ function EstadosContables({
   });
   const approved = fs?.status === 'approved';
 
+  // La norma que se cita en los estados depende de la empresa: un ente pequeño
+  // aplica RT 54 y el resto RT 6. El mecanismo del ajuste es el mismo.
+  const { data: membreteEecc } = useQuery({
+    queryKey: ['accounting', 'membrete', clientId],
+    queryFn: () => getMembreteData({ data: { clientId } }),
+  });
+  const norma = frameworkCite(membreteEecc?.accountingFramework ?? 'rt54');
+
   const invalidateFs = () =>
     qc.invalidateQueries({
       queryKey: ['accounting', 'financial-statement', clientId, effectiveFyId],
@@ -7875,7 +7884,7 @@ function EstadosContables({
                 onClick={() => setValuation(k)}
                 title={
                   k === 'ajustado'
-                    ? 'Incluye el asiento de ajuste por inflación (RT 6). Es como se presentan los EECC.'
+                    ? `Incluye el asiento de ajuste por inflación (${norma}). Es como se presentan los EECC.`
                     : 'Excluye el asiento de ajuste. Queda como papel de trabajo.'
                 }
                 className="px-2.5 h-6 text-[11.5px] font-medium rounded-[6px] transition-colors"
@@ -7953,6 +7962,7 @@ function EstadosContables({
           clientName={clientName}
           selectedFy={selectedFy}
           valuation={valuation}
+          norma={norma}
         />
       )}
       {view === 'er' && (
@@ -7961,6 +7971,7 @@ function EstadosContables({
           clientName={clientName}
           selectedFy={selectedFy}
           valuation={valuation}
+          norma={norma}
         />
       )}
       {view === 'eepn' && (
@@ -7969,6 +7980,7 @@ function EstadosContables({
           clientName={clientName}
           selectedFy={selectedFy}
           valuation={valuation}
+          norma={norma}
         />
       )}
       {view === 'efe' && (
@@ -7977,6 +7989,7 @@ function EstadosContables({
           clientName={clientName}
           selectedFy={selectedFy}
           valuation={valuation}
+          norma={norma}
         />
       )}
       {view === 'nota3' && (
@@ -7985,6 +7998,7 @@ function EstadosContables({
           clientName={clientName}
           selectedFy={selectedFy}
           valuation={valuation}
+          norma={norma}
         />
       )}
       {view === 'cmv' && (
@@ -8040,6 +8054,7 @@ function EstadosContables({
           notes={fs?.notes ?? []}
           isOwner={isOwner}
           valuation={valuation}
+          norma={norma}
           pdfGeneratedAt={fs?.pdfGeneratedAt ?? null}
           pdfGeneratedByName={fs?.pdfGeneratedByName ?? null}
           onPdfSaved={invalidateFs}
@@ -8054,11 +8069,14 @@ function EspView({
   clientName,
   selectedFy,
   valuation,
+  norma,
 }: {
   clientId: string;
   clientName: string;
   selectedFy: FyOption | undefined;
   valuation: 'ajustado' | 'historico';
+  /** Cómo se cita la norma del ajuste: "RT 54" o "RT 6". */
+  norma: string;
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [drill, setDrill] = useState<LedgerDrill | null>(null);
@@ -8117,7 +8135,7 @@ function EspView({
             {valuation === 'historico'
               ? 'Expresado en valores históricos, sin ajuste por inflación. Papel de trabajo.'
               : data?.inflationApplied
-                ? 'Expresado en moneda homogénea de cierre (ajuste por inflación · RT 6).'
+                ? `Expresado en moneda homogénea de cierre (ajuste por inflación · ${norma}).`
                 : 'El ajuste por inflación del ejercicio todavía no está generado: los importes son históricos. Generalo en la solapa «Ajuste por inflación».'}
           </div>
         </div>
@@ -8338,11 +8356,14 @@ function Nota3View({
   clientName,
   selectedFy,
   valuation,
+  norma,
 }: {
   clientId: string;
   clientName: string;
   selectedFy: FyOption | undefined;
   valuation: 'ajustado' | 'historico';
+  /** Cómo se cita la norma del ajuste: "RT 54" o "RT 6". */
+  norma: string;
 }) {
   const effectiveFyId = selectedFy?.id ?? '';
   const { data, isLoading } = useQuery({
@@ -8390,7 +8411,7 @@ function Nota3View({
         </div>
         <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
           {valuation === 'ajustado'
-            ? 'Valores ajustados por inflación (RT 6), en moneda homogénea de cierre.'
+            ? `Valores ajustados por inflación (${norma}), en moneda homogénea de cierre.`
             : 'Valores históricos, sin ajuste por inflación. Papel de trabajo.'}
         </div>
       </div>
@@ -8554,11 +8575,14 @@ function EfeView({
   clientName,
   selectedFy,
   valuation,
+  norma,
 }: {
   clientId: string;
   clientName: string;
   selectedFy: FyOption | undefined;
   valuation: 'ajustado' | 'historico';
+  /** Cómo se cita la norma del ajuste: "RT 54" o "RT 6". */
+  norma: string;
 }) {
   const effectiveFyId = selectedFy?.id ?? '';
   const { data, isLoading } = useQuery({
@@ -8599,7 +8623,7 @@ function EfeView({
         </div>
         <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
           {valuation === 'ajustado'
-            ? 'Expresado en moneda homogénea de cierre (ajuste por inflación · RT 6).'
+            ? `Expresado en moneda homogénea de cierre (ajuste por inflación · ${norma}).`
             : 'Expresado en valores históricos, sin ajuste por inflación. Papel de trabajo.'}
         </div>
       </div>
@@ -8727,11 +8751,14 @@ function EepnView({
   clientName,
   selectedFy,
   valuation,
+  norma,
 }: {
   clientId: string;
   clientName: string;
   selectedFy: FyOption | undefined;
   valuation: 'ajustado' | 'historico';
+  /** Cómo se cita la norma del ajuste: "RT 54" o "RT 6". */
+  norma: string;
 }) {
   const effectiveFyId = selectedFy?.id ?? '';
 
@@ -8802,7 +8829,7 @@ function EepnView({
         </div>
         <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
           {valuation === 'ajustado'
-            ? 'Expresado en moneda homogénea de cierre (ajuste por inflación · RT 6). La reexpresión del patrimonio inicial se incluye en «Saldos al inicio»; el Capital social se mantiene a valor nominal.'
+            ? `Expresado en moneda homogénea de cierre (ajuste por inflación · ${norma}). La reexpresión del patrimonio inicial se incluye en «Saldos al inicio»; el Capital social se mantiene a valor nominal.`
             : 'Expresado en valores históricos, sin ajuste por inflación. Papel de trabajo.'}
         </div>
       </div>
@@ -8958,11 +8985,14 @@ function ErView({
   clientName,
   selectedFy,
   valuation,
+  norma,
 }: {
   clientId: string;
   clientName: string;
   selectedFy: FyOption | undefined;
   valuation: 'ajustado' | 'historico';
+  /** Cómo se cita la norma del ajuste: "RT 54" o "RT 6". */
+  norma: string;
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [drill, setDrill] = useState<LedgerDrill | null>(null);
@@ -9015,7 +9045,7 @@ function ErView({
             {valuation === 'historico'
               ? 'Expresado en valores históricos, sin ajuste por inflación. Papel de trabajo.'
               : data?.inflationApplied
-                ? 'Expresado en moneda homogénea de cierre (ajuste por inflación · RT 6).'
+                ? `Expresado en moneda homogénea de cierre (ajuste por inflación · ${norma}).`
                 : 'El ajuste por inflación del ejercicio todavía no está generado: los importes son históricos. Generalo en la solapa «Ajuste por inflación».'}
           </div>
         </div>
@@ -9727,6 +9757,7 @@ function ExportView({
   notes,
   isOwner,
   valuation,
+  norma,
   pdfGeneratedAt,
   pdfGeneratedByName,
   onPdfSaved,
@@ -9738,6 +9769,8 @@ function ExportView({
   notes: FsNote[];
   isOwner: boolean;
   valuation: 'ajustado' | 'historico';
+  /** Cómo se cita la norma del ajuste: "RT 54" o "RT 6". */
+  norma: string;
   pdfGeneratedAt: string | null;
   pdfGeneratedByName: string | null;
   onPdfSaved: () => void;
@@ -9805,6 +9838,7 @@ function ExportView({
         fiscalYearNumber: esp.fiscalYearNumber,
         periodLabel: esp.periodLabel,
         valuation,
+        norma,
         eepn: eepn ?? null,
         efe: efe ?? null,
         esp,
@@ -9835,6 +9869,7 @@ function ExportView({
         eepn: eepn ?? null,
         efe: efe ?? null,
         valuation,
+        norma,
         anexoII,
         anexoI: anexoI
           ? {

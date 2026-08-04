@@ -11,6 +11,13 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { getClient } from '@/actions/profile';
 import { updateClientFiscalData } from '@/actions/accounting';
@@ -74,6 +81,7 @@ function FiscalDataCard({
     actividadPrincipal?: string | null;
     fechaInscripcion?: string | Date | null;
     numeroInscripcion?: string | null;
+    accountingFramework?: 'rt54' | 'rt6' | null;
   };
 }) {
   const qc = useQueryClient();
@@ -87,6 +95,7 @@ function FiscalDataCard({
     actividadPrincipal: client.actividadPrincipal ?? '',
     fechaInscripcion: toDateInput(client.fechaInscripcion),
     numeroInscripcion: client.numeroInscripcion ?? '',
+    accountingFramework: client.accountingFramework ?? 'rt54',
   });
   const [form, setForm] = useState(initial);
   useEffect(() => {
@@ -97,6 +106,7 @@ function FiscalDataCard({
     client.actividadPrincipal,
     client.fechaInscripcion,
     client.numeroInscripcion,
+    client.accountingFramework,
   ]);
 
   const mut = useMutation({
@@ -108,6 +118,7 @@ function FiscalDataCard({
           actividadPrincipal: form.actividadPrincipal,
           fechaInscripcion: form.fechaInscripcion || null,
           numeroInscripcion: form.numeroInscripcion,
+          accountingFramework: form.accountingFramework,
         },
       }),
     onSuccess: () => {
@@ -136,6 +147,34 @@ function FiscalDataCard({
           }}
           className="space-y-3"
         >
+          <div className="space-y-1.5">
+            <Label htmlFor="fd-norma" className="text-xs">
+              Norma contable aplicada
+            </Label>
+            <Select
+              value={form.accountingFramework}
+              onValueChange={(v) =>
+                setForm((f) => ({
+                  ...f,
+                  accountingFramework: v as 'rt54' | 'rt6',
+                }))
+              }
+            >
+              <SelectTrigger id="fd-norma" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="rt54">
+                  RT 54 (T.O. RT 59) — entes pequeños
+                </SelectItem>
+                <SelectItem value="rt6">RT 6 — norma general</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground">
+              Define cómo se cita el ajuste por inflación en los Estados
+              Contables. El cálculo es el mismo en las dos.
+            </p>
+          </div>
           <div className="space-y-1.5">
             <Label htmlFor="fd-actividad" className="text-xs">
               Actividad principal

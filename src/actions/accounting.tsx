@@ -64,6 +64,7 @@ import {
   ACCOUNT_GROUP_LABELS,
   EXPENSE_FUNCTION_LABELS,
   type AccountGroup,
+  type AccountingFramework,
 } from '@/lib/accounting-labels';
 import {
   buildEntryLines,
@@ -4719,6 +4720,8 @@ export interface MembreteData {
   actividadPrincipal: string;
   fechaInscripcion: Date | null;
   numeroInscripcion: string;
+  /** Norma bajo la que se preparan los EECC: define cómo se cita el ajuste. */
+  accountingFramework: AccountingFramework;
   accountant: AccountantSignatureData | null;
 }
 
@@ -4737,6 +4740,7 @@ export const getMembreteData = createServerFn({ method: 'GET' })
         actividadPrincipal: client.actividadPrincipal,
         fechaInscripcion: client.fechaInscripcion,
         numeroInscripcion: client.numeroInscripcion,
+        accountingFramework: client.accountingFramework,
       })
       .from(client)
       .where(eq(client.id, ctx.data.clientId))
@@ -4755,6 +4759,7 @@ export const getMembreteData = createServerFn({ method: 'GET' })
       actividadPrincipal: c?.actividadPrincipal ?? '',
       fechaInscripcion: c?.fechaInscripcion ?? null,
       numeroInscripcion: c?.numeroInscripcion ?? '',
+      accountingFramework: c?.accountingFramework ?? 'rt54',
       accountant: sig
         ? {
             nombre: sig.nombre ?? '',
@@ -4846,6 +4851,7 @@ export const updateClientFiscalData = createServerFn({ method: 'POST' })
       actividadPrincipal: z.string().max(300).nullable().optional(),
       fechaInscripcion: z.string().nullable().optional(), // YYYY-MM-DD
       numeroInscripcion: z.string().max(60).nullable().optional(),
+      accountingFramework: z.enum(['rt54', 'rt6']).optional(),
     })
   )
   .handler(async (ctx) => {
@@ -4858,6 +4864,8 @@ export const updateClientFiscalData = createServerFn({ method: 'POST' })
     if (ctx.data.address !== undefined) set.address = ctx.data.address;
     if (ctx.data.actividadPrincipal !== undefined)
       set.actividadPrincipal = ctx.data.actividadPrincipal || null;
+    if (ctx.data.accountingFramework !== undefined)
+      set.accountingFramework = ctx.data.accountingFramework;
     if (ctx.data.numeroInscripcion !== undefined)
       set.numeroInscripcion = ctx.data.numeroInscripcion || null;
     if (ctx.data.fechaInscripcion !== undefined)
