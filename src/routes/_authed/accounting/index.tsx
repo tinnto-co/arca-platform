@@ -1170,13 +1170,16 @@ function PlanDeCuentas({
       <ArcaCard>
         {/* Toolbar */}
         <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-[var(--arca-border)]">
-          <div className="relative">
+          {/* Elástico a propósito: es el único control que puede ceder ancho.
+              Con ancho fijo, la barra entraba por un pelo y cualquier
+              diferencia de renderizado la mandaba a un segundo renglón. */}
+          <div className="relative flex-1 min-w-[150px] max-w-[260px]">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--arca-ink-3)]" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Buscar código o nombre…"
-              className={`${INPUT_CLASS} pl-7 w-56`}
+              className={`${INPUT_CLASS} pl-7 w-full`}
             />
           </div>
 
@@ -1184,7 +1187,7 @@ function PlanDeCuentas({
             value={rubro === '' ? 'all' : rubro}
             onValueChange={(v) => setRubro(v === 'all' ? '' : v)}
           >
-            <SelectTrigger size="sm" className="w-52 text-[12.5px]">
+            <SelectTrigger size="sm" className="w-44 text-[12.5px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -1323,7 +1326,7 @@ function PlanDeCuentas({
                   className={TOOLBAR_BTN_PRIMARIO}
                 >
                   <Plus className="w-3 h-3" strokeWidth={2.5} />
-                  Nueva cuenta propia
+                  Nueva cuenta
                 </button>
               </>
             )}
@@ -3656,7 +3659,7 @@ function Asientos({
                 setFrom(e.target.value);
                 setPage(1);
               }}
-              className={`${INPUT_CLASS} w-36`}
+              className={`${INPUT_CLASS} w-32`}
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -3670,7 +3673,7 @@ function Asientos({
                 setTo(e.target.value);
                 setPage(1);
               }}
-              className={`${INPUT_CLASS} w-36`}
+              className={`${INPUT_CLASS} w-32`}
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -3684,7 +3687,7 @@ function Asientos({
                 setPage(1);
               }}
             >
-              <SelectTrigger size="sm" className="w-44 text-[12.5px]">
+              <SelectTrigger size="sm" className="w-40 text-[12.5px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -3749,7 +3752,7 @@ function Asientos({
                 setSortDir(d2 as 'asc' | 'desc');
               }}
             >
-              <SelectTrigger size="sm" className="w-36 text-[12.5px]">
+              <SelectTrigger size="sm" className="w-32 text-[12.5px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -3789,14 +3792,16 @@ function Asientos({
             {(isOwner || canWrite) && (
               <span aria-hidden className={TOOLBAR_SEP} />
             )}
+            {/* Solo icono: con cinco filtros más el orden, la barra no da para
+                dos botones rotulados. El nombre va en el `title`. */}
             {isOwner && (
               <button
                 onClick={exportLibroDiario}
-                title="PDF del Libro Diario para rubricar"
-                className={TOOLBAR_BTN}
+                title="Descargar el Libro Diario en PDF, para rubricar"
+                aria-label="Descargar el Libro Diario en PDF, para rubricar"
+                className={TOOLBAR_ICON_BTN}
               >
-                <Download className="w-3 h-3" strokeWidth={2} />
-                Libro Diario
+                <Download className="w-3.5 h-3.5" strokeWidth={2} />
               </button>
             )}
             {canWrite && (
