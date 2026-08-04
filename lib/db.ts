@@ -129,6 +129,23 @@ export async function withUserContext<T>(
   });
 }
 
+/**
+ * Corre `fn` con `app.org_id` seteado, en una transacción y como `arca_app`.
+ *
+ * Para cuando un request del portal necesita un dato del estudio: su pool es
+ * `arca_portal`, que a propósito no tiene permiso sobre las tablas internas.
+ * El orgId no lo elige el cliente, sale de una fila que el portal ya leyó.
+ */
+export async function withOrgContext<T>(
+  orgId: string,
+  fn: (tx: Tx) => Promise<T>
+): Promise<T> {
+  return baseDb.transaction(async (tx) => {
+    await tx.execute(sql`select set_config('app.org_id', ${orgId}, true)`);
+    return fn(tx);
+  });
+}
+
 export const dbReadonly = routed(() =>
   resolve(readonlyPoolsByOrg, READONLY_URL, baseReadonlyDb)
 );

@@ -9,7 +9,7 @@
 import { createServerFn } from '@tanstack/react-start';
 import { getRequestHeaders } from '@tanstack/react-start/server';
 import z from 'zod';
-import { db, withUserContext } from '@/lib/db';
+import { db, withUserContext, withOrgContext } from '@/lib/db';
 import { setDbContext } from '@/lib/db-context';
 import { auth } from '@/lib/auth';
 import { user as userTable, organization, member } from '@/drizzle/auth';
@@ -574,12 +574,15 @@ export const uploadDocumentoSolicitud = createServerFn({ method: 'POST' })
 
     // `documento` cuelga del login de AFIP (los documentos nacieron del scraping),
     // así que un archivo subido por el portal se archiva bajo el login con el que
-    // el estudio administra a ese cliente.
-    const [rel] = await db
-      .select({ credencialId: clienteCredencial.credencialId })
-      .from(clienteCredencial)
-      .where(eq(clienteCredencial.clienteId, row.clienteId))
-      .limit(1);
+    // el estudio administra a ese cliente. `cliente_credencial` está fuera del
+    // alcance del rol del portal, como todo lo que huele a credencial.
+    const [rel] = await withOrgContext(row.orgId, (tx) =>
+      tx
+        .select({ credencialId: clienteCredencial.credencialId })
+        .from(clienteCredencial)
+        .where(eq(clienteCredencial.clienteId, row.clienteId))
+        .limit(1)
+    );
     if (!rel)
       throw new Error('El cliente no tiene una credencial de AFIP asociada');
 

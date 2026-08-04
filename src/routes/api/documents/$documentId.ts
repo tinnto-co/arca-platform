@@ -10,6 +10,7 @@ import { and, eq } from 'drizzle-orm';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { setDbContext } from '@/lib/db-context';
+import { getClientePortalSession } from '@/actions/helpers';
 import { documento } from '@/drizzle/schema';
 import * as r2 from '@/lib/r2';
 
@@ -22,9 +23,14 @@ export const Route = createFileRoute('/api/documents/$documentId')({
           return new Response('Unauthorized', { status: 401 });
         const orgId = (session.session as { activeOrganizationId?: string })
           .activeOrganizationId;
-        if (!orgId)
-          return new Response('No active organization', { status: 403 });
-        setDbContext({ orgId });
+        if (orgId) {
+          setDbContext({ orgId });
+        } else {
+          // Un usuario del portal no pertenece a ninguna organización: abre el
+          // contexto de su cliente y el RLS de `arca_portal` acota las filas.
+          const portal = await getClientePortalSession().catch(() => null);
+          if (!portal) return new Response('Forbidden', { status: 403 });
+        }
 
         const [doc] = await db
           .select({
@@ -34,10 +40,12 @@ export const Route = createFileRoute('/api/documents/$documentId')({
           })
           .from(documento)
           .where(
-            and(
-              eq(documento.id, params.documentId),
-              eq(documento.orgId, orgId)
-            )
+            orgId
+              ? and(
+                  eq(documento.id, params.documentId),
+                  eq(documento.orgId, orgId)
+                )
+              : eq(documento.id, params.documentId)
           )
           .limit(1);
 
