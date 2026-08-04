@@ -13,6 +13,7 @@ import {
   pdf,
 } from '@react-pdf/renderer';
 import { MONTH_NAMES, JOURNAL_ORIGIN_LABELS } from '@/lib/accounting-labels';
+import type { NumberedNote } from '@/lib/accounting-document';
 import type {
   EspResult,
   ErResult,
@@ -1933,6 +1934,11 @@ export interface EeccPackageData {
   anexoII: AnexoIIResult;
   cmv: CmvBlockData | null;
   notes: FsNote[];
+  /**
+   * Secuencia de notas ya numerada, incluida la composición de rubros. Define
+   * el número de cada una y en qué posición cae el bloque del sistema.
+   */
+  noteSequence?: NumberedNote[];
 }
 
 /** Valores del Anexo CMV para el bloque embebido en el paquete EECC. */
@@ -2421,7 +2427,14 @@ function EfeBlock({ efe }: { efe: EfeResult | null }) {
  * Nota 3 — Composición de los principales rubros. Sale del mismo detalle por
  * cuenta del ESP, así que no puede diferir de él.
  */
-function Nota3Block({ esp }: { esp: EspResult }) {
+function Nota3Block({
+  esp,
+  numero,
+}: {
+  esp: EspResult;
+  /** Número que le tocó en la secuencia; null si no se numera. */
+  numero: number | null;
+}) {
   const rubros = esp.sections
     .flatMap((sec) => sec.rubros)
     .filter((r) => r.group !== 'resultado_ejercicio')
@@ -2433,7 +2446,8 @@ function Nota3Block({ esp }: { esp: EspResult }) {
   return (
     <View break>
       <Text style={pk.sectionTitle}>
-        Nota 3 — Composición de los principales rubros
+        {numero != null ? `Nota ${numero} — ` : ''}Composición de los
+        principales rubros
       </Text>
       <View style={pk.colHead}>
         <Text style={pk.cLabel}>Concepto</Text>
@@ -2662,17 +2676,35 @@ function AnexoIBlock({ anexoI }: { anexoI: EeccPackageData['anexoI'] }) {
   );
 }
 
-function NotesBlock({ notes }: { notes: FsNote[] }) {
+function NotesBlock({
+  notes,
+  sequence,
+}: {
+  notes: FsNote[];
+  /** Números resueltos por posición. Sin esto se numeran por orden de carga. */
+  sequence?: NumberedNote[];
+}) {
+  // La composición de rubros se imprime en su propio bloque: acá solo van las
+  // notas de texto, pero con el número que les tocó en la secuencia completa.
+  const numeroDe = (id: string) =>
+    sequence?.find((n) => n.entry === `note:${id}`)?.number ?? null;
+  const ordenadas = sequence
+    ? sequence
+        .filter((n) => !n.isSystem)
+        .map((n) => notes.find((x) => `note:${x.id}` === n.entry))
+        .filter((n): n is FsNote => !!n)
+    : notes;
   return (
     <View>
       <Text style={pk.sectionTitle}>Notas a los Estados Contables</Text>
-      {notes.length === 0 ? (
+      {ordenadas.length === 0 ? (
         <Text style={pk.empty}>Sin notas cargadas.</Text>
       ) : (
-        notes.map((note, idx) => (
+        ordenadas.map((note, idx) => (
           <View key={note.id} wrap={false}>
             <Text style={pk.noteTitle}>
-              {idx + 1}. {note.title || `Nota ${idx + 1}`}
+              {numeroDe(note.id) ?? idx + 1}.{' '}
+              {note.title || `Nota ${numeroDe(note.id) ?? idx + 1}`}
             </Text>
             {mdLines(note.content).map((l, i) =>
               l.type === 'h' ? (
@@ -2731,11 +2763,17 @@ function EeccPackageDoc({ data }: { data: EeccPackageData }) {
         <ErBlock er={data.er} />
         <EepnBlock eepn={data.eepn} />
         <EfeBlock efe={data.efe} />
-        <Nota3Block esp={data.esp} />
+        <Nota3Block
+          esp={data.esp}
+          numero={
+            data.noteSequence?.find((n) => n.entry === 'composicion')?.number ??
+            null
+          }
+        />
         <AnexoIIBlock a2={data.anexoII} />
         <AnexoIBlock anexoI={data.anexoI} />
         <AnexoCMVBlock cmv={data.cmv} />
-        <NotesBlock notes={data.notes} />
+        <NotesBlock notes={data.notes} sequence={data.noteSequence} />
         <Signatures />
         <PageFooter data={data} />
       </Page>

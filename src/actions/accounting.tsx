@@ -78,6 +78,7 @@ import {
   accumulatedDepreciation,
 } from '@/lib/accounting-depreciation';
 import { parentCodeOf } from '@/lib/accounting-base-chart';
+import type { LayoutEntry } from '@/lib/accounting-document';
 import { nextEntryNumber } from '@/lib/accounting-posting-db';
 import {
   buildClosingEntries,
@@ -6992,6 +6993,10 @@ export interface FinancialStatementResult {
   id: string | null;
   status: 'draft' | 'approved';
   notes: FsNote[];
+  /** Orden de las notas y secciones. Vacío = el de por defecto. */
+  layout: LayoutEntry[];
+  /** Rótulos que el contador cambió, por clave de sección. */
+  sectionLabels: Record<string, string>;
   approvedAt: string | null;
   approvedByName: string | null;
   /** Metadata del PDF guardado (no incluye el binario; usar getFinancialStatementPdf). */
@@ -7023,6 +7028,8 @@ export const getFinancialStatement = createServerFn({ method: 'GET' })
         id: financialStatement.id,
         status: financialStatement.status,
         notes: financialStatement.notes,
+        layout: financialStatement.layout,
+        sectionLabels: financialStatement.sectionLabels,
         approvedAt: financialStatement.approvedAt,
         approvedByName: user.name,
         pdfGeneratedAt: financialStatement.pdfGeneratedAt,
@@ -7045,6 +7052,8 @@ export const getFinancialStatement = createServerFn({ method: 'GET' })
         id: null,
         status: 'draft',
         notes: [],
+        layout: [],
+        sectionLabels: {},
         approvedAt: null,
         approvedByName: null,
         pdfGeneratedAt: null,
@@ -7056,6 +7065,8 @@ export const getFinancialStatement = createServerFn({ method: 'GET' })
       id: row.id,
       status: row.status,
       notes: (row.notes as FsNote[]) ?? [],
+      layout: (row.layout as LayoutEntry[]) ?? [],
+      sectionLabels: (row.sectionLabels as Record<string, string>) ?? {},
       approvedAt: row.approvedAt ? row.approvedAt.toISOString() : null,
       approvedByName: row.approvedByName ?? null,
       pdfGeneratedAt: row.pdfGeneratedAt
@@ -7073,13 +7084,17 @@ export const saveFinancialStatementNotes = createServerFn({ method: 'POST' })
       clientId: z.string().uuid(),
       fiscalYearId: z.string().uuid(),
       notes: z.array(fsNoteSchema).max(100),
+      /** Orden de las notas y secciones. Omitido = no se toca. */
+      layout: z.array(z.string().min(1).max(80)).max(200).optional(),
+      /** Rótulos de las secciones. Omitido = no se toca. */
+      sectionLabels: z.record(z.string(), z.string().max(120)).optional(),
     })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertOwner(role);
-    const { clientId, fiscalYearId, notes } = ctx.data;
+    const { clientId, fiscalYearId, notes, layout, sectionLabels } = ctx.data;
     await ensureClientBelongsToOrg(clientId, orgId);
     await loadFiscalYearForOrg(fiscalYearId, orgId);
 
@@ -7100,18 +7115,24 @@ export const saveFinancialStatementNotes = createServerFn({ method: 'POST' })
       );
     }
 
+    // Solo se pisa lo que vino: guardar el texto de una nota no puede
+    // llevarse puesto el orden que el contador acomodó en otra pantalla.
+    const patch: Record<string, unknown> = { notes };
+    if (layout !== undefined) patch.layout = layout;
+    if (sectionLabels !== undefined) patch.sectionLabels = sectionLabels;
+
     if (existing) {
       await db
         .update(financialStatement)
-        .set({ notes })
+        .set(patch)
         .where(eq(financialStatement.id, existing.id));
     } else {
       await db.insert(financialStatement).values({
         organizationId: orgId,
         clientId,
         fiscalYearId,
-        notes,
-      });
+        ...patch,
+      } as never);
     }
     return { ok: true };
   });

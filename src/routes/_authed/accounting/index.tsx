@@ -53,6 +53,11 @@ import { ArcaCard } from '@/components/dashboard/shared';
 import { SaldosReferencia } from '@/components/accounting/SaldosReferencia';
 import { frameworkCite } from '@/lib/accounting-labels';
 import {
+  defaultNoteLayout,
+  numberNotes,
+  type LayoutEntry,
+} from '@/lib/accounting-document';
+import {
   Select,
   SelectContent,
   SelectGroup,
@@ -8033,6 +8038,8 @@ function EstadosContables({
             clientId={clientId}
             fiscalYearId={effectiveFyId}
             notes={fs.notes}
+            layout={fs.layout}
+            sectionLabels={fs.sectionLabels}
             approved={approved}
             canEdit={isOwner}
             onSaved={invalidateFs}
@@ -8052,6 +8059,8 @@ function EstadosContables({
           clientCuit={clientCuit}
           selectedFy={selectedFy}
           notes={fs?.notes ?? []}
+          layout={fs?.layout ?? []}
+          sectionLabels={fs?.sectionLabels ?? {}}
           isOwner={isOwner}
           valuation={valuation}
           norma={norma}
@@ -9551,6 +9560,8 @@ function NotesEditor({
   clientId,
   fiscalYearId,
   notes: initialNotes,
+  layout: initialLayout,
+  sectionLabels,
   approved,
   canEdit,
   onSaved,
@@ -9558,20 +9569,38 @@ function NotesEditor({
   clientId: string;
   fiscalYearId: string;
   notes: FsNote[];
+  layout: LayoutEntry[];
+  sectionLabels: Record<string, string>;
   approved: boolean;
   canEdit: boolean;
   onSaved: () => void;
 }) {
   const [notes, setNotes] = useState<FsNote[]>(initialNotes);
+  // El orden vive aparte del contenido: incluye los bloques que genera el
+  // sistema, así el contador decide en qué posición cae cada uno y de ahí sale
+  // el número de nota.
+  const [layout, setLayout] = useState<LayoutEntry[]>(
+    initialLayout.length > 0 ? initialLayout : defaultNoteLayout(initialNotes)
+  );
   const [preview, setPreview] = useState<Set<string>>(new Set());
 
-  const dirty = JSON.stringify(notes) !== JSON.stringify(initialNotes);
+  const secuencia = numberNotes(layout, notes, sectionLabels);
+  const dirty =
+    JSON.stringify(notes) !== JSON.stringify(initialNotes) ||
+    JSON.stringify(secuencia.map((n) => n.entry)) !==
+      JSON.stringify(initialLayout);
   const editable = canEdit && !approved;
 
   const saveMut = useMutation({
     mutationFn: () =>
       saveFinancialStatementNotes({
-        data: { clientId, fiscalYearId, notes },
+        data: {
+          clientId,
+          fiscalYearId,
+          notes,
+          // Se guarda ya normalizado: sin notas borradas y con las nuevas.
+          layout: secuencia.map((n) => n.entry),
+        },
       }),
     onSuccess: () => {
       toast.success('Notas guardadas');
@@ -9584,23 +9613,29 @@ function NotesEditor({
   const newId = () =>
     `n-${notes.reduce((m, n) => Math.max(m, Number(n.id.split('-')[1]) || 0), 0) + 1}`;
 
-  const addNote = () =>
-    setNotes((prev) => [
-      ...prev,
-      { id: newId(), title: 'Nueva nota', content: '' },
-    ]);
+  const addNote = () => {
+    const id = newId();
+    setNotes((prev) => [...prev, { id, title: 'Nueva nota', content: '' }]);
+    setLayout((prev) => [...prev, `note:${id}`]);
+  };
   const update = (id: string, patch: Partial<FsNote>) =>
     setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, ...patch } : n)));
-  const remove = (id: string) =>
+  const remove = (id: string) => {
     setNotes((prev) => prev.filter((n) => n.id !== id));
-  const move = (idx: number, dir: -1 | 1) =>
-    setNotes((prev) => {
-      const next = [...prev];
-      const j = idx + dir;
-      if (j < 0 || j >= next.length) return prev;
-      [next[idx], next[j]] = [next[j], next[idx]];
-      return next;
-    });
+    setLayout((prev) => prev.filter((e) => e !== `note:${id}`));
+  };
+  /**
+   * Mueve sobre la secuencia ya resuelta y la guarda entera. Operar sobre el
+   * layout crudo fallaría cuando quedó viejo: las entradas que faltan se
+   * resuelven al final y las posiciones no coincidirían con lo que se ve.
+   */
+  const move = (idx: number, dir: -1 | 1) => {
+    const orden = secuencia.map((n) => n.entry);
+    const j = idx + dir;
+    if (j < 0 || j >= orden.length) return;
+    [orden[idx], orden[j]] = [orden[j], orden[idx]];
+    setLayout(orden);
+  };
   const togglePreview = (id: string) =>
     setPreview((prev) => {
       const n = new Set(prev);
@@ -9654,7 +9689,52 @@ function NotesEditor({
           </div>
         )}
 
-        {notes.map((note, idx) => {
+        {secuencia.map((item, idx) => {
+          // La composición de rubros la arma el sistema: se puede mover para
+          // que le toque otro número, pero no editar ni borrar.
+          if (item.isSystem) {
+            return (
+              <div
+                key={item.entry}
+                className="rounded-[8px] border border-dashed border-[var(--arca-border)] bg-[var(--arca-surface-2)]/40"
+              >
+                <div className="flex items-center gap-2 px-3 py-2.5">
+                  <span className="text-[11px] text-[var(--arca-ink-3)] w-6 shrink-0">
+                    {item.number}.
+                  </span>
+                  <span className="flex-1 text-[13px] font-medium text-[var(--arca-ink)]">
+                    {item.title}
+                  </span>
+                  <span className="text-[10.5px] text-[var(--arca-ink-3)] italic">
+                    la genera el sistema
+                  </span>
+                  {editable && (
+                    <>
+                      <button
+                        onClick={() => move(idx, -1)}
+                        disabled={idx === 0}
+                        className="text-[12px] px-1.5 h-6 rounded-[5px] text-[var(--arca-ink-3)] hover:bg-[var(--arca-surface)] disabled:opacity-30"
+                        title="Subir"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        onClick={() => move(idx, 1)}
+                        disabled={idx === secuencia.length - 1}
+                        className="text-[12px] px-1.5 h-6 rounded-[5px] text-[var(--arca-ink-3)] hover:bg-[var(--arca-surface)] disabled:opacity-30"
+                        title="Bajar"
+                      >
+                        ↓
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          }
+
+          const note = notes.find((n) => `note:${n.id}` === item.entry);
+          if (!note) return null;
           const isPreview = preview.has(note.id) || !editable;
           return (
             <div
@@ -9663,7 +9743,7 @@ function NotesEditor({
             >
               <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)]">
                 <span className="text-[11px] text-[var(--arca-ink-3)] w-6 shrink-0">
-                  {idx + 1}.
+                  {item.number}.
                 </span>
                 {editable ? (
                   <input
@@ -9674,7 +9754,7 @@ function NotesEditor({
                   />
                 ) : (
                   <span className="flex-1 text-[13px] font-medium text-[var(--arca-ink)]">
-                    {note.title || `Nota ${idx + 1}`}
+                    {note.title || `Nota ${item.number}`}
                   </span>
                 )}
                 {editable && (
@@ -9695,7 +9775,7 @@ function NotesEditor({
                     </button>
                     <button
                       onClick={() => move(idx, 1)}
-                      disabled={idx === notes.length - 1}
+                      disabled={idx === secuencia.length - 1}
                       className="text-[12px] px-1.5 h-6 rounded-[5px] text-[var(--arca-ink-3)] hover:bg-[var(--arca-surface)] disabled:opacity-30"
                       title="Bajar"
                     >
@@ -9755,6 +9835,8 @@ function ExportView({
   clientCuit,
   selectedFy,
   notes,
+  layout,
+  sectionLabels,
   isOwner,
   valuation,
   norma,
@@ -9767,6 +9849,8 @@ function ExportView({
   clientCuit: string;
   selectedFy: FyOption | undefined;
   notes: FsNote[];
+  layout: LayoutEntry[];
+  sectionLabels: Record<string, string>;
   isOwner: boolean;
   valuation: 'ajustado' | 'historico';
   /** Cómo se cita la norma del ajuste: "RT 54" o "RT 6". */
@@ -9870,6 +9954,8 @@ function ExportView({
         efe: efe ?? null,
         valuation,
         norma,
+        // El número de cada nota sale de su posición, no del orden de carga.
+        noteSequence: numberNotes(layout, notes, sectionLabels),
         anexoII,
         anexoI: anexoI
           ? {

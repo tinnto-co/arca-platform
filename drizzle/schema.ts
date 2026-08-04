@@ -1954,8 +1954,20 @@ export const financialStatement = pgTable(
       .notNull()
       .references(() => fiscalYear.id, { onDelete: "cascade" }),
     status: financialStatementStatusEnum("status").notNull().default("draft"),
-    /** Notas markdown en orden de exposición: [{ id, title, content }]. */
+    /** Notas markdown del contador: [{ id, title, content }]. */
     notes: jsonb("notes").notNull().default([]),
+    /**
+     * Orden de las secciones del documento, incluidas las notas: ["note:n-1",
+     * "composicion", "note:n-2"]. De ahí sale el número de cada nota. Vacío =
+     * orden por defecto, así que los balances viejos siguen andando.
+     */
+    layout: jsonb("layout").notNull().default([]),
+    /**
+     * Rótulo de cada sección cuando el contador lo cambia. Los anexos no se
+     * pueden numerar solos: el estudio llama "Anexo I" al costo de mercadería
+     * vendida y deja el de bienes de uso sin número.
+     */
+    sectionLabels: jsonb("section_labels").notNull().default({}),
     approvedAt: timestamp("approved_at"),
     approvedBy: text("approved_by").references(() => user.id, {
       onDelete: "set null",
