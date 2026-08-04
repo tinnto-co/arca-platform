@@ -75,7 +75,7 @@ de Bun).
 | `DATABASE_URL` | `postgres://arca_app:…@<host>/<db>` |
 | `DATABASE_READONLY_URL` | igual con `arca_agent` |
 | `DATABASE_PORTAL_URL` | igual con `arca_portal` |
-| `BETTER_AUTH_URL` / `VITE_BETTER_AUTH_URL` | dominio de staging (`VITE_*` es build arg) |
+| `BETTER_AUTH_URL` / `VITE_BETTER_AUTH_URL` | `https://v2-contable.staging.tinnto.ai/api/auth` (`VITE_*` es build arg, no env de runtime) |
 | `BETTER_AUTH_SECRET` | el mismo de prod |
 | `CREDENTIAL_ENCRYPTION_KEY` | **el mismo de prod**, si no las claves de AFIP no se desencriptan |
 | `GEMINI_API_KEY` | el de siempre |

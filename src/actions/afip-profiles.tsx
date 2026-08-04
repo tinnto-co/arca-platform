@@ -60,7 +60,7 @@ async function getCredencialDeOrg(credencialId: string, orgId: string) {
 }
 
 export const getCredencialProfiles = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ credencialId: z.string() }))
+  .validator(z.object({ credencialId: z.string() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const cred = await getCredencialDeOrg(ctx.data.credencialId, orgId);
@@ -123,7 +123,7 @@ export const getCredencialProfiles = createServerFn({ method: 'GET' })
   });
 
 export const addProfileAsCliente = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       credencialId: z.string(),
       cuit: z.string().min(11, 'El CUIT debe tener al menos 11 dígitos'),
@@ -183,7 +183,7 @@ export const addProfileAsCliente = createServerFn({ method: 'POST' })
 
 /** Cuánto dato hay cargado del cliente, para avisar antes de borrarlo. */
 export const getClienteDataCounts = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ clienteId: z.string() }))
+  .validator(z.object({ clienteId: z.string() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const { clienteId } = ctx.data;
@@ -204,7 +204,7 @@ export const getClienteDataCounts = createServerFn({ method: 'GET' })
   });
 
 export const deleteCliente = createServerFn({ method: 'POST' })
-  .inputValidator(z.object({ clienteId: z.string() }))
+  .validator(z.object({ clienteId: z.string() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     assertCanWrite(await getMemberRole());

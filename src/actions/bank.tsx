@@ -54,7 +54,7 @@ async function assertClienteDeOrg(clienteId: string, orgId: string) {
 }
 
 export const createCuentaBancaria = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clienteId: z.string().uuid(),
       banco: z.string().min(1),
@@ -88,7 +88,7 @@ export const createCuentaBancaria = createServerFn({ method: 'POST' })
   });
 
 export const listCuentasBancarias = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ clienteId: z.string().uuid() }))
+  .validator(z.object({ clienteId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
@@ -106,7 +106,7 @@ export const listCuentasBancarias = createServerFn({ method: 'GET' })
   });
 
 export const importMovimientos = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       cuentaBancariaId: z.string().uuid(),
       movimientos: z.array(
@@ -181,7 +181,7 @@ export const importMovimientos = createServerFn({ method: 'POST' })
   });
 
 export const listMovimientos = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       cuentaBancariaId: z.string().uuid(),
       from: z.string().optional(),
@@ -256,7 +256,7 @@ export const listMovimientos = createServerFn({ method: 'GET' })
 const DIAS_PROXIMIDAD = 5;
 
 export const autoConciliar = createServerFn({ method: 'POST' })
-  .inputValidator(z.object({ cuentaBancariaId: z.string().uuid() }))
+  .validator(z.object({ cuentaBancariaId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     assertCanWrite(await getMemberRole());
@@ -361,7 +361,7 @@ export const autoConciliar = createServerFn({ method: 'POST' })
   });
 
 export const conciliarManual = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       movimientoId: z.string().uuid(),
       comprobanteId: z.string().uuid(),
@@ -429,7 +429,7 @@ export const conciliarManual = createServerFn({ method: 'POST' })
   });
 
 export const getResumenConciliacion = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ clienteId: z.string().uuid() }))
+  .validator(z.object({ clienteId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 

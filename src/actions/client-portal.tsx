@@ -137,7 +137,7 @@ async function getAccesoPortal(userId: string, clienteId: string) {
 const DEUDAS_EN_PORTADA = 10;
 
 export const getClientePortalDashboard = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ clienteId: z.string().uuid() }))
+  .validator(z.object({ clienteId: z.string().uuid() }))
   .handler(async (ctx) => {
     const session = await getAuthSession();
     const access = await getAccesoPortal(session.user.id, ctx.data.clienteId);
@@ -402,7 +402,7 @@ async function getContadorDelEstudio(userId: string, orgId: string) {
 }
 
 export const getClientePortalDeudas = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ clienteId: z.string().uuid() }))
+  .validator(z.object({ clienteId: z.string().uuid() }))
   .handler(async (ctx) => {
     const session = await getAuthSession();
     const access = await getAccesoPortal(session.user.id, ctx.data.clienteId);
@@ -432,7 +432,7 @@ export const getClientePortalDeudas = createServerFn({ method: 'GET' })
   });
 
 export const getClientePortalVencimientos = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clienteId: z.string().uuid(),
       incluirCompletados: z.boolean().optional().default(false),
@@ -464,7 +464,7 @@ export const getClientePortalVencimientos = createServerFn({ method: 'GET' })
   });
 
 export const getClientePortalNotificaciones = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clienteId: z.string().uuid(),
       limit: z.number().optional().default(50),
@@ -498,7 +498,7 @@ export const getClientePortalNotificaciones = createServerFn({ method: 'GET' })
   });
 
 export const getClientePortalSolicitudes = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clienteId: z.string().uuid(),
       estado: z.enum(solicitudEstado.enumValues).optional(),
@@ -529,7 +529,7 @@ export const getClientePortalSolicitudes = createServerFn({ method: 'GET' })
   });
 
 export const completarSolicitud = createServerFn({ method: 'POST' })
-  .inputValidator(z.object({ solicitudId: z.string().uuid() }))
+  .validator(z.object({ solicitudId: z.string().uuid() }))
   .handler(async (ctx) => {
     // La sesión va primero: es la que abre el contexto del cliente. Leer la
     // solicitud antes la deja fuera del alcance del RLS y no devuelve nada.
@@ -552,7 +552,7 @@ export const completarSolicitud = createServerFn({ method: 'POST' })
   });
 
 export const uploadDocumentoSolicitud = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       solicitudId: z.string().uuid(),
       fileName: z.string().min(1),
@@ -668,7 +668,7 @@ async function assertClienteDeOrg(clienteId: string, orgId: string) {
 }
 
 export const listSolicitudes = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clienteId: z.string().uuid(),
       estado: z.enum(solicitudEstado.enumValues).optional(),
@@ -702,7 +702,7 @@ export const listSolicitudes = createServerFn({ method: 'GET' })
   });
 
 export const createSolicitud = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clienteId: z.string().uuid(),
       titulo: z.string().min(1),
@@ -746,7 +746,7 @@ export const createSolicitud = createServerFn({ method: 'POST' })
   });
 
 export const getDocumentoSolicitud = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ solicitudId: z.string().uuid() }))
+  .validator(z.object({ solicitudId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
@@ -779,7 +779,7 @@ export const getDocumentoSolicitud = createServerFn({ method: 'GET' })
   });
 
 export const updateSolicitudEstado = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       solicitudId: z.string().uuid(),
       estado: z.enum(solicitudEstado.enumValues),
@@ -808,7 +808,7 @@ export const updateSolicitudEstado = createServerFn({ method: 'POST' })
 // ── Usuarios del portal (lado estudio) ──────────────────────────────────────
 
 export const listPortalUsers = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ clienteId: z.string().uuid() }))
+  .validator(z.object({ clienteId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     await assertClienteDeOrg(ctx.data.clienteId, orgId);
@@ -841,7 +841,7 @@ const permisosSchema = z.object({
 });
 
 export const createPortalUser = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clienteId: z.string().uuid(),
       name: z.string().min(1),
@@ -901,7 +901,7 @@ async function getAccesoDeOrg(accessId: string, orgId: string) {
 }
 
 export const updatePortalUserPermissions = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       accessId: z.string().uuid(),
       permisos: permisosSchema,
@@ -921,7 +921,7 @@ export const updatePortalUserPermissions = createServerFn({ method: 'POST' })
   });
 
 export const resetPortalUserPassword = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       userId: z.string(),
       newPassword: z.string().min(8),
@@ -954,7 +954,7 @@ export const resetPortalUserPassword = createServerFn({ method: 'POST' })
   });
 
 export const revokePortalAccess = createServerFn({ method: 'POST' })
-  .inputValidator(z.object({ accessId: z.string().uuid() }))
+  .validator(z.object({ accessId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     assertCanWrite(await getMemberRole());

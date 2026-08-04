@@ -31,7 +31,7 @@ export interface AlertaDetalle {
 }
 
 export const listAlerts = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       estado: z.enum(alertaEstado.enumValues).optional(),
       severidad: z.enum(alertaSeveridad.enumValues).optional(),
@@ -84,7 +84,7 @@ export const listAlerts = createServerFn({ method: 'GET' })
   });
 
 export const assignAlert = createServerFn({ method: 'POST' })
-  .inputValidator(z.object({ id: z.string().uuid(), userId: z.string() }))
+  .validator(z.object({ id: z.string().uuid(), userId: z.string() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
@@ -101,7 +101,7 @@ export const assignAlert = createServerFn({ method: 'POST' })
   });
 
 export const resolveAlert = createServerFn({ method: 'POST' })
-  .inputValidator(z.object({ id: z.string().uuid() }))
+  .validator(z.object({ id: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId, userId } = await getSessionWithOrg();
     const role = await getMemberRole();
@@ -174,7 +174,7 @@ async function jobsDeAlertas(
 }
 
 export const retryAlertJobs = createServerFn({ method: 'POST' })
-  .inputValidator(z.object({ id: z.string().uuid() }))
+  .validator(z.object({ id: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId, userId } = await getSessionWithOrg();
     const role = await getMemberRole();

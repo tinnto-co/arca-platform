@@ -134,7 +134,7 @@ export type GetIvaPositionForCopilotResult =
     };
 
 export const getIvaPositionForCopilot = createServerFn({ method: 'POST' })
-  .inputValidator(getIvaPositionInput)
+  .validator(getIvaPositionInput)
   .handler(async (ctx): Promise<GetIvaPositionForCopilotResult> => {
     const { orgId } = await getSessionWithOrg();
     const { clientName } = ctx.data;
@@ -300,7 +300,7 @@ export type ResolveClientResult =
   | { error: string; options?: string[] };
 
 export const resolveClientForCopilot = createServerFn({ method: 'POST' })
-  .inputValidator(resolveClientInput)
+  .validator(resolveClientInput)
   .handler(async (ctx): Promise<ResolveClientResult> => {
     const { orgId } = await getSessionWithOrg();
     const { clienteId, clientName } = ctx.data;
@@ -389,7 +389,7 @@ function parseArgFecha(raw: string): string | null {
 }
 
 export const persistBankStatementMovements = createServerFn({ method: 'POST' })
-  .inputValidator(persistMovementsInput)
+  .validator(persistMovementsInput)
   .handler(async (ctx): Promise<PersistMovementsResult> => {
     const { orgId } = await getSessionWithOrg();
     assertCanWrite(await getMemberRole());
@@ -510,7 +510,7 @@ export type GetResumenSaludClienteResult =
     };
 
 export const getResumenSaludCliente = createServerFn({ method: 'POST' })
-  .inputValidator(getResumenSaludClienteInput)
+  .validator(getResumenSaludClienteInput)
   .handler(async (ctx): Promise<GetResumenSaludClienteResult> => {
     const { orgId } = await getSessionWithOrg();
     const { clienteId, clientName } = ctx.data;

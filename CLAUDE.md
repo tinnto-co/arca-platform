@@ -65,7 +65,7 @@ export const getThings = createServerFn({ method: "GET" })
   });
 
 export const createThing = createServerFn({ method: "POST" })
-  .inputValidator(z.object({ name: z.string() }))
+  .validator(z.object({ name: z.string() }))
   .handler(async ({ data }) => {
     const { orgId } = await getSessionWithOrg();
     // ...

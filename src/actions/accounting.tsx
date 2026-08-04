@@ -355,7 +355,7 @@ export interface ChartAccount {
  * en el ejercicio actual.  (US 1.1.1)
  */
 export const getChartOfAccounts = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .validator(z.object({ clientId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const { clientId } = ctx.data;
@@ -432,7 +432,7 @@ export const getChartOfAccounts = createServerFn({ method: 'GET' })
  * previo a desactivar).  (US 1.1.2)
  */
 export const getAccountMovementCounts = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({ clientId: z.string().uuid(), accountId: z.string().uuid() })
   )
   .handler(async (ctx) => {
@@ -459,7 +459,7 @@ export const getAccountMovementCounts = createServerFn({ method: 'GET' })
  * - No se puede desactivar una cuenta con movimientos en el ejercicio actual.
  */
 export const setAccountActive = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       accountId: z.string().uuid(),
@@ -529,7 +529,7 @@ export const setAccountActive = createServerFn({ method: 'POST' })
  *   colisionar con cuentas base.
  */
 export const createCustomAccount = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       name: z.string().min(1),
@@ -619,7 +619,7 @@ export const createCustomAccount = createServerFn({ method: 'POST' })
  * Renombra una cuenta del plan base solo para una empresa (override).  (US 1.1.4)
  */
 export const renameBaseAccount = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       accountId: z.string().uuid(),
@@ -658,7 +658,7 @@ export const renameBaseAccount = createServerFn({ method: 'POST' })
  * Si el override solo servía para el renombre, se elimina la fila.
  */
 export const revertBaseAccountRename = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({ clientId: z.string().uuid(), accountId: z.string().uuid() })
   )
   .handler(async (ctx) => {
@@ -700,7 +700,7 @@ export const revertBaseAccountRename = createServerFn({ method: 'POST' })
  * todas las empresas (se propaga por referencia, no por clonado).
  */
 export const createBaseAccount = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       code: z.string().min(1),
       name: z.string().min(1),
@@ -797,7 +797,7 @@ export const createBaseAccount = createServerFn({ method: 'POST' })
  * NINGUNA empresa (cambiar rubro/tipo post-movimientos corrompería los EECC).
  */
 export const updateBaseAccount = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       id: z.string().uuid(),
       name: z.string().min(1).optional(),
@@ -859,7 +859,7 @@ export const updateBaseAccount = createServerFn({ method: 'POST' })
  * empresa o si tiene cuentas hijas.
  */
 export const deleteBaseAccount = createServerFn({ method: 'POST' })
-  .inputValidator(z.object({ id: z.string().uuid() }))
+  .validator(z.object({ id: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
@@ -901,7 +901,7 @@ export const deleteBaseAccount = createServerFn({ method: 'POST' })
  * No permitido si tiene movimientos en la empresa o si tiene subcuentas.
  */
 export const deleteCustomAccount = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({ clientId: z.string().uuid(), id: z.string().uuid() })
   )
   .handler(async (ctx) => {
@@ -1005,7 +1005,7 @@ const VALID_GROUPS = new Set(Object.keys(ACCOUNT_GROUP_LABELS));
  * al resto. Ver `planChartImport` para las reglas.
  */
 export const importChartOfAccounts = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       target: z.enum(['base', 'propia']),
@@ -1302,7 +1302,7 @@ async function countPendingReviewEntries(
  * mensuales (todos abiertos). Solo puede haber un ejercicio abierto por empresa. (US 1.2.1)
  */
 export const createFiscalYear = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       startDate: z.string(), // YYYY-MM-DD
@@ -1400,7 +1400,7 @@ export const createFiscalYear = createServerFn({ method: 'POST' })
 
 /** Lista los ejercicios de una empresa con su resumen de períodos cerrados. */
 export const getFiscalYears = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .validator(z.object({ clientId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
@@ -1447,7 +1447,7 @@ export interface PeriodView {
  * monto movido, y cuál es el período abierto actual. (US 1.2.2)
  */
 export const getFiscalYearDetail = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ fiscalYearId: z.string().uuid() }))
+  .validator(z.object({ fiscalYearId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
@@ -1548,7 +1548,7 @@ export interface PendingReviewEntry {
  * una línea en la cuenta de sistema pending_review, a resolver antes de cerrar. (US 3.4.1)
  */
 export const getPendingReviewEntries = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .validator(z.object({ clientId: z.string().uuid() }))
   .handler(async (ctx): Promise<PendingReviewEntry[]> => {
     const { orgId } = await getSessionWithOrg();
     const { clientId } = ctx.data;
@@ -1636,7 +1636,7 @@ export const getPendingReviewEntries = createServerFn({ method: 'GET' })
  * Bloquea si hay asientos pendientes de revisión. Registra en el log. (US 1.2.3)
  */
 export const closePeriod = createServerFn({ method: 'POST' })
-  .inputValidator(z.object({ periodId: z.string().uuid() }))
+  .validator(z.object({ periodId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId, userId } = await getSessionWithOrg();
     const role = await getMemberRole();
@@ -1700,7 +1700,7 @@ export const closePeriod = createServerFn({ method: 'POST' })
  * Registra en el log con usuario, fecha y motivo. (US 1.2.4)
  */
 export const reopenPeriod = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({ periodId: z.string().uuid(), reason: z.string().trim().min(1) })
   )
   .handler(async (ctx) => {
@@ -1742,7 +1742,7 @@ export const reopenPeriod = createServerFn({ method: 'POST' })
 
 /** Log auditable de cierres/reaperturas de un ejercicio. */
 export const getAccountingLog = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ fiscalYearId: z.string().uuid() }))
+  .validator(z.object({ fiscalYearId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
@@ -1815,7 +1815,7 @@ export interface AuditLogEntry {
  * con filtro opcional por tipo de evento. Solo Owner del estudio. (UST3)
  */
 export const getAuditLog = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       eventTypes: z.array(z.enum(AUDIT_EVENT_TYPES)).optional(),
@@ -1978,7 +1978,7 @@ async function assertPostableAccounts(
 
 /** Cuentas imputables y activas de la empresa, para el selector de líneas del asiento. */
 export const getPostableAccounts = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .validator(z.object({ clientId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
@@ -2020,7 +2020,7 @@ const journalLineSchema = z.object({
 
 /** Crea un asiento manual con numeración consecutiva por ejercicio. (US 1.3.1) */
 export const createJournalEntry = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       entryDate: z.string(),
@@ -2103,7 +2103,7 @@ export const createJournalEntry = createServerFn({ method: 'POST' })
 
 /** Edita un asiento (solo si su período está abierto). (US 1.3.2) */
 export const updateJournalEntry = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       id: z.string().uuid(),
       entryDate: z.string(),
@@ -2198,7 +2198,7 @@ export const updateJournalEntry = createServerFn({ method: 'POST' })
 
 /** Anula un asiento sin borrarlo, conservando su número. (US 1.3.3) */
 export const voidJournalEntry = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({ id: z.string().uuid(), reason: z.string().trim().min(1) })
   )
   .handler(async (ctx) => {
@@ -2257,7 +2257,7 @@ export interface JournalEntryListRow {
 
 /** Lista paginada de asientos del ejercicio con filtros. (US 1.3.4) */
 export const listJournalEntries = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       fiscalYearId: z.string().uuid().optional(),
@@ -2410,7 +2410,7 @@ export const listJournalEntries = createServerFn({ method: 'GET' })
 
 /** Detalle completo de un asiento: cabecera, líneas, origen y log adjunto. (US 1.3.5) */
 export const getJournalEntry = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ id: z.string().uuid() }))
+  .validator(z.object({ id: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const entry = await loadJournalEntryForOrg(ctx.data.id, orgId);
@@ -2573,7 +2573,7 @@ export interface LedgerRow {
 
 /** Mayor de una cuenta puntual con saldo inicial, movimientos y saldo final. (US 2.1.1) */
 export const getLedgerAccount = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       accountId: z.string().uuid(),
@@ -2710,7 +2710,7 @@ export interface ConsolidatedAccount {
 
 /** Mayor consolidado: todas las cuentas con movimientos en el rango, agrupadas. (US 2.1.2) */
 export const getLedgerConsolidated = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       fiscalYearId: z.string().uuid().optional(),
@@ -2913,7 +2913,7 @@ export interface TrialBalanceRow {
 
 /** Balance de sumas y saldos a una fecha de corte. (US 2.2.1) */
 export const getTrialBalance = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       fiscalYearId: z.string().uuid().optional(),
@@ -3018,7 +3018,7 @@ export interface JournalBookEntry {
 
 /** Todos los asientos del ejercicio (incl. anulados) con sus líneas, para el Libro Diario. (US 2.3.1) */
 export const getJournalBook = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       fiscalYearId: z.string().uuid().optional(),
@@ -3196,7 +3196,7 @@ export interface MappingRuleListRow {
 
 /** Lista reglas de una empresa, ordenadas por prioridad. (US 3.1.2) */
 export const listMappingRules = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       sourceModule: z.enum(['comprobante', 'recibo', 'movimiento_bancario']).optional(),
@@ -3246,7 +3246,7 @@ export const listMappingRules = createServerFn({ method: 'GET' })
 
 /** Detalle de una regla con sus líneas + cuántos asientos del período abierto generó. */
 export const getMappingRule = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ id: z.string().uuid() }))
+  .validator(z.object({ id: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const rule = await loadMappingRuleForOrg(ctx.data.id, orgId);
@@ -3298,7 +3298,7 @@ export const getMappingRule = createServerFn({ method: 'GET' })
 
 /** Crea una regla de mapeo con sus líneas-plantilla. (US 3.1.1) */
 export const createMappingRule = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       name: z.string().min(1),
@@ -3360,7 +3360,7 @@ export const createMappingRule = createServerFn({ method: 'POST' })
 
 /** Edita una regla. No regenera asientos ya creados. (US 3.1.3) */
 export const updateMappingRule = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       id: z.string().uuid(),
       name: z.string().min(1),
@@ -3420,7 +3420,7 @@ export const updateMappingRule = createServerFn({ method: 'POST' })
 
 /** Activa/desactiva una regla sin borrarla. (US 3.1.4) */
 export const setMappingRuleActive = createServerFn({ method: 'POST' })
-  .inputValidator(z.object({ id: z.string().uuid(), isActive: z.boolean() }))
+  .validator(z.object({ id: z.string().uuid(), isActive: z.boolean() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
@@ -3438,7 +3438,7 @@ export const setMappingRuleActive = createServerFn({ method: 'POST' })
  * por código en la empresa destino; salta reglas con cuentas que no existen allí. (US 3.1.5)
  */
 export const importMappingRules = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({ fromClientId: z.string().uuid(), toClientId: z.string().uuid() })
   )
   .handler(async (ctx) => {
@@ -3840,7 +3840,7 @@ const INVOICE_SELECT = {
  * qué regla matchearía, si ya está contabilizada y el estado de su período. (US 3.2.1/3.2.2)
  */
 export const getInvoicePostingPreview = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       direction: z.enum(['all', 'emitido', 'recibido']).default('all'),
@@ -3963,7 +3963,7 @@ export const getInvoicePostingPreview = createServerFn({ method: 'GET' })
 
 /** Genera los asientos automáticos de las facturas seleccionadas. (US 3.2.1/3.2.2) */
 export const generateInvoiceEntries = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       invoiceIds: z.array(z.string().uuid()).min(1),
@@ -4055,7 +4055,7 @@ export const generateInvoiceEntries = createServerFn({ method: 'POST' })
  * uno nuevo con las reglas actuales. Si el asiento fue editado a mano, exige `force`.
  */
 export const regenerateInvoiceEntry = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       invoiceId: z.string().uuid(),
@@ -4170,7 +4170,7 @@ interface AccountOpt {
 
 /** Cuentas compatibles para cada rol de un bien de uso (activo / amort. acum. / gasto). */
 export const getFixedAssetAccounts = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .validator(z.object({ clientId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const { clientId } = ctx.data;
@@ -4302,7 +4302,7 @@ const fixedAssetInput = z.object({
 
 /** Registra un bien de uso. (US 4.1.1) */
 export const createFixedAsset = createServerFn({ method: 'POST' })
-  .inputValidator(fixedAssetInput)
+  .validator(fixedAssetInput)
   .handler(async (ctx) => {
     const { orgId, userId } = await getSessionWithOrg();
     const role = await getMemberRole();
@@ -4358,7 +4358,7 @@ export interface FixedAssetRow {
 
 /** Lista bienes de uso con su amortización calculada a hoy. (US 4.1.2) */
 export const listFixedAssets = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       category: z.string().optional(),
@@ -4432,7 +4432,7 @@ export const listFixedAssets = createServerFn({ method: 'GET' })
 
 /** Da de baja un bien (venta / desuso / destrucción). (US 4.1.3) */
 export const disposeFixedAsset = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       id: z.string().uuid(),
       disposalDate: z.string(),
@@ -4497,7 +4497,7 @@ export interface MembreteData {
 
 /** Datos de la empresa + firma del contador para el membrete de los EECC. */
 export const getMembreteData = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .validator(z.object({ clientId: z.string().uuid() }))
   .handler(async (ctx): Promise<MembreteData> => {
     const { orgId } = await getSessionWithOrg();
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
@@ -4564,7 +4564,7 @@ export const getAccountantSignature = createServerFn({ method: 'GET' }).handler(
 );
 
 export const saveAccountantSignature = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       nombre: z.string().max(200).optional().default(''),
       titulo: z.string().max(120).optional().default('Contador Público'),
@@ -4639,7 +4639,7 @@ export const saveAccountantSignature = createServerFn({ method: 'POST' })
 
 /** Actualiza los datos fiscales de la empresa usados en el membrete de los EECC. */
 export const updateClientFiscalData = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       address: z.string().max(300).optional(),
@@ -4895,7 +4895,7 @@ function groupAnexoI(rows: AnexoIAssetFull[]): {
 
 /** Anexo I del ejercicio + sugerencia de asiento de amortización. (US 4.2.x) */
 export const getAnexoI = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       fiscalYearId: z.string().uuid(),
@@ -4998,7 +4998,7 @@ export interface YearEndChecklist {
  * asientos en pending_review, balance cuadrado, y reglas de mapeo consistentes. (US 5.1.1)
  */
 export const getYearEndChecklist = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       fiscalYearId: z.string().uuid(),
@@ -5416,7 +5416,7 @@ export interface ClosingWizardState {
 
 /** Estado del wizard de cierre por etapa (con previews editables). (US 5.3.x) */
 export const getClosingWizard = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({ clientId: z.string().uuid(), fiscalYearId: z.string().uuid() })
   )
   .handler(async (ctx): Promise<ClosingWizardState> => {
@@ -5536,7 +5536,7 @@ const closingLineInput = z.object({
 
 /** Aprueba (persiste) el asiento de una etapa del cierre, con montos ya editados. (US 5.3.2) */
 export const approveClosingStage = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       fiscalYearId: z.string().uuid(),
@@ -5709,7 +5709,7 @@ export const approveClosingStage = createServerFn({ method: 'POST' })
 
 /** Sella el ejercicio: status='cerrado' + log. (US 5.3.3) */
 export const sealClosing = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({ clientId: z.string().uuid(), fiscalYearId: z.string().uuid() })
   )
   .handler(async (ctx) => {
@@ -5853,7 +5853,7 @@ const ESP_SECTIONS = ACCOUNT_GROUP_SECTIONS.filter(
 
 /** Estado de Situación Patrimonial comparativo (actual vs anterior). (US 6.1.1/6.1.2) */
 export const getESP = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({ clientId: z.string().uuid(), fiscalYearId: z.string().uuid() })
   )
   .handler(async (ctx): Promise<EspResult> => {
@@ -6054,7 +6054,7 @@ const ER_COMPONENTS: {
 
 /** Estado de Resultados comparativo (actual vs anterior). (US 6.2.1/6.2.2) */
 export const getER = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({ clientId: z.string().uuid(), fiscalYearId: z.string().uuid() })
   )
   .handler(async (ctx): Promise<ErResult> => {
@@ -6313,7 +6313,7 @@ async function computeExpenseBalances(orgId: string, fyId: string) {
 
 /** Anexo II — clasifica los gastos del ER por función, con comparativo. (US 6.3.2) */
 export const getAnexoII = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({ clientId: z.string().uuid(), fiscalYearId: z.string().uuid() })
   )
   .handler(async (ctx): Promise<AnexoIIResult> => {
@@ -6425,7 +6425,7 @@ const cmvTotal = (
 
 /** Anexo de Costo de Mercadería Vendida del ejercicio (valores de carga manual). */
 export const getCMV = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       fiscalYearId: z.string().uuid(),
@@ -6490,7 +6490,7 @@ export const getCMV = createServerFn({ method: 'GET' })
 
 /** Guarda (upsert) los valores manuales del Anexo CMV del ejercicio. */
 export const saveCMV = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       fiscalYearId: z.string().uuid(),
@@ -6554,7 +6554,7 @@ const fsNoteSchema = z.object({
 
 /** Devuelve el eecc del ejercicio (o un borrador vacío si no existe). */
 export const getFinancialStatement = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({ clientId: z.string().uuid(), fiscalYearId: z.string().uuid() })
   )
   .handler(async (ctx): Promise<FinancialStatementResult> => {
@@ -6614,7 +6614,7 @@ export const getFinancialStatement = createServerFn({ method: 'GET' })
 
 /** Guarda (upsert) las notas markdown del paquete. Bloqueado si ya está aprobado. (US 6.3.1) */
 export const saveFinancialStatementNotes = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       fiscalYearId: z.string().uuid(),
@@ -6664,7 +6664,7 @@ export const saveFinancialStatementNotes = createServerFn({ method: 'POST' })
 
 /** Aprueba el paquete EECC: status draft→approved, queda inmutable y se registra en el log. (US 6.3.3) */
 export const approveFinancialStatement = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({ clientId: z.string().uuid(), fiscalYearId: z.string().uuid() })
   )
   .handler(async (ctx) => {
@@ -6733,7 +6733,7 @@ export const approveFinancialStatement = createServerFn({ method: 'POST' })
 
 /** Reabre un paquete aprobado a borrador para poder regenerarlo/editarlo. (US 6.3.3) */
 export const reopenFinancialStatement = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({ clientId: z.string().uuid(), fiscalYearId: z.string().uuid() })
   )
   .handler(async (ctx) => {
@@ -6760,7 +6760,7 @@ export const reopenFinancialStatement = createServerFn({ method: 'POST' })
 
 /** Guarda el PDF generado del paquete asociado al eecc del ejercicio. */
 export const saveFinancialStatementPdf = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       fiscalYearId: z.string().uuid(),
@@ -6829,7 +6829,7 @@ export const saveFinancialStatementPdf = createServerFn({ method: 'POST' })
 
 /** URL temporal para re-descargar el PDF guardado del paquete, o null. */
 export const getFinancialStatementPdf = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({ clientId: z.string().uuid(), fiscalYearId: z.string().uuid() })
   )
   .handler(

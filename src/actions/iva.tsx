@@ -40,7 +40,7 @@ function periodoADate(periodo: string): string {
  * Left join: los RI sin declaración del período aparecen con datos en null.
  */
 export const getIvaResumenRI = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       periodo: z.string().regex(/^\d{2}\/\d{4}$/, 'Formato esperado: MM/YYYY'),
     })
@@ -156,7 +156,7 @@ export const getClientesSinClasificar = createServerFn({
 });
 
 export const updateClienteCondicionIva = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clienteId: z.string().uuid(),
       condicionIva: z.enum(condicionIva.enumValues).nullable(),

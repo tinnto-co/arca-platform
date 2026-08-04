@@ -62,7 +62,7 @@ const MESES = [
 // ── getDashboardStats ──────────────────────────────────────────────────────
 
 export const getDashboardStats = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       from: z.string().optional(),
       to: z.string().optional(),
@@ -149,7 +149,7 @@ export const getDashboardStats = createServerFn({ method: 'GET' })
 // ── getMonthlyEvolution ────────────────────────────────────────────────────
 
 export const getMonthlyEvolution = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       from: z.string().optional(),
       to: z.string().optional(),
@@ -211,7 +211,7 @@ export const getMonthlyEvolution = createServerFn({ method: 'GET' })
 // ── getUpcomingDueDates ────────────────────────────────────────────────────
 
 export const getUpcomingDueDates = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       days: z.number().default(7),
       limit: z.number().default(5),
@@ -249,7 +249,7 @@ export const getUpcomingDueDates = createServerFn({ method: 'GET' })
 // ── getOverdueDebts ────────────────────────────────────────────────────────
 
 export const getOverdueDebts = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       limit: z.number().default(5),
     })
@@ -277,7 +277,7 @@ export const getOverdueDebts = createServerFn({ method: 'GET' })
 // ── getRecentInvoices ──────────────────────────────────────────────────────
 
 export const getRecentInvoices = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       limit: z.number().default(5),
       from: z.string().optional(),
@@ -320,7 +320,7 @@ export const getRecentInvoices = createServerFn({ method: 'GET' })
 // ── getTopClientes ─────────────────────────────────────────────────────────
 
 export const getTopClientes = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       limit: z.number().default(5),
       from: z.string().optional(),
@@ -427,7 +427,7 @@ export const getPendingNotificationsCount = createServerFn({
 // ── getCalendarDueDates ──────────────────────────────────────────────────
 
 export const getCalendarDueDates = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       from: z.string(),
       to: z.string(),

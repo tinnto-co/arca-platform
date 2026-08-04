@@ -99,7 +99,7 @@ async function assertCredencialDeOrg(
 export const createCredencial = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
+  .validator(
     z.object({
       cuit: z.string().min(1, 'El CUIT es requerido'),
       password: z.string().min(1, 'La contraseña es requerida'),
@@ -138,7 +138,7 @@ export const createCredencial = createServerFn({
 export const createCredencialWithClientes = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
+  .validator(
     z.object({
       cuit: z.string().min(1),
       password: z.string().min(1),
@@ -236,7 +236,7 @@ export function tipoPersonaDeCuit(cuit: string): 'fisica' | 'juridica' {
 export const notifyBackendNewCredencial = createServerFn({
   method: 'POST',
 })
-  .inputValidator(z.object({ credencialId: z.string() }))
+  .validator(z.object({ credencialId: z.string() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
@@ -399,7 +399,7 @@ export const getClientes = createServerFn({
 export const getCliente = createServerFn({
   method: 'GET',
 })
-  .inputValidator(z.object({ id: z.string() }))
+  .validator(z.object({ id: z.string() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
@@ -418,7 +418,7 @@ export const getCliente = createServerFn({
 export const getClienteCredenciales = createServerFn({
   method: 'GET',
 })
-  .inputValidator(z.object({ clienteId: z.string() }))
+  .validator(z.object({ clienteId: z.string() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
@@ -446,7 +446,7 @@ export const getClienteCredenciales = createServerFn({
 export const getCredencialClientes = createServerFn({
   method: 'GET',
 })
-  .inputValidator(z.object({ credencialId: z.string() }))
+  .validator(z.object({ credencialId: z.string() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
@@ -466,7 +466,7 @@ export const getCredencialClientes = createServerFn({
 export const getCredencialPassword = createServerFn({
   method: 'GET',
 })
-  .inputValidator(z.object({ credencialId: z.string() }))
+  .validator(z.object({ credencialId: z.string() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
@@ -501,7 +501,7 @@ function periodoAnteriorA(periodo: string): string {
 export const getClienteIvaCredit = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
+  .validator(
     z.object({
       clienteId: z.string(),
       /** Período del resumen que ve el usuario ("YYYY-MM-DD"). */
@@ -544,7 +544,7 @@ export const getClienteIvaCredit = createServerFn({
 export const updateCliente = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
+  .validator(
     z.object({
       id: z.string(),
       razonSocial: z.string().min(1, 'La razón social es requerida'),
@@ -604,7 +604,7 @@ export const updateCliente = createServerFn({
 export const updateCredencialPassword = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
+  .validator(
     z.object({
       id: z.string(),
       password: z.string().min(1, 'La contraseña es requerida'),
@@ -652,7 +652,7 @@ export const updateCredencialPassword = createServerFn({
 export const deleteCredencial = createServerFn({
   method: 'POST',
 })
-  .inputValidator(z.object({ id: z.string() }))
+  .validator(z.object({ id: z.string() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
@@ -673,7 +673,7 @@ export const deleteCredencial = createServerFn({
 export const getClienteDeudas = createServerFn({
   method: 'GET',
 })
-  .inputValidator(z.object({ clienteId: z.string() }))
+  .validator(z.object({ clienteId: z.string() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
@@ -693,7 +693,7 @@ export const getClienteDeudas = createServerFn({
 export const getCredencialDeudas = createServerFn({
   method: 'GET',
 })
-  .inputValidator(z.object({ credencialId: z.string() }))
+  .validator(z.object({ credencialId: z.string() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
@@ -716,7 +716,7 @@ export const getCredencialDeudas = createServerFn({
 export const updateDeudaEstado = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
+  .validator(
     z.object({
       id: z.string().uuid(),
       estado: z.enum(['abierta', 'pagada', 'plan_pago', 'prescripta']),
@@ -742,7 +742,7 @@ export const updateDeudaEstado = createServerFn({
 export const getCredencialVencimientos = createServerFn({
   method: 'GET',
 })
-  .inputValidator(
+  .validator(
     z.object({
       credencialId: z.string(),
       clienteId: z.string().optional(),
@@ -798,7 +798,7 @@ async function waitForJob(
 export const updateCredencialModules = createServerFn({
   method: 'POST',
 })
-  .inputValidator(z.object({ credencialId: z.string() }))
+  .validator(z.object({ credencialId: z.string() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
@@ -868,7 +868,7 @@ export const updateCredencialModules = createServerFn({
 export const scrapBatchJobs = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
+  .validator(
     z.object({
       credencialIds: z.array(z.string()).min(1),
       jobTypes: z
@@ -977,7 +977,7 @@ export const scrapBatchJobs = createServerFn({
 export const scrapSingleJob = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
+  .validator(
     z.object({
       credencialId: z.string(),
       jobType: z.enum([
@@ -1052,7 +1052,7 @@ export const scrapSingleJob = createServerFn({
 export const getLastJobByType = createServerFn({
   method: 'GET',
 })
-  .inputValidator(
+  .validator(
     z.object({
       credencialId: z.string(),
       jobType: z.enum([
@@ -1112,7 +1112,7 @@ export const getLastJobByType = createServerFn({
 export const getRunningJobByType = createServerFn({
   method: 'GET',
 })
-  .inputValidator(
+  .validator(
     z.object({
       credencialId: z.string(),
       jobType: z.enum([
@@ -1161,7 +1161,7 @@ export const getRunningJobByType = createServerFn({
 export const markVencimientoCompletado = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
+  .validator(
     z.object({
       id: z.string().uuid(),
       completed: z.boolean(),
@@ -1190,7 +1190,7 @@ export const markVencimientoCompletado = createServerFn({
 
 /** Cierre de ejercicio del cliente, para los avisos de presentación de balance. */
 export const getEeccConfig = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ clienteId: z.string().uuid() }))
+  .validator(z.object({ clienteId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
@@ -1214,7 +1214,7 @@ export const getEeccConfig = createServerFn({ method: 'GET' })
   });
 
 export const upsertEeccConfig = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clienteId: z.string().uuid(),
       cierreEjercicioMes: z.number().int().min(1).max(12).nullable(),

@@ -34,7 +34,7 @@ function periodoADate(periodo: string): string {
 }
 
 export const getComprobantes = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       page: z.number().default(1),
       limit: z.number().default(10),
@@ -136,7 +136,7 @@ export const getComprobantes = createServerFn({ method: 'GET' })
   });
 
 export const getComprobante = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ id: z.string() }))
+  .validator(z.object({ id: z.string() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
@@ -194,7 +194,7 @@ export const getComprobante = createServerFn({ method: 'GET' })
 
 /** Comprobantes de un cliente en un rango de fechas. */
 export const getComprobantesEnRango = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clienteId: z.string(),
       dateFrom: z.string(),
@@ -249,7 +249,7 @@ export const getComprobantesEnRango = createServerFn({ method: 'GET' })
  * facturación (para el IVA la regla es otra, ver `calcularIva`).
  */
 export const getComprobanteStats = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clienteId: z.string(),
       dateFrom: z.string().optional(),
@@ -382,7 +382,7 @@ const baseImponibleSql = sql<string>`(CASE WHEN ${comprobanteTipo.letra} = 'C' T
 const signoNcSql = sql`(CASE WHEN ${comprobanteTipo.esNc} THEN -1 ELSE 1 END)`;
 
 export const getClienteMultilateralResumen = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clienteId: z.string(),
       dateFrom: z.string().optional(),
@@ -419,7 +419,7 @@ export const getClienteMultilateralResumen = createServerFn({ method: 'GET' })
 export const getClienteMultilateralComprobantes = createServerFn({
   method: 'GET',
 })
-  .inputValidator(
+  .validator(
     z.object({
       clienteId: z.string(),
       provincia: z.string().nullable().optional(),
@@ -480,7 +480,7 @@ export const getClienteMultilateralComprobantes = createServerFn({
  * No hay nada que propagar a los comprobantes: la provincia vive sólo acá.
  */
 export const updateContraparteProvincia = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       docNro: z.string().min(1),
       provincia: z.enum(PROVINCE_LABELS),
@@ -518,7 +518,7 @@ export const updateContraparteProvincia = createServerFn({ method: 'POST' })
  * período anterior por provincia (el frontend lo usa como valor inicial).
  */
 export const getLiquidacionIibb = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clienteId: z.string(),
       periodo: z.string(), // "YYYY-MM"
@@ -573,7 +573,7 @@ export const getLiquidacionIibb = createServerFn({ method: 'GET' })
   });
 
 export const saveLiquidacionIibb = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clienteId: z.string(),
       periodo: z.string(), // "YYYY-MM"

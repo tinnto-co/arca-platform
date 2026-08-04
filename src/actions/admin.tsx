@@ -71,7 +71,7 @@ export const getOrgDetails = createServerFn({
 export const updateOrg = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
+  .validator(
     z.object({
       name: z.string().min(1).optional(),
       slug: z.string().min(1).optional(),
@@ -99,7 +99,7 @@ export const updateOrg = createServerFn({
 export const inviteMember = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
+  .validator(
     z.object({
       email: z.string().email(),
       role: z.enum(['owner', 'member', 'viewer']),
@@ -122,7 +122,7 @@ export const inviteMember = createServerFn({
 export const removeMember = createServerFn({
   method: 'POST',
 })
-  .inputValidator(z.object({ memberIdOrEmail: z.string() }))
+  .validator(z.object({ memberIdOrEmail: z.string() }))
   .handler(async (ctx) => {
     await requireOwner();
 
@@ -139,7 +139,7 @@ export const removeMember = createServerFn({
 export const updateMemberRole = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
+  .validator(
     z.object({
       memberId: z.string(),
       role: z.enum(['owner', 'member', 'viewer']),
@@ -175,7 +175,7 @@ export const getOrgInvitations = createServerFn({
 export const cancelInvitation = createServerFn({
   method: 'POST',
 })
-  .inputValidator(z.object({ invitationId: z.string() }))
+  .validator(z.object({ invitationId: z.string() }))
   .handler(async (ctx) => {
     await requireOwner();
 
@@ -212,7 +212,7 @@ export const listOrgModules = createServerFn({
 export const setModuleEnabled = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
+  .validator(
     z.object({
       module: z.enum(MODULES),
       enabled: z.boolean(),

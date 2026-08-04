@@ -119,7 +119,7 @@ export const getOrganizations = createServerFn({
 export const setActiveOrganization = createServerFn({
   method: 'POST',
 })
-  .inputValidator(z.object({ organizationId: z.string() }))
+  .validator(z.object({ organizationId: z.string() }))
   .handler(async (ctx) => {
     await auth.api.setActiveOrganization({
       headers: getRequestHeaders(),
@@ -143,7 +143,7 @@ export const getDashboardId = createServerFn({
 export const updateUser = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
+  .validator(
     z.object({
       name: z.string().optional(),
       image: z.string().optional(),
@@ -172,7 +172,7 @@ export const updateUser = createServerFn({
 export const setNewPassword = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
+  .validator(
     z.object({
       newPassword: z.string(),
     })

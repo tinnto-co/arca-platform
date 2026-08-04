@@ -6,7 +6,7 @@ import { getSessionWithOrg } from '@/actions/helpers';
 import { eq, and, desc, ilike } from 'drizzle-orm';
 
 export const getAgentConversations = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z
       .object({ limit: z.number().optional(), offset: z.number().optional() })
       .optional()
@@ -33,7 +33,7 @@ export const getAgentConversations = createServerFn({ method: 'GET' })
   });
 
 export const searchConversations = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ query: z.string() }))
+  .validator(z.object({ query: z.string() }))
   .handler(async ({ data }) => {
     const { orgId, userId } = await getSessionWithOrg();
     return db
@@ -55,7 +55,7 @@ export const searchConversations = createServerFn({ method: 'GET' })
   });
 
 export const getConversationMessages = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ conversationId: z.string().uuid() }))
+  .validator(z.object({ conversationId: z.string().uuid() }))
   .handler(async ({ data }) => {
     const { orgId, userId } = await getSessionWithOrg();
     const [conv] = await db
@@ -88,7 +88,7 @@ export const getConversationMessages = createServerFn({ method: 'GET' })
   });
 
 export const deleteConversation = createServerFn({ method: 'POST' })
-  .inputValidator(z.object({ conversationId: z.string().uuid() }))
+  .validator(z.object({ conversationId: z.string().uuid() }))
   .handler(async ({ data }) => {
     const { orgId, userId } = await getSessionWithOrg();
     const [conv] = await db

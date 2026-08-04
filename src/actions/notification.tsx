@@ -29,7 +29,7 @@ import { eq, desc, and, gte, lte, sql, isNull } from 'drizzle-orm';
 export const getNotifications = createServerFn({
   method: 'GET',
 })
-  .inputValidator(
+  .validator(
     z.object({
       page: z.number().default(1),
       limit: z.number().default(10),
@@ -136,7 +136,7 @@ export const getNotifications = createServerFn({
 export const getNotification = createServerFn({
   method: 'GET',
 })
-  .inputValidator(z.object({ id: z.string() }))
+  .validator(z.object({ id: z.string() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
@@ -204,7 +204,7 @@ export const getNotification = createServerFn({
 export const markNotificationOpened = createServerFn({
   method: 'POST',
 })
-  .inputValidator(z.object({ id: z.string().uuid() }))
+  .validator(z.object({ id: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
@@ -223,7 +223,7 @@ export const markNotificationOpened = createServerFn({
 export const markNotificationUnread = createServerFn({
   method: 'POST',
 })
-  .inputValidator(z.object({ id: z.string().uuid() }))
+  .validator(z.object({ id: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
@@ -256,7 +256,7 @@ export const markAllNotificationsRead = createServerFn({
 export const deleteNotification = createServerFn({
   method: 'POST',
 })
-  .inputValidator(z.object({ id: z.string() }))
+  .validator(z.object({ id: z.string() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
@@ -299,7 +299,7 @@ export const listOrgMembersForAssignment = createServerFn({
 export const assignNotification = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
+  .validator(
     z.object({
       id: z.string().uuid(),
       userId: z.string().nullable(),
@@ -325,7 +325,7 @@ export const assignNotification = createServerFn({
 export const resolveNotification = createServerFn({
   method: 'POST',
 })
-  .inputValidator(z.object({ id: z.string().uuid() }))
+  .validator(z.object({ id: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId, userId } = await getSessionWithOrg();
     const role = await getMemberRole();
@@ -347,7 +347,7 @@ export const resolveNotification = createServerFn({
 export const unresolveNotification = createServerFn({
   method: 'POST',
 })
-  .inputValidator(z.object({ id: z.string().uuid() }))
+  .validator(z.object({ id: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
@@ -455,7 +455,7 @@ async function registrarEventoClasificacion(
 export const classifyNotification = createServerFn({
   method: 'POST',
 })
-  .inputValidator(z.object({ id: z.string().uuid() }))
+  .validator(z.object({ id: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
@@ -498,7 +498,7 @@ export const classifyNotification = createServerFn({
 export const classifyUnclassifiedNotifications = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
+  .validator(
     z
       .object({ limit: z.number().int().positive().max(500).optional() })
       .optional()

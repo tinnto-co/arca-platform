@@ -102,7 +102,7 @@ async function getClientesPorCredencial(credencialIds: string[]) {
 }
 
 export const getJobs = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       page: z.number().default(1),
       limit: z.number().default(20),
@@ -190,7 +190,7 @@ export const getJobs = createServerFn({ method: 'GET' })
   });
 
 export const getJobLogs = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       jobId: z.string().uuid(),
       limit: z.number().default(100),
@@ -306,7 +306,7 @@ export const getActiveJobsSummary = createServerFn({ method: 'GET' }).handler(
 );
 
 export const dispatchAllJobs = createServerFn({ method: 'POST' })
-  .inputValidator(z.object({ limit: z.number().int().positive().optional() }))
+  .validator(z.object({ limit: z.number().int().positive().optional() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     assertCanWrite(await getMemberRole());
@@ -377,7 +377,7 @@ export interface JobErrorSummary {
 }
 
 export const getJobErrorSummary = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       credencialId: z.string().optional(),
       type: jobTypeEnum.optional(),

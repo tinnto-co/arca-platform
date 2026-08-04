@@ -65,7 +65,7 @@ const totalEnPesos = sql<number>`(${comprobante.total} * ${comprobante.cotizacio
 // ── Proyección de IVA ────────────────────────────────────────────────────────
 
 export const generateIvaProjection = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clienteId: z.string().uuid(),
       periodo: z.string().regex(/^\d{4}-\d{2}$/, 'El período debe ser YYYY-MM'),
@@ -164,7 +164,7 @@ export const generateIvaProjection = createServerFn({ method: 'POST' })
 // ── Ratios por cliente ───────────────────────────────────────────────────────
 
 export const getRatios = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clienteId: z.string().uuid(),
       from: z.string(),
@@ -235,7 +235,7 @@ export const getRatios = createServerFn({ method: 'GET' })
 // ── Clientes en riesgo ───────────────────────────────────────────────────────
 
 export const getClientesEnRiesgo = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       periodo: z
         .string()

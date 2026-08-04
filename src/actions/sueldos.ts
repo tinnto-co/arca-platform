@@ -296,7 +296,7 @@ import { parseISO } from 'date-fns';
 // ---------- Convenios ----------
 
 export const listConvenios = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
     })
@@ -428,7 +428,7 @@ export const listConvenios = createServerFn({ method: 'GET' })
   });
 
 export const createConvenio = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       nombre: z.string().min(1),
@@ -465,7 +465,7 @@ export const createConvenio = createServerFn({ method: 'POST' })
   });
 
 export const updateConvenio = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       id: z.string().uuid(),
       clientId: z.string().uuid(),
@@ -498,7 +498,7 @@ export const updateConvenio = createServerFn({ method: 'POST' })
   });
 
 export const deleteConvenio = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       id: z.string().uuid(),
       clientId: z.string().uuid(),
@@ -532,7 +532,7 @@ export const deleteConvenio = createServerFn({ method: 'POST' })
 
 /** Convenios CCT scrapeados desde AFIP (Simplificación Registral - Empleadores). */
 export const listConveniosAfipEmpleadores = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .validator(z.object({ clientId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
@@ -565,7 +565,7 @@ export const listConveniosAfipEmpleadores = createServerFn({ method: 'GET' })
 
 /** Lista conceptos unificados SOS + AFIP por perfil, incluyendo subsistemas. */
 export const listConceptosByPerfil = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
     })
@@ -641,7 +641,7 @@ export const listTodosConceptosSos = createServerFn({ method: 'GET' })
 export const agregarConvenioDesdeAfipEmpleadores = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       afipConvenioId: z.string().uuid(),
@@ -752,7 +752,7 @@ export const agregarConvenioDesdeAfipEmpleadores = createServerFn({
 // ---------- Categorías por convenio ----------
 
 export const listCategoriasByConvenio = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({ convenioId: z.string().uuid(), clientId: z.string().uuid() })
   )
   .handler(async (ctx) => {
@@ -766,7 +766,7 @@ export const listCategoriasByConvenio = createServerFn({ method: 'GET' })
   });
 
 export const createCategoria = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       convenioId: z.string().uuid(),
       clientId: z.string().uuid(),
@@ -793,7 +793,7 @@ export const createCategoria = createServerFn({ method: 'POST' })
   });
 
 export const updateCategoriaEsValorHora = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       categoriaId: z.string().uuid(),
       clientId: z.string().uuid(),
@@ -814,7 +814,7 @@ export const updateCategoriaEsValorHora = createServerFn({ method: 'POST' })
 // ---------- Escalas salariales ----------
 
 export const listEscalasByCategoria = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({ categoriaId: z.string().uuid(), clientId: z.string().uuid() })
   )
   .handler(async (ctx) => {
@@ -829,7 +829,7 @@ export const listEscalasByCategoria = createServerFn({ method: 'GET' })
 
 /** Elimina una escala salarial. Verifica que pertenezca al cliente vía categoría → convenio. */
 export const deleteEscala = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({ escalaId: z.string().uuid(), clientId: z.string().uuid() })
   )
   .handler(async (ctx) => {
@@ -863,7 +863,7 @@ export const deleteEscala = createServerFn({ method: 'POST' })
   });
 
 export const upsertEscala = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       categoriaId: z.string().uuid(),
       clientId: z.string().uuid(),
@@ -1181,7 +1181,7 @@ async function basicoParaRecibo(
 
 /** Obtiene el básico vigente para una categoría en una fecha */
 export const getBasicoVigente = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       categoriaId: z.string().uuid(),
       fecha: z.string(), // YYYY-MM-DD o YYYY-MM
@@ -1197,7 +1197,7 @@ export const getBasicoVigente = createServerFn({ method: 'GET' })
  * No lanza error si no hay escala configurada.
  */
 export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       importEmpleadoId: z.string().uuid(),
       periodo: z.string(), // YYYY-MM
@@ -1343,7 +1343,7 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
 // ---------- Conceptos salariales ----------
 
 export const listConceptos = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .validator(z.object({ clientId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
@@ -1382,7 +1382,7 @@ async function conceptoIdPorNumeroSos(numeroSos: number): Promise<string> {
 }
 
 export const createConcepto = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       numeroSos: z.number().int(),
@@ -1436,7 +1436,7 @@ export const createConcepto = createServerFn({ method: 'POST' })
   });
 
 export const updateConcepto = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       id: z.string().uuid(),
       clientId: z.string().uuid(),
@@ -1494,7 +1494,7 @@ export const updateConcepto = createServerFn({ method: 'POST' })
   });
 
 export const deleteConcepto = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       id: z.string().uuid(),
       clientId: z.string().uuid(),
@@ -1519,7 +1519,7 @@ export const deleteConcepto = createServerFn({ method: 'POST' })
 // ---------- Empleados ----------
 
 export const listEmpleados = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({ clientId: z.string().uuid() })
   )
   .handler(async (ctx) => {
@@ -1553,7 +1553,7 @@ export const listEmpleados = createServerFn({ method: 'GET' })
 
 /** Empleados importados desde Excel LSD (filtrados por perfil seleccionado). */
 export const listImportEmpleados = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({ clientId: z.string().uuid() })
   )
   .handler(async (ctx) => {
@@ -1602,7 +1602,7 @@ export const listImportEmpleados = createServerFn({ method: 'GET' })
   });
 
 export const getProfileSueldosConfig = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({ clientId: z.string().uuid() })
   )
   .handler(async (ctx) => {
@@ -1658,7 +1658,7 @@ function scoreCat(importCat: string, target: { codigo: string; nombre: string })
 /** Vincula automáticamente convenio y categoría a los empleados del perfil,
  *  usando el CCT del perfil y el texto de categoría del LSD. */
 export const sincronizarConveniosEmpleados = createServerFn({ method: 'POST' })
-  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .validator(z.object({ clientId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
@@ -1753,7 +1753,7 @@ export const sincronizarConveniosEmpleados = createServerFn({ method: 'POST' })
 
 /** Crea un empleado manualmente en la tabla unificada. */
 export const createManualEmpleado = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       cuil: z.string().min(1),
@@ -1837,7 +1837,7 @@ export const createManualEmpleado = createServerFn({ method: 'POST' })
 
 /** Elimina un empleado creado manualmente (origen = 'manual'). */
 export const deleteManualEmpleado = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({ clientId: z.string().uuid(), empleadoId: z.string().uuid() })
   )
   .handler(async (ctx) => {
@@ -1861,7 +1861,7 @@ export const deleteManualEmpleado = createServerFn({ method: 'POST' })
 
 /** Empleados del perfil con su configuración de liquidación (solo activos). */
 export const listImportEmpleadosConConfig = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({ clientId: z.string().uuid() })
   )
   .handler(async (ctx) => {
@@ -1894,7 +1894,7 @@ export const listImportEmpleadosConConfig = createServerFn({ method: 'GET' })
 
 /** Recibos importados por período (para selector en solapa Recibo). */
 export const listImportRecibosByPeriodo = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       periodo: z.string().regex(/^\d{4}-\d{2}$/),
@@ -1928,7 +1928,7 @@ export const listImportRecibosByPeriodo = createServerFn({ method: 'GET' })
 
 /** Último recibo importado del empleado con todos sus conceptos (para la tabla estilo SOS). */
 export const getUltimoReciboImportado = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       importEmpleadoId: z.string().uuid(),
       clientId: z.string().uuid(),
@@ -2040,7 +2040,7 @@ export const getUltimoReciboImportado = createServerFn({ method: 'GET' })
  * de modo que cualquier empresa pueda trabajar con cualquier concepto SOS.
  */
 export const listConceptosPlantillaManualSos = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       /** Si se pasa, usa el profileId para buscar el empleado de referencia de plantilla. */
@@ -2165,7 +2165,7 @@ export const listConceptosPlantillaManualSos = createServerFn({ method: 'GET' })
 
 /** Detalle de un recibo importado + conceptos LSD. */
 export const getImportReciboDetalle = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       reciboId: z.string().uuid(),
       clientId: z.string().uuid(),
@@ -2302,7 +2302,7 @@ export const listTiposEmpresa = createServerFn({ method: 'GET' }).handler(
 );
 
 export const getEmpleadorConfig = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .validator(z.object({ clientId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
@@ -2343,7 +2343,7 @@ const empleadorConfigSchema = z.object({
 });
 
 export const updateEmpleadorConfig = createServerFn({ method: 'POST' })
-  .inputValidator(empleadorConfigSchema)
+  .validator(empleadorConfigSchema)
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     await assertCanWrite(orgId);
@@ -2436,7 +2436,7 @@ function validateConceptoEditSos(c: z.infer<typeof conceptoEditsSosSchema>): voi
  * Monto por línea: si hay valor en columna monto, se usa; si no, fórmula SOS (cantidad × %/100 × base) con piso por importe mínimo.
  */
 export const guardarReciboDesdeTabla = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       importEmpleadoId: z.string().uuid(),
@@ -2639,7 +2639,7 @@ export const guardarReciboDesdeTabla = createServerFn({ method: 'POST' })
 
 /** Crea cabecera en payroll_liquidacion (metadata del recibo: fechas, obra social, pago). */
 export const createReciboHeader = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z
       .object({
         clientId: z.string().uuid(),
@@ -2801,7 +2801,7 @@ export const createReciboHeader = createServerFn({ method: 'POST' })
   });
 
 export const createEmpleado = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       nombre: z.string().min(1),
@@ -2855,7 +2855,7 @@ export const createEmpleado = createServerFn({ method: 'POST' })
 
 /** Carga masiva de empleados. convenioNombre y categoriaCodigo se resuelven a IDs del cliente. */
 export const createEmpleadosMasivo = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       empleados: z.array(
@@ -2972,7 +2972,7 @@ export const createEmpleadosMasivo = createServerFn({ method: 'POST' })
   });
 
 export const updateEmpleado = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       id: z.string().uuid(),
       clientId: z.string().uuid(),
@@ -3133,7 +3133,7 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
   });
 
 export const deleteEmpleado = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       id: z.string().uuid(),
       clientId: z.string().uuid(),
@@ -3757,7 +3757,7 @@ async function calcularUnaLiquidacion(
 
 /** Calcula una liquidación para un empleado en un período */
 export const calcularLiquidacion = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       importEmpleadoId: z.string().uuid(),
@@ -3829,7 +3829,7 @@ function mapLiquidacionMasivaErrorCode(message: string): LiquidacionMasivaErrorC
 
 /** Liquidación masiva: calcula para todos los empleados activos del período del cliente */
 export const calcularLiquidacionMasiva = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       periodo: z.string(),
@@ -3941,7 +3941,7 @@ export const calcularLiquidacionMasiva = createServerFn({ method: 'POST' })
 export const eliminarLiquidacionesDelPeriodo = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
+  .validator(
     z.object({ clientId: z.string().uuid(), periodo: z.string() })
   )
   .handler(async (ctx) => {
@@ -3975,7 +3975,7 @@ export const eliminarLiquidacionesDelPeriodo = createServerFn({
 
 /** Elimina una liquidación puntual del cliente. */
 export const eliminarLiquidacion = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       liquidacionId: z.string().uuid(),
@@ -4016,7 +4016,7 @@ export const eliminarLiquidacion = createServerFn({ method: 'POST' })
 
 /** Actualiza los inputs editables de una fila de detalle (cantidad, pct, importeOverride, etc.) */
 export const updateDetalleInputs = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       detalleId: z.string().uuid(),
@@ -4072,7 +4072,7 @@ export const updateDetalleInputs = createServerFn({ method: 'POST' })
  * El período se normaliza a `YYYY-MM` y se buscan variantes guardadas en BD (p. ej. `2026-04` vs `2026-4`).
  */
 export const listLiquidacionesByPeriodo = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       periodo: z.string(),
       clientId: z.string().uuid(),
@@ -4114,7 +4114,7 @@ export const listLiquidacionesByPeriodo = createServerFn({ method: 'GET' })
  * Al menos uno de los dos debe estar presente.
  */
 export const listLiquidacionesByFiltros = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z
       .object({
         clientId: z.string().uuid(),
@@ -4178,7 +4178,7 @@ export const listLiquidacionesByFiltros = createServerFn({ method: 'GET' })
 
 /** Marca la liquidación como recibo confirmado; así aparece en la solapa Recibo. */
 export const confirmarReciboLiquidacion = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({ liquidacionId: z.string().uuid(), clientId: z.string().uuid() })
   )
   .handler(async (ctx) => {
@@ -4211,7 +4211,7 @@ export const confirmarReciboLiquidacion = createServerFn({ method: 'POST' })
 
 /** Configuración del empleador para el recibo (firma digital, redondeo). */
 export const getPayrollEmployerConfig = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .validator(z.object({ clientId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
@@ -4233,7 +4233,7 @@ export const getPayrollEmployerConfig = createServerFn({ method: 'GET' })
 
 /** Establece el empleado de referencia para la plantilla base de nuevos recibos. */
 export const setPlantillaEmpleado = createServerFn({ method: 'POST' })
-  .inputValidator(z.object({
+  .validator(z.object({
     clientId: z.string().uuid(),
     empleadoId: z.string().uuid().nullable(),
   }))
@@ -4261,7 +4261,7 @@ export const setPlantillaEmpleado = createServerFn({ method: 'POST' })
 
 /** Guarda (o elimina) la firma digital del empleador en el perfil. */
 export const saveFirmaDigitalEmpleador = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       /** data URL de la imagen, o null para borrar la firma. */
@@ -4434,7 +4434,7 @@ function armarDetalleRecibo(
 }
 
 export const getReciboDetalle = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({ liquidacionId: z.string().uuid(), clientId: z.string().uuid() })
   )
   .handler(async (ctx) => {
@@ -4566,7 +4566,7 @@ export const getReciboDetalle = createServerFn({ method: 'GET' })
  * Diseñado para generación de PDFs: 2 consultas principales + cálculos en paralelo.
  */
 export const listRecibosDetalleParaPDF = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       ano: z.string().regex(/^\d{4}$/, 'Año inválido'),
@@ -4755,7 +4755,7 @@ export const listRecibosDetalleParaPDF = createServerFn({ method: 'GET' })
  * Diseñado para mostrar un overview en el agente IA sin abrir el dashboard.
  */
 export const getResumenLiquidacionMes = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       periodo: z.string(),
@@ -4848,7 +4848,7 @@ export type GetResumenLiquidacionMesResult = Awaited<
 
 /** Previsualización de los datos que se exportarán en el LSD para un período. */
 export const previewLsd = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       periodo: z.string().regex(/^\d{4}-\d{2}$/),
@@ -4987,7 +4987,7 @@ export const previewLsd = createServerFn({ method: 'GET' })
 
 /** Obtiene los parámetros del período (tope imponible, SMVM) para la solapa Cargas Sociales. */
 export const getParametrosPeriodo = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ periodo: z.string().regex(/^\d{4}-\d{2}$/) }))
+  .validator(z.object({ periodo: z.string().regex(/^\d{4}-\d{2}$/) }))
   .handler(async (ctx) => {
     await getSessionWithOrg();
     const [row] = await db
@@ -5000,7 +5000,7 @@ export const getParametrosPeriodo = createServerFn({ method: 'GET' })
 
 /** Crea o actualiza el tope imponible y SMVM para un período. */
 export const upsertParametrosPeriodo = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       periodo: z.string().regex(/^\d{4}-\d{2}$/),
       topeMaximoImponible: z.string().regex(/^\d+(\.\d{1,2})?$/, 'Debe ser un número con hasta 2 decimales'),
@@ -5034,7 +5034,7 @@ export const upsertParametrosPeriodo = createServerFn({ method: 'POST' })
 
 /** Actualiza los campos de override LSD de un recibo (bases imponibles, aportes adicionales, etc.). */
 export const updateReciboLsdOverrides = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       reciboId: z.string().uuid(),
@@ -5097,7 +5097,7 @@ type LsdIssue = {
  * Devuelve la lista de errores (bloqueantes) y warnings, y si se puede descargar.
  */
 export const validarLsd = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       periodo: z.string().regex(/^\d{4}-\d{2}$/),
@@ -5210,7 +5210,7 @@ function lsdMoney(centavos: number): string {
 
 /** Genera el archivo LSD (Records 01-04) para un período. */
 export const generarArchivoLsd = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       periodo: z.string().regex(/^\d{4}-\d{2}$/),
@@ -5606,7 +5606,7 @@ export const generarArchivoLsd = createServerFn({ method: 'GET' })
 
 /** Lista todas las presentaciones LSD generadas para un período y empresa. */
 export const listLsdPresentaciones = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       periodo: z.string().regex(/^\d{4}-\d{2}$/),
@@ -5637,7 +5637,7 @@ export const listLsdPresentaciones = createServerFn({ method: 'GET' })
 
 /** Devuelve el contenido de una presentación para re-descarga. */
 export const getLsdPresentacionContenido = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       presentacionId: z.string().uuid(),
@@ -5693,7 +5693,7 @@ function flagsConceptoLsd(tipoPrefijo: string): string {
  * 195 chars/línea + CRLF — campos: codigoAfip(6) + 000000(6) + sos(4) + nombre(150) + flags(29).
  */
 export const generarConceptosLsd = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       periodo: z.string().regex(/^\d{4}-\d{2}$/),
@@ -5767,7 +5767,7 @@ export const generarConceptosLsd = createServerFn({ method: 'GET' })
  * y devuelve SAC = mejor_mes / 2.
  */
 export const getSacPreview = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       periodo: z.string().regex(/^\d{4}-\d{2}$/),
@@ -5869,7 +5869,7 @@ export const getSacPreview = createServerFn({ method: 'GET' })
  * Empleados que ya tienen SAC en el período son ignorados (no se sobreescribe).
  */
 export const generarSacsMasivo = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       periodo: z.string().regex(/^\d{4}-\d{2}$/),
@@ -6075,7 +6075,7 @@ export const generarSacsMasivo = createServerFn({ method: 'POST' })
 // ─── Liquidación Final masiva ─────────────────────────────────────────────────
 
 export const getLiqFinalPreview = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       periodo: z.string().regex(/^\d{4}-\d{2}$/),
@@ -6143,7 +6143,7 @@ export const getLiqFinalPreview = createServerFn({ method: 'GET' })
   });
 
 export const generarLiqFinalMasivo = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       periodo: z.string().regex(/^\d{4}-\d{2}$/),
