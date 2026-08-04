@@ -22,7 +22,7 @@ import {
   List,
   Inbox,
   TrendingUp,
-  Sparkles,
+  Percent,
   FileBarChart,
   ScrollText,
   Pencil,
@@ -368,6 +368,15 @@ const SOLAPAS: {
     icon: FileText,
     ready: true,
   },
+  // Las reglas de mapeo son las que arman los asientos automáticos, así que
+  // van pegadas a Asientos y antes de Contabilizar, que es quien las aplica.
+  {
+    id: 'reglas',
+    label: 'Reglas',
+    grupo: 'Registración',
+    icon: Workflow,
+    ready: true,
+  },
   {
     id: 'contabilizar',
     label: 'Contabilizar',
@@ -408,7 +417,7 @@ const SOLAPAS: {
     id: 'ajuste',
     label: 'Ajuste por inflación',
     grupo: 'Cierre',
-    icon: Sparkles,
+    icon: Percent,
     ready: true,
   },
   {
@@ -438,13 +447,6 @@ const SOLAPAS: {
     label: 'Ejercicios',
     grupo: 'Configuración',
     icon: CalendarDays,
-    ready: true,
-  },
-  {
-    id: 'reglas',
-    label: 'Reglas',
-    grupo: 'Configuración',
-    icon: Workflow,
     ready: true,
   },
   {
@@ -500,7 +502,7 @@ function TabBar({
       const anchoSolapa = anchos.slice(0, solapas.length);
       const disponible = bar.getBoundingClientRect().width;
       const GAP = 4;
-      const SEPARADOR = 1 + 12 * 2; // línea + su margen
+      const SEPARADOR = 1 + 8 * 2; // línea + su margen (mx-2)
 
       const extra = (i: number) =>
         anchoSolapa[i] +
@@ -545,7 +547,7 @@ function TabBar({
     : desbordan;
 
   const claseSolapa =
-    'flex items-center gap-1.5 px-2.5 h-7 rounded-[7px] text-[12.5px] font-medium transition-colors duration-[120ms] shrink-0 whitespace-nowrap';
+    'flex items-center gap-1.5 px-2 h-7 rounded-[7px] text-[12.5px] font-medium transition-colors duration-[120ms] shrink-0 whitespace-nowrap';
   const estiloSolapa = (id: Tab) => ({
     // El activo se marca con fondo y no con subrayado: el subrayado colgaba
     // del borde de la barra y dejó de tener dónde apoyarse.
@@ -589,7 +591,7 @@ function TabBar({
           {i > 0 && tab.grupo !== mostradas[i - 1].grupo && (
             <span
               aria-hidden
-              className="w-px h-4 mx-3 shrink-0 bg-[var(--arca-border)]"
+              className="w-px h-4 mx-2 shrink-0 bg-[var(--arca-border)]"
             />
           )}
           <button
