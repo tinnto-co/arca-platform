@@ -16,6 +16,8 @@ import {
   Plus,
   ChevronRight,
   ChevronDown,
+  ChevronsUpDown,
+  ChevronsDownUp,
   FileText,
   Scale,
   BookOpen,
@@ -298,6 +300,29 @@ export const Route = createFileRoute('/_authed/accounting/')({
 /* ─── Shared styles ─── */
 const INPUT_CLASS =
   'h-8 px-2.5 text-[12.5px] border border-[var(--arca-border)] rounded-[8px] bg-[var(--arca-surface)] text-[var(--arca-ink)] focus:outline-none';
+
+/* ─── Barra de filtros y acciones ─── */
+
+/**
+ * Las barras que van arriba de las tablas se leen en tres zonas: a la
+ * izquierda lo que achica lo que se ve (filtros), a la derecha lo que se hace
+ * (vista y acciones), y una línea que las separa.
+ *
+ * Antes los filtros iban en un renglón y todo lo demás en otro, pegado a la
+ * derecha: la segunda línea juntaba controles de vista, operaciones masivas y
+ * la acción principal sin nada que los distinguiera, y el hueco de la
+ * izquierda la hacía leer como una tira suelta.
+ */
+const TOOLBAR_ACCIONES = 'ml-auto flex items-center gap-1.5';
+const TOOLBAR_SEP = 'w-px h-5 mx-1 shrink-0 bg-[var(--arca-border)]';
+const TOOLBAR_BTN =
+  'flex items-center gap-1.5 h-7 px-2.5 text-[11.5px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] transition-colors';
+/** Solo icono: los controles de vista se repiten en cada pantalla y el rótulo
+ *  costaba el ancho que necesitaban los filtros. El nombre va en el `title`. */
+const TOOLBAR_ICON_BTN =
+  'flex items-center justify-center h-7 w-7 rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors';
+const TOOLBAR_BTN_PRIMARIO =
+  'flex items-center gap-1.5 h-7 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90 transition-opacity';
 
 /* ─── Badges ─── */
 function TypeBadge({ type }: { type: 'imputable' | 'group' }) {
@@ -1201,26 +1226,39 @@ function PlanDeCuentas({
             Solo activas
           </label>
 
-          <div className="ml-auto flex items-center gap-1.5">
+          {/* A la derecha, lo que se hace: primero abrir/cerrar el árbol, y
+              después las acciones. Las de armado inicial —plantillas, importar,
+              plan base— van juntas en un menú: se usan al dar de alta la
+              empresa y casi nunca más, pero ocupaban media barra. */}
+          <div className={TOOLBAR_ACCIONES}>
+            {/* Delimita las zonas aunque no sobre ancho: sin esto, cuando la
+                barra se llena los filtros y las acciones quedan pegados. */}
+            <span aria-hidden className={TOOLBAR_SEP} />
             <button
               onClick={expandAll}
-              className="h-7 px-2.5 text-[11.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors"
+              title="Expandir todo el árbol"
+              aria-label="Expandir todo el árbol"
+              className={TOOLBAR_ICON_BTN}
             >
-              Expandir
+              <ChevronsUpDown className="w-3.5 h-3.5" strokeWidth={2} />
             </button>
             <button
               onClick={collapseAll}
-              className="h-7 px-2.5 text-[11.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors"
+              title="Colapsar todo el árbol"
+              aria-label="Colapsar todo el árbol"
+              className={TOOLBAR_ICON_BTN}
             >
-              Colapsar
+              <ChevronsDownUp className="w-3.5 h-3.5" strokeWidth={2} />
             </button>
             {isOwner && (
               <>
+                <span aria-hidden className={TOOLBAR_SEP} />
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <button className="flex items-center gap-1.5 h-7 px-2.5 text-[11.5px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] transition-colors">
-                      <Download className="w-3 h-3" strokeWidth={2} />
-                      Plantilla
+                    <button className={TOOLBAR_BTN}>
+                      <FileSpreadsheet className="w-3 h-3" strokeWidth={2} />
+                      Importar / Exportar
+                      <ChevronDown className="w-3 h-3" strokeWidth={2} />
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-64">
@@ -1257,25 +1295,32 @@ function PlanDeCuentas({
                         </span>
                       </div>
                     </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => setImportOpen(true)}>
+                      <Upload className="w-3.5 h-3.5" />
+                      <div className="flex flex-col">
+                        <span>Importar desde Excel</span>
+                        <span className="text-[11px] text-[var(--arca-ink-3)]">
+                          Cargar el plan desde una planilla
+                        </span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setFormMode({ kind: 'base-create' })}
+                    >
+                      <Layers className="w-3.5 h-3.5" />
+                      <div className="flex flex-col">
+                        <span>Nueva cuenta del plan base</span>
+                        <span className="text-[11px] text-[var(--arca-ink-3)]">
+                          Se agrega al plan que comparten las empresas
+                        </span>
+                      </div>
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
                 <button
-                  onClick={() => setImportOpen(true)}
-                  className="flex items-center gap-1.5 h-7 px-2.5 text-[11.5px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] transition-colors"
-                >
-                  <Upload className="w-3 h-3" strokeWidth={2} />
-                  Importar
-                </button>
-                <button
-                  onClick={() => setFormMode({ kind: 'base-create' })}
-                  className="flex items-center gap-1.5 h-7 px-2.5 text-[11.5px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] transition-colors"
-                >
-                  <Layers className="w-3 h-3" strokeWidth={2} />
-                  Plan base
-                </button>
-                <button
                   onClick={() => setFormMode({ kind: 'custom' })}
-                  className="flex items-center gap-1.5 h-7 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90 transition-opacity"
+                  className={TOOLBAR_BTN_PRIMARIO}
                 >
                   <Plus className="w-3 h-3" strokeWidth={2.5} />
                   Nueva cuenta propia
@@ -3639,7 +3684,7 @@ function Asientos({
                 setPage(1);
               }}
             >
-              <SelectTrigger size="sm" className="w-52 text-[12.5px]">
+              <SelectTrigger size="sm" className="w-44 text-[12.5px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -3689,14 +3734,13 @@ function Asientos({
             Incluir anulados
           </label>
 
-          <div className="ml-auto flex items-center gap-2">
-            <button
-              onClick={toggleExpandAll}
-              disabled={rows.length === 0}
-              className="h-8 px-2.5 text-[11.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] disabled:opacity-40 transition-colors"
-            >
-              {allExpanded ? 'Colapsar todo' : 'Expandir todo'}
-            </button>
+          {/* El orden es un filtro más, así que va con los filtros y con
+              rótulo: suelto en la fila de acciones y sin nombre, «N° (desc)»
+              no decía de qué era. */}
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] text-[var(--arca-ink-3)]">
+              Orden
+            </label>
             <Select
               value={`${sortBy}:${sortDir}`}
               onValueChange={(v) => {
@@ -3705,30 +3749,60 @@ function Asientos({
                 setSortDir(d2 as 'asc' | 'desc');
               }}
             >
-              <SelectTrigger size="sm" className="w-44 text-[12.5px]">
+              <SelectTrigger size="sm" className="w-36 text-[12.5px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="number:desc">N° (desc)</SelectItem>
-                <SelectItem value="number:asc">N° (asc)</SelectItem>
-                <SelectItem value="date:desc">Fecha (desc)</SelectItem>
-                <SelectItem value="date:asc">Fecha (asc)</SelectItem>
+                <SelectItem value="number:desc">N° desc</SelectItem>
+                <SelectItem value="number:asc">N° asc</SelectItem>
+                <SelectItem value="date:desc">Fecha desc</SelectItem>
+                <SelectItem value="date:asc">Fecha asc</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+
+          {/* A la derecha, lo que se hace: abrir/cerrar el detalle, y después
+              exportar y crear. */}
+          <div className={`${TOOLBAR_ACCIONES} self-end`}>
+            <span aria-hidden className={TOOLBAR_SEP} />
+            <button
+              onClick={toggleExpandAll}
+              disabled={rows.length === 0}
+              title={
+                allExpanded
+                  ? 'Colapsar el detalle de todos los asientos'
+                  : 'Expandir el detalle de todos los asientos'
+              }
+              aria-label={
+                allExpanded
+                  ? 'Colapsar el detalle de todos los asientos'
+                  : 'Expandir el detalle de todos los asientos'
+              }
+              className={`${TOOLBAR_ICON_BTN} disabled:opacity-40`}
+            >
+              {allExpanded ? (
+                <ChevronsDownUp className="w-3.5 h-3.5" strokeWidth={2} />
+              ) : (
+                <ChevronsUpDown className="w-3.5 h-3.5" strokeWidth={2} />
+              )}
+            </button>
+            {(isOwner || canWrite) && (
+              <span aria-hidden className={TOOLBAR_SEP} />
+            )}
             {isOwner && (
               <button
                 onClick={exportLibroDiario}
                 title="PDF del Libro Diario para rubricar"
-                className="flex items-center gap-1.5 h-8 px-2.5 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
+                className={TOOLBAR_BTN}
               >
-                <Download className="w-3.5 h-3.5" strokeWidth={1.8} />
-                Libro Diario PDF
+                <Download className="w-3 h-3" strokeWidth={2} />
+                Libro Diario
               </button>
             )}
             {canWrite && (
               <button
                 onClick={() => setEditor({ mode: 'create' })}
-                className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90"
+                className={TOOLBAR_BTN_PRIMARIO}
               >
                 <Plus className="w-3 h-3" strokeWidth={2.5} />
                 Nuevo asiento
