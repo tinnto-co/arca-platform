@@ -1185,10 +1185,10 @@ export const AXW_BASE = {
   netoPrior: '0%',
 };
 export const AXW_PRIOR = {
-  name: '15%',
+  name: '13%',
   vInicio: '7%',
-  altas: '6%',
-  bajas: '6%',
+  altas: '7%',
+  bajas: '7%',
   vCierre: '8%',
   acumInicio: '7%',
   amortBajas: '6%',
@@ -1371,10 +1371,10 @@ function AnexoIDoc({ data }: { data: AnexoIExportData }) {
               </View>
               <View style={ax.hBand}>
                 <View style={[ax.hCellB, { width: '23.53%' }]}>
-                  <Text>Acumuladas al inicio</Text>
+                  <Text>Acum. al inicio</Text>
                 </View>
                 <View style={[ax.hCellB, { width: '20.59%' }]}>
-                  <Text>Bajas del ejercicio</Text>
+                  <Text>Bajas</Text>
                 </View>
                 {/* Sub-grupo Del ejercicio (19% de tabla = 55.88% del grupo) */}
                 <View style={{ width: '55.88%' }}>
