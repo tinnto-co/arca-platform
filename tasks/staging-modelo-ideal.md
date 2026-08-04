@@ -17,10 +17,14 @@ Decidido: Postgres nuevo en Coolify · datos por dump de BD_IDEAL local · scrap
   AFIP en paralelo** (el de prod sigue vivo). Si aparecen sesiones cortadas o "usuario no
   logueado", es esto. Se apaga con `CRON_ENABLED=false`.
 
-## 1. Postgres en Coolify
+## 1. Postgres en Coolify — HECHO 04/08
 
 Servicio Postgres **17** (la base local es 17; un restore a 16 falla). Anotar host, puerto y las
 credenciales del superusuario, y dejarlo alcanzable desde tu IP para poder restaurar.
+
+Vivo en `77.42.70.84:6001`, base **`arca_staging`** (no `postgres`: así se puede tirar y rehacer
+sin arrastrar el catálogo del servicio). Postgres 17.10. Los passwords de los cuatro roles se
+generaron nuevos y **no van en el repo** — están en las env de Coolify.
 
 Crear los roles **antes** del restore: el dump trae las políticas de RLS y los GRANT, que
 referencian los roles por nombre, y el restore falla si no existen. `pg_dump` no dumpea roles.
@@ -50,11 +54,14 @@ docker run --rm -v /tmp/arca-staging:/dump postgres:17 \
   pg_restore --no-owner -d "postgres://<super>:<pass>@<host>:<puerto>/<db>" /dump/bd_ideal.dump
 ```
 
-Verificar después del restore (script bun con el paquete `postgres`, como siempre):
+Verificado 04/08 (78 tablas, 52 con RLS, 67 políticas, counts idénticos al local):
 
-- `cliente` 97, `comprobante` ~73.400, `recibo` 175, `concepto` 233, `job` 17.743.
-- RLS vivo: conectado como `arca_app` **sin** `app.org_id` → 0 clientes; con
-  `set local app.org_id = 'org_estudio_blakg'` → 97.
+- `cliente` 97, `comprobante` 74.063, `recibo` 175, `concepto` 233, `job` 17.897,
+  `documento` 535 (los 535 con `storage_key`).
+- `arca_app` **sin** `app.org_id` → 0 clientes; con `set local app.org_id = 'org_estudio_blakg'`
+  → 97. `arca_agent` no puede borrar. `arca_scrapper` lee `comprobante` pero `concepto` le da
+  `permission denied`. `arca_portal` sin `app.cliente_id` → 0, con el id → 1, y `credencial_afip`
+  le da `permission denied`.
 - El `DATABASE_URL` de la app **no** puede ser el superusuario ni `arca`: son dueños y bypassean
   el RLS, con lo cual el aislamiento por organización deja de existir.
 
@@ -77,6 +84,11 @@ de Bun).
 
 `R2_PREFIX` sólo separa los screenshots de debug del scrapper, no los documentos: la única forma
 de no mezclar archivos con producción es el bucket.
+
+**Los documentos no viajan en el dump.** En la BD sólo está la `storage_key`; los 535 archivos
+viven en el bucket `arca`. Con `R2_BUCKET=arca-staging` todo enlace a un documento existente da
+502 hasta que se copie el prefijo `documentos/` de un bucket al otro. Para sueldos no molesta;
+se nota en notificaciones y en el portal.
 
 El estudio entra con **su mail y contraseña de siempre**: el ETL copió las tablas de auth.
 
