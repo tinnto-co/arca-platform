@@ -1968,6 +1968,11 @@ export const financialStatement = pgTable(
      * vendida y deja el de bienes de uso sin número.
      */
     sectionLabels: jsonb("section_labels").notNull().default({}),
+    /**
+     * Informe del auditor de este balance, ya rellenado y editable:
+     * { body, lugar, fecha }. Nulo hasta que se emite.
+     */
+    auditReport: jsonb("audit_report"),
     approvedAt: timestamp("approved_at"),
     approvedBy: text("approved_by").references(() => user.id, {
       onDelete: "set null",
@@ -1989,6 +1994,39 @@ export const financialStatement = pgTable(
     unique("financial_statement_fy_unique").on(table.fiscalYearId),
     index("idx_financial_statement_client").on(table.clientId),
   ],
+);
+
+/**
+ * Plantillas del informe del auditor, por estudio.
+ *
+ * El informe es casi todo texto normativo que no cambia entre empresas: lo que
+ * varía son datos que el sistema ya tiene y se rellenan como variables
+ * (`{{empresa}}`, `{{cierre}}`…). Guardar la plantilla una vez y rellenarla por
+ * balance evita reescribir cuatro páginas de norma por cliente.
+ */
+export const auditReportTemplate = pgTable(
+  "audit_report_template",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** Nombre con el que se elige (ej. "Opinión favorable — SRL"). */
+    name: text("name").notNull(),
+    /** Cuerpo markdown con variables entre llaves dobles. */
+    body: text("body").notNull(),
+    /** La que se propone al abrir un balance sin informe cargado. */
+    isDefault: boolean("is_default").notNull().default(false),
+    createdBy: text("created_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [index("idx_audit_report_template_org").on(table.organizationId)],
 );
 
 /**

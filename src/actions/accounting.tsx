@@ -13,6 +13,7 @@ import {
   accountOverride,
   accountingLog,
   accountingPeriod,
+  auditReportTemplate,
   accountantSignature,
   client,
   cmvAnnex,
@@ -5186,6 +5187,155 @@ export const getAnexoI = createServerFn({ method: 'GET' })
     };
   });
 
+/* ── Informe del auditor: plantillas del estudio y el informe del balance ── */
+
+export interface AuditReportTemplateRow {
+  id: string;
+  name: string;
+  body: string;
+  isDefault: boolean;
+}
+
+/** Plantillas del estudio, la predeterminada primero. */
+export const listAuditReportTemplates = createServerFn({
+  method: 'GET',
+}).handler(async (): Promise<AuditReportTemplateRow[]> => {
+  const { orgId } = await getSessionWithOrg();
+  return await db
+    .select({
+      id: auditReportTemplate.id,
+      name: auditReportTemplate.name,
+      body: auditReportTemplate.body,
+      isDefault: auditReportTemplate.isDefault,
+    })
+    .from(auditReportTemplate)
+    .where(eq(auditReportTemplate.organizationId, orgId))
+    .orderBy(
+      desc(auditReportTemplate.isDefault),
+      asc(auditReportTemplate.name)
+    );
+});
+
+export const saveAuditReportTemplate = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      id: z.string().uuid().optional(),
+      name: z.string().min(1).max(120),
+      body: z.string().min(1).max(60000),
+      isDefault: z.boolean().default(false),
+    })
+  )
+  .handler(async (ctx) => {
+    const { session, orgId } = await getSessionWithOrg();
+    assertOwner(await getMemberRole());
+    const { id, name, body, isDefault } = ctx.data;
+
+    return await db.transaction(async (tx) => {
+      // Una sola predeterminada por estudio: con dos, cuál se propone
+      // dependería del orden de la consulta.
+      if (isDefault) {
+        await tx
+          .update(auditReportTemplate)
+          .set({ isDefault: false })
+          .where(eq(auditReportTemplate.organizationId, orgId));
+      }
+      if (id) {
+        const [row] = await tx
+          .update(auditReportTemplate)
+          .set({ name, body, isDefault })
+          .where(
+            and(
+              eq(auditReportTemplate.id, id),
+              eq(auditReportTemplate.organizationId, orgId)
+            )
+          )
+          .returning({ id: auditReportTemplate.id });
+        if (!row) {
+          throw new Error('La plantilla no existe o es de otro estudio.');
+        }
+        return { id: row.id };
+      }
+      const [row] = await tx
+        .insert(auditReportTemplate)
+        .values({
+          organizationId: orgId,
+          name,
+          body,
+          isDefault,
+          createdBy: session.user.id,
+        })
+        .returning({ id: auditReportTemplate.id });
+      return { id: row.id };
+    });
+  });
+
+export const deleteAuditReportTemplate = createServerFn({ method: 'POST' })
+  .inputValidator(z.object({ id: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    assertOwner(await getMemberRole());
+    await db
+      .delete(auditReportTemplate)
+      .where(
+        and(
+          eq(auditReportTemplate.id, ctx.data.id),
+          eq(auditReportTemplate.organizationId, orgId)
+        )
+      );
+    return { ok: true };
+  });
+
+/** Guarda el informe ya rellenado de un balance. */
+export const saveAuditReport = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid(),
+      body: z.string().max(60000),
+      lugar: z.string().max(160),
+      fecha: z.string().max(40),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    assertOwner(await getMemberRole());
+    const { clientId, fiscalYearId, body, lugar, fecha } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    await loadFiscalYearForOrg(fiscalYearId, orgId);
+
+    const [existing] = await db
+      .select({ id: financialStatement.id, status: financialStatement.status })
+      .from(financialStatement)
+      .where(
+        and(
+          eq(financialStatement.fiscalYearId, fiscalYearId),
+          eq(financialStatement.clientId, clientId)
+        )
+      )
+      .limit(1);
+    if (existing?.status === 'approved') {
+      throw new Error(
+        'Los EECC están aprobados. Reabrilos a borrador para editar el informe.'
+      );
+    }
+
+    const auditReport = { body, lugar, fecha };
+    if (existing) {
+      await db
+        .update(financialStatement)
+        .set({ auditReport })
+        .where(eq(financialStatement.id, existing.id));
+    } else {
+      await db.insert(financialStatement).values({
+        organizationId: orgId,
+        clientId,
+        fiscalYearId,
+        auditReport,
+      } as never);
+    }
+    return { ok: true };
+  });
+
 /* ════════════════════ Cierre de ejercicio — checklist (US 5.1.1) ════════════════════ */
 
 /**
@@ -5398,8 +5548,7 @@ export const getYearEndChecklist = createServerFn({ method: 'GET' })
     checks.push({
       key: 'income_tax',
       label: 'Provisión del impuesto a las ganancias',
-      status:
-        Math.abs(provision) >= 0.005 || !hayGanancia ? 'pass' : 'warn',
+      status: Math.abs(provision) >= 0.005 || !hayGanancia ? 'pass' : 'warn',
       detail:
         Math.abs(provision) >= 0.005
           ? `Provisionado $ ${money(provision)}`
@@ -6997,6 +7146,8 @@ export interface FinancialStatementResult {
   layout: LayoutEntry[];
   /** Rótulos que el contador cambió, por clave de sección. */
   sectionLabels: Record<string, string>;
+  /** Informe del auditor de este balance. null = todavía no se cargó. */
+  auditReport: { body: string; lugar: string; fecha: string } | null;
   approvedAt: string | null;
   approvedByName: string | null;
   /** Metadata del PDF guardado (no incluye el binario; usar getFinancialStatementPdf). */
@@ -7030,6 +7181,7 @@ export const getFinancialStatement = createServerFn({ method: 'GET' })
         notes: financialStatement.notes,
         layout: financialStatement.layout,
         sectionLabels: financialStatement.sectionLabels,
+        auditReport: financialStatement.auditReport,
         approvedAt: financialStatement.approvedAt,
         approvedByName: user.name,
         pdfGeneratedAt: financialStatement.pdfGeneratedAt,
@@ -7054,6 +7206,7 @@ export const getFinancialStatement = createServerFn({ method: 'GET' })
         notes: [],
         layout: [],
         sectionLabels: {},
+        auditReport: null,
         approvedAt: null,
         approvedByName: null,
         pdfGeneratedAt: null,
@@ -7067,6 +7220,8 @@ export const getFinancialStatement = createServerFn({ method: 'GET' })
       notes: (row.notes as FsNote[]) ?? [],
       layout: (row.layout as LayoutEntry[]) ?? [],
       sectionLabels: (row.sectionLabels as Record<string, string>) ?? {},
+      auditReport:
+        (row.auditReport as FinancialStatementResult['auditReport']) ?? null,
       approvedAt: row.approvedAt ? row.approvedAt.toISOString() : null,
       approvedByName: row.approvedByName ?? null,
       pdfGeneratedAt: row.pdfGeneratedAt

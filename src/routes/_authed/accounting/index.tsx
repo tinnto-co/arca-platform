@@ -52,6 +52,12 @@ import { PageHeader } from '@/components/shared/page-header';
 import { ArcaCard } from '@/components/dashboard/shared';
 import { SaldosReferencia } from '@/components/accounting/SaldosReferencia';
 import { OrdenDocumento } from '@/components/accounting/OrdenDocumento';
+import { InformeAuditor } from '@/components/accounting/InformeAuditor';
+import {
+  fechaLarga,
+  rangoAnexos,
+  rangoNotas,
+} from '@/lib/accounting-audit-report';
 import { frameworkCite } from '@/lib/accounting-labels';
 import {
   defaultNoteLayout,
@@ -7777,6 +7783,7 @@ function EstadosContables({
     | 'anexoI'
     | 'anexo'
     | 'notas'
+    | 'informe'
     | 'orden'
     | 'export'
   >('esp');
@@ -7907,6 +7914,7 @@ function EstadosContables({
     { k: 'anexoI', label: 'Anexo I' },
     { k: 'anexo', label: 'Anexo II' },
     { k: 'notas', label: 'Notas' },
+    { k: 'informe', label: 'Informe del auditor' },
     { k: 'orden', label: 'Orden del documento' },
     { k: 'export', label: 'Exportar' },
   ];
@@ -8100,6 +8108,38 @@ function EstadosContables({
           selectedFy={selectedFy}
         />
       )}
+      {view === 'informe' &&
+        (fs && selectedFy ? (
+          <InformeAuditor
+            key={effectiveFyId}
+            clientId={clientId}
+            fiscalYearId={effectiveFyId}
+            saved={fs.auditReport}
+            canEdit={isOwner && !approved}
+            onSaved={invalidateFs}
+            vars={{
+              empresa: clientName,
+              cuit: clientCuit,
+              domicilio: membreteEecc?.domicilio ?? '',
+              cierre: fechaLarga(new Date(selectedFy.endDate)),
+              ejercicio: String(selectedFy.number),
+              notas: rangoNotas(fs.notes.length),
+              anexos: rangoAnexos(3),
+              destinatario: 'Señores Socios',
+              contador: membreteEecc?.accountant?.nombre ?? '',
+              matricula: [
+                membreteEecc?.accountant?.tomo &&
+                  `Tomo ${membreteEecc.accountant.tomo}`,
+                membreteEecc?.accountant?.folio &&
+                  `Folio ${membreteEecc.accountant.folio}`,
+                membreteEecc?.accountant?.consejo,
+              ]
+                .filter(Boolean)
+                .join(' '),
+            }}
+          />
+        ) : null)}
+
       {view === 'orden' &&
         (fs ? (
           <OrdenDocumento
@@ -8144,6 +8184,7 @@ function EstadosContables({
           notes={fs?.notes ?? []}
           layout={fs?.layout ?? []}
           sectionLabels={fs?.sectionLabels ?? {}}
+          auditReport={fs?.auditReport ?? null}
           references={references}
           isOwner={isOwner}
           valuation={valuation}
@@ -10143,6 +10184,7 @@ function ExportView({
   notes,
   layout,
   sectionLabels,
+  auditReport,
   references,
   isOwner,
   valuation,
@@ -10158,6 +10200,8 @@ function ExportView({
   notes: FsNote[];
   layout: LayoutEntry[];
   sectionLabels: Record<string, string>;
+  /** Informe del auditor ya rellenado, si se cargó. */
+  auditReport: { body: string; lugar: string; fecha: string } | null;
   /** Referencias ya resueltas por rubro, para imprimirlas en los estados. */
   references: Record<string, string>;
   isOwner: boolean;
@@ -10277,6 +10321,8 @@ function ExportView({
         valuation,
         norma,
         accountant: membrete?.accountant ?? null,
+        auditReport,
+        auditoriaFecha: auditReport?.fecha ?? null,
         // El número de cada nota sale de su posición, no del orden de carga.
         noteSequence: numberNotes(layout, notes, sectionLabels),
         references,

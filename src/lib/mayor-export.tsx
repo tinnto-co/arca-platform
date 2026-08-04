@@ -1950,6 +1950,8 @@ export interface EeccPackageData {
   references?: Record<string, string>;
   /** Fecha del informe del auditor, para la leyenda al pie de cada estado. */
   auditoriaFecha?: string | null;
+  /** Informe del auditor ya rellenado, si se cargó. */
+  auditReport?: { body: string; lugar: string; fecha: string } | null;
   /**
    * Orden de las secciones. Cada entrada es una clave de sección o `note:<id>`.
    * Sin esto se usa el orden clásico.
@@ -2816,7 +2818,44 @@ const DEFAULT_PACKAGE_SECTIONS: string[] = [
   'anexo_ii',
   'anexo_i',
   'anexo_cmv',
+  'informe_auditor',
 ];
+
+/**
+ * Informe del auditor. Va sin la leyenda de integración: no es un estado, es
+ * una opinión sobre ellos, y lleva su propio lugar y fecha al pie.
+ */
+function InformeAuditorBlock({
+  informe,
+}: {
+  informe?: { body: string; lugar: string; fecha: string } | null;
+}) {
+  if (!informe?.body?.trim()) return null;
+  return (
+    <View>
+      {mdLines(informe.body).map((l, i) =>
+        l.type === 'h' ? (
+          <Text key={i} style={pk.noteH}>
+            {l.text}
+          </Text>
+        ) : l.type === 'li' ? (
+          <Text key={i} style={pk.noteLi}>
+            • {l.text}
+          </Text>
+        ) : (
+          <Text key={i} style={pk.noteP}>
+            {l.text}
+          </Text>
+        )
+      )}
+      {(informe.lugar || informe.fecha) && (
+        <Text style={pk.noteP}>
+          {[informe.lugar, informe.fecha].filter(Boolean).join(', ')}
+        </Text>
+      )}
+    </View>
+  );
+}
 
 function EeccPackageDoc({ data }: { data: EeccPackageData }) {
   return (
@@ -2880,6 +2919,10 @@ function EeccPackageDoc({ data }: { data: EeccPackageData }) {
               return <AnexoIBlock key={entry} anexoI={data.anexoI} />;
             case 'anexo_cmv':
               return <AnexoCMVBlock key={entry} cmv={data.cmv} />;
+            case 'informe_auditor':
+              return (
+                <InformeAuditorBlock key={entry} informe={data.auditReport} />
+              );
             default: {
               // Una nota suelta: se imprime sola, en la posición que le tocó.
               const note = data.notes.find((n) => `note:${n.id}` === entry);
@@ -2899,10 +2942,14 @@ function EeccPackageDoc({ data }: { data: EeccPackageData }) {
         return (
           <Page key={entry} size="A4" style={pk.page} wrap>
             {bloque}
-            <EstadoFooter
-              auditoriaFecha={data.auditoriaFecha}
-              accountant={data.accountant}
-            />
+            {entry === 'informe_auditor' ? (
+              <SignatureBlock ac={data.accountant} />
+            ) : (
+              <EstadoFooter
+                auditoriaFecha={data.auditoriaFecha}
+                accountant={data.accountant}
+              />
+            )}
             <PageFooter data={data} />
           </Page>
         );
