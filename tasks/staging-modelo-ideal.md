@@ -80,15 +80,17 @@ de Bun).
 | `CREDENTIAL_ENCRYPTION_KEY` | **el mismo de prod**, si no las claves de AFIP no se desencriptan |
 | `GEMINI_API_KEY` | el de siempre |
 | `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_ENDPOINT` | los de siempre (`R2_ACCOUNT_ID` no lo lee la app, sólo el scrapper) |
-| `R2_BUCKET` | **`arca-staging`**, bucket aparte |
+| `R2_BUCKET` | `arca`, el mismo de prod |
 
-`R2_PREFIX` sólo separa los screenshots de debug del scrapper, no los documentos: la única forma
-de no mezclar archivos con producción es el bucket.
+**El bucket es compartido con producción, a propósito.** Los documentos no viajan en el dump: en
+la BD sólo está la `storage_key`, y los 535 archivos viven en `arca`. Un bucket aparte obligaría
+a copiarlos, y cualquiera que se escape aparece como un 502 en la cara del estudio.
 
-**Los documentos no viajan en el dump.** En la BD sólo está la `storage_key`; los 535 archivos
-viven en el bucket `arca`. Con `R2_BUCKET=arca-staging` todo enlace a un documento existente da
-502 hasta que se copie el prefijo `documentos/` de un bucket al otro. Para sueldos no molesta;
-se nota en notificaciones y en el portal.
+Compartir es seguro hoy porque **nada borra objetos de R2**: `r2.remove` (`src/lib/r2.ts:138`) no
+tiene callers y el `R2StorageService` del scrapper no tiene método de borrado. El precio es que
+staging deja objetos huérfanos en el bucket de prod. El día que se agregue un borrado de
+documentos hay que revisar esta decisión: las `storage_key` son las mismas en las dos bases, así
+que staging podría borrar un archivo que prod referencia.
 
 El estudio entra con **su mail y contraseña de siempre**: el ETL copió las tablas de auth.
 
@@ -98,9 +100,11 @@ Rama `v2` del repo `arca-scrapper`. Necesita su propio Redis.
 
 - `DATABASE_URL` con el rol **`arca_scrapper`** (tiene grants sobre 18 tablas; lo que no está
   enumerado le da `permission denied`, y eso es a propósito).
-- `PROXY_URL` **con `session-<id>`**. El de prod no lo tiene y por eso rota de IP a mitad del
-  scrapeo y AFIP corta la sesión. Es el bug que arreglamos en la rama.
-- `R2_BUCKET=arca-staging`, `QUEUE_NAME` distinto al de prod (si comparten Redis, se roban jobs).
+- `PROXY_URL` **tal cual está en el `.env` local**, sin `session-<id>`: el id lo inserta el código
+  (`conSesion`, `proxy-config.ts:97`) generando uno nuevo por browser. Hardcodearlo sería peor —
+  todos los jobs saldrían por la misma IP para siempre.
+- `R2_BUCKET=arca`, `QUEUE_NAME` distinto al de prod (`brian-queue`) si comparten Redis: si no, se
+  roban jobs.
 - `CREDENTIAL_ENCRYPTION_KEY` igual que la app.
 
 ## 5. Qué probaría el estudio (sueldos)

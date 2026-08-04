@@ -104,9 +104,8 @@ guard de localhost; `--snapshot` / `--comparar` para chequear idempotencia).
 1. Sync incremental ORIGINAL_DB → NEW_DB de las filas nuevas desde el dump del 30/07. No puede
    ser drop+restore: NEW_DB tiene correcciones propias que un restore pisaría.
 2. Re-correr el ETL completo y el subidor de documentos con la base congelada.
-3. Coolify: apuntar `DATABASE_URL` de app y scrapper a la base nueva, cargar las `R2_*` en la
-   app, y **arreglar el `PROXY_URL` de producción, que no tiene `session-<id>`** — sin eso la IP
-   rota a mitad del scrapeo y AFIP corta la sesión.
+3. Coolify: apuntar `DATABASE_URL` de app y scrapper a la base nueva y cargar las `R2_*` en la
+   app. El `PROXY_URL` NO se toca: el `session-<id>` lo inserta el código de la rama.
 4. Sacar el `DEFAULT 'org_estudio_blakg'` de `cliente.organization_id`.
 5. Decidir qué pasa con `src/scripts/**` de la app (~197 errores de TS, apuntan al modelo viejo):
    migrarlos o borrarlos.
