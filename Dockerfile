@@ -23,7 +23,12 @@ FROM base AS release
 # curl is required for container healthchecks (Coolify/Docker)
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 
-COPY --from=install /usr/src/app/node_modules ./node_modules
+# Se copia desde `prerelease` y no desde `install` a propósito. Con `install`,
+# BuildKit ve que esta etapa no depende del build y la arranca en paralelo:
+# los ~58s de copiar node_modules caían justo sobre el pico de memoria del
+# bundling, en un servidor que ya está al límite. Tomándolo de `prerelease`
+# la etapa queda encadenada y espera a que el build termine.
+COPY --from=prerelease /usr/src/app/node_modules ./node_modules
 COPY --from=prerelease /usr/src/app/dist ./dist
 COPY --from=prerelease /usr/src/app/server.ts ./server.ts
 COPY --from=prerelease /usr/src/app/lib ./lib
