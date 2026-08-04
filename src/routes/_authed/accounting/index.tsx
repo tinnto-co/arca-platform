@@ -7307,8 +7307,13 @@ function AnexoIView({
         amortYear: a.amortYear,
         accumEnd: a.accumEnd,
         residualEnd: a.residualEnd,
+        priorResidualEnd: data!.prior?.residualByAsset[a.id] ?? null,
       })),
-      totals: c.totals,
+      totals: {
+        ...c.totals,
+        priorResidualEnd:
+          data!.prior?.residualByCategory[c.category] ?? null,
+      },
     })),
     grandTotals: data!.grandTotals,
     priorResidualEnd: data!.prior?.grandTotals.residualEnd ?? null,
@@ -9842,7 +9847,11 @@ function ExportView({
         valuation,
         anexoII,
         anexoI: anexoI
-          ? { categories: anexoI.categories, grandTotals: anexoI.grandTotals }
+          ? {
+              categories: anexoI.categories,
+              grandTotals: anexoI.grandTotals,
+              prior: anexoI.prior,
+            }
           : null,
         cmv: cmv?.hasData
           ? {

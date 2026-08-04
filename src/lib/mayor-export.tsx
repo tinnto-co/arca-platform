@@ -845,6 +845,8 @@ export interface AnexoIExportAsset {
   amortYear: number;
   accumEnd: number;
   residualEnd: number;
+  /** Neto al cierre del ejercicio anterior. Ausente si no hay comparativo. */
+  priorResidualEnd?: number | null;
 }
 export interface AnexoIExportCategory {
   category: string;
@@ -859,6 +861,7 @@ export interface AnexoIExportCategory {
     amortYear: number;
     accumEnd: number;
     residualEnd: number;
+    priorResidualEnd?: number | null;
   };
 }
 export interface AnexoIAccountantData {
@@ -908,7 +911,12 @@ const ANEXO_HEADERS = [
   'Amort. acum. cierre',
   'Neto al cierre',
 ];
-const ANEXO_COLS = ANEXO_HEADERS.length; // 11
+/** Encabezados efectivos: con comparativo se suma la columna del anterior. */
+function anexoIHeaders(priorNumber?: number | null): string[] {
+  return priorNumber != null
+    ? [...ANEXO_HEADERS, `Neto al cierre ej. N°${priorNumber}`]
+    : ANEXO_HEADERS;
+}
 
 async function anexoIWorkbookBuffer(
   data: AnexoIExportData
@@ -918,7 +926,9 @@ async function anexoIWorkbookBuffer(
     views: [{ showGridLines: false }],
   });
   const m = data.membrete;
-  const NC = ANEXO_COLS; // 11
+  const hasPrior = data.priorNumber != null;
+  const HEADERS = anexoIHeaders(data.priorNumber);
+  const NC = HEADERS.length;
   const RATE_COL = 8;
   const thin = { style: 'thin' as const, color: { argb: 'FF999999' } };
   const box = { top: thin, left: thin, bottom: thin, right: thin };
@@ -994,6 +1004,12 @@ async function anexoIWorkbookBuffer(
     [5, 'Valor al cierre'],
     [10, 'Neto acum. al cierre'],
     [11, 'Neto al cierre'],
+    ...(hasPrior
+      ? ([[12, `Neto al cierre ej. N°${data.priorNumber}`]] as [
+          number,
+          string,
+        ][])
+      : []),
   ];
   for (const [col, label] of singles) {
     mergeBlock(R1, col, R3, col);
@@ -1057,6 +1073,7 @@ async function anexoIWorkbookBuffer(
     t.amortYear,
     t.accumEnd,
     t.residualEnd,
+    ...(hasPrior ? [t.priorResidualEnd ?? 0] : []),
   ];
 
   for (const cat of data.categories) {
@@ -1080,6 +1097,7 @@ async function anexoIWorkbookBuffer(
         a.amortYear,
         a.accumEnd,
         a.residualEnd,
+        ...(hasPrior ? [a.priorResidualEnd ?? 0] : []),
       ]);
       styleDataRow(row);
     }
@@ -1095,18 +1113,6 @@ async function anexoIWorkbookBuffer(
     bold: true,
     fill: true,
   });
-
-  if (data.priorResidualEnd != null) {
-    const pr = ws.addRow([
-      `Neto al cierre · Ejercicio anterior (N°${data.priorNumber})`,
-      ...Array(NC - 2).fill(''),
-      data.priorResidualEnd,
-    ]);
-    mergeRange(pr.number, 1, NC - 1);
-    pr.getCell(NC).numFmt = MONEY_FMT;
-    pr.getCell(NC).alignment = { horizontal: 'right' };
-    pr.getCell(1).font = { italic: true, color: { argb: 'FF555555' } };
-  }
 
   ws.addRow([]);
   const note = ws.addRow([
@@ -1160,7 +1166,11 @@ export async function exportAnexoIExcel(data: AnexoIExportData): Promise<void> {
 
 const AXB = '0.5pt solid #888';
 // Anchos de columna como % de la tabla (suman 100).
-const AXW = {
+/**
+ * Anchos de las columnas del Anexo I, en dos juegos: con y sin la columna del
+ * ejercicio anterior. Cada juego suma 100%, que es lo que espera react-pdf.
+ */
+export const AXW_BASE = {
   name: '16%',
   vInicio: '8%',
   altas: '7%',
@@ -1172,6 +1182,21 @@ const AXW = {
   amortYear: '12%',
   acumCierre: '9%',
   neto: '10%',
+  netoPrior: '0%',
+};
+export const AXW_PRIOR = {
+  name: '15%',
+  vInicio: '7%',
+  altas: '6%',
+  bajas: '6%',
+  vCierre: '8%',
+  acumInicio: '7%',
+  amortBajas: '6%',
+  rate: '5%',
+  amortYear: '10%',
+  acumCierre: '8%',
+  neto: '11%',
+  netoPrior: '11%',
 };
 const ax = StyleSheet.create({
   table: { borderTop: AXB, borderLeft: AXB, marginTop: 8, fontSize: 6.8 },
@@ -1230,7 +1255,6 @@ const ax = StyleSheet.create({
     backgroundColor: '#eeeee9',
   },
   cName: {
-    width: AXW.name,
     borderRight: AXB,
     borderBottom: AXB,
     paddingVertical: 2,
@@ -1279,6 +1303,8 @@ const ax = StyleSheet.create({
 });
 
 function AnexoIDoc({ data }: { data: AnexoIExportData }) {
+  const hasPrior = data.priorNumber != null;
+  const AXW = hasPrior ? AXW_PRIOR : AXW_BASE;
   const t = data.grandTotals;
   const m = data.membrete;
   const num = (v: number) => fmtMoney(v);
@@ -1372,6 +1398,11 @@ function AnexoIDoc({ data }: { data: AnexoIExportData }) {
             <View style={[ax.hCell, { width: AXW.neto }]}>
               <Text>Neto al cierre</Text>
             </View>
+            {hasPrior && (
+              <View style={[ax.hCell, { width: AXW.netoPrior }]}>
+                <Text>Neto al cierre ej. N°{data.priorNumber}</Text>
+              </View>
+            )}
           </View>
 
           {/* Filas por rubro */}
@@ -1384,7 +1415,7 @@ function AnexoIDoc({ data }: { data: AnexoIExportData }) {
               </View>
               {cat.assets.map((a, i) => (
                 <View key={i} style={ax.row}>
-                  <Text style={ax.cName}>{a.name}</Text>
+                  <Text style={[ax.cName, { width: AXW.name }]}>{a.name}</Text>
                   <Text style={[ax.c, { width: AXW.vInicio }]}>
                     {num(a.valorInicio)}
                   </Text>
@@ -1415,10 +1446,15 @@ function AnexoIDoc({ data }: { data: AnexoIExportData }) {
                   <Text style={[ax.c, { width: AXW.neto }]}>
                     {num(a.residualEnd)}
                   </Text>
+                  {hasPrior && (
+                    <Text style={[ax.c, { width: AXW.netoPrior }]}>
+                      {num(a.priorResidualEnd ?? 0)}
+                    </Text>
+                  )}
                 </View>
               ))}
               <View style={ax.subRow}>
-                <Text style={ax.cName}>Subtotal {cat.category}</Text>
+                <Text style={[ax.cName, { width: AXW.name }]}>Subtotal {cat.category}</Text>
                 <Text style={[ax.c, { width: AXW.vInicio }]}>
                   {num(cat.totals.valorInicio)}
                 </Text>
@@ -1447,13 +1483,18 @@ function AnexoIDoc({ data }: { data: AnexoIExportData }) {
                 <Text style={[ax.c, { width: AXW.neto }]}>
                   {num(cat.totals.residualEnd)}
                 </Text>
+                {hasPrior && (
+                  <Text style={[ax.c, { width: AXW.netoPrior }]}>
+                    {num(cat.totals.priorResidualEnd ?? 0)}
+                  </Text>
+                )}
               </View>
             </View>
           ))}
 
           {/* TOTALES */}
           <View style={ax.totalRow}>
-            <Text style={ax.cName}>TOTALES $</Text>
+            <Text style={[ax.cName, { width: AXW.name }]}>TOTALES $</Text>
             <Text style={[ax.c, { width: AXW.vInicio }]}>
               {num(t.valorInicio)}
             </Text>
@@ -1478,15 +1519,13 @@ function AnexoIDoc({ data }: { data: AnexoIExportData }) {
             <Text style={[ax.c, { width: AXW.neto }]}>
               {num(t.residualEnd)}
             </Text>
+            {hasPrior && (
+              <Text style={[ax.c, { width: AXW.netoPrior }]}>
+                {num(data.priorResidualEnd ?? 0)}
+              </Text>
+            )}
           </View>
         </View>
-
-        {data.priorResidualEnd != null && (
-          <Text style={ax.prior}>
-            Neto al cierre · Ejercicio anterior (N°{data.priorNumber}):{' '}
-            {fmtMoney(data.priorResidualEnd)}
-          </Text>
-        )}
 
         <Text style={ax.note}>
           Las Notas y Anexos forman parte integrante de este Estado.
@@ -1880,6 +1919,13 @@ export interface EeccPackageData {
   anexoI: {
     categories: AnexoICategory[];
     grandTotals: AnexoICategory['totals'];
+    /** Neto al cierre del ejercicio anterior, por bien y por rubro. */
+    prior: {
+      number: number;
+      grandTotals: AnexoICategory['totals'];
+      residualByAsset: Record<string, number>;
+      residualByCategory: Record<string, number>;
+    } | null;
   } | null;
   anexoII: AnexoIIResult;
   cmv: CmvBlockData | null;
@@ -2516,6 +2562,7 @@ function AnexoCMVBlock({ cmv }: { cmv: CmvBlockData | null }) {
 }
 
 function AnexoIBlock({ anexoI }: { anexoI: EeccPackageData['anexoI'] }) {
+  const prior = anexoI?.prior ?? null;
   return (
     <View>
       <Text style={pk.sectionTitle}>Anexo I · Bienes de uso</Text>
@@ -2535,6 +2582,7 @@ function AnexoIBlock({ anexoI }: { anexoI: EeccPackageData['anexoI'] }) {
             <Text style={ax6.cNum}>Am.ejerc</Text>
             <Text style={ax6.cNum}>Am.ac.cie</Text>
             <Text style={ax6.cNum}>Neto cierre</Text>
+            {prior && <Text style={ax6.cNum}>Neto ej. N°{prior.number}</Text>}
           </View>
           {anexoI.categories.map((cat) => (
             <View key={cat.category} wrap={false}>
@@ -2552,6 +2600,11 @@ function AnexoIBlock({ anexoI }: { anexoI: EeccPackageData['anexoI'] }) {
                   <Text style={ax6.cNum}>{fmtMoney(a.amortYear)}</Text>
                   <Text style={ax6.cNum}>{fmtMoney(a.accumEnd)}</Text>
                   <Text style={ax6.cNum}>{fmtMoney(a.residualEnd)}</Text>
+                  {prior && (
+                    <Text style={ax6.cNum}>
+                      {fmtMoney(prior.residualByAsset[a.id] ?? 0)}
+                    </Text>
+                  )}
                 </View>
               ))}
               <View style={ax6.sub}>
@@ -2566,6 +2619,11 @@ function AnexoIBlock({ anexoI }: { anexoI: EeccPackageData['anexoI'] }) {
                 <Text style={ax6.cNum}>{fmtMoney(cat.totals.amortYear)}</Text>
                 <Text style={ax6.cNum}>{fmtMoney(cat.totals.accumEnd)}</Text>
                 <Text style={ax6.cNum}>{fmtMoney(cat.totals.residualEnd)}</Text>
+                {prior && (
+                  <Text style={ax6.cNum}>
+                    {fmtMoney(prior.residualByCategory[cat.category] ?? 0)}
+                  </Text>
+                )}
               </View>
             </View>
           ))}
@@ -2595,6 +2653,11 @@ function AnexoIBlock({ anexoI }: { anexoI: EeccPackageData['anexoI'] }) {
             <Text style={ax6.cNum}>
               {fmtMoney(anexoI.grandTotals.residualEnd)}
             </Text>
+            {prior && (
+              <Text style={ax6.cNum}>
+                {fmtMoney(prior.grandTotals.residualEnd)}
+              </Text>
+            )}
           </View>
         </>
       )}
