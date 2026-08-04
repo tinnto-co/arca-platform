@@ -7772,6 +7772,7 @@ function EstadosContables({
     | 'eepn'
     | 'efe'
     | 'nota3'
+    | 'inventario'
     | 'cmv'
     | 'anexoI'
     | 'anexo'
@@ -7901,6 +7902,7 @@ function EstadosContables({
     { k: 'eepn', label: 'Evolución del Patrimonio Neto' },
     { k: 'efe', label: 'Flujo de Efectivo' },
     { k: 'nota3', label: 'Composición de rubros' },
+    { k: 'inventario', label: 'Inventario' },
     { k: 'cmv', label: 'Costo de mercadería (CMV)' },
     { k: 'anexoI', label: 'Anexo I' },
     { k: 'anexo', label: 'Anexo II' },
@@ -8069,6 +8071,15 @@ function EstadosContables({
           clientName={clientName}
           selectedFy={selectedFy}
           canEdit={isOwner && !approved}
+        />
+      )}
+      {view === 'inventario' && (
+        <InventarioView
+          clientId={clientId}
+          clientName={clientName}
+          selectedFy={selectedFy}
+          valuation={valuation}
+          norma={norma}
         />
       )}
       {view === 'anexoI' && (
@@ -8445,6 +8456,137 @@ function EspSectionRows({
  * mismos datos del Estado de Situación Patrimonial, así que no puede diferir de
  * él: si un rubro cambia, la nota cambia sola.
  */
+/**
+ * Inventario al cierre: cada cuenta con su saldo, agrupada como el balance.
+ *
+ * Es la misma información que imprime el Libro Inventarios y Balances; estaba
+ * solo en el PDF y no había forma de revisarla antes de generarlo.
+ */
+function InventarioView({
+  clientId,
+  clientName,
+  selectedFy,
+  valuation,
+  norma,
+}: {
+  clientId: string;
+  clientName: string;
+  selectedFy: FyOption | undefined;
+  valuation: 'ajustado' | 'historico';
+  /** Cómo se cita la norma del ajuste: "RT 54" o "RT 6". */
+  norma: string;
+}) {
+  const effectiveFyId = selectedFy?.id ?? '';
+  const { data, isLoading } = useQuery({
+    queryKey: ['accounting', 'esp', clientId, effectiveFyId, valuation],
+    queryFn: () =>
+      getESP({
+        data: { clientId, fiscalYearId: effectiveFyId, view: valuation },
+      }),
+    enabled: !!effectiveFyId,
+  });
+
+  if (isLoading || !data) {
+    return (
+      <ArcaCard>
+        <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+          {isLoading ? 'Calculando…' : 'Sin datos para este ejercicio.'}
+        </div>
+      </ArcaCard>
+    );
+  }
+
+  const macros = [
+    { macro: 'activo' as const, title: 'ACTIVO' },
+    { macro: 'pasivo' as const, title: 'PASIVO' },
+    { macro: 'pn' as const, title: 'PATRIMONIO NETO' },
+  ];
+
+  return (
+    <ArcaCard>
+      <div className="px-5 pt-4 pb-3 border-b border-[var(--arca-border)]">
+        <div className="text-[14px] font-semibold text-[var(--arca-ink)]">
+          {clientName}
+        </div>
+        <div className="text-[12px] text-[var(--arca-ink-3)]">
+          Inventario al cierre · Ejercicio N°{data.fiscalYearNumber} ·{' '}
+          {data.periodLabel}
+        </div>
+        <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
+          {valuation === 'ajustado'
+            ? `Expresado en moneda homogénea de cierre (ajuste por inflación · ${norma}).`
+            : 'Expresado en valores históricos, sin ajuste por inflación. Papel de trabajo.'}
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-[12.5px]">
+          <thead>
+            <tr className="bg-[var(--arca-surface-2)] text-[10.5px] uppercase tracking-wide text-[var(--arca-ink-3)]">
+              <th className="text-left font-semibold px-4 py-1.5">Cuenta</th>
+              <th className="text-right font-semibold px-4 py-1.5 w-48">
+                Saldo al cierre
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {macros.map(({ macro, title }) => {
+              const secs = data.sections.filter((s) => s.macro === macro);
+              if (secs.every((s) => s.rubros.length === 0)) return null;
+              return (
+                <Fragment key={macro}>
+                  <tr className="bg-[var(--arca-surface-2)]">
+                    <td
+                      className="px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--arca-ink-2)]"
+                      colSpan={2}
+                    >
+                      {title}
+                    </td>
+                  </tr>
+                  {secs.map((sec) =>
+                    sec.rubros.map((r) => (
+                      <Fragment key={r.group}>
+                        <tr className="border-t border-[var(--arca-border)]">
+                          <td className="px-4 py-1.5 pl-6 font-medium text-[var(--arca-ink)]">
+                            {r.label}
+                          </td>
+                          <td className="px-4 py-1.5 text-right tabular-nums font-medium">
+                            $ {fmtMoney(r.current)}
+                          </td>
+                        </tr>
+                        {r.accounts.map((a) => (
+                          <tr
+                            key={a.accountId}
+                            className="text-[11.5px] text-[var(--arca-ink-2)]"
+                          >
+                            <td className="px-4 py-1 pl-10">
+                              <span className="text-[var(--arca-ink-3)] tabular-nums mr-1.5">
+                                {a.code}
+                              </span>
+                              {a.name}
+                            </td>
+                            <td className="px-4 py-1 text-right tabular-nums">
+                              $ {fmtMoney(a.current)}
+                            </td>
+                          </tr>
+                        ))}
+                      </Fragment>
+                    ))
+                  )}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="px-5 py-3 border-t border-[var(--arca-border)] text-[11.5px] text-[var(--arca-ink-3)]">
+        Es el detalle que sale en el Libro Inventarios y Balances, en Exportar.
+      </div>
+    </ArcaCard>
+  );
+}
+
 function Nota3View({
   clientId,
   clientName,
