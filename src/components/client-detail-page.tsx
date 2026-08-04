@@ -136,6 +136,8 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { periodoLegible } from '@/lib/periodo';
+import { CONDICION_IVA_LABELS } from '@/lib/cliente-labels';
 import { ChartContainer, type ChartConfig } from '@/components/ui/chart';
 import {
   BarChart,
@@ -1267,7 +1269,7 @@ export function RepresentativeDetailPage({
     let totalPurchases = 0;
     allInvoicesData.comprobantes.forEach((inv) => {
       if (!invoicePassesFacturasFilters(inv)) return;
-      const invDate = new Date(inv.fechaEmision);
+      const invDate = parseLocalDateOnly(inv.fechaEmision.slice(0, 10));
       if (invDate < from || invDate > to) return;
       let amount = parseFloat(inv.total || '0');
       if (inv.moneda?.toUpperCase() === 'USD') {
@@ -1304,7 +1306,7 @@ export function RepresentativeDetailPage({
       let totalPurchases = 0;
       allInvoicesData.comprobantes.forEach((inv) => {
         if (!invoicePassesFacturasFilters(inv)) return;
-        const invDate = new Date(inv.fechaEmision);
+        const invDate = parseLocalDateOnly(inv.fechaEmision.slice(0, 10));
         if (invDate < fromDate || invDate > toDate) return;
         let amount = parseFloat(inv.total || '0');
         if (inv.moneda?.toUpperCase() === 'USD')
@@ -1327,7 +1329,7 @@ export function RepresentativeDetailPage({
       let totalPurchases = 0;
       allInvoicesData.comprobantes.forEach((inv) => {
         if (!invoicePassesFacturasFilters(inv)) return;
-        const invDate = new Date(inv.fechaEmision);
+        const invDate = parseLocalDateOnly(inv.fechaEmision.slice(0, 10));
         if (invDate < fromDate || invDate > toDate) return;
         let amount = parseFloat(inv.total || '0');
         if (inv.moneda?.toUpperCase() === 'USD')
@@ -1400,7 +1402,7 @@ export function RepresentativeDetailPage({
       const byMonth: Record<number, { ventas: number; compras: number }> = {};
       for (let i = 0; i < 12; i++) byMonth[i] = { ventas: 0, compras: 0 };
       filtered.forEach((inv) => {
-        const d = new Date(inv.fechaEmision);
+        const d = parseLocalDateOnly(inv.fechaEmision.slice(0, 10));
         if (d.getFullYear() !== facturasYear) return;
         const m = d.getMonth();
         const amount = getAmount(inv);
@@ -1420,7 +1422,7 @@ export function RepresentativeDetailPage({
       let ventas = 0;
       let compras = 0;
       filtered.forEach((inv) => {
-        const d = new Date(inv.fechaEmision);
+        const d = parseLocalDateOnly(inv.fechaEmision.slice(0, 10));
         if (d.getFullYear() !== facturasYear || d.getMonth() !== facturasMonth)
           return;
         const amount = getAmount(inv);
@@ -1457,7 +1459,7 @@ export function RepresentativeDetailPage({
         t = d.getTime();
       }
       filtered.forEach((inv) => {
-        const d = new Date(inv.fechaEmision);
+        const d = parseLocalDateOnly(inv.fechaEmision.slice(0, 10));
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         if (!byMonthKey[key]) return;
         const amount = getAmount(inv);
@@ -1484,7 +1486,7 @@ export function RepresentativeDetailPage({
         byMonthKey[key] = { ventas: 0, compras: 0 };
       }
       filtered.forEach((inv) => {
-        const d = new Date(inv.fechaEmision);
+        const d = parseLocalDateOnly(inv.fechaEmision.slice(0, 10));
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         if (!byMonthKey[key]) return;
         const amount = getAmount(inv);
@@ -1545,7 +1547,7 @@ export function RepresentativeDetailPage({
         inv.clienteId !== effectiveResumenProfileId
       )
         return;
-      const d = new Date(inv.fechaEmision);
+      const d = parseLocalDateOnly(inv.fechaEmision.slice(0, 10));
       const bucket = buckets.find(
         (b) => b.year === d.getFullYear() && b.month === d.getMonth()
       );
@@ -1592,7 +1594,7 @@ export function RepresentativeDetailPage({
         inv.clienteId !== effectiveResumenProfileId
       )
         return;
-      const invDate = new Date(inv.fechaEmision);
+      const invDate = parseLocalDateOnly(inv.fechaEmision.slice(0, 10));
       if (invDate < fromDate || invDate > toDate) return;
       let amount = parseFloat(inv.total || '0');
       if (inv.moneda?.toUpperCase() === 'USD')
@@ -1781,7 +1783,10 @@ export function RepresentativeDetailPage({
                   {selectedProfile?.condicionIva && (
                     <>
                       <span className="w-[3px] h-[3px] rounded-full bg-[var(--arca-ink-4)] shrink-0" />
-                      <span>{selectedProfile.condicionIva}</span>
+                      <span>
+                        {CONDICION_IVA_LABELS[selectedProfile.condicionIva] ??
+                          selectedProfile.condicionIva}
+                      </span>
                     </>
                   )}
                   {selectedProfile?.iibbRegimen && (
@@ -2790,7 +2795,7 @@ export function RepresentativeDetailPage({
                               </span>
                             </td>
                             <td className="px-[14px] py-[10px] whitespace-nowrap font-mono text-[var(--arca-ink-3)]">
-                              {debt.periodo || '-'}
+                              {periodoLegible(debt.periodo)}
                             </td>
                             <td className="px-[14px] py-[10px] whitespace-nowrap font-mono text-[var(--arca-ink-3)]">
                               {debt.venceAt
@@ -3230,9 +3235,9 @@ export function RepresentativeDetailPage({
                               </TableCell>
                               <TableCell
                                 className="truncate"
-                                title={dueDate.periodo || '-'}
+                                title={periodoLegible(dueDate.periodo)}
                               >
-                                {dueDate.periodo || '-'}
+                                {periodoLegible(dueDate.periodo)}
                               </TableCell>
                               <TableCell className="whitespace-nowrap text-center">
                                 {dueDate.cuota || '-'}
@@ -3744,8 +3749,8 @@ export function RepresentativeDetailPage({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Todas</SelectItem>
-                    <SelectItem value="Outbound">Emitida</SelectItem>
-                    <SelectItem value="Inbound">Recibida</SelectItem>
+                    <SelectItem value="emitido">Emitida</SelectItem>
+                    <SelectItem value="recibido">Recibida</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -5222,7 +5227,7 @@ export function RepresentativeDetailPage({
                         >
                           <TableCell className="text-[11px]">
                             {inv.fechaEmision
-                              ? new Date(inv.fechaEmision).toLocaleDateString(
+                              ? parseLocalDateOnly(inv.fechaEmision.slice(0, 10)).toLocaleDateString(
                                   'es-AR',
                                   {
                                     day: '2-digit',
@@ -5284,7 +5289,7 @@ export function RepresentativeDetailPage({
                         </span>
                         <span className="text-muted-foreground">
                           {inv.fechaEmision
-                            ? new Date(inv.fechaEmision).toLocaleDateString(
+                            ? parseLocalDateOnly(inv.fechaEmision.slice(0, 10)).toLocaleDateString(
                                 'es-AR',
                                 {
                                   day: '2-digit',

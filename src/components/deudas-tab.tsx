@@ -23,6 +23,7 @@ import {
   scrapSingleJob,
 } from '@/actions/client';
 import { cn } from '@/lib/utils';
+import { periodoLegible } from '@/lib/periodo';
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 const formatARS = (value: number | string | null | undefined) => {
@@ -608,7 +609,7 @@ export function DeudasTab({
 
                 {/* PERÍODO */}
                 <div className="text-[13px] text-[#3E404A] tabular-nums">
-                  {debt.periodo || '—'}
+                  {periodoLegible(debt.periodo)}
                 </div>
 
                 {/* VENCIMIENTO */}

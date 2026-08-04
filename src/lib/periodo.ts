@@ -14,6 +14,13 @@ export function dateAPeriodo(fecha: string): string {
   return fecha.slice(0, 7);
 }
 
+/** "2025-06-01" → "06/2025" (como lo lee un contador en una tabla). */
+export function periodoLegible(fecha: string | null | undefined): string {
+  if (!fecha) return '—';
+  const [anio, mes] = fecha.slice(0, 7).split('-');
+  return mes ? `${mes}/${anio}` : fecha;
+}
+
 /**
  * Rango inclusivo de períodos de un año, para filtrar columnas `date` que
  * siempre guardan el primer día del mes.

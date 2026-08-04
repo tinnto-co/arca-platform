@@ -20,7 +20,17 @@ import {
   getMemberRole,
 } from '@/actions/helpers';
 import { encrypt, safeDecrypt } from '@/lib/crypto';
-import { eq, and, inArray, desc, asc, isNotNull, sql } from 'drizzle-orm';
+import {
+  eq,
+  and,
+  or,
+  inArray,
+  desc,
+  asc,
+  isNotNull,
+  isNull,
+  sql,
+} from 'drizzle-orm';
 
 const JOBS_API_URL =
   process.env.SCRAPPER_JOBS_URL ||
@@ -745,8 +755,16 @@ export const getCredencialVencimientos = createServerFn({
       eq(vencimiento.orgId, orgId),
       eq(vencimiento.credencialId, ctx.data.credencialId),
     ];
+    // AFIP devuelve los vencimientos por CUIT del login, sin CUIT por fila: casi
+    // todos quedan con `cliente_id` null. Son del login, así que se muestran
+    // igual junto a los del cliente elegido (si no, la pestaña queda vacía).
     if (ctx.data.clienteId)
-      conditions.push(eq(vencimiento.clienteId, ctx.data.clienteId));
+      conditions.push(
+        or(
+          eq(vencimiento.clienteId, ctx.data.clienteId),
+          isNull(vencimiento.clienteId)
+        )!
+      );
 
     return await db
       .select()
@@ -755,13 +773,19 @@ export const getCredencialVencimientos = createServerFn({
       .orderBy(vencimiento.venceAt);
   });
 
-/** Espera a que un job termine (finished o failed) haciendo polling */
+/**
+ * Espera a que un job termine (finished o failed) haciendo polling.
+ * El scrapper corre bajo RLS: la lectura necesita saber de qué organización es.
+ */
 async function waitForJob(
   baseUrl: string,
-  jobId: string
+  jobId: string,
+  orgId: string
 ): Promise<{ status: string; result?: unknown; failedReason?: string | null }> {
   for (let i = 0; i < MAX_POLL_ATTEMPTS; i++) {
-    const { data } = await axios.get(`${baseUrl}/api/jobs/${jobId}`);
+    const { data } = await axios.get(`${baseUrl}/api/jobs/${jobId}`, {
+      params: { orgId },
+    });
     if (data.status === 'finished' || data.status === 'failed') {
       return data;
     }
@@ -1001,7 +1025,7 @@ export const scrapSingleJob = createServerFn({
         jobId = created.id;
       }
 
-      const result = await waitForJob(JOBS_API_URL, jobId);
+      const result = await waitForJob(JOBS_API_URL, jobId, orgId);
       if (result.status === 'failed') {
         throw new Error(
           result.failedReason || `Error en el scrape de ${jobType}`

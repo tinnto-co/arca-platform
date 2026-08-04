@@ -5,6 +5,9 @@ export type ErrorCategory =
   | 'selector_change'
   | 'csv_not_found'
   | 'profile_not_found'
+  // La emite el scrapper cuando el job termina pero algún perfil falló;
+  // no sale de `classifyError`.
+  | 'partial'
   | 'unknown';
 
 export type ErrorSeverity = 'critical' | 'high' | 'medium' | 'low';
@@ -22,6 +25,7 @@ export const CATEGORY_LABELS: Record<ErrorCategory, string> = {
   selector_change: 'AFIP cambió la interfaz',
   csv_not_found: 'CSV no encontrado',
   profile_not_found: 'Perfil no encontrado',
+  partial: 'Falla parcial',
   unknown: 'Error desconocido',
 };
 

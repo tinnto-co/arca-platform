@@ -91,6 +91,10 @@ const CATEGORY_BADGE: Record<string, { bg: string; fg: string }> = {
     bg: 'var(--arca-accent-neg-bg)',
     fg: 'var(--arca-accent-neg-fg)',
   },
+  partial: {
+    bg: 'var(--arca-accent-warn-bg)',
+    fg: 'var(--arca-accent-warn-fg)',
+  },
   unknown: {
     bg: 'var(--arca-surface-2)',
     fg: 'var(--arca-ink-3)',
@@ -474,6 +478,7 @@ function AlertsPage() {
             { value: 'selector_change', label: 'AFIP cambió la interfaz' },
             { value: 'csv_not_found', label: 'CSV no encontrado' },
             { value: 'profile_not_found', label: 'Perfil no encontrado' },
+            { value: 'partial', label: 'Falla parcial' },
             { value: 'unknown', label: 'Desconocido' },
           ]}
           value={errorCategoryFilter}

@@ -24,6 +24,7 @@ import {
   scrapSingleJob,
 } from '@/actions/client';
 import { cn } from '@/lib/utils';
+import { periodoLegible } from '@/lib/periodo';
 
 /** Fila de `vencimiento` tal como la devuelve `getCredencialVencimientos`. */
 type VencimientoRow = Awaited<
@@ -540,7 +541,7 @@ export function VencimientosTab({
 
                 {/* Período */}
                 <div className="text-[13.5px] text-[#3E404A] tabular-nums truncate pr-2">
-                  {dd.periodo || '—'}
+                  {periodoLegible(dd.periodo)}
                 </div>
 
                 {/* Cuota */}
