@@ -8664,16 +8664,6 @@ function EfeView({
         </div>
       ))}
 
-      {valuation === 'ajustado' &&
-        (Math.abs(data.recpamEfectivo.current) >= 0.005 ||
-          Math.abs(data.recpamEfectivo.prior) >= 0.005) && (
-          <EfeRow
-            label="Resultado por exposición a la inflación del efectivo (RECPAM)"
-            value={data.recpamEfectivo}
-            hasPrior={data.hasPrior}
-          />
-        )}
-
       <EfeRow
         label="Total de las variaciones del efectivo"
         value={data.totalCausas}

@@ -7814,8 +7814,10 @@ export interface EfeResult {
   variacion: { current: number; prior: number };
   activities: EfeActivity[];
   /**
-   * Resultado por exposición a la inflación del efectivo: cierra el estado. Es
-   * la pérdida (o ganancia) de poder adquisitivo por haber mantenido efectivo.
+   * Resultado por exposición a la inflación del efectivo: la pérdida (o
+   * ganancia) de poder adquisitivo por haber mantenido efectivo. Ya viene
+   * incluido como una línea dentro de actividades operativas; se expone acá
+   * aparte solo para poder mostrarlo o cruzarlo, no para volver a sumarlo.
    */
   recpamEfectivo: { current: number; prior: number };
   totalCausas: { current: number; prior: number };
@@ -8148,9 +8150,31 @@ export const getEFE = createServerFn({ method: 'GET' })
       current: ajustado ? r2(variacion.current - flujos.current) : 0,
       prior: ajustado && pri ? r2(variacion.prior - flujos.prior) : 0,
     };
+
+    // El RECPAM se expone DENTRO de actividades operativas, no como una línea
+    // suelta al pie. Es como lo presenta el estudio en sus balances y es lo que
+    // hace que el flujo operativo sea comparable con el resultado del ejercicio.
+    if (
+      Math.abs(recpamEfectivo.current) >= 0.005 ||
+      Math.abs(recpamEfectivo.prior) >= 0.005
+    ) {
+      const operativas = activities.find((a) => a.key === 'operating');
+      if (operativas) {
+        operativas.lines.push({
+          accountId: 'recpam-efectivo',
+          code: '',
+          name: 'RECPAM',
+          current: recpamEfectivo.current,
+          prior: recpamEfectivo.prior,
+        });
+        operativas.current = r2(operativas.current + recpamEfectivo.current);
+        operativas.prior = r2(operativas.prior + recpamEfectivo.prior);
+      }
+    }
+
     const totalCausas = {
-      current: r2(flujos.current + recpamEfectivo.current),
-      prior: r2(flujos.prior + recpamEfectivo.prior),
+      current: r2(activities.reduce((s, a) => s + a.current, 0)),
+      prior: r2(activities.reduce((s, a) => s + a.prior, 0)),
     };
 
     const fmtD = (d: Date) =>

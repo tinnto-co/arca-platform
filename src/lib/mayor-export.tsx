@@ -2404,12 +2404,6 @@ function EfeBlock({ efe }: { efe: EfeResult | null }) {
           )}
         </View>
       ))}
-      {(Math.abs(efe.recpamEfectivo.current) >= 0.005 ||
-        Math.abs(efe.recpamEfectivo.prior) >= 0.005) &&
-        row(
-          'Resultado por exposición a la inflación del efectivo (RECPAM)',
-          efe.recpamEfectivo
-        )}
       {row(
         'Total de las variaciones del efectivo',
         efe.totalCausas,
@@ -3172,15 +3166,6 @@ export async function exportEstadosExcel(
       t.getCell(1).font = { bold: true, size: 10 };
       for (const l of a.lines) line(`    ${l.name}`, l);
       line(`Flujo neto por ${a.label.toLowerCase()}`, a, true);
-    }
-    if (
-      Math.abs(f.recpamEfectivo.current) >= 0.005 ||
-      Math.abs(f.recpamEfectivo.prior) >= 0.005
-    ) {
-      line(
-        'Resultado por exposición a la inflación del efectivo (RECPAM)',
-        f.recpamEfectivo
-      );
     }
     line('Total de las variaciones del efectivo', f.totalCausas, true);
   }
