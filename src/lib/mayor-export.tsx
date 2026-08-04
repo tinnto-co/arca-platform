@@ -1944,6 +1944,8 @@ export interface EeccPackageData {
    * { caja_bancos: 'Nota 3.1', bienes_uso: 's/Anexo I' }.
    */
   references?: Record<string, string>;
+  /** Fecha del informe del auditor, para la leyenda al pie de cada estado. */
+  auditoriaFecha?: string | null;
   /**
    * Orden de las secciones. Cada entrada es una clave de sección o `note:<id>`.
    * Sin esto se usa el orden clásico.
@@ -2081,10 +2083,16 @@ const pk = StyleSheet.create({
   },
   noteH: { fontSize: 9.5, fontFamily: 'Helvetica-Bold', marginTop: 5 },
   empty: { fontSize: 8.5, color: '#999', fontStyle: 'italic', marginTop: 4 },
+  integracion: {
+    fontSize: 7.5,
+    fontStyle: 'italic',
+    color: '#444',
+    marginTop: 10,
+  },
   signWrap: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 50,
+    marginTop: 34,
   },
   signBox: {
     width: '30%',
@@ -2323,35 +2331,51 @@ function ErBlock({
  */
 function EepnBlock({ eepn }: { eepn: EepnResult | null }) {
   if (!eepn || eepn.columns.length === 0) return null;
-  // Con muchas columnas el ancho por cuenta se achica para que entre en A4.
-  const colWidth = `${Math.max(9, 46 / (eepn.columns.length + 1))}%`;
+  /**
+   * Los anchos se reparten para sumar 100: react-pdf no recorta el excedente,
+   * encima las columnas unas sobre otras y no da ningún error. El concepto y
+   * los dos totales se llevan lo fijo y el resto se divide entre las cuentas.
+   */
+  const totalCols = eepn.priorFiscalYearNumber !== null ? 2 : 1;
+  const LABEL = 22;
+  const TOTAL = 13;
+  const libre = 100 - LABEL - TOTAL * totalCols;
+  const colWidth = `${libre / eepn.columns.length}%`;
+  const labelStyle = { width: `${LABEL}%` };
+  const totalStyle = {
+    width: `${TOTAL}%`,
+    textAlign: 'right' as const,
+    paddingLeft: 3,
+  };
   const colStyle = {
     width: colWidth,
     textAlign: 'right' as const,
-    paddingLeft: 4,
+    paddingLeft: 3,
   };
   return (
-    <View break>
+    <View>
       <Text style={pk.sectionTitle}>
         Estado de Evolución del Patrimonio Neto
       </Text>
       <View style={pk.colHead}>
-        <Text style={pk.cLabel}>Concepto</Text>
+        <Text style={labelStyle}>Concepto</Text>
         {eepn.columns.map((c) => (
           <Text key={c.accountId} style={colStyle}>
             {c.isSubtotal ? `Total ${c.groupLabel}` : c.name}
           </Text>
         ))}
-        <Text style={pk.cNum}>Ej. N°{eepn.fiscalYearNumber}</Text>
+        <Text style={totalStyle}>Ej. N°{eepn.fiscalYearNumber}</Text>
         {eepn.priorFiscalYearNumber !== null && (
-          <Text style={pk.cNum}>Ej. N°{eepn.priorFiscalYearNumber}</Text>
+          <Text style={totalStyle}>Ej. N°{eepn.priorFiscalYearNumber}</Text>
         )}
       </View>
       {eepn.rows.map((r) => {
         const strong = r.kind === 'inicio' || r.kind === 'cierre';
         return (
           <View key={r.key} style={strong ? pk.totalRow : pk.row}>
-            <Text style={strong ? pk.cLabel : pk.cLabelIndent}>{r.label}</Text>
+            <Text style={[labelStyle, strong ? {} : { paddingLeft: 6 }]}>
+              {r.label}
+            </Text>
             {eepn.columns.map((c) => (
               <Text key={c.accountId} style={colStyle}>
                 {r.amounts[c.accountId]
@@ -2359,9 +2383,9 @@ function EepnBlock({ eepn }: { eepn: EepnResult | null }) {
                   : '—'}
               </Text>
             ))}
-            <Text style={pk.cNum}>{fmtMoney(r.total)}</Text>
+            <Text style={totalStyle}>{fmtMoney(r.total)}</Text>
             {eepn.priorFiscalYearNumber !== null && (
-              <Text style={pk.cNum}>
+              <Text style={totalStyle}>
                 {eepn.prior
                   ? fmtMoney(
                       r.kind === 'inicio'
@@ -2402,7 +2426,7 @@ function EfeBlock({ efe }: { efe: EfeResult | null }) {
     </View>
   );
   return (
-    <View break>
+    <View>
       <Text style={pk.sectionTitle}>
         Estado de Flujo de Efectivo y sus Equivalentes — Método directo, forma completa
       </Text>
@@ -2470,7 +2494,7 @@ function Nota3Block({
     ? `Ej. N°${esp.priorFiscalYearNumber}`
     : 'Anterior';
   return (
-    <View break>
+    <View>
       <Text style={pk.sectionTitle}>
         {numero != null ? `Nota ${numero} — ` : ''}Composición de los
         principales rubros
@@ -2769,6 +2793,31 @@ function Signatures() {
   );
 }
 
+/**
+ * Cierre de cada estado: la leyenda de integración y el espacio de firma.
+ *
+ * En el balance del estudio esto va al pie de **cada** estado y de cada anexo,
+ * no una sola vez al final del cuerpo. Cada hoja tiene que poder circular sola
+ * y decir que las notas y anexos forman parte de ella.
+ */
+function EstadoFooter({ auditoriaFecha }: { auditoriaFecha?: string | null }) {
+  return (
+    <View wrap={false}>
+      <Text style={pk.integracion}>
+        Las Notas y Anexos que se acompañan forman parte integrante de este
+        Estado.
+      </Text>
+      {auditoriaFecha && (
+        <Text style={pk.integracion}>
+          El informe del auditor se extiende en documento aparte con fecha{' '}
+          {auditoriaFecha}.
+        </Text>
+      )}
+      <Signatures />
+    </View>
+  );
+}
+
 /** Orden clásico: estados, notas y anexos al final. */
 const DEFAULT_PACKAGE_SECTIONS: string[] = [
   'esp',
@@ -2800,9 +2849,9 @@ function EeccPackageDoc({ data }: { data: EeccPackageData }) {
         <PageFooter data={data} />
       </Page>
 
-      {/* Cuerpo, en el orden que eligió el contador */}
-      <Page size="A4" style={pk.page} wrap>
-        {(data.sections ?? DEFAULT_PACKAGE_SECTIONS).map((entry) => {
+      {/* Cuerpo: una página por sección, en el orden que eligió el contador */}
+      {(data.sections ?? DEFAULT_PACKAGE_SECTIONS).map((entry) => {
+        const bloque = (() => {
           switch (entry) {
             case 'esp':
               return (
@@ -2855,10 +2904,16 @@ function EeccPackageDoc({ data }: { data: EeccPackageData }) {
               );
             }
           }
-        })}
-        <Signatures />
-        <PageFooter data={data} />
-      </Page>
+        })();
+        if (!bloque) return null;
+        return (
+          <Page key={entry} size="A4" style={pk.page} wrap>
+            {bloque}
+            <EstadoFooter auditoriaFecha={data.auditoriaFecha} />
+            <PageFooter data={data} />
+          </Page>
+        );
+      })}
     </Document>
   );
 }
