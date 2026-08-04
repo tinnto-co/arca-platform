@@ -337,74 +337,147 @@ function TabBar({
   pendingCount?: number;
   isOwner?: boolean;
 }) {
-  const tabs: {
-    id: Tab;
-    label: string;
-    icon: React.ElementType;
-    ready: boolean;
-    ownerOnly?: boolean;
+  /**
+   * Las solapas van en el orden en que se usan: primero se configura, después
+   * se registra, se consulta lo registrado y por último se cierra. Los grupos
+   * se separan con una línea; no llevan rótulo porque el rótulo costaría un
+   * renglón entero y el orden ya se explica solo.
+   */
+  const grupos: {
+    grupo: string;
+    items: {
+      id: Tab;
+      label: string;
+      icon: React.ElementType;
+      ready: boolean;
+      ownerOnly?: boolean;
+    }[];
   }[] = [
-    { id: 'plan', label: 'Plan de cuentas', icon: List, ready: true },
-    { id: 'ejercicios', label: 'Ejercicios', icon: CalendarDays, ready: true },
-    { id: 'asientos', label: 'Asientos', icon: FileText, ready: true },
-    { id: 'mayor', label: 'Mayor', icon: BookOpen, ready: true },
-    { id: 'balance', label: 'Balance', icon: Scale, ready: true },
-    { id: 'reglas', label: 'Reglas', icon: Workflow, ready: true },
-    { id: 'contabilizar', label: 'Contabilizar', icon: Zap, ready: true },
-    { id: 'pendientes', label: 'Pendientes', icon: Inbox, ready: true },
-    { id: 'bienes', label: 'Bienes de uso', icon: Boxes, ready: true },
-    { id: 'indices', label: 'Índices', icon: TrendingUp, ready: true },
     {
-      id: 'ajuste',
-      label: 'Ajuste por inflación',
-      icon: Sparkles,
-      ready: true,
+      grupo: 'Configuración',
+      items: [
+        { id: 'plan', label: 'Plan de cuentas', icon: List, ready: true },
+        {
+          id: 'ejercicios',
+          label: 'Ejercicios',
+          icon: CalendarDays,
+          ready: true,
+        },
+        { id: 'reglas', label: 'Reglas', icon: Workflow, ready: true },
+      ],
     },
     {
-      id: 'estados',
-      label: 'Estados Contables',
-      icon: FileBarChart,
-      ready: true,
+      grupo: 'Registración',
+      items: [
+        { id: 'asientos', label: 'Asientos', icon: FileText, ready: true },
+        { id: 'contabilizar', label: 'Contabilizar', icon: Zap, ready: true },
+        { id: 'pendientes', label: 'Pendientes', icon: Inbox, ready: true },
+        { id: 'bienes', label: 'Bienes de uso', icon: Boxes, ready: true },
+      ],
     },
     {
-      id: 'auditoria',
-      label: 'Auditoría',
-      icon: ScrollText,
-      ready: true,
-      ownerOnly: true,
+      grupo: 'Consulta',
+      items: [
+        { id: 'mayor', label: 'Mayor', icon: BookOpen, ready: true },
+        { id: 'balance', label: 'Balance', icon: Scale, ready: true },
+      ],
+    },
+    {
+      grupo: 'Cierre',
+      items: [
+        { id: 'indices', label: 'Índices', icon: TrendingUp, ready: true },
+        {
+          id: 'ajuste',
+          label: 'Ajuste por inflación',
+          icon: Sparkles,
+          ready: true,
+        },
+        {
+          id: 'estados',
+          label: 'Estados Contables',
+          icon: FileBarChart,
+          ready: true,
+        },
+      ],
+    },
+    {
+      grupo: 'Control',
+      items: [
+        {
+          id: 'auditoria',
+          label: 'Auditoría',
+          icon: ScrollText,
+          ready: true,
+          ownerOnly: true,
+        },
+      ],
     },
   ];
+
+  const visibles = grupos
+    .map((g) => ({
+      ...g,
+      items: g.items.filter((t) => !t.ownerOnly || isOwner),
+    }))
+    .filter((g) => g.items.length > 0);
+
   return (
-    // Con 13 solapas la barra desborda: scrollea sola en vez de arrastrar la página.
-    <div className="flex gap-1 mb-5 border-b border-[var(--arca-border)] overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      {tabs
-        .filter((tab) => !tab.ownerOnly || isOwner)
-        .map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => onChange(tab.id)}
-            className="flex items-center gap-1.5 px-3 py-2 text-[12.5px] font-medium transition-colors duration-[120ms] border-b-2 -mb-px shrink-0 whitespace-nowrap"
-            style={{
-              color:
-                active === tab.id ? 'var(--arca-ink)' : 'var(--arca-ink-3)',
-              borderBottomColor:
-                active === tab.id ? 'var(--arca-ink)' : 'transparent',
-            }}
-          >
-            <tab.icon className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
-            {tab.label}
-            {tab.id === 'pendientes' && pendingCount > 0 && (
-              <span className="text-[9px] font-semibold px-1.5 py-px rounded-full bg-amber-100 text-amber-700">
-                {pendingCount}
-              </span>
-            )}
-            {!tab.ready && (
-              <span className="text-[9px] px-1 py-px rounded-full bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
-                pronto
-              </span>
-            )}
-          </button>
-        ))}
+    /**
+     * Trece solapas no entran en un renglón. Antes la barra scrolleaba de
+     * costado y la solapa activa podía quedar fuera de la pantalla: se perdía
+     * la única señal de dónde estabas parado. Ahora envuelve, así que están
+     * todas a la vista y no cuesta ancho de contenido —que es justo lo que
+     * necesitan las tablas de los estados—.
+     */
+    <div className="flex flex-wrap items-center gap-x-1 gap-y-1 mb-5 pb-1.5 border-b border-[var(--arca-border)]">
+      {visibles.map(({ grupo, items }, i) => (
+        <Fragment key={grupo}>
+          {i > 0 && (
+            <span
+              aria-hidden
+              className="w-px h-4 mx-1.5 shrink-0 bg-[var(--arca-border)]"
+            />
+          )}
+          {/* El grupo salta de renglón entero: partirlo al medio deshace la
+              única señal de que esas solapas van juntas. Igual puede envolver
+              por dentro si la ventana es tan angosta que no entra ni él. */}
+          <div className="flex flex-wrap items-center gap-1">
+            {items.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => onChange(tab.id)}
+                aria-current={active === tab.id ? 'page' : undefined}
+                title={`${grupo} · ${tab.label}`}
+                className="flex items-center gap-1.5 px-2.5 h-7 rounded-[7px] text-[12.5px] font-medium transition-colors duration-[120ms] shrink-0 whitespace-nowrap"
+                style={{
+                  // El activo se marca con fondo y no con subrayado: al envolver
+                  // en dos renglones el subrayado ya no cae sobre el borde de la
+                  // barra y dejaba de leerse como «acá estás».
+                  background:
+                    active === tab.id ? 'var(--arca-ink)' : 'transparent',
+                  color:
+                    active === tab.id
+                      ? 'var(--arca-surface)'
+                      : 'var(--arca-ink-3)',
+                }}
+              >
+                <tab.icon className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
+                {tab.label}
+                {tab.id === 'pendientes' && pendingCount > 0 && (
+                  <span className="text-[9px] font-semibold px-1.5 py-px rounded-full bg-amber-100 text-amber-700">
+                    {pendingCount}
+                  </span>
+                )}
+                {!tab.ready && (
+                  <span className="text-[9px] px-1 py-px rounded-full bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
+                    pronto
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </Fragment>
+      ))}
     </div>
   );
 }
