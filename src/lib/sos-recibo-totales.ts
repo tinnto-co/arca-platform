@@ -72,11 +72,28 @@ export function parseDecimalSos(raw: string | null | undefined): number | null {
   if (raw == null) return null;
   const t = String(raw).trim();
   if (!t) return null;
+  // Un solo punto es decimal (así vienen los numeric de Postgres). Dos o más
+  // sólo pueden ser separadores de miles tipeados a mano ("1.137.677"), que
+  // parseFloat cortaría en 1.137 sin avisar.
   const normalized = t.includes(',')
     ? t.replace(/\./g, '').replace(',', '.')
-    : t;
+    : (t.match(/\./g)?.length ?? 0) > 1
+      ? t.replace(/\./g, '')
+      : t;
   const n = parseFloat(normalized);
   return isNaN(n) ? null : n;
+}
+
+/**
+ * Los numeric de Postgres vuelven con sus decimales completos ("30.0000"), y en
+ * un input se leen como treinta mil. Recorta los ceros sobrantes para mostrar.
+ * Sólo toca strings que ya son un decimal con punto: lo que el usuario está
+ * tipeando (con coma, o a medio escribir) pasa intacto.
+ */
+export function limpiarDecimalesSos(raw: string | null | undefined): string {
+  const t = (raw ?? '').trim();
+  if (!/^-?\d+\.\d+$/.test(t)) return t;
+  return t.replace(/\.?0+$/, '');
 }
 
 function roundMoney(n: number): number {

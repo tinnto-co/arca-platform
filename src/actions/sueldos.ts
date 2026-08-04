@@ -2526,6 +2526,8 @@ export const guardarReciboDesdeTabla = createServerFn({ method: 'POST' })
         sql`select pg_advisory_xact_lock(hashtext(${lockKey}))`
       );
 
+      // El filtro por fuente es obligatorio: sin él, liquidar un período que ya
+      // tiene un recibo importado del SOS lo pisaba y le daba vuelta la fuente.
       const [existing] = await tx
         .select({ id: recibo.id })
         .from(recibo)
@@ -2533,7 +2535,8 @@ export const guardarReciboDesdeTabla = createServerFn({ method: 'POST' })
           and(
             eq(recibo.empleadoId, ctx.data.importEmpleadoId),
             eq(recibo.periodo, periodoADate(ctx.data.periodo)),
-            eq(recibo.tipo, ctx.data.tipoRecibo)
+            eq(recibo.tipo, ctx.data.tipoRecibo),
+            eq(recibo.fuente, 'calculo')
           )
         )
         .limit(1);

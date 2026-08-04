@@ -18,6 +18,7 @@ import {
   type EditsMap,
 } from '@/components/sueldos/TablaReciboSos';
 import {
+  limpiarDecimalesSos,
   montoLiquidadoDesdeEditsSos,
   parseDecimalSos,
   totalesReciboSosDesdeMontos,
@@ -56,14 +57,16 @@ export interface ReciboCalculoResult {
 /** Seed de una fila de edición desde el concepto (espejo de initialEdits de la grilla). */
 export function seedEditRow(c: ConceptoImportado): EditsMap[string] {
   return {
-    monto: c.monto ?? '',
+    monto: limpiarDecimalesSos(c.monto),
     montoFijo: '',
-    cantidad: c.cantidad ?? '',
-    porcentaje: c.porcentaje ?? (c.pctFijo != null ? String(c.pctFijo) : ''),
+    cantidad: limpiarDecimalesSos(c.cantidad),
+    porcentaje: limpiarDecimalesSos(
+      c.porcentaje ?? (c.pctFijo != null ? String(c.pctFijo) : '')
+    ),
     importeConceptoNumero: c.importeConceptoNumero ?? '',
-    importe: c.importe ?? '',
-    importeMinimo: c.importeMinimo ?? '',
-    importeMaximo: c.importeMaximo ?? '',
+    importe: limpiarDecimalesSos(c.importe),
+    importeMinimo: limpiarDecimalesSos(c.importeMinimo),
+    importeMaximo: limpiarDecimalesSos(c.importeMaximo),
     memo: c.memo ?? '',
   };
 }

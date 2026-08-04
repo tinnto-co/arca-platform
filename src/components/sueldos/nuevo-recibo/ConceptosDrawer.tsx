@@ -415,22 +415,16 @@ export function ConceptosDrawer({
                           )}
                       </div>
 
-                      {/* Monto calculado */}
-                      <div className="flex-none ml-auto text-right min-w-[120px]">
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.07em] text-[var(--arca-ink-4)]">
-                          {esHaber ? 'Haber' : 'Retención'}
-                        </div>
-                        <div
-                          className={cn(
-                            'text-[13.5px] font-medium tabular-nums',
-                            esHaber
-                              ? 'text-[var(--arca-ink)]'
-                              : 'text-[var(--arca-accent-neg-fg)]'
-                          )}
-                        >
-                          {fmtMonto(montoByCodigo[c.codigo] ?? 0)}
-                        </div>
-                      </div>
+                      {/* Monto calculado (editable a mano) */}
+                      <MontoCalculado
+                        label={esHaber ? 'Haber' : 'Retención'}
+                        monto={montoByCodigo[c.codigo] ?? 0}
+                        montoFijo={edits[c.codigo]?.montoFijo ?? ''}
+                        esHaber={esHaber}
+                        onOverride={(v) =>
+                          onEditField(c.codigo, 'montoFijo', v)
+                        }
+                      />
 
                       <button
                         type="button"
@@ -533,6 +527,108 @@ export function ConceptosDrawer({
             Listo
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Monto de la fila. El contador puede pisarlo a mano cuando el cálculo no le
+ * cierra: el valor se guarda en `montoFijo` y la cascada lo respeta, así que
+ * también arrastra a los subtotales y a las retenciones que dependen de él.
+ */
+function MontoCalculado({
+  label,
+  monto,
+  montoFijo,
+  esHaber,
+  onOverride,
+}: {
+  label: string;
+  monto: number;
+  montoFijo: string;
+  esHaber: boolean;
+  onOverride: (v: string) => void;
+}) {
+  const [editando, setEditando] = useState(false);
+  const [local, setLocal] = useState('');
+  const pisado = montoFijo.trim() !== '';
+
+  const abrir = () => {
+    setLocal(pisado ? montoFijo : monto === 0 ? '' : String(monto.toFixed(2)));
+    setEditando(true);
+  };
+
+  const confirmar = () => {
+    onOverride(local.trim());
+    setEditando(false);
+  };
+
+  if (editando) {
+    return (
+      <div className="flex-none ml-auto text-right min-w-[140px]">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.07em] text-[var(--arca-ink-4)]">
+          {label} — a mano
+        </div>
+        <input
+          autoFocus
+          value={local}
+          onChange={(e) => setLocal(e.target.value)}
+          onBlur={confirmar}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              confirmar();
+            }
+            if (e.key === 'Escape') setEditando(false);
+          }}
+          inputMode="decimal"
+          className={cn(inputCls, 'mt-[3px] w-[140px]')}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-none ml-auto text-right min-w-[120px]">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.07em] text-[var(--arca-ink-4)]">
+        {label}
+        {pisado && ' — a mano'}
+      </div>
+      <div className="flex items-center justify-end gap-1">
+        <span
+          className={cn(
+            'text-[13.5px] font-medium tabular-nums',
+            pisado
+              ? 'text-[var(--arca-accent-warn-fg)]'
+              : esHaber
+                ? 'text-[var(--arca-ink)]'
+                : 'text-[var(--arca-accent-neg-fg)]'
+          )}
+        >
+          {fmtMonto(monto)}
+        </span>
+        {pisado ? (
+          <button
+            type="button"
+            onClick={() => onOverride('')}
+            aria-label="Volver al monto calculado"
+            title="Volver al monto calculado"
+            className="flex-none h-[20px] w-[20px] rounded-[6px] flex items-center justify-center text-[var(--arca-accent-warn-fg)] hover:bg-[var(--arca-surface-2)] transition-colors duration-120 motion-reduce:transition-none cursor-pointer"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={abrir}
+            aria-label="Editar el monto a mano"
+            title="Editar el monto a mano"
+            className="flex-none h-[20px] w-[20px] rounded-[6px] flex items-center justify-center text-[var(--arca-ink-4)] hover:text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] transition-colors duration-120 motion-reduce:transition-none cursor-pointer"
+          >
+            <PenLine className="h-3 w-3" />
+          </button>
+        )}
       </div>
     </div>
   );
