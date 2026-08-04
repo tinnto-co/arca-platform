@@ -57,6 +57,25 @@ export const DEFAULT_SECTION_LABELS: Record<SystemSectionKey, string> = {
   anexo_cmv: 'Anexo CMV · Costo de la mercadería vendida',
 };
 
+/**
+ * Opciones de exposición que el contador decide por balance. Se guardan junto
+ * a los rótulos, en `sectionLabels`, con clave reservada.
+ */
+export const OPCION_ANEXO_I_COMPARATIVO = '@anexoIComparativo';
+
+/**
+ * ¿El Anexo I muestra la columna del ejercicio anterior?
+ *
+ * El modelo del Consejo la trae, pero el balance del estudio no la usa: sale
+ * con una sola columna de neto. Por defecto se muestra —es información de
+ * más, no de menos— y se apaga desde «Orden del documento».
+ */
+export function anexoIMuestraComparativo(
+  labels: Record<string, string> = {}
+): boolean {
+  return labels[OPCION_ANEXO_I_COMPARATIVO] !== 'no';
+}
+
 /** Secciones que se numeran como nota. Hoy solo la composición de rubros. */
 export const NUMBERED_AS_NOTE: SystemSectionKey[] = ['composicion'];
 

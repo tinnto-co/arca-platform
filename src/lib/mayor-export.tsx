@@ -1455,7 +1455,9 @@ function AnexoIDoc({ data }: { data: AnexoIExportData }) {
                 </View>
               ))}
               <View style={ax.subRow}>
-                <Text style={[ax.cName, { width: AXW.name }]}>Subtotal {cat.category}</Text>
+                <Text style={[ax.cName, { width: AXW.name }]}>
+                  Subtotal {cat.category}
+                </Text>
                 <Text style={[ax.c, { width: AXW.vInicio }]}>
                   {num(cat.totals.valorInicio)}
                 </Text>
@@ -1920,6 +1922,8 @@ export interface EeccPackageData {
   valuation?: 'ajustado' | 'historico';
   /** Cómo se cita la norma del ajuste: "RT 54" o "RT 6". */
   norma?: string;
+  /** Firma del contador: la misma que ya usa el Anexo I. */
+  accountant?: AnexoIAccountantData | null;
   anexoI: {
     categories: AnexoICategory[];
     grandTotals: AnexoICategory['totals'];
@@ -2088,19 +2092,6 @@ const pk = StyleSheet.create({
     fontStyle: 'italic',
     color: '#444',
     marginTop: 10,
-  },
-  signWrap: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 34,
-  },
-  signBox: {
-    width: '30%',
-    borderTop: '0.7pt solid #333',
-    paddingTop: 4,
-    textAlign: 'center',
-    fontSize: 8,
-    color: '#444',
   },
   footer: {
     position: 'absolute',
@@ -2428,7 +2419,8 @@ function EfeBlock({ efe }: { efe: EfeResult | null }) {
   return (
     <View>
       <Text style={pk.sectionTitle}>
-        Estado de Flujo de Efectivo y sus Equivalentes — Método directo, forma completa
+        Estado de Flujo de Efectivo y sus Equivalentes — Método directo, forma
+        completa
       </Text>
       <View style={pk.colHead}>
         <Text style={pk.cLabel}>Concepto</Text>
@@ -2783,16 +2775,6 @@ function NotesBlock({
   );
 }
 
-function Signatures() {
-  return (
-    <View style={pk.signWrap} wrap={false}>
-      <Text style={pk.signBox}>Firma del representante legal</Text>
-      <Text style={pk.signBox}>Firma del contador{'\n'}Sello profesional</Text>
-      <Text style={pk.signBox}>Legalización C.P.C.E.</Text>
-    </View>
-  );
-}
-
 /**
  * Cierre de cada estado: la leyenda de integración y el espacio de firma.
  *
@@ -2800,7 +2782,13 @@ function Signatures() {
  * no una sola vez al final del cuerpo. Cada hoja tiene que poder circular sola
  * y decir que las notas y anexos forman parte de ella.
  */
-function EstadoFooter({ auditoriaFecha }: { auditoriaFecha?: string | null }) {
+function EstadoFooter({
+  auditoriaFecha,
+  accountant,
+}: {
+  auditoriaFecha?: string | null;
+  accountant?: AnexoIAccountantData | null;
+}) {
   return (
     <View wrap={false}>
       <Text style={pk.integracion}>
@@ -2813,7 +2801,7 @@ function EstadoFooter({ auditoriaFecha }: { auditoriaFecha?: string | null }) {
           {auditoriaFecha}.
         </Text>
       )}
-      <Signatures />
+      <SignatureBlock ac={accountant} />
     </View>
   );
 }
@@ -2843,7 +2831,9 @@ function EeccPackageDoc({ data }: { data: EeccPackageData }) {
             Ejercicio Económico N°{data.fiscalYearNumber}
           </Text>
           <Text style={pk.coverMeta}>{data.periodLabel}</Text>
-          <Text style={pk.coverDisc}>{disclaimerFor(data.valuation, data.norma)}</Text>
+          <Text style={pk.coverDisc}>
+            {disclaimerFor(data.valuation, data.norma)}
+          </Text>
           <Text style={pk.coverGen}>Generado el {data.generatedLabel}</Text>
         </View>
         <PageFooter data={data} />
@@ -2909,7 +2899,10 @@ function EeccPackageDoc({ data }: { data: EeccPackageData }) {
         return (
           <Page key={entry} size="A4" style={pk.page} wrap>
             {bloque}
-            <EstadoFooter auditoriaFecha={data.auditoriaFecha} />
+            <EstadoFooter
+              auditoriaFecha={data.auditoriaFecha}
+              accountant={data.accountant}
+            />
             <PageFooter data={data} />
           </Page>
         );
@@ -3209,6 +3202,10 @@ export async function exportLibroInventariosPdf(
 export interface EstadosExcelData {
   /** Cómo se cita la norma del ajuste: "RT 54" o "RT 6". */
   norma?: string;
+  /** Orden de las secciones, para que las solapas sigan el del documento. */
+  sections?: string[];
+  /** Número que le tocó a la composición de rubros. */
+  composicionNumber?: number | null;
   empresaName: string;
   fiscalYearNumber: number;
   periodLabel: string;
@@ -3257,8 +3254,12 @@ export async function exportEstadosExcel(
     }
   };
 
-  // ── EEPN ──
-  if (data.eepn && data.eepn.columns.length > 0) {
+  /**
+   * Cada hoja se crea aparte para poder respetar el orden que eligió el
+   * contador: en exceljs el orden de las solapas es el de creación.
+   */
+  const hojaEepn = () => {
+    if (!(data.eepn && data.eepn.columns.length > 0)) return;
     const e = data.eepn;
     const ws = wb.addWorksheet('EEPN', { views: [{ showGridLines: false }] });
     const nCols =
@@ -3303,10 +3304,10 @@ export async function exportEstadosExcel(
         if (c.isSubtotal) r.getCell(i + 2).font = { bold: true };
       });
     }
-  }
+  };
 
-  // ── Flujo de efectivo ──
-  if (data.efe) {
+  const hojaEfe = () => {
+    if (!data.efe) return;
     const f = data.efe;
     const ws = wb.addWorksheet('Flujo de efectivo', {
       views: [{ showGridLines: false }],
@@ -3350,16 +3351,21 @@ export async function exportEstadosExcel(
       line(`Flujo neto por ${a.label.toLowerCase()}`, a, true);
     }
     line('Total de las variaciones del efectivo', f.totalCausas, true);
-  }
+  };
 
-  // ── Nota 3 ──
-  const rubros = data.esp.sections
-    .flatMap((sec) => sec.rubros)
-    .filter((r) => r.group !== 'resultado_ejercicio')
-    .filter((r) => Math.abs(r.current) >= 0.005 || Math.abs(r.prior) >= 0.005);
-  if (rubros.length > 0) {
-    const ws = wb.addWorksheet('Nota 3', { views: [{ showGridLines: false }] });
-    header(ws, 'Nota 3 — Composición de los principales rubros', 4);
+  const hojaComposicion = () => {
+    const rubros = data.esp.sections
+      .flatMap((sec) => sec.rubros)
+      .filter((r) => r.group !== 'resultado_ejercicio')
+      .filter(
+        (r) => Math.abs(r.current) >= 0.005 || Math.abs(r.prior) >= 0.005
+      );
+    if (rubros.length === 0) return;
+    // El número sale de la posición de la nota, igual que en el PDF.
+    const n = data.composicionNumber;
+    const titulo = n != null ? `Nota ${n}` : 'Composición';
+    const ws = wb.addWorksheet(titulo, { views: [{ showGridLines: false }] });
+    header(ws, `${titulo} — Composición de los principales rubros`, 4);
     const hr = ws.addRow([
       'Nota',
       'Concepto',
@@ -3373,7 +3379,7 @@ export async function exportEstadosExcel(
     if (ws.columns[1]) ws.columns[1].width = 46;
 
     rubros.forEach((r, i) => {
-      const t = ws.addRow([`3.${i + 1}`, r.label]);
+      const t = ws.addRow([`${n ?? 3}.${i + 1}`, r.label]);
       t.getCell(2).font = { bold: true };
       for (const a of r.accounts) {
         const row = ws.addRow(['', `    ${a.name}`, a.current, a.prior]);
@@ -3382,7 +3388,18 @@ export async function exportEstadosExcel(
       const tot = ws.addRow(['', '', r.current, r.prior]);
       money(tot, 3, 4, true);
     });
-  }
+  };
+
+  // Las solapas salen en el orden del documento, igual que el PDF.
+  const porSeccion: Record<string, () => void> = {
+    eepn: hojaEepn,
+    efe: hojaEfe,
+    composicion: hojaComposicion,
+  };
+  const orden = (data.sections ?? ['eepn', 'efe', 'composicion']).filter(
+    (k) => k in porSeccion
+  );
+  for (const k of orden) porSeccion[k]();
 
   const buffer = await wb.xlsx.writeBuffer();
   triggerDownload(

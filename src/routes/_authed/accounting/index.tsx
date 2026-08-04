@@ -58,6 +58,7 @@ import {
   numberNotes,
   referenceForGroup,
   resolveDocumentLayout,
+  anexoIMuestraComparativo,
   ANEXO_REFERENCE_BY_GROUP,
   type LayoutEntry,
 } from '@/lib/accounting-document';
@@ -7244,6 +7245,7 @@ function AnexoIView({
   clientName,
   fiscalYearId,
   readOnly = false,
+  conComparativo = true,
 }: {
   clientId: string;
   canWrite: boolean;
@@ -7256,6 +7258,8 @@ function AnexoIView({
   fiscalYearId?: string;
   /** Sin edición ni sugerencia de asiento: el anexo como parte del balance. */
   readOnly?: boolean;
+  /** El balance puede exponerlo sin la columna del ejercicio anterior. */
+  conComparativo?: boolean;
 }) {
   const [selectedFyId, setSelectedFyId] = useState('');
   const [editor, setEditor] = useState<EditorState | null>(null);
@@ -7267,12 +7271,17 @@ function AnexoIView({
   const effectiveFyId =
     fiscalYearId ?? (selectedFyId || defaultFiscalYearId(fiscalYears));
 
-  const { data, isLoading } = useQuery({
+  const { data: rawData, isLoading } = useQuery({
     queryKey: ['accounting', 'anexo-i', clientId, effectiveFyId],
     queryFn: () =>
       getAnexoI({ data: { clientId, fiscalYearId: effectiveFyId } }),
     enabled: !!effectiveFyId,
   });
+
+  // Apagar el comparativo es una decisión de exposición: se saca acá y ni la
+  // tabla ni los exportes tienen que enterarse.
+  const data =
+    rawData && !conComparativo ? { ...rawData, prior: null } : rawData;
 
   const { data: postable = [] } = useQuery({
     queryKey: ['accounting', 'postable', clientId],
@@ -7321,8 +7330,7 @@ function AnexoIView({
       })),
       totals: {
         ...c.totals,
-        priorResidualEnd:
-          data!.prior?.residualByCategory[c.category] ?? null,
+        priorResidualEnd: data!.prior?.residualByCategory[c.category] ?? null,
       },
     })),
     grandTotals: data!.grandTotals,
@@ -7814,7 +7822,9 @@ function EstadosContables({
   const { data: espParaRefs } = useQuery({
     queryKey: ['accounting', 'esp', clientId, effectiveFyId, valuation],
     queryFn: () =>
-      getESP({ data: { clientId, fiscalYearId: effectiveFyId, view: valuation } }),
+      getESP({
+        data: { clientId, fiscalYearId: effectiveFyId, view: valuation },
+      }),
     enabled: !!effectiveFyId,
   });
   /**
@@ -7827,9 +7837,7 @@ function EstadosContables({
     const grupos = (espParaRefs?.sections ?? [])
       .flatMap((sec) => sec.rubros)
       .filter((r) => r.group !== 'resultado_ejercicio')
-      .filter(
-        (r) => Math.abs(r.current) >= 0.005 || Math.abs(r.prior) >= 0.005
-      )
+      .filter((r) => Math.abs(r.current) >= 0.005 || Math.abs(r.prior) >= 0.005)
       .map((r) => r.group);
     const ctx = {
       composicionGroups: grupos,
@@ -8071,6 +8079,7 @@ function EstadosContables({
           canWrite={false}
           fiscalYearId={effectiveFyId}
           readOnly
+          conComparativo={anexoIMuestraComparativo(fs?.sectionLabels ?? {})}
         />
       )}
       {view === 'anexo' && (
@@ -8702,8 +8711,8 @@ function EfeView({
           {clientName}
         </div>
         <div className="text-[12px] text-[var(--arca-ink-3)]">
-          Estado de Flujo de Efectivo y sus Equivalentes · Método directo,
-          forma completa · Ejercicio N°
+          Estado de Flujo de Efectivo y sus Equivalentes · Método directo, forma
+          completa · Ejercicio N°
           {data.fiscalYearNumber} · {data.periodLabel}
         </div>
         <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
@@ -9949,6 +9958,12 @@ function ExportView({
   const fyId = selectedFy?.id ?? '';
   const [busy, setBusy] = useState<string | null>(null);
 
+  /** La firma del contador es del estudio, no de la empresa. */
+  const { data: membrete } = useQuery({
+    queryKey: ['accounting', 'membrete', clientId],
+    queryFn: () => getMembreteData({ data: { clientId } }),
+  });
+
   const { data: esp } = useQuery({
     queryKey: ['accounting', 'esp', clientId, fyId, valuation],
     queryFn: () =>
@@ -10010,6 +10025,13 @@ function ExportView({
         periodLabel: esp.periodLabel,
         valuation,
         norma,
+        sections: resolveDocumentLayout(layout, notes, sectionLabels).map(
+          (x) => x.entry
+        ),
+        composicionNumber:
+          numberNotes(layout, notes, sectionLabels).find(
+            (n) => n.entry === 'composicion'
+          )?.number ?? null,
         eepn: eepn ?? null,
         efe: efe ?? null,
         esp,
@@ -10041,6 +10063,7 @@ function ExportView({
         efe: efe ?? null,
         valuation,
         norma,
+        accountant: membrete?.accountant ?? null,
         // El número de cada nota sale de su posición, no del orden de carga.
         noteSequence: numberNotes(layout, notes, sectionLabels),
         references,
@@ -10052,7 +10075,9 @@ function ExportView({
           ? {
               categories: anexoI.categories,
               grandTotals: anexoI.grandTotals,
-              prior: anexoI.prior,
+              prior: anexoIMuestraComparativo(sectionLabels)
+                ? anexoI.prior
+                : null,
             }
           : null,
         cmv: cmv?.hasData

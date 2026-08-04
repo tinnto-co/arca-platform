@@ -19,6 +19,8 @@ import { saveFinancialStatementNotes, type FsNote } from '@/actions/accounting';
 import { ArcaCard } from '@/components/dashboard/shared';
 import {
   DEFAULT_SECTION_LABELS,
+  OPCION_ANEXO_I_COMPARATIVO,
+  anexoIMuestraComparativo,
   defaultDocumentLayout,
   resolveDocumentLayout,
   type LayoutEntry,
@@ -48,8 +50,7 @@ export function OrdenDocumento({
   const [layout, setLayout] = useState<LayoutEntry[]>(
     initialLayout.length > 0 ? initialLayout : defaultDocumentLayout(notes)
   );
-  const [labels, setLabels] =
-    useState<Record<string, string>>(initialLabels);
+  const [labels, setLabels] = useState<Record<string, string>>(initialLabels);
   /** Fila que se está arrastrando y fila sobre la que caería. */
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
@@ -227,10 +228,31 @@ export function OrdenDocumento({
         })}
       </div>
 
+      <div className="px-5 py-3 border-t border-[var(--arca-border)]">
+        <label className="flex items-center gap-2 text-[12px] text-[var(--arca-ink-2)] cursor-pointer">
+          <input
+            type="checkbox"
+            disabled={!canEdit}
+            checked={anexoIMuestraComparativo(labels)}
+            onChange={(e) =>
+              setLabels((l) => ({
+                ...l,
+                [OPCION_ANEXO_I_COMPARATIVO]: e.target.checked ? 'si' : 'no',
+              }))
+            }
+          />
+          El Anexo I muestra la columna del ejercicio anterior
+        </label>
+        <p className="text-[11px] text-[var(--arca-ink-3)] mt-1 pl-6">
+          El modelo del Consejo la trae; el balance del estudio sale con una
+          sola columna de neto.
+        </p>
+      </div>
+
       <div className="px-5 py-3 border-t border-[var(--arca-border)] text-[11.5px] text-[var(--arca-ink-3)]">
-        Arrastrá desde el asa o usá las flechas. Los anexos se pueden
-        renombrar: dejalos en blanco para usar el nombre propuesto. Una sección
-        sin datos no se imprime, esté donde esté.
+        Arrastrá desde el asa o usá las flechas. Los anexos se pueden renombrar:
+        dejalos en blanco para usar el nombre propuesto. Una sección sin datos
+        no se imprime, esté donde esté.
       </div>
     </ArcaCard>
   );
