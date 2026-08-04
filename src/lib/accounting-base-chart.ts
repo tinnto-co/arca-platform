@@ -130,12 +130,10 @@ export const BASE_CHART: BaseAccountSeed[] = [
     inflationNature: 'no_monetaria_valor_corriente',
   }),
 
+  // Todo el rubro es monetario y cuenta como equivalente de efectivo: es el
+  // criterio que confirmó el estudio.
   G('1.1.02', 'Inversiones temporarias', 'inversiones_temporarias'),
-  // Un plazo fijo en pesos es un crédito de importe nominal fijo: es monetario,
-  // a diferencia del resto del rubro (FCI y títulos van a cotización de cierre).
-  I('1.1.02.001', 'Plazo fijo', 'inversiones_temporarias', 'debit', {
-    inflationNature: 'monetaria',
-  }),
+  I('1.1.02.001', 'Plazo fijo', 'inversiones_temporarias', 'debit'),
   I(
     '1.1.02.002',
     'Fondos comunes de inversión',

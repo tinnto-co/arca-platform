@@ -449,6 +449,17 @@ export function AjustePorInflacion({
         )}
       </ArcaCard>
 
+      {/* El cálculo tarda unos segundos y hasta ahora la pantalla quedaba con
+          el cabezal solo, sin nada debajo: parecía rota. Y es justo la
+          pantalla a la que el ESP manda cuando falta generar el ajuste. */}
+      {isLoading && (
+        <ArcaCard>
+          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+            Calculando el ajuste del ejercicio…
+          </div>
+        </ArcaCard>
+      )}
+
       {/* ── Avisos ── */}
       {error && (
         <Banner tone="error" icon={AlertTriangle} title="No se pudo calcular">
@@ -514,6 +525,24 @@ export function AjustePorInflacion({
             .join(', ')}
           {preview.accountsWithoutNature.length > 6 && '…'}. Revisala en el plan
           de cuentas si alguna necesita otro tratamiento.
+        </Banner>
+      )}
+
+      {preview && !blocked && preview.depreciationMismatch.length > 0 && (
+        <Banner
+          tone="warn"
+          icon={AlertTriangle}
+          title="La amortización del mayor no coincide con el registro de bienes de uso"
+        >
+          El coeficiente de la amortización sale del registro de bienes, así que
+          si los totales difieren el ajuste queda mal.{' '}
+          {preview.depreciationMismatch
+            .map(
+              (d) =>
+                `${d.code}: mayor ${fmtMoney(d.ledger)} vs registro ${fmtMoney(d.register)}`
+            )
+            .join(' · ')}
+          . Revisá el asiento de amortización o las altas del registro.
         </Banner>
       )}
 

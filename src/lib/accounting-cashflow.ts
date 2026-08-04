@@ -32,7 +32,11 @@ export const CASH_FLOW_ACTIVITY_ORDER: CashFlowActivity[] = [
  * de efectivo si son de altísima liquidez y vencimiento menor a tres meses, y
  * eso depende del instrumento. El contador puede marcarlas cuenta por cuenta.
  */
-export const CASH_ACCOUNT_GROUPS = ['caja_bancos'] as const;
+export const CASH_ACCOUNT_GROUPS = [
+  'caja_bancos',
+  // El estudio cuenta plazos fijos y FCI como equivalentes de efectivo.
+  'inversiones_temporarias',
+] as const;
 
 /**
  * Actividad por defecto de cada rubro. Es solo la propuesta del sistema; la
@@ -61,7 +65,6 @@ export const DEFAULT_CASH_FLOW_ACTIVITY_BY_GROUP: Record<
   otros_resultados_neg: 'operating',
   impuesto_ganancias: 'operating',
   // Inversión: colocación y recupero de fondos en activos.
-  inversiones_temporarias: 'investing',
   inversiones_permanentes: 'investing',
   bienes_uso: 'investing',
   intangibles: 'investing',

@@ -75,7 +75,11 @@ export const DEFAULT_INFLATION_NATURE_BY_GROUP: Record<
 > = {
   // Activo corriente
   caja_bancos: 'monetaria',
-  inversiones_temporarias: 'no_monetaria_valor_corriente',
+  // Monetarias por decisión del estudio: las consideran equivalentes de
+  // efectivo (integran el efectivo del EFE), y el efectivo es monetario. Si
+  // fueran no monetarias no generarían RECPAM y el control cruzado del EFE
+  // —variación del efectivo menos flujos reexpresados— dejaría de cerrar.
+  inversiones_temporarias: 'monetaria',
   creditos_ventas: 'monetaria',
   otros_creditos_cte: 'monetaria',
   bienes_cambio: 'no_monetaria_costo',
@@ -84,7 +88,10 @@ export const DEFAULT_INFLATION_NATURE_BY_GROUP: Record<
   creditos_largo_plazo: 'monetaria',
   bienes_uso: 'no_monetaria_costo',
   intangibles: 'no_monetaria_costo',
-  inversiones_permanentes: 'no_monetaria_costo',
+  // El estudio las valúa a VPP, que ya está en moneda de cierre. Hoy ningún
+  // cliente tiene participaciones; si apareciera alguna a costo, hay que
+  // reclasificarla a mano.
+  inversiones_permanentes: 'no_monetaria_valor_corriente',
   otros_activos_no_cte: 'monetaria',
   // Pasivo
   deudas_comerciales: 'monetaria',
@@ -117,21 +124,19 @@ export const DEFAULT_INFLATION_NATURE_BY_GROUP: Record<
  * Rubros donde el default no alcanza y el contador tiene que confirmar, con el
  * motivo. Alimenta la pantalla de validación de clasificación (AXI-2).
  */
+/**
+ * Rubros donde la clasificación no se puede deducir del rubro solo. El resto
+ * quedó cerrado con las respuestas del estudio (julio 2026): moneda extranjera
+ * e inversiones temporarias no se reexpresan, los otros créditos son todos
+ * monetarios, los anticipos van en una sola cuenta monetaria, los bienes de
+ * cambio se reexpresan por el mes de origen de la existencia y los resultados
+ * financieros van por diferencia.
+ */
 export const INFLATION_NATURE_NEEDS_REVIEW: Record<string, string> = {
   caja_bancos:
     'Las cuentas en moneda extranjera no se reexpresan (ya están al TC de cierre). Deben ir en cuenta separada.',
-  inversiones_temporarias:
-    'Plazo fijo en pesos es monetario; FCI y títulos a cotización de cierre no se reexpresan.',
-  otros_creditos_cte:
-    'Los anticipos a proveedores que fijan precio son no monetarios y se reexpresan.',
-  bienes_cambio:
-    'A costo se reexpresan; a valor neto de realización ya están en moneda de cierre.',
-  deudas_comerciales:
-    'Los anticipos de clientes que fijan precio son no monetarios y se reexpresan.',
   inversiones_permanentes:
-    'A costo se reexpresan; medidas a valor patrimonial proporcional, no.',
-  gastos_financieros:
-    'Los resultados financieros y por tenencia se determinan por diferencia, no por coeficiente.',
+    'Medidas a VPP no se reexpresan; si alguna quedara a costo, hay que reexpresarla.',
   otros_activos_cte: 'Depende de la naturaleza de cada cuenta.',
   otros_activos_no_cte: 'Depende de la naturaleza de cada cuenta.',
 };
@@ -195,6 +200,16 @@ export interface InflationAccountInput {
   opening?: number;
   /** Movimientos netos del ejercicio, agrupados por mes. */
   monthly?: MonthlyMovement[];
+  /**
+   * Coeficiente único para los movimientos del ejercicio, en lugar del de cada
+   * mes. El saldo de apertura no se ve afectado: sigue yendo por el coeficiente
+   * del cierre anterior.
+   *
+   * Lo usan las amortizaciones de bienes de uso, que llevan el coeficiente del
+   * bien que amortizan y no el del mes en que se asentaron —ver
+   * `accounting-fixed-asset-inflation.ts`.
+   */
+  monthlyCoefficient?: number | null;
 }
 
 export interface InflationEngineInput {
@@ -334,12 +349,13 @@ export function computeInflationAdjustment(
 
     for (const mv of acc.monthly ?? []) {
       if (Math.abs(mv.amount) < 0.005) continue;
-      const coef = reexpress
-        ? reexpressionCoefficient(
+      const coef = !reexpress
+        ? 1
+        : (acc.monthlyCoefficient ??
+          reexpressionCoefficient(
             closingIndex,
             indexFor(indexes, mv.year, mv.month)
-          )
-        : 1;
+          ));
       const rawAdj = mv.amount * coef;
       rawHistorical += mv.amount;
       rawAdjusted += rawAdj;

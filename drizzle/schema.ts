@@ -66,6 +66,15 @@ export const representative = pgTable("representative", {
   index('idx_representative_org').on(table.organizationId),
 ]);
 
+/**
+ * Norma contable aplicada. La RT 54 (T.O. RT 59) rige para entes pequeños y es
+ * la que usa el estudio en la mayoría de sus balances; la RT 6 es la general.
+ */
+export const accountingFrameworkEnum = pgEnum("accounting_framework", [
+  "rt54",
+  "rt6",
+]);
+
 export const client = pgTable("client", {
   id: uuid("id").primaryKey().defaultRandom(),
   representativeId: uuid("representative_id").references(() => representative.id, {
@@ -146,6 +155,15 @@ export const client = pgTable("client", {
   fechaInscripcion: timestamp("fecha_inscripcion", { mode: "date" }),
   /** Número de inscripción en la Inspección General de Justicia (IGJ). */
   numeroInscripcion: text("numero_inscripcion"),
+  /**
+   * Norma bajo la que se preparan los Estados Contables. Define cómo se cita
+   * el ajuste por inflación en los estados y en la carátula: un ente pequeño
+   * aplica la RT 54 (T.O. RT 59) y el resto, la RT 6. El mecanismo del ajuste
+   * es el mismo; lo que cambia es la norma que se invoca.
+   */
+  accountingFramework: accountingFrameworkEnum("accounting_framework")
+    .notNull()
+    .default("rt54"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -1744,6 +1762,20 @@ export const fiscalYear = pgTable(
     status: fiscalYearStatusEnum("status").notNull().default("open"),
     /** N° de ejercicio (1, 2, 3...). */
     number: integer("number").notNull(),
+    /**
+     * Ejercicio cargado solo como referencia para la columna comparativa, con
+     * los saldos del balance ya presentado. No se lleva contablemente: no exige
+     * cierre ni ajuste por inflación, y no cuenta como el ejercicio abierto de
+     * la empresa.
+     */
+    referenceOnly: boolean("reference_only").notNull().default(false),
+    /**
+     * Los saldos cargados ya están expresados en moneda de cierre de ese
+     * ejercicio. Es lo normal cuando se transcriben de un balance presentado,
+     * porque ya viene ajustado. Si son históricos sin ajustar, el comparativo
+     * es aproximado y los estados lo advierten.
+     */
+    statementsAdjusted: boolean("statements_adjusted").notNull().default(true),
     closedAt: timestamp("closed_at"),
     closedBy: text("closed_by").references(() => user.id, { onDelete: "set null" }),
     reopenedAt: timestamp("reopened_at"),
@@ -1922,8 +1954,25 @@ export const financialStatement = pgTable(
       .notNull()
       .references(() => fiscalYear.id, { onDelete: "cascade" }),
     status: financialStatementStatusEnum("status").notNull().default("draft"),
-    /** Notas markdown en orden de exposición: [{ id, title, content }]. */
+    /** Notas markdown del contador: [{ id, title, content }]. */
     notes: jsonb("notes").notNull().default([]),
+    /**
+     * Orden de las secciones del documento, incluidas las notas: ["note:n-1",
+     * "composicion", "note:n-2"]. De ahí sale el número de cada nota. Vacío =
+     * orden por defecto, así que los balances viejos siguen andando.
+     */
+    layout: jsonb("layout").notNull().default([]),
+    /**
+     * Rótulo de cada sección cuando el contador lo cambia. Los anexos no se
+     * pueden numerar solos: el estudio llama "Anexo I" al costo de mercadería
+     * vendida y deja el de bienes de uso sin número.
+     */
+    sectionLabels: jsonb("section_labels").notNull().default({}),
+    /**
+     * Informe del auditor de este balance, ya rellenado y editable:
+     * { body, lugar, fecha }. Nulo hasta que se emite.
+     */
+    auditReport: jsonb("audit_report"),
     approvedAt: timestamp("approved_at"),
     approvedBy: text("approved_by").references(() => user.id, {
       onDelete: "set null",
@@ -1945,6 +1994,39 @@ export const financialStatement = pgTable(
     unique("financial_statement_fy_unique").on(table.fiscalYearId),
     index("idx_financial_statement_client").on(table.clientId),
   ],
+);
+
+/**
+ * Plantillas del informe del auditor, por estudio.
+ *
+ * El informe es casi todo texto normativo que no cambia entre empresas: lo que
+ * varía son datos que el sistema ya tiene y se rellenan como variables
+ * (`{{empresa}}`, `{{cierre}}`…). Guardar la plantilla una vez y rellenarla por
+ * balance evita reescribir cuatro páginas de norma por cliente.
+ */
+export const auditReportTemplate = pgTable(
+  "audit_report_template",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** Nombre con el que se elige (ej. "Opinión favorable — SRL"). */
+    name: text("name").notNull(),
+    /** Cuerpo markdown con variables entre llaves dobles. */
+    body: text("body").notNull(),
+    /** La que se propone al abrir un balance sin informe cargado. */
+    isDefault: boolean("is_default").notNull().default(false),
+    createdBy: text("created_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [index("idx_audit_report_template_org").on(table.organizationId)],
 );
 
 /**

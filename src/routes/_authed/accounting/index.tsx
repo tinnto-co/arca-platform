@@ -1,18 +1,32 @@
 import { createFileRoute, redirect, Link } from '@tanstack/react-router';
 import { z } from 'zod';
 import { listOrgModules } from '@/actions/admin';
-import { useMemo, useState, useEffect, Fragment } from 'react';
+import {
+  useMemo,
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  Fragment,
+} from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
-  BookOpen,
   Plus,
   ChevronRight,
   ChevronDown,
+  ChevronsUpDown,
+  ChevronsDownUp,
   FileText,
   Scale,
+  BookOpen,
   List,
+  Inbox,
+  TrendingUp,
+  Percent,
+  FileBarChart,
+  ScrollText,
   Pencil,
   Trash2,
   RotateCcw,
@@ -38,18 +52,31 @@ import {
   RefreshCw,
   CheckSquare,
   Square,
-  Inbox,
   AlertTriangle,
   Boxes,
-  TrendingUp,
-  Sparkles,
   CheckCircle2,
   XCircle,
-  FileBarChart,
-  ScrollText,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { ArcaCard } from '@/components/dashboard/shared';
+import { SaldosReferencia } from '@/components/accounting/SaldosReferencia';
+import { OrdenDocumento } from '@/components/accounting/OrdenDocumento';
+import { InformeAuditor } from '@/components/accounting/InformeAuditor';
+import {
+  fechaLarga,
+  rangoAnexos,
+  rangoNotas,
+} from '@/lib/accounting-audit-report';
+import { frameworkCite } from '@/lib/accounting-labels';
+import {
+  defaultNoteLayout,
+  numberNotes,
+  referenceForGroup,
+  resolveDocumentLayout,
+  anexoIMuestraComparativo,
+  ANEXO_REFERENCE_BY_GROUP,
+  type LayoutEntry,
+} from '@/lib/accounting-document';
 import {
   Select,
   SelectContent,
@@ -113,6 +140,7 @@ import {
   getESP,
   getER,
   getEEPN,
+  type EepnRow,
   getEFE,
   getAnexoII,
   getAuditLog,
@@ -166,6 +194,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import { ImportarPlanDialog } from '@/components/accounting/ImportarPlanDialog';
 import {
@@ -238,6 +267,24 @@ const accountingSearchSchema = z.object({
   tab: z.enum(TAB_IDS).optional(),
 });
 
+/**
+ * Ejercicio que se muestra cuando el usuario todavía no eligió ninguno.
+ *
+ * Los de referencia quedan afuera: existen solo para alimentar la columna
+ * comparativa y están en estado «abierto», así que sin esto se llevaban el
+ * lugar del ejercicio que la empresa está liquidando de verdad.
+ */
+function defaultFiscalYearId(
+  years: { id: string; status: string; referenceOnly?: boolean }[]
+): string {
+  return (
+    years.find((y) => y.status === 'open' && !y.referenceOnly)?.id ??
+    years.find((y) => !y.referenceOnly)?.id ??
+    years[0]?.id ??
+    ''
+  );
+}
+
 export const Route = createFileRoute('/_authed/accounting/')({
   validateSearch: accountingSearchSchema,
   beforeLoad: async () => {
@@ -253,6 +300,29 @@ export const Route = createFileRoute('/_authed/accounting/')({
 /* ─── Shared styles ─── */
 const INPUT_CLASS =
   'h-8 px-2.5 text-[12.5px] border border-[var(--arca-border)] rounded-[8px] bg-[var(--arca-surface)] text-[var(--arca-ink)] focus:outline-none';
+
+/* ─── Barra de filtros y acciones ─── */
+
+/**
+ * Las barras que van arriba de las tablas se leen en tres zonas: a la
+ * izquierda lo que achica lo que se ve (filtros), a la derecha lo que se hace
+ * (vista y acciones), y una línea que las separa.
+ *
+ * Antes los filtros iban en un renglón y todo lo demás en otro, pegado a la
+ * derecha: la segunda línea juntaba controles de vista, operaciones masivas y
+ * la acción principal sin nada que los distinguiera, y el hueco de la
+ * izquierda la hacía leer como una tira suelta.
+ */
+const TOOLBAR_ACCIONES = 'ml-auto flex items-center gap-1.5';
+const TOOLBAR_SEP = 'w-px h-5 mx-1 shrink-0 bg-[var(--arca-border)]';
+const TOOLBAR_BTN =
+  'flex items-center gap-1.5 h-7 px-2.5 text-[11.5px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] transition-colors';
+/** Solo icono: los controles de vista se repiten en cada pantalla y el rótulo
+ *  costaba el ancho que necesitaban los filtros. El nombre va en el `title`. */
+const TOOLBAR_ICON_BTN =
+  'flex items-center justify-center h-7 w-7 rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors';
+const TOOLBAR_BTN_PRIMARIO =
+  'flex items-center gap-1.5 h-7 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90 transition-opacity';
 
 /* ─── Badges ─── */
 function TypeBadge({ type }: { type: 'imputable' | 'group' }) {
@@ -289,6 +359,131 @@ function OriginBadge({ scope }: { scope: 'base' | 'custom' }) {
 
 /* ─── Tab bar ─── */
 
+/**
+ * Las solapas van de más usada a menos usada, y los grupos también. Ese orden
+ * es el que decide qué queda a la vista: cuando no entran todas, el desborde
+ * come desde el final, así que lo que cae en «Más» es lo que menos se abre.
+ *
+ * El criterio, de mayor a menor: lo de todos los días (registrar asientos,
+ * contabilizar comprobantes, resolver pendientes), lo que se consulta seguido
+ * (mayor y balance), lo del cierre —intenso, pero una vez por ejercicio—, la
+ * configuración —que se arma al dar de alta la empresa y después casi no se
+ * toca— y al final el log de auditoría, de solo lectura, que se mira cuando
+ * algo salió mal.
+ *
+ * Los grupos se separan con una línea; no llevan rótulo porque costaría el
+ * renglón que estamos tratando de ahorrar.
+ *
+ * En módulo y no adentro del componente para que la lista sea estable: la
+ * medición del ancho depende de ella y rehacerla en cada render la dispararía
+ * de nuevo cada vez.
+ */
+const SOLAPAS: {
+  id: Tab;
+  label: string;
+  grupo: string;
+  icon: React.ElementType;
+  ready: boolean;
+  ownerOnly?: boolean;
+}[] = [
+  {
+    id: 'asientos',
+    label: 'Asientos',
+    grupo: 'Registración',
+    icon: FileText,
+    ready: true,
+  },
+  // Las reglas de mapeo son las que arman los asientos automáticos, así que
+  // van pegadas a Asientos y antes de Contabilizar, que es quien las aplica.
+  {
+    id: 'reglas',
+    label: 'Reglas',
+    grupo: 'Registración',
+    icon: Workflow,
+    ready: true,
+  },
+  {
+    id: 'contabilizar',
+    label: 'Contabilizar',
+    grupo: 'Registración',
+    icon: Zap,
+    ready: true,
+  },
+  // Pendientes trae un contador que reclama atención: no debería esconderse.
+  {
+    id: 'pendientes',
+    label: 'Pendientes',
+    grupo: 'Registración',
+    icon: Inbox,
+    ready: true,
+  },
+  {
+    id: 'mayor',
+    label: 'Mayor',
+    grupo: 'Consulta',
+    icon: BookOpen,
+    ready: true,
+  },
+  {
+    id: 'balance',
+    label: 'Balance',
+    grupo: 'Consulta',
+    icon: Scale,
+    ready: true,
+  },
+  {
+    id: 'estados',
+    label: 'Estados Contables',
+    grupo: 'Cierre',
+    icon: FileBarChart,
+    ready: true,
+  },
+  {
+    id: 'ajuste',
+    label: 'Ajuste por inflación',
+    grupo: 'Cierre',
+    icon: Percent,
+    ready: true,
+  },
+  {
+    id: 'bienes',
+    label: 'Bienes de uso',
+    grupo: 'Cierre',
+    icon: Boxes,
+    ready: true,
+  },
+  // La serie la carga el cron mensual: se entra solo si falta un mes.
+  {
+    id: 'indices',
+    label: 'Índices',
+    grupo: 'Cierre',
+    icon: TrendingUp,
+    ready: true,
+  },
+  {
+    id: 'plan',
+    label: 'Plan de cuentas',
+    grupo: 'Configuración',
+    icon: List,
+    ready: true,
+  },
+  {
+    id: 'ejercicios',
+    label: 'Ejercicios',
+    grupo: 'Configuración',
+    icon: CalendarDays,
+    ready: true,
+  },
+  {
+    id: 'auditoria',
+    label: 'Auditoría',
+    grupo: 'Control',
+    icon: ScrollText,
+    ready: true,
+    ownerOnly: true,
+  },
+];
+
 function TabBar({
   active,
   onChange,
@@ -300,74 +495,198 @@ function TabBar({
   pendingCount?: number;
   isOwner?: boolean;
 }) {
-  const tabs: {
-    id: Tab;
-    label: string;
-    icon: React.ElementType;
-    ready: boolean;
-    ownerOnly?: boolean;
-  }[] = [
-    { id: 'plan', label: 'Plan de cuentas', icon: List, ready: true },
-    { id: 'ejercicios', label: 'Ejercicios', icon: CalendarDays, ready: true },
-    { id: 'asientos', label: 'Asientos', icon: FileText, ready: true },
-    { id: 'mayor', label: 'Mayor', icon: BookOpen, ready: true },
-    { id: 'balance', label: 'Balance', icon: Scale, ready: true },
-    { id: 'reglas', label: 'Reglas', icon: Workflow, ready: true },
-    { id: 'contabilizar', label: 'Contabilizar', icon: Zap, ready: true },
-    { id: 'pendientes', label: 'Pendientes', icon: Inbox, ready: true },
-    { id: 'bienes', label: 'Bienes de uso', icon: Boxes, ready: true },
-    { id: 'indices', label: 'Índices', icon: TrendingUp, ready: true },
-    {
-      id: 'ajuste',
-      label: 'Ajuste por inflación',
-      icon: Sparkles,
-      ready: true,
-    },
-    {
-      id: 'estados',
-      label: 'Estados Contables',
-      icon: FileBarChart,
-      ready: true,
-    },
-    {
-      id: 'auditoria',
-      label: 'Auditoría',
-      icon: ScrollText,
-      ready: true,
-      ownerOnly: true,
-    },
-  ];
+  const solapas = useMemo(
+    () => SOLAPAS.filter((t) => !t.ownerOnly || isOwner),
+    [isOwner]
+  );
+
+  const barRef = useRef<HTMLDivElement>(null);
+  const medidorRef = useRef<HTMLDivElement>(null);
+  /** Cuántas entran en el renglón; el resto cae en «Más». */
+  const [entran, setEntran] = useState(solapas.length);
+
+  /**
+   * Cuántas solapas entran se resuelve midiendo, no adivinando: los rótulos
+   * son de ancho variable y el ancho útil depende de la ventana.
+   *
+   * Se mide sobre una copia oculta que siempre tiene las trece. Medir sobre
+   * las visibles se realimentaría —esconder una agranda el sobrante, que
+   * vuelve a mostrarla— y la barra quedaría parpadeando.
+   */
+  useLayoutEffect(() => {
+    const bar = barRef.current;
+    const medidor = medidorRef.current;
+    if (!bar || !medidor) return;
+
+    const recalcular = () => {
+      const anchos = Array.from(medidor.children).map(
+        (c) => c.getBoundingClientRect().width
+      );
+      // El último hijo del medidor es el botón «Más».
+      const anchoMas = anchos[anchos.length - 1] ?? 0;
+      const anchoSolapa = anchos.slice(0, solapas.length);
+      const disponible = bar.getBoundingClientRect().width;
+      const GAP = 4;
+      const SEPARADOR = 1 + 8 * 2; // línea + su margen (mx-2)
+
+      const extra = (i: number) =>
+        anchoSolapa[i] +
+        (i === 0 ? 0 : GAP) +
+        (i > 0 && solapas[i].grupo !== solapas[i - 1].grupo ? SEPARADOR : 0);
+
+      const todas = anchoSolapa.reduce((s, _, i) => s + extra(i), 0);
+      if (todas <= disponible) {
+        setEntran(solapas.length);
+        return;
+      }
+
+      // Con «Más» en pantalla hay menos lugar, y la solapa activa tiene que
+      // entrar sí o sí: sin ella no queda ninguna señal de dónde estás.
+      const iActiva = solapas.findIndex((t) => t.id === active);
+      let usado = anchoMas + GAP;
+      let n = 0;
+      for (let i = 0; i < solapas.length; i++) {
+        const reservaActiva =
+          iActiva > -1 && iActiva >= i ? anchoSolapa[iActiva] + GAP : 0;
+        if (usado + extra(i) + reservaActiva > disponible) break;
+        usado += extra(i);
+        n = i + 1;
+      }
+      setEntran(n);
+    };
+
+    recalcular();
+    const ro = new ResizeObserver(recalcular);
+    ro.observe(bar);
+    return () => ro.disconnect();
+  }, [solapas, active]);
+
+  const enBarra = solapas.slice(0, entran);
+  const desbordan = solapas.slice(entran);
+  // La activa se muestra siempre, aunque le tocara caer en el menú. Y si se
+  // promueve a la barra sale del menú: figurar en los dos lados la duplica.
+  const activaEscondida = desbordan.find((t) => t.id === active);
+  const mostradas = activaEscondida ? [...enBarra, activaEscondida] : enBarra;
+  const enMenu = activaEscondida
+    ? desbordan.filter((t) => t.id !== active)
+    : desbordan;
+
+  const claseSolapa =
+    'flex items-center gap-1.5 px-2 h-7 rounded-[7px] text-[12.5px] font-medium transition-colors duration-[120ms] shrink-0 whitespace-nowrap';
+  const estiloSolapa = (id: Tab) => ({
+    // El activo se marca con fondo y no con subrayado: el subrayado colgaba
+    // del borde de la barra y dejó de tener dónde apoyarse.
+    background: active === id ? 'var(--arca-ink)' : 'transparent',
+    color: active === id ? 'var(--arca-surface)' : 'var(--arca-ink-3)',
+  });
+
+  const contenido = (tab: (typeof solapas)[number]) => (
+    <>
+      <tab.icon className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
+      {tab.label}
+      {tab.id === 'pendientes' && pendingCount > 0 && (
+        <span className="text-[9px] font-semibold px-1.5 py-px rounded-full bg-amber-100 text-amber-700">
+          {pendingCount}
+        </span>
+      )}
+      {!tab.ready && (
+        <span className="text-[9px] px-1 py-px rounded-full bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
+          pronto
+        </span>
+      )}
+    </>
+  );
+
   return (
-    // Con 13 solapas la barra desborda: scrollea sola en vez de arrastrar la página.
-    <div className="flex gap-1 mb-5 border-b border-[var(--arca-border)] overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      {tabs
-        .filter((tab) => !tab.ownerOnly || isOwner)
-        .map((tab) => (
+    /**
+     * Trece solapas no entran en un renglón. Scrollear de costado dejaba la
+     * activa fuera de la pantalla —la única señal de dónde estabas parado— y
+     * envolver costaba un renglón entero. Ahora entran las que entran y el
+     * resto cae en «Más», con la activa siempre presente.
+     *
+     * Sin iconos: eran 260px de los 572 que sobraban, y en un monitor de 1920
+     * alcanzan para que las trece entren sin abrir el menú.
+     */
+    <div
+      ref={barRef}
+      className="relative flex items-center gap-1 mb-5 pb-1.5 border-b border-[var(--arca-border)]"
+    >
+      {mostradas.map((tab, i) => (
+        <Fragment key={tab.id}>
+          {i > 0 && tab.grupo !== mostradas[i - 1].grupo && (
+            <span
+              aria-hidden
+              className="w-px h-4 mx-2 shrink-0 bg-[var(--arca-border)]"
+            />
+          )}
           <button
-            key={tab.id}
             onClick={() => onChange(tab.id)}
-            className="flex items-center gap-1.5 px-3 py-2 text-[12.5px] font-medium transition-colors duration-[120ms] border-b-2 -mb-px shrink-0 whitespace-nowrap"
-            style={{
-              color:
-                active === tab.id ? 'var(--arca-ink)' : 'var(--arca-ink-3)',
-              borderBottomColor:
-                active === tab.id ? 'var(--arca-ink)' : 'transparent',
-            }}
+            aria-current={active === tab.id ? 'page' : undefined}
+            title={`${tab.grupo} · ${tab.label}`}
+            className={claseSolapa}
+            style={estiloSolapa(tab.id)}
           >
-            <tab.icon className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
-            {tab.label}
-            {tab.id === 'pendientes' && pendingCount > 0 && (
-              <span className="text-[9px] font-semibold px-1.5 py-px rounded-full bg-amber-100 text-amber-700">
-                {pendingCount}
-              </span>
-            )}
-            {!tab.ready && (
-              <span className="text-[9px] px-1 py-px rounded-full bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
-                pronto
-              </span>
-            )}
+            {contenido(tab)}
           </button>
-        ))}
+        </Fragment>
+      ))}
+
+      {enMenu.length > 0 && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className={`${claseSolapa} ml-auto text-[var(--arca-ink-3)]`}
+              title="Solapas que no entran en el ancho de la ventana"
+            >
+              Más
+              <ChevronDown className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-48">
+            {enMenu.map((tab, i) => (
+              <Fragment key={tab.id}>
+                {i > 0 && tab.grupo !== enMenu[i - 1].grupo && (
+                  <DropdownMenuSeparator />
+                )}
+                <DropdownMenuItem onSelect={() => onChange(tab.id)}>
+                  <tab.icon
+                    className="w-3.5 h-3.5 shrink-0 text-[var(--arca-ink-3)]"
+                    strokeWidth={2}
+                  />
+                  {tab.label}
+                  {tab.id === 'pendientes' && pendingCount > 0 && (
+                    <span className="ml-auto text-[9px] font-semibold px-1.5 py-px rounded-full bg-amber-100 text-amber-700">
+                      {pendingCount}
+                    </span>
+                  )}
+                </DropdownMenuItem>
+              </Fragment>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+
+      {/* Copia oculta para medir: siempre con las trece y el botón «Más».
+          Va dentro de una caja de 0×0 recortada porque mide más que la barra
+          y, aun siendo absoluta, su desborde le agregaba scroll horizontal a
+          todo el módulo. `w-max` para que las solapas conserven su ancho
+          natural pese a que el contenedor mida cero. */}
+      <div
+        aria-hidden
+        className="absolute left-0 top-0 h-0 w-0 overflow-hidden pointer-events-none"
+      >
+        <div ref={medidorRef} className="flex items-center w-max">
+          {solapas.map((tab) => (
+            <span key={tab.id} className={claseSolapa}>
+              {contenido(tab)}
+            </span>
+          ))}
+          <span className={claseSolapa}>
+            Más
+            <ChevronDown className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
+          </span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -378,7 +697,12 @@ function AccountingPage() {
   // Guarda en runtime: el search viene de la URL, puede traer cualquier cosa.
   const [tab, setTab] = useState<Tab>(() => {
     const t = String(search.tab ?? '');
-    return (TAB_IDS as readonly string[]).includes(t) ? (t as Tab) : 'plan';
+    // Se entra por la primera solapa, que es la más usada. Antes se entraba
+    // por «Plan de cuentas», que quedó entre las que menos se abren: al
+    // ordenar por uso, la de arranque terminaba promovida al extremo derecho.
+    return (TAB_IDS as readonly string[]).includes(t)
+      ? (t as Tab)
+      : SOLAPAS[0].id;
   });
   const [clientId, setClientId] = useState<string>(() =>
     String(search.clientId ?? '')
@@ -851,13 +1175,16 @@ function PlanDeCuentas({
       <ArcaCard>
         {/* Toolbar */}
         <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-[var(--arca-border)]">
-          <div className="relative">
+          {/* Elástico a propósito: es el único control que puede ceder ancho.
+              Con ancho fijo, la barra entraba por un pelo y cualquier
+              diferencia de renderizado la mandaba a un segundo renglón. */}
+          <div className="relative flex-1 min-w-[150px] max-w-[260px]">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--arca-ink-3)]" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Buscar código o nombre…"
-              className={`${INPUT_CLASS} pl-7 w-56`}
+              className={`${INPUT_CLASS} pl-7 w-full`}
             />
           </div>
 
@@ -865,7 +1192,7 @@ function PlanDeCuentas({
             value={rubro === '' ? 'all' : rubro}
             onValueChange={(v) => setRubro(v === 'all' ? '' : v)}
           >
-            <SelectTrigger size="sm" className="w-52 text-[12.5px]">
+            <SelectTrigger size="sm" className="w-44 text-[12.5px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -907,26 +1234,39 @@ function PlanDeCuentas({
             Solo activas
           </label>
 
-          <div className="ml-auto flex items-center gap-1.5">
+          {/* A la derecha, lo que se hace: primero abrir/cerrar el árbol, y
+              después las acciones. Las de armado inicial —plantillas, importar,
+              plan base— van juntas en un menú: se usan al dar de alta la
+              empresa y casi nunca más, pero ocupaban media barra. */}
+          <div className={TOOLBAR_ACCIONES}>
+            {/* Delimita las zonas aunque no sobre ancho: sin esto, cuando la
+                barra se llena los filtros y las acciones quedan pegados. */}
+            <span aria-hidden className={TOOLBAR_SEP} />
             <button
               onClick={expandAll}
-              className="h-7 px-2.5 text-[11.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors"
+              title="Expandir todo el árbol"
+              aria-label="Expandir todo el árbol"
+              className={TOOLBAR_ICON_BTN}
             >
-              Expandir
+              <ChevronsUpDown className="w-3.5 h-3.5" strokeWidth={2} />
             </button>
             <button
               onClick={collapseAll}
-              className="h-7 px-2.5 text-[11.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors"
+              title="Colapsar todo el árbol"
+              aria-label="Colapsar todo el árbol"
+              className={TOOLBAR_ICON_BTN}
             >
-              Colapsar
+              <ChevronsDownUp className="w-3.5 h-3.5" strokeWidth={2} />
             </button>
             {isOwner && (
               <>
+                <span aria-hidden className={TOOLBAR_SEP} />
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <button className="flex items-center gap-1.5 h-7 px-2.5 text-[11.5px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] transition-colors">
-                      <Download className="w-3 h-3" strokeWidth={2} />
-                      Plantilla
+                    <button className={TOOLBAR_BTN}>
+                      <FileSpreadsheet className="w-3 h-3" strokeWidth={2} />
+                      Importar / Exportar
+                      <ChevronDown className="w-3 h-3" strokeWidth={2} />
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-64">
@@ -963,28 +1303,35 @@ function PlanDeCuentas({
                         </span>
                       </div>
                     </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => setImportOpen(true)}>
+                      <Upload className="w-3.5 h-3.5" />
+                      <div className="flex flex-col">
+                        <span>Importar desde Excel</span>
+                        <span className="text-[11px] text-[var(--arca-ink-3)]">
+                          Cargar el plan desde una planilla
+                        </span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setFormMode({ kind: 'base-create' })}
+                    >
+                      <Layers className="w-3.5 h-3.5" />
+                      <div className="flex flex-col">
+                        <span>Nueva cuenta del plan base</span>
+                        <span className="text-[11px] text-[var(--arca-ink-3)]">
+                          Se agrega al plan que comparten las empresas
+                        </span>
+                      </div>
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
                 <button
-                  onClick={() => setImportOpen(true)}
-                  className="flex items-center gap-1.5 h-7 px-2.5 text-[11.5px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] transition-colors"
-                >
-                  <Upload className="w-3 h-3" strokeWidth={2} />
-                  Importar
-                </button>
-                <button
-                  onClick={() => setFormMode({ kind: 'base-create' })}
-                  className="flex items-center gap-1.5 h-7 px-2.5 text-[11.5px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] transition-colors"
-                >
-                  <Layers className="w-3 h-3" strokeWidth={2} />
-                  Plan base
-                </button>
-                <button
                   onClick={() => setFormMode({ kind: 'custom' })}
-                  className="flex items-center gap-1.5 h-7 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90 transition-opacity"
+                  className={TOOLBAR_BTN_PRIMARIO}
                 >
                   <Plus className="w-3 h-3" strokeWidth={2.5} />
-                  Nueva cuenta propia
+                  Nueva cuenta
                 </button>
               </>
             )}
@@ -1735,12 +2082,12 @@ function Ejercicios({
     queryFn: () => getFiscalYears({ data: { clientId } }),
   });
 
+  // Por defecto se muestra el ejercicio que se está llevando, no uno de
+  // referencia: esos solo guardan los saldos de un balance anterior.
   const effectiveFyId =
-    selectedFyId !== ''
-      ? selectedFyId
-      : (fiscalYears.find((y) => y.status === 'open')?.id ??
-        fiscalYears[0]?.id ??
-        '');
+    selectedFyId !== '' ? selectedFyId : defaultFiscalYearId(fiscalYears);
+  const selectedFyIsReference =
+    fiscalYears.find((y) => y.id === effectiveFyId)?.referenceOnly ?? false;
 
   const { data: detail } = useQuery({
     queryKey: ['accounting', 'fy-detail', effectiveFyId],
@@ -1832,10 +2179,22 @@ function Ejercicios({
               <span className="text-[var(--arca-ink-3)]">
                 {fmtFecha(y.startDate)} – {fmtFecha(y.endDate)}
               </span>
-              <FyStatusBadge status={y.status} />
-              <span className="text-[11px] text-[var(--arca-ink-3)]">
-                {y.periodsClosed}/{y.periodsTotal} cerrados
-              </span>
+              {y.referenceOnly ? (
+                <span
+                  className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                  style={{ background: '#eef2ff', color: '#4338ca' }}
+                  title="Cargado solo para la columna comparativa. No se cierra ni se ajusta."
+                >
+                  Referencia
+                </span>
+              ) : (
+                <>
+                  <FyStatusBadge status={y.status} />
+                  <span className="text-[11px] text-[var(--arca-ink-3)]">
+                    {y.periodsClosed}/{y.periodsTotal} cerrados
+                  </span>
+                </>
+              )}
             </button>
           );
         })}
@@ -1875,13 +2234,36 @@ function Ejercicios({
         </ArcaCard>
       )}
 
-      {/* Checklist de cierre de ejercicio (US 5.1.1) */}
-      {detail && effectiveFyId && (
+      {/* Checklist de cierre de ejercicio (US 5.1.1). Los ejercicios de
+          referencia no se cierran: solo guardan los saldos del balance anterior. */}
+      {detail && effectiveFyId && !selectedFyIsReference && (
         <CierreChecklist
           clientId={clientId}
           fiscalYearId={effectiveFyId}
           isOwner={isOwner}
         />
+      )}
+
+      {detail && selectedFyIsReference && (
+        <>
+          <ArcaCard className="mt-4">
+            <div className="px-5 py-4 text-[12.5px] text-[var(--arca-ink-2)]">
+              <div className="font-semibold text-[var(--arca-ink)]">
+                Ejercicio de referencia
+              </div>
+              <div className="mt-0.5 text-[var(--arca-ink-3)]">
+                Se cargó para alimentar la columna comparativa de los Estados
+                Contables. No se cierra ni se ajusta por inflación: alcanza con
+                transcribir abajo los saldos del balance ya presentado.
+              </div>
+            </div>
+          </ArcaCard>
+          <SaldosReferencia
+            clientId={clientId}
+            fiscalYearId={effectiveFyId}
+            canWrite={isOwner}
+          />
+        </>
       )}
 
       {/* Log auditable */}
@@ -2182,6 +2564,11 @@ function CierreChecklist({
                 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600"
                 strokeWidth={2}
               />
+            ) : c.status === 'warn' ? (
+              <AlertTriangle
+                className="w-4 h-4 shrink-0 mt-0.5 text-amber-600"
+                strokeWidth={2}
+              />
             ) : (
               <XCircle
                 className="w-4 h-4 shrink-0 mt-0.5 text-red-600"
@@ -2198,7 +2585,9 @@ function CierreChecklist({
                   color:
                     c.status === 'pass'
                       ? 'var(--arca-ink-3)'
-                      : 'oklch(0.55 0.18 25)',
+                      : c.status === 'warn'
+                        ? 'oklch(0.58 0.13 75)'
+                        : 'oklch(0.55 0.18 25)',
                 }}
               >
                 {c.detail}
@@ -2210,9 +2599,11 @@ function CierreChecklist({
 
       <div className="flex items-center justify-between gap-3 px-5 py-3 border-t border-[var(--arca-border)]">
         <span className="text-[12px] text-[var(--arca-ink-3)]">
-          {data.canClose
-            ? 'Todas las validaciones pasan. Podés iniciar el cierre.'
-            : 'Resolvé los puntos en rojo para habilitar el cierre.'}
+          {!data.canClose
+            ? 'Resolvé los puntos en rojo para habilitar el cierre.'
+            : data.checks.some((c: YearEndCheck) => c.status === 'warn')
+              ? 'Podés iniciar el cierre. Revisá antes los puntos en ámbar: no bloquean, pero conviene resolverlos.'
+              : 'Todas las validaciones pasan. Podés iniciar el cierre.'}
         </span>
         {isOwner ? (
           <button
@@ -2541,6 +2932,11 @@ function ClosingWizard({
                         className="w-4 h-4 mt-0.5 text-emerald-600 shrink-0"
                         strokeWidth={2}
                       />
+                    ) : c.status === 'warn' ? (
+                      <AlertTriangle
+                        className="w-4 h-4 mt-0.5 text-amber-600 shrink-0"
+                        strokeWidth={2}
+                      />
                     ) : (
                       <XCircle
                         className="w-4 h-4 mt-0.5 text-red-600 shrink-0"
@@ -2549,7 +2945,15 @@ function ClosingWizard({
                     )}
                     <div>
                       <div className="text-[12.5px]">{c.label}</div>
-                      <div className="text-[11.5px] text-[var(--arca-ink-3)]">
+                      <div
+                        className="text-[11.5px]"
+                        style={{
+                          color:
+                            c.status === 'warn'
+                              ? 'oklch(0.58 0.13 75)'
+                              : 'var(--arca-ink-3)',
+                        }}
+                      >
                         {c.detail}
                       </div>
                     </div>
@@ -2653,6 +3057,13 @@ function ClosingWizard({
               } $ ${fmtMoney(Math.abs(wiz.resultado.net))}`}
               preview={wiz.refundicion.preview}
               done={done.refundicion}
+              blockedReason={
+                !wiz.inflation.applied
+                  ? 'Generá el ajuste por inflación antes de refundir'
+                  : wiz.inflation.stale
+                    ? 'Regenerá el ajuste por inflación: quedó desactualizado'
+                    : undefined
+              }
               doneLabel={
                 wiz.refundicion.entryNumber
                   ? `Registrado · Asiento N°${wiz.refundicion.entryNumber}`
@@ -2791,6 +3202,7 @@ function StageEntry({
   onApprove,
   onContinue,
   hideContinue,
+  blockedReason,
 }: {
   title: string;
   subtitle?: string;
@@ -2802,6 +3214,8 @@ function StageEntry({
   onApprove: (lines: EditLine[]) => void;
   onContinue?: () => void;
   hideContinue?: boolean;
+  /** Motivo por el que todavía no se puede registrar; deshabilita el botón. */
+  blockedReason?: string;
 }) {
   const [lines, setLines] = useState<EditLine[]>([]);
   const [balanced, setBalanced] = useState(preview.balanced);
@@ -2861,8 +3275,11 @@ function StageEntry({
               onClick={() =>
                 onApprove(lines.length ? lines : toEditLines(preview))
               }
-              disabled={pending || !balanced}
-              title={balanced ? undefined : 'El asiento no balancea'}
+              disabled={pending || !balanced || !!blockedReason}
+              title={
+                blockedReason ??
+                (balanced ? undefined : 'El asiento no balancea')
+              }
               className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
             >
               {pending ? 'Registrando…' : 'Aprobar y registrar'}
@@ -2895,16 +3312,28 @@ function CreateFiscalYearDialog({
 }) {
   const [start, setStart] = useState('');
   const [months, setMonths] = useState(12);
+  const [referenceOnly, setReferenceOnly] = useState(false);
+  const [statementsAdjusted, setStatementsAdjusted] = useState(true);
   const startFirst = firstOfMonth(start);
   const end = computeEnd(start, months);
 
   const mut = useMutation({
     mutationFn: () =>
       createFiscalYear({
-        data: { clientId, startDate: startFirst, endDate: end },
+        data: {
+          clientId,
+          startDate: startFirst,
+          endDate: end,
+          referenceOnly,
+          statementsAdjusted: referenceOnly ? statementsAdjusted : true,
+        },
       }),
     onSuccess: () => {
-      toast.success(`Ejercicio creado con sus ${months} períodos`);
+      toast.success(
+        referenceOnly
+          ? 'Ejercicio de referencia creado. Transcribí abajo los saldos del balance anterior.'
+          : `Ejercicio creado con sus ${months} períodos`
+      );
       onSaved();
     },
     onError: (e: Error) => toast.error(e.message),
@@ -2965,6 +3394,48 @@ function CreateFiscalYearDialog({
               </span>
             </div>
           )}
+
+          <div className="rounded-[8px] border border-[var(--arca-border)] px-3 py-2.5 space-y-2">
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={referenceOnly}
+                onChange={(e) => setReferenceOnly(e.target.checked)}
+                className="mt-0.5 accent-[var(--arca-navy-900)]"
+              />
+              <span>
+                <span className="text-[12.5px] font-medium text-[var(--arca-ink)]">
+                  Solo para el comparativo
+                </span>
+                <span className="block text-[11.5px] text-[var(--arca-ink-3)]">
+                  Para transcribir los saldos de un balance ya presentado. No
+                  hay que cerrarlo ni ajustarlo, y no ocupa el lugar del
+                  ejercicio abierto de la empresa.
+                </span>
+              </span>
+            </label>
+
+            {referenceOnly && (
+              <label className="flex items-start gap-2 cursor-pointer pl-6">
+                <input
+                  type="checkbox"
+                  checked={statementsAdjusted}
+                  onChange={(e) => setStatementsAdjusted(e.target.checked)}
+                  className="mt-0.5 accent-[var(--arca-navy-900)]"
+                />
+                <span>
+                  <span className="text-[12.5px] text-[var(--arca-ink)]">
+                    Los saldos ya están ajustados por inflación
+                  </span>
+                  <span className="block text-[11.5px] text-[var(--arca-ink-3)]">
+                    Es lo normal: un balance presentado ya viene en moneda de su
+                    cierre. Destildalo solo si vas a cargar valores históricos
+                    sin ajustar.
+                  </span>
+                </span>
+              </label>
+            )}
+          </div>
         </div>
 
         <DialogFooter>
@@ -3193,7 +3664,7 @@ function Asientos({
                 setFrom(e.target.value);
                 setPage(1);
               }}
-              className={`${INPUT_CLASS} w-36`}
+              className={`${INPUT_CLASS} w-32`}
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -3207,7 +3678,7 @@ function Asientos({
                 setTo(e.target.value);
                 setPage(1);
               }}
-              className={`${INPUT_CLASS} w-36`}
+              className={`${INPUT_CLASS} w-32`}
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -3221,7 +3692,7 @@ function Asientos({
                 setPage(1);
               }}
             >
-              <SelectTrigger size="sm" className="w-52 text-[12.5px]">
+              <SelectTrigger size="sm" className="w-40 text-[12.5px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -3271,14 +3742,13 @@ function Asientos({
             Incluir anulados
           </label>
 
-          <div className="ml-auto flex items-center gap-2">
-            <button
-              onClick={toggleExpandAll}
-              disabled={rows.length === 0}
-              className="h-8 px-2.5 text-[11.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] disabled:opacity-40 transition-colors"
-            >
-              {allExpanded ? 'Colapsar todo' : 'Expandir todo'}
-            </button>
+          {/* El orden es un filtro más, así que va con los filtros y con
+              rótulo: suelto en la fila de acciones y sin nombre, «N° (desc)»
+              no decía de qué era. */}
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] text-[var(--arca-ink-3)]">
+              Orden
+            </label>
             <Select
               value={`${sortBy}:${sortDir}`}
               onValueChange={(v) => {
@@ -3287,30 +3757,62 @@ function Asientos({
                 setSortDir(d2 as 'asc' | 'desc');
               }}
             >
-              <SelectTrigger size="sm" className="w-44 text-[12.5px]">
+              <SelectTrigger size="sm" className="w-32 text-[12.5px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="number:desc">N° (desc)</SelectItem>
-                <SelectItem value="number:asc">N° (asc)</SelectItem>
-                <SelectItem value="date:desc">Fecha (desc)</SelectItem>
-                <SelectItem value="date:asc">Fecha (asc)</SelectItem>
+                <SelectItem value="number:desc">N° desc</SelectItem>
+                <SelectItem value="number:asc">N° asc</SelectItem>
+                <SelectItem value="date:desc">Fecha desc</SelectItem>
+                <SelectItem value="date:asc">Fecha asc</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+
+          {/* A la derecha, lo que se hace: abrir/cerrar el detalle, y después
+              exportar y crear. */}
+          <div className={`${TOOLBAR_ACCIONES} self-end`}>
+            <span aria-hidden className={TOOLBAR_SEP} />
+            <button
+              onClick={toggleExpandAll}
+              disabled={rows.length === 0}
+              title={
+                allExpanded
+                  ? 'Colapsar el detalle de todos los asientos'
+                  : 'Expandir el detalle de todos los asientos'
+              }
+              aria-label={
+                allExpanded
+                  ? 'Colapsar el detalle de todos los asientos'
+                  : 'Expandir el detalle de todos los asientos'
+              }
+              className={`${TOOLBAR_ICON_BTN} disabled:opacity-40`}
+            >
+              {allExpanded ? (
+                <ChevronsDownUp className="w-3.5 h-3.5" strokeWidth={2} />
+              ) : (
+                <ChevronsUpDown className="w-3.5 h-3.5" strokeWidth={2} />
+              )}
+            </button>
+            {(isOwner || canWrite) && (
+              <span aria-hidden className={TOOLBAR_SEP} />
+            )}
+            {/* Solo icono: con cinco filtros más el orden, la barra no da para
+                dos botones rotulados. El nombre va en el `title`. */}
             {isOwner && (
               <button
                 onClick={exportLibroDiario}
-                title="PDF del Libro Diario para rubricar"
-                className="flex items-center gap-1.5 h-8 px-2.5 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
+                title="Descargar el Libro Diario en PDF, para rubricar"
+                aria-label="Descargar el Libro Diario en PDF, para rubricar"
+                className={TOOLBAR_ICON_BTN}
               >
-                <Download className="w-3.5 h-3.5" strokeWidth={1.8} />
-                Libro Diario PDF
+                <Download className="w-3.5 h-3.5" strokeWidth={2} />
               </button>
             )}
             {canWrite && (
               <button
                 onClick={() => setEditor({ mode: 'create' })}
-                className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90"
+                className={TOOLBAR_BTN_PRIMARIO}
               >
                 <Plus className="w-3 h-3" strokeWidth={2.5} />
                 Nuevo asiento
@@ -4009,6 +4511,21 @@ function saldoLabel(n: number): string {
   return `$ ${fmtMoney(Math.abs(n))} ${n >= 0 ? 'D' : 'H'}`;
 }
 
+/**
+ * Anchos de las columnas del mayor consolidado. Van en constantes porque los
+ * comparten el encabezado, la fila de cada cuenta y la de totales: cuando cada
+ * uno traía su propio ancho, los totales no caían debajo de su columna.
+ *
+ * Las de importes son anchas a propósito. Con `w-24` un saldo de nueve cifras
+ * partía el «$» en un renglón y el número en el siguiente, y la «D»/«H» del
+ * saldo se iba sola a un tercero.
+ */
+const MAYOR_COL_CODE = 'w-24 shrink-0';
+const MAYOR_COL_MONEY =
+  'w-32 shrink-0 text-right tabular-nums whitespace-nowrap';
+const MAYOR_COL_SALDO =
+  'w-36 shrink-0 text-right tabular-nums whitespace-nowrap';
+
 function Mayor({
   clientId,
   canWrite,
@@ -4033,11 +4550,7 @@ function Mayor({
     queryFn: () => getFiscalYears({ data: { clientId } }),
   });
   const effectiveFyId =
-    fiscalYearId !== ''
-      ? fiscalYearId
-      : (fiscalYears.find((y) => y.status === 'open')?.id ??
-        fiscalYears[0]?.id ??
-        '');
+    fiscalYearId !== '' ? fiscalYearId : defaultFiscalYearId(fiscalYears);
 
   const { data: chart } = useQuery({
     queryKey: ['accounting', 'chart', clientId],
@@ -4344,6 +4857,16 @@ function Mayor({
           </div>
         ) : (
           <div>
+            {/* Sin encabezado, las tres columnas de plata no decían cuál era
+                el Debe, cuál el Haber y cuál el saldo. */}
+            <div className="flex items-center gap-3 px-4 py-1.5 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[10.5px] font-semibold uppercase tracking-wide text-[var(--arca-ink-3)]">
+              <span className="w-4 shrink-0" aria-hidden />
+              <span className={MAYOR_COL_CODE}>Código</span>
+              <span className="flex-1 min-w-0">Cuenta</span>
+              <span className={MAYOR_COL_MONEY}>Debe</span>
+              <span className={MAYOR_COL_MONEY}>Haber</span>
+              <span className={MAYOR_COL_SALDO}>Saldo</span>
+            </div>
             {consol.accounts.map((a) => (
               <ConsolidatedAccountRow
                 key={a.accountId}
@@ -4354,14 +4877,16 @@ function Mayor({
               />
             ))}
             <div className="flex items-center gap-3 px-4 py-3 border-t-2 border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[13px] font-semibold">
-              <span className="flex-1">Totales generales</span>
-              <span className="w-28 text-right">
+              <span className="w-4 shrink-0" aria-hidden />
+              <span className={MAYOR_COL_CODE} />
+              <span className="flex-1 min-w-0">Totales generales</span>
+              <span className={MAYOR_COL_MONEY}>
                 $ {fmtMoney(consol.grandTotalDebit)}
               </span>
-              <span className="w-28 text-right">
+              <span className={MAYOR_COL_MONEY}>
                 $ {fmtMoney(consol.grandTotalCredit)}
               </span>
-              <span className="w-28" />
+              <span className={MAYOR_COL_SALDO} />
             </div>
           </div>
         )}
@@ -4486,27 +5011,29 @@ function ConsolidatedAccountRow({
             strokeWidth={1.8}
           />
         )}
-        <span className="w-24 shrink-0 text-[12px] font-mono text-[var(--arca-ink-3)]">
+        <span
+          className={`${MAYOR_COL_CODE} text-[12px] font-mono text-[var(--arca-ink-3)]`}
+        >
           {acc.code}
         </span>
         <span className="flex-1 min-w-0 truncate text-[13px] font-medium text-[var(--arca-ink)]">
           {acc.name}
         </span>
-        <span className="w-24 shrink-0 text-right text-[12px]">
+        <span className={`${MAYOR_COL_MONEY} text-[12px]`}>
           $ {fmtMoney(acc.totalDebit)}
         </span>
-        <span className="w-24 shrink-0 text-right text-[12px]">
+        <span className={`${MAYOR_COL_MONEY} text-[12px]`}>
           $ {fmtMoney(acc.totalCredit)}
         </span>
-        <span className="w-28 shrink-0 text-right text-[12.5px] font-medium">
+        <span className={`${MAYOR_COL_SALDO} text-[12.5px] font-medium`}>
           {saldoLabel(acc.saldoFinal)}
         </span>
       </button>
       {expanded && (
         <div className="bg-[var(--arca-surface-2)] pl-6">
           <div className="flex items-center gap-3 px-4 py-1.5 text-[11.5px] italic text-[var(--arca-ink-3)]">
-            <div className="flex-1">Saldo inicial</div>
-            <div className="w-28 shrink-0 text-right not-italic">
+            <div className="flex-1 min-w-0">Saldo inicial</div>
+            <div className={`${MAYOR_COL_SALDO} not-italic`}>
               {saldoLabel(acc.saldoInicial)}
             </div>
           </div>
@@ -4525,15 +5052,13 @@ function ConsolidatedAccountRow({
               <div className="flex-1 min-w-0 truncate text-[var(--arca-ink)]">
                 {r.description ?? r.lineDescription ?? ''}
               </div>
-              <div className="w-24 shrink-0 text-right">
+              <div className={MAYOR_COL_MONEY}>
                 {r.debit ? fmtMoney(r.debit) : ''}
               </div>
-              <div className="w-24 shrink-0 text-right">
+              <div className={MAYOR_COL_MONEY}>
                 {r.credit ? fmtMoney(r.credit) : ''}
               </div>
-              <div className="w-28 shrink-0 text-right">
-                {saldoLabel(r.balance)}
-              </div>
+              <div className={MAYOR_COL_SALDO}>{saldoLabel(r.balance)}</div>
             </button>
           ))}
         </div>
@@ -4556,6 +5081,14 @@ interface LedgerDrill {
   to: string;
 }
 
+/**
+ * Columna de importes del balance de sumas y saldos. Compartida por
+ * encabezado, filas y totales: cada uno traía su propio ancho y los totales
+ * podían no caer debajo de su columna.
+ */
+const BALANCE_COL_MONEY =
+  'w-28 shrink-0 text-right tabular-nums whitespace-nowrap';
+
 function Balance({
   clientId,
   canWrite,
@@ -4574,11 +5107,7 @@ function Balance({
     queryFn: () => getFiscalYears({ data: { clientId } }),
   });
   const effectiveFyId =
-    fiscalYearId !== ''
-      ? fiscalYearId
-      : (fiscalYears.find((y) => y.status === 'open')?.id ??
-        fiscalYears[0]?.id ??
-        '');
+    fiscalYearId !== '' ? fiscalYearId : defaultFiscalYearId(fiscalYears);
 
   const { data, isLoading } = useQuery({
     queryKey: ['accounting', 'trial-balance', clientId, effectiveFyId, asOf],
@@ -4704,10 +5233,10 @@ function Balance({
         <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
           <div className="w-24 shrink-0">Código</div>
           <div className="flex-1 min-w-0">Cuenta</div>
-          <div className="w-28 shrink-0 text-right">Suma Debe</div>
-          <div className="w-28 shrink-0 text-right">Suma Haber</div>
-          <div className="w-28 shrink-0 text-right">Saldo Deudor</div>
-          <div className="w-28 shrink-0 text-right">Saldo Acreedor</div>
+          <div className={BALANCE_COL_MONEY}>Suma Debe</div>
+          <div className={BALANCE_COL_MONEY}>Suma Haber</div>
+          <div className={BALANCE_COL_MONEY}>Saldo Deudor</div>
+          <div className={BALANCE_COL_MONEY}>Saldo Acreedor</div>
         </div>
 
         {isLoading ? (
@@ -4740,16 +5269,12 @@ function Balance({
                 <div className="flex-1 min-w-0 truncate text-[var(--arca-ink)]">
                   {r.name}
                 </div>
-                <div className="w-28 shrink-0 text-right">
-                  {fmtMoney(r.sumaDebe)}
-                </div>
-                <div className="w-28 shrink-0 text-right">
-                  {fmtMoney(r.sumaHaber)}
-                </div>
-                <div className="w-28 shrink-0 text-right">
+                <div className={BALANCE_COL_MONEY}>{fmtMoney(r.sumaDebe)}</div>
+                <div className={BALANCE_COL_MONEY}>{fmtMoney(r.sumaHaber)}</div>
+                <div className={BALANCE_COL_MONEY}>
                   {r.saldoDeudor ? fmtMoney(r.saldoDeudor) : ''}
                 </div>
-                <div className="w-28 shrink-0 text-right">
+                <div className={BALANCE_COL_MONEY}>
                   {r.saldoAcreedor ? fmtMoney(r.saldoAcreedor) : ''}
                 </div>
               </button>
@@ -4760,17 +5285,19 @@ function Balance({
             >
               <div className="w-24 shrink-0" />
               <div className="flex-1 min-w-0">Totales</div>
-              <div className="w-28 shrink-0 text-right">
-                $ {fmtMoney(data.totals.sumaDebe)}
+              {/* Sin el «$» que traía de más: el cuerpo de la tabla va sin
+                  símbolo y era justo lo que hacía desbordar la columna. */}
+              <div className={BALANCE_COL_MONEY}>
+                {fmtMoney(data.totals.sumaDebe)}
               </div>
-              <div className="w-28 shrink-0 text-right">
-                $ {fmtMoney(data.totals.sumaHaber)}
+              <div className={BALANCE_COL_MONEY}>
+                {fmtMoney(data.totals.sumaHaber)}
               </div>
-              <div className="w-28 shrink-0 text-right">
-                $ {fmtMoney(data.totals.saldoDeudor)}
+              <div className={BALANCE_COL_MONEY}>
+                {fmtMoney(data.totals.saldoDeudor)}
               </div>
-              <div className="w-28 shrink-0 text-right">
-                $ {fmtMoney(data.totals.saldoAcreedor)}
+              <div className={BALANCE_COL_MONEY}>
+                {fmtMoney(data.totals.saldoAcreedor)}
               </div>
             </div>
             {data.balanced && (
@@ -7086,6 +7613,30 @@ function DisposeAssetDialog({
   );
 }
 
+/**
+ * Tabla que no entra a lo ancho: la primera columna —la que nombra la partida—
+ * queda congelada mientras el resto scrollea de costado. Se aplica al `<table>`.
+ *
+ * Cada fila tiene que traer su propio fondo opaco: la celda fija hereda el de
+ * su `<tr>` (`bg-inherit`) y, si es transparente, se transparenta encima lo que
+ * pasa por debajo al scrollear. Por eso los `<tr>` de estas tablas llevan
+ * `bg-[var(--arca-surface)]` explícito en vez de quedar sin fondo.
+ */
+const COL_FIJA = [
+  // Solo la primera fila del encabezado: en las cabeceras de dos y tres niveles
+  // la celda de la partida va con `rowSpan`, así que las filas siguientes ya no
+  // tienen celda en la columna 1 y congelarlas correría la que sí está.
+  '[&_thead_tr:first-child_th:first-child]:sticky',
+  '[&_thead_tr:first-child_th:first-child]:left-0',
+  '[&_thead_tr:first-child_th:first-child]:z-20',
+  '[&_thead_tr:first-child_th:first-child]:bg-inherit',
+  '[&_thead_tr:first-child_th:first-child]:shadow-[inset_-1px_0_0_var(--arca-border)]',
+  '[&_tbody_td:first-child]:sticky [&_tbody_td:first-child]:left-0',
+  '[&_tbody_td:first-child]:z-10',
+  '[&_tbody_td:first-child]:bg-inherit',
+  '[&_tbody_td:first-child]:shadow-[inset_-1px_0_0_var(--arca-border)]',
+].join(' ');
+
 /* ════════════════════════ Anexo I (US 4.2.x) ════════════════════════ */
 
 // Clases compartidas por la tabla del Anexo I (vista web).
@@ -7096,10 +7647,23 @@ function AnexoIView({
   clientId,
   canWrite,
   clientName,
+  fiscalYearId,
+  readOnly = false,
+  conComparativo = true,
 }: {
   clientId: string;
   canWrite: boolean;
   clientName: string;
+  /**
+   * Ejercicio impuesto desde afuera. Lo usa la solapa de Estados Contables,
+   * que ya tiene su propio selector: dos selectores en pantalla se
+   * desincronizan y el contador termina mirando ejercicios distintos.
+   */
+  fiscalYearId?: string;
+  /** Sin edición ni sugerencia de asiento: el anexo como parte del balance. */
+  readOnly?: boolean;
+  /** El balance puede exponerlo sin la columna del ejercicio anterior. */
+  conComparativo?: boolean;
 }) {
   const [selectedFyId, setSelectedFyId] = useState('');
   const [editor, setEditor] = useState<EditorState | null>(null);
@@ -7109,17 +7673,19 @@ function AnexoIView({
     queryFn: () => getFiscalYears({ data: { clientId } }),
   });
   const effectiveFyId =
-    selectedFyId ||
-    fiscalYears.find((y) => y.status === 'open')?.id ||
-    fiscalYears[0]?.id ||
-    '';
+    fiscalYearId ?? (selectedFyId || defaultFiscalYearId(fiscalYears));
 
-  const { data, isLoading } = useQuery({
+  const { data: rawData, isLoading } = useQuery({
     queryKey: ['accounting', 'anexo-i', clientId, effectiveFyId],
     queryFn: () =>
       getAnexoI({ data: { clientId, fiscalYearId: effectiveFyId } }),
     enabled: !!effectiveFyId,
   });
+
+  // Apagar el comparativo es una decisión de exposición: se saca acá y ni la
+  // tabla ni los exportes tienen que enterarse.
+  const data =
+    rawData && !conComparativo ? { ...rawData, prior: null } : rawData;
 
   const { data: postable = [] } = useQuery({
     queryKey: ['accounting', 'postable', clientId],
@@ -7164,8 +7730,12 @@ function AnexoIView({
         amortYear: a.amortYear,
         accumEnd: a.accumEnd,
         residualEnd: a.residualEnd,
+        priorResidualEnd: data!.prior?.residualByAsset[a.id] ?? null,
       })),
-      totals: c.totals,
+      totals: {
+        ...c.totals,
+        priorResidualEnd: data!.prior?.residualByCategory[c.category] ?? null,
+      },
     })),
     grandTotals: data!.grandTotals,
     priorResidualEnd: data!.prior?.grandTotals.residualEnd ?? null,
@@ -7208,24 +7778,33 @@ function AnexoIView({
     <div className="space-y-4">
       <ArcaCard>
         <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-[var(--arca-border)]">
-          <span className="text-[12px] text-[var(--arca-ink-3)]">
-            Ejercicio
-          </span>
-          <Select
-            value={effectiveFyId}
-            onValueChange={(v) => setSelectedFyId(v)}
-          >
-            <SelectTrigger size="sm" className="w-44 text-[12.5px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {fiscalYears.map((y) => (
-                <SelectItem key={y.id} value={y.id}>
-                  N°{y.number} ({y.status === 'open' ? 'abierto' : 'cerrado'})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {fiscalYearId ? (
+            <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+              Anexo I · Bienes de uso
+            </span>
+          ) : (
+            <>
+              <span className="text-[12px] text-[var(--arca-ink-3)]">
+                Ejercicio
+              </span>
+              <Select
+                value={effectiveFyId}
+                onValueChange={(v) => setSelectedFyId(v)}
+              >
+                <SelectTrigger size="sm" className="w-44 text-[12.5px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {fiscalYears.map((y) => (
+                    <SelectItem key={y.id} value={y.id}>
+                      N°{y.number} (
+                      {y.status === 'open' ? 'abierto' : 'cerrado'})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </>
+          )}
           <div className="flex-1" />
           {data && data.categories.length > 0 && (
             <>
@@ -7255,9 +7834,11 @@ function AnexoIView({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1000px] text-[11.5px]">
+            <table
+              className={`w-full min-w-[1000px] text-[11.5px] ${COL_FIJA}`}
+            >
               <thead>
-                <tr className="text-[9.5px] uppercase tracking-wide text-[var(--arca-ink-3)]">
+                <tr className="text-[9.5px] uppercase tracking-wide text-[var(--arca-ink-3)] bg-[var(--arca-surface)]">
                   <th
                     className="py-2 pl-4 text-left align-bottom border-b border-[var(--arca-border)]"
                     rowSpan={3}
@@ -7301,11 +7882,21 @@ function AnexoIView({
                     Acum. al cierre
                   </th>
                   <th
-                    className="px-3 py-2 pr-4 text-right align-bottom border-b border-[var(--arca-border)]"
+                    className="px-3 py-2 text-right align-bottom border-b border-[var(--arca-border)]"
                     rowSpan={3}
                   >
                     Neto al cierre
                   </th>
+                  {data.prior && (
+                    <th
+                      className="px-3 py-2 pr-4 text-right align-bottom border-l border-b border-[var(--arca-border)]"
+                      rowSpan={3}
+                    >
+                      Neto al cierre
+                      <br />
+                      ej. N°{data.prior.number}
+                    </th>
+                  )}
                 </tr>
                 <tr className="text-[9.5px] uppercase tracking-wide text-[var(--arca-ink-3)] bg-[var(--arca-surface-2)]">
                   <th
@@ -7334,9 +7925,13 @@ function AnexoIView({
               </thead>
               <tbody>
                 {data.categories.map((cat) => (
-                  <AnexoICategoryRows key={cat.category} cat={cat} />
+                  <AnexoICategoryRows
+                    key={cat.category}
+                    cat={cat}
+                    prior={data.prior}
+                  />
                 ))}
-                <tr className="border-t-2 border-[var(--arca-ink-2)] font-semibold">
+                <tr className="border-t-2 border-[var(--arca-ink-2)] font-semibold bg-[var(--arca-surface)]">
                   <td className="py-2.5 pl-4 whitespace-nowrap">
                     TOTAL GENERAL
                   </td>
@@ -7367,21 +7962,17 @@ function AnexoIView({
                   <td className={`${ANEXO_NUM_TD} ${ANEXO_GROUP_BORDER}`}>
                     {fmtMoney(data.grandTotals.accumEnd)}
                   </td>
-                  <td className={`${ANEXO_NUM_TD} pr-4`}>
+                  <td className={ANEXO_NUM_TD}>
                     {fmtMoney(data.grandTotals.residualEnd)}
                   </td>
-                </tr>
-                {data.prior && (
-                  <tr className="text-[var(--arca-ink-3)] text-[11px]">
-                    <td className="py-1.5 pl-4 italic" colSpan={10}>
-                      Neto al cierre · Ejercicio anterior (N°
-                      {data.prior.number})
-                    </td>
-                    <td className={`${ANEXO_NUM_TD} pr-4 italic`}>
+                  {data.prior && (
+                    <td
+                      className={`${ANEXO_NUM_TD} pr-4 border-l border-[var(--arca-border)]`}
+                    >
                       {fmtMoney(data.prior.grandTotals.residualEnd)}
                     </td>
-                  </tr>
-                )}
+                  )}
+                </tr>
               </tbody>
             </table>
           </div>
@@ -7389,7 +7980,7 @@ function AnexoIView({
       </ArcaCard>
 
       {/* Sugerencia de asiento de amortización (US 4.2.2) */}
-      {data && data.suggestion.lines.length > 0 && (
+      {!readOnly && data && data.suggestion.lines.length > 0 && (
         <ArcaCard>
           <div className="px-4 py-3 border-b border-[var(--arca-border)] flex items-center gap-2">
             <Lightbulb
@@ -7470,23 +8061,34 @@ function AnexoIView({
 
 function AnexoICategoryRows({
   cat,
+  prior,
 }: {
   cat: Awaited<ReturnType<typeof getAnexoI>>['categories'][number];
+  prior: Awaited<ReturnType<typeof getAnexoI>>['prior'];
 }) {
+  /** Un bien incorporado en el ejercicio no tenía neto al cierre anterior. */
+  const priorAsset = (id: string) => prior?.residualByAsset[id] ?? 0;
   return (
     <>
+      {/* La banda del rubro ocupa todo el ancho, así que como celda no tiene
+          hacia dónde quedarse fija y se iba con el scroll: el clasificador se
+          perdía justo cuando hace falta. Se congela el rótulo adentro, y la
+          banda se saca de la columna fija para no arrastrar su borde al
+          extremo derecho. */}
       <tr className="bg-[var(--arca-surface-2)]">
         <td
-          className="py-1.5 pl-4 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--arca-ink-2)]"
-          colSpan={11}
+          className="py-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--arca-ink-2)] static! shadow-none!"
+          colSpan={prior ? 12 : 11}
         >
-          {FIXED_ASSET_CATEGORY_LABELS[cat.category] ?? cat.category}
+          <span className="sticky left-0 inline-block pl-4">
+            {FIXED_ASSET_CATEGORY_LABELS[cat.category] ?? cat.category}
+          </span>
         </td>
       </tr>
       {cat.assets.map((a) => (
         <tr
           key={a.id}
-          className="border-b border-[var(--arca-border)] last:border-0 hover:bg-[var(--arca-surface-2)]/50"
+          className="border-b border-[var(--arca-border)] last:border-0 bg-[var(--arca-surface)] hover:bg-[var(--arca-surface-2)]"
         >
           <td className="py-2 pl-4 pr-3">
             {a.name}
@@ -7522,9 +8124,16 @@ function AnexoICategoryRows({
           <td className={`${ANEXO_NUM_TD} pr-4 font-medium`}>
             {fmtMoney(a.residualEnd)}
           </td>
+          {prior && (
+            <td
+              className={`${ANEXO_NUM_TD} pr-4 border-l border-[var(--arca-border)]`}
+            >
+              {fmtMoney(priorAsset(a.id))}
+            </td>
+          )}
         </tr>
       ))}
-      <tr className="border-b border-[var(--arca-border)] font-medium bg-[var(--arca-surface-2)]/40">
+      <tr className="border-b border-[var(--arca-border)] font-medium bg-[var(--arca-surface-2)]">
         <td className="py-2 pl-4 pr-3 text-[var(--arca-ink-2)] whitespace-nowrap">
           Subtotal {FIXED_ASSET_CATEGORY_LABELS[cat.category] ?? cat.category}
         </td>
@@ -7541,9 +8150,14 @@ function AnexoICategoryRows({
         <td className={`${ANEXO_NUM_TD} ${ANEXO_GROUP_BORDER}`}>
           {fmtMoney(cat.totals.accumEnd)}
         </td>
-        <td className={`${ANEXO_NUM_TD} pr-4`}>
-          {fmtMoney(cat.totals.residualEnd)}
-        </td>
+        <td className={ANEXO_NUM_TD}>{fmtMoney(cat.totals.residualEnd)}</td>
+        {prior && (
+          <td
+            className={`${ANEXO_NUM_TD} pr-4 border-l border-[var(--arca-border)]`}
+          >
+            {fmtMoney(prior.residualByCategory[cat.category] ?? 0)}
+          </td>
+        )}
       </tr>
     </>
   );
@@ -7571,9 +8185,13 @@ function EstadosContables({
     | 'eepn'
     | 'efe'
     | 'nota3'
+    | 'inventario'
     | 'cmv'
+    | 'anexoI'
     | 'anexo'
     | 'notas'
+    | 'informe'
+    | 'orden'
     | 'export'
   >('esp');
   /**
@@ -7589,11 +8207,7 @@ function EstadosContables({
     queryKey: ['accounting', 'fiscal-years', clientId],
     queryFn: () => getFiscalYears({ data: { clientId } }),
   });
-  const effectiveFyId =
-    selectedFyId ||
-    fiscalYears.find((y) => y.status === 'open')?.id ||
-    fiscalYears[0]?.id ||
-    '';
+  const effectiveFyId = selectedFyId || defaultFiscalYearId(fiscalYears);
   const selectedFy = fiscalYears.find((y) => y.id === effectiveFyId);
 
   const { data: fs } = useQuery({
@@ -7605,6 +8219,55 @@ function EstadosContables({
     enabled: !!effectiveFyId,
   });
   const approved = fs?.status === 'approved';
+
+  // La norma que se cita en los estados depende de la empresa: un ente pequeño
+  // aplica RT 54 y el resto RT 6. El mecanismo del ajuste es el mismo.
+  const { data: membreteEecc } = useQuery({
+    queryKey: ['accounting', 'membrete', clientId],
+    queryFn: () => getMembreteData({ data: { clientId } }),
+  });
+  const norma = frameworkCite(membreteEecc?.accountingFramework ?? 'rt54');
+
+  /**
+   * Referencia de cada rubro a su nota o su anexo, como en los balances del
+   * estudio: «Caja y Bancos (Nota 3.1)», «Bienes de Uso (s/Anexo I)». La
+   * subnumeración sale del orden en que la composición expone los rubros, así
+   * que sigue sola al mover la nota.
+   */
+  const { data: espParaRefs } = useQuery({
+    queryKey: ['accounting', 'esp', clientId, effectiveFyId, valuation],
+    queryFn: () =>
+      getESP({
+        data: { clientId, fiscalYearId: effectiveFyId, view: valuation },
+      }),
+    enabled: !!effectiveFyId,
+  });
+  /**
+   * Referencias de cada rubro, resueltas de una vez: la pantalla las consulta
+   * por rubro y los documentos necesitan el mapa entero.
+   */
+  const references = useMemo<Record<string, string>>(() => {
+    if (!fs) return {};
+    const secuencia = numberNotes(fs.layout, fs.notes, fs.sectionLabels);
+    const grupos = (espParaRefs?.sections ?? [])
+      .flatMap((sec) => sec.rubros)
+      .filter((r) => r.group !== 'resultado_ejercicio')
+      .filter((r) => Math.abs(r.current) >= 0.005 || Math.abs(r.prior) >= 0.005)
+      .map((r) => r.group);
+    const ctx = {
+      composicionGroups: grupos,
+      composicionNumber:
+        secuencia.find((n) => n.entry === 'composicion')?.number ?? null,
+      labels: fs.sectionLabels,
+    };
+    const out: Record<string, string> = {};
+    for (const g of [...grupos, ...Object.keys(ANEXO_REFERENCE_BY_GROUP)]) {
+      const r = referenceForGroup(g, ctx);
+      if (r) out[g] = r;
+    }
+    return out;
+  }, [fs, espParaRefs]);
+  const refFor = (group: string): string | null => references[group] ?? null;
 
   const invalidateFs = () =>
     qc.invalidateQueries({
@@ -7647,16 +8310,56 @@ function EstadosContables({
     );
   }
 
-  const tabs: { k: typeof view; label: string }[] = [
-    { k: 'esp', label: 'Estado de Situación Patrimonial' },
-    { k: 'er', label: 'Estado de Resultados' },
-    { k: 'eepn', label: 'Evolución del Patrimonio Neto' },
-    { k: 'efe', label: 'Flujo de Efectivo' },
-    { k: 'nota3', label: 'Composición de rubros' },
-    { k: 'cmv', label: 'Costo de mercadería (CMV)' },
-    { k: 'anexo', label: 'Anexo II' },
-    { k: 'notas', label: 'Notas' },
-    { k: 'export', label: 'Exportar' },
+  /**
+   * Las secciones van agrupadas por el papel que cumplen en el balance: los
+   * estados que se presentan, lo que los respalda, y lo que arma el documento.
+   * El rótulo corto es el del sidebar; el largo, el que se lee al pasar por
+   * encima y el que titula cada estado adentro.
+   */
+  const grupos: {
+    grupo: string;
+    items: { k: typeof view; label: string; title?: string }[];
+  }[] = [
+    {
+      grupo: 'Estados',
+      items: [
+        {
+          k: 'esp',
+          label: 'Situación Patrimonial',
+          title: 'Estado de Situación Patrimonial',
+        },
+        { k: 'er', label: 'Resultados', title: 'Estado de Resultados' },
+        {
+          k: 'eepn',
+          label: 'Evolución del PN',
+          title: 'Estado de Evolución del Patrimonio Neto',
+        },
+        {
+          k: 'efe',
+          label: 'Flujo de Efectivo',
+          title: 'Estado de Flujo de Efectivo',
+        },
+      ],
+    },
+    {
+      grupo: 'Notas y anexos',
+      items: [
+        { k: 'nota3', label: 'Composición de rubros' },
+        { k: 'inventario', label: 'Inventario', title: 'Inventario al cierre' },
+        { k: 'cmv', label: 'Costo de mercadería', title: 'Anexo — CMV' },
+        { k: 'anexoI', label: 'Anexo I', title: 'Anexo I — Bienes de uso' },
+        { k: 'anexo', label: 'Anexo II', title: 'Anexo II' },
+        { k: 'notas', label: 'Notas' },
+      ],
+    },
+    {
+      grupo: 'Documento',
+      items: [
+        { k: 'informe', label: 'Informe del auditor' },
+        { k: 'orden', label: 'Orden del documento' },
+        { k: 'export', label: 'Exportar' },
+      ],
+    },
   ];
 
   return (
@@ -7694,7 +8397,7 @@ function EstadosContables({
                 onClick={() => setValuation(k)}
                 title={
                   k === 'ajustado'
-                    ? 'Incluye el asiento de ajuste por inflación (RT 6). Es como se presentan los EECC.'
+                    ? `Incluye el asiento de ajuste por inflación (${norma}). Es como se presentan los EECC.`
                     : 'Excluye el asiento de ajuste. Queda como papel de trabajo.'
                 }
                 className="px-2.5 h-6 text-[11.5px] font-medium rounded-[6px] transition-colors"
@@ -7748,112 +8451,225 @@ function EstadosContables({
         </div>
       </ArcaCard>
 
-      {/* Toggle de vistas */}
-      <div className="inline-flex rounded-[8px] border border-[var(--arca-border)] p-0.5 bg-[var(--arca-surface-2)]">
-        {tabs.map(({ k, label }) => (
-          <button
-            key={k}
-            onClick={() => setView(k)}
-            className="px-3 h-7 text-[12.5px] font-medium rounded-[6px] transition-colors"
-            style={{
-              background: view === k ? 'var(--arca-surface)' : 'transparent',
-              color: view === k ? 'var(--arca-ink)' : 'var(--arca-ink-3)',
-              boxShadow: view === k ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
-            }}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {view === 'esp' && (
-        <EspView
-          clientId={clientId}
-          clientName={clientName}
-          selectedFy={selectedFy}
-          valuation={valuation}
-        />
-      )}
-      {view === 'er' && (
-        <ErView
-          clientId={clientId}
-          clientName={clientName}
-          selectedFy={selectedFy}
-          valuation={valuation}
-        />
-      )}
-      {view === 'eepn' && (
-        <EepnView
-          clientId={clientId}
-          clientName={clientName}
-          selectedFy={selectedFy}
-          valuation={valuation}
-        />
-      )}
-      {view === 'efe' && (
-        <EfeView
-          clientId={clientId}
-          clientName={clientName}
-          selectedFy={selectedFy}
-          valuation={valuation}
-        />
-      )}
-      {view === 'nota3' && (
-        <Nota3View
-          clientId={clientId}
-          clientName={clientName}
-          selectedFy={selectedFy}
-          valuation={valuation}
-        />
-      )}
-      {view === 'cmv' && (
-        <AnexoCMVView
-          clientId={clientId}
-          clientName={clientName}
-          selectedFy={selectedFy}
-          canEdit={isOwner && !approved}
-        />
-      )}
-      {view === 'anexo' && (
-        <AnexoIIView
-          clientId={clientId}
-          clientName={clientName}
-          selectedFy={selectedFy}
-        />
-      )}
-      {view === 'notas' &&
-        (fs ? (
-          <NotesEditor
-            key={effectiveFyId}
-            clientId={clientId}
-            fiscalYearId={effectiveFyId}
-            notes={fs.notes}
-            approved={approved}
-            canEdit={isOwner}
-            onSaved={invalidateFs}
-          />
-        ) : (
+      {/* Índice del balance a la izquierda; el estado elegido, a la derecha. */}
+      <div className="flex items-start gap-4">
+        <nav className="w-[188px] shrink-0 sticky top-4">
           <ArcaCard>
-            <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
-              Cargando…
+            <div className="py-1.5">
+              {/* El rótulo del grupo no es una opción más: va separado por una
+                  línea, más chico y espaciado, y las opciones sangradas debajo.
+                  Antes compartía sangrado y color con los ítems y solo se
+                  descubría que no era clickeable al pasarle el cursor. */}
+              {grupos.map(({ grupo, items }, i) => (
+                <div
+                  key={grupo}
+                  className={
+                    i > 0
+                      ? 'pt-2 mt-2 border-t border-[var(--arca-border)]'
+                      : 'pt-0.5'
+                  }
+                >
+                  <div className="px-3 pb-1 text-[9.5px] font-semibold uppercase tracking-[0.1em] text-[var(--arca-ink-3)] cursor-default select-none">
+                    {grupo}
+                  </div>
+                  {items.map(({ k, label, title }) => (
+                    <button
+                      key={k}
+                      onClick={() => setView(k)}
+                      title={title ?? label}
+                      aria-current={view === k ? 'page' : undefined}
+                      className="w-full text-left pl-5 pr-3 py-1 text-[12.5px] leading-[1.35] border-l-2 transition-colors"
+                      style={{
+                        borderColor:
+                          view === k ? 'var(--arca-ink)' : 'transparent',
+                        background:
+                          view === k ? 'var(--arca-surface-2)' : 'transparent',
+                        color:
+                          view === k ? 'var(--arca-ink)' : 'var(--arca-ink-2)',
+                        fontWeight: view === k ? 600 : 400,
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              ))}
             </div>
           </ArcaCard>
-        ))}
+        </nav>
 
-      {view === 'export' && (
-        <ExportView
-          clientId={clientId}
-          clientName={clientName}
-          clientCuit={clientCuit}
-          selectedFy={selectedFy}
-          notes={fs?.notes ?? []}
-          isOwner={isOwner}
-          valuation={valuation}
-          pdfGeneratedAt={fs?.pdfGeneratedAt ?? null}
-          pdfGeneratedByName={fs?.pdfGeneratedByName ?? null}
-          onPdfSaved={invalidateFs}
-        />
-      )}
+        {/* `min-w-0` para que las tablas anchas scrolleen en vez de estirar. */}
+        <div className="flex-1 min-w-0 space-y-4">
+          {view === 'esp' && (
+            <EspView
+              clientId={clientId}
+              clientName={clientName}
+              selectedFy={selectedFy}
+              valuation={valuation}
+              norma={norma}
+              refFor={refFor}
+            />
+          )}
+          {view === 'er' && (
+            <ErView
+              clientId={clientId}
+              clientName={clientName}
+              selectedFy={selectedFy}
+              valuation={valuation}
+              norma={norma}
+              refFor={refFor}
+            />
+          )}
+          {view === 'eepn' && (
+            <EepnView
+              clientId={clientId}
+              clientName={clientName}
+              selectedFy={selectedFy}
+              valuation={valuation}
+              norma={norma}
+            />
+          )}
+          {view === 'efe' && (
+            <EfeView
+              clientId={clientId}
+              clientName={clientName}
+              selectedFy={selectedFy}
+              valuation={valuation}
+              norma={norma}
+            />
+          )}
+          {view === 'nota3' && (
+            <Nota3View
+              clientId={clientId}
+              clientName={clientName}
+              selectedFy={selectedFy}
+              valuation={valuation}
+              norma={norma}
+            />
+          )}
+          {view === 'cmv' && (
+            <AnexoCMVView
+              clientId={clientId}
+              clientName={clientName}
+              selectedFy={selectedFy}
+              canEdit={isOwner && !approved}
+            />
+          )}
+          {view === 'inventario' && (
+            <InventarioView
+              clientId={clientId}
+              clientName={clientName}
+              selectedFy={selectedFy}
+              valuation={valuation}
+              norma={norma}
+            />
+          )}
+          {view === 'anexoI' && (
+            <AnexoIView
+              key={effectiveFyId}
+              clientId={clientId}
+              clientName={clientName}
+              canWrite={false}
+              fiscalYearId={effectiveFyId}
+              readOnly
+              conComparativo={anexoIMuestraComparativo(fs?.sectionLabels ?? {})}
+            />
+          )}
+          {view === 'anexo' && (
+            <AnexoIIView
+              clientId={clientId}
+              clientName={clientName}
+              selectedFy={selectedFy}
+            />
+          )}
+          {view === 'informe' &&
+            (fs && selectedFy ? (
+              <InformeAuditor
+                key={effectiveFyId}
+                clientId={clientId}
+                fiscalYearId={effectiveFyId}
+                saved={fs.auditReport}
+                canEdit={isOwner && !approved}
+                onSaved={invalidateFs}
+                vars={{
+                  empresa: clientName,
+                  cuit: clientCuit,
+                  domicilio: membreteEecc?.domicilio ?? '',
+                  cierre: fechaLarga(new Date(selectedFy.endDate)),
+                  ejercicio: String(selectedFy.number),
+                  notas: rangoNotas(fs.notes.length),
+                  anexos: rangoAnexos(3),
+                  destinatario: 'Señores Socios',
+                  contador: membreteEecc?.accountant?.nombre ?? '',
+                  matricula: [
+                    membreteEecc?.accountant?.tomo &&
+                      `Tomo ${membreteEecc.accountant.tomo}`,
+                    membreteEecc?.accountant?.folio &&
+                      `Folio ${membreteEecc.accountant.folio}`,
+                    membreteEecc?.accountant?.consejo,
+                  ]
+                    .filter(Boolean)
+                    .join(' '),
+                }}
+              />
+            ) : null)}
+
+          {view === 'orden' &&
+            (fs ? (
+              <OrdenDocumento
+                key={effectiveFyId}
+                clientId={clientId}
+                fiscalYearId={effectiveFyId}
+                notes={fs.notes}
+                layout={fs.layout}
+                sectionLabels={fs.sectionLabels}
+                canEdit={isOwner && !approved}
+                onSaved={invalidateFs}
+              />
+            ) : null)}
+
+          {view === 'notas' &&
+            (fs ? (
+              <NotesEditor
+                key={effectiveFyId}
+                clientId={clientId}
+                fiscalYearId={effectiveFyId}
+                notes={fs.notes}
+                layout={fs.layout}
+                sectionLabels={fs.sectionLabels}
+                approved={approved}
+                canEdit={isOwner}
+                onSaved={invalidateFs}
+              />
+            ) : (
+              <ArcaCard>
+                <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+                  Cargando…
+                </div>
+              </ArcaCard>
+            ))}
+
+          {view === 'export' && (
+            <ExportView
+              clientId={clientId}
+              clientName={clientName}
+              clientCuit={clientCuit}
+              selectedFy={selectedFy}
+              notes={fs?.notes ?? []}
+              layout={fs?.layout ?? []}
+              sectionLabels={fs?.sectionLabels ?? {}}
+              auditReport={fs?.auditReport ?? null}
+              references={references}
+              isOwner={isOwner}
+              valuation={valuation}
+              norma={norma}
+              pdfGeneratedAt={fs?.pdfGeneratedAt ?? null}
+              pdfGeneratedByName={fs?.pdfGeneratedByName ?? null}
+              onPdfSaved={invalidateFs}
+            />
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -7863,11 +8679,17 @@ function EspView({
   clientName,
   selectedFy,
   valuation,
+  norma,
+  refFor,
 }: {
+  /** Referencia a la nota o al anexo de cada rubro. */
+  refFor?: (group: string) => string | null;
   clientId: string;
   clientName: string;
   selectedFy: FyOption | undefined;
   valuation: 'ajustado' | 'historico';
+  /** Cómo se cita la norma del ajuste: "RT 54" o "RT 6". */
+  norma: string;
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [drill, setDrill] = useState<LedgerDrill | null>(null);
@@ -7923,9 +8745,11 @@ function EspView({
               : ''}
           </div>
           <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
-            {valuation === 'ajustado'
-              ? 'Expresado en moneda homogénea de cierre (ajuste por inflación · RT 6).'
-              : 'Expresado en valores históricos, sin ajuste por inflación. Papel de trabajo.'}
+            {valuation === 'historico'
+              ? 'Expresado en valores históricos, sin ajuste por inflación. Papel de trabajo.'
+              : data?.inflationApplied
+                ? `Expresado en moneda homogénea de cierre (ajuste por inflación · ${norma}).`
+                : 'El ajuste por inflación del ejercicio todavía no está generado: los importes son históricos. Generalo en la solapa «Ajuste por inflación».'}
           </div>
         </div>
 
@@ -7971,6 +8795,7 @@ function EspView({
                           expanded={expanded}
                           onToggle={toggle}
                           onAccount={openLedger}
+                          refFor={refFor ?? (() => null)}
                         />
                       ))}
                       <tr className="border-t border-[var(--arca-ink-3)] font-semibold">
@@ -8015,6 +8840,13 @@ function EspView({
                   emisión está bloqueada hasta corregir.
                 </div>
               )}
+              <div className="mt-1">
+                <PriorNotAdjustedNote
+                  hasPrior={data.hasPrior}
+                  priorInflationApplied={data.priorInflationApplied}
+                  valuation={valuation}
+                />
+              </div>
             </div>
           </div>
         )}
@@ -8038,7 +8870,10 @@ function EspSectionRows({
   expanded,
   onToggle,
   onAccount,
+  refFor,
 }: {
+  /** Referencia a la nota o al anexo de cada rubro, como en el balance. */
+  refFor: (group: string) => string | null;
   section: EspSection;
   hasPrior: boolean;
   expanded: Set<string>;
@@ -8075,6 +8910,11 @@ function EspSectionRows({
                   {isOpen ? '▾' : '▸'}
                 </span>
                 {rubro.label}
+                {refFor(rubro.group) && (
+                  <span className="ml-1.5 text-[11px] text-[var(--arca-ink-3)]">
+                    ({refFor(rubro.group)})
+                  </span>
+                )}
               </td>
               <td className="py-1.5 pr-3 text-right tabular-nums">
                 $ {fmtMoney(rubro.current)}
@@ -8133,16 +8973,221 @@ function EspSectionRows({
  * mismos datos del Estado de Situación Patrimonial, así que no puede diferir de
  * él: si un rubro cambia, la nota cambia sola.
  */
-function Nota3View({
+/**
+ * Inventario al cierre, en el formato de cuatro columnas del balance.
+ *
+ * Cada nivel de la jerarquía coloca su importe una columna más a la derecha:
+ * las cuentas imputables en la primera, el rubro en la segunda, el subtotal de
+ * la sección —corriente / no corriente— en la tercera y los totales mayores en
+ * la cuarta. Es la disposición del inventario que presenta el estudio.
+ */
+function InventarioView({
   clientId,
   clientName,
   selectedFy,
   valuation,
+  norma,
 }: {
   clientId: string;
   clientName: string;
   selectedFy: FyOption | undefined;
   valuation: 'ajustado' | 'historico';
+  /** Cómo se cita la norma del ajuste: "RT 54" o "RT 6". */
+  norma: string;
+}) {
+  const effectiveFyId = selectedFy?.id ?? '';
+  const { data, isLoading } = useQuery({
+    queryKey: ['accounting', 'esp', clientId, effectiveFyId, valuation],
+    queryFn: () =>
+      getESP({
+        data: { clientId, fiscalYearId: effectiveFyId, view: valuation },
+      }),
+    enabled: !!effectiveFyId,
+  });
+
+  if (isLoading || !data) {
+    return (
+      <ArcaCard>
+        <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+          {isLoading ? 'Calculando…' : 'Sin datos para este ejercicio.'}
+        </div>
+      </ArcaCard>
+    );
+  }
+
+  const macros = [
+    { macro: 'activo' as const, title: 'Activo', total: data.totals.activo },
+    { macro: 'pasivo' as const, title: 'Pasivo', total: data.totals.pasivo },
+    { macro: 'pn' as const, title: 'Patrimonio Neto', total: data.totals.pn },
+  ];
+
+  return (
+    <ArcaCard>
+      <div className="px-5 pt-4 pb-3 border-b border-[var(--arca-border)]">
+        <div className="text-[14px] font-semibold text-[var(--arca-ink)]">
+          {clientName}
+        </div>
+        <div className="text-[12px] text-[var(--arca-ink-3)]">
+          Inventario al cierre · Ejercicio N°{data.fiscalYearNumber} ·{' '}
+          {data.periodLabel}
+        </div>
+        <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
+          {valuation === 'ajustado'
+            ? `Expresado en moneda homogénea de cierre (ajuste por inflación · ${norma}).`
+            : 'Expresado en valores históricos, sin ajuste por inflación. Papel de trabajo.'}
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className={`w-full text-[12.5px] min-w-[720px] ${COL_FIJA}`}>
+          <thead>
+            <tr className="bg-[var(--arca-surface-2)] text-[10.5px] uppercase tracking-wide text-[var(--arca-ink-3)]">
+              <th className="text-left font-semibold px-4 py-1.5">Conceptos</th>
+              {[1, 2, 3, 4].map((n) => (
+                <th
+                  key={n}
+                  className="text-right font-semibold px-3 py-1.5 w-36 border-l border-[var(--arca-border)]"
+                >
+                  $
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {macros.map(({ macro, title, total }) => {
+              const secs = data.sections.filter((s) => s.macro === macro);
+              if (secs.every((s) => s.rubros.length === 0)) return null;
+              return (
+                <Fragment key={macro}>
+                  <InventarioRow label={title} bold />
+                  {secs.map((sec) => (
+                    <Fragment key={sec.key}>
+                      {/* En el PN la sección se llama igual que el macro: no
+                          hace falta repetirlo. */}
+                      {sec.label !== title && (
+                        <InventarioRow label={sec.label} indent={1} />
+                      )}
+                      {sec.rubros.map((r) => (
+                        <Fragment key={r.group}>
+                          <InventarioRow
+                            label={r.label}
+                            indent={2}
+                            col={2}
+                            amount={r.current}
+                          />
+                          {r.accounts.map((a) => (
+                            <InventarioRow
+                              key={a.accountId}
+                              label={a.name}
+                              code={a.code}
+                              indent={3}
+                              col={1}
+                              amount={a.current}
+                            />
+                          ))}
+                        </Fragment>
+                      ))}
+                      {/* Una sección sin rubros no aporta un subtotal en cero. */}
+                      {sec.rubros.length > 0 && sec.label !== title && (
+                        <InventarioRow
+                          label={`Total ${sec.label}`}
+                          indent={1}
+                          col={3}
+                          amount={sec.current}
+                        />
+                      )}
+                    </Fragment>
+                  ))}
+                  <InventarioRow
+                    label={`Total ${title}`}
+                    bold
+                    col={4}
+                    amount={total.current}
+                  />
+                </Fragment>
+              );
+            })}
+            <InventarioRow
+              label="Total Pasivo + Patrimonio Neto"
+              bold
+              col={4}
+              amount={data.totals.pasivoMasPn.current}
+              topBorder
+            />
+          </tbody>
+        </table>
+      </div>
+
+      <div className="px-5 py-3 border-t border-[var(--arca-border)] text-[11.5px] text-[var(--arca-ink-3)]">
+        Es el detalle que sale en el Libro Inventarios y Balances, en Exportar.
+      </div>
+    </ArcaCard>
+  );
+}
+
+/** Una fila del inventario: el importe cae en la columna de su nivel. */
+function InventarioRow({
+  label,
+  code,
+  amount,
+  col,
+  indent = 0,
+  bold = false,
+  topBorder = false,
+}: {
+  label: string;
+  code?: string;
+  amount?: number;
+  /** 1 = cuenta, 2 = rubro, 3 = sección, 4 = total mayor. */
+  col?: 1 | 2 | 3 | 4;
+  indent?: 0 | 1 | 2 | 3;
+  bold?: boolean;
+  topBorder?: boolean;
+}) {
+  const pad = ['pl-4', 'pl-7', 'pl-10', 'pl-14'][indent];
+  return (
+    <tr
+      className={`border-t border-[var(--arca-border)] bg-[var(--arca-surface)] ${
+        topBorder ? 'border-t-2 border-t-[var(--arca-ink-2)]' : ''
+      }`}
+    >
+      <td
+        className={`${pad} py-1 text-[var(--arca-ink)]`}
+        style={bold ? { fontWeight: 600 } : undefined}
+      >
+        {code && (
+          <span className="text-[var(--arca-ink-3)] tabular-nums mr-1.5 text-[11px]">
+            {code}
+          </span>
+        )}
+        {label}
+      </td>
+      {([1, 2, 3, 4] as const).map((n) => (
+        <td
+          key={n}
+          className="px-3 py-1 text-right tabular-nums border-l border-[var(--arca-border)] text-[var(--arca-ink-2)]"
+          style={bold ? { fontWeight: 600 } : undefined}
+        >
+          {col === n && amount !== undefined ? fmtMoney(amount) : ''}
+        </td>
+      ))}
+    </tr>
+  );
+}
+
+function Nota3View({
+  clientId,
+  clientName,
+  selectedFy,
+  valuation,
+  norma,
+}: {
+  clientId: string;
+  clientName: string;
+  selectedFy: FyOption | undefined;
+  valuation: 'ajustado' | 'historico';
+  /** Cómo se cita la norma del ajuste: "RT 54" o "RT 6". */
+  norma: string;
 }) {
   const effectiveFyId = selectedFy?.id ?? '';
   const { data, isLoading } = useQuery({
@@ -8190,7 +9235,7 @@ function Nota3View({
         </div>
         <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
           {valuation === 'ajustado'
-            ? 'Valores ajustados por inflación (RT 6), en moneda homogénea de cierre.'
+            ? `Valores ajustados por inflación (${norma}), en moneda homogénea de cierre.`
             : 'Valores históricos, sin ajuste por inflación. Papel de trabajo.'}
         </div>
       </div>
@@ -8274,21 +9319,54 @@ function Nota3View({
   );
 }
 
-/** Fila del EFE: concepto a la izquierda, importe a la derecha. */
+/** Fila del EFE: concepto a la izquierda, ejercicio actual y anterior a la derecha. */
+/**
+ * Aviso cuando el ejercicio anterior no tiene su propio ajuste aplicado: sus
+ * cifras están en moneda heterogénea y multiplicarlas por un coeficiente no las
+ * homogeneiza. El comparativo sirve de referencia, pero no es exacto.
+ */
+function PriorNotAdjustedNote({
+  hasPrior,
+  priorInflationApplied,
+  valuation,
+}: {
+  hasPrior: boolean;
+  priorInflationApplied: boolean;
+  valuation: 'ajustado' | 'historico';
+}) {
+  if (!hasPrior || priorInflationApplied || valuation !== 'ajustado') {
+    return null;
+  }
+  return (
+    <div className="text-[11.5px] text-amber-600">
+      El ejercicio anterior no tiene su ajuste por inflación generado, así que
+      la columna comparativa parte de valores históricos. Generá el ajuste de
+      ese ejercicio para que el comparativo sea exacto.
+    </div>
+  );
+}
+
 function EfeRow({
   label,
   value,
   strong,
   indent,
+  hasPrior,
 }: {
   label: string;
-  value: number;
+  value: { current: number; prior: number };
   strong?: boolean;
   indent?: boolean;
+  hasPrior: boolean;
 }) {
+  const fmt = (n: number) =>
+    n.toLocaleString('es-AR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
   return (
     <div
-      className="flex items-center justify-between gap-4 px-5 py-1.5 border-b border-[var(--arca-border)] last:border-b-0"
+      className="grid grid-cols-[1fr_170px_170px] gap-4 px-5 py-1.5 border-b border-[var(--arca-border)] last:border-b-0"
       style={strong ? { background: 'var(--arca-surface-2)' } : undefined}
     >
       <span
@@ -8301,14 +9379,16 @@ function EfeRow({
         {label}
       </span>
       <span
-        className="text-[12.5px] tabular-nums text-[var(--arca-ink)]"
+        className="text-[12.5px] tabular-nums text-right text-[var(--arca-ink)]"
         style={{ fontWeight: strong ? 600 : 400 }}
       >
-        ${' '}
-        {value.toLocaleString('es-AR', {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })}
+        $ {fmt(value.current)}
+      </span>
+      <span
+        className="text-[12.5px] tabular-nums text-right text-[var(--arca-ink-3)]"
+        style={{ fontWeight: strong ? 600 : 400 }}
+      >
+        {hasPrior ? `$ ${fmt(value.prior)}` : '—'}
       </span>
     </div>
   );
@@ -8319,11 +9399,14 @@ function EfeView({
   clientName,
   selectedFy,
   valuation,
+  norma,
 }: {
   clientId: string;
   clientName: string;
   selectedFy: FyOption | undefined;
   valuation: 'ajustado' | 'historico';
+  /** Cómo se cita la norma del ajuste: "RT 54" o "RT 6". */
+  norma: string;
 }) {
   const effectiveFyId = selectedFy?.id ?? '';
   const { data, isLoading } = useQuery({
@@ -8358,28 +9441,42 @@ function EfeView({
           {clientName}
         </div>
         <div className="text-[12px] text-[var(--arca-ink-3)]">
-          Estado de Flujo de Efectivo · Método directo · Ejercicio N°
+          Estado de Flujo de Efectivo y sus Equivalentes · Método directo, forma
+          completa · Ejercicio N°
           {data.fiscalYearNumber} · {data.periodLabel}
         </div>
         <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
           {valuation === 'ajustado'
-            ? 'Expresado en moneda homogénea de cierre (ajuste por inflación · RT 6).'
+            ? `Expresado en moneda homogénea de cierre (ajuste por inflación · ${norma}).`
             : 'Expresado en valores históricos, sin ajuste por inflación. Papel de trabajo.'}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-[1fr_170px_170px] gap-4 px-5 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+        <div>Concepto</div>
+        <div className="text-right">Ej. N°{data.fiscalYearNumber}</div>
+        <div className="text-right">
+          {data.priorFiscalYearNumber !== null
+            ? `Ej. N°${data.priorFiscalYearNumber}`
+            : 'Anterior'}
         </div>
       </div>
 
       <EfeRow
         label="Efectivo al inicio del ejercicio"
         value={data.efectivoInicio}
+        hasPrior={data.hasPrior}
       />
       <EfeRow
         label="Efectivo al cierre del ejercicio"
         value={data.efectivoCierre}
+        hasPrior={data.hasPrior}
       />
       <EfeRow
         label="Aumento (disminución) neto del efectivo"
         value={data.variacion}
         strong
+        hasPrior={data.hasPrior}
       />
 
       <div className="px-5 py-2 text-[10.5px] uppercase tracking-wide font-semibold text-[var(--arca-ink-3)] bg-[var(--arca-surface-2)] border-y border-[var(--arca-border)]">
@@ -8400,30 +9497,26 @@ function EfeView({
               <EfeRow
                 key={l.accountId}
                 label={l.name}
-                value={l.amount}
+                value={l}
                 indent
+                hasPrior={data.hasPrior}
               />
             ))
           )}
           <EfeRow
             label={`Flujo neto por ${a.label.toLowerCase()}`}
-            value={a.total}
+            value={a}
             strong
+            hasPrior={data.hasPrior}
           />
         </div>
       ))}
-
-      {valuation === 'ajustado' && Math.abs(data.recpamEfectivo) >= 0.005 && (
-        <EfeRow
-          label="Resultado por exposición a la inflación del efectivo (RECPAM)"
-          value={data.recpamEfectivo}
-        />
-      )}
 
       <EfeRow
         label="Total de las variaciones del efectivo"
         value={data.totalCausas}
         strong
+        hasPrior={data.hasPrior}
       />
 
       <div className="px-5 py-3 border-t border-[var(--arca-border)] space-y-1">
@@ -8437,7 +9530,7 @@ function EfeView({
         >
           {data.cuadra
             ? '✓ Las causas explican la variación del efectivo.'
-            : `✗ Las causas ($ ${money(data.totalCausas)}) no explican la variación ($ ${money(data.variacion)}).`}
+            : `✗ Las causas ($ ${money(data.totalCausas.current)}) no explican la variación ($ ${money(data.variacion.current)}).`}
         </div>
         {valuation === 'ajustado' && data.coeficienteInicio !== null && (
           <div className="text-[11.5px] text-[var(--arca-ink-3)]">
@@ -8447,7 +9540,7 @@ function EfeView({
               maximumFractionDigits: 4,
             })}
             : $ {money(data.efectivoInicioHistorico)} históricos → ${' '}
-            {money(data.efectivoInicio)}.
+            {money(data.efectivoInicio.current)}.
           </div>
         )}
         {valuation === 'ajustado' && !data.inflationApplied && (
@@ -8456,6 +9549,11 @@ function EfeView({
             que los flujos son históricos.
           </div>
         )}
+        <PriorNotAdjustedNote
+          hasPrior={data.hasPrior}
+          priorInflationApplied={data.priorInflationApplied}
+          valuation={valuation}
+        />
         {data.sinActividad.length > 0 && (
           <div className="text-[11.5px] text-amber-600">
             {data.sinActividad.length} cuenta(s) sin actividad asignada; se usó
@@ -8477,11 +9575,14 @@ function EepnView({
   clientName,
   selectedFy,
   valuation,
+  norma,
 }: {
   clientId: string;
   clientName: string;
   selectedFy: FyOption | undefined;
   valuation: 'ajustado' | 'historico';
+  /** Cómo se cita la norma del ajuste: "RT 54" o "RT 6". */
+  norma: string;
 }) {
   const effectiveFyId = selectedFy?.id ?? '';
 
@@ -8522,6 +9623,16 @@ function EepnView({
     );
   }
 
+  // La columna del ejercicio anterior solo tiene valor en las tres filas que el
+  // modelo RT 9 expone: inicio, resultado y cierre.
+  const priorFor = (kind: EepnRow['kind']) => {
+    if (!data.prior) return 0;
+    if (kind === 'inicio') return data.prior.inicio;
+    if (kind === 'resultado') return data.prior.resultado;
+    if (kind === 'cierre') return data.prior.cierre;
+    return 0;
+  };
+
   // Cabecera en dos niveles: rubro y, debajo, la cuenta.
   const groups: { label: string; span: number }[] = [];
   for (const c of data.columns) {
@@ -8542,13 +9653,13 @@ function EepnView({
         </div>
         <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
           {valuation === 'ajustado'
-            ? 'Expresado en moneda homogénea de cierre (ajuste por inflación · RT 6). La reexpresión del patrimonio inicial se incluye en «Saldos al inicio»; el Capital social se mantiene a valor nominal.'
+            ? `Expresado en moneda homogénea de cierre (ajuste por inflación · ${norma}). La reexpresión del patrimonio inicial se incluye en «Saldos al inicio»; el Capital social se mantiene a valor nominal.`
             : 'Expresado en valores históricos, sin ajuste por inflación. Papel de trabajo.'}
         </div>
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-[12.5px] min-w-[720px]">
+        <table className={`w-full text-[12.5px] min-w-[720px] ${COL_FIJA}`}>
           <thead>
             <tr className="bg-[var(--arca-surface-2)] text-[10.5px] uppercase tracking-wide text-[var(--arca-ink-3)]">
               <th className="text-left font-semibold px-4 py-1.5" rowSpan={2}>
@@ -8582,8 +9693,12 @@ function EepnView({
               {data.columns.map((c) => (
                 <th
                   key={c.accountId}
-                  className="text-right font-medium px-3 pb-1.5 border-l border-[var(--arca-border)] whitespace-nowrap"
-                  title={`${c.code} · ${c.name}`}
+                  className={`text-right px-3 pb-1.5 border-l border-[var(--arca-border)] whitespace-nowrap ${
+                    c.isSubtotal
+                      ? 'font-semibold text-[var(--arca-ink-2)]'
+                      : 'font-medium'
+                  }`}
+                  title={c.isSubtotal ? c.groupLabel : `${c.code} · ${c.name}`}
                 >
                   {c.name}
                 </th>
@@ -8597,9 +9712,12 @@ function EepnView({
                 <tr
                   key={row.key}
                   className="border-t border-[var(--arca-border)]"
-                  style={
-                    strong ? { background: 'var(--arca-surface-2)' } : undefined
-                  }
+                  style={{
+                    // Opaco siempre: la columna fija hereda este fondo.
+                    background: strong
+                      ? 'var(--arca-surface-2)'
+                      : 'var(--arca-surface)',
+                  }}
                 >
                   <td
                     className="px-4 py-1.5 text-[var(--arca-ink)]"
@@ -8616,6 +9734,9 @@ function EepnView({
                     <td
                       key={c.accountId}
                       className="px-3 py-1.5 text-right tabular-nums border-l border-[var(--arca-border)] text-[var(--arca-ink-2)]"
+                      style={
+                        c.isSubtotal || strong ? { fontWeight: 600 } : undefined
+                      }
                     >
                       {money(row.amounts[c.accountId] ?? 0)}
                     </td>
@@ -8628,9 +9749,7 @@ function EepnView({
                   </td>
                   {data.priorFiscalYearNumber !== null && (
                     <td className="px-4 py-1.5 text-right tabular-nums border-l border-[var(--arca-border)] text-[var(--arca-ink-2)]">
-                      {row.kind === 'cierre' && data.priorTotal !== null
-                        ? money(data.priorTotal)
-                        : '—'}
+                      {money(priorFor(row.kind))}
                     </td>
                   )}
                 </tr>
@@ -8660,6 +9779,11 @@ function EepnView({
             inflación».
           </div>
         )}
+        <PriorNotAdjustedNote
+          hasPrior={data.priorFiscalYearNumber !== null}
+          priorInflationApplied={data.priorInflationApplied}
+          valuation={valuation}
+        />
         {data.priorFiscalYearNumber !== null &&
           valuation === 'ajustado' &&
           (data.priorCoefficient !== null ? (
@@ -8688,11 +9812,17 @@ function ErView({
   clientName,
   selectedFy,
   valuation,
+  norma,
+  refFor,
 }: {
+  /** Referencia a la nota o al anexo de cada línea. */
+  refFor?: (group: string) => string | null;
   clientId: string;
   clientName: string;
   selectedFy: FyOption | undefined;
   valuation: 'ajustado' | 'historico';
+  /** Cómo se cita la norma del ajuste: "RT 54" o "RT 6". */
+  norma: string;
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [drill, setDrill] = useState<LedgerDrill | null>(null);
@@ -8742,9 +9872,11 @@ function ErView({
               : ''}
           </div>
           <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
-            {valuation === 'ajustado'
-              ? 'Expresado en moneda homogénea de cierre (ajuste por inflación · RT 6).'
-              : 'Expresado en valores históricos, sin ajuste por inflación. Papel de trabajo.'}
+            {valuation === 'historico'
+              ? 'Expresado en valores históricos, sin ajuste por inflación. Papel de trabajo.'
+              : data?.inflationApplied
+                ? `Expresado en moneda homogénea de cierre (ajuste por inflación · ${norma}).`
+                : 'El ajuste por inflación del ejercicio todavía no está generado: los importes son históricos. Generalo en la solapa «Ajuste por inflación».'}
           </div>
         </div>
 
@@ -8816,6 +9948,11 @@ function ErView({
                             </span>
                           )}
                           {line.label}
+                          {refFor?.(line.key) && (
+                            <span className="ml-1.5 text-[11px] text-[var(--arca-ink-3)]">
+                              ({refFor(line.key)})
+                            </span>
+                          )}
                         </td>
                         <td className="py-1.5 pr-3 text-right tabular-nums">
                           $ {fmtMoney(line.current)}
@@ -8867,6 +10004,13 @@ function ErView({
                   bloqueada hasta corregir.
                 </div>
               )}
+              <div className="mt-1">
+                <PriorNotAdjustedNote
+                  hasPrior={data.hasPrior}
+                  priorInflationApplied={data.priorInflationApplied}
+                  valuation={valuation}
+                />
+              </div>
             </div>
           </div>
         )}
@@ -9242,6 +10386,8 @@ function NotesEditor({
   clientId,
   fiscalYearId,
   notes: initialNotes,
+  layout: initialLayout,
+  sectionLabels,
   approved,
   canEdit,
   onSaved,
@@ -9249,20 +10395,38 @@ function NotesEditor({
   clientId: string;
   fiscalYearId: string;
   notes: FsNote[];
+  layout: LayoutEntry[];
+  sectionLabels: Record<string, string>;
   approved: boolean;
   canEdit: boolean;
   onSaved: () => void;
 }) {
   const [notes, setNotes] = useState<FsNote[]>(initialNotes);
+  // El orden vive aparte del contenido: incluye los bloques que genera el
+  // sistema, así el contador decide en qué posición cae cada uno y de ahí sale
+  // el número de nota.
+  const [layout, setLayout] = useState<LayoutEntry[]>(
+    initialLayout.length > 0 ? initialLayout : defaultNoteLayout(initialNotes)
+  );
   const [preview, setPreview] = useState<Set<string>>(new Set());
 
-  const dirty = JSON.stringify(notes) !== JSON.stringify(initialNotes);
+  const secuencia = numberNotes(layout, notes, sectionLabels);
+  const dirty =
+    JSON.stringify(notes) !== JSON.stringify(initialNotes) ||
+    JSON.stringify(secuencia.map((n) => n.entry)) !==
+      JSON.stringify(initialLayout);
   const editable = canEdit && !approved;
 
   const saveMut = useMutation({
     mutationFn: () =>
       saveFinancialStatementNotes({
-        data: { clientId, fiscalYearId, notes },
+        data: {
+          clientId,
+          fiscalYearId,
+          notes,
+          // Se guarda ya normalizado: sin notas borradas y con las nuevas.
+          layout: secuencia.map((n) => n.entry),
+        },
       }),
     onSuccess: () => {
       toast.success('Notas guardadas');
@@ -9275,23 +10439,29 @@ function NotesEditor({
   const newId = () =>
     `n-${notes.reduce((m, n) => Math.max(m, Number(n.id.split('-')[1]) || 0), 0) + 1}`;
 
-  const addNote = () =>
-    setNotes((prev) => [
-      ...prev,
-      { id: newId(), title: 'Nueva nota', content: '' },
-    ]);
+  const addNote = () => {
+    const id = newId();
+    setNotes((prev) => [...prev, { id, title: 'Nueva nota', content: '' }]);
+    setLayout((prev) => [...prev, `note:${id}`]);
+  };
   const update = (id: string, patch: Partial<FsNote>) =>
     setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, ...patch } : n)));
-  const remove = (id: string) =>
+  const remove = (id: string) => {
     setNotes((prev) => prev.filter((n) => n.id !== id));
-  const move = (idx: number, dir: -1 | 1) =>
-    setNotes((prev) => {
-      const next = [...prev];
-      const j = idx + dir;
-      if (j < 0 || j >= next.length) return prev;
-      [next[idx], next[j]] = [next[j], next[idx]];
-      return next;
-    });
+    setLayout((prev) => prev.filter((e) => e !== `note:${id}`));
+  };
+  /**
+   * Mueve sobre la secuencia ya resuelta y la guarda entera. Operar sobre el
+   * layout crudo fallaría cuando quedó viejo: las entradas que faltan se
+   * resuelven al final y las posiciones no coincidirían con lo que se ve.
+   */
+  const move = (idx: number, dir: -1 | 1) => {
+    const orden = secuencia.map((n) => n.entry);
+    const j = idx + dir;
+    if (j < 0 || j >= orden.length) return;
+    [orden[idx], orden[j]] = [orden[j], orden[idx]];
+    setLayout(orden);
+  };
   const togglePreview = (id: string) =>
     setPreview((prev) => {
       const n = new Set(prev);
@@ -9345,7 +10515,52 @@ function NotesEditor({
           </div>
         )}
 
-        {notes.map((note, idx) => {
+        {secuencia.map((item, idx) => {
+          // La composición de rubros la arma el sistema: se puede mover para
+          // que le toque otro número, pero no editar ni borrar.
+          if (item.isSystem) {
+            return (
+              <div
+                key={item.entry}
+                className="rounded-[8px] border border-dashed border-[var(--arca-border)] bg-[var(--arca-surface-2)]/40"
+              >
+                <div className="flex items-center gap-2 px-3 py-2.5">
+                  <span className="text-[11px] text-[var(--arca-ink-3)] w-6 shrink-0">
+                    {item.number}.
+                  </span>
+                  <span className="flex-1 text-[13px] font-medium text-[var(--arca-ink)]">
+                    {item.title}
+                  </span>
+                  <span className="text-[10.5px] text-[var(--arca-ink-3)] italic">
+                    la genera el sistema
+                  </span>
+                  {editable && (
+                    <>
+                      <button
+                        onClick={() => move(idx, -1)}
+                        disabled={idx === 0}
+                        className="text-[12px] px-1.5 h-6 rounded-[5px] text-[var(--arca-ink-3)] hover:bg-[var(--arca-surface)] disabled:opacity-30"
+                        title="Subir"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        onClick={() => move(idx, 1)}
+                        disabled={idx === secuencia.length - 1}
+                        className="text-[12px] px-1.5 h-6 rounded-[5px] text-[var(--arca-ink-3)] hover:bg-[var(--arca-surface)] disabled:opacity-30"
+                        title="Bajar"
+                      >
+                        ↓
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          }
+
+          const note = notes.find((n) => `note:${n.id}` === item.entry);
+          if (!note) return null;
           const isPreview = preview.has(note.id) || !editable;
           return (
             <div
@@ -9354,7 +10569,7 @@ function NotesEditor({
             >
               <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)]">
                 <span className="text-[11px] text-[var(--arca-ink-3)] w-6 shrink-0">
-                  {idx + 1}.
+                  {item.number}.
                 </span>
                 {editable ? (
                   <input
@@ -9365,7 +10580,7 @@ function NotesEditor({
                   />
                 ) : (
                   <span className="flex-1 text-[13px] font-medium text-[var(--arca-ink)]">
-                    {note.title || `Nota ${idx + 1}`}
+                    {note.title || `Nota ${item.number}`}
                   </span>
                 )}
                 {editable && (
@@ -9386,7 +10601,7 @@ function NotesEditor({
                     </button>
                     <button
                       onClick={() => move(idx, 1)}
-                      disabled={idx === notes.length - 1}
+                      disabled={idx === secuencia.length - 1}
                       className="text-[12px] px-1.5 h-6 rounded-[5px] text-[var(--arca-ink-3)] hover:bg-[var(--arca-surface)] disabled:opacity-30"
                       title="Bajar"
                     >
@@ -9446,8 +10661,13 @@ function ExportView({
   clientCuit,
   selectedFy,
   notes,
+  layout,
+  sectionLabels,
+  auditReport,
+  references,
   isOwner,
   valuation,
+  norma,
   pdfGeneratedAt,
   pdfGeneratedByName,
   onPdfSaved,
@@ -9457,14 +10677,28 @@ function ExportView({
   clientCuit: string;
   selectedFy: FyOption | undefined;
   notes: FsNote[];
+  layout: LayoutEntry[];
+  sectionLabels: Record<string, string>;
+  /** Informe del auditor ya rellenado, si se cargó. */
+  auditReport: { body: string; lugar: string; fecha: string } | null;
+  /** Referencias ya resueltas por rubro, para imprimirlas en los estados. */
+  references: Record<string, string>;
   isOwner: boolean;
   valuation: 'ajustado' | 'historico';
+  /** Cómo se cita la norma del ajuste: "RT 54" o "RT 6". */
+  norma: string;
   pdfGeneratedAt: string | null;
   pdfGeneratedByName: string | null;
   onPdfSaved: () => void;
 }) {
   const fyId = selectedFy?.id ?? '';
   const [busy, setBusy] = useState<string | null>(null);
+
+  /** La firma del contador es del estudio, no de la empresa. */
+  const { data: membrete } = useQuery({
+    queryKey: ['accounting', 'membrete', clientId],
+    queryFn: () => getMembreteData({ data: { clientId } }),
+  });
 
   const { data: esp } = useQuery({
     queryKey: ['accounting', 'esp', clientId, fyId, valuation],
@@ -9526,6 +10760,14 @@ function ExportView({
         fiscalYearNumber: esp.fiscalYearNumber,
         periodLabel: esp.periodLabel,
         valuation,
+        norma,
+        sections: resolveDocumentLayout(layout, notes, sectionLabels).map(
+          (x) => x.entry
+        ),
+        composicionNumber:
+          numberNotes(layout, notes, sectionLabels).find(
+            (n) => n.entry === 'composicion'
+          )?.number ?? null,
         eepn: eepn ?? null,
         efe: efe ?? null,
         esp,
@@ -9556,9 +10798,25 @@ function ExportView({
         eepn: eepn ?? null,
         efe: efe ?? null,
         valuation,
+        norma,
+        accountant: membrete?.accountant ?? null,
+        auditReport,
+        auditoriaFecha: auditReport?.fecha ?? null,
+        // El número de cada nota sale de su posición, no del orden de carga.
+        noteSequence: numberNotes(layout, notes, sectionLabels),
+        references,
+        sections: resolveDocumentLayout(layout, notes, sectionLabels).map(
+          (x) => x.entry
+        ),
         anexoII,
         anexoI: anexoI
-          ? { categories: anexoI.categories, grandTotals: anexoI.grandTotals }
+          ? {
+              categories: anexoI.categories,
+              grandTotals: anexoI.grandTotals,
+              prior: anexoIMuestraComparativo(sectionLabels)
+                ? anexoI.prior
+                : null,
+            }
           : null,
         cmv: cmv?.hasData
           ? {

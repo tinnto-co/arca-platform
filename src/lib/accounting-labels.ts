@@ -292,3 +292,33 @@ export const RESULT_ACCOUNT_GROUPS = [
 
 /** Grupo de la cuenta sistema "Resultado del ejercicio" (destino de la refundición). */
 export const RESULT_TARGET_GROUP = 'resultado_ejercicio';
+
+/* ─────────────────────── Norma contable aplicada ─────────────────────── */
+
+export type AccountingFramework = 'rt54' | 'rt6';
+
+/**
+ * Cómo se cita la norma del ajuste por inflación en los Estados Contables.
+ *
+ * El mecanismo es el mismo en las dos —índice FACPCE, coeficientes, RECPAM—,
+ * pero un ente pequeño lo aplica por la RT 54 y el resto por la RT 6, y el
+ * balance tiene que invocar la que corresponde. El estudio prepara casi todos
+ * sus balances bajo RT 54, así que es el default.
+ */
+export const ACCOUNTING_FRAMEWORK_LABELS: Record<AccountingFramework, string> = {
+  rt54: 'RT 54',
+  rt6: 'RT 6',
+};
+
+export const ACCOUNTING_FRAMEWORK_DESCRIPTIONS: Record<
+  AccountingFramework,
+  string
+> = {
+  rt54: 'RT 54 (T.O. RT 59) — entes pequeños',
+  rt6: 'RT 6 — norma general',
+};
+
+/** «…ajuste por inflación (RT 54)», para meter en los subtítulos. */
+export function frameworkCite(framework: AccountingFramework): string {
+  return ACCOUNTING_FRAMEWORK_LABELS[framework];
+}

@@ -508,69 +508,69 @@ function SettingsTab() {
 
   return (
     <div className="space-y-6">
-    <Card>
-      <CardHeader>
-        <CardTitle>Configuración de la organización</CardTitle>
-        <CardDescription>
-          Edita el nombre, identificador y logo de tu organización
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4 max-w-md">
-          <div className="space-y-2">
-            <Label>Logo (URL)</Label>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-              <div className="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-[var(--arca-surface-2)]">
-                {logoUrl.trim() ? (
-                  <Avatar className="size-20 rounded-lg">
-                    <AvatarImage
-                      src={logoUrl.trim()}
-                      alt="Vista previa"
-                      className="object-cover"
-                    />
-                    <AvatarFallback className="rounded-lg text-xs">
-                      ?
-                    </AvatarFallback>
-                  </Avatar>
-                ) : (
-                  <Building className="size-8 text-[var(--arca-ink-3)]" />
-                )}
+      <Card>
+        <CardHeader>
+          <CardTitle>Configuración de la organización</CardTitle>
+          <CardDescription>
+            Edita el nombre, identificador y logo de tu organización
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4 max-w-md">
+            <div className="space-y-2">
+              <Label>Logo (URL)</Label>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+                <div className="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-[var(--arca-surface-2)]">
+                  {logoUrl.trim() ? (
+                    <Avatar className="size-20 rounded-lg">
+                      <AvatarImage
+                        src={logoUrl.trim()}
+                        alt="Vista previa"
+                        className="object-cover"
+                      />
+                      <AvatarFallback className="rounded-lg text-xs">
+                        ?
+                      </AvatarFallback>
+                    </Avatar>
+                  ) : (
+                    <Building className="size-8 text-[var(--arca-ink-3)]" />
+                  )}
+                </div>
+                <Input
+                  id="org-logo"
+                  type="url"
+                  value={logoUrl}
+                  onChange={(e) => setLogoUrl(e.target.value)}
+                  placeholder="https://…"
+                  className="flex-1"
+                />
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="org-name">Nombre</Label>
               <Input
-                id="org-logo"
-                type="url"
-                value={logoUrl}
-                onChange={(e) => setLogoUrl(e.target.value)}
-                placeholder="https://…"
-                className="flex-1"
+                id="org-name"
+                defaultValue={org?.name ?? ''}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Nombre de la organización"
               />
             </div>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="org-name">Nombre</Label>
-            <Input
-              id="org-name"
-              defaultValue={org?.name ?? ''}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Nombre de la organización"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="org-slug">Slug</Label>
-            <Input
-              id="org-slug"
-              defaultValue={org?.slug ?? ''}
-              onChange={(e) => setSlug(e.target.value)}
-              placeholder="identificador-unico"
-            />
-          </div>
-          <Button type="submit" disabled={updateMutation.isPending}>
-            {updateMutation.isPending ? 'Guardando...' : 'Guardar cambios'}
-          </Button>
-        </form>
-      </CardContent>
-    </Card>
-    <AccountantSignatureCard />
+            <div className="space-y-2">
+              <Label htmlFor="org-slug">Slug</Label>
+              <Input
+                id="org-slug"
+                defaultValue={org?.slug ?? ''}
+                onChange={(e) => setSlug(e.target.value)}
+                placeholder="identificador-unico"
+              />
+            </div>
+            <Button type="submit" disabled={updateMutation.isPending}>
+              {updateMutation.isPending ? 'Guardando...' : 'Guardar cambios'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+      <AccountantSignatureCard />
     </div>
   );
 }
@@ -588,6 +588,7 @@ function AccountantSignatureCard() {
     consejo: '',
     tomo: '',
     folio: '',
+    firmaImagen: null as string | null,
   });
 
   useEffect(() => {
@@ -599,6 +600,7 @@ function AccountantSignatureCard() {
         consejo: sig.consejo ?? '',
         tomo: sig.tomo ?? '',
         folio: sig.folio ?? '',
+        firmaImagen: sig.firmaImagen ?? null,
       });
     }
   }, [sig]);
@@ -609,8 +611,37 @@ function AccountantSignatureCard() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const upd = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setForm((f) => ({ ...f, [k]: e.target.value }));
+  const upd =
+    (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+      setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  /**
+   * La firma va embebida en el PDF como data URL. Se limita el tamaño porque
+   * viaja dentro de cada documento generado: una firma escaneada razonable
+   * pesa unos pocos kilobytes.
+   */
+  const MAX_FIRMA = 300 * 1024;
+  const onFirma = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('La firma tiene que ser una imagen (PNG o JPG).');
+      return;
+    }
+    if (file.size > MAX_FIRMA) {
+      toast.error(
+        `La imagen pesa ${Math.round(file.size / 1024)} KB. El máximo son 300 KB: recortala o bajale la resolución.`
+      );
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      // readAsDataURL siempre devuelve string; el tipo admite ArrayBuffer.
+      const url = typeof reader.result === 'string' ? reader.result : null;
+      if (url) setForm((f) => ({ ...f, firmaImagen: url }));
+    };
+    reader.readAsDataURL(file);
+  };
 
   return (
     <Card>
@@ -690,6 +721,40 @@ function AccountantSignatureCard() {
                 />
               </div>
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ac-firma">Imagen de la firma</Label>
+              {form.firmaImagen ? (
+                <div className="flex items-center gap-3">
+                  <img
+                    src={form.firmaImagen}
+                    alt="Firma del contador"
+                    className="h-14 border rounded bg-white px-2"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setForm((f) => ({ ...f, firmaImagen: null }))
+                    }
+                  >
+                    Quitar
+                  </Button>
+                </div>
+              ) : (
+                <Input
+                  id="ac-firma"
+                  type="file"
+                  accept="image/png,image/jpeg"
+                  onChange={onFirma}
+                />
+              )}
+              <p className="text-xs text-muted-foreground">
+                Se imprime arriba del nombre, al pie de cada estado. Sin imagen
+                se deja la línea para firmar a mano. PNG con fondo transparente
+                queda mejor. Máximo 300 KB.
+              </p>
+            </div>
             <Button type="submit" disabled={mut.isPending}>
               {mut.isPending ? 'Guardando...' : 'Guardar datos del contador'}
             </Button>
@@ -728,7 +793,12 @@ function ModulesTab() {
   const toggleMutation = useMutation({
     mutationFn: (data: { module: string; enabled: boolean }) =>
       setModuleEnabled({
-        data: { module: data.module as Parameters<typeof setModuleEnabled>[0]['data']['module'], enabled: data.enabled },
+        data: {
+          module: data.module as Parameters<
+            typeof setModuleEnabled
+          >[0]['data']['module'],
+          enabled: data.enabled,
+        },
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['admin', 'modules'] });

@@ -13,6 +13,7 @@ import {
   pdf,
 } from '@react-pdf/renderer';
 import { MONTH_NAMES, JOURNAL_ORIGIN_LABELS } from '@/lib/accounting-labels';
+import type { NumberedNote } from '@/lib/accounting-document';
 import type {
   EspResult,
   ErResult,
@@ -845,6 +846,8 @@ export interface AnexoIExportAsset {
   amortYear: number;
   accumEnd: number;
   residualEnd: number;
+  /** Neto al cierre del ejercicio anterior. Ausente si no hay comparativo. */
+  priorResidualEnd?: number | null;
 }
 export interface AnexoIExportCategory {
   category: string;
@@ -859,6 +862,7 @@ export interface AnexoIExportCategory {
     amortYear: number;
     accumEnd: number;
     residualEnd: number;
+    priorResidualEnd?: number | null;
   };
 }
 export interface AnexoIAccountantData {
@@ -908,7 +912,12 @@ const ANEXO_HEADERS = [
   'Amort. acum. cierre',
   'Neto al cierre',
 ];
-const ANEXO_COLS = ANEXO_HEADERS.length; // 11
+/** Encabezados efectivos: con comparativo se suma la columna del anterior. */
+function anexoIHeaders(priorNumber?: number | null): string[] {
+  return priorNumber != null
+    ? [...ANEXO_HEADERS, `Neto al cierre ej. N°${priorNumber}`]
+    : ANEXO_HEADERS;
+}
 
 async function anexoIWorkbookBuffer(
   data: AnexoIExportData
@@ -918,7 +927,9 @@ async function anexoIWorkbookBuffer(
     views: [{ showGridLines: false }],
   });
   const m = data.membrete;
-  const NC = ANEXO_COLS; // 11
+  const hasPrior = data.priorNumber != null;
+  const HEADERS = anexoIHeaders(data.priorNumber);
+  const NC = HEADERS.length;
   const RATE_COL = 8;
   const thin = { style: 'thin' as const, color: { argb: 'FF999999' } };
   const box = { top: thin, left: thin, bottom: thin, right: thin };
@@ -994,6 +1005,12 @@ async function anexoIWorkbookBuffer(
     [5, 'Valor al cierre'],
     [10, 'Neto acum. al cierre'],
     [11, 'Neto al cierre'],
+    ...(hasPrior
+      ? ([[12, `Neto al cierre ej. N°${data.priorNumber}`]] as [
+          number,
+          string,
+        ][])
+      : []),
   ];
   for (const [col, label] of singles) {
     mergeBlock(R1, col, R3, col);
@@ -1057,6 +1074,7 @@ async function anexoIWorkbookBuffer(
     t.amortYear,
     t.accumEnd,
     t.residualEnd,
+    ...(hasPrior ? [t.priorResidualEnd ?? 0] : []),
   ];
 
   for (const cat of data.categories) {
@@ -1080,6 +1098,7 @@ async function anexoIWorkbookBuffer(
         a.amortYear,
         a.accumEnd,
         a.residualEnd,
+        ...(hasPrior ? [a.priorResidualEnd ?? 0] : []),
       ]);
       styleDataRow(row);
     }
@@ -1095,18 +1114,6 @@ async function anexoIWorkbookBuffer(
     bold: true,
     fill: true,
   });
-
-  if (data.priorResidualEnd != null) {
-    const pr = ws.addRow([
-      `Neto al cierre · Ejercicio anterior (N°${data.priorNumber})`,
-      ...Array(NC - 2).fill(''),
-      data.priorResidualEnd,
-    ]);
-    mergeRange(pr.number, 1, NC - 1);
-    pr.getCell(NC).numFmt = MONEY_FMT;
-    pr.getCell(NC).alignment = { horizontal: 'right' };
-    pr.getCell(1).font = { italic: true, color: { argb: 'FF555555' } };
-  }
 
   ws.addRow([]);
   const note = ws.addRow([
@@ -1160,7 +1167,11 @@ export async function exportAnexoIExcel(data: AnexoIExportData): Promise<void> {
 
 const AXB = '0.5pt solid #888';
 // Anchos de columna como % de la tabla (suman 100).
-const AXW = {
+/**
+ * Anchos de las columnas del Anexo I, en dos juegos: con y sin la columna del
+ * ejercicio anterior. Cada juego suma 100%, que es lo que espera react-pdf.
+ */
+export const AXW_BASE = {
   name: '16%',
   vInicio: '8%',
   altas: '7%',
@@ -1172,6 +1183,21 @@ const AXW = {
   amortYear: '12%',
   acumCierre: '9%',
   neto: '10%',
+  netoPrior: '0%',
+};
+export const AXW_PRIOR = {
+  name: '13%',
+  vInicio: '7%',
+  altas: '7%',
+  bajas: '7%',
+  vCierre: '8%',
+  acumInicio: '7%',
+  amortBajas: '6%',
+  rate: '5%',
+  amortYear: '10%',
+  acumCierre: '8%',
+  neto: '11%',
+  netoPrior: '11%',
 };
 const ax = StyleSheet.create({
   table: { borderTop: AXB, borderLeft: AXB, marginTop: 8, fontSize: 6.8 },
@@ -1230,7 +1256,6 @@ const ax = StyleSheet.create({
     backgroundColor: '#eeeee9',
   },
   cName: {
-    width: AXW.name,
     borderRight: AXB,
     borderBottom: AXB,
     paddingVertical: 2,
@@ -1279,6 +1304,8 @@ const ax = StyleSheet.create({
 });
 
 function AnexoIDoc({ data }: { data: AnexoIExportData }) {
+  const hasPrior = data.priorNumber != null;
+  const AXW = hasPrior ? AXW_PRIOR : AXW_BASE;
   const t = data.grandTotals;
   const m = data.membrete;
   const num = (v: number) => fmtMoney(v);
@@ -1345,10 +1372,10 @@ function AnexoIDoc({ data }: { data: AnexoIExportData }) {
               </View>
               <View style={ax.hBand}>
                 <View style={[ax.hCellB, { width: '23.53%' }]}>
-                  <Text>Acumuladas al inicio</Text>
+                  <Text>Acum. al inicio</Text>
                 </View>
                 <View style={[ax.hCellB, { width: '20.59%' }]}>
-                  <Text>Bajas del ejercicio</Text>
+                  <Text>Bajas</Text>
                 </View>
                 {/* Sub-grupo Del ejercicio (19% de tabla = 55.88% del grupo) */}
                 <View style={{ width: '55.88%' }}>
@@ -1372,6 +1399,11 @@ function AnexoIDoc({ data }: { data: AnexoIExportData }) {
             <View style={[ax.hCell, { width: AXW.neto }]}>
               <Text>Neto al cierre</Text>
             </View>
+            {hasPrior && (
+              <View style={[ax.hCell, { width: AXW.netoPrior }]}>
+                <Text>Neto al cierre ej. N°{data.priorNumber}</Text>
+              </View>
+            )}
           </View>
 
           {/* Filas por rubro */}
@@ -1384,7 +1416,7 @@ function AnexoIDoc({ data }: { data: AnexoIExportData }) {
               </View>
               {cat.assets.map((a, i) => (
                 <View key={i} style={ax.row}>
-                  <Text style={ax.cName}>{a.name}</Text>
+                  <Text style={[ax.cName, { width: AXW.name }]}>{a.name}</Text>
                   <Text style={[ax.c, { width: AXW.vInicio }]}>
                     {num(a.valorInicio)}
                   </Text>
@@ -1415,10 +1447,17 @@ function AnexoIDoc({ data }: { data: AnexoIExportData }) {
                   <Text style={[ax.c, { width: AXW.neto }]}>
                     {num(a.residualEnd)}
                   </Text>
+                  {hasPrior && (
+                    <Text style={[ax.c, { width: AXW.netoPrior }]}>
+                      {num(a.priorResidualEnd ?? 0)}
+                    </Text>
+                  )}
                 </View>
               ))}
               <View style={ax.subRow}>
-                <Text style={ax.cName}>Subtotal {cat.category}</Text>
+                <Text style={[ax.cName, { width: AXW.name }]}>
+                  Subtotal {cat.category}
+                </Text>
                 <Text style={[ax.c, { width: AXW.vInicio }]}>
                   {num(cat.totals.valorInicio)}
                 </Text>
@@ -1447,13 +1486,18 @@ function AnexoIDoc({ data }: { data: AnexoIExportData }) {
                 <Text style={[ax.c, { width: AXW.neto }]}>
                   {num(cat.totals.residualEnd)}
                 </Text>
+                {hasPrior && (
+                  <Text style={[ax.c, { width: AXW.netoPrior }]}>
+                    {num(cat.totals.priorResidualEnd ?? 0)}
+                  </Text>
+                )}
               </View>
             </View>
           ))}
 
           {/* TOTALES */}
           <View style={ax.totalRow}>
-            <Text style={ax.cName}>TOTALES $</Text>
+            <Text style={[ax.cName, { width: AXW.name }]}>TOTALES $</Text>
             <Text style={[ax.c, { width: AXW.vInicio }]}>
               {num(t.valorInicio)}
             </Text>
@@ -1478,15 +1522,13 @@ function AnexoIDoc({ data }: { data: AnexoIExportData }) {
             <Text style={[ax.c, { width: AXW.neto }]}>
               {num(t.residualEnd)}
             </Text>
+            {hasPrior && (
+              <Text style={[ax.c, { width: AXW.netoPrior }]}>
+                {num(data.priorResidualEnd ?? 0)}
+              </Text>
+            )}
           </View>
         </View>
-
-        {data.priorResidualEnd != null && (
-          <Text style={ax.prior}>
-            Neto al cierre · Ejercicio anterior (N°{data.priorNumber}):{' '}
-            {fmtMoney(data.priorResidualEnd)}
-          </Text>
-        )}
 
         <Text style={ax.note}>
           Las Notas y Anexos forman parte integrante de este Estado.
@@ -1854,16 +1896,17 @@ export async function exportCmvExcel(data: CmvExportData): Promise<void> {
 
 /* ═══════════════ Paquete EECC + Libros legales — PDF (Fase 7) ═══════════════ */
 
-const EECC_DISCLAIMER_HISTORICO =
-  'Estados Contables expresados en valores históricos, sin ajuste por inflación (RT 6).';
-
-const EECC_DISCLAIMER_AJUSTADO =
-  'Estados Contables expresados en moneda homogénea de cierre, con ajuste por inflación (RT 6).';
-
-const disclaimerFor = (valuation: 'ajustado' | 'historico' | undefined) =>
+/**
+ * La norma que se cita depende de la empresa: un ente pequeño aplica RT 54 y
+ * el resto RT 6. El mecanismo del ajuste es el mismo en las dos.
+ */
+const disclaimerFor = (
+  valuation: 'ajustado' | 'historico' | undefined,
+  norma = 'RT 54'
+) =>
   valuation === 'historico'
-    ? EECC_DISCLAIMER_HISTORICO
-    : EECC_DISCLAIMER_AJUSTADO;
+    ? `Estados Contables expresados en valores históricos, sin ajuste por inflación (${norma}).`
+    : `Estados Contables expresados en moneda homogénea de cierre, con ajuste por inflación (${norma}).`;
 
 export interface EeccPackageData {
   empresaName: string;
@@ -1877,13 +1920,43 @@ export interface EeccPackageData {
   efe: EfeResult | null;
   /** Con qué valuación se generaron los estados. Define el disclaimer. */
   valuation?: 'ajustado' | 'historico';
+  /** Cómo se cita la norma del ajuste: "RT 54" o "RT 6". */
+  norma?: string;
+  /** Firma del contador: la misma que ya usa el Anexo I. */
+  accountant?: AnexoIAccountantData | null;
   anexoI: {
     categories: AnexoICategory[];
     grandTotals: AnexoICategory['totals'];
+    /** Neto al cierre del ejercicio anterior, por bien y por rubro. */
+    prior: {
+      number: number;
+      grandTotals: AnexoICategory['totals'];
+      residualByAsset: Record<string, number>;
+      residualByCategory: Record<string, number>;
+    } | null;
   } | null;
   anexoII: AnexoIIResult;
   cmv: CmvBlockData | null;
   notes: FsNote[];
+  /**
+   * Secuencia de notas ya numerada, incluida la composición de rubros. Define
+   * el número de cada una y en qué posición cae el bloque del sistema.
+   */
+  noteSequence?: NumberedNote[];
+  /**
+   * Referencia de cada rubro a su nota o su anexo, por clave de rubro:
+   * { caja_bancos: 'Nota 3.1', bienes_uso: 's/Anexo I' }.
+   */
+  references?: Record<string, string>;
+  /** Fecha del informe del auditor, para la leyenda al pie de cada estado. */
+  auditoriaFecha?: string | null;
+  /** Informe del auditor ya rellenado, si se cargó. */
+  auditReport?: { body: string; lugar: string; fecha: string } | null;
+  /**
+   * Orden de las secciones. Cada entrada es una clave de sección o `note:<id>`.
+   * Sin esto se usa el orden clásico.
+   */
+  sections?: string[];
 }
 
 /** Valores del Anexo CMV para el bloque embebido en el paquete EECC. */
@@ -2016,18 +2089,11 @@ const pk = StyleSheet.create({
   },
   noteH: { fontSize: 9.5, fontFamily: 'Helvetica-Bold', marginTop: 5 },
   empty: { fontSize: 8.5, color: '#999', fontStyle: 'italic', marginTop: 4 },
-  signWrap: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 50,
-  },
-  signBox: {
-    width: '30%',
-    borderTop: '0.7pt solid #333',
-    paddingTop: 4,
-    textAlign: 'center',
-    fontSize: 8,
+  integracion: {
+    fontSize: 7.5,
+    fontStyle: 'italic',
     color: '#444',
+    marginTop: 10,
   },
   footer: {
     position: 'absolute',
@@ -2125,7 +2191,13 @@ function mdLines(md: string): { type: 'h' | 'li' | 'p'; text: string }[] {
     .filter((l) => l.text.length > 0);
 }
 
-function EspBlock({ esp }: { esp: EspResult }) {
+function EspBlock({
+  esp,
+  references = {},
+}: {
+  esp: EspResult;
+  references?: Record<string, string>;
+}) {
   const macros: { macro: 'activo' | 'pasivo' | 'pn'; title: string }[] = [
     { macro: 'activo', title: 'ACTIVO' },
     { macro: 'pasivo', title: 'PASIVO' },
@@ -2162,7 +2234,10 @@ function EspBlock({ esp }: { esp: EspResult }) {
                 )}
                 {sec.rubros.map((r) => (
                   <View key={r.group} style={pk.row}>
-                    <Text style={pk.cLabelIndent}>{r.label}</Text>
+                    <Text style={pk.cLabelIndent}>
+                      {r.label}
+                      {references[r.group] ? ` (${references[r.group]})` : ''}
+                    </Text>
                     <Text style={pk.cNum}>{fmtMoney(r.current)}</Text>
                     <Text style={pk.cNum}>
                       {esp.hasPrior ? fmtMoney(r.prior) : '—'}
@@ -2203,7 +2278,13 @@ function EspBlock({ esp }: { esp: EspResult }) {
   );
 }
 
-function ErBlock({ er }: { er: ErResult }) {
+function ErBlock({
+  er,
+  references = {},
+}: {
+  er: ErResult;
+  references?: Record<string, string>;
+}) {
   const priorLabel = er.hasPrior
     ? `Ej. N°${er.priorFiscalYearNumber}`
     : 'Anterior';
@@ -2223,6 +2304,7 @@ function ErBlock({ er }: { er: ErResult }) {
           <View key={line.key} style={style}>
             <Text style={isSub ? pk.cLabel : pk.cLabelIndent}>
               {line.label}
+              {references[line.key] ? ` (${references[line.key]})` : ''}
             </Text>
             <Text style={pk.cNum}>{fmtMoney(line.current)}</Text>
             <Text style={pk.cNum}>
@@ -2242,35 +2324,51 @@ function ErBlock({ er }: { er: ErResult }) {
  */
 function EepnBlock({ eepn }: { eepn: EepnResult | null }) {
   if (!eepn || eepn.columns.length === 0) return null;
-  // Con muchas columnas el ancho por cuenta se achica para que entre en A4.
-  const colWidth = `${Math.max(9, 46 / (eepn.columns.length + 1))}%`;
+  /**
+   * Los anchos se reparten para sumar 100: react-pdf no recorta el excedente,
+   * encima las columnas unas sobre otras y no da ningún error. El concepto y
+   * los dos totales se llevan lo fijo y el resto se divide entre las cuentas.
+   */
+  const totalCols = eepn.priorFiscalYearNumber !== null ? 2 : 1;
+  const LABEL = 22;
+  const TOTAL = 13;
+  const libre = 100 - LABEL - TOTAL * totalCols;
+  const colWidth = `${libre / eepn.columns.length}%`;
+  const labelStyle = { width: `${LABEL}%` };
+  const totalStyle = {
+    width: `${TOTAL}%`,
+    textAlign: 'right' as const,
+    paddingLeft: 3,
+  };
   const colStyle = {
     width: colWidth,
     textAlign: 'right' as const,
-    paddingLeft: 4,
+    paddingLeft: 3,
   };
   return (
-    <View break>
+    <View>
       <Text style={pk.sectionTitle}>
         Estado de Evolución del Patrimonio Neto
       </Text>
       <View style={pk.colHead}>
-        <Text style={pk.cLabel}>Concepto</Text>
+        <Text style={labelStyle}>Concepto</Text>
         {eepn.columns.map((c) => (
           <Text key={c.accountId} style={colStyle}>
-            {c.name}
+            {c.isSubtotal ? `Total ${c.groupLabel}` : c.name}
           </Text>
         ))}
-        <Text style={pk.cNum}>Ej. N°{eepn.fiscalYearNumber}</Text>
+        <Text style={totalStyle}>Ej. N°{eepn.fiscalYearNumber}</Text>
         {eepn.priorFiscalYearNumber !== null && (
-          <Text style={pk.cNum}>Ej. N°{eepn.priorFiscalYearNumber}</Text>
+          <Text style={totalStyle}>Ej. N°{eepn.priorFiscalYearNumber}</Text>
         )}
       </View>
       {eepn.rows.map((r) => {
         const strong = r.kind === 'inicio' || r.kind === 'cierre';
         return (
           <View key={r.key} style={strong ? pk.totalRow : pk.row}>
-            <Text style={strong ? pk.cLabel : pk.cLabelIndent}>{r.label}</Text>
+            <Text style={[labelStyle, strong ? {} : { paddingLeft: 6 }]}>
+              {r.label}
+            </Text>
             {eepn.columns.map((c) => (
               <Text key={c.accountId} style={colStyle}>
                 {r.amounts[c.accountId]
@@ -2278,11 +2376,19 @@ function EepnBlock({ eepn }: { eepn: EepnResult | null }) {
                   : '—'}
               </Text>
             ))}
-            <Text style={pk.cNum}>{fmtMoney(r.total)}</Text>
+            <Text style={totalStyle}>{fmtMoney(r.total)}</Text>
             {eepn.priorFiscalYearNumber !== null && (
-              <Text style={pk.cNum}>
-                {r.kind === 'cierre' && eepn.priorTotal !== null
-                  ? fmtMoney(eepn.priorTotal)
+              <Text style={totalStyle}>
+                {eepn.prior
+                  ? fmtMoney(
+                      r.kind === 'inicio'
+                        ? eepn.prior.inicio
+                        : r.kind === 'resultado'
+                          ? eepn.prior.resultado
+                          : r.kind === 'cierre'
+                            ? eepn.prior.cierre
+                            : 0
+                    )
                   : '—'}
               </Text>
             )}
@@ -2293,61 +2399,70 @@ function EepnBlock({ eepn }: { eepn: EepnResult | null }) {
   );
 }
 
-/** Estado de Flujo de Efectivo, método directo. */
+/** Estado de Flujo de Efectivo, método directo, comparativo. */
 function EfeBlock({ efe }: { efe: EfeResult | null }) {
   if (!efe) return null;
+  const priorLabel =
+    efe.priorFiscalYearNumber !== null
+      ? `Ej. N°${efe.priorFiscalYearNumber}`
+      : 'Anterior';
+  const row = (
+    label: string,
+    v: { current: number; prior: number },
+    style: Record<string, unknown> = pk.row,
+    indent = true
+  ) => (
+    <View style={style as never} key={label}>
+      <Text style={indent ? pk.cLabelIndent : pk.cLabel}>{label}</Text>
+      <Text style={pk.cNum}>{fmtMoney(v.current)}</Text>
+      <Text style={pk.cNum}>{efe.hasPrior ? fmtMoney(v.prior) : '—'}</Text>
+    </View>
+  );
   return (
-    <View break>
+    <View>
       <Text style={pk.sectionTitle}>
-        Estado de Flujo de Efectivo — Método directo
+        Estado de Flujo de Efectivo y sus Equivalentes — Método directo, forma
+        completa
       </Text>
-      <View style={pk.row}>
-        <Text style={pk.cLabelIndent}>
-          Efectivo y equivalentes al inicio del ejercicio
-        </Text>
-        <Text style={pk.cNum}>{fmtMoney(efe.efectivoInicio)}</Text>
+      <View style={pk.colHead}>
+        <Text style={pk.cLabel}>Concepto</Text>
+        <Text style={pk.cNum}>Ej. N°{efe.fiscalYearNumber}</Text>
+        <Text style={pk.cNum}>{priorLabel}</Text>
       </View>
-      <View style={pk.row}>
-        <Text style={pk.cLabelIndent}>
-          Efectivo y equivalentes al cierre del ejercicio
-        </Text>
-        <Text style={pk.cNum}>{fmtMoney(efe.efectivoCierre)}</Text>
-      </View>
-      <View style={pk.totalRow}>
-        <Text style={pk.cLabel}>Aumento (disminución) neto del efectivo</Text>
-        <Text style={pk.cNum}>{fmtMoney(efe.variacion)}</Text>
-      </View>
+      {row(
+        'Efectivo y equivalentes al inicio del ejercicio',
+        efe.efectivoInicio
+      )}
+      {row(
+        'Efectivo y equivalentes al cierre del ejercicio',
+        efe.efectivoCierre
+      )}
+      {row(
+        'Aumento (disminución) neto del efectivo',
+        efe.variacion,
+        pk.totalRow,
+        false
+      )}
 
       <Text style={pk.subTitle}>Causas de las variaciones del efectivo</Text>
       {efe.activities.map((a) => (
         <View key={a.key}>
           <Text style={pk.subTitle}>{a.label}</Text>
-          {a.lines.map((l) => (
-            <View key={l.accountId} style={pk.row}>
-              <Text style={pk.cLabelIndent}>{l.name}</Text>
-              <Text style={pk.cNum}>{fmtMoney(l.amount)}</Text>
-            </View>
-          ))}
-          <View style={pk.totalRow}>
-            <Text style={pk.cLabel}>
-              Flujo neto por {a.label.toLowerCase()}
-            </Text>
-            <Text style={pk.cNum}>{fmtMoney(a.total)}</Text>
-          </View>
+          {a.lines.map((l) => row(l.name, l))}
+          {row(
+            `Flujo neto por ${a.label.toLowerCase()}`,
+            a,
+            pk.totalRow,
+            false
+          )}
         </View>
       ))}
-      {Math.abs(efe.recpamEfectivo) >= 0.005 && (
-        <View style={pk.row}>
-          <Text style={pk.cLabelIndent}>
-            Resultado por exposición a la inflación del efectivo (RECPAM)
-          </Text>
-          <Text style={pk.cNum}>{fmtMoney(efe.recpamEfectivo)}</Text>
-        </View>
+      {row(
+        'Total de las variaciones del efectivo',
+        efe.totalCausas,
+        pk.grandRow,
+        false
       )}
-      <View style={pk.grandRow}>
-        <Text style={pk.cLabel}>Total de las variaciones del efectivo</Text>
-        <Text style={pk.cNum}>{fmtMoney(efe.totalCausas)}</Text>
-      </View>
     </View>
   );
 }
@@ -2356,7 +2471,14 @@ function EfeBlock({ efe }: { efe: EfeResult | null }) {
  * Nota 3 — Composición de los principales rubros. Sale del mismo detalle por
  * cuenta del ESP, así que no puede diferir de él.
  */
-function Nota3Block({ esp }: { esp: EspResult }) {
+function Nota3Block({
+  esp,
+  numero,
+}: {
+  esp: EspResult;
+  /** Número que le tocó en la secuencia; null si no se numera. */
+  numero: number | null;
+}) {
   const rubros = esp.sections
     .flatMap((sec) => sec.rubros)
     .filter((r) => r.group !== 'resultado_ejercicio')
@@ -2366,9 +2488,10 @@ function Nota3Block({ esp }: { esp: EspResult }) {
     ? `Ej. N°${esp.priorFiscalYearNumber}`
     : 'Anterior';
   return (
-    <View break>
+    <View>
       <Text style={pk.sectionTitle}>
-        Nota 3 — Composición de los principales rubros
+        {numero != null ? `Nota ${numero} — ` : ''}Composición de los
+        principales rubros
       </Text>
       <View style={pk.colHead}>
         <Text style={pk.cLabel}>Concepto</Text>
@@ -2494,6 +2617,7 @@ function AnexoCMVBlock({ cmv }: { cmv: CmvBlockData | null }) {
 }
 
 function AnexoIBlock({ anexoI }: { anexoI: EeccPackageData['anexoI'] }) {
+  const prior = anexoI?.prior ?? null;
   return (
     <View>
       <Text style={pk.sectionTitle}>Anexo I · Bienes de uso</Text>
@@ -2513,6 +2637,7 @@ function AnexoIBlock({ anexoI }: { anexoI: EeccPackageData['anexoI'] }) {
             <Text style={ax6.cNum}>Am.ejerc</Text>
             <Text style={ax6.cNum}>Am.ac.cie</Text>
             <Text style={ax6.cNum}>Neto cierre</Text>
+            {prior && <Text style={ax6.cNum}>Neto ej. N°{prior.number}</Text>}
           </View>
           {anexoI.categories.map((cat) => (
             <View key={cat.category} wrap={false}>
@@ -2530,6 +2655,11 @@ function AnexoIBlock({ anexoI }: { anexoI: EeccPackageData['anexoI'] }) {
                   <Text style={ax6.cNum}>{fmtMoney(a.amortYear)}</Text>
                   <Text style={ax6.cNum}>{fmtMoney(a.accumEnd)}</Text>
                   <Text style={ax6.cNum}>{fmtMoney(a.residualEnd)}</Text>
+                  {prior && (
+                    <Text style={ax6.cNum}>
+                      {fmtMoney(prior.residualByAsset[a.id] ?? 0)}
+                    </Text>
+                  )}
                 </View>
               ))}
               <View style={ax6.sub}>
@@ -2544,6 +2674,11 @@ function AnexoIBlock({ anexoI }: { anexoI: EeccPackageData['anexoI'] }) {
                 <Text style={ax6.cNum}>{fmtMoney(cat.totals.amortYear)}</Text>
                 <Text style={ax6.cNum}>{fmtMoney(cat.totals.accumEnd)}</Text>
                 <Text style={ax6.cNum}>{fmtMoney(cat.totals.residualEnd)}</Text>
+                {prior && (
+                  <Text style={ax6.cNum}>
+                    {fmtMoney(prior.residualByCategory[cat.category] ?? 0)}
+                  </Text>
+                )}
               </View>
             </View>
           ))}
@@ -2573,6 +2708,11 @@ function AnexoIBlock({ anexoI }: { anexoI: EeccPackageData['anexoI'] }) {
             <Text style={ax6.cNum}>
               {fmtMoney(anexoI.grandTotals.residualEnd)}
             </Text>
+            {prior && (
+              <Text style={ax6.cNum}>
+                {fmtMoney(prior.grandTotals.residualEnd)}
+              </Text>
+            )}
           </View>
         </>
       )}
@@ -2580,17 +2720,40 @@ function AnexoIBlock({ anexoI }: { anexoI: EeccPackageData['anexoI'] }) {
   );
 }
 
-function NotesBlock({ notes }: { notes: FsNote[] }) {
+function NotesBlock({
+  notes,
+  sequence,
+  soloUna = false,
+}: {
+  notes: FsNote[];
+  /** Números resueltos por posición. Sin esto se numeran por orden de carga. */
+  sequence?: NumberedNote[];
+  /** Intercalada entre estados: se imprime sin el título del bloque. */
+  soloUna?: boolean;
+}) {
+  // La composición de rubros se imprime en su propio bloque: acá solo van las
+  // notas de texto, pero con el número que les tocó en la secuencia completa.
+  const numeroDe = (id: string) =>
+    sequence?.find((n) => n.entry === `note:${id}`)?.number ?? null;
+  const ordenadas = sequence
+    ? sequence
+        .filter((n) => !n.isSystem)
+        .map((n) => notes.find((x) => `note:${x.id}` === n.entry))
+        .filter((n): n is FsNote => !!n)
+    : notes;
   return (
     <View>
-      <Text style={pk.sectionTitle}>Notas a los Estados Contables</Text>
-      {notes.length === 0 ? (
+      {!soloUna && (
+        <Text style={pk.sectionTitle}>Notas a los Estados Contables</Text>
+      )}
+      {ordenadas.length === 0 ? (
         <Text style={pk.empty}>Sin notas cargadas.</Text>
       ) : (
-        notes.map((note, idx) => (
+        ordenadas.map((note, idx) => (
           <View key={note.id} wrap={false}>
             <Text style={pk.noteTitle}>
-              {idx + 1}. {note.title || `Nota ${idx + 1}`}
+              {numeroDe(note.id) ?? idx + 1}.{' '}
+              {note.title || `Nota ${numeroDe(note.id) ?? idx + 1}`}
             </Text>
             {mdLines(note.content).map((l, i) =>
               l.type === 'h' ? (
@@ -2614,12 +2777,82 @@ function NotesBlock({ notes }: { notes: FsNote[] }) {
   );
 }
 
-function Signatures() {
+/**
+ * Cierre de cada estado: la leyenda de integración y el espacio de firma.
+ *
+ * En el balance del estudio esto va al pie de **cada** estado y de cada anexo,
+ * no una sola vez al final del cuerpo. Cada hoja tiene que poder circular sola
+ * y decir que las notas y anexos forman parte de ella.
+ */
+function EstadoFooter({
+  auditoriaFecha,
+  accountant,
+}: {
+  auditoriaFecha?: string | null;
+  accountant?: AnexoIAccountantData | null;
+}) {
   return (
-    <View style={pk.signWrap} wrap={false}>
-      <Text style={pk.signBox}>Firma del representante legal</Text>
-      <Text style={pk.signBox}>Firma del contador{'\n'}Sello profesional</Text>
-      <Text style={pk.signBox}>Legalización C.P.C.E.</Text>
+    <View wrap={false}>
+      <Text style={pk.integracion}>
+        Las Notas y Anexos que se acompañan forman parte integrante de este
+        Estado.
+      </Text>
+      {auditoriaFecha && (
+        <Text style={pk.integracion}>
+          El informe del auditor se extiende en documento aparte con fecha{' '}
+          {auditoriaFecha}.
+        </Text>
+      )}
+      <SignatureBlock ac={accountant} />
+    </View>
+  );
+}
+
+/** Orden clásico: estados, notas y anexos al final. */
+const DEFAULT_PACKAGE_SECTIONS: string[] = [
+  'esp',
+  'er',
+  'eepn',
+  'efe',
+  'composicion',
+  'anexo_ii',
+  'anexo_i',
+  'anexo_cmv',
+  'informe_auditor',
+];
+
+/**
+ * Informe del auditor. Va sin la leyenda de integración: no es un estado, es
+ * una opinión sobre ellos, y lleva su propio lugar y fecha al pie.
+ */
+function InformeAuditorBlock({
+  informe,
+}: {
+  informe?: { body: string; lugar: string; fecha: string } | null;
+}) {
+  if (!informe?.body?.trim()) return null;
+  return (
+    <View>
+      {mdLines(informe.body).map((l, i) =>
+        l.type === 'h' ? (
+          <Text key={i} style={pk.noteH}>
+            {l.text}
+          </Text>
+        ) : l.type === 'li' ? (
+          <Text key={i} style={pk.noteLi}>
+            • {l.text}
+          </Text>
+        ) : (
+          <Text key={i} style={pk.noteP}>
+            {l.text}
+          </Text>
+        )
+      )}
+      {(informe.lugar || informe.fecha) && (
+        <Text style={pk.noteP}>
+          {[informe.lugar, informe.fecha].filter(Boolean).join(', ')}
+        </Text>
+      )}
     </View>
   );
 }
@@ -2637,26 +2870,90 @@ function EeccPackageDoc({ data }: { data: EeccPackageData }) {
             Ejercicio Económico N°{data.fiscalYearNumber}
           </Text>
           <Text style={pk.coverMeta}>{data.periodLabel}</Text>
-          <Text style={pk.coverDisc}>{disclaimerFor(data.valuation)}</Text>
+          <Text style={pk.coverDisc}>
+            {disclaimerFor(data.valuation, data.norma)}
+          </Text>
           <Text style={pk.coverGen}>Generado el {data.generatedLabel}</Text>
         </View>
         <PageFooter data={data} />
       </Page>
 
-      {/* Cuerpo */}
-      <Page size="A4" style={pk.page} wrap>
-        <EspBlock esp={data.esp} />
-        <ErBlock er={data.er} />
-        <EepnBlock eepn={data.eepn} />
-        <EfeBlock efe={data.efe} />
-        <Nota3Block esp={data.esp} />
-        <AnexoIIBlock a2={data.anexoII} />
-        <AnexoIBlock anexoI={data.anexoI} />
-        <AnexoCMVBlock cmv={data.cmv} />
-        <NotesBlock notes={data.notes} />
-        <Signatures />
-        <PageFooter data={data} />
-      </Page>
+      {/* Cuerpo: una página por sección, en el orden que eligió el contador */}
+      {(data.sections ?? DEFAULT_PACKAGE_SECTIONS).map((entry) => {
+        const bloque = (() => {
+          switch (entry) {
+            case 'esp':
+              return (
+                <EspBlock
+                  key={entry}
+                  esp={data.esp}
+                  references={data.references}
+                />
+              );
+            case 'er':
+              return (
+                <ErBlock
+                  key={entry}
+                  er={data.er}
+                  references={data.references}
+                />
+              );
+            case 'eepn':
+              return <EepnBlock key={entry} eepn={data.eepn} />;
+            case 'efe':
+              return <EfeBlock key={entry} efe={data.efe} />;
+            case 'composicion':
+              return (
+                <Nota3Block
+                  key={entry}
+                  esp={data.esp}
+                  numero={
+                    data.noteSequence?.find((n) => n.entry === 'composicion')
+                      ?.number ?? null
+                  }
+                />
+              );
+            case 'anexo_ii':
+              return <AnexoIIBlock key={entry} a2={data.anexoII} />;
+            case 'anexo_i':
+              return <AnexoIBlock key={entry} anexoI={data.anexoI} />;
+            case 'anexo_cmv':
+              return <AnexoCMVBlock key={entry} cmv={data.cmv} />;
+            case 'informe_auditor':
+              return (
+                <InformeAuditorBlock key={entry} informe={data.auditReport} />
+              );
+            default: {
+              // Una nota suelta: se imprime sola, en la posición que le tocó.
+              const note = data.notes.find((n) => `note:${n.id}` === entry);
+              if (!note) return null;
+              return (
+                <NotesBlock
+                  key={entry}
+                  notes={[note]}
+                  sequence={data.noteSequence}
+                  soloUna
+                />
+              );
+            }
+          }
+        })();
+        if (!bloque) return null;
+        return (
+          <Page key={entry} size="A4" style={pk.page} wrap>
+            {bloque}
+            {entry === 'informe_auditor' ? (
+              <SignatureBlock ac={data.accountant} />
+            ) : (
+              <EstadoFooter
+                auditoriaFecha={data.auditoriaFecha}
+                accountant={data.accountant}
+              />
+            )}
+            <PageFooter data={data} />
+          </Page>
+        );
+      })}
     </Document>
   );
 }
@@ -2805,6 +3102,8 @@ export async function exportLibroMayorPdf(
 /* ── Libro Inventarios y Balances — US 7.1.3 ── */
 
 export interface LibroInventariosData {
+  /** Cómo se cita la norma del ajuste: "RT 54" o "RT 6". */
+  norma?: string;
   empresaName: string;
   cuit: string;
   fiscalYearNumber: number;
@@ -2816,50 +3115,106 @@ export interface LibroInventariosData {
   valuation?: 'ajustado' | 'historico';
 }
 
+/** Anchos del inventario: concepto + las cuatro columnas de importes. */
+const inv = StyleSheet.create({
+  row: { flexDirection: 'row', paddingVertical: 1.2 },
+  label: { width: '36%' },
+  c: { width: '16%', textAlign: 'right', paddingLeft: 3 },
+});
+
+/**
+ * Inventario al cierre, en el formato de cuatro columnas del balance: cada
+ * nivel de la jerarquía coloca su importe una columna más a la derecha.
+ */
 function InventarioBlock({ esp }: { esp: EspResult }) {
+  const fila = (
+    key: string,
+    label: string,
+    col: 0 | 1 | 2 | 3 | 4,
+    amount?: number,
+    opts: { indent?: number; bold?: boolean } = {}
+  ) => (
+    <View key={key} style={inv.row}>
+      <Text
+        style={[
+          inv.label,
+          { paddingLeft: (opts.indent ?? 0) * 7 },
+          opts.bold ? { fontFamily: 'Helvetica-Bold' } : {},
+        ]}
+      >
+        {label}
+      </Text>
+      {([1, 2, 3, 4] as const).map((n) => (
+        <Text
+          key={n}
+          style={[inv.c, opts.bold ? { fontFamily: 'Helvetica-Bold' } : {}]}
+        >
+          {col === n && amount !== undefined ? fmtMoney(amount) : ''}
+        </Text>
+      ))}
+    </View>
+  );
+
+  const macros = [
+    { macro: 'activo' as const, title: 'Activo', total: esp.totals.activo },
+    { macro: 'pasivo' as const, title: 'Pasivo', total: esp.totals.pasivo },
+    { macro: 'pn' as const, title: 'Patrimonio Neto', total: esp.totals.pn },
+  ];
+
   return (
     <View>
       <Text style={pk.sectionTitle}>Inventario al cierre del ejercicio</Text>
-      <View style={pk.colHead}>
-        <Text style={pk.cLabel}>Cuenta</Text>
-        <Text style={pk.cNum}>Saldo al cierre</Text>
-        <Text style={pk.cNum} />
+      <View style={[pk.colHead, inv.row]}>
+        <Text style={inv.label}>Conceptos</Text>
+        {[1, 2, 3, 4].map((n) => (
+          <Text key={n} style={inv.c}>
+            $
+          </Text>
+        ))}
       </View>
-      {(['activo', 'pasivo', 'pn'] as const).map((macro) => {
+      {macros.map(({ macro, title, total }) => {
         const secs = esp.sections.filter((s) => s.macro === macro);
-        const title =
-          macro === 'activo'
-            ? 'ACTIVO'
-            : macro === 'pasivo'
-              ? 'PASIVO'
-              : 'PATRIMONIO NETO';
         if (secs.every((s) => s.rubros.length === 0)) return null;
         return (
           <View key={macro}>
-            <View style={pk.macroRow}>
-              <Text style={pk.cLabel}>{title}</Text>
-              <Text style={pk.cNum} />
-              <Text style={pk.cNum} />
-            </View>
-            {secs.map((sec) =>
-              sec.rubros.map((r) => (
-                <View key={r.group} wrap={false}>
-                  <Text style={pk.subTitle}>{r.label}</Text>
-                  {r.accounts.map((a) => (
-                    <View key={a.accountId} style={pk.row}>
-                      <Text style={pk.cLabelIndent}>
-                        {a.code} {a.name}
-                      </Text>
-                      <Text style={pk.cNum}>{fmtMoney(a.current)}</Text>
-                      <Text style={pk.cNum} />
-                    </View>
-                  ))}
-                </View>
-              ))
-            )}
+            {fila(macro, title, 0, undefined, { bold: true })}
+            {secs.map((sec) => (
+              <View key={sec.key}>
+                {sec.label !== title
+                  ? fila(sec.key, sec.label, 0, undefined, { indent: 1 })
+                  : null}
+                {sec.rubros.map((r) => (
+                  <View key={r.group} wrap={false}>
+                    {fila(r.group, r.label, 2, r.current, { indent: 2 })}
+                    {r.accounts.map((a) =>
+                      fila(a.accountId, a.name, 1, a.current, { indent: 3 })
+                    )}
+                  </View>
+                ))}
+                {sec.rubros.length > 0 && sec.label !== title
+                  ? fila(
+                      `${sec.key}-total`,
+                      `Total ${sec.label}`,
+                      3,
+                      sec.current,
+                      { indent: 1 }
+                    )
+                  : null}
+              </View>
+            ))}
+            {fila(`${macro}-total`, `Total ${title}`, 4, total.current, {
+              bold: true,
+            })}
           </View>
         );
       })}
+      {fila(
+        'total-general',
+        'Total Pasivo + Patrimonio Neto',
+        4,
+        esp.totals.pasivoMasPn.current,
+        { bold: true }
+      )}
     </View>
   );
 }
@@ -2909,16 +3264,22 @@ function LibroInventariosDoc({ data }: { data: LibroInventariosData }) {
         <Text
           style={[lm.meta, { fontStyle: 'italic', color: '#999' }] as never}
         >
-          {disclaimerFor(data.valuation)}
+          {disclaimerFor(data.valuation, data.norma)}
         </Text>
+        {/* El salto lo decide el documento: el paquete de EECC abre una
+            página por sección y el libro encadena, salvo el patrimonio. */}
         <InventarioBlock esp={data.esp} />
-        <EspBlock esp={data.esp} />
-        <ErBlock er={data.er} />
-        {data.eepn && data.eepn.columns.length > 0 ? (
-          <EepnBlock eepn={data.eepn} />
-        ) : (
-          <InventarioPnBlock esp={data.esp} />
-        )}
+        <View break>
+          <EspBlock esp={data.esp} />
+          <ErBlock er={data.er} />
+        </View>
+        <View break>
+          {data.eepn && data.eepn.columns.length > 0 ? (
+            <EepnBlock eepn={data.eepn} />
+          ) : (
+            <InventarioPnBlock esp={data.esp} />
+          )}
+        </View>
         <View style={pk.footer} fixed>
           <Text>
             {footerData.empresaName} · Libro Inventarios y Balances · Ejercicio
@@ -2948,6 +3309,12 @@ export async function exportLibroInventariosPdf(
 /* ═════ Excel de los estados nuevos: EEPN, EFE y Nota 3 (AXI-6/7/8) ═════ */
 
 export interface EstadosExcelData {
+  /** Cómo se cita la norma del ajuste: "RT 54" o "RT 6". */
+  norma?: string;
+  /** Orden de las secciones, para que las solapas sigan el del documento. */
+  sections?: string[];
+  /** Número que le tocó a la composición de rubros. */
+  composicionNumber?: number | null;
   empresaName: string;
   fiscalYearNumber: number;
   periodLabel: string;
@@ -2969,7 +3336,7 @@ export async function exportEstadosExcel(
   const disclaimer =
     data.valuation === 'historico'
       ? 'Valores históricos, sin ajuste por inflación (papel de trabajo).'
-      : 'Moneda homogénea de cierre, con ajuste por inflación (RT 6).';
+      : `Moneda homogénea de cierre, con ajuste por inflación (${data.norma ?? 'RT 54'}).`;
 
   /** Encabezado común a todas las hojas. */
   const header = (ws: XLWorksheet, title: string, cols: number) => {
@@ -2996,8 +3363,12 @@ export async function exportEstadosExcel(
     }
   };
 
-  // ── EEPN ──
-  if (data.eepn && data.eepn.columns.length > 0) {
+  /**
+   * Cada hoja se crea aparte para poder respetar el orden que eligió el
+   * contador: en exceljs el orden de las solapas es el de creación.
+   */
+  const hojaEepn = () => {
+    if (!(data.eepn && data.eepn.columns.length > 0)) return;
     const e = data.eepn;
     const ws = wb.addWorksheet('EEPN', { views: [{ showGridLines: false }] });
     const nCols =
@@ -3006,7 +3377,9 @@ export async function exportEstadosExcel(
 
     const head = [
       'Concepto',
-      ...e.columns.map((c) => c.name),
+      ...e.columns.map((c) =>
+        c.isSubtotal ? `Total ${c.groupLabel}` : c.name
+      ),
       `Ej. N°${e.fiscalYearNumber}`,
     ];
     if (e.priorFiscalYearNumber !== null) {
@@ -3022,27 +3395,55 @@ export async function exportEstadosExcel(
       values.push(row.total);
       if (e.priorFiscalYearNumber !== null) {
         values.push(
-          row.kind === 'cierre' && e.priorTotal !== null ? e.priorTotal : 0
+          e.prior
+            ? row.kind === 'inicio'
+              ? e.prior.inicio
+              : row.kind === 'resultado'
+                ? e.prior.resultado
+                : row.kind === 'cierre'
+                  ? e.prior.cierre
+                  : 0
+            : 0
         );
       }
       const r = ws.addRow(values);
       if (strong) r.getCell(1).font = { bold: true };
       money(r, 2, values.length, strong);
+      e.columns.forEach((c, i) => {
+        if (c.isSubtotal) r.getCell(i + 2).font = { bold: true };
+      });
     }
-  }
+  };
 
-  // ── Flujo de efectivo ──
-  if (data.efe) {
+  const hojaEfe = () => {
+    if (!data.efe) return;
     const f = data.efe;
     const ws = wb.addWorksheet('Flujo de efectivo', {
       views: [{ showGridLines: false }],
     });
-    header(ws, 'Estado de Flujo de Efectivo — Método directo', 2);
+    header(
+      ws,
+      'Estado de Flujo de Efectivo y sus Equivalentes — Método directo, forma completa',
+      3
+    );
 
-    const line = (label: string, value: number, bold = false) => {
-      const r = ws.addRow([label, value]);
+    const hr = ws.addRow([
+      'Concepto',
+      `Ej. N°${f.fiscalYearNumber}`,
+      f.priorFiscalYearNumber !== null
+        ? `Ej. N°${f.priorFiscalYearNumber}`
+        : 'Anterior',
+    ]);
+    for (let c = 1; c <= 3; c++) hr.getCell(c).font = { bold: true };
+
+    const line = (
+      label: string,
+      value: { current: number; prior: number },
+      bold = false
+    ) => {
+      const r = ws.addRow([label, value.current, value.prior]);
       if (bold) r.getCell(1).font = { bold: true };
-      money(r, 2, 2, bold);
+      money(r, 2, 3, bold);
     };
 
     line('Efectivo y equivalentes al inicio del ejercicio', f.efectivoInicio);
@@ -3055,26 +3456,25 @@ export async function exportEstadosExcel(
     for (const a of f.activities) {
       const t = ws.addRow([a.label]);
       t.getCell(1).font = { bold: true, size: 10 };
-      for (const l of a.lines) line(`    ${l.name}`, l.amount);
-      line(`Flujo neto por ${a.label.toLowerCase()}`, a.total, true);
-    }
-    if (Math.abs(f.recpamEfectivo) >= 0.005) {
-      line(
-        'Resultado por exposición a la inflación del efectivo (RECPAM)',
-        f.recpamEfectivo
-      );
+      for (const l of a.lines) line(`    ${l.name}`, l);
+      line(`Flujo neto por ${a.label.toLowerCase()}`, a, true);
     }
     line('Total de las variaciones del efectivo', f.totalCausas, true);
-  }
+  };
 
-  // ── Nota 3 ──
-  const rubros = data.esp.sections
-    .flatMap((sec) => sec.rubros)
-    .filter((r) => r.group !== 'resultado_ejercicio')
-    .filter((r) => Math.abs(r.current) >= 0.005 || Math.abs(r.prior) >= 0.005);
-  if (rubros.length > 0) {
-    const ws = wb.addWorksheet('Nota 3', { views: [{ showGridLines: false }] });
-    header(ws, 'Nota 3 — Composición de los principales rubros', 4);
+  const hojaComposicion = () => {
+    const rubros = data.esp.sections
+      .flatMap((sec) => sec.rubros)
+      .filter((r) => r.group !== 'resultado_ejercicio')
+      .filter(
+        (r) => Math.abs(r.current) >= 0.005 || Math.abs(r.prior) >= 0.005
+      );
+    if (rubros.length === 0) return;
+    // El número sale de la posición de la nota, igual que en el PDF.
+    const n = data.composicionNumber;
+    const titulo = n != null ? `Nota ${n}` : 'Composición';
+    const ws = wb.addWorksheet(titulo, { views: [{ showGridLines: false }] });
+    header(ws, `${titulo} — Composición de los principales rubros`, 4);
     const hr = ws.addRow([
       'Nota',
       'Concepto',
@@ -3088,7 +3488,7 @@ export async function exportEstadosExcel(
     if (ws.columns[1]) ws.columns[1].width = 46;
 
     rubros.forEach((r, i) => {
-      const t = ws.addRow([`3.${i + 1}`, r.label]);
+      const t = ws.addRow([`${n ?? 3}.${i + 1}`, r.label]);
       t.getCell(2).font = { bold: true };
       for (const a of r.accounts) {
         const row = ws.addRow(['', `    ${a.name}`, a.current, a.prior]);
@@ -3097,7 +3497,18 @@ export async function exportEstadosExcel(
       const tot = ws.addRow(['', '', r.current, r.prior]);
       money(tot, 3, 4, true);
     });
-  }
+  };
+
+  // Las solapas salen en el orden del documento, igual que el PDF.
+  const porSeccion: Record<string, () => void> = {
+    eepn: hojaEepn,
+    efe: hojaEfe,
+    composicion: hojaComposicion,
+  };
+  const orden = (data.sections ?? ['eepn', 'efe', 'composicion']).filter(
+    (k) => k in porSeccion
+  );
+  for (const k of orden) porSeccion[k]();
 
   const buffer = await wb.xlsx.writeBuffer();
   triggerDownload(
