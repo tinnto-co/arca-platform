@@ -629,6 +629,42 @@ function Manual() {
           Con «Guardar plantilla» el texto actual queda disponible para
           cualquier otra empresa.
         </Text>
+
+        <Text style={s.h2}>La firma del contador</Text>
+        <Text style={s.p}>
+          Se carga una sola vez, en <Text>Administración</Text>, en la tarjeta
+          «Firma del contador (Estados Contables)». No se configura por empresa:
+          es la del estudio y sale al pie de cada estado y de cada anexo de
+          todos los clientes.
+        </Text>
+        <Row a="Nombre y apellido" b="Como firma. Ej.: Dr. Juan Pérez." />
+        <Row a="Título" b="Contador Público, si no se cambia." />
+        <Row a="Universidad" b="La de la matrícula. Ej.: U.B.A." />
+        <Row a="Consejo profesional" b="Ej.: C.P.C.E.C.A.B.A." />
+        <Row a="Tomo y folio" b="Los de la matrícula." />
+        <Row
+          a="Imagen de la firma"
+          b="Opcional. Se imprime arriba del nombre."
+        />
+        <View style={{ height: 8 }} />
+        <Li>
+          La imagen va <Text>embebida en cada PDF</Text> que se genera, así que
+          tiene un tope de 300 KB. Una firma recortada pesa unos pocos
+          kilobytes; si subís el escaneo entero de la hoja, lo rechaza.
+        </Li>
+        <Li>
+          Conviene <Text>PNG con fondo transparente</Text>: un JPG llega con su
+          recuadro blanco y se nota sobre la hoja.
+        </Li>
+        <Li>
+          Sin imagen no falla nada: se deja la línea en blanco para firmar a
+          mano sobre el impreso.
+        </Li>
+        <Note>
+          Es lo último que suele faltar y lo primero que se ve. Cargala antes de
+          generar el paquete: los EECC ya exportados no la incorporan solos, hay
+          que volver a generarlos.
+        </Note>
       </Cap>
 
       {/* ── 7. Cerrar ── */}
