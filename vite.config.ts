@@ -20,7 +20,6 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: [
-      "gridstack",
       "@react-pdf/renderer",
       "@copilotkit/react-core",
       "@copilotkit/react-ui",
@@ -28,24 +27,14 @@ export default defineConfig({
     ],
   },
 
-
   ssr: {
-    noExternal: [
-      "lucide-react",
-      "gridstack",
-      "katex",
-      "@platejs/math",
-      "platejs",
-      "use-file-picker",
-      "react-lite-youtube-embed",
-      "react-tweet",
-      "ai",
-      "@ai-sdk/google",
-      "@ai-sdk/react",
-      "@copilotkit/react-core",
-      "@copilotkit/react-ui",
-      "@copilotkit/runtime-client-gql",
-    ],
+    // CopilotKit queda FUERA de esta lista a propósito. Arrastra
+    // streamdown → mermaid + shiki + katex, y bundlearlo también para SSR
+    // duplicaba ese árbol entero: era la mitad del pico de memoria del build.
+    // Externalizado, Bun lo resuelve desde node_modules en runtime.
+    // Las entradas de gridstack/katex/platejs/react-tweet se sacaron porque
+    // esos paquetes no están instalados: apuntaban a nada.
+    noExternal: ["lucide-react", "ai", "@ai-sdk/google", "@ai-sdk/react"],
   },
   plugins: [
     viteTsConfigPaths({

@@ -16,15 +16,17 @@ import {
   useRouterState,
 } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { CopilotKit } from '@copilotkit/react-core';
-import '@copilotkit/react-ui/styles.css';
-import { CopilotActions } from '@/components/copilot/CopilotActions';
+import { lazy, Suspense } from 'react';
 import { CopilotAttachmentProvider } from '@/components/copilot/AttachmentContext';
-import { CopilotBottomPanel } from '@/components/copilot/CopilotBottomPanel';
-import { FrontendTools } from '@/components/copilot/FrontendTools';
-import { GlobalCopilotReadables } from '@/components/copilot/GlobalCopilotReadables';
-import { VisiblePageReadable } from '@/components/copilot/VisiblePageReadable';
 import { cn } from '@/lib/utils';
+
+// Carga diferida a propósito: CopilotProvider es la única puerta a
+// `@copilotkit/*`, que arrastra streamdown → mermaid + shiki (~2 MB de JS).
+// Importado en forma estática, ese árbol entra al grafo de entrada del build
+// aunque la organización no tenga el módulo `ai_agent` habilitado.
+const CopilotProvider = lazy(
+  () => import('@/components/copilot/CopilotProvider')
+);
 
 export const Route = createFileRoute('/_authed')({
   component: RouteComponent,
@@ -91,21 +93,19 @@ function RouteComponent() {
   );
 
   if (aiAgentEnabled) {
+    const shellNode = shell(!hideAgentInput ? <AgentInput /> : null);
     return (
-      <CopilotKit
-        runtimeUrl="/api/copilotkit"
-        showDevConsole={false}
-        enableInspector={false}
-      >
-        <CopilotAttachmentProvider>
-          <CopilotActions />
-          <FrontendTools />
-          <GlobalCopilotReadables />
-          <VisiblePageReadable />
-          {shell(!hideAgentInput ? <AgentInput /> : null)}
-          {!isChatRoute && <CopilotBottomPanel />}
-        </CopilotAttachmentProvider>
-      </CopilotKit>
+      <CopilotAttachmentProvider>
+        {/* fallback null y no `shellNode`: montar el shell fuera del provider
+            y después moverlo adentro lo remontaría entero. Además esta rama ya
+            devuelve null arriba mientras carga `orgModules`, así que no cambia
+            lo que se ve. */}
+        <Suspense fallback={null}>
+          <CopilotProvider showBottomPanel={!isChatRoute}>
+            {shellNode}
+          </CopilotProvider>
+        </Suspense>
+      </CopilotAttachmentProvider>
     );
   }
 
