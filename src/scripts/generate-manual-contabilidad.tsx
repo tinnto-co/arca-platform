@@ -629,7 +629,11 @@ function Manual() {
           Con «Guardar plantilla» el texto actual queda disponible para
           cualquier otra empresa.
         </Text>
+      </Cap>
 
+      {/* La firma va en página propia: entre la tabla de campos, los avisos y
+          la nota no entra debajo del informe del auditor sin partirse. */}
+      <Cap titulo="6 · NOTAS, ORDEN E INFORME (CONT.)" cont>
         <Text style={s.h2}>La firma del contador</Text>
         <Text style={s.p}>
           Se carga una sola vez, en <Text>Administración</Text>, en la tarjeta
