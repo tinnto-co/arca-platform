@@ -1,0 +1,15 @@
+# Sin esto, `COPY . .` en la etapa prerelease manda el directorio entero al
+# daemon —incluidos node_modules y dist— y encima pisa los node_modules de
+# Linux que la etapa `install` acaba de instalar, con los binarios del host.
+node_modules
+dist
+.git
+.env
+.env.*
+.claude
+
+# Artefactos locales que no hacen falta para buildear
+*.dump
+tmp-*.json
+.DS_Store
+*.log

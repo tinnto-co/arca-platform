@@ -28,17 +28,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf 
 # los ~58s de copiar node_modules caían justo sobre el pico de memoria del
 # bundling, en un servidor que ya está al límite. Tomándolo de `prerelease`
 # la etapa queda encadenada y espera a que el build termine.
-COPY --from=prerelease /usr/src/app/node_modules ./node_modules
-COPY --from=prerelease /usr/src/app/dist ./dist
-COPY --from=prerelease /usr/src/app/server.ts ./server.ts
-COPY --from=prerelease /usr/src/app/lib ./lib
-COPY --from=prerelease /usr/src/app/src ./src
-COPY --from=prerelease /usr/src/app/drizzle ./drizzle
-COPY --from=prerelease /usr/src/app/tsconfig.json ./tsconfig.json
-COPY package.json ./
-
-# Fix permissions before switching to non-root user
-RUN chown -R bun:bun /usr/src/app
+#
+# Cada COPY lleva --chown en vez de un `RUN chown -R` al final: recorrer
+# node_modules entero para cambiarle el dueño tardaba ~145s y duplicaba esas
+# capas en la imagen.
+COPY --from=prerelease --chown=bun:bun /usr/src/app/node_modules ./node_modules
+COPY --from=prerelease --chown=bun:bun /usr/src/app/dist ./dist
+COPY --from=prerelease --chown=bun:bun /usr/src/app/server.ts ./server.ts
+COPY --from=prerelease --chown=bun:bun /usr/src/app/lib ./lib
+COPY --from=prerelease --chown=bun:bun /usr/src/app/src ./src
+COPY --from=prerelease --chown=bun:bun /usr/src/app/drizzle ./drizzle
+COPY --from=prerelease --chown=bun:bun /usr/src/app/tsconfig.json ./tsconfig.json
+COPY --chown=bun:bun package.json ./
 
 # run the app
 USER bun
