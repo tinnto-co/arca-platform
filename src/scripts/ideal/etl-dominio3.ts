@@ -513,6 +513,25 @@ await insertChunked(
 );
 const cctCodigos = new Set(ccts.map((r) => r.cct as string));
 
+/**
+ * El catálogo escribe el número de convenio con el bloque izquierdo en 4 dígitos
+ * ("0130/75") y payroll_convenio sin rellenar ("130/75"). Sin normalizar, el match
+ * exacto fallaba en TODOS salvo "9999/99" y los convenios quedaban sin CCT — que es
+ * la clave por la que el scrapper de escalas encuentra a quién actualizar.
+ */
+function normalizarCctCodigo(raw: string | null): string | null {
+  if (!raw) return null;
+  const m = raw.trim().match(/^(\d{1,4})\/(\d{1,4})$/);
+  const codigo = m ? `${m[1].padStart(4, "0")}/${m[2]}` : raw.trim();
+  return cctCodigos.has(codigo) ? codigo : null;
+}
+
+/** De dónde saca el scrapper la escala de cada CCT (ver escalas.processor.ts). */
+await dst.unsafe(`insert into cct_fuente (cct_codigo, url, extractor)
+  select '0130/75', 'https://estudiovilaplana.com.ar/escala-salarial-empleados-comercio/', 'vilaplana-tabla'
+  where exists (select 1 from cct where codigo = '0130/75')
+  on conflict do nothing`);
+
 const convenios = (await src.unsafe(`select * from payroll_convenio`)) as unknown as Row[];
 const conveniosOk = convenios.filter((r) => clienteById.has(r.client_id));
 if (conveniosOk.length < convenios.length)
@@ -523,8 +542,8 @@ await insertChunked(
     id: r.id,
     org_id: orgDe(r.client_id),
     cliente_id: r.client_id,
-    // Solo 16 de 59 CCT del convenio están en el catálogo: el resto queda sin FK hasta que se cargue.
-    cct_codigo: r.cct_codigo && cctCodigos.has(r.cct_codigo) ? r.cct_codigo : null,
+    // Los que no están en el catálogo quedan sin FK hasta que se cargue el CCT.
+    cct_codigo: normalizarCctCodigo(r.cct_codigo as string | null),
     nombre: r.nombre,
     descripcion: r.descripcion,
     activo: r.activo,

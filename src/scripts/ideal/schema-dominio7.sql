@@ -6,7 +6,8 @@
 -- ============================================================================
 
 create type job_type as enum (
-  'iva', 'comprobantes', 'comprobantes_full', 'notificaciones', 'deuda', 'vencimientos', 'batch'
+  'iva', 'comprobantes', 'comprobantes_full', 'notificaciones', 'deuda', 'vencimientos', 'batch',
+  'escalas'
 );
 create type job_status as enum ('pending', 'running', 'failed', 'finished');
 create type job_log_level as enum ('debug', 'info', 'warn', 'error');
@@ -27,7 +28,7 @@ create type agent_action_estado as enum ('propuesta', 'aprobada', 'rechazada', '
 create table job (
   id uuid primary key default gen_random_uuid(),
   org_id text not null references organization(id) on delete cascade,
-  credencial_id uuid not null references credencial_afip(id) on delete cascade,
+  credencial_id uuid references credencial_afip(id) on delete cascade,
   cliente_id uuid references cliente(id) on delete set null,
   type job_type not null,
   status job_status not null default 'pending',
@@ -41,7 +42,8 @@ create table job (
   finished_at timestamptz,
   failed_at timestamptz,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  constraint job_credencial_requerida check (type = 'escalas' or credencial_id is not null)
 );
 create index idx_job_credencial on job(credencial_id);
 create index idx_job_cliente on job(cliente_id);
@@ -52,6 +54,8 @@ create trigger trg_set_updated_at before update on job for each row execute func
 
 comment on table job is
   'Trabajo de scraping despachado al servicio externo. La unidad de scrapeo es el login de AFIP (credencial), no el cliente: un job recorre todas las empresas de ese login. cliente_id solo se completa cuando el job es de una empresa puntual.';
+comment on column job.credencial_id is
+  'Null solo en los jobs que no scrapean AFIP: type=''escalas'' lee una página pública de escalas salariales y no tiene login. El CHECK job_credencial_requerida lo exige para todos los demás tipos.';
 comment on column job.bull_job_id is 'Id del job en BullMQ. Une esta fila con la cola real; sin esto no se puede diagnosticar un job trabado.';
 comment on column job.attempts is 'Reintentos ya consumidos. Un job pending con started_at seteado es uno que BullMQ dio por colgado y reencoló.';
 

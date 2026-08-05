@@ -52,8 +52,15 @@ grant update (nombre, email, telefono, estado, ultimo_login_ok) on credencial_af
 grant select on cliente_credencial to arca_scrapper;
 grant update (afip_contribuyente_id) on cliente_credencial to arca_scrapper;
 
+-- De las escalas salariales solo agrega/pisa el básico de convenio. Las categorías
+-- y los convenios los arma el estudio: el scrapper los lee para saber a quién aplicar.
+grant select, insert, update on escala_salarial to arca_scrapper;
+grant select on convenio, convenio_categoria to arca_scrapper;
+grant select on cct to arca_scrapper;
+grant update (ultimo_intento_at, ultimo_ok_at, ultimo_error) on cct_fuente to arca_scrapper;
+
 -- ---------- lo que el scrapper solo LEE ----------
-grant select on cliente, organization, comprobante_tipo to arca_scrapper;
+grant select on cliente, organization, comprobante_tipo, cct_fuente to arca_scrapper;
 
 -- Ninguna de las tablas de arriba usa secuencias hoy (todas las PK son uuid), pero
 -- el grant evita un fallo silencioso si mañana alguna las usa.
@@ -74,14 +81,17 @@ begin
     -- org vía cliente
     'cliente_credencial','iva_declaracion',
     -- hijas, heredan del padre
-    'comprobante_alicuota','job_log','notificacion_adjunto'
+    'comprobante_alicuota','job_log','notificacion_adjunto',
+    -- escalas salariales: convenio tiene org_id, categoria y escala cuelgan de él
+    'convenio','convenio_categoria','escala_salarial'
   ] loop
     execute format('alter policy tenant on %I to arca_app, arca_agent, arca_scrapper', t);
   end loop;
 end
 $do$;
 
--- `contraparte` no tiene RLS (catálogo global, ver schema-rls.sql): con el grant alcanza.
+-- `contraparte`, `cct` y `cct_fuente` no tienen RLS (catálogos globales, ver
+-- schema-rls.sql): con el grant alcanza.
 
 -- ---------- arranque del job ----------
 -- Huevo y gallina: el worker recibe un credencialId y necesita leer esa credencial

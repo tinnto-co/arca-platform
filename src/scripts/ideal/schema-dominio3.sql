@@ -468,6 +468,33 @@ create table cct (
 comment on table cct is
   'Catálogo de convenios colectivos de trabajo por número oficial (ej. "130/75" = Comercio). Global: el CCT no es de nadie, los clientes se adhieren.';
 
+create table cct_fuente (
+  id uuid primary key default gen_random_uuid(),
+  cct_codigo text not null references cct(codigo) on delete cascade,
+  url text not null,
+  extractor text not null,
+  activo boolean not null default true,
+  ultimo_intento_at timestamptz,
+  ultimo_ok_at timestamptz,
+  ultimo_error text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (cct_codigo, url)
+);
+create trigger trg_set_updated_at before update on cct_fuente for each row execute function set_updated_at();
+
+comment on table cct_fuente is
+  'De dónde saca el scrapper la escala de un CCT. Global como cct: la escala del convenio es la misma para todos los estudios, lo que cambia por cliente es a qué categorías se aplica. Agregar un convenio al scrapeo automático es una fila acá, no un deploy.';
+comment on column cct_fuente.extractor is
+  'Qué rutina sabe leer esta página (ej. "vilaplana-tabla"). No se infiere de la URL: un sitio puede publicar dos formatos distintos.';
+comment on column cct_fuente.ultimo_intento_at is
+  'Última vez que el scrapper abrió esta página, haya salido bien o mal. Comparada con ultimo_ok_at dice si el cron corre: si esta se mueve y la otra no, la fuente está fallando; si no se mueve ninguna, el cron no está corriendo.';
+comment on column cct_fuente.ultimo_ok_at is
+  'Última corrida que trajo escalas. Si se queda vieja, la fuente cambió de forma y el extractor dejó de matchear — es la señal de alarma.';
+comment on column cct_fuente.ultimo_error is
+  'Error de la última corrida fallida, en texto. Se limpia cuando una corrida vuelve a salir bien.';
+-- Las filas las siembra etl-dominio3.ts: acá todavía no existe el catálogo `cct` al que apuntan.
+
 create table convenio (
   id uuid primary key default gen_random_uuid(),
   org_id text not null references organization(id) on delete cascade,

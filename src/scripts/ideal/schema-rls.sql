@@ -21,7 +21,7 @@
 -- para una tabla no ve nada. Fail-closed también acá.
 --
 -- El scrapper entra por estas mismas políticas: schema-rls-scrapper.sql se suma a
--- la lista de roles de `tenant` (alter policy) en las 15 tablas que puede tocar.
+-- la lista de roles de `tenant` (alter policy) en las 18 tablas que puede tocar.
 -- ============================================================================
 
 -- ---------- roles (sobreviven al drop schema; creación idempotente) ----------
@@ -138,10 +138,11 @@ create policy tenant on escala_salarial to arca_app, arca_agent
 -- ============================================================================
 -- Sin política, A PROPÓSITO
 -- ============================================================================
--- Catálogos globales (19): actividad, base_calculo, base_calculo_concepto,
---   cct, comprobante_tipo, concepto, concepto_afip, condicion_trabajador,
---   contraparte, localidad, modalidad_contratacion, nacionalidad, obra_social,
---   parametro_periodo, provincia, siniestrado, situacion_revista, tipo_empresa, zona.
+-- Catálogos globales (20): actividad, base_calculo, base_calculo_concepto,
+--   cct, cct_fuente, comprobante_tipo, concepto, concepto_afip,
+--   condicion_trabajador, contraparte, localidad, modalidad_contratacion,
+--   nacionalidad, obra_social, parametro_periodo, provincia, siniestrado,
+--   situacion_revista, tipo_empresa, zona.
 --   Son códigos AFIP y sujetos vistos en comprobantes: no pertenecen a nadie.
 --   contraparte es el caso deliberado — dos estudios que le facturan al mismo
 --   proveedor comparten la fila, y eso está bien: no revela nada del otro
@@ -152,7 +153,7 @@ create policy tenant on escala_salarial to arca_app, arca_agent
 --   de sesión (en el login todavía no sabemos la org). El aislamiento acá lo
 --   hace Better Auth, no Postgres.
 --
--- Total: 52 tablas con política, 26 sin.
+-- Total: 52 tablas con política, 27 sin.
 
 comment on schema public is
   'BD_IDEAL. Aislamiento multi-tenant por RLS: toda conexión de app/agente debe abrir transacción y hacer `set local app.org_id = ''<org>''` antes de consultar; sin eso se ven cero filas. Ver schema-rls.sql. Los catálogos globales y las tablas de auth están exentas a propósito.';
