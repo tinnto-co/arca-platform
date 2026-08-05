@@ -549,8 +549,8 @@ create index idx_escala_categoria on escala_salarial(categoria_id);
 create trigger trg_set_updated_at before update on escala_salarial for each row execute function set_updated_at();
 
 comment on table escala_salarial is
-  'Básico de convenio por categoría y vigencia. Se actualiza sola: src/lib/payroll-cron.ts corre el día 20, scrapea la fuente y parsea la escala con Gemini.';
-comment on column escala_salarial.fuente is 'URL de donde salió la escala, o "MANUAL". Es la trazabilidad de un dato cargado por IA.';
+  'Básico de convenio por categoría y vigencia. Se actualiza sola: el job "escalas" del scrapper lee las páginas de cct_fuente todas las semanas y pisa el básico y el no remunerativo.';
+comment on column escala_salarial.fuente is 'URL de donde salió la escala, o "MANUAL". Es la trazabilidad de un dato que no cargó una persona.';
 comment on column escala_salarial.vigencia_hasta is 'Null = vigente hasta que aparezca una escala posterior.';
 
 create table convenio_fuente (
