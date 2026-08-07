@@ -8,13 +8,19 @@ import {
   credencialAfip,
   cliente,
   clienteCredencial,
+  comprobante,
+  ivaDeclaracion,
+  notificacion,
+  deuda,
+  vencimiento,
+  escalaSalarial,
 } from '@/drizzle/schema';
 import {
   getSessionWithOrg,
   getMemberRole,
   assertCanWrite,
 } from '@/actions/helpers';
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql, type AnyColumn } from 'drizzle-orm';
 import {
   classifyStoredFailedReason,
   CATEGORY_LABELS,
@@ -36,6 +42,7 @@ const jobTypeEnum = z.enum([
   'notificaciones',
   'deuda',
   'vencimientos',
+  'escalas',
 ]);
 
 export type JobStatus = z.infer<typeof jobStatusEnum>;
@@ -495,3 +502,113 @@ export const getJobErrorSummary = createServerFn({ method: 'GET' })
       groups,
     };
   });
+
+/** Una fuente de datos scrapeada: última corrida y última actualización real. */
+export interface FuenteDatoRow {
+  id: string;
+  nombre: string;
+  /** Último job terminado OK (ISO) o null si nunca corrió. */
+  ultimoOkAt: string | null;
+  /** Último job fallido (ISO) o null. */
+  ultimoErrorAt: string | null;
+  /** max(updated_at) de la tabla destino (ISO) o null si está vacía. */
+  datosActualizadosAt: string | null;
+}
+
+// max(timestamptz) crudo vuelve como string no-ISO del driver → patrón to_json.
+const isoMax = (col: AnyColumn) =>
+  sql<string | null>`to_json(max(${col}))#>>'{}'`;
+
+export const getFuentesDatos = createServerFn({ method: 'GET' }).handler(
+  async (): Promise<FuenteDatoRow[]> => {
+    const { orgId } = await getSessionWithOrg();
+
+    const jobsPorTipo = await db
+      .select({
+        type: job.type,
+        ultimoOkAt: sql<
+          string | null
+        >`to_json(max(${job.finishedAt}) filter (where ${job.status} = 'finished'))#>>'{}'`,
+        ultimoErrorAt: sql<
+          string | null
+        >`to_json(max(coalesce(${job.failedAt}, ${job.updatedAt})) filter (where ${job.status} = 'failed'))#>>'{}'`,
+      })
+      .from(job)
+      .where(eq(job.orgId, orgId))
+      .groupBy(job.type);
+
+    const porTipo = new Map(jobsPorTipo.map((r) => [r.type as string, r]));
+
+    // Última actualización real de cada tabla destino (RLS scopea por org;
+    // escala_salarial es catálogo por convenio, scopeada a 2 saltos).
+    const [[comp], [ivaDecl], [notif], [deu], [venc], [esc]] =
+      await Promise.all([
+        db.select({ at: isoMax(comprobante.updatedAt) }).from(comprobante),
+        db
+          .select({ at: isoMax(ivaDeclaracion.updatedAt) })
+          .from(ivaDeclaracion),
+        db.select({ at: isoMax(notificacion.updatedAt) }).from(notificacion),
+        db.select({ at: isoMax(deuda.updatedAt) }).from(deuda),
+        db.select({ at: isoMax(vencimiento.updatedAt) }).from(vencimiento),
+        db
+          .select({ at: isoMax(escalaSalarial.updatedAt) })
+          .from(escalaSalarial),
+      ]);
+
+    // Combina varios job types en una fuente (ej. comprobantes + full).
+    const jobsDe = (tipos: string[]) => {
+      let ultimoOkAt: string | null = null;
+      let ultimoErrorAt: string | null = null;
+      for (const t of tipos) {
+        const r = porTipo.get(t);
+        if (r?.ultimoOkAt && (!ultimoOkAt || r.ultimoOkAt > ultimoOkAt))
+          ultimoOkAt = r.ultimoOkAt;
+        if (
+          r?.ultimoErrorAt &&
+          (!ultimoErrorAt || r.ultimoErrorAt > ultimoErrorAt)
+        )
+          ultimoErrorAt = r.ultimoErrorAt;
+      }
+      return { ultimoOkAt, ultimoErrorAt };
+    };
+
+    return [
+      {
+        id: 'comprobantes',
+        nombre: 'Comprobantes',
+        ...jobsDe(['comprobantes', 'comprobantes_full']),
+        datosActualizadosAt: comp.at,
+      },
+      {
+        id: 'iva',
+        nombre: 'IVA (F2051)',
+        ...jobsDe(['iva']),
+        datosActualizadosAt: ivaDecl.at,
+      },
+      {
+        id: 'notificaciones',
+        nombre: 'Notificaciones',
+        ...jobsDe(['notificaciones']),
+        datosActualizadosAt: notif.at,
+      },
+      {
+        id: 'deuda',
+        nombre: 'Deudas',
+        ...jobsDe(['deuda']),
+        datosActualizadosAt: deu.at,
+      },
+      {
+        id: 'vencimientos',
+        nombre: 'Vencimientos',
+        ...jobsDe(['vencimientos']),
+        datosActualizadosAt: venc.at,
+      },
+      {
+        id: 'escalas',
+        nombre: 'Escalas salariales',
+        ...jobsDe(['escalas']),
+        datosActualizadosAt: esc.at,
+      },
+    ];
+  }
+);
