@@ -2503,7 +2503,12 @@ function validateConceptoEditSos(
 
   const esRetencionSubBase =
     (code >= 511 && code <= 520) || (code >= 551 && code <= 562);
-  if (esRetencionSubBase && (pct ?? 0) > 0) {
+  // Con monto explícito la fórmula (base × % × importe) no corre — el monto
+  // gana en montoLiquidadoDesdeEditsSos — así que no se exige importe=1.
+  // Permite vaciar/editar el importe de un concepto precargado sin error (TIN-1303).
+  const montoDirecto = parseDecimalSos(c.monto);
+  const usaFormula = montoDirecto == null || montoDirecto === 0;
+  if (esRetencionSubBase && (pct ?? 0) > 0 && usaFormula) {
     if (imp == null || imp === 0) {
       throw new Error(
         `Concepto ${c.codigo}: para retenciones sobre base dinámica se debe informar importe=1.`

@@ -44,7 +44,11 @@ import {
   RevistaNovedadesCard,
   type SituacionSel,
 } from './RevistaNovedadesCard';
-import { calcularRecibo, useReciboCalculo } from './useReciboCalculo';
+import {
+  calcularRecibo,
+  seedEditRow,
+  useReciboCalculo,
+} from './useReciboCalculo';
 import {
   antiguedadAnios,
   fechaDepositoCargasDe,
@@ -297,11 +301,24 @@ export function NuevoReciboView({
     periodoLiquidable,
   ]);
 
+  // Días trabajados aplicados al concepto 1 aunque los edits se hayan
+  // reseteado (cambio de tipo — p. ej. liquidación final — o copia del último
+  // recibo): overlay declarativo, la edición manual de la fila 1 gana (TIN-1304).
+  const editsConDias = useMemo<EditsMap>(() => {
+    if (dias === '' || edits['1'] || !activeCodigos.has('1')) return edits;
+    const c1 = conceptosFilas.find((c) => c.codigo === '1');
+    if (!c1) return edits;
+    return {
+      ...edits,
+      '1': { ...seedEditRow(c1), cantidad: dias, monto: '' },
+    };
+  }, [edits, dias, activeCodigos, conceptosFilas]);
+
   // ---------------------------------------------------------------- cálculo
   const calculo = useReciboCalculo({
     conceptos: conceptosFilas,
     activeCodigos,
-    edits,
+    edits: editsConDias,
     basicoEscala,
     basicoJornadaCompleta: basicoEscala,
     mejorSueldoSemestre: ultimoRecibo?.mejorSueldoSemestre ?? 0,
@@ -322,7 +339,7 @@ export function NuevoReciboView({
       calcularRecibo({
         conceptos: conceptosFilas,
         activeCodigos,
-        edits,
+        edits: editsConDias,
         basicoEscala,
         basicoJornadaCompleta: basicoEscala,
         mejorSueldoSemestre: ultimoRecibo?.mejorSueldoSemestre ?? 0,
@@ -370,7 +387,7 @@ export function NuevoReciboView({
     emp,
     conceptosFilas,
     activeCodigos,
-    edits,
+    editsConDias,
     basicoEscala,
     ultimoRecibo?.mejorSueldoSemestre,
     diasSemestre,

@@ -35,34 +35,35 @@ function buildConceptosParaGuardar(
   filas: ConceptoImportado[],
   edits: EditsMap
 ) {
-  const empty = {
-    monto: '',
-    cantidad: '',
-    porcentaje: '',
-    importeConceptoNumero: '',
-    importe: '',
-    importeMinimo: '',
-    importeMaximo: '',
-    memo: '',
-  };
   return filas
     .map((c) => {
-      const e = edits[c.codigo] ?? empty;
+      const e = edits[c.codigo];
+      // La fila de edición de la grilla ya viene sembrada (initialEdits): si
+      // existe se respeta tal cual — un campo vaciado por el usuario queda
+      // vacío, no se resucita el valor precargado (TIN-1303).
+      if (e) {
+        return {
+          codigo: c.codigo,
+          monto: e.monto,
+          cantidad: e.cantidad,
+          porcentaje: e.porcentaje,
+          importeConceptoNumero: e.importeConceptoNumero,
+          importe: e.importe,
+          importeMinimo: e.importeMinimo,
+          importeMaximo: e.importeMaximo,
+          memo: e.memo !== '' ? e.memo : undefined,
+        };
+      }
       return {
         codigo: c.codigo,
-        monto: e.monto !== '' ? e.monto : (c.monto ?? ''),
-        cantidad: e.cantidad !== '' ? e.cantidad : (c.cantidad ?? ''),
-        porcentaje: e.porcentaje !== '' ? e.porcentaje : (c.porcentaje ?? ''),
-        importeConceptoNumero:
-          e.importeConceptoNumero !== ''
-            ? e.importeConceptoNumero
-            : (c.importeConceptoNumero ?? ''),
-        importe: e.importe !== '' ? e.importe : (c.importe ?? ''),
-        importeMinimo:
-          e.importeMinimo !== '' ? e.importeMinimo : (c.importeMinimo ?? ''),
-        importeMaximo:
-          e.importeMaximo !== '' ? e.importeMaximo : (c.importeMaximo ?? ''),
-        memo: e.memo !== '' ? e.memo : (c.memo ?? undefined),
+        monto: c.monto ?? '',
+        cantidad: c.cantidad ?? '',
+        porcentaje: c.porcentaje ?? '',
+        importeConceptoNumero: c.importeConceptoNumero ?? '',
+        importe: c.importe ?? '',
+        importeMinimo: c.importeMinimo ?? '',
+        importeMaximo: c.importeMaximo ?? '',
+        memo: c.memo ?? undefined,
       };
     })
     .filter((c) => {
