@@ -209,6 +209,7 @@ function EmpleadoDetalleDialog({
   const [nombre, setNombre] = useState('');
   const [cuil, setCuil] = useState('');
   const [fechaAlta, setFechaAlta] = useState('');
+  const [fechaBaja, setFechaBaja] = useState('');
   const [activo, setActivo] = useState(true);
   const [tipoJornada, setTipoJornada] = useState<'full_time' | 'part_time' | 'reducida'>('full_time');
   const [convenioId, setConvenioId] = useState('');
@@ -302,6 +303,11 @@ function EmpleadoDetalleDialog({
         ? (typeof emp.fechaAlta === 'string' ? emp.fechaAlta : (emp.fechaAlta as Date).toISOString()).slice(0, 10)
         : ''
     );
+    setFechaBaja(
+      emp.fechaBaja
+        ? (typeof emp.fechaBaja === 'string' ? emp.fechaBaja : (emp.fechaBaja as Date).toISOString()).slice(0, 10)
+        : ''
+    );
     setActivo(emp.activo ?? true);
     setTipoJornada((emp.tipoJornada as 'full_time' | 'part_time' | 'reducida') ?? 'full_time');
     setConvenioId(emp.convenioId ?? '');
@@ -343,6 +349,7 @@ function EmpleadoDetalleDialog({
           nombre: nombre.trim() || undefined,
           cuilCuil: cuil.trim() || undefined,
           fechaAlta: fechaAlta || undefined,
+          fechaBaja: fechaBaja || null,
           activo,
           tipoJornada,
           convenioId: convenioId || undefined,
@@ -512,6 +519,10 @@ function EmpleadoDetalleDialog({
                     <div className="space-y-1">
                       <Label>Fecha de alta (antigüedad)</Label>
                       <Input type="date" value={fechaAlta} onChange={(ev) => setFechaAlta(ev.target.value)} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Fecha de baja</Label>
+                      <Input type="date" value={fechaBaja} onChange={(ev) => setFechaBaja(ev.target.value)} />
                     </div>
                     <div className="space-y-1">
                       <Label>Tipo jornada</Label>

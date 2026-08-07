@@ -3242,8 +3242,9 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
         valorSueldo != null && valorSueldo.trim() !== ''
           ? valorSueldo.trim()
           : null;
+    // `fecha_baja` es columna `date`: Drizzle espera string YYYY-MM-DD (un Date corre un día por TZ).
     if (fechaBaja !== undefined)
-      set.fechaBaja = fechaBaja ? new Date(fechaBaja) : null;
+      set.fechaBaja = fechaBaja ? fechaBaja.slice(0, 10) : null;
 
     const [row] = await db
       .update(empleado)
