@@ -590,10 +590,23 @@ export function NuevoReciboView({
     );
     if (basicoData) {
       if (basicoEscala > 0 && !basicoData.sinEscalaParaPeriodo) {
-        c.push({
-          nivel: 'ok',
-          texto: `Escala vigente: básico ${fmtMonto(basicoEscala)}`,
-        });
+        // Escala sin correcciones desde antes del período liquidado: el básico
+        // puede estar desactualizado respecto del convenio (TIN-1301).
+        const actualizadaAt = basicoData.escalaActualizadaAt
+          ? new Date(basicoData.escalaActualizadaAt)
+          : null;
+        const inicioPeriodo = new Date(anio, mes - 1, 1);
+        if (actualizadaAt && actualizadaAt < inicioPeriodo) {
+          c.push({
+            nivel: 'warn',
+            texto: `La escala del período no se actualiza desde el ${actualizadaAt.toLocaleDateString('es-AR')} — verificá el básico ${fmtMonto(basicoEscala)} contra el convenio`,
+          });
+        } else {
+          c.push({
+            nivel: 'ok',
+            texto: `Escala vigente: básico ${fmtMonto(basicoEscala)}`,
+          });
+        }
       } else if (basicoEscala > 0) {
         c.push({
           nivel: 'warn',
@@ -646,6 +659,8 @@ export function NuevoReciboView({
     periodoLiquidable,
     quincena,
     dias,
+    anio,
+    mes,
   ]);
 
   const legajosLiquidados = useMemo(

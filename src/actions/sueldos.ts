@@ -1212,6 +1212,7 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
         tipoJornada: 'full_time' as const,
         fechaAlta: null as string | null,
         fechaIngreso: null as string | null,
+        escalaActualizadaAt: null as string | null,
       };
 
     const legajo = emp.empleado;
@@ -1258,18 +1259,20 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
         periodoEscalaLabel: null,
         fechaAlta: fechaAltaStr,
         fechaIngreso: fechaIngresoStr,
+        escalaActualizadaAt: null as string | null,
       };
     }
 
     // 2° prioridad: escala configurada para el período exacto
     let escalaPeriodo:
-      | { monto: string; periodoLabel: string | null }
+      | { monto: string; periodoLabel: string | null; updatedAt: Date }
       | undefined;
     if (categoriaId) {
       const [row] = await db
         .select({
           monto: escalaSalarial.montoBasico,
           periodoLabel: escalaSalarial.periodoLabel,
+          updatedAt: escalaSalarial.updatedAt,
         })
         .from(escalaSalarial)
         .where(
@@ -1301,6 +1304,11 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
         periodoEscalaLabel: escalaPeriodo.periodoLabel,
         fechaAlta: legajo.fechaAlta ? legajo.fechaAlta : null,
         fechaIngreso: legajo.fechaAlta ? legajo.fechaAlta : null,
+        // Última corrección de la escala usada: si es anterior al período
+        // liquidado, el básico puede estar viejo (TIN-1301).
+        escalaActualizadaAt: escalaPeriodo.updatedAt.toISOString() as
+          | string
+          | null,
       };
     }
 
@@ -1315,6 +1323,7 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
         tipoJornada,
         fechaAlta: fechaAltaStr2,
         fechaIngreso: fechaIngresoStr2,
+        escalaActualizadaAt: null as string | null,
       };
 
     // 3° prioridad: escala más reciente anterior al período (fallback)
@@ -1355,6 +1364,7 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
       periodoEscalaLabel,
       fechaAlta: fechaAltaStr2,
       fechaIngreso: fechaIngresoStr2,
+      escalaActualizadaAt: null as string | null,
     };
   });
 
