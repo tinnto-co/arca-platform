@@ -35,6 +35,30 @@ export function tipoReciboLabel(tipo: string | null | undefined): string {
   return RECIBO_TIPO_LABELS[tipo] ?? tipo;
 }
 
+/** `concepto.modo` / `cliente_concepto.modo`: cómo se calcula el monto. */
+export type ConceptoModoCalculo =
+  | 'importe_manual'
+  | 'pct_sobre_base'
+  | 'pct_sobre_concepto'
+  | 'sueldo_basico'
+  | 'valor_hora'
+  | 'sac'
+  | 'sac_proporcional'
+  | 'dia_vacaciones'
+  | 'promedio_anual_concepto';
+
+export const CONCEPTO_MODO_LABELS: Record<string, string> = {
+  importe_manual: 'Importe fijo / manual',
+  pct_sobre_base: '% sobre una base',
+  pct_sobre_concepto: '% sobre otro concepto',
+  sueldo_basico: 'Sueldo básico (escala)',
+  valor_hora: 'Valor hora × cantidad',
+  sac: 'SAC',
+  sac_proporcional: 'SAC proporcional',
+  dia_vacaciones: 'Día de vacaciones',
+  promedio_anual_concepto: 'Promedio anual de otro concepto',
+} satisfies Record<ConceptoModoCalculo, string>;
+
 /** `recibo.quincena` pasó de text ('0'|'1'|'2') a smallint. */
 export function quincenaLabel(q: number | null | undefined): string {
   if (q === 1) return '1ra quincena';

@@ -1370,6 +1370,22 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
 
 // ---------- Conceptos salariales ----------
 
+/** Las 7 canastas de `base_calculo`, para el selector de base en la config de conceptos. */
+export const getBasesCalculo = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    await getSessionWithOrg();
+    return db
+      .select({
+        id: baseCalculo.id,
+        codigo: baseCalculo.codigo,
+        nombre: baseCalculo.nombre,
+        descripcion: baseCalculo.descripcion,
+      })
+      .from(baseCalculo)
+      .orderBy(baseCalculo.codigo);
+  }
+);
+
 export const listConceptos = createServerFn({ method: 'GET' })
   .validator(z.object({ clientId: z.string().uuid() }))
   .handler(async (ctx) => {
@@ -1387,6 +1403,8 @@ export const listConceptos = createServerFn({ method: 'GET' })
         modo: clienteConcepto.modo,
         baseCalculoId: clienteConcepto.baseCalculoId,
         importeFijo: clienteConcepto.importeFijo,
+        importeMin: clienteConcepto.importeMin,
+        importeMax: clienteConcepto.importeMax,
         orden: clienteConcepto.orden,
         activo: clienteConcepto.habilitado,
         createdAt: clienteConcepto.createdAt,
@@ -1436,6 +1454,8 @@ export const createConcepto = createServerFn({ method: 'POST' })
         .optional(),
       baseCalculoId: z.string().uuid().optional(),
       importeFijo: z.number().optional(),
+      importeMin: z.number().nullable().optional(),
+      importeMax: z.number().nullable().optional(),
       orden: z.number().optional(),
     })
   )
@@ -1444,6 +1464,11 @@ export const createConcepto = createServerFn({ method: 'POST' })
     const role = await getMemberRole();
     assertCanWrite(role);
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    if (ctx.data.modo === 'pct_sobre_base' && ctx.data.baseCalculoId == null) {
+      throw new Error(
+        'El modo "% sobre base" necesita una base de cálculo asignada'
+      );
+    }
     const conceptoId = await conceptoIdPorNumeroSos(ctx.data.numeroSos);
     const campos = {
       codigoPropio: ctx.data.codigo,
@@ -1453,6 +1478,10 @@ export const createConcepto = createServerFn({ method: 'POST' })
       baseCalculoId: ctx.data.baseCalculoId ?? null,
       importeFijo:
         ctx.data.importeFijo != null ? String(ctx.data.importeFijo) : null,
+      importeMin:
+        ctx.data.importeMin != null ? String(ctx.data.importeMin) : null,
+      importeMax:
+        ctx.data.importeMax != null ? String(ctx.data.importeMax) : null,
       orden: ctx.data.orden ?? 0,
       habilitado: true,
     };
@@ -1494,6 +1523,8 @@ export const updateConcepto = createServerFn({ method: 'POST' })
         .optional(),
       baseCalculoId: z.string().uuid().nullable().optional(),
       importeFijo: z.number().nullable().optional(),
+      importeMin: z.number().nullable().optional(),
+      importeMax: z.number().nullable().optional(),
       orden: z.number().optional(),
       activo: z.boolean().optional(),
     })
@@ -1504,6 +1535,11 @@ export const updateConcepto = createServerFn({ method: 'POST' })
     assertCanWrite(role);
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     const d = ctx.data;
+    if (d.modo === 'pct_sobre_base' && d.baseCalculoId == null) {
+      throw new Error(
+        'El modo "% sobre base" necesita una base de cálculo asignada'
+      );
+    }
     const [row] = await db
       .update(clienteConcepto)
       .set({
@@ -1518,6 +1554,12 @@ export const updateConcepto = createServerFn({ method: 'POST' })
           ? {
               importeFijo: d.importeFijo != null ? String(d.importeFijo) : null,
             }
+          : {}),
+        ...(d.importeMin !== undefined
+          ? { importeMin: d.importeMin != null ? String(d.importeMin) : null }
+          : {}),
+        ...(d.importeMax !== undefined
+          ? { importeMax: d.importeMax != null ? String(d.importeMax) : null }
           : {}),
         ...(d.orden !== undefined ? { orden: d.orden } : {}),
         ...(d.activo !== undefined ? { habilitado: d.activo } : {}),
@@ -2200,9 +2242,30 @@ export const listConceptosPlantillaManualSos = createServerFn({ method: 'GET' })
       .from(baseCalculo);
     const baseCodigoPorId = new Map(bases.map((b) => [b.id, b.codigo]));
 
+    // Overrides del cliente (cliente_concepto): modo/base/importes configurados
+    // por el estudio pisan al catálogo global en la grilla (TIN-1302).
+    const overrides = await db
+      .select({
+        conceptoId: clienteConcepto.conceptoId,
+        habilitado: clienteConcepto.habilitado,
+        modo: clienteConcepto.modo,
+        baseCalculoId: clienteConcepto.baseCalculoId,
+        importeFijo: clienteConcepto.importeFijo,
+        importeMin: clienteConcepto.importeMin,
+        importeMax: clienteConcepto.importeMax,
+      })
+      .from(clienteConcepto)
+      .where(eq(clienteConcepto.clienteId, ctx.data.clientId));
+    const overridePorConceptoId = new Map(
+      overrides.map((o) => [o.conceptoId, o])
+    );
+
     return rows.map((r) => {
       const codigo = String(r.numero);
       const ref = plantillaMap.get(codigo);
+      const ov = overridePorConceptoId.get(r.id);
+      const modo = ov?.modo ?? r.modo;
+      const baseCalculoId = ov?.baseCalculoId ?? r.baseCalculoId;
       return {
         id: r.id,
         codigo,
@@ -2212,15 +2275,17 @@ export const listConceptosPlantillaManualSos = createServerFn({ method: 'GET' })
           ref?.porcentaje ??
           ((r.pctFijo != null ? String(r.pctFijo) : null) as string | null),
         importeConceptoNumero: ref?.importeConceptoNumero ?? null,
-        importe: ref?.importe ?? null,
-        importeMinimo: ref?.importeMinimo ?? null,
-        importeMaximo: ref?.importeMaximo ?? null,
+        // El importe fijo configurado para el cliente pre-carga el campo importe
+        // (sin % el importe ES el monto; con % actúa de base del cálculo).
+        importe: ref?.importe ?? ov?.importeFijo ?? null,
+        importeMinimo: ref?.importeMinimo ?? ov?.importeMin ?? null,
+        importeMaximo: ref?.importeMaximo ?? ov?.importeMax ?? null,
         nombre: r.nombre,
         codigoAfip: r.codigoAfip,
-        modo: r.modo,
+        modo,
         baseCodigo:
-          r.baseCalculoId != null
-            ? (baseCodigoPorId.get(r.baseCalculoId) ?? null)
+          baseCalculoId != null
+            ? (baseCodigoPorId.get(baseCalculoId) ?? null)
             : null,
         divCantidad: r.divCantidad != null ? Number(r.divCantidad) : null,
         divHsNorm: r.divHsNorm != null ? r.divHsNorm > 0 : null,
