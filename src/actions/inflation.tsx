@@ -37,6 +37,7 @@ import {
   type InflationNature,
 } from '@/lib/accounting-inflation';
 import { depreciationCoefficients } from '@/lib/accounting-fixed-asset-inflation';
+import { nextEntryNumber } from '@/lib/accounting-posting-db';
 
 /** Código de la cuenta que absorbe la contrapartida del ajuste. */
 const RECPAM_CODE = '5.4.004';
@@ -915,16 +916,7 @@ async function applyAdjustment(
       })
       .returning();
 
-    const [{ maxNum }] = await tx
-      .select({ maxNum: sql<number>`coalesce(max(${asiento.numero}),0)::int` })
-      .from(asiento)
-      .where(
-        and(
-          eq(asiento.clienteId, clientId),
-          eq(asiento.ejercicioId, fiscalYearId)
-        )
-      );
-    const number = (maxNum ?? 0) + 1;
+    const number = await nextEntryNumber(tx, clientId, fiscalYearId);
 
     const [je] = await tx
       .insert(asiento)
