@@ -27,6 +27,10 @@ import {
   clienteEeccConfig,
   contraparte,
   comprobanteTipo,
+  ajusteInflacion,
+  ajusteInflacionLinea,
+  indiceInflacion,
+  plantillaInformeAuditor,
 } from '@/drizzle/schema';
 import { user } from '@/drizzle/auth';
 import {
@@ -39,6 +43,7 @@ import {
   asc,
   desc,
   eq,
+  gt,
   gte,
   inArray,
   isNull,
@@ -60,7 +65,15 @@ import {
   ACCOUNT_GROUP_LABELS,
   EXPENSE_FUNCTION_LABELS,
   type AccountGroup,
+  CASH_FLOW_ACTIVITY_FROM_DB,
 } from '@/lib/accounting-labels';
+import {
+  CASH_FLOW_ACTIVITY_LABELS,
+  CASH_FLOW_ACTIVITY_ORDER,
+  defaultCashFlowActivity,
+  isCashGroup,
+  type CashFlowActivity,
+} from '@/lib/accounting-cashflow';
 import {
   armarLineas,
   calcularImportes,
@@ -250,16 +263,12 @@ async function countMovements(
     eq(asientoLinea.cuentaId, accountId),
     eq(asiento.anulado, false),
   ];
-  if (fiscalYearId)
-    conditions.push(eq(asiento.ejercicioId, fiscalYearId));
+  if (fiscalYearId) conditions.push(eq(asiento.ejercicioId, fiscalYearId));
 
   const [row] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(asientoLinea)
-    .innerJoin(
-      asiento,
-      eq(asiento.id, asientoLinea.asientoId)
-    )
+    .innerJoin(asiento, eq(asiento.id, asientoLinea.asientoId))
     .where(and(...conditions));
   return row?.count ?? 0;
 }
@@ -387,10 +396,7 @@ export const getChartOfAccounts = createServerFn({ method: 'GET' })
       const rows = await db
         .selectDistinct({ accountId: asientoLinea.cuentaId })
         .from(asientoLinea)
-        .innerJoin(
-          asiento,
-          eq(asiento.id, asientoLinea.asientoId)
-        )
+        .innerJoin(asiento, eq(asiento.id, asientoLinea.asientoId))
         .where(
           and(
             eq(asiento.clienteId, clientId),
@@ -418,8 +424,7 @@ export const getChartOfAccounts = createServerFn({ method: 'GET' })
         expectedBalance: a.saldoEsperado,
         expenseFunction: a.funcionGasto,
         isSystemAccount: a.esCuentaSistema,
-        isActive:
-          a.alcance === 'base' ? (ov?.activa ?? a.activa) : a.activa,
+        isActive: a.alcance === 'base' ? (ov?.activa ?? a.activa) : a.activa,
         hasMovements: movementAccountIds.has(a.id),
       };
     });
@@ -901,9 +906,7 @@ export const deleteBaseAccount = createServerFn({ method: 'POST' })
  * No permitido si tiene movimientos en la empresa o si tiene subcuentas.
  */
 export const deleteCustomAccount = createServerFn({ method: 'POST' })
-  .validator(
-    z.object({ clientId: z.string().uuid(), id: z.string().uuid() })
-  )
+  .validator(z.object({ clientId: z.string().uuid(), id: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
@@ -967,9 +970,7 @@ async function chartUsageBlocker(
     const [custom] = await db
       .select({ id: cuenta.id })
       .from(cuenta)
-      .where(
-        and(eq(cuenta.orgId, orgId), eq(cuenta.alcance, 'propia'))
-      )
+      .where(and(eq(cuenta.orgId, orgId), eq(cuenta.alcance, 'propia')))
       .limit(1);
     if (custom) return 'existen cuentas propias de empresas colgadas del plan';
 
@@ -1224,7 +1225,10 @@ export const importChartOfAccounts = createServerFn({ method: 'POST' })
       if (!needsRelink) continue;
       const pc = parentCodeOf(a.code);
       const parentId = pc ? (uCodeToId.get(pc) ?? null) : null;
-      await db.update(cuenta).set({ padreId: parentId }).where(eq(cuenta.id, a.id));
+      await db
+        .update(cuenta)
+        .set({ padreId: parentId })
+        .where(eq(cuenta.id, a.id));
     }
 
     return {
@@ -1281,10 +1285,7 @@ async function countPendingReviewEntries(
   const [r] = await db
     .select({ count: sql<number>`count(distinct ${asiento.id})::int` })
     .from(asiento)
-    .innerJoin(
-      asientoLinea,
-      eq(asientoLinea.asientoId, asiento.id)
-    )
+    .innerJoin(asientoLinea, eq(asientoLinea.asientoId, asiento.id))
     .innerJoin(cuenta, eq(cuenta.id, asientoLinea.cuentaId))
     .where(
       and(
@@ -1342,9 +1343,7 @@ export const createFiscalYear = createServerFn({ method: 'POST' })
     // ejercicios irregulares: 3, 5, 6, 8, 10, etc., pero nunca más de 12).
     const months = (eY - sY) * 12 + (eM - sM) + 1;
     if (months < 1 || months > 12) {
-      throw new Error(
-        'El ejercicio debe durar entre 1 y 12 meses calendario'
-      );
+      throw new Error('El ejercicio debe durar entre 1 y 12 meses calendario');
     }
 
     // Un solo ejercicio abierto por empresa.
@@ -1465,16 +1464,8 @@ export const getFiscalYearDetail = createServerFn({ method: 'GET' })
         totalDebit: sql<string>`coalesce(sum(${asientoLinea.debe}),0)`,
       })
       .from(asiento)
-      .leftJoin(
-        asientoLinea,
-        eq(asientoLinea.asientoId, asiento.id)
-      )
-      .where(
-        and(
-          eq(asiento.ejercicioId, fy.id),
-          eq(asiento.anulado, false)
-        )
-      )
+      .leftJoin(asientoLinea, eq(asientoLinea.asientoId, asiento.id))
+      .where(and(eq(asiento.ejercicioId, fy.id), eq(asiento.anulado, false)))
       .groupBy(asiento.periodoId);
     const byPeriod = new Map(stats.map((s) => [s.periodId, s]));
 
@@ -1485,10 +1476,7 @@ export const getFiscalYearDetail = createServerFn({ method: 'GET' })
         pendingCount: sql<number>`count(distinct ${asiento.id})::int`,
       })
       .from(asiento)
-      .innerJoin(
-        asientoLinea,
-        eq(asientoLinea.asientoId, asiento.id)
-      )
+      .innerJoin(asientoLinea, eq(asientoLinea.asientoId, asiento.id))
       .innerJoin(cuenta, eq(cuenta.id, asientoLinea.cuentaId))
       .where(
         and(
@@ -1571,14 +1559,8 @@ export const getPendingReviewEntries = createServerFn({ method: 'GET' })
         description: asientoLinea.descripcion,
       })
       .from(asientoLinea)
-      .innerJoin(
-        asiento,
-        eq(asiento.id, asientoLinea.asientoId)
-      )
-      .innerJoin(
-        periodoContable,
-        eq(periodoContable.id, asiento.periodoId)
-      )
+      .innerJoin(asiento, eq(asiento.id, asientoLinea.asientoId))
+      .innerJoin(periodoContable, eq(periodoContable.id, asiento.periodoId))
       .where(
         and(
           eq(asiento.clienteId, clientId),
@@ -2061,10 +2043,7 @@ export const createJournalEntry = createServerFn({ method: 'POST' })
         })
         .from(asiento)
         .where(
-          and(
-            eq(asiento.clienteId, clientId),
-            eq(asiento.ejercicioId, fy.id)
-          )
+          and(eq(asiento.clienteId, clientId), eq(asiento.ejercicioId, fy.id))
         );
       const number = (maxNum ?? 0) + 1;
 
@@ -2117,8 +2096,7 @@ export const updateJournalEntry = createServerFn({ method: 'POST' })
     assertCanWrite(role);
 
     const entry = await loadJournalEntryForOrg(ctx.data.id, orgId);
-    if (entry.anulado)
-      throw new Error('No se puede editar un asiento anulado');
+    if (entry.anulado) throw new Error('No se puede editar un asiento anulado');
 
     // El período actual del asiento debe estar abierto.
     const { period: currentPeriod } = await loadPeriodForOrg(
@@ -2167,9 +2145,7 @@ export const updateJournalEntry = createServerFn({ method: 'POST' })
             entry.origenTipo === 'manual' ? entry.editadoPostGeneracion : true,
         })
         .where(eq(asiento.id, entry.id));
-      await tx
-        .delete(asientoLinea)
-        .where(eq(asientoLinea.asientoId, entry.id));
+      await tx.delete(asientoLinea).where(eq(asientoLinea.asientoId, entry.id));
       await tx.insert(asientoLinea).values(
         ctx.data.lines.map((l, i) => ({
           asientoId: entry.id,
@@ -2315,14 +2291,8 @@ export const listJournalEntries = createServerFn({ method: 'GET' })
     ];
     if (!d.includeVoided) conditions.push(eq(asiento.anulado, false));
     if (d.origin) conditions.push(eq(asiento.origenTipo, d.origin));
-    if (d.from)
-      conditions.push(
-        gte(asiento.fecha, d.from)
-      );
-    if (d.to)
-      conditions.push(
-        lte(asiento.fecha, d.to)
-      );
+    if (d.from) conditions.push(gte(asiento.fecha, d.from));
+    if (d.to) conditions.push(lte(asiento.fecha, d.to));
 
     if (d.accountId) {
       const lineEntries = await db
@@ -2351,8 +2321,7 @@ export const listJournalEntries = createServerFn({ method: 'GET' })
       .from(asiento)
       .where(and(...conditions));
 
-    const orderCol =
-      d.sortBy === 'date' ? asiento.fecha : asiento.numero;
+    const orderCol = d.sortBy === 'date' ? asiento.fecha : asiento.numero;
     const rows = await db
       .select({
         id: asiento.id,
@@ -2425,10 +2394,7 @@ export const getJournalEntry = createServerFn({ method: 'GET' })
       })
       .from(asiento)
       .leftJoin(ejercicio, eq(ejercicio.id, asiento.ejercicioId))
-      .leftJoin(
-        periodoContable,
-        eq(periodoContable.id, asiento.periodoId)
-      )
+      .leftJoin(periodoContable, eq(periodoContable.id, asiento.periodoId))
       .leftJoin(user, eq(user.id, asiento.creadoPor))
       .where(eq(asiento.id, entry.id))
       .limit(1);
@@ -2613,10 +2579,7 @@ export const getLedgerAccount = createServerFn({ method: 'GET' })
         h: sql<string>`coalesce(sum(${asientoLinea.haber}),0)`,
       })
       .from(asientoLinea)
-      .innerJoin(
-        asiento,
-        eq(asiento.id, asientoLinea.asientoId)
-      )
+      .innerJoin(asiento, eq(asiento.id, asientoLinea.asientoId))
       .where(
         and(
           eq(asiento.clienteId, d.clientId),
@@ -2651,10 +2614,7 @@ export const getLedgerAccount = createServerFn({ method: 'GET' })
         lineOrder: asientoLinea.orden,
       })
       .from(asientoLinea)
-      .innerJoin(
-        asiento,
-        eq(asiento.id, asientoLinea.asientoId)
-      )
+      .innerJoin(asiento, eq(asiento.id, asientoLinea.asientoId))
       .where(and(...conds))
       .orderBy(
         asc(asiento.fecha),
@@ -2754,10 +2714,7 @@ export const getLedgerConsolidated = createServerFn({ method: 'GET' })
         h: sql<string>`coalesce(sum(${asientoLinea.haber}),0)`,
       })
       .from(asientoLinea)
-      .innerJoin(
-        asiento,
-        eq(asiento.id, asientoLinea.asientoId)
-      )
+      .innerJoin(asiento, eq(asiento.id, asientoLinea.asientoId))
       .where(
         and(
           eq(asiento.clienteId, d.clientId),
@@ -2796,10 +2753,7 @@ export const getLedgerConsolidated = createServerFn({ method: 'GET' })
         lineOrder: asientoLinea.orden,
       })
       .from(asientoLinea)
-      .innerJoin(
-        asiento,
-        eq(asiento.id, asientoLinea.asientoId)
-      )
+      .innerJoin(asiento, eq(asiento.id, asientoLinea.asientoId))
       .innerJoin(cuenta, eq(cuenta.id, asientoLinea.cuentaId))
       .where(and(...conds))
       .orderBy(
@@ -2938,10 +2892,7 @@ export const getTrialBalance = createServerFn({ method: 'GET' })
         h: sql<string>`coalesce(sum(${asientoLinea.haber}),0)`,
       })
       .from(asientoLinea)
-      .innerJoin(
-        asiento,
-        eq(asiento.id, asientoLinea.asientoId)
-      )
+      .innerJoin(asiento, eq(asiento.id, asientoLinea.asientoId))
       .innerJoin(cuenta, eq(cuenta.id, asientoLinea.cuentaId))
       .where(
         and(
@@ -3049,10 +3000,7 @@ export const getJournalBook = createServerFn({ method: 'GET' })
       })
       .from(asiento)
       .where(
-        and(
-          eq(asiento.clienteId, clientId),
-          eq(asiento.ejercicioId, fy.id)
-        )
+        and(eq(asiento.clienteId, clientId), eq(asiento.ejercicioId, fy.id))
       )
       .orderBy(asc(asiento.numero));
 
@@ -3067,16 +3015,10 @@ export const getJournalBook = createServerFn({ method: 'GET' })
         lineOrder: asientoLinea.orden,
       })
       .from(asientoLinea)
-      .innerJoin(
-        asiento,
-        eq(asiento.id, asientoLinea.asientoId)
-      )
+      .innerJoin(asiento, eq(asiento.id, asientoLinea.asientoId))
       .innerJoin(cuenta, eq(cuenta.id, asientoLinea.cuentaId))
       .where(
-        and(
-          eq(asiento.clienteId, clientId),
-          eq(asiento.ejercicioId, fy.id)
-        )
+        and(eq(asiento.clienteId, clientId), eq(asiento.ejercicioId, fy.id))
       )
       .orderBy(asc(asiento.numero), asc(asientoLinea.orden));
 
@@ -3199,7 +3141,9 @@ export const listMappingRules = createServerFn({ method: 'GET' })
   .validator(
     z.object({
       clientId: z.string().uuid(),
-      sourceModule: z.enum(['comprobante', 'recibo', 'movimiento_bancario']).optional(),
+      sourceModule: z
+        .enum(['comprobante', 'recibo', 'movimiento_bancario'])
+        .optional(),
     })
   )
   .handler(async (ctx) => {
@@ -3271,10 +3215,7 @@ export const getMappingRule = createServerFn({ method: 'GET' })
     const [gen] = await db
       .select({ n: sql<number>`count(*)::int` })
       .from(asiento)
-      .innerJoin(
-        periodoContable,
-        eq(periodoContable.id, asiento.periodoId)
-      )
+      .innerJoin(periodoContable, eq(periodoContable.id, asiento.periodoId))
       .where(
         and(
           eq(asiento.reglaId, rule.id),
@@ -3692,12 +3633,7 @@ async function insertAutoInvoiceEntry(
       maxNum: sql<number>`coalesce(max(${asiento.numero}),0)::int`,
     })
     .from(asiento)
-    .where(
-      and(
-        eq(asiento.clienteId, clientId),
-        eq(asiento.ejercicioId, fyId)
-      )
-    );
+    .where(and(eq(asiento.clienteId, clientId), eq(asiento.ejercicioId, fyId)));
   const number = (maxNum ?? 0) + 1;
 
   const label = inv.direccion === 'recibido' ? 'Compra' : 'Venta';
@@ -3861,7 +3797,10 @@ export const getInvoicePostingPreview = createServerFn({ method: 'GET' })
     // Las fechas de ejercicio son columnas `date` (strings YYYY-MM-DD): ordenan
     // lexicográficamente, así que el mínimo/máximo salen sin parsear.
     const minStart = fys.map((f) => f.fechaDesde).sort()[0];
-    const maxEnd = fys.map((f) => f.fechaHasta).sort().at(-1)!;
+    const maxEnd = fys
+      .map((f) => f.fechaHasta)
+      .sort()
+      .at(-1)!;
 
     // Estado de períodos indexado por YYYY-MM (único por empresa, los ejercicios no se solapan).
     const periods = await db
@@ -4075,7 +4014,9 @@ export const regenerateInvoiceEntry = createServerFn({ method: 'POST' })
       .from(comprobante)
       .leftJoin(comprobanteTipo, eq(comprobanteTipo.codigo, comprobante.tipo))
       .leftJoin(contraparte, eq(contraparte.id, comprobante.contraparteId))
-      .where(and(eq(comprobante.clienteId, clientId), eq(comprobante.id, invoiceId)))
+      .where(
+        and(eq(comprobante.clienteId, clientId), eq(comprobante.id, invoiceId))
+      )
       .limit(1);
     if (!inv) throw new Error('Factura no encontrada o de otra empresa');
 
@@ -4194,9 +4135,7 @@ export const getFixedAssetAccounts = createServerFn({ method: 'GET' })
       .where(eq(clienteCuenta.clienteId, clientId));
     const ovMap = new Map(overrides.map((o) => [o.cuentaId, o]));
 
-    const active = accounts.filter(
-      (a) => ovMap.get(a.id)?.activa ?? a.activa
-    );
+    const active = accounts.filter((a) => ovMap.get(a.id)?.activa ?? a.activa);
     const opt = (a: (typeof active)[number]): AccountOpt => ({
       id: a.id,
       code: a.codigo,
@@ -4205,24 +4144,18 @@ export const getFixedAssetAccounts = createServerFn({ method: 'GET' })
 
     return {
       assetAccounts: active
-        .filter(
-          (a) =>
-            a.rubro === 'bienes_uso' && a.saldoEsperado === 'deudor'
-        )
+        .filter((a) => a.rubro === 'bienes_uso' && a.saldoEsperado === 'deudor')
         .map(opt),
       accumAccounts: active
         .filter(
-          (a) =>
-            a.rubro === 'bienes_uso' && a.saldoEsperado === 'acreedor'
+          (a) => a.rubro === 'bienes_uso' && a.saldoEsperado === 'acreedor'
         )
         .map(opt),
       expenseAccounts: active
         .filter(
           (a) =>
             a.rubro !== null &&
-            (EXPENSE_ACCOUNT_GROUPS as readonly string[]).includes(
-              a.rubro
-            )
+            (EXPENSE_ACCOUNT_GROUPS as readonly string[]).includes(a.rubro)
         )
         .map(opt),
     };
@@ -4391,7 +4324,10 @@ export const listFixedAssets = createServerFn({ method: 'GET' })
       })
       .from(bienDeUso)
       .innerJoin(assetAcc, eq(assetAcc.id, bienDeUso.cuentaBienId))
-      .innerJoin(accumAcc, eq(accumAcc.id, bienDeUso.cuentaAmortizacionAcumuladaId))
+      .innerJoin(
+        accumAcc,
+        eq(accumAcc.id, bienDeUso.cuentaAmortizacionAcumuladaId)
+      )
       .innerJoin(expAcc, eq(expAcc.id, bienDeUso.cuentaAmortizacionGastoId))
       .where(and(...conds))
       .orderBy(asc(bienDeUso.categoria), asc(bienDeUso.nombre));
@@ -4763,16 +4699,16 @@ async function computeAnexoIRows(
     })
     .from(bienDeUso)
     .innerJoin(assetAcc, eq(assetAcc.id, bienDeUso.cuentaBienId))
-    .innerJoin(accumAcc, eq(accumAcc.id, bienDeUso.cuentaAmortizacionAcumuladaId))
+    .innerJoin(
+      accumAcc,
+      eq(accumAcc.id, bienDeUso.cuentaAmortizacionAcumuladaId)
+    )
     .innerJoin(expAcc, eq(expAcc.id, bienDeUso.cuentaAmortizacionGastoId))
     .where(
       and(
         eq(bienDeUso.clienteId, clientId),
         lte(bienDeUso.fechaAlta, fy.fechaHasta),
-        or(
-          isNull(bienDeUso.fechaBaja),
-          gte(bienDeUso.fechaBaja, fy.fechaDesde)
-        )
+        or(isNull(bienDeUso.fechaBaja), gte(bienDeUso.fechaBaja, fy.fechaDesde))
       )
     )
     .orderBy(asc(bienDeUso.categoria), asc(bienDeUso.nombre));
@@ -4817,8 +4753,7 @@ async function computeAnexoIRows(
     // Acumulada al cierre: inicio + del ejercicio − dada de baja.
     const accumEnd = r2(accumStart + amortYear - amortBajas);
     const residualEnd = r2(valorCierre - accumEnd);
-    const rate =
-      r.fa.vidaUtilAnios > 0 ? r2(100 / r.fa.vidaUtilAnios) : 0;
+    const rate = r.fa.vidaUtilAnios > 0 ? r2(100 / r.fa.vidaUtilAnios) : 0;
 
     return {
       id: r.fa.id,
@@ -5036,10 +4971,7 @@ export const getYearEndChecklist = createServerFn({ method: 'GET' })
     const [{ pend }] = await db
       .select({ pend: sql<number>`count(distinct ${asiento.id})::int` })
       .from(asiento)
-      .innerJoin(
-        asientoLinea,
-        eq(asientoLinea.asientoId, asiento.id)
-      )
+      .innerJoin(asientoLinea, eq(asientoLinea.asientoId, asiento.id))
       .innerJoin(cuenta, eq(cuenta.id, asientoLinea.cuentaId))
       .where(
         and(
@@ -5066,16 +4998,8 @@ export const getYearEndChecklist = createServerFn({ method: 'GET' })
         credit: sql<string>`coalesce(sum(${asientoLinea.haber}),0)`,
       })
       .from(asientoLinea)
-      .innerJoin(
-        asiento,
-        eq(asiento.id, asientoLinea.asientoId)
-      )
-      .where(
-        and(
-          eq(asiento.ejercicioId, fy.id),
-          eq(asiento.anulado, false)
-        )
-      );
+      .innerJoin(asiento, eq(asiento.id, asientoLinea.asientoId))
+      .where(and(eq(asiento.ejercicioId, fy.id), eq(asiento.anulado, false)));
     const totalDebit = parseFloat(bal?.debit ?? '0');
     const totalCredit = parseFloat(bal?.credit ?? '0');
     const diff = r2(totalDebit - totalCredit);
@@ -5098,10 +5022,7 @@ export const getYearEndChecklist = createServerFn({ method: 'GET' })
       })
       .from(reglaMapeo)
       .where(
-        and(
-          eq(reglaMapeo.clienteId, clientId),
-          eq(reglaMapeo.activa, true)
-        )
+        and(eq(reglaMapeo.clienteId, clientId), eq(reglaMapeo.activa, true))
       );
     // Mismo vocabulario que `reglaMatchea()`: una sola clave desconocida hace
     // que la regla no matchee nunca, así que alcanza con que sobre una.
@@ -5158,10 +5079,7 @@ async function computeFyBalances(
       credit: sql<string>`coalesce(sum(${asientoLinea.haber}),0)`,
     })
     .from(asientoLinea)
-    .innerJoin(
-      asiento,
-      eq(asiento.id, asientoLinea.asientoId)
-    )
+    .innerJoin(asiento, eq(asiento.id, asientoLinea.asientoId))
     .innerJoin(cuenta, eq(cuenta.id, asientoLinea.cuentaId))
     .where(
       and(
@@ -5551,7 +5469,8 @@ export const approveClosingStage = createServerFn({ method: 'POST' })
     const { clientId, stage } = ctx.data;
     await ensureClientBelongsToOrg(clientId, orgId);
     const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
-    if (fy.estado !== 'abierto') throw new Error('El ejercicio no está abierto');
+    if (fy.estado !== 'abierto')
+      throw new Error('El ejercicio no está abierto');
 
     validateLineAmounts(ctx.data.lines);
     await assertPostableAccounts(
@@ -5619,6 +5538,10 @@ export const approveClosingStage = createServerFn({ method: 'POST' })
             fecha: date,
             descripcion: description,
             origenTipo: origin,
+            // El check asiento_origen_coherente exige origen_id para todo
+            // origen no manual. El origen de un cierre o una apertura es el
+            // ejercicio que se está cerrando: se referencia ese.
+            origenId: fy.id,
             creadoPor: userId,
           })
           .returning();
@@ -5683,10 +5606,7 @@ export const approveClosingStage = createServerFn({ method: 'POST' })
         })
         .from(asiento)
         .where(
-          and(
-            eq(asiento.clienteId, clientId),
-            eq(asiento.ejercicioId, fy.id)
-          )
+          and(eq(asiento.clienteId, clientId), eq(asiento.ejercicioId, fy.id))
         );
       const number = (maxNum ?? 0) + 1;
       const description =
@@ -5719,7 +5639,8 @@ export const sealClosing = createServerFn({ method: 'POST' })
     const { clientId } = ctx.data;
     await ensureClientBelongsToOrg(clientId, orgId);
     const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
-    if (fy.estado !== 'abierto') throw new Error('El ejercicio ya está cerrado');
+    if (fy.estado !== 'abierto')
+      throw new Error('El ejercicio ya está cerrado');
 
     const closingEntries = await db
       .select({ id: asiento.id })
@@ -5767,15 +5688,27 @@ interface EspBalance {
 }
 
 /**
- * Saldos por cuenta de un ejercicio EXCLUYENDO los asientos de cierre/apertura
- * (auto_closing/auto_opening). Así el ESP refleja la posición patrimonial pre-cierre
- * (si no, un ejercicio cerrado daría todo en cero) y el resultado se computa de las
- * cuentas de resultado.
+ * Saldos por cuenta de un ejercicio EXCLUYENDO el asiento de cierre. Así el ESP
+ * refleja la posición patrimonial pre-cierre (si no, un ejercicio cerrado daría
+ * todo en cero) y el resultado se computa de las cuentas de resultado.
+ *
+ * La apertura SÍ cuenta: el saldo de una cuenta patrimonial es apertura +
+ * movimientos, y un ejercicio transcripto como referencia vive justamente de su
+ * asiento de apertura. (La base excluía la apertura; la rama de balances lo
+ * corrigió y esa semántica es la que manda.)
+ *
+ * `view = 'historico'` excluye además el asiento del ajuste por inflación: es
+ * el toggle histórico/ajustado de los estados.
  */
 async function computeEspBalances(
   orgId: string,
-  fyId: string
+  fyId: string,
+  view: 'ajustado' | 'historico' = 'ajustado'
 ): Promise<EspBalance[]> {
+  const excluded =
+    view === 'historico'
+      ? sql`${asiento.origenTipo} NOT IN ('cierre','ajuste_inflacion')`
+      : sql`${asiento.origenTipo} <> 'cierre'`;
   const rows = await db
     .select({
       accountId: cuenta.id,
@@ -5786,17 +5719,14 @@ async function computeEspBalances(
       credit: sql<string>`coalesce(sum(${asientoLinea.haber}),0)`,
     })
     .from(asientoLinea)
-    .innerJoin(
-      asiento,
-      eq(asiento.id, asientoLinea.asientoId)
-    )
+    .innerJoin(asiento, eq(asiento.id, asientoLinea.asientoId))
     .innerJoin(cuenta, eq(cuenta.id, asientoLinea.cuentaId))
     .where(
       and(
         eq(asiento.ejercicioId, fyId),
         eq(asiento.anulado, false),
         eq(cuenta.orgId, orgId),
-        sql`${asiento.origenTipo} NOT IN ('cierre','apertura')`
+        excluded
       )
     )
     .groupBy(cuenta.id, cuenta.codigo, cuenta.nombre, cuenta.rubro);
@@ -5807,6 +5737,145 @@ async function computeEspBalances(
     group: r.group,
     saldo: r2(parseFloat(r.debit) - parseFloat(r.credit)),
   }));
+}
+
+/**
+ * ¿La columna comparativa de este ejercicio es exacta?
+ *
+ * Lo es si el ejercicio tiene su propio ajuste aplicado, o si se cargó como
+ * referencia declarando que los saldos ya venían ajustados —que es lo normal al
+ * transcribir un balance presentado, porque ya viene en moneda de su cierre—.
+ */
+function priorFiguresAreHomogeneous(
+  fy: FiscalYearRow,
+  adjustmentApplied: boolean
+): boolean {
+  return adjustmentApplied || (fy.soloReferencia && fy.estadosAjustados);
+}
+
+async function loadInflationStatus(fyId: string): Promise<{
+  applied: boolean;
+  stale: boolean;
+  recpam: number | null;
+  journalEntryNumber: number | null;
+}> {
+  const [adj] = await db
+    .select()
+    .from(ajusteInflacion)
+    .where(
+      and(
+        eq(ajusteInflacion.ejercicioId, fyId),
+        eq(ajusteInflacion.estado, 'aplicado')
+      )
+    )
+    .limit(1);
+  if (!adj) {
+    return {
+      applied: false,
+      stale: false,
+      recpam: null,
+      journalEntryNumber: null,
+    };
+  }
+
+  let journalEntryNumber: number | null = null;
+  if (adj.asientoId) {
+    const [je] = await db
+      .select({ numero: asiento.numero })
+      .from(asiento)
+      .where(eq(asiento.id, adj.asientoId))
+      .limit(1);
+    journalEntryNumber = je?.numero ?? null;
+  }
+
+  // El asiento del ajuste debe ser el último movimiento no-cierre del ejercicio:
+  // si después se cargó cualquier otro asiento, el ajuste quedó viejo.
+  let stale = false;
+  if (adj.aplicadoAt) {
+    const [{ posteriores }] = await db
+      .select({ posteriores: sql<number>`count(*)::int` })
+      .from(asiento)
+      .where(
+        and(
+          eq(asiento.ejercicioId, fyId),
+          eq(asiento.anulado, false),
+          gt(asiento.createdAt, adj.aplicadoAt),
+          sql`${asiento.origenTipo} NOT IN ('cierre','ajuste_inflacion')`
+        )
+      );
+    stale = posteriores > 0;
+  }
+
+  return {
+    applied: true,
+    stale,
+    recpam: Number(adj.recpam),
+    journalEntryNumber,
+  };
+}
+
+/**
+ * Ejercicio inmediato anterior de la empresa: el último que termina antes de
+ * que empiece este.
+ *
+ * Se busca por fecha y no por `numero - 1` porque el número se asigna por orden
+ * de creación. Un estudio que carga primero el ejercicio corriente y después
+ * transcribe el anterior como referencia lo tendría numerado al revés, y el
+ * comparativo no lo encontraría.
+ */
+async function loadPriorFiscalYear(
+  clientId: string,
+  fy: FiscalYearRow
+): Promise<FiscalYearRow | null> {
+  const [row] = await db
+    .select()
+    .from(ejercicio)
+    .where(
+      and(
+        eq(ejercicio.clienteId, clientId),
+        lt(ejercicio.fechaHasta, fy.fechaDesde)
+      )
+    )
+    .orderBy(desc(ejercicio.fechaHasta))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * Coeficiente para llevar la columna comparativa a la moneda de cierre actual.
+ *
+ * Los EECC del ejercicio anterior están expresados en moneda de SU cierre. Para
+ * exponerlos al lado de los del ejercicio corriente hay que reexpresarlos, si no
+ * se estarían comparando pesos de distinto poder adquisitivo (RT 6). Como el
+ * ejercicio anterior ya es homogéneo, alcanza con un único coeficiente:
+ * índice del cierre actual sobre índice del cierre anterior.
+ *
+ * Devuelve `null` si falta alguno de los dos índices; en ese caso el comparativo
+ * queda en valores históricos y se avisa en la UI.
+ *
+ * Las fechas llegan como string 'YYYY-MM-DD' (columnas `date` de drizzle).
+ */
+async function priorColumnCoefficient(
+  currentEnd: string,
+  priorEnd: string
+): Promise<number | null> {
+  const load = async (d: string) => {
+    const [row] = await db
+      .select({ valor: indiceInflacion.valor })
+      .from(indiceInflacion)
+      .where(
+        and(
+          eq(indiceInflacion.fuente, 'facpce_rt6'),
+          eq(indiceInflacion.anio, parseInt(d.slice(0, 4), 10)),
+          eq(indiceInflacion.mes, parseInt(d.slice(5, 7), 10))
+        )
+      )
+      .limit(1);
+    return row ? Number(row.valor) : null;
+  };
+  const [cur, pri] = await Promise.all([load(currentEnd), load(priorEnd)]);
+  if (!cur || !pri || pri <= 0) return null;
+  return Math.round((cur / pri) * 10000) / 10000;
 }
 
 export interface EspAccountRow {
@@ -6221,7 +6290,11 @@ export const getER = createServerFn({ method: 'GET' })
 
 /* ── Anexo II — Gastos por función (US 6.3.2) ── */
 
-type ExpenseFunction = 'administracion' | 'comercializacion' | 'financiero' | 'otro';
+type ExpenseFunction =
+  | 'administracion'
+  | 'comercializacion'
+  | 'financiero'
+  | 'otro';
 
 /** Mapeo de rubro de gasto → función, cuando la cuenta no tiene expenseFunction explícito. */
 const EXPENSE_GROUP_TO_FUNCTION: Record<string, ExpenseFunction> = {
@@ -6277,10 +6350,7 @@ async function computeExpenseBalances(orgId: string, fyId: string) {
       credit: sql<string>`coalesce(sum(${asientoLinea.haber}),0)`,
     })
     .from(asientoLinea)
-    .innerJoin(
-      asiento,
-      eq(asiento.id, asientoLinea.asientoId)
-    )
+    .innerJoin(asiento, eq(asiento.id, asientoLinea.asientoId))
     .innerJoin(cuenta, eq(cuenta.id, asientoLinea.cuentaId))
     .where(
       and(
@@ -6305,8 +6375,7 @@ async function computeExpenseBalances(orgId: string, fyId: string) {
     accountId: r.accountId,
     code: r.code,
     name: r.name,
-    fn:
-      r.expenseFunction ?? EXPENSE_GROUP_TO_FUNCTION[r.group ?? ''] ?? 'otro',
+    fn: r.expenseFunction ?? EXPENSE_GROUP_TO_FUNCTION[r.group ?? ''] ?? 'otro',
     saldo: r2(parseFloat(r.debit) - parseFloat(r.credit)),
   }));
 }
@@ -6579,10 +6648,7 @@ export const getFinancialStatement = createServerFn({ method: 'GET' })
       .leftJoin(user, eq(user.id, eecc.aprobadoPor))
       .leftJoin(pdfUser, eq(pdfUser.id, eecc.pdfGeneradoPor))
       .where(
-        and(
-          eq(eecc.ejercicioId, fiscalYearId),
-          eq(eecc.clienteId, clientId)
-        )
+        and(eq(eecc.ejercicioId, fiscalYearId), eq(eecc.clienteId, clientId))
       )
       .limit(1);
 
@@ -6633,10 +6699,7 @@ export const saveFinancialStatementNotes = createServerFn({ method: 'POST' })
       .select({ id: eecc.id, status: eecc.estado })
       .from(eecc)
       .where(
-        and(
-          eq(eecc.ejercicioId, fiscalYearId),
-          eq(eecc.clienteId, clientId)
-        )
+        and(eq(eecc.ejercicioId, fiscalYearId), eq(eecc.clienteId, clientId))
       )
       .limit(1);
 
@@ -6688,10 +6751,7 @@ export const approveFinancialStatement = createServerFn({ method: 'POST' })
       .select({ id: eecc.id, status: eecc.estado })
       .from(eecc)
       .where(
-        and(
-          eq(eecc.ejercicioId, fiscalYearId),
-          eq(eecc.clienteId, clientId)
-        )
+        and(eq(eecc.ejercicioId, fiscalYearId), eq(eecc.clienteId, clientId))
       )
       .limit(1);
 
@@ -6748,10 +6808,7 @@ export const reopenFinancialStatement = createServerFn({ method: 'POST' })
       .update(eecc)
       .set({ estado: 'borrador', aprobadoAt: null, aprobadoPor: null })
       .where(
-        and(
-          eq(eecc.ejercicioId, fiscalYearId),
-          eq(eecc.clienteId, clientId)
-        )
+        and(eq(eecc.ejercicioId, fiscalYearId), eq(eecc.clienteId, clientId))
       );
     return { ok: true };
   });
@@ -6787,10 +6844,7 @@ export const saveFinancialStatementPdf = createServerFn({ method: 'POST' })
       .select({ id: eecc.id })
       .from(eecc)
       .where(
-        and(
-          eq(eecc.ejercicioId, fiscalYearId),
-          eq(eecc.clienteId, clientId)
-        )
+        and(eq(eecc.ejercicioId, fiscalYearId), eq(eecc.clienteId, clientId))
       )
       .limit(1);
 
@@ -6848,10 +6902,7 @@ export const getFinancialStatementPdf = createServerFn({ method: 'GET' })
         })
         .from(eecc)
         .where(
-          and(
-            eq(eecc.ejercicioId, fiscalYearId),
-            eq(eecc.clienteId, clientId)
-          )
+          and(eq(eecc.ejercicioId, fiscalYearId), eq(eecc.clienteId, clientId))
         )
         .limit(1);
 
@@ -6864,3 +6915,1340 @@ export const getFinancialStatementPdf = createServerFn({ method: 'GET' })
       };
     }
   );
+
+/* ═════════ Saldos de un ejercicio de referencia (columna comparativa) ═════════ */
+
+export interface ReferenceBalanceRow {
+  accountId: string;
+  code: string;
+  name: string;
+  group: string | null;
+  groupLabel: string;
+  /** Lado natural de la cuenta: define el signo de lo que se tipea. */
+  side: 'debit' | 'credit';
+  /** Saldo al inicio del ejercicio, como figura en el balance. */
+  inicio: number;
+  /** Saldo al cierre del ejercicio. */
+  cierre: number;
+}
+
+export interface ReferenceBalancesView {
+  fiscalYearNumber: number;
+  periodLabel: string;
+  /** Ya hay saldos cargados: guardar los reemplaza. */
+  loaded: boolean;
+  rows: ReferenceBalanceRow[];
+}
+
+/** Signo contable de un importe tipeado, según el lado natural de la cuenta. */
+function signedForSide(amount: number, side: 'debit' | 'credit'): number {
+  return side === 'credit' ? -amount : amount;
+}
+
+/**
+ * Devuelve el plan de cuentas imputable de la empresa con los saldos ya
+ * cargados, para transcribir un balance ya presentado sin armar los asientos a
+ * mano.
+ *
+ * Solo aplica a ejercicios marcados como de referencia: son los únicos cuyo
+ * libro diario existe nada más que para alimentar el comparativo, así que se
+ * puede reemplazar entero sin pisarle trabajo a nadie.
+ */
+export const getReferenceBalances = createServerFn({ method: 'GET' })
+  .validator(
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid(),
+    })
+  )
+  .handler(async (ctx): Promise<ReferenceBalancesView> => {
+    const { orgId } = await getSessionWithOrg();
+    const { clientId } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
+    if (!fy.soloReferencia) {
+      throw new Error(
+        'Los saldos se transcriben solo en ejercicios de referencia. Este ejercicio se liquida normalmente: cargá sus asientos en el Libro Diario.'
+      );
+    }
+
+    const accounts = await db
+      .select({
+        id: cuenta.id,
+        code: cuenta.codigo,
+        name: cuenta.nombre,
+        group: cuenta.rubro,
+        expectedBalance: cuenta.saldoEsperado,
+      })
+      .from(cuenta)
+      .where(
+        and(
+          eq(cuenta.orgId, orgId),
+          eq(cuenta.tipo, 'imputable'),
+          eq(cuenta.activa, true),
+          sql`(${cuenta.alcance} = 'base' OR ${cuenta.clienteId} = ${clientId})`
+        )
+      )
+      .orderBy(asc(cuenta.codigo));
+
+    // Saldos ya cargados: la apertura es la columna «inicio», y el cierre sale
+    // de sumarle el asiento de movimientos.
+    const lines = await db
+      .select({
+        accountId: asientoLinea.cuentaId,
+        origin: asiento.origenTipo,
+        debit: sql<string>`coalesce(sum(${asientoLinea.debe}),0)`,
+        credit: sql<string>`coalesce(sum(${asientoLinea.haber}),0)`,
+      })
+      .from(asientoLinea)
+      .innerJoin(asiento, eq(asiento.id, asientoLinea.asientoId))
+      .where(and(eq(asiento.ejercicioId, fy.id), eq(asiento.anulado, false)))
+      .groupBy(asientoLinea.cuentaId, asiento.origenTipo);
+
+    const inicioBy = new Map<string, number>();
+    const cierreBy = new Map<string, number>();
+    for (const l of lines) {
+      const v = parseFloat(l.debit) - parseFloat(l.credit);
+      if (l.origin === 'apertura') {
+        inicioBy.set(l.accountId, (inicioBy.get(l.accountId) ?? 0) + v);
+      }
+      cierreBy.set(l.accountId, (cierreBy.get(l.accountId) ?? 0) + v);
+    }
+
+    const rows: ReferenceBalanceRow[] = accounts.map((a) => {
+      const side: 'debit' | 'credit' =
+        a.expectedBalance === 'acreedor' ? 'credit' : 'debit';
+      // Se devuelve el importe tal como se tipea (positivo del lado natural),
+      // que es como figura impreso en el balance.
+      const unsign = (v: number) => r2(signedForSide(v, side));
+      return {
+        accountId: a.id,
+        code: a.code,
+        name: a.name,
+        group: a.group,
+        groupLabel: a.group ? ACCOUNT_GROUP_LABELS[a.group] : '',
+        side,
+        inicio: unsign(inicioBy.get(a.id) ?? 0),
+        cierre: unsign(cierreBy.get(a.id) ?? 0),
+      };
+    });
+
+    const fmtD = (d: string) =>
+      `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;
+
+    return {
+      fiscalYearNumber: fy.numero,
+      periodLabel: `${fmtD(fy.fechaDesde)} – ${fmtD(fy.fechaHasta)}`,
+      loaded: lines.length > 0,
+      rows,
+    };
+  });
+
+/**
+ * Transcribe un balance ya presentado en dos asientos: la apertura del
+ * ejercicio y, como diferencia contra el cierre, sus movimientos.
+ *
+ * Se arma como diferencia y no como dos fotos porque así el libro diario del
+ * ejercicio de referencia queda igual que el de cualquier otro —apertura más
+ * movimientos— y los estados lo leen sin ningún caso especial.
+ */
+export const saveReferenceBalances = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid(),
+      rows: z.array(
+        z.object({
+          accountId: z.string().uuid(),
+          inicio: z.number(),
+          cierre: z.number(),
+        })
+      ),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const { clientId, rows } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    assertCanWrite(await getMemberRole());
+    const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
+    if (!fy.soloReferencia) {
+      throw new Error(
+        'Los saldos se transcriben solo en ejercicios de referencia.'
+      );
+    }
+
+    const accounts = await db
+      .select({
+        id: cuenta.id,
+        code: cuenta.codigo,
+        expectedBalance: cuenta.saldoEsperado,
+      })
+      .from(cuenta)
+      .where(
+        and(
+          eq(cuenta.orgId, orgId),
+          eq(cuenta.tipo, 'imputable'),
+          sql`(${cuenta.alcance} = 'base' OR ${cuenta.clienteId} = ${clientId})`
+        )
+      );
+    const byId = new Map(accounts.map((a) => [a.id, a]));
+
+    // Signo contable de cada columna.
+    const inicio = new Map<string, number>();
+    const movimiento = new Map<string, number>();
+    for (const r of rows) {
+      const a = byId.get(r.accountId);
+      if (!a) continue;
+      const side: 'debit' | 'credit' =
+        a.expectedBalance === 'acreedor' ? 'credit' : 'debit';
+      const ini = r2(signedForSide(r.inicio, side));
+      const cie = r2(signedForSide(r.cierre, side));
+      if (Math.abs(ini) >= 0.005) inicio.set(r.accountId, ini);
+      // El movimiento del ejercicio es lo que va del inicio al cierre.
+      const mov = r2(cie - ini);
+      if (Math.abs(mov) >= 0.005) movimiento.set(r.accountId, mov);
+    }
+
+    const sum = (m: Map<string, number>) =>
+      r2([...m.values()].reduce((s, v) => s + v, 0));
+    const diffInicio = sum(inicio);
+    const diffCierre = r2(diffInicio + sum(movimiento));
+    if (Math.abs(diffInicio) >= 0.005) {
+      throw new Error(
+        `La columna «saldo al inicio» no cuadra: hay una diferencia de $ ${diffInicio.toFixed(2)} entre Debe y Haber.`
+      );
+    }
+    if (Math.abs(diffCierre) >= 0.005) {
+      throw new Error(
+        `La columna «saldo al cierre» no cuadra: hay una diferencia de $ ${diffCierre.toFixed(2)} entre Debe y Haber.`
+      );
+    }
+    if (inicio.size === 0 && movimiento.size === 0) {
+      throw new Error('No hay ningún saldo cargado.');
+    }
+
+    const periods = await db
+      .select()
+      .from(periodoContable)
+      .where(eq(periodoContable.ejercicioId, fy.id))
+      .orderBy(asc(periodoContable.periodo));
+    const firstPeriod = periods[0];
+    const lastPeriod = periods[periods.length - 1];
+    if (!firstPeriod || !lastPeriod) {
+      throw new Error('El ejercicio no tiene períodos generados.');
+    }
+
+    await db.transaction(async (tx) => {
+      // El libro diario de un ejercicio de referencia existe solo para esto,
+      // así que se reemplaza entero en vez de intentar conciliar contra lo que
+      // hubiera cargado antes.
+      const previous = await tx
+        .select({ id: asiento.id })
+        .from(asiento)
+        .where(eq(asiento.ejercicioId, fy.id));
+      if (previous.length > 0) {
+        const ids = previous.map((p) => p.id);
+        await tx
+          .delete(asientoLinea)
+          .where(inArray(asientoLinea.asientoId, ids));
+        await tx.delete(asiento).where(inArray(asiento.id, ids));
+      }
+
+      let number = 1;
+      const write = async (
+        amounts: Map<string, number>,
+        entryDate: string,
+        periodId: string,
+        origin: 'apertura' | 'manual',
+        description: string
+      ) => {
+        if (amounts.size === 0) return;
+        const [je] = await tx
+          .insert(asiento)
+          .values({
+            orgId,
+            clienteId: clientId,
+            ejercicioId: fy.id,
+            periodoId: periodId,
+            numero: number++,
+            fecha: entryDate,
+            descripcion: description,
+            origenTipo: origin,
+            // Ver asiento_origen_coherente: una apertura referencia al
+            // ejercicio que la origina.
+            origenId: origin === 'manual' ? null : fy.id,
+            creadoPor: userId,
+          })
+          .returning({ id: asiento.id });
+        await tx.insert(asientoLinea).values(
+          [...amounts].map(([accountId, v], i) => ({
+            asientoId: je.id,
+            cuentaId: accountId,
+            debe: (v > 0 ? v : 0).toFixed(2),
+            haber: (v < 0 ? -v : 0).toFixed(2),
+            orden: i,
+          }))
+        );
+      };
+
+      await write(
+        inicio,
+        fy.fechaDesde,
+        firstPeriod.id,
+        'apertura',
+        'Saldos al inicio — balance del ejercicio anterior'
+      );
+      await write(
+        movimiento,
+        fy.fechaHasta,
+        lastPeriod.id,
+        'manual',
+        'Movimientos del ejercicio — balance del ejercicio anterior'
+      );
+    });
+
+    return { cuentas: inicio.size + movimiento.size };
+  });
+
+/* ── Informe del auditor: plantillas del estudio y el informe del balance ── */
+
+export interface AuditReportTemplateRow {
+  id: string;
+  name: string;
+  body: string;
+  isDefault: boolean;
+}
+
+/** Plantillas del estudio, la predeterminada primero. */
+export const listAuditReportTemplates = createServerFn({
+  method: 'GET',
+}).handler(async (): Promise<AuditReportTemplateRow[]> => {
+  const { orgId } = await getSessionWithOrg();
+  return await db
+    .select({
+      id: plantillaInformeAuditor.id,
+      name: plantillaInformeAuditor.nombre,
+      body: plantillaInformeAuditor.cuerpo,
+      isDefault: plantillaInformeAuditor.esDefault,
+    })
+    .from(plantillaInformeAuditor)
+    .where(eq(plantillaInformeAuditor.orgId, orgId))
+    .orderBy(
+      desc(plantillaInformeAuditor.esDefault),
+      asc(plantillaInformeAuditor.nombre)
+    );
+});
+
+export const saveAuditReportTemplate = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      id: z.string().uuid().optional(),
+      name: z.string().min(1).max(120),
+      body: z.string().min(1).max(60000),
+      isDefault: z.boolean().default(false),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    assertOwner(await getMemberRole());
+    const { id, name, body, isDefault } = ctx.data;
+
+    return await db.transaction(async (tx) => {
+      // Una sola predeterminada por estudio: con dos, cuál se propone
+      // dependería del orden de la consulta.
+      if (isDefault) {
+        await tx
+          .update(plantillaInformeAuditor)
+          .set({ esDefault: false })
+          .where(eq(plantillaInformeAuditor.orgId, orgId));
+      }
+      if (id) {
+        const [row] = await tx
+          .update(plantillaInformeAuditor)
+          .set({ nombre: name, cuerpo: body, esDefault: isDefault })
+          .where(
+            and(
+              eq(plantillaInformeAuditor.id, id),
+              eq(plantillaInformeAuditor.orgId, orgId)
+            )
+          )
+          .returning({ id: plantillaInformeAuditor.id });
+        if (!row) {
+          throw new Error('La plantilla no existe o es de otro estudio.');
+        }
+        return { id: row.id };
+      }
+      const [row] = await tx
+        .insert(plantillaInformeAuditor)
+        .values({
+          orgId,
+          nombre: name,
+          cuerpo: body,
+          esDefault: isDefault,
+          creadoPor: userId,
+        })
+        .returning({ id: plantillaInformeAuditor.id });
+      return { id: row.id };
+    });
+  });
+
+export const deleteAuditReportTemplate = createServerFn({ method: 'POST' })
+  .validator(z.object({ id: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    assertOwner(await getMemberRole());
+    await db
+      .delete(plantillaInformeAuditor)
+      .where(
+        and(
+          eq(plantillaInformeAuditor.id, ctx.data.id),
+          eq(plantillaInformeAuditor.orgId, orgId)
+        )
+      );
+    return { ok: true };
+  });
+
+/** Guarda el informe ya rellenado de un balance. */
+export const saveAuditReport = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid(),
+      body: z.string().max(60000),
+      lugar: z.string().max(160),
+      fecha: z.string().max(40),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    assertOwner(await getMemberRole());
+    const { clientId, fiscalYearId, body, lugar, fecha } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    await loadFiscalYearForOrg(fiscalYearId, orgId);
+
+    const [existing] = await db
+      .select({ id: eecc.id, estado: eecc.estado })
+      .from(eecc)
+      .where(
+        and(eq(eecc.ejercicioId, fiscalYearId), eq(eecc.clienteId, clientId))
+      )
+      .limit(1);
+    if (existing?.estado === 'aprobado') {
+      throw new Error(
+        'Los EECC están aprobados. Reabrilos a borrador para editar el informe.'
+      );
+    }
+
+    const informeAuditor = { body, lugar, fecha };
+    if (existing) {
+      await db
+        .update(eecc)
+        .set({ informeAuditor })
+        .where(eq(eecc.id, existing.id));
+    } else {
+      await db.insert(eecc).values({
+        orgId,
+        clienteId: clientId,
+        ejercicioId: fiscalYearId,
+        informeAuditor,
+      });
+    }
+    return { ok: true };
+  });
+
+/* ── Estado de Evolución del Patrimonio Neto (EEPN) — AXI-6 ── */
+
+/** Rubros que integran el patrimonio neto, en orden de exposición (RT 9). */
+const PN_GROUPS = [
+  'capital',
+  'aportes_irrevocables',
+  'primas_emision',
+  'reservas',
+  'resultados_no_asignados',
+] as const;
+
+export interface EepnColumn {
+  /** Id de la cuenta, o `subtotal:<rubro>` en las columnas de subtotal. */
+  accountId: string;
+  code: string;
+  name: string;
+  group: string;
+  groupLabel: string;
+  /**
+   * Cierra un rubro de más de una cuenta con su total, como el "Total" de
+   * Capital Social del modelo RT 9 y de la planilla del estudio.
+   */
+  isSubtotal: boolean;
+}
+
+export interface EepnRow {
+  key: string;
+  label: string;
+  kind: 'inicio' | 'movimiento' | 'resultado' | 'cierre';
+  /** Importe por columna (accountId → importe, signo de exposición: positivo = suma al PN). */
+  amounts: Record<string, number>;
+  total: number;
+  /** Solo en filas de movimiento: asiento que lo originó. */
+  entryNumber?: number;
+  entryDate?: string;
+}
+
+export interface EepnResult {
+  fiscalYearNumber: number;
+  priorFiscalYearNumber: number | null;
+  periodLabel: string;
+  columns: EepnColumn[];
+  rows: EepnRow[];
+  /**
+   * Columna del ejercicio anterior, reexpresada a moneda de cierre. Se expone en
+   * las tres filas que tiene el modelo RT 9: patrimonio al inicio de aquel
+   * ejercicio, su resultado, y su patrimonio al cierre —que es el inicio de
+   * este—. Así lo arma el papel de trabajo del estudio.
+   */
+  prior: { inicio: number; resultado: number; cierre: number } | null;
+  priorCoefficient: number | null;
+  /** Total del PN según el ESP; debe coincidir con el saldo al cierre. */
+  espTotal: number;
+  matchesEsp: boolean;
+  /** El ajuste por inflación del ejercicio está aplicado. */
+  inflationApplied: boolean;
+  /**
+   * El ejercicio anterior tiene su propio ajuste aplicado. Si es false, sus
+   * cifras están en moneda heterogénea y multiplicarlas por un coeficiente no
+   * las homogeneiza: el comparativo es aproximado y hay que decirlo.
+   */
+  priorInflationApplied: boolean;
+}
+
+/**
+ * Estado de Evolución del Patrimonio Neto.
+ *
+ * Layout según el modelo RT 9 del CPCECABA: una columna por cuenta de PN
+ * (agrupadas por rubro) y filas por causa de variación.
+ *
+ * Dos particularidades del ajuste por inflación, tomadas del papel de trabajo
+ * del estudio:
+ *
+ * 1. La fila "Saldos al inicio" se expone **en moneda de cierre**: la
+ *    reexpresión del patrimonio inicial se incorpora ahí y no aparece como un
+ *    movimiento del ejercicio. El modelo RT 9 no tiene fila para exponerla.
+ * 2. El Capital social queda a **valor nominal**: su reexpresión no se le imputa
+ *    a él sino a Ajuste de capital (`cuenta.cuentaAjusteId`). Por eso la
+ *    columna "Ajuste de capital" arranca con el ajuste anterior reexpresado más
+ *    el del capital — las "dos fórmulas" que describió el contador.
+ *
+ * Las variaciones del ejercicio se exponen desglosadas por asiento, con su
+ * descripción: el sistema no infiere si un movimiento es un dividendo o una
+ * constitución de reserva, lo muestra tal como lo cargó el contador.
+ */
+export const getEEPN = createServerFn({ method: 'GET' })
+  .validator(
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid(),
+      view: z.enum(['ajustado', 'historico']).default('ajustado'),
+    })
+  )
+  .handler(async (ctx): Promise<EepnResult> => {
+    const { orgId } = await getSessionWithOrg();
+    const { clientId, view } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
+
+    const priorFy = await loadPriorFiscalYear(clientId, fy);
+
+    // Cuentas de PN visibles para la empresa.
+    const pnAccounts = await db
+      .select({
+        id: cuenta.id,
+        code: cuenta.codigo,
+        name: cuenta.nombre,
+        group: cuenta.rubro,
+        inflationTargetId: cuenta.cuentaAjusteId,
+      })
+      .from(cuenta)
+      .where(
+        and(
+          eq(cuenta.orgId, orgId),
+          eq(cuenta.tipo, 'imputable'),
+          inArray(cuenta.rubro, PN_GROUPS as unknown as AccountGroup[]),
+          sql`(${cuenta.alcance} = 'base' OR ${cuenta.clienteId} = ${clientId})`
+        )
+      )
+      .orderBy(asc(cuenta.codigo));
+    const pnIds = new Set(pnAccounts.map((a) => a.id));
+
+    /** Signo de exposición: el PN es acreedor, así que se invierte. */
+    const expose = (saldo: number) => r2(-saldo);
+
+    // 1. Saldos de apertura (histórico), del asiento de apertura del ejercicio.
+    const openingRows = await db
+      .select({
+        accountId: asientoLinea.cuentaId,
+        debit: sql<string>`coalesce(sum(${asientoLinea.debe}),0)`,
+        credit: sql<string>`coalesce(sum(${asientoLinea.haber}),0)`,
+      })
+      .from(asientoLinea)
+      .innerJoin(asiento, eq(asiento.id, asientoLinea.asientoId))
+      .where(
+        and(
+          eq(asiento.ejercicioId, fy.id),
+          eq(asiento.anulado, false),
+          eq(asiento.origenTipo, 'apertura')
+        )
+      )
+      .groupBy(asientoLinea.cuentaId);
+
+    const inicio: Record<string, number> = {};
+    for (const r of openingRows) {
+      if (!pnIds.has(r.accountId)) continue;
+      inicio[r.accountId] = expose(parseFloat(r.debit) - parseFloat(r.credit));
+    }
+
+    // 2. Reexpresión del patrimonio inicial → se incorpora a la fila de inicio,
+    //    imputada a la cuenta destino (Capital social → Ajuste de capital).
+    const [adjustment] = await db
+      .select()
+      .from(ajusteInflacion)
+      .where(
+        and(
+          eq(ajusteInflacion.ejercicioId, fy.id),
+          eq(ajusteInflacion.estado, 'aplicado')
+        )
+      )
+      .limit(1);
+
+    const reexpresionMovimientos: Record<string, number> = {};
+    if (adjustment && view === 'ajustado') {
+      const adjLines = await db
+        .select({
+          accountId: ajusteInflacionLinea.cuentaId,
+          isOpening: ajusteInflacionLinea.esApertura,
+          difference: ajusteInflacionLinea.diferencia,
+        })
+        .from(ajusteInflacionLinea)
+        .where(eq(ajusteInflacionLinea.ajusteId, adjustment.id));
+
+      const targetOf = new Map(
+        pnAccounts.map((a) => [a.id, a.inflationTargetId ?? a.id])
+      );
+      for (const l of adjLines) {
+        if (!pnIds.has(l.accountId)) continue;
+        const target = targetOf.get(l.accountId) ?? l.accountId;
+        const amount = expose(parseFloat(l.difference));
+        if (l.isOpening) {
+          inicio[target] = r2((inicio[target] ?? 0) + amount);
+        } else {
+          reexpresionMovimientos[target] = r2(
+            (reexpresionMovimientos[target] ?? 0) + amount
+          );
+        }
+      }
+    }
+
+    // 3. Movimientos del ejercicio en cuentas de PN, desglosados por asiento.
+    const movementRows = await db
+      .select({
+        entryId: asiento.id,
+        number: asiento.numero,
+        entryDate: asiento.fecha,
+        description: asiento.descripcion,
+        accountId: asientoLinea.cuentaId,
+        debit: sql<string>`coalesce(sum(${asientoLinea.debe}),0)`,
+        credit: sql<string>`coalesce(sum(${asientoLinea.haber}),0)`,
+      })
+      .from(asientoLinea)
+      .innerJoin(asiento, eq(asiento.id, asientoLinea.asientoId))
+      .where(
+        and(
+          eq(asiento.ejercicioId, fy.id),
+          eq(asiento.anulado, false),
+          sql`${asiento.origenTipo} NOT IN ('apertura','cierre','ajuste_inflacion')`,
+          inArray(asientoLinea.cuentaId, [...pnIds])
+        )
+      )
+      .groupBy(
+        asiento.id,
+        asiento.numero,
+        asiento.fecha,
+        asiento.descripcion,
+        asientoLinea.cuentaId
+      )
+      .orderBy(asc(asiento.numero));
+
+    const movimientos = new Map<
+      string,
+      {
+        number: number;
+        entryDate: string;
+        description: string | null;
+        amounts: Record<string, number>;
+      }
+    >();
+    for (const r of movementRows) {
+      const amount = expose(parseFloat(r.debit) - parseFloat(r.credit));
+      if (Math.abs(amount) < 0.005) continue;
+      const prev = movimientos.get(r.entryId) ?? {
+        number: r.number,
+        entryDate: r.entryDate,
+        description: r.description,
+        amounts: {},
+      };
+      prev.amounts[r.accountId] = r2((prev.amounts[r.accountId] ?? 0) + amount);
+      movimientos.set(r.entryId, prev);
+    }
+
+    // 4. Resultado del ejercicio: sale del ER ya ajustado.
+    const balances = await computeEspBalances(orgId, fy.id, view);
+    const resultado = r2(
+      balances
+        .filter(
+          (b) =>
+            b.group &&
+            (RESULT_ACCOUNT_GROUPS as readonly string[]).includes(b.group)
+        )
+        .reduce((s, b) => s + expose(b.saldo), 0)
+    );
+
+    // 5. El resultado del ejercicio se expone en la columna de Resultados no
+    //    asignados, que es donde lo lleva el modelo RT 9 (y donde lo acumula el
+    //    papel de trabajo del estudio en la fila de totales).
+    const rnaAccount =
+      pnAccounts.find(
+        (a) =>
+          a.group === 'resultados_no_asignados' && inicio[a.id] !== undefined
+      ) ?? pnAccounts.find((a) => a.group === 'resultados_no_asignados');
+    const resultadoAmounts: Record<string, number> =
+      rnaAccount && Math.abs(resultado) >= 0.005
+        ? { [rnaAccount.id]: resultado }
+        : {};
+
+    // 6. Columnas: solo las cuentas con algún importe.
+    const touched = new Set<string>([
+      ...Object.keys(inicio),
+      ...Object.keys(reexpresionMovimientos),
+      ...Object.keys(resultadoAmounts),
+      ...[...movimientos.values()].flatMap((m) => Object.keys(m.amounts)),
+    ]);
+    const accountColumns: EepnColumn[] = pnAccounts
+      .filter((a) => touched.has(a.id))
+      .map((a) => ({
+        accountId: a.id,
+        code: a.code,
+        name: a.name,
+        group: a.group ?? '',
+        groupLabel: a.group ? (ACCOUNT_GROUP_LABELS[a.group] ?? a.group) : '',
+        isSubtotal: false,
+      }));
+
+    // Cada rubro de más de una cuenta cierra con su subtotal. Los importes se
+    // calculan acá, y no en cada vista, para que la pantalla, el PDF y el Excel
+    // no puedan diferir entre sí.
+    const columns: EepnColumn[] = [];
+    const subtotalMembers = new Map<string, string[]>();
+    for (let i = 0; i < accountColumns.length; i++) {
+      const col = accountColumns[i];
+      columns.push(col);
+      const next = accountColumns[i + 1];
+      if (next?.group === col.group) continue; // el rubro sigue
+      const members = accountColumns
+        .filter((c) => c.group === col.group)
+        .map((c) => c.accountId);
+      if (members.length < 2) continue;
+      const key = `subtotal:${col.group}`;
+      subtotalMembers.set(key, members);
+      columns.push({
+        accountId: key,
+        code: '',
+        name: 'Total',
+        group: col.group,
+        groupLabel: col.groupLabel,
+        isSubtotal: true,
+      });
+    }
+
+    /** Agrega a una fila los importes de las columnas de subtotal. */
+    const withSubtotals = (amounts: Record<string, number>) => {
+      const out = { ...amounts };
+      for (const [key, members] of subtotalMembers) {
+        out[key] = r2(members.reduce((s, id) => s + (amounts[id] ?? 0), 0));
+      }
+      return out;
+    };
+
+    // Suma solo las cuentas: incluir los subtotales duplicaría los importes.
+    const sumRow = (amounts: Record<string, number>) =>
+      r2(accountColumns.reduce((s, c) => s + (amounts[c.accountId] ?? 0), 0));
+
+    const rows: EepnRow[] = [];
+    rows.push({
+      key: 'inicio',
+      label: 'Saldos al inicio del ejercicio',
+      kind: 'inicio',
+      amounts: withSubtotals(inicio),
+      total: sumRow(inicio),
+    });
+
+    for (const [entryId, m] of movimientos) {
+      rows.push({
+        key: `mov-${entryId}`,
+        label: m.description ?? `Asiento N° ${m.number}`,
+        kind: 'movimiento',
+        amounts: withSubtotals(m.amounts),
+        total: sumRow(m.amounts),
+        entryNumber: m.number,
+        entryDate: m.entryDate,
+      });
+    }
+
+    if (Object.keys(reexpresionMovimientos).length > 0) {
+      rows.push({
+        key: 'reexpresion-movimientos',
+        label: 'Reexpresión de los movimientos del ejercicio',
+        kind: 'movimiento',
+        amounts: withSubtotals(reexpresionMovimientos),
+        total: sumRow(reexpresionMovimientos),
+      });
+    }
+
+    rows.push({
+      key: 'resultado',
+      label: 'Resultado del ejercicio',
+      kind: 'resultado',
+      amounts: withSubtotals(resultadoAmounts),
+      total: resultado,
+    });
+
+    // 7. Saldos al cierre = inicio + movimientos + resultado.
+    const cierre: Record<string, number> = { ...inicio };
+    const accumulate = (amounts: Record<string, number>) => {
+      for (const [accountId, amount] of Object.entries(amounts)) {
+        cierre[accountId] = r2((cierre[accountId] ?? 0) + amount);
+      }
+    };
+    accumulate(reexpresionMovimientos);
+    for (const m of movimientos.values()) accumulate(m.amounts);
+    accumulate(resultadoAmounts);
+    rows.push({
+      key: 'cierre',
+      label: 'Saldos al cierre del ejercicio',
+      kind: 'cierre',
+      amounts: withSubtotals(cierre),
+      total: sumRow(cierre),
+    });
+
+    // 8. Comparativo: el ejercicio anterior en sus tres filas, reexpresado.
+    let prior: { inicio: number; resultado: number; cierre: number } | null =
+      null;
+    let priorCoefficient: number | null = null;
+    if (priorFy) {
+      const priorBalances = await computeEspBalances(orgId, priorFy.id, view);
+      const sumGroups = (groups: readonly string[]) =>
+        r2(
+          priorBalances
+            .filter((b) => b.group && groups.includes(b.group))
+            .reduce((s, b) => s + expose(b.saldo), 0)
+        );
+      const priorResultado = sumGroups(RESULT_ACCOUNT_GROUPS);
+      const priorCierre = sumGroups([...PN_GROUPS, ...RESULT_ACCOUNT_GROUPS]);
+
+      // El patrimonio al inicio de aquel ejercicio sale de su asiento de
+      // apertura; si no lo tiene (primer ejercicio), se deduce por diferencia.
+      const priorOpeningRows = await db
+        .select({
+          accountId: asientoLinea.cuentaId,
+          debit: sql<string>`coalesce(sum(${asientoLinea.debe}),0)`,
+          credit: sql<string>`coalesce(sum(${asientoLinea.haber}),0)`,
+        })
+        .from(asientoLinea)
+        .innerJoin(asiento, eq(asiento.id, asientoLinea.asientoId))
+        .where(
+          and(
+            eq(asiento.ejercicioId, priorFy.id),
+            eq(asiento.anulado, false),
+            eq(asiento.origenTipo, 'apertura')
+          )
+        )
+        .groupBy(asientoLinea.cuentaId);
+      const priorInicio = r2(
+        priorOpeningRows
+          .filter((r) => pnIds.has(r.accountId))
+          .reduce(
+            (s, r) => s + expose(parseFloat(r.debit) - parseFloat(r.credit)),
+            0
+          )
+      );
+
+      if (view === 'ajustado') {
+        priorCoefficient = await priorColumnCoefficient(
+          fy.fechaHasta,
+          priorFy.fechaHasta
+        );
+      }
+      const k = priorCoefficient ?? 1;
+      prior = {
+        inicio: r2(priorInicio * k),
+        resultado: r2(priorResultado * k),
+        cierre: r2(priorCierre * k),
+      };
+    }
+
+    const espTotal = r2(
+      balances
+        .filter(
+          (b) =>
+            b.group &&
+            (
+              [...PN_GROUPS, ...RESULT_ACCOUNT_GROUPS] as readonly string[]
+            ).includes(b.group)
+        )
+        .reduce((s, b) => s + expose(b.saldo), 0)
+    );
+
+    const fmtD = (d: string) =>
+      `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;
+
+    const cierreTotal = rows[rows.length - 1].total;
+    return {
+      fiscalYearNumber: fy.numero,
+      priorFiscalYearNumber: priorFy?.numero ?? null,
+      periodLabel: `${fmtD(fy.fechaDesde)} – ${fmtD(fy.fechaHasta)}`,
+      columns,
+      rows,
+      prior,
+      priorCoefficient,
+      espTotal,
+      matchesEsp: Math.abs(cierreTotal - espTotal) < 0.05,
+      inflationApplied: !!adjustment,
+      priorInflationApplied: priorFy
+        ? priorFiguresAreHomogeneous(
+            priorFy,
+            (await loadInflationStatus(priorFy.id)).applied
+          )
+        : true,
+    };
+  });
+
+/* ── Estado de Flujo de Efectivo (EFE) — método directo — AXI-7 ── */
+
+export interface EfeLine {
+  accountId: string;
+  code: string;
+  name: string;
+  current: number;
+  prior: number;
+}
+
+export interface EfeActivity {
+  key: CashFlowActivity;
+  label: string;
+  lines: EfeLine[];
+  current: number;
+  prior: number;
+}
+
+export interface EfeResult {
+  fiscalYearNumber: number;
+  priorFiscalYearNumber: number | null;
+  periodLabel: string;
+  hasPrior: boolean;
+  /** Coeficiente con el que se reexpresó la columna anterior. null = quedó histórica. */
+  priorCoefficient: number | null;
+  /** Efectivo al inicio, ya reexpresado a moneda de cierre si la vista es ajustada. */
+  efectivoInicio: { current: number; prior: number };
+  efectivoInicioHistorico: number;
+  /** Coeficiente con el que se reexpresó el efectivo inicial del ejercicio. */
+  coeficienteInicio: number | null;
+  efectivoCierre: { current: number; prior: number };
+  variacion: { current: number; prior: number };
+  activities: EfeActivity[];
+  /**
+   * Resultado por exposición a la inflación del efectivo: la pérdida (o
+   * ganancia) de poder adquisitivo por haber mantenido efectivo. Ya viene
+   * incluido como una línea dentro de actividades operativas; se expone acá
+   * aparte solo para poder mostrarlo o cruzarlo, no para volver a sumarlo.
+   */
+  recpamEfectivo: { current: number; prior: number };
+  totalCausas: { current: number; prior: number };
+  cuadra: boolean;
+  /** Cuentas que movieron efectivo pero no tienen actividad asignada. */
+  sinActividad: { code: string; name: string }[];
+  inflationApplied: boolean;
+  /**
+   * El ejercicio anterior tiene su propio ajuste aplicado. Si es false, sus
+   * cifras están en moneda heterogénea y multiplicarlas por un coeficiente no
+   * las homogeneiza: el comparativo es aproximado y hay que decirlo.
+   */
+  priorInflationApplied: boolean;
+}
+
+interface AccountLike {
+  id: string;
+  code: string;
+  name: string;
+  group: string | null;
+  /** Actividad del EFE, ya en el vocabulario del módulo puro (operating/...). */
+  activity: CashFlowActivity | null;
+}
+
+/** Cifras crudas del EFE de un ejercicio, antes de armar el comparativo. */
+interface EfeComputed {
+  efectivoInicioHistorico: number;
+  efectivoInicio: number;
+  efectivoCierre: number;
+  coeficienteInicio: number | null;
+  /** Flujo de efectivo por cuenta de contrapartida, ya reexpresado. */
+  byAccount: Map<string, number>;
+  sinActividad: Map<string, { code: string; name: string }>;
+  inflationApplied: boolean;
+}
+
+/** Clave año-mes sin cero a la izquierda, p. ej. "2026-6". */
+const efeMonthKey = (periodo: string) =>
+  `${parseInt(periodo.slice(0, 4), 10)}-${parseInt(periodo.slice(5, 7), 10)}`;
+
+/**
+ * Calcula el flujo de efectivo de un ejercicio.
+ *
+ * Toma los asientos que tocan una cuenta de efectivo y usa **la contrapartida**
+ * para clasificar el movimiento: si pagué un sueldo la causa es operativa, si
+ * compré una máquina es de inversión. Como todo asiento cuadra, la suma de las
+ * contrapartidas con signo invertido es exactamente el movimiento de efectivo,
+ * así que no hay que prorratear nada.
+ *
+ * Se extrajo del handler para poder correrlo también sobre el ejercicio anterior
+ * y armar la columna comparativa.
+ */
+async function computeEfe(
+  orgId: string,
+  fy: FiscalYearRow,
+  view: 'ajustado' | 'historico',
+  accById: Map<string, AccountLike>,
+  cashIds: Set<string>
+): Promise<EfeComputed> {
+  const ajustado = view === 'ajustado';
+
+  // Efectivo al inicio: del asiento de apertura.
+  const openingRows = await db
+    .select({
+      accountId: asientoLinea.cuentaId,
+      debit: sql<string>`coalesce(sum(${asientoLinea.debe}),0)`,
+      credit: sql<string>`coalesce(sum(${asientoLinea.haber}),0)`,
+    })
+    .from(asientoLinea)
+    .innerJoin(asiento, eq(asiento.id, asientoLinea.asientoId))
+    .where(
+      and(
+        eq(asiento.ejercicioId, fy.id),
+        eq(asiento.anulado, false),
+        eq(asiento.origenTipo, 'apertura')
+      )
+    )
+    .groupBy(asientoLinea.cuentaId);
+
+  const efectivoInicioHistorico = r2(
+    openingRows
+      .filter((r) => cashIds.has(r.accountId))
+      .reduce((s, r) => s + parseFloat(r.debit) - parseFloat(r.credit), 0)
+  );
+
+  // Efectivo al cierre: saldo del mayor. El efectivo es monetario, así que no
+  // cambia entre la vista histórica y la ajustada.
+  const balances = await computeEspBalances(orgId, fy.id, view);
+  const efectivoCierre = r2(
+    balances
+      .filter((b) => cashIds.has(b.accountId))
+      .reduce((s, b) => s + b.saldo, 0)
+  );
+
+  // Movimientos del ejercicio, por asiento y mes. El mes sale del período del
+  // asiento (`periodo_contable.periodo`, primer día del mes).
+  const lines = await db
+    .select({
+      entryId: asiento.id,
+      periodo: periodoContable.periodo,
+      accountId: asientoLinea.cuentaId,
+      debit: sql<string>`coalesce(sum(${asientoLinea.debe}),0)`,
+      credit: sql<string>`coalesce(sum(${asientoLinea.haber}),0)`,
+    })
+    .from(asientoLinea)
+    .innerJoin(asiento, eq(asiento.id, asientoLinea.asientoId))
+    .innerJoin(periodoContable, eq(periodoContable.id, asiento.periodoId))
+    .where(
+      and(
+        eq(asiento.ejercicioId, fy.id),
+        eq(asiento.anulado, false),
+        sql`${asiento.origenTipo} NOT IN ('apertura','cierre','ajuste_inflacion')`
+      )
+    )
+    .groupBy(asiento.id, periodoContable.periodo, asientoLinea.cuentaId);
+
+  // Coeficientes por mes, si la vista es ajustada.
+  const [adjustment] = await db
+    .select()
+    .from(ajusteInflacion)
+    .where(
+      and(
+        eq(ajusteInflacion.ejercicioId, fy.id),
+        eq(ajusteInflacion.estado, 'aplicado')
+      )
+    )
+    .limit(1);
+
+  const coefficients = new Map<string, number>();
+  let coeficienteInicio: number | null = null;
+  if (ajustado && adjustment) {
+    const idx = await db
+      .select()
+      .from(indiceInflacion)
+      .where(eq(indiceInflacion.fuente, adjustment.fuente));
+    const byKey = new Map(
+      idx.map((r) => [`${r.anio}-${r.mes}`, Number(r.valor)])
+    );
+    const closingIndex = byKey.get(
+      `${adjustment.cierreAnio}-${adjustment.cierreMes}`
+    );
+    if (closingIndex) {
+      for (const [key, value] of byKey) {
+        if (value > 0) {
+          coefficients.set(
+            key,
+            Math.round((closingIndex / value) * 10000) / 10000
+          );
+        }
+      }
+      coeficienteInicio =
+        coefficients.get(
+          `${adjustment.aperturaAnio}-${adjustment.aperturaMes}`
+        ) ?? null;
+    }
+  }
+  const coefOf = (periodo: string) =>
+    coefficients.get(efeMonthKey(periodo)) ?? 1;
+
+  // Solo interesan los asientos que tocan efectivo.
+  const entriesWithCash = new Set(
+    lines
+      .filter(
+        (l) =>
+          cashIds.has(l.accountId) &&
+          Math.abs(parseFloat(l.debit) - parseFloat(l.credit)) >= 0.005
+      )
+      .map((l) => l.entryId)
+  );
+
+  const byAccount = new Map<string, number>();
+  const sinActividad = new Map<string, { code: string; name: string }>();
+  for (const l of lines) {
+    if (!entriesWithCash.has(l.entryId)) continue;
+    if (cashIds.has(l.accountId)) continue;
+    const delta = parseFloat(l.debit) - parseFloat(l.credit);
+    if (Math.abs(delta) < 0.005) continue;
+    const flow = -delta * (ajustado ? coefOf(l.periodo) : 1);
+    byAccount.set(l.accountId, (byAccount.get(l.accountId) ?? 0) + flow);
+    const acc = accById.get(l.accountId);
+    if (acc && !acc.activity) {
+      sinActividad.set(acc.id, { code: acc.code, name: acc.name });
+    }
+  }
+
+  return {
+    efectivoInicioHistorico,
+    efectivoInicio:
+      ajustado && coeficienteInicio
+        ? r2(efectivoInicioHistorico * coeficienteInicio)
+        : efectivoInicioHistorico,
+    efectivoCierre,
+    coeficienteInicio,
+    byAccount,
+    sinActividad,
+    inflationApplied: !!adjustment,
+  };
+}
+
+/**
+ * Estado de Flujo de Efectivo por método directo, comparativo.
+ *
+ * En la vista ajustada cada flujo se reexpresa por el coeficiente de su mes y el
+ * efectivo inicial por el del cierre anterior. La diferencia entre la variación
+ * real del efectivo y la suma de los flujos reexpresados es el **RECPAM del
+ * efectivo**: la pérdida de poder adquisitivo por haber tenido plata quieta. Se
+ * expone como una línea propia, que es lo que hace cerrar el estado.
+ *
+ * La columna del ejercicio anterior se calcula igual y después se reexpresa a la
+ * moneda de cierre actual, como en el ESP y el ER.
+ */
+export const getEFE = createServerFn({ method: 'GET' })
+  .validator(
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid(),
+      view: z.enum(['ajustado', 'historico']).default('ajustado'),
+    })
+  )
+  .handler(async (ctx): Promise<EfeResult> => {
+    const { orgId } = await getSessionWithOrg();
+    const { clientId, view } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
+    const ajustado = view === 'ajustado';
+
+    const priorFy = await loadPriorFiscalYear(clientId, fy);
+
+    const accounts = await db
+      .select({
+        id: cuenta.id,
+        code: cuenta.codigo,
+        name: cuenta.nombre,
+        group: cuenta.rubro,
+        activity: cuenta.flujoEfectivo,
+      })
+      .from(cuenta)
+      .where(
+        and(
+          eq(cuenta.orgId, orgId),
+          eq(cuenta.tipo, 'imputable'),
+          sql`(${cuenta.alcance} = 'base' OR ${cuenta.clienteId} = ${clientId})`
+        )
+      );
+    // El enum de la base habla castellano; el módulo puro, inglés (D27).
+    const accById = new Map<string, AccountLike>(
+      accounts.map((a) => [
+        a.id,
+        {
+          id: a.id,
+          code: a.code,
+          name: a.name,
+          group: a.group,
+          activity: a.activity ? CASH_FLOW_ACTIVITY_FROM_DB[a.activity] : null,
+        },
+      ])
+    );
+    const cashIds = new Set(
+      accounts.filter((a) => isCashGroup(a.group)).map((a) => a.id)
+    );
+
+    const cur = await computeEfe(orgId, fy, view, accById, cashIds);
+    const pri = priorFy
+      ? await computeEfe(orgId, priorFy, view, accById, cashIds)
+      : null;
+
+    // El comparativo va a moneda de cierre actual, igual que en el ESP y el ER.
+    let priorCoefficient: number | null = null;
+    if (priorFy && ajustado) {
+      priorCoefficient = await priorColumnCoefficient(
+        fy.fechaHasta,
+        priorFy.fechaHasta
+      );
+    }
+    const k = priorCoefficient ?? 1;
+    const pv = (n: number) => (pri ? r2(n * k) : 0);
+
+    const activities: EfeActivity[] = CASH_FLOW_ACTIVITY_ORDER.map((key) => {
+      const ids = new Set<string>([
+        ...cur.byAccount.keys(),
+        ...(pri ? pri.byAccount.keys() : []),
+      ]);
+      const rows: EfeLine[] = [];
+      for (const accountId of ids) {
+        const acc = accById.get(accountId);
+        if (!acc) continue;
+        const activity =
+          acc.activity ?? defaultCashFlowActivity(acc.group) ?? 'operating';
+        if (activity !== key) continue;
+        const c = r2(cur.byAccount.get(accountId) ?? 0);
+        const p = pv(pri?.byAccount.get(accountId) ?? 0);
+        if (Math.abs(c) < 0.005 && Math.abs(p) < 0.005) continue;
+        rows.push({
+          accountId,
+          code: acc.code,
+          name: acc.name,
+          current: c,
+          prior: p,
+        });
+      }
+      rows.sort((a, b) => a.code.localeCompare(b.code));
+      return {
+        key,
+        label: CASH_FLOW_ACTIVITY_LABELS[key],
+        lines: rows,
+        current: r2(rows.reduce((s, r) => s + r.current, 0)),
+        prior: r2(rows.reduce((s, r) => s + r.prior, 0)),
+      };
+    });
+
+    const efectivoInicio = {
+      current: cur.efectivoInicio,
+      prior: pv(pri?.efectivoInicio ?? 0),
+    };
+    const efectivoCierre = {
+      current: cur.efectivoCierre,
+      prior: pv(pri?.efectivoCierre ?? 0),
+    };
+    const variacion = {
+      current: r2(efectivoCierre.current - efectivoInicio.current),
+      prior: r2(efectivoCierre.prior - efectivoInicio.prior),
+    };
+    const flujos = {
+      current: r2(activities.reduce((s, a) => s + a.current, 0)),
+      prior: r2(activities.reduce((s, a) => s + a.prior, 0)),
+    };
+    // Cierra por diferencia: es el efecto de la inflación sobre el efectivo.
+    const recpamEfectivo = {
+      current: ajustado ? r2(variacion.current - flujos.current) : 0,
+      prior: ajustado && pri ? r2(variacion.prior - flujos.prior) : 0,
+    };
+
+    // El RECPAM se expone DENTRO de actividades operativas, no como una línea
+    // suelta al pie. Es como lo presenta el estudio en sus balances y es lo que
+    // hace que el flujo operativo sea comparable con el resultado del ejercicio.
+    if (
+      Math.abs(recpamEfectivo.current) >= 0.005 ||
+      Math.abs(recpamEfectivo.prior) >= 0.005
+    ) {
+      const operativas = activities.find((a) => a.key === 'operating');
+      if (operativas) {
+        operativas.lines.push({
+          accountId: 'recpam-efectivo',
+          code: '',
+          name: 'RECPAM',
+          current: recpamEfectivo.current,
+          prior: recpamEfectivo.prior,
+        });
+        operativas.current = r2(operativas.current + recpamEfectivo.current);
+        operativas.prior = r2(operativas.prior + recpamEfectivo.prior);
+      }
+    }
+
+    const totalCausas = {
+      current: r2(activities.reduce((s, a) => s + a.current, 0)),
+      prior: r2(activities.reduce((s, a) => s + a.prior, 0)),
+    };
+
+    const fmtD = (d: string) =>
+      `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;
+
+    return {
+      fiscalYearNumber: fy.numero,
+      priorFiscalYearNumber: priorFy?.numero ?? null,
+      periodLabel: `${fmtD(fy.fechaDesde)} – ${fmtD(fy.fechaHasta)}`,
+      hasPrior: !!priorFy,
+      priorCoefficient,
+      efectivoInicio,
+      efectivoInicioHistorico: cur.efectivoInicioHistorico,
+      coeficienteInicio: cur.coeficienteInicio,
+      efectivoCierre,
+      variacion,
+      activities,
+      recpamEfectivo,
+      totalCausas,
+      cuadra: Math.abs(totalCausas.current - variacion.current) < 0.05,
+      sinActividad: [...cur.sinActividad.values()],
+      inflationApplied: cur.inflationApplied,
+      priorInflationApplied:
+        pri && priorFy
+          ? priorFiguresAreHomogeneous(priorFy, pri.inflationApplied)
+          : true,
+    };
+  });
