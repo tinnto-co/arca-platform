@@ -19,6 +19,19 @@
 create type indice_inflacion_fuente as enum ('facpce_rt6', 'indec_ipc', 'manual');
 create type ajuste_inflacion_estado as enum ('borrador', 'aplicado');
 
+-- El asiento del ajuste necesita su propio origen: con 'cierre' quedaría
+-- indistinguible del asiento de cierre del ejercicio, y `origen_id` no podría
+-- apuntar a la corrida que lo generó.
+alter type asiento_origen_tipo add value if not exists 'ajuste_inflacion';
+
+-- El motor de RT 6 distingue cuatro naturalezas, no dos: una no monetaria a
+-- costo se reexpresa y una a valor corriente ya está en moneda de cierre, y los
+-- resultados financieros se determinan por diferencia. `no_monetaria` queda como
+-- valor heredado y el código lo lee como `no_monetaria_costo`.
+alter type cuenta_naturaleza_inflacion add value if not exists 'no_monetaria_costo';
+alter type cuenta_naturaleza_inflacion add value if not exists 'no_monetaria_valor_corriente';
+alter type cuenta_naturaleza_inflacion add value if not exists 'resultado_por_diferencia';
+
 -- ---------------------------------------------------------------- catálogo --
 create table indice_inflacion (
   id uuid primary key default gen_random_uuid(),

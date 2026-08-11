@@ -29,12 +29,24 @@ const CON_RLS = [
   'cierre_sueldos',
 ] as const;
 
+// Los `alter type add value` van aparte y siempre: son idempotentes por sí
+// mismos (`if not exists`) y pueden faltar aunque las tablas ya estén.
+console.log('→ Valores nuevos de enum...');
+for (const stmt of [
+  "alter type asiento_origen_tipo add value if not exists 'ajuste_inflacion'",
+  "alter type cuenta_naturaleza_inflacion add value if not exists 'no_monetaria_costo'",
+  "alter type cuenta_naturaleza_inflacion add value if not exists 'no_monetaria_valor_corriente'",
+  "alter type cuenta_naturaleza_inflacion add value if not exists 'resultado_por_diferencia'",
+]) {
+  await sql.unsafe(stmt);
+}
+
 const [{ existe }] = await sql`
   select count(*)::int existe from information_schema.tables
   where table_schema = 'public' and table_name = 'indice_inflacion'`;
 
 if (existe) {
-  console.log('→ El dominio 8 ya está aplicado, no hay nada que hacer.');
+  console.log('→ Las tablas del dominio 8 ya están, no se recrean.');
 } else {
   console.log('→ Aplicando schema-dominio8.sql...');
   await sql.unsafe(

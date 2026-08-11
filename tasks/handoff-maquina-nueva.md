@@ -43,8 +43,8 @@ siendo la fuente.
 
 ```bash
 docker compose -f docker-compose.ideal.yml up -d      # postgres:17 en localhost:5460
-bun src/scripts/ideal/apply-schema.ts                 # 76 tablas + RLS + roles
-for n in 1 2 3 4 5 6 7; do
+bun src/scripts/ideal/apply-schema.ts                 # 84 tablas + RLS + roles
+for n in 1 2 3 4 5 6 7 8; do
   DATABASE_URL="$(grep -m1 '^MIGRATION_URL=' .env | cut -d= -f2- | tr -d '"')" \
     bun src/scripts/ideal/etl-dominio$n.ts
 done
