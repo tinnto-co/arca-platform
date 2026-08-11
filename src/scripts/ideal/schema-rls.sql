@@ -47,16 +47,18 @@ grant select on all tables in schema public to arca_agent;
 -- Políticas
 -- ============================================================================
 
--- ---------- Nivel 1: la fila tiene org_id propio (31 tablas) ----------
+-- ---------- Nivel 1: la fila tiene org_id propio (34 tablas) ----------
 do $do$
 declare t text;
 begin
   foreach t in array array[
-    'agent_action','agent_conversation','agent_run','alerta','anexo_cmv','asiento',
-    'bien_de_uso','cliente','cliente_cct','cliente_concepto','comprobante','convenio',
-    'credencial_afip','cuenta','cuenta_bancaria','deuda','documento','eecc','ejercicio',
-    'empleado','evento','firmante','job','liquidacion_iibb','lsd_presentacion',
-    'notificacion','organization_module','recibo','regla_mapeo','solicitud','vencimiento'
+    'agent_action','agent_conversation','agent_run','ajuste_inflacion','alerta',
+    'anexo_cmv','asiento','bien_de_uso','cierre_sueldos','cliente','cliente_cct',
+    'cliente_concepto','comprobante','convenio','credencial_afip','cuenta',
+    'cuenta_bancaria','deuda','documento','eecc','ejercicio','empleado','evento',
+    'firmante','job','liquidacion_iibb','lsd_presentacion','notificacion',
+    'organization_module','plantilla_informe_auditor','recibo','regla_mapeo',
+    'solicitud','vencimiento'
   ] loop
     execute format('alter table %I enable row level security', t);
     execute format(
@@ -90,7 +92,7 @@ begin
 end
 $do$;
 
--- ---------- Nivel 3: hijas — heredan del padre (12 tablas) ----------
+-- ---------- Nivel 3: hijas — heredan del padre (13 tablas) ----------
 -- Todas las FK de acá son NOT NULL, así que no hay filas huérfanas que se
 -- escapen del filtro.
 do $do$
@@ -98,6 +100,7 @@ declare r record;
 begin
   for r in select * from (values
     ('agent_message',            'conversation_id',        'agent_conversation'),
+    ('ajuste_inflacion_linea',   'ajuste_id',              'ajuste_inflacion'),
     ('asiento_linea',            'asiento_id',             'asiento'),
     ('comprobante_alicuota',     'comprobante_id',         'comprobante'),
     ('conciliacion_comprobante', 'comprobante_id',         'comprobante'),
@@ -138,11 +141,11 @@ create policy tenant on escala_salarial to arca_app, arca_agent
 -- ============================================================================
 -- Sin política, A PROPÓSITO
 -- ============================================================================
--- Catálogos globales (20): actividad, base_calculo, base_calculo_concepto,
+-- Catálogos globales (21): actividad, base_calculo, base_calculo_concepto,
 --   cct, cct_fuente, comprobante_tipo, concepto, concepto_afip,
---   condicion_trabajador, contraparte, localidad, modalidad_contratacion,
---   nacionalidad, obra_social, parametro_periodo, provincia, siniestrado,
---   situacion_revista, tipo_empresa, zona.
+--   condicion_trabajador, contraparte, indice_inflacion, localidad,
+--   modalidad_contratacion, nacionalidad, obra_social, parametro_periodo,
+--   provincia, siniestrado, situacion_revista, tipo_empresa, zona.
 --   Son códigos AFIP y sujetos vistos en comprobantes: no pertenecen a nadie.
 --   contraparte es el caso deliberado — dos estudios que le facturan al mismo
 --   proveedor comparten la fila, y eso está bien: no revela nada del otro

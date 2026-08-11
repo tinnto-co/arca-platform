@@ -52,10 +52,11 @@ export interface JobRow {
   id: string;
   status: JobStatus;
   type: JobType;
-  credencialId: string;
+  /** Null en los jobs que no usan credencial de AFIP, como `escalas`. */
+  credencialId: string | null;
   credencialNombre: string | null;
-  credencialCuit: string;
-  /** Clientes a los que da acceso esa credencial. */
+  credencialCuit: string | null;
+  /** Clientes a los que da acceso esa credencial; vacío si no hay credencial. */
   clientes: { id: string; razonSocial: string }[];
   params: Record<string, {}> | null;
   result: Record<string, {}> | null;
@@ -83,10 +84,15 @@ export interface JobLogRow {
   createdAt: Date;
 }
 
-/** Los clientes de cada credencial, para mostrarlos debajo del job. */
-async function getClientesPorCredencial(credencialIds: string[]) {
+/**
+ * Los clientes de cada credencial, para mostrarlos debajo del job.
+ * Acepta nulls porque hay jobs sin credencial —`escalas` scrapea las páginas
+ * públicas de los CCT y no se loguea a ninguna cuenta de AFIP—: se descartan.
+ */
+async function getClientesPorCredencial(credencialIds: (string | null)[]) {
   const byCredencial = new Map<string, { id: string; razonSocial: string }[]>();
-  if (credencialIds.length === 0) return byCredencial;
+  const ids = credencialIds.filter((id): id is string => id !== null);
+  if (ids.length === 0) return byCredencial;
 
   const rows = await db
     .select({
@@ -96,7 +102,7 @@ async function getClientesPorCredencial(credencialIds: string[]) {
     })
     .from(clienteCredencial)
     .innerJoin(cliente, eq(clienteCredencial.clienteId, cliente.id))
-    .where(inArray(clienteCredencial.credencialId, credencialIds))
+    .where(inArray(clienteCredencial.credencialId, ids))
     .orderBy(asc(cliente.razonSocial));
 
   for (const r of rows) {
@@ -181,7 +187,9 @@ export const getJobs = createServerFn({ method: 'GET' })
       ...j,
       // El enum de la DB incluye 'batch' pero la UI solo maneja JobType.
       type: j.type as JobType,
-      clientes: clientesPorCredencial.get(j.credencialId) ?? [],
+      clientes: j.credencialId
+        ? (clientesPorCredencial.get(j.credencialId) ?? [])
+        : [],
       params: (j.params ?? null) as Record<string, {}> | null,
       result: (j.result ?? null) as Record<string, {}> | null,
     }));
@@ -458,13 +466,17 @@ export const getJobErrorSummary = createServerFn({ method: 'GET' })
       acc.count++;
       const reason = row.failedReason ?? 'Sin motivo registrado';
       acc.reasons.set(reason, (acc.reasons.get(reason) ?? 0) + 1);
-      const cred = acc.credenciales.get(row.credencialId);
-      if (cred) cred.count++;
-      else
-        acc.credenciales.set(row.credencialId, {
-          nombre: row.credencialNombre,
-          count: 1,
-        });
+      // Un job sin credencial (`escalas`) suma a la categoría pero no agrupa
+      // por credencial: no hay ninguna a la que atribuirle el error.
+      if (row.credencialId) {
+        const cred = acc.credenciales.get(row.credencialId);
+        if (cred) cred.count++;
+        else
+          acc.credenciales.set(row.credencialId, {
+            nombre: row.credencialNombre,
+            count: 1,
+          });
+      }
     }
 
     const affectedIds = [...new Set(failedRows.map((r) => r.credencialId))];

@@ -1,124 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { cliente, anexoCmv, ejercicio, organization, agentConversation, user, agentRun, agentAction, concepto, reciboConcepto, recibo, convenio, convenioCategoria, bienDeUso, cuenta, movimientoBancario, contraparte, cuentaBancaria, invitation, member, clienteCredencial, credencialAfip, evento, comprobante, comprobanteTipo, alerta, job, solicitud, riesgoSnapshot, proyeccionImpuesto, notificacion, clienteConcepto, conceptoAfip, cct, actividad, empleado, condicionTrabajador, localidad, modalidadContratacion, nacionalidad, obraSocial, provincia, siniestrado, situacionRevista, zona, clienteCct, lsdPresentacion, asiento, periodoContable, reglaMapeo, eecc, firmante, conciliacionComprobante, documento, accesoUsuarioCliente, organizationModule, asientoLinea, reglaMapeoLinea, jobLog, agentMessage, comprobanteAlicuota, clienteEmpleadorConfig, session, account, clienteEeccConfig, clienteCuenta, ivaDeclaracion, deuda, vencimiento, liquidacionIibb, escalaSalarial, convenioFuente, notificacionAdjunto } from "./schema";
-
-export const anexoCmvRelations = relations(anexoCmv, ({one}) => ({
-	cliente: one(cliente, {
-		fields: [anexoCmv.clienteId],
-		references: [cliente.id]
-	}),
-	ejercicio: one(ejercicio, {
-		fields: [anexoCmv.ejercicioId],
-		references: [ejercicio.id]
-	}),
-	organization: one(organization, {
-		fields: [anexoCmv.orgId],
-		references: [organization.id]
-	}),
-}));
-
-export const clienteRelations = relations(cliente, ({one, many}) => ({
-	anexoCmvs: many(anexoCmv),
-	agentConversations: many(agentConversation),
-	agentRuns: many(agentRun),
-	agentActions: many(agentAction),
-	bienDeUsos: many(bienDeUso),
-	ejercicios: many(ejercicio),
-	cuentaBancarias: many(cuentaBancaria),
-	organization: one(organization, {
-		fields: [cliente.orgId],
-		references: [organization.id]
-	}),
-	clienteCredencials: many(clienteCredencial),
-	eventos: many(evento),
-	comprobantes: many(comprobante),
-	alertas: many(alerta),
-	solicituds: many(solicitud),
-	riesgoSnapshots: many(riesgoSnapshot),
-	proyeccionImpuestos: many(proyeccionImpuesto),
-	notificacions: many(notificacion),
-	clienteConceptos: many(clienteConcepto),
-	convenios: many(convenio),
-	empleados: many(empleado),
-	clienteCcts: many(clienteCct),
-	lsdPresentacions: many(lsdPresentacion),
-	asientos: many(asiento),
-	reglaMapeos: many(reglaMapeo),
-	periodoContables: many(periodoContable),
-	eeccs: many(eecc),
-	documentos: many(documento),
-	accesoUsuarioClientes: many(accesoUsuarioCliente),
-	clienteEmpleadorConfigs: many(clienteEmpleadorConfig),
-	clienteEeccConfigs: many(clienteEeccConfig),
-	clienteCuentas: many(clienteCuenta),
-	cuentas: many(cuenta),
-	recibos: many(recibo),
-	jobs: many(job),
-	ivaDeclaracions: many(ivaDeclaracion),
-	deudas: many(deuda),
-	vencimientos: many(vencimiento),
-	liquidacionIibbs: many(liquidacionIibb),
-}));
-
-export const ejercicioRelations = relations(ejercicio, ({one, many}) => ({
-	anexoCmvs: many(anexoCmv),
-	user_cerradoPor: one(user, {
-		fields: [ejercicio.cerradoPor],
-		references: [user.id],
-		relationName: "ejercicio_cerradoPor_user_id"
-	}),
-	cliente: one(cliente, {
-		fields: [ejercicio.clienteId],
-		references: [cliente.id]
-	}),
-	organization: one(organization, {
-		fields: [ejercicio.orgId],
-		references: [organization.id]
-	}),
-	user_reabiertoPor: one(user, {
-		fields: [ejercicio.reabiertoPor],
-		references: [user.id],
-		relationName: "ejercicio_reabiertoPor_user_id"
-	}),
-	asientos: many(asiento),
-	periodoContables: many(periodoContable),
-	eeccs: many(eecc),
-}));
-
-export const organizationRelations = relations(organization, ({many}) => ({
-	anexoCmvs: many(anexoCmv),
-	agentConversations: many(agentConversation),
-	agentRuns: many(agentRun),
-	agentActions: many(agentAction),
-	bienDeUsos: many(bienDeUso),
-	ejercicios: many(ejercicio),
-	invitations: many(invitation),
-	members: many(member),
-	cuentaBancarias: many(cuentaBancaria),
-	clientes: many(cliente),
-	eventos: many(evento),
-	comprobantes: many(comprobante),
-	alertas: many(alerta),
-	solicituds: many(solicitud),
-	notificacions: many(notificacion),
-	clienteConceptos: many(clienteConcepto),
-	convenios: many(convenio),
-	empleados: many(empleado),
-	clienteCcts: many(clienteCct),
-	lsdPresentacions: many(lsdPresentacion),
-	asientos: many(asiento),
-	reglaMapeos: many(reglaMapeo),
-	eeccs: many(eecc),
-	firmantes: many(firmante),
-	documentos: many(documento),
-	organizationModules: many(organizationModule),
-	credencialAfips: many(credencialAfip),
-	cuentas: many(cuenta),
-	recibos: many(recibo),
-	jobs: many(job),
-	deudas: many(deuda),
-	vencimientos: many(vencimiento),
-	liquidacionIibbs: many(liquidacionIibb),
-}));
+import { cliente, agentConversation, organization, user, clienteCredencial, credencialAfip, plantillaInformeAuditor, ajusteInflacion, ejercicio, asiento, ajusteInflacionLinea, cuenta, bienDeUso, cierreSueldos, cuentaBancaria, periodoContable, agentRun, recibo, empleado, obraSocial, situacionRevista, session, deuda, proyeccionImpuesto, convenioCategoria, escalaSalarial, vencimiento, actividad, condicionTrabajador, convenio, localidad, modalidadContratacion, nacionalidad, provincia, siniestrado, zona, ivaDeclaracion, notificacion, documento, accesoUsuarioCliente, agentMessage, anexoCmv, asientoLinea, reglaMapeo, alerta, job, account, agentAction, clienteCct, baseCalculo, clienteConcepto, conceptoAfip, concepto, cct, cctFuente, comprobante, contraparte, comprobanteTipo, comprobanteAlicuota, clienteEeccConfig, firmante, clienteCuenta, conciliacionComprobante, movimientoBancario, clienteEmpleadorConfig, liquidacionIibb, organizationModule, lsdPresentacion, member, reglaMapeoLinea, riesgoSnapshot, reciboConcepto, solicitud, notificacionAdjunto, jobLog, eecc, convenioFuente, invitation, evento, baseCalculoConcepto } from "./schema";
 
 export const agentConversationRelations = relations(agentConversation, ({one, many}) => ({
 	cliente: one(cliente, {
@@ -137,121 +18,410 @@ export const agentConversationRelations = relations(agentConversation, ({one, ma
 	agentMessages: many(agentMessage),
 }));
 
+export const clienteRelations = relations(cliente, ({one, many}) => ({
+	agentConversations: many(agentConversation),
+	clienteCredencials: many(clienteCredencial),
+	ajusteInflacions: many(ajusteInflacion),
+	bienDeUsos: many(bienDeUso),
+	cierreSueldos: many(cierreSueldos),
+	cuentaBancarias: many(cuentaBancaria),
+	periodoContables: many(periodoContable),
+	recibos: many(recibo),
+	deudas: many(deuda),
+	proyeccionImpuestos: many(proyeccionImpuesto),
+	vencimientos: many(vencimiento),
+	empleados: many(empleado),
+	ivaDeclaracions: many(ivaDeclaracion),
+	notificacions: many(notificacion),
+	documentos: many(documento),
+	agentRuns: many(agentRun),
+	accesoUsuarioClientes: many(accesoUsuarioCliente),
+	anexoCmvs: many(anexoCmv),
+	asientos: many(asiento),
+	alertas: many(alerta),
+	agentActions: many(agentAction),
+	clienteCcts: many(clienteCct),
+	clienteConceptos: many(clienteConcepto),
+	organization: one(organization, {
+		fields: [cliente.orgId],
+		references: [organization.id]
+	}),
+	comprobantes: many(comprobante),
+	convenios: many(convenio),
+	clienteEeccConfigs: many(clienteEeccConfig),
+	clienteCuentas: many(clienteCuenta),
+	clienteEmpleadorConfigs: many(clienteEmpleadorConfig),
+	liquidacionIibbs: many(liquidacionIibb),
+	lsdPresentacions: many(lsdPresentacion),
+	reglaMapeos: many(reglaMapeo),
+	riesgoSnapshots: many(riesgoSnapshot),
+	solicituds: many(solicitud),
+	cuentas: many(cuenta),
+	ejercicios: many(ejercicio),
+	eeccs: many(eecc),
+	jobs: many(job),
+	eventos: many(evento),
+}));
+
+export const organizationRelations = relations(organization, ({many}) => ({
+	agentConversations: many(agentConversation),
+	plantillaInformeAuditors: many(plantillaInformeAuditor),
+	ajusteInflacions: many(ajusteInflacion),
+	bienDeUsos: many(bienDeUso),
+	cierreSueldos: many(cierreSueldos),
+	cuentaBancarias: many(cuentaBancaria),
+	recibos: many(recibo),
+	deudas: many(deuda),
+	credencialAfips: many(credencialAfip),
+	vencimientos: many(vencimiento),
+	empleados: many(empleado),
+	notificacions: many(notificacion),
+	documentos: many(documento),
+	agentRuns: many(agentRun),
+	anexoCmvs: many(anexoCmv),
+	asientos: many(asiento),
+	alertas: many(alerta),
+	agentActions: many(agentAction),
+	clienteCcts: many(clienteCct),
+	clienteConceptos: many(clienteConcepto),
+	clientes: many(cliente),
+	comprobantes: many(comprobante),
+	convenios: many(convenio),
+	liquidacionIibbs: many(liquidacionIibb),
+	organizationModules: many(organizationModule),
+	lsdPresentacions: many(lsdPresentacion),
+	members: many(member),
+	reglaMapeos: many(reglaMapeo),
+	solicituds: many(solicitud),
+	cuentas: many(cuenta),
+	ejercicios: many(ejercicio),
+	eeccs: many(eecc),
+	firmantes: many(firmante),
+	invitations: many(invitation),
+	jobs: many(job),
+	eventos: many(evento),
+}));
+
 export const userRelations = relations(user, ({many}) => ({
 	agentConversations: many(agentConversation),
-	agentRuns: many(agentRun),
-	agentActions: many(agentAction),
+	plantillaInformeAuditors: many(plantillaInformeAuditor),
+	ajusteInflacions: many(ajusteInflacion),
 	bienDeUsos: many(bienDeUso),
-	ejercicios_cerradoPor: many(ejercicio, {
-		relationName: "ejercicio_cerradoPor_user_id"
+	cierreSueldos_cerradoPor: many(cierreSueldos, {
+		relationName: "cierreSueldos_cerradoPor_user_id"
 	}),
-	ejercicios_reabiertoPor: many(ejercicio, {
-		relationName: "ejercicio_reabiertoPor_user_id"
+	cierreSueldos_reabiertoPor: many(cierreSueldos, {
+		relationName: "cierreSueldos_reabiertoPor_user_id"
 	}),
-	invitations: many(invitation),
-	members: many(member),
-	alertas_asignadaA: many(alerta, {
-		relationName: "alerta_asignadaA_user_id"
-	}),
-	alertas_resueltaPor: many(alerta, {
-		relationName: "alerta_resueltaPor_user_id"
-	}),
-	solicituds: many(solicitud),
+	periodoContables: many(periodoContable),
+	sessions: many(session),
+	vencimientos: many(vencimiento),
 	notificacions_asignadaA: many(notificacion, {
 		relationName: "notificacion_asignadaA_user_id"
 	}),
 	notificacions_resueltaPor: many(notificacion, {
 		relationName: "notificacion_resueltaPor_user_id"
 	}),
+	agentRuns: many(agentRun),
+	accesoUsuarioClientes: many(accesoUsuarioCliente),
 	asientos_anuladoPor: many(asiento, {
 		relationName: "asiento_anuladoPor_user_id"
 	}),
 	asientos_creadoPor: many(asiento, {
 		relationName: "asiento_creadoPor_user_id"
 	}),
-	periodoContables: many(periodoContable),
+	alertas_asignadaA: many(alerta, {
+		relationName: "alerta_asignadaA_user_id"
+	}),
+	alertas_resueltaPor: many(alerta, {
+		relationName: "alerta_resueltaPor_user_id"
+	}),
+	accounts: many(account),
+	agentActions: many(agentAction),
+	conciliacionComprobantes: many(conciliacionComprobante),
+	members: many(member),
+	solicituds: many(solicitud),
+	ejercicios_cerradoPor: many(ejercicio, {
+		relationName: "ejercicio_cerradoPor_user_id"
+	}),
+	ejercicios_reabiertoPor: many(ejercicio, {
+		relationName: "ejercicio_reabiertoPor_user_id"
+	}),
 	eeccs_aprobadoPor: many(eecc, {
 		relationName: "eecc_aprobadoPor_user_id"
 	}),
 	eeccs_pdfGeneradoPor: many(eecc, {
 		relationName: "eecc_pdfGeneradoPor_user_id"
 	}),
-	conciliacionComprobantes: many(conciliacionComprobante),
-	accesoUsuarioClientes: many(accesoUsuarioCliente),
-	sessions: many(session),
-	accounts: many(account),
-	vencimientos: many(vencimiento),
+	invitations: many(invitation),
 }));
 
-export const agentRunRelations = relations(agentRun, ({one, many}) => ({
+export const clienteCredencialRelations = relations(clienteCredencial, ({one}) => ({
 	cliente: one(cliente, {
-		fields: [agentRun.clienteId],
+		fields: [clienteCredencial.clienteId],
 		references: [cliente.id]
 	}),
-	agentConversation: one(agentConversation, {
-		fields: [agentRun.conversationId],
-		references: [agentConversation.id]
+	credencialAfip: one(credencialAfip, {
+		fields: [clienteCredencial.credencialId],
+		references: [credencialAfip.id]
 	}),
+}));
+
+export const credencialAfipRelations = relations(credencialAfip, ({one, many}) => ({
+	clienteCredencials: many(clienteCredencial),
+	deudas: many(deuda),
 	organization: one(organization, {
-		fields: [agentRun.orgId],
+		fields: [credencialAfip.orgId],
+		references: [organization.id]
+	}),
+	vencimientos: many(vencimiento),
+	notificacions: many(notificacion),
+	documentos: many(documento),
+	alertas: many(alerta),
+	jobs: many(job),
+}));
+
+export const plantillaInformeAuditorRelations = relations(plantillaInformeAuditor, ({one}) => ({
+	organization: one(organization, {
+		fields: [plantillaInformeAuditor.orgId],
 		references: [organization.id]
 	}),
 	user: one(user, {
-		fields: [agentRun.userId],
+		fields: [plantillaInformeAuditor.creadoPor],
 		references: [user.id]
 	}),
-	agentActions: many(agentAction),
-	movimientoBancarios: many(movimientoBancario),
-	comprobantes: many(comprobante),
-	empleados: many(empleado),
-	asientos: many(asiento),
-	conciliacionComprobantes: many(conciliacionComprobante),
-	documentos: many(documento),
-	recibos: many(recibo),
-	ivaDeclaracions: many(ivaDeclaracion),
 }));
 
-export const agentActionRelations = relations(agentAction, ({one}) => ({
+export const ajusteInflacionRelations = relations(ajusteInflacion, ({one, many}) => ({
+	organization: one(organization, {
+		fields: [ajusteInflacion.orgId],
+		references: [organization.id]
+	}),
+	cliente: one(cliente, {
+		fields: [ajusteInflacion.clienteId],
+		references: [cliente.id]
+	}),
+	ejercicio: one(ejercicio, {
+		fields: [ajusteInflacion.ejercicioId],
+		references: [ejercicio.id]
+	}),
+	asiento: one(asiento, {
+		fields: [ajusteInflacion.asientoId],
+		references: [asiento.id]
+	}),
+	user: one(user, {
+		fields: [ajusteInflacion.aplicadoPor],
+		references: [user.id]
+	}),
+	ajusteInflacionLineas: many(ajusteInflacionLinea),
+}));
+
+export const ejercicioRelations = relations(ejercicio, ({one, many}) => ({
+	ajusteInflacions: many(ajusteInflacion),
+	periodoContables: many(periodoContable),
+	anexoCmvs: many(anexoCmv),
+	asientos: many(asiento),
+	user_cerradoPor: one(user, {
+		fields: [ejercicio.cerradoPor],
+		references: [user.id],
+		relationName: "ejercicio_cerradoPor_user_id"
+	}),
+	cliente: one(cliente, {
+		fields: [ejercicio.clienteId],
+		references: [cliente.id]
+	}),
+	organization: one(organization, {
+		fields: [ejercicio.orgId],
+		references: [organization.id]
+	}),
+	user_reabiertoPor: one(user, {
+		fields: [ejercicio.reabiertoPor],
+		references: [user.id],
+		relationName: "ejercicio_reabiertoPor_user_id"
+	}),
+	eeccs: many(eecc),
+}));
+
+export const asientoRelations = relations(asiento, ({one, many}) => ({
+	ajusteInflacions: many(ajusteInflacion),
+	cierreSueldos: many(cierreSueldos),
+	asientoLineas: many(asientoLinea),
 	agentRun: one(agentRun, {
-		fields: [agentAction.agentRunId],
+		fields: [asiento.aiRunId],
 		references: [agentRun.id]
 	}),
+	user_anuladoPor: one(user, {
+		fields: [asiento.anuladoPor],
+		references: [user.id],
+		relationName: "asiento_anuladoPor_user_id"
+	}),
 	cliente: one(cliente, {
-		fields: [agentAction.clienteId],
+		fields: [asiento.clienteId],
+		references: [cliente.id]
+	}),
+	user_creadoPor: one(user, {
+		fields: [asiento.creadoPor],
+		references: [user.id],
+		relationName: "asiento_creadoPor_user_id"
+	}),
+	ejercicio: one(ejercicio, {
+		fields: [asiento.ejercicioId],
+		references: [ejercicio.id]
+	}),
+	organization: one(organization, {
+		fields: [asiento.orgId],
+		references: [organization.id]
+	}),
+	periodoContable: one(periodoContable, {
+		fields: [asiento.periodoId],
+		references: [periodoContable.id]
+	}),
+	reglaMapeo: one(reglaMapeo, {
+		fields: [asiento.reglaId],
+		references: [reglaMapeo.id]
+	}),
+}));
+
+export const ajusteInflacionLineaRelations = relations(ajusteInflacionLinea, ({one}) => ({
+	ajusteInflacion: one(ajusteInflacion, {
+		fields: [ajusteInflacionLinea.ajusteId],
+		references: [ajusteInflacion.id]
+	}),
+	cuenta: one(cuenta, {
+		fields: [ajusteInflacionLinea.cuentaId],
+		references: [cuenta.id]
+	}),
+}));
+
+export const cuentaRelations = relations(cuenta, ({one, many}) => ({
+	ajusteInflacionLineas: many(ajusteInflacionLinea),
+	bienDeUsos_cuentaAmortizacionAcumuladaId: many(bienDeUso, {
+		relationName: "bienDeUso_cuentaAmortizacionAcumuladaId_cuenta_id"
+	}),
+	bienDeUsos_cuentaAmortizacionGastoId: many(bienDeUso, {
+		relationName: "bienDeUso_cuentaAmortizacionGastoId_cuenta_id"
+	}),
+	bienDeUsos_cuentaBienId: many(bienDeUso, {
+		relationName: "bienDeUso_cuentaBienId_cuenta_id"
+	}),
+	cuentaBancarias: many(cuentaBancaria),
+	asientoLineas: many(asientoLinea),
+	clienteCuentas: many(clienteCuenta),
+	reglaMapeoLineas: many(reglaMapeoLinea),
+	cuenta_cuentaAjusteId: one(cuenta, {
+		fields: [cuenta.cuentaAjusteId],
+		references: [cuenta.id],
+		relationName: "cuenta_cuentaAjusteId_cuenta_id"
+	}),
+	cuentas_cuentaAjusteId: many(cuenta, {
+		relationName: "cuenta_cuentaAjusteId_cuenta_id"
+	}),
+	cliente: one(cliente, {
+		fields: [cuenta.clienteId],
+		references: [cliente.id]
+	}),
+	organization: one(organization, {
+		fields: [cuenta.orgId],
+		references: [organization.id]
+	}),
+	cuenta_padreId: one(cuenta, {
+		fields: [cuenta.padreId],
+		references: [cuenta.id],
+		relationName: "cuenta_padreId_cuenta_id"
+	}),
+	cuentas_padreId: many(cuenta, {
+		relationName: "cuenta_padreId_cuenta_id"
+	}),
+}));
+
+export const bienDeUsoRelations = relations(bienDeUso, ({one}) => ({
+	cliente: one(cliente, {
+		fields: [bienDeUso.clienteId],
 		references: [cliente.id]
 	}),
 	user: one(user, {
-		fields: [agentAction.decididoPor],
+		fields: [bienDeUso.creadoPor],
 		references: [user.id]
 	}),
+	cuenta_cuentaAmortizacionAcumuladaId: one(cuenta, {
+		fields: [bienDeUso.cuentaAmortizacionAcumuladaId],
+		references: [cuenta.id],
+		relationName: "bienDeUso_cuentaAmortizacionAcumuladaId_cuenta_id"
+	}),
+	cuenta_cuentaAmortizacionGastoId: one(cuenta, {
+		fields: [bienDeUso.cuentaAmortizacionGastoId],
+		references: [cuenta.id],
+		relationName: "bienDeUso_cuentaAmortizacionGastoId_cuenta_id"
+	}),
+	cuenta_cuentaBienId: one(cuenta, {
+		fields: [bienDeUso.cuentaBienId],
+		references: [cuenta.id],
+		relationName: "bienDeUso_cuentaBienId_cuenta_id"
+	}),
 	organization: one(organization, {
-		fields: [agentAction.orgId],
+		fields: [bienDeUso.orgId],
 		references: [organization.id]
 	}),
 }));
 
-export const reciboConceptoRelations = relations(reciboConcepto, ({one}) => ({
-	concepto: one(concepto, {
-		fields: [reciboConcepto.conceptoId],
-		references: [concepto.id]
+export const cierreSueldosRelations = relations(cierreSueldos, ({one}) => ({
+	organization: one(organization, {
+		fields: [cierreSueldos.orgId],
+		references: [organization.id]
 	}),
-	recibo: one(recibo, {
-		fields: [reciboConcepto.reciboId],
-		references: [recibo.id]
+	cliente: one(cliente, {
+		fields: [cierreSueldos.clienteId],
+		references: [cliente.id]
+	}),
+	asiento: one(asiento, {
+		fields: [cierreSueldos.asientoId],
+		references: [asiento.id]
+	}),
+	user_cerradoPor: one(user, {
+		fields: [cierreSueldos.cerradoPor],
+		references: [user.id],
+		relationName: "cierreSueldos_cerradoPor_user_id"
+	}),
+	user_reabiertoPor: one(user, {
+		fields: [cierreSueldos.reabiertoPor],
+		references: [user.id],
+		relationName: "cierreSueldos_reabiertoPor_user_id"
 	}),
 }));
 
-export const conceptoRelations = relations(concepto, ({one, many}) => ({
-	reciboConceptos: many(reciboConcepto),
-	clienteConceptos: many(clienteConcepto),
-	conceptoAfip: one(conceptoAfip, {
-		fields: [concepto.codigoAfip],
-		references: [conceptoAfip.codigo]
+export const cuentaBancariaRelations = relations(cuentaBancaria, ({one, many}) => ({
+	cliente: one(cliente, {
+		fields: [cuentaBancaria.clienteId],
+		references: [cliente.id]
 	}),
+	cuenta: one(cuenta, {
+		fields: [cuentaBancaria.cuentaContableId],
+		references: [cuenta.id]
+	}),
+	organization: one(organization, {
+		fields: [cuentaBancaria.orgId],
+		references: [organization.id]
+	}),
+	movimientoBancarios: many(movimientoBancario),
+}));
+
+export const periodoContableRelations = relations(periodoContable, ({one, many}) => ({
+	user: one(user, {
+		fields: [periodoContable.cerradoPor],
+		references: [user.id]
+	}),
+	cliente: one(cliente, {
+		fields: [periodoContable.clienteId],
+		references: [cliente.id]
+	}),
+	ejercicio: one(ejercicio, {
+		fields: [periodoContable.ejercicioId],
+		references: [ejercicio.id]
+	}),
+	asientos: many(asiento),
 }));
 
 export const reciboRelations = relations(recibo, ({one, many}) => ({
-	reciboConceptos: many(reciboConcepto),
 	agentRun: one(agentRun, {
 		fields: [recibo.aiRunId],
 		references: [agentRun.id]
@@ -287,351 +457,39 @@ export const reciboRelations = relations(recibo, ({one, many}) => ({
 		references: [situacionRevista.id],
 		relationName: "recibo_situacionRevista3Id_situacionRevista_id"
 	}),
+	reciboConceptos: many(reciboConcepto),
 }));
 
-export const convenioCategoriaRelations = relations(convenioCategoria, ({one, many}) => ({
-	convenio: one(convenio, {
-		fields: [convenioCategoria.convenioId],
-		references: [convenio.id]
-	}),
+export const agentRunRelations = relations(agentRun, ({one, many}) => ({
+	recibos: many(recibo),
 	empleados: many(empleado),
-	escalaSalarials: many(escalaSalarial),
-}));
-
-export const convenioRelations = relations(convenio, ({one, many}) => ({
-	convenioCategorias: many(convenioCategoria),
-	cct: one(cct, {
-		fields: [convenio.cctCodigo],
-		references: [cct.codigo]
-	}),
-	cliente: one(cliente, {
-		fields: [convenio.clienteId],
-		references: [cliente.id]
-	}),
-	organization: one(organization, {
-		fields: [convenio.orgId],
-		references: [organization.id]
-	}),
-	empleados: many(empleado),
-	convenioFuentes: many(convenioFuente),
-}));
-
-export const bienDeUsoRelations = relations(bienDeUso, ({one}) => ({
-	cliente: one(cliente, {
-		fields: [bienDeUso.clienteId],
-		references: [cliente.id]
-	}),
-	user: one(user, {
-		fields: [bienDeUso.creadoPor],
-		references: [user.id]
-	}),
-	cuenta_cuentaAmortizacionAcumuladaId: one(cuenta, {
-		fields: [bienDeUso.cuentaAmortizacionAcumuladaId],
-		references: [cuenta.id],
-		relationName: "bienDeUso_cuentaAmortizacionAcumuladaId_cuenta_id"
-	}),
-	cuenta_cuentaAmortizacionGastoId: one(cuenta, {
-		fields: [bienDeUso.cuentaAmortizacionGastoId],
-		references: [cuenta.id],
-		relationName: "bienDeUso_cuentaAmortizacionGastoId_cuenta_id"
-	}),
-	cuenta_cuentaBienId: one(cuenta, {
-		fields: [bienDeUso.cuentaBienId],
-		references: [cuenta.id],
-		relationName: "bienDeUso_cuentaBienId_cuenta_id"
-	}),
-	organization: one(organization, {
-		fields: [bienDeUso.orgId],
-		references: [organization.id]
-	}),
-}));
-
-export const cuentaRelations = relations(cuenta, ({one, many}) => ({
-	bienDeUsos_cuentaAmortizacionAcumuladaId: many(bienDeUso, {
-		relationName: "bienDeUso_cuentaAmortizacionAcumuladaId_cuenta_id"
-	}),
-	bienDeUsos_cuentaAmortizacionGastoId: many(bienDeUso, {
-		relationName: "bienDeUso_cuentaAmortizacionGastoId_cuenta_id"
-	}),
-	bienDeUsos_cuentaBienId: many(bienDeUso, {
-		relationName: "bienDeUso_cuentaBienId_cuenta_id"
-	}),
-	cuentaBancarias: many(cuentaBancaria),
-	asientoLineas: many(asientoLinea),
-	reglaMapeoLineas: many(reglaMapeoLinea),
-	clienteCuentas: many(clienteCuenta),
-	cliente: one(cliente, {
-		fields: [cuenta.clienteId],
-		references: [cliente.id]
-	}),
-	organization: one(organization, {
-		fields: [cuenta.orgId],
-		references: [organization.id]
-	}),
-	cuenta: one(cuenta, {
-		fields: [cuenta.padreId],
-		references: [cuenta.id],
-		relationName: "cuenta_padreId_cuenta_id"
-	}),
-	cuentas: many(cuenta, {
-		relationName: "cuenta_padreId_cuenta_id"
-	}),
-}));
-
-export const movimientoBancarioRelations = relations(movimientoBancario, ({one, many}) => ({
-	agentRun: one(agentRun, {
-		fields: [movimientoBancario.aiRunId],
-		references: [agentRun.id]
-	}),
-	contraparte: one(contraparte, {
-		fields: [movimientoBancario.contraparteId],
-		references: [contraparte.id]
-	}),
-	cuentaBancaria: one(cuentaBancaria, {
-		fields: [movimientoBancario.cuentaBancariaId],
-		references: [cuentaBancaria.id]
-	}),
-	conciliacionComprobantes: many(conciliacionComprobante),
-}));
-
-export const contraparteRelations = relations(contraparte, ({many}) => ({
-	movimientoBancarios: many(movimientoBancario),
-	comprobantes: many(comprobante),
-}));
-
-export const cuentaBancariaRelations = relations(cuentaBancaria, ({one, many}) => ({
-	movimientoBancarios: many(movimientoBancario),
-	cliente: one(cliente, {
-		fields: [cuentaBancaria.clienteId],
-		references: [cliente.id]
-	}),
-	cuenta: one(cuenta, {
-		fields: [cuentaBancaria.cuentaContableId],
-		references: [cuenta.id]
-	}),
-	organization: one(organization, {
-		fields: [cuentaBancaria.orgId],
-		references: [organization.id]
-	}),
-}));
-
-export const invitationRelations = relations(invitation, ({one}) => ({
-	user: one(user, {
-		fields: [invitation.inviterId],
-		references: [user.id]
-	}),
-	organization: one(organization, {
-		fields: [invitation.organizationId],
-		references: [organization.id]
-	}),
-}));
-
-export const memberRelations = relations(member, ({one}) => ({
-	organization: one(organization, {
-		fields: [member.organizationId],
-		references: [organization.id]
-	}),
-	user: one(user, {
-		fields: [member.userId],
-		references: [user.id]
-	}),
-}));
-
-export const clienteCredencialRelations = relations(clienteCredencial, ({one}) => ({
-	cliente: one(cliente, {
-		fields: [clienteCredencial.clienteId],
-		references: [cliente.id]
-	}),
-	credencialAfip: one(credencialAfip, {
-		fields: [clienteCredencial.credencialId],
-		references: [credencialAfip.id]
-	}),
-}));
-
-export const credencialAfipRelations = relations(credencialAfip, ({one, many}) => ({
-	clienteCredencials: many(clienteCredencial),
-	alertas: many(alerta),
-	notificacions: many(notificacion),
+	ivaDeclaracions: many(ivaDeclaracion),
 	documentos: many(documento),
-	organization: one(organization, {
-		fields: [credencialAfip.orgId],
-		references: [organization.id]
-	}),
-	jobs: many(job),
-	deudas: many(deuda),
-	vencimientos: many(vencimiento),
-}));
-
-export const eventoRelations = relations(evento, ({one}) => ({
 	cliente: one(cliente, {
-		fields: [evento.clienteId],
+		fields: [agentRun.clienteId],
 		references: [cliente.id]
 	}),
-	organization: one(organization, {
-		fields: [evento.orgId],
-		references: [organization.id]
-	}),
-}));
-
-export const comprobanteRelations = relations(comprobante, ({one, many}) => ({
-	agentRun: one(agentRun, {
-		fields: [comprobante.aiRunId],
-		references: [agentRun.id]
-	}),
-	cliente: one(cliente, {
-		fields: [comprobante.clienteId],
-		references: [cliente.id]
-	}),
-	contraparte: one(contraparte, {
-		fields: [comprobante.contraparteId],
-		references: [contraparte.id]
+	agentConversation: one(agentConversation, {
+		fields: [agentRun.conversationId],
+		references: [agentConversation.id]
 	}),
 	organization: one(organization, {
-		fields: [comprobante.orgId],
-		references: [organization.id]
-	}),
-	comprobanteTipo: one(comprobanteTipo, {
-		fields: [comprobante.tipo],
-		references: [comprobanteTipo.codigo]
-	}),
-	conciliacionComprobantes: many(conciliacionComprobante),
-	comprobanteAlicuotas: many(comprobanteAlicuota),
-}));
-
-export const comprobanteTipoRelations = relations(comprobanteTipo, ({many}) => ({
-	comprobantes: many(comprobante),
-}));
-
-export const alertaRelations = relations(alerta, ({one}) => ({
-	user_asignadaA: one(user, {
-		fields: [alerta.asignadaA],
-		references: [user.id],
-		relationName: "alerta_asignadaA_user_id"
-	}),
-	cliente: one(cliente, {
-		fields: [alerta.clienteId],
-		references: [cliente.id]
-	}),
-	credencialAfip: one(credencialAfip, {
-		fields: [alerta.credencialId],
-		references: [credencialAfip.id]
-	}),
-	organization: one(organization, {
-		fields: [alerta.orgId],
-		references: [organization.id]
-	}),
-	job: one(job, {
-		fields: [alerta.origenId],
-		references: [job.id]
-	}),
-	user_resueltaPor: one(user, {
-		fields: [alerta.resueltaPor],
-		references: [user.id],
-		relationName: "alerta_resueltaPor_user_id"
-	}),
-}));
-
-export const jobRelations = relations(job, ({one, many}) => ({
-	alertas: many(alerta),
-	jobLogs: many(jobLog),
-	cliente: one(cliente, {
-		fields: [job.clienteId],
-		references: [cliente.id]
-	}),
-	credencialAfip: one(credencialAfip, {
-		fields: [job.credencialId],
-		references: [credencialAfip.id]
-	}),
-	organization: one(organization, {
-		fields: [job.orgId],
-		references: [organization.id]
-	}),
-}));
-
-export const solicitudRelations = relations(solicitud, ({one}) => ({
-	cliente: one(cliente, {
-		fields: [solicitud.clienteId],
-		references: [cliente.id]
-	}),
-	organization: one(organization, {
-		fields: [solicitud.orgId],
+		fields: [agentRun.orgId],
 		references: [organization.id]
 	}),
 	user: one(user, {
-		fields: [solicitud.pedidaPor],
+		fields: [agentRun.userId],
 		references: [user.id]
 	}),
-}));
-
-export const riesgoSnapshotRelations = relations(riesgoSnapshot, ({one}) => ({
-	cliente: one(cliente, {
-		fields: [riesgoSnapshot.clienteId],
-		references: [cliente.id]
-	}),
-}));
-
-export const proyeccionImpuestoRelations = relations(proyeccionImpuesto, ({one}) => ({
-	cliente: one(cliente, {
-		fields: [proyeccionImpuesto.clienteId],
-		references: [cliente.id]
-	}),
-}));
-
-export const notificacionRelations = relations(notificacion, ({one, many}) => ({
-	user_asignadaA: one(user, {
-		fields: [notificacion.asignadaA],
-		references: [user.id],
-		relationName: "notificacion_asignadaA_user_id"
-	}),
-	cliente: one(cliente, {
-		fields: [notificacion.clienteId],
-		references: [cliente.id]
-	}),
-	credencialAfip: one(credencialAfip, {
-		fields: [notificacion.credencialId],
-		references: [credencialAfip.id]
-	}),
-	organization: one(organization, {
-		fields: [notificacion.orgId],
-		references: [organization.id]
-	}),
-	user_resueltaPor: one(user, {
-		fields: [notificacion.resueltaPor],
-		references: [user.id],
-		relationName: "notificacion_resueltaPor_user_id"
-	}),
-	notificacionAdjuntos: many(notificacionAdjunto),
-}));
-
-export const clienteConceptoRelations = relations(clienteConcepto, ({one}) => ({
-	cliente: one(cliente, {
-		fields: [clienteConcepto.clienteId],
-		references: [cliente.id]
-	}),
-	conceptoAfip: one(conceptoAfip, {
-		fields: [clienteConcepto.conceptoAfipId],
-		references: [conceptoAfip.id]
-	}),
-	concepto: one(concepto, {
-		fields: [clienteConcepto.conceptoId],
-		references: [concepto.id]
-	}),
-	organization: one(organization, {
-		fields: [clienteConcepto.orgId],
-		references: [organization.id]
-	}),
-}));
-
-export const conceptoAfipRelations = relations(conceptoAfip, ({many}) => ({
-	clienteConceptos: many(clienteConcepto),
-	conceptos: many(concepto),
-}));
-
-export const cctRelations = relations(cct, ({many}) => ({
-	convenios: many(convenio),
+	asientos: many(asiento),
+	agentActions: many(agentAction),
+	comprobantes: many(comprobante),
+	conciliacionComprobantes: many(conciliacionComprobante),
+	movimientoBancarios: many(movimientoBancario),
 }));
 
 export const empleadoRelations = relations(empleado, ({one, many}) => ({
+	recibos: many(recibo),
 	actividad: one(actividad, {
 		fields: [empleado.actividadId],
 		references: [actividad.id]
@@ -692,7 +550,88 @@ export const empleadoRelations = relations(empleado, ({one, many}) => ({
 		fields: [empleado.zonaId],
 		references: [zona.id]
 	}),
+}));
+
+export const obraSocialRelations = relations(obraSocial, ({many}) => ({
 	recibos: many(recibo),
+	empleados: many(empleado),
+}));
+
+export const situacionRevistaRelations = relations(situacionRevista, ({many}) => ({
+	recibos_situacionRevista1Id: many(recibo, {
+		relationName: "recibo_situacionRevista1Id_situacionRevista_id"
+	}),
+	recibos_situacionRevista2Id: many(recibo, {
+		relationName: "recibo_situacionRevista2Id_situacionRevista_id"
+	}),
+	recibos_situacionRevista3Id: many(recibo, {
+		relationName: "recibo_situacionRevista3Id_situacionRevista_id"
+	}),
+	empleados: many(empleado),
+}));
+
+export const sessionRelations = relations(session, ({one}) => ({
+	user: one(user, {
+		fields: [session.userId],
+		references: [user.id]
+	}),
+}));
+
+export const deudaRelations = relations(deuda, ({one}) => ({
+	cliente: one(cliente, {
+		fields: [deuda.clienteId],
+		references: [cliente.id]
+	}),
+	credencialAfip: one(credencialAfip, {
+		fields: [deuda.credencialId],
+		references: [credencialAfip.id]
+	}),
+	organization: one(organization, {
+		fields: [deuda.orgId],
+		references: [organization.id]
+	}),
+}));
+
+export const proyeccionImpuestoRelations = relations(proyeccionImpuesto, ({one}) => ({
+	cliente: one(cliente, {
+		fields: [proyeccionImpuesto.clienteId],
+		references: [cliente.id]
+	}),
+}));
+
+export const escalaSalarialRelations = relations(escalaSalarial, ({one}) => ({
+	convenioCategoria: one(convenioCategoria, {
+		fields: [escalaSalarial.categoriaId],
+		references: [convenioCategoria.id]
+	}),
+}));
+
+export const convenioCategoriaRelations = relations(convenioCategoria, ({one, many}) => ({
+	escalaSalarials: many(escalaSalarial),
+	empleados: many(empleado),
+	convenio: one(convenio, {
+		fields: [convenioCategoria.convenioId],
+		references: [convenio.id]
+	}),
+}));
+
+export const vencimientoRelations = relations(vencimiento, ({one}) => ({
+	cliente: one(cliente, {
+		fields: [vencimiento.clienteId],
+		references: [cliente.id]
+	}),
+	user: one(user, {
+		fields: [vencimiento.completadoPor],
+		references: [user.id]
+	}),
+	credencialAfip: one(credencialAfip, {
+		fields: [vencimiento.credencialId],
+		references: [credencialAfip.id]
+	}),
+	organization: one(organization, {
+		fields: [vencimiento.orgId],
+		references: [organization.id]
+	}),
 }));
 
 export const actividadRelations = relations(actividad, ({many}) => ({
@@ -701,6 +640,24 @@ export const actividadRelations = relations(actividad, ({many}) => ({
 
 export const condicionTrabajadorRelations = relations(condicionTrabajador, ({many}) => ({
 	empleados: many(empleado),
+}));
+
+export const convenioRelations = relations(convenio, ({one, many}) => ({
+	empleados: many(empleado),
+	cct: one(cct, {
+		fields: [convenio.cctCodigo],
+		references: [cct.codigo]
+	}),
+	cliente: one(cliente, {
+		fields: [convenio.clienteId],
+		references: [cliente.id]
+	}),
+	organization: one(organization, {
+		fields: [convenio.orgId],
+		references: [organization.id]
+	}),
+	convenioCategorias: many(convenioCategoria),
+	convenioFuentes: many(convenioFuente),
 }));
 
 export const localidadRelations = relations(localidad, ({many}) => ({
@@ -715,11 +672,6 @@ export const nacionalidadRelations = relations(nacionalidad, ({many}) => ({
 	empleados: many(empleado),
 }));
 
-export const obraSocialRelations = relations(obraSocial, ({many}) => ({
-	empleados: many(empleado),
-	recibos: many(recibo),
-}));
-
 export const provinciaRelations = relations(provincia, ({many}) => ({
 	empleados: many(empleado),
 }));
@@ -728,162 +680,45 @@ export const siniestradoRelations = relations(siniestrado, ({many}) => ({
 	empleados: many(empleado),
 }));
 
-export const situacionRevistaRelations = relations(situacionRevista, ({many}) => ({
-	empleados: many(empleado),
-	recibos_situacionRevista1Id: many(recibo, {
-		relationName: "recibo_situacionRevista1Id_situacionRevista_id"
-	}),
-	recibos_situacionRevista2Id: many(recibo, {
-		relationName: "recibo_situacionRevista2Id_situacionRevista_id"
-	}),
-	recibos_situacionRevista3Id: many(recibo, {
-		relationName: "recibo_situacionRevista3Id_situacionRevista_id"
-	}),
-}));
-
 export const zonaRelations = relations(zona, ({many}) => ({
 	empleados: many(empleado),
 }));
 
-export const clienteCctRelations = relations(clienteCct, ({one}) => ({
-	cliente: one(cliente, {
-		fields: [clienteCct.clienteId],
-		references: [cliente.id]
-	}),
-	organization: one(organization, {
-		fields: [clienteCct.orgId],
-		references: [organization.id]
-	}),
-}));
-
-export const lsdPresentacionRelations = relations(lsdPresentacion, ({one}) => ({
-	cliente: one(cliente, {
-		fields: [lsdPresentacion.clienteId],
-		references: [cliente.id]
-	}),
-	organization: one(organization, {
-		fields: [lsdPresentacion.orgId],
-		references: [organization.id]
-	}),
-}));
-
-export const asientoRelations = relations(asiento, ({one, many}) => ({
+export const ivaDeclaracionRelations = relations(ivaDeclaracion, ({one}) => ({
 	agentRun: one(agentRun, {
-		fields: [asiento.aiRunId],
+		fields: [ivaDeclaracion.aiRunId],
 		references: [agentRun.id]
 	}),
-	user_anuladoPor: one(user, {
-		fields: [asiento.anuladoPor],
-		references: [user.id],
-		relationName: "asiento_anuladoPor_user_id"
-	}),
 	cliente: one(cliente, {
-		fields: [asiento.clienteId],
+		fields: [ivaDeclaracion.clienteId],
 		references: [cliente.id]
 	}),
-	user_creadoPor: one(user, {
-		fields: [asiento.creadoPor],
-		references: [user.id],
-		relationName: "asiento_creadoPor_user_id"
-	}),
-	ejercicio: one(ejercicio, {
-		fields: [asiento.ejercicioId],
-		references: [ejercicio.id]
-	}),
-	organization: one(organization, {
-		fields: [asiento.orgId],
-		references: [organization.id]
-	}),
-	periodoContable: one(periodoContable, {
-		fields: [asiento.periodoId],
-		references: [periodoContable.id]
-	}),
-	reglaMapeo: one(reglaMapeo, {
-		fields: [asiento.reglaId],
-		references: [reglaMapeo.id]
-	}),
-	asientoLineas: many(asientoLinea),
 }));
 
-export const periodoContableRelations = relations(periodoContable, ({one, many}) => ({
-	asientos: many(asiento),
-	user: one(user, {
-		fields: [periodoContable.cerradoPor],
-		references: [user.id]
+export const notificacionRelations = relations(notificacion, ({one, many}) => ({
+	user_asignadaA: one(user, {
+		fields: [notificacion.asignadaA],
+		references: [user.id],
+		relationName: "notificacion_asignadaA_user_id"
 	}),
 	cliente: one(cliente, {
-		fields: [periodoContable.clienteId],
+		fields: [notificacion.clienteId],
 		references: [cliente.id]
 	}),
-	ejercicio: one(ejercicio, {
-		fields: [periodoContable.ejercicioId],
-		references: [ejercicio.id]
-	}),
-}));
-
-export const reglaMapeoRelations = relations(reglaMapeo, ({one, many}) => ({
-	asientos: many(asiento),
-	cliente: one(cliente, {
-		fields: [reglaMapeo.clienteId],
-		references: [cliente.id]
+	credencialAfip: one(credencialAfip, {
+		fields: [notificacion.credencialId],
+		references: [credencialAfip.id]
 	}),
 	organization: one(organization, {
-		fields: [reglaMapeo.orgId],
+		fields: [notificacion.orgId],
 		references: [organization.id]
 	}),
-	reglaMapeoLineas: many(reglaMapeoLinea),
-}));
-
-export const eeccRelations = relations(eecc, ({one}) => ({
-	user_aprobadoPor: one(user, {
-		fields: [eecc.aprobadoPor],
+	user_resueltaPor: one(user, {
+		fields: [notificacion.resueltaPor],
 		references: [user.id],
-		relationName: "eecc_aprobadoPor_user_id"
+		relationName: "notificacion_resueltaPor_user_id"
 	}),
-	cliente: one(cliente, {
-		fields: [eecc.clienteId],
-		references: [cliente.id]
-	}),
-	ejercicio: one(ejercicio, {
-		fields: [eecc.ejercicioId],
-		references: [ejercicio.id]
-	}),
-	organization: one(organization, {
-		fields: [eecc.orgId],
-		references: [organization.id]
-	}),
-	user_pdfGeneradoPor: one(user, {
-		fields: [eecc.pdfGeneradoPor],
-		references: [user.id],
-		relationName: "eecc_pdfGeneradoPor_user_id"
-	}),
-}));
-
-export const firmanteRelations = relations(firmante, ({one, many}) => ({
-	organization: one(organization, {
-		fields: [firmante.orgId],
-		references: [organization.id]
-	}),
-	clienteEeccConfigs: many(clienteEeccConfig),
-}));
-
-export const conciliacionComprobanteRelations = relations(conciliacionComprobante, ({one}) => ({
-	agentRun: one(agentRun, {
-		fields: [conciliacionComprobante.aiRunId],
-		references: [agentRun.id]
-	}),
-	comprobante: one(comprobante, {
-		fields: [conciliacionComprobante.comprobanteId],
-		references: [comprobante.id]
-	}),
-	movimientoBancario: one(movimientoBancario, {
-		fields: [conciliacionComprobante.movimientoBancarioId],
-		references: [movimientoBancario.id]
-	}),
-	user: one(user, {
-		fields: [conciliacionComprobante.revisadoPor],
-		references: [user.id]
-	}),
+	notificacionAdjuntos: many(notificacionAdjunto),
 }));
 
 export const documentoRelations = relations(documento, ({one, many}) => ({
@@ -917,9 +752,24 @@ export const accesoUsuarioClienteRelations = relations(accesoUsuarioCliente, ({o
 	}),
 }));
 
-export const organizationModuleRelations = relations(organizationModule, ({one}) => ({
+export const agentMessageRelations = relations(agentMessage, ({one}) => ({
+	agentConversation: one(agentConversation, {
+		fields: [agentMessage.conversationId],
+		references: [agentConversation.id]
+	}),
+}));
+
+export const anexoCmvRelations = relations(anexoCmv, ({one}) => ({
+	cliente: one(cliente, {
+		fields: [anexoCmv.clienteId],
+		references: [cliente.id]
+	}),
+	ejercicio: one(ejercicio, {
+		fields: [anexoCmv.ejercicioId],
+		references: [ejercicio.id]
+	}),
 	organization: one(organization, {
-		fields: [organizationModule.orgId],
+		fields: [anexoCmv.orgId],
 		references: [organization.id]
 	}),
 }));
@@ -935,49 +785,62 @@ export const asientoLineaRelations = relations(asientoLinea, ({one}) => ({
 	}),
 }));
 
-export const reglaMapeoLineaRelations = relations(reglaMapeoLinea, ({one}) => ({
-	cuenta: one(cuenta, {
-		fields: [reglaMapeoLinea.cuentaId],
-		references: [cuenta.id]
-	}),
-	reglaMapeo: one(reglaMapeo, {
-		fields: [reglaMapeoLinea.reglaId],
-		references: [reglaMapeo.id]
-	}),
-}));
-
-export const jobLogRelations = relations(jobLog, ({one}) => ({
-	job: one(job, {
-		fields: [jobLog.jobId],
-		references: [job.id]
-	}),
-}));
-
-export const agentMessageRelations = relations(agentMessage, ({one}) => ({
-	agentConversation: one(agentConversation, {
-		fields: [agentMessage.conversationId],
-		references: [agentConversation.id]
-	}),
-}));
-
-export const comprobanteAlicuotaRelations = relations(comprobanteAlicuota, ({one}) => ({
-	comprobante: one(comprobante, {
-		fields: [comprobanteAlicuota.comprobanteId],
-		references: [comprobante.id]
-	}),
-}));
-
-export const clienteEmpleadorConfigRelations = relations(clienteEmpleadorConfig, ({one}) => ({
+export const reglaMapeoRelations = relations(reglaMapeo, ({one, many}) => ({
+	asientos: many(asiento),
 	cliente: one(cliente, {
-		fields: [clienteEmpleadorConfig.clienteId],
+		fields: [reglaMapeo.clienteId],
 		references: [cliente.id]
 	}),
+	organization: one(organization, {
+		fields: [reglaMapeo.orgId],
+		references: [organization.id]
+	}),
+	reglaMapeoLineas: many(reglaMapeoLinea),
 }));
 
-export const sessionRelations = relations(session, ({one}) => ({
-	user: one(user, {
-		fields: [session.userId],
-		references: [user.id]
+export const alertaRelations = relations(alerta, ({one}) => ({
+	user_asignadaA: one(user, {
+		fields: [alerta.asignadaA],
+		references: [user.id],
+		relationName: "alerta_asignadaA_user_id"
+	}),
+	cliente: one(cliente, {
+		fields: [alerta.clienteId],
+		references: [cliente.id]
+	}),
+	credencialAfip: one(credencialAfip, {
+		fields: [alerta.credencialId],
+		references: [credencialAfip.id]
+	}),
+	organization: one(organization, {
+		fields: [alerta.orgId],
+		references: [organization.id]
+	}),
+	job: one(job, {
+		fields: [alerta.origenId],
+		references: [job.id]
+	}),
+	user_resueltaPor: one(user, {
+		fields: [alerta.resueltaPor],
+		references: [user.id],
+		relationName: "alerta_resueltaPor_user_id"
+	}),
+}));
+
+export const jobRelations = relations(job, ({one, many}) => ({
+	alertas: many(alerta),
+	jobLogs: many(jobLog),
+	cliente: one(cliente, {
+		fields: [job.clienteId],
+		references: [cliente.id]
+	}),
+	credencialAfip: one(credencialAfip, {
+		fields: [job.credencialId],
+		references: [credencialAfip.id]
+	}),
+	organization: one(organization, {
+		fields: [job.orgId],
+		references: [organization.id]
 	}),
 }));
 
@@ -985,6 +848,132 @@ export const accountRelations = relations(account, ({one}) => ({
 	user: one(user, {
 		fields: [account.userId],
 		references: [user.id]
+	}),
+}));
+
+export const agentActionRelations = relations(agentAction, ({one}) => ({
+	agentRun: one(agentRun, {
+		fields: [agentAction.agentRunId],
+		references: [agentRun.id]
+	}),
+	cliente: one(cliente, {
+		fields: [agentAction.clienteId],
+		references: [cliente.id]
+	}),
+	user: one(user, {
+		fields: [agentAction.decididoPor],
+		references: [user.id]
+	}),
+	organization: one(organization, {
+		fields: [agentAction.orgId],
+		references: [organization.id]
+	}),
+}));
+
+export const clienteCctRelations = relations(clienteCct, ({one}) => ({
+	cliente: one(cliente, {
+		fields: [clienteCct.clienteId],
+		references: [cliente.id]
+	}),
+	organization: one(organization, {
+		fields: [clienteCct.orgId],
+		references: [organization.id]
+	}),
+}));
+
+export const clienteConceptoRelations = relations(clienteConcepto, ({one}) => ({
+	baseCalculo: one(baseCalculo, {
+		fields: [clienteConcepto.baseCalculoId],
+		references: [baseCalculo.id]
+	}),
+	cliente: one(cliente, {
+		fields: [clienteConcepto.clienteId],
+		references: [cliente.id]
+	}),
+	conceptoAfip: one(conceptoAfip, {
+		fields: [clienteConcepto.conceptoAfipId],
+		references: [conceptoAfip.id]
+	}),
+	concepto: one(concepto, {
+		fields: [clienteConcepto.conceptoId],
+		references: [concepto.id]
+	}),
+	organization: one(organization, {
+		fields: [clienteConcepto.orgId],
+		references: [organization.id]
+	}),
+}));
+
+export const baseCalculoRelations = relations(baseCalculo, ({many}) => ({
+	clienteConceptos: many(clienteConcepto),
+	conceptos: many(concepto),
+	baseCalculoConceptos: many(baseCalculoConcepto),
+}));
+
+export const conceptoAfipRelations = relations(conceptoAfip, ({many}) => ({
+	clienteConceptos: many(clienteConcepto),
+}));
+
+export const conceptoRelations = relations(concepto, ({one, many}) => ({
+	clienteConceptos: many(clienteConcepto),
+	baseCalculo: one(baseCalculo, {
+		fields: [concepto.baseCalculoId],
+		references: [baseCalculo.id]
+	}),
+	reciboConceptos: many(reciboConcepto),
+	baseCalculoConceptos: many(baseCalculoConcepto),
+}));
+
+export const cctFuenteRelations = relations(cctFuente, ({one}) => ({
+	cct: one(cct, {
+		fields: [cctFuente.cctCodigo],
+		references: [cct.codigo]
+	}),
+}));
+
+export const cctRelations = relations(cct, ({many}) => ({
+	cctFuentes: many(cctFuente),
+	convenios: many(convenio),
+}));
+
+export const comprobanteRelations = relations(comprobante, ({one, many}) => ({
+	agentRun: one(agentRun, {
+		fields: [comprobante.aiRunId],
+		references: [agentRun.id]
+	}),
+	cliente: one(cliente, {
+		fields: [comprobante.clienteId],
+		references: [cliente.id]
+	}),
+	contraparte: one(contraparte, {
+		fields: [comprobante.contraparteId],
+		references: [contraparte.id]
+	}),
+	organization: one(organization, {
+		fields: [comprobante.orgId],
+		references: [organization.id]
+	}),
+	comprobanteTipo: one(comprobanteTipo, {
+		fields: [comprobante.tipo],
+		references: [comprobanteTipo.codigo]
+	}),
+	comprobanteAlicuotas: many(comprobanteAlicuota),
+	conciliacionComprobantes: many(conciliacionComprobante),
+}));
+
+export const contraparteRelations = relations(contraparte, ({many}) => ({
+	comprobantes: many(comprobante),
+	movimientoBancarios: many(movimientoBancario),
+}));
+
+export const comprobanteTipoRelations = relations(comprobanteTipo, ({many}) => ({
+	comprobantes: many(comprobante),
+}));
+
+export const comprobanteAlicuotaRelations = relations(comprobanteAlicuota, ({one}) => ({
+	comprobante: one(comprobante, {
+		fields: [comprobanteAlicuota.comprobanteId],
+		references: [comprobante.id]
 	}),
 }));
 
@@ -999,6 +988,14 @@ export const clienteEeccConfigRelations = relations(clienteEeccConfig, ({one}) =
 	}),
 }));
 
+export const firmanteRelations = relations(firmante, ({one, many}) => ({
+	clienteEeccConfigs: many(clienteEeccConfig),
+	organization: one(organization, {
+		fields: [firmante.orgId],
+		references: [organization.id]
+	}),
+}));
+
 export const clienteCuentaRelations = relations(clienteCuenta, ({one}) => ({
 	cliente: one(cliente, {
 		fields: [clienteCuenta.clienteId],
@@ -1010,48 +1007,45 @@ export const clienteCuentaRelations = relations(clienteCuenta, ({one}) => ({
 	}),
 }));
 
-export const ivaDeclaracionRelations = relations(ivaDeclaracion, ({one}) => ({
+export const conciliacionComprobanteRelations = relations(conciliacionComprobante, ({one}) => ({
 	agentRun: one(agentRun, {
-		fields: [ivaDeclaracion.aiRunId],
+		fields: [conciliacionComprobante.aiRunId],
 		references: [agentRun.id]
 	}),
-	cliente: one(cliente, {
-		fields: [ivaDeclaracion.clienteId],
-		references: [cliente.id]
+	comprobante: one(comprobante, {
+		fields: [conciliacionComprobante.comprobanteId],
+		references: [comprobante.id]
 	}),
-}));
-
-export const deudaRelations = relations(deuda, ({one}) => ({
-	cliente: one(cliente, {
-		fields: [deuda.clienteId],
-		references: [cliente.id]
-	}),
-	credencialAfip: one(credencialAfip, {
-		fields: [deuda.credencialId],
-		references: [credencialAfip.id]
-	}),
-	organization: one(organization, {
-		fields: [deuda.orgId],
-		references: [organization.id]
-	}),
-}));
-
-export const vencimientoRelations = relations(vencimiento, ({one}) => ({
-	cliente: one(cliente, {
-		fields: [vencimiento.clienteId],
-		references: [cliente.id]
+	movimientoBancario: one(movimientoBancario, {
+		fields: [conciliacionComprobante.movimientoBancarioId],
+		references: [movimientoBancario.id]
 	}),
 	user: one(user, {
-		fields: [vencimiento.completadoPor],
+		fields: [conciliacionComprobante.revisadoPor],
 		references: [user.id]
 	}),
-	credencialAfip: one(credencialAfip, {
-		fields: [vencimiento.credencialId],
-		references: [credencialAfip.id]
+}));
+
+export const movimientoBancarioRelations = relations(movimientoBancario, ({one, many}) => ({
+	conciliacionComprobantes: many(conciliacionComprobante),
+	agentRun: one(agentRun, {
+		fields: [movimientoBancario.aiRunId],
+		references: [agentRun.id]
 	}),
-	organization: one(organization, {
-		fields: [vencimiento.orgId],
-		references: [organization.id]
+	contraparte: one(contraparte, {
+		fields: [movimientoBancario.contraparteId],
+		references: [contraparte.id]
+	}),
+	cuentaBancaria: one(cuentaBancaria, {
+		fields: [movimientoBancario.cuentaBancariaId],
+		references: [cuentaBancaria.id]
+	}),
+}));
+
+export const clienteEmpleadorConfigRelations = relations(clienteEmpleadorConfig, ({one}) => ({
+	cliente: one(cliente, {
+		fields: [clienteEmpleadorConfig.clienteId],
+		references: [cliente.id]
 	}),
 }));
 
@@ -1066,17 +1060,76 @@ export const liquidacionIibbRelations = relations(liquidacionIibb, ({one}) => ({
 	}),
 }));
 
-export const escalaSalarialRelations = relations(escalaSalarial, ({one}) => ({
-	convenioCategoria: one(convenioCategoria, {
-		fields: [escalaSalarial.categoriaId],
-		references: [convenioCategoria.id]
+export const organizationModuleRelations = relations(organizationModule, ({one}) => ({
+	organization: one(organization, {
+		fields: [organizationModule.orgId],
+		references: [organization.id]
 	}),
 }));
 
-export const convenioFuenteRelations = relations(convenioFuente, ({one}) => ({
-	convenio: one(convenio, {
-		fields: [convenioFuente.convenioId],
-		references: [convenio.id]
+export const lsdPresentacionRelations = relations(lsdPresentacion, ({one}) => ({
+	cliente: one(cliente, {
+		fields: [lsdPresentacion.clienteId],
+		references: [cliente.id]
+	}),
+	organization: one(organization, {
+		fields: [lsdPresentacion.orgId],
+		references: [organization.id]
+	}),
+}));
+
+export const memberRelations = relations(member, ({one}) => ({
+	organization: one(organization, {
+		fields: [member.organizationId],
+		references: [organization.id]
+	}),
+	user: one(user, {
+		fields: [member.userId],
+		references: [user.id]
+	}),
+}));
+
+export const reglaMapeoLineaRelations = relations(reglaMapeoLinea, ({one}) => ({
+	cuenta: one(cuenta, {
+		fields: [reglaMapeoLinea.cuentaId],
+		references: [cuenta.id]
+	}),
+	reglaMapeo: one(reglaMapeo, {
+		fields: [reglaMapeoLinea.reglaId],
+		references: [reglaMapeo.id]
+	}),
+}));
+
+export const riesgoSnapshotRelations = relations(riesgoSnapshot, ({one}) => ({
+	cliente: one(cliente, {
+		fields: [riesgoSnapshot.clienteId],
+		references: [cliente.id]
+	}),
+}));
+
+export const reciboConceptoRelations = relations(reciboConcepto, ({one}) => ({
+	concepto: one(concepto, {
+		fields: [reciboConcepto.conceptoId],
+		references: [concepto.id]
+	}),
+	recibo: one(recibo, {
+		fields: [reciboConcepto.reciboId],
+		references: [recibo.id]
+	}),
+}));
+
+export const solicitudRelations = relations(solicitud, ({one}) => ({
+	cliente: one(cliente, {
+		fields: [solicitud.clienteId],
+		references: [cliente.id]
+	}),
+	organization: one(organization, {
+		fields: [solicitud.orgId],
+		references: [organization.id]
+	}),
+	user: one(user, {
+		fields: [solicitud.pedidaPor],
+		references: [user.id]
 	}),
 }));
 
@@ -1088,5 +1141,77 @@ export const notificacionAdjuntoRelations = relations(notificacionAdjunto, ({one
 	notificacion: one(notificacion, {
 		fields: [notificacionAdjunto.notificacionId],
 		references: [notificacion.id]
+	}),
+}));
+
+export const jobLogRelations = relations(jobLog, ({one}) => ({
+	job: one(job, {
+		fields: [jobLog.jobId],
+		references: [job.id]
+	}),
+}));
+
+export const eeccRelations = relations(eecc, ({one}) => ({
+	user_aprobadoPor: one(user, {
+		fields: [eecc.aprobadoPor],
+		references: [user.id],
+		relationName: "eecc_aprobadoPor_user_id"
+	}),
+	cliente: one(cliente, {
+		fields: [eecc.clienteId],
+		references: [cliente.id]
+	}),
+	ejercicio: one(ejercicio, {
+		fields: [eecc.ejercicioId],
+		references: [ejercicio.id]
+	}),
+	organization: one(organization, {
+		fields: [eecc.orgId],
+		references: [organization.id]
+	}),
+	user_pdfGeneradoPor: one(user, {
+		fields: [eecc.pdfGeneradoPor],
+		references: [user.id],
+		relationName: "eecc_pdfGeneradoPor_user_id"
+	}),
+}));
+
+export const convenioFuenteRelations = relations(convenioFuente, ({one}) => ({
+	convenio: one(convenio, {
+		fields: [convenioFuente.convenioId],
+		references: [convenio.id]
+	}),
+}));
+
+export const invitationRelations = relations(invitation, ({one}) => ({
+	user: one(user, {
+		fields: [invitation.inviterId],
+		references: [user.id]
+	}),
+	organization: one(organization, {
+		fields: [invitation.organizationId],
+		references: [organization.id]
+	}),
+}));
+
+export const eventoRelations = relations(evento, ({one}) => ({
+	cliente: one(cliente, {
+		fields: [evento.clienteId],
+		references: [cliente.id]
+	}),
+	organization: one(organization, {
+		fields: [evento.orgId],
+		references: [organization.id]
+	}),
+}));
+
+export const baseCalculoConceptoRelations = relations(baseCalculoConcepto, ({one}) => ({
+	baseCalculo: one(baseCalculo, {
+		fields: [baseCalculoConcepto.baseCalculoId],
+		references: [baseCalculo.id]
+	}),
+	concepto: one(concepto, {
+		fields: [baseCalculoConcepto.conceptoId],
+		references: [concepto.id]
 	}),
 }));

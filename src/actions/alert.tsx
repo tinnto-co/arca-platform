@@ -129,11 +129,18 @@ export const resolveAlert = createServerFn({ method: 'POST' })
  * duplicado — y saltea pares que ya tienen un job pending/running.
  */
 async function dedupeRetryJobs(
-  jobsToRetry: { type: string; credencialId: string }[]
+  jobsToRetry: { type: string; credencialId: string | null }[]
 ): Promise<{ type: string; credencialId: string }[]> {
   const uniquePairs = new Map<string, { type: string; credencialId: string }>();
   for (const j of jobsToRetry) {
-    uniquePairs.set(`${j.credencialId}:${j.type}`, j);
+    // Los jobs sin credencial (`escalas`) quedan afuera: todo el deduplicado y
+    // el reintento están definidos por par credencial+tipo. Reintentar un
+    // scrape de escalas es otra operación y hoy no pasa por acá.
+    if (!j.credencialId) continue;
+    uniquePairs.set(`${j.credencialId}:${j.type}`, {
+      type: j.type,
+      credencialId: j.credencialId,
+    });
   }
   if (uniquePairs.size === 0) return [];
 
