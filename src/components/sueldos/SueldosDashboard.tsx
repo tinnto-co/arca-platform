@@ -52,6 +52,7 @@ import {
   getPeriodoMesAnterior,
   puedeLiquidarPeriodo,
 } from '@/lib/payroll-period-rules';
+import { SueldosCierreContable } from '@/components/sueldos/SueldosCierreContable';
 import { legajoParaMostrar } from '@/lib/legajo';
 import { dateAPeriodo } from '@/lib/periodo';
 import { toTitleCase } from '@/lib/format-name';
@@ -93,25 +94,24 @@ type LiquidacionMasivaResultItem = {
   error?: string;
 };
 
-export function SueldosDashboard({
-  clientId,
-}: SueldosDashboardProps) {
+export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
   const queryClient = useQueryClient();
   const [ano, setAno] = useState(PERIODO_INICIAL_ANO);
   const [mes, setMes] = useState(PERIODO_INICIAL_MES);
   const periodo = useMemo(() => `${ano}-${mes}`, [ano, mes]);
   const permiteLiquidar = puedeLiquidarPeriodo(periodo);
-  const mesesDisponibles = ano === PERIODO_INICIAL_ANO
-    ? MESES.filter((m) => m.value <= PERIODO_INICIAL_MES)
-    : MESES;
+  const mesesDisponibles =
+    ano === PERIODO_INICIAL_ANO
+      ? MESES.filter((m) => m.value <= PERIODO_INICIAL_MES)
+      : MESES;
 
   const liquidacionesQuery = useQuery({
     queryKey: ['liquidaciones', clientId, periodo],
-    queryFn: () =>
-      listLiquidacionesByPeriodo({ data: { clientId, periodo } }),
+    queryFn: () => listLiquidacionesByPeriodo({ data: { clientId, periodo } }),
     enabled: !!clientId,
   });
-  const { data: liquidaciones = [], isLoading: loadingLiq } = liquidacionesQuery;
+  const { data: liquidaciones = [], isLoading: loadingLiq } =
+    liquidacionesQuery;
 
   const empleadosQuery = useQuery({
     queryKey: ['empleados', clientId],
@@ -166,20 +166,18 @@ export function SueldosDashboard({
   const empleadosPendientesMasiva = useMemo(
     () =>
       [...empleados]
-        .filter(
-          (e) => {
-            if (!e.empleado.activo) return false;
-            if (usaLsdReferencia) {
-              return !empleadosConReciboGenerado.has(e.empleado.id);
-            }
-            return !liquidaciones.some(
-              (l) =>
-                l.empleado.id === e.empleado.id &&
-                dateAPeriodo(l.liquidacion.periodo) === periodo &&
-                l.liquidacion.tipo === 'mensual'
-            );
+        .filter((e) => {
+          if (!e.empleado.activo) return false;
+          if (usaLsdReferencia) {
+            return !empleadosConReciboGenerado.has(e.empleado.id);
           }
-        )
+          return !liquidaciones.some(
+            (l) =>
+              l.empleado.id === e.empleado.id &&
+              dateAPeriodo(l.liquidacion.periodo) === periodo &&
+              l.liquidacion.tipo === 'mensual'
+          );
+        })
         .sort((a, b) => {
           const byLegajo = compareLegajoAsc(
             a.empleado.legajo,
@@ -190,7 +188,13 @@ export function SueldosDashboard({
             sensitivity: 'base',
           });
         }),
-    [empleados, empleadosConReciboGenerado, liquidaciones, periodo, usaLsdReferencia]
+    [
+      empleados,
+      empleadosConReciboGenerado,
+      liquidaciones,
+      periodo,
+      usaLsdReferencia,
+    ]
   );
 
   const liquidacionMasiva = useMutation({
@@ -235,9 +239,9 @@ export function SueldosDashboard({
   const [convenioByEmpleado, setConvenioByEmpleado] = useState<
     Record<string, string>
   >({});
-  const [erroresMasiva, setErroresMasiva] = useState<LiquidacionMasivaResultItem[]>(
-    []
-  );
+  const [erroresMasiva, setErroresMasiva] = useState<
+    LiquidacionMasivaResultItem[]
+  >([]);
   const [erroresMasivaOpen, setErroresMasivaOpen] = useState(false);
   const [liquidacionToDelete, setLiquidacionToDelete] = useState<{
     id: string;
@@ -246,7 +250,9 @@ export function SueldosDashboard({
 
   const empleadosSinConvenio = useMemo(
     () =>
-      empleadosPendientesMasiva.filter((e) => !e.empleado.convenioId).map((e) => e.empleado),
+      empleadosPendientesMasiva
+        .filter((e) => !e.empleado.convenioId)
+        .map((e) => e.empleado),
     [empleadosPendientesMasiva]
   );
 
@@ -261,7 +267,9 @@ export function SueldosDashboard({
           r.errorCode ?? 'OTRO'
         } | ${r.error ?? 'Error desconocido'}`
     );
-    const text = [`Errores liquidación masiva (${periodo})`, ...lines].join('\n');
+    const text = [`Errores liquidación masiva (${periodo})`, ...lines].join(
+      '\n'
+    );
     try {
       await navigator.clipboard.writeText(text);
       toast.success('Detalle de errores copiado al portapapeles.');
@@ -370,8 +378,8 @@ export function SueldosDashboard({
               <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
                 npm run db:ensure-empleado-pago
               </code>{' '}
-              (necesita <code className="font-mono text-xs">DATABASE_URL</code> en
-              .env). Es seguro repetirlo: solo agrega columnas si faltan.
+              (necesita <code className="font-mono text-xs">DATABASE_URL</code>{' '}
+              en .env). Es seguro repetirlo: solo agrega columnas si faltan.
             </p>
           </AlertDescription>
         </Alert>
@@ -424,7 +432,10 @@ export function SueldosDashboard({
             className="inline-flex items-center gap-2 bg-[#12131A] text-white rounded-[10px] px-[17px] py-[10px] text-[13.5px] font-semibold hover:bg-black transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {liquidacionMasiva.isPending ? (
-              <Loader2 style={{ width: 15, height: 15 }} className="animate-spin" />
+              <Loader2
+                style={{ width: 15, height: 15 }}
+                className="animate-spin"
+              />
             ) : (
               <Zap style={{ width: 15, height: 15 }} />
             )}
@@ -439,11 +450,21 @@ export function SueldosDashboard({
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-1.5">
             <Users style={{ width: 15, height: 15, color: '#9B9CA3' }} />
-            <span style={{ fontSize: '12.5px', color: '#6E7079', fontWeight: 500 }}>Empleados activos</span>
+            <span
+              style={{ fontSize: '12.5px', color: '#6E7079', fontWeight: 500 }}
+            >
+              Empleados activos
+            </span>
           </div>
           <div
             className="font-[family-name:var(--ff-display)] font-semibold tabular-nums"
-            style={{ fontSize: 30, letterSpacing: '-0.025em', color: '#12131A', lineHeight: 1.1, marginTop: 4 }}
+            style={{
+              fontSize: 30,
+              letterSpacing: '-0.025em',
+              color: '#12131A',
+              lineHeight: 1.1,
+              marginTop: 4,
+            }}
           >
             {importEmpleados.filter((e) => e.empleado.activo).length}
           </div>
@@ -452,11 +473,21 @@ export function SueldosDashboard({
         <div className="flex flex-col gap-1 border-l border-[#ECEAE3] pl-7">
           <div className="flex items-center gap-1.5">
             <FileText style={{ width: 15, height: 15, color: '#9B9CA3' }} />
-            <span style={{ fontSize: '12.5px', color: '#6E7079', fontWeight: 500 }}>Liquidaciones (período)</span>
+            <span
+              style={{ fontSize: '12.5px', color: '#6E7079', fontWeight: 500 }}
+            >
+              Liquidaciones (período)
+            </span>
           </div>
           <div
             className="font-[family-name:var(--ff-display)] font-semibold tabular-nums"
-            style={{ fontSize: 30, letterSpacing: '-0.025em', color: '#12131A', lineHeight: 1.1, marginTop: 4 }}
+            style={{
+              fontSize: 30,
+              letterSpacing: '-0.025em',
+              color: '#12131A',
+              lineHeight: 1.1,
+              marginTop: 4,
+            }}
           >
             {loadingLiq ? '—' : liquidaciones.length}
           </div>
@@ -465,29 +496,58 @@ export function SueldosDashboard({
         <div className="flex flex-col gap-1 border-l border-[#ECEAE3] pl-7">
           <div className="flex items-center gap-1.5">
             <Calculator style={{ width: 15, height: 15, color: '#9B9CA3' }} />
-            <span style={{ fontSize: '12.5px', color: '#6E7079', fontWeight: 500 }}>Total bruto</span>
+            <span
+              style={{ fontSize: '12.5px', color: '#6E7079', fontWeight: 500 }}
+            >
+              Total bruto
+            </span>
           </div>
           <div
             className="font-[family-name:var(--ff-display)] font-semibold tabular-nums"
-            style={{ fontSize: 30, letterSpacing: '-0.025em', color: '#12131A', lineHeight: 1.1, marginTop: 4 }}
+            style={{
+              fontSize: 30,
+              letterSpacing: '-0.025em',
+              color: '#12131A',
+              lineHeight: 1.1,
+              marginTop: 4,
+            }}
           >
-            {loadingLiq ? '—' : `$${Math.ceil(totalBruto).toLocaleString('es-AR')}`}
+            {loadingLiq
+              ? '—'
+              : `$${Math.ceil(totalBruto).toLocaleString('es-AR')}`}
           </div>
         </div>
         {/* Col 4 */}
         <div className="flex flex-col gap-1 border-l border-[#ECEAE3] pl-7">
           <div className="flex items-center gap-1.5">
-            <LayoutDashboard style={{ width: 15, height: 15, color: '#9B9CA3' }} />
-            <span style={{ fontSize: '12.5px', color: '#6E7079', fontWeight: 500 }}>Total neto</span>
+            <LayoutDashboard
+              style={{ width: 15, height: 15, color: '#9B9CA3' }}
+            />
+            <span
+              style={{ fontSize: '12.5px', color: '#6E7079', fontWeight: 500 }}
+            >
+              Total neto
+            </span>
           </div>
           <div
             className="font-[family-name:var(--ff-display)] font-semibold tabular-nums"
-            style={{ fontSize: 30, letterSpacing: '-0.025em', color: '#12131A', lineHeight: 1.1, marginTop: 4 }}
+            style={{
+              fontSize: 30,
+              letterSpacing: '-0.025em',
+              color: '#12131A',
+              lineHeight: 1.1,
+              marginTop: 4,
+            }}
           >
-            {loadingLiq ? '—' : `$${Math.ceil(totalNeto).toLocaleString('es-AR')}`}
+            {loadingLiq
+              ? '—'
+              : `$${Math.ceil(totalNeto).toLocaleString('es-AR')}`}
           </div>
         </div>
       </div>
+
+      {/* Cierre contable del período (US 3.3.1) */}
+      <SueldosCierreContable clientId={clientId} periodo={periodo} />
 
       {/* Two-column body */}
       <div className="grid grid-cols-[1.15fr_1fr] gap-[44px]">
@@ -522,14 +582,50 @@ export function SueldosDashboard({
             className="grid gap-4 border-b border-[#ECEAE3] py-2"
             style={{ gridTemplateColumns: '1fr auto auto' }}
           >
-            <span style={{ fontSize: '10.5px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#9B9CA3' }}>Empleado</span>
-            <span style={{ fontSize: '10.5px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#9B9CA3' }}>Estado</span>
-            <span style={{ fontSize: '10.5px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#9B9CA3' }}>Neto</span>
+            <span
+              style={{
+                fontSize: '10.5px',
+                fontWeight: 600,
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                color: '#9B9CA3',
+              }}
+            >
+              Empleado
+            </span>
+            <span
+              style={{
+                fontSize: '10.5px',
+                fontWeight: 600,
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                color: '#9B9CA3',
+              }}
+            >
+              Estado
+            </span>
+            <span
+              style={{
+                fontSize: '10.5px',
+                fontWeight: 600,
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                color: '#9B9CA3',
+              }}
+            >
+              Neto
+            </span>
           </div>
 
           {loadingLiq ? (
-            <div className="flex items-center gap-2 py-4" style={{ color: '#9B9CA3' }}>
-              <Loader2 style={{ width: 14, height: 14 }} className="animate-spin" />
+            <div
+              className="flex items-center gap-2 py-4"
+              style={{ color: '#9B9CA3' }}
+            >
+              <Loader2
+                style={{ width: 14, height: 14 }}
+                className="animate-spin"
+              />
               <span style={{ fontSize: 13 }}>Cargando…</span>
             </div>
           ) : liquidacionesGeneradas.length === 0 ? (
@@ -545,7 +641,13 @@ export function SueldosDashboard({
                   style={{ gridTemplateColumns: '1fr auto auto' }}
                 >
                   <div>
-                    <span style={{ fontSize: '13.5px', fontWeight: 600, color: '#12131A' }}>
+                    <span
+                      style={{
+                        fontSize: '13.5px',
+                        fontWeight: 600,
+                        color: '#12131A',
+                      }}
+                    >
                       {toTitleCase(l.empleado.nombre)}
                     </span>
                     <span style={{ fontSize: '11.5px', color: '#9B9CA3' }}>
@@ -566,12 +668,22 @@ export function SueldosDashboard({
                   >
                     Generado
                   </span>
-                  <div className="flex items-center gap-2 justify-end" style={{ minWidth: 104 }}>
+                  <div
+                    className="flex items-center gap-2 justify-end"
+                    style={{ minWidth: 104 }}
+                  >
                     <span
                       className="tabular-nums"
-                      style={{ fontSize: '13.5px', fontWeight: 600, color: '#12131A' }}
+                      style={{
+                        fontSize: '13.5px',
+                        fontWeight: 600,
+                        color: '#12131A',
+                      }}
                     >
-                      ${Math.ceil(Number(l.liquidacion.neto)).toLocaleString('es-AR')}
+                      $
+                      {Math.ceil(Number(l.liquidacion.neto)).toLocaleString(
+                        'es-AR'
+                      )}
                     </span>
                     <button
                       type="button"
@@ -608,13 +720,22 @@ export function SueldosDashboard({
               Recibos importados LSD
             </h2>
             <p style={{ fontSize: 13, color: '#9B9CA3', marginTop: 2 }}>
-              Período {periodo}.{usaLsdReferencia ? ' Se conservan para comparar contra los generados.' : ''}
+              Período {periodo}.
+              {usaLsdReferencia
+                ? ' Se conservan para comparar contra los generados.'
+                : ''}
             </p>
           </div>
 
           {loadingLiq ? (
-            <div className="flex items-center gap-2 py-4" style={{ color: '#9B9CA3' }}>
-              <Loader2 style={{ width: 14, height: 14 }} className="animate-spin" />
+            <div
+              className="flex items-center gap-2 py-4"
+              style={{ color: '#9B9CA3' }}
+            >
+              <Loader2
+                style={{ width: 14, height: 14 }}
+                className="animate-spin"
+              />
               <span style={{ fontSize: 13 }}>Cargando…</span>
             </div>
           ) : liquidacionesImportadasLsd.length === 0 ? (
@@ -623,9 +744,17 @@ export function SueldosDashboard({
                 className="flex items-center justify-center rounded-[10px]"
                 style={{ width: 42, height: 42, backgroundColor: '#F1EFE8' }}
               >
-                <FileCheck style={{ width: 20, height: 20, color: '#9B9CA3' }} />
+                <FileCheck
+                  style={{ width: 20, height: 20, color: '#9B9CA3' }}
+                />
               </div>
-              <p style={{ fontSize: '13.5px', color: '#6E7079', textAlign: 'center' }}>
+              <p
+                style={{
+                  fontSize: '13.5px',
+                  color: '#6E7079',
+                  textAlign: 'center',
+                }}
+              >
                 No hay recibos LSD importados para este período.
               </p>
               <button
@@ -644,9 +773,39 @@ export function SueldosDashboard({
                 className="grid gap-4 border-b border-[#ECEAE3] py-2"
                 style={{ gridTemplateColumns: '1fr auto auto' }}
               >
-                <span style={{ fontSize: '10.5px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#9B9CA3' }}>Empleado</span>
-                <span style={{ fontSize: '10.5px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#9B9CA3' }}>Tipo</span>
-                <span style={{ fontSize: '10.5px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#9B9CA3' }}>Neto</span>
+                <span
+                  style={{
+                    fontSize: '10.5px',
+                    fontWeight: 600,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                    color: '#9B9CA3',
+                  }}
+                >
+                  Empleado
+                </span>
+                <span
+                  style={{
+                    fontSize: '10.5px',
+                    fontWeight: 600,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                    color: '#9B9CA3',
+                  }}
+                >
+                  Tipo
+                </span>
+                <span
+                  style={{
+                    fontSize: '10.5px',
+                    fontWeight: 600,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                    color: '#9B9CA3',
+                  }}
+                >
+                  Neto
+                </span>
               </div>
               {liquidacionesImportadasLsd.slice(0, 10).map((l) => (
                 <div
@@ -655,7 +814,13 @@ export function SueldosDashboard({
                   style={{ gridTemplateColumns: '1fr auto auto' }}
                 >
                   <div>
-                    <span style={{ fontSize: '13.5px', fontWeight: 600, color: '#12131A' }}>
+                    <span
+                      style={{
+                        fontSize: '13.5px',
+                        fontWeight: 600,
+                        color: '#12131A',
+                      }}
+                    >
                       {toTitleCase(l.empleado.nombre)}
                     </span>
                     <span style={{ fontSize: '11.5px', color: '#9B9CA3' }}>
@@ -678,9 +843,18 @@ export function SueldosDashboard({
                   </span>
                   <span
                     className="tabular-nums"
-                    style={{ fontSize: '13.5px', fontWeight: 600, color: '#12131A', minWidth: 104, textAlign: 'right' }}
+                    style={{
+                      fontSize: '13.5px',
+                      fontWeight: 600,
+                      color: '#12131A',
+                      minWidth: 104,
+                      textAlign: 'right',
+                    }}
                   >
-                    ${Number(l.liquidacion.neto).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                    $
+                    {Number(l.liquidacion.neto).toLocaleString('es-AR', {
+                      minimumFractionDigits: 2,
+                    })}
                   </span>
                 </div>
               ))}
@@ -723,7 +897,9 @@ export function SueldosDashboard({
                   className="grid grid-cols-1 items-center gap-2 rounded-md border p-2 md:grid-cols-[1fr_auto]"
                 >
                   <div className="text-sm">
-                    <div className="font-medium">{toTitleCase(e.empleado.nombre)}</div>
+                    <div className="font-medium">
+                      {toTitleCase(e.empleado.nombre)}
+                    </div>
                     <div className="text-muted-foreground">
                       Legajo: {legajoParaMostrar(e.empleado.legajo ?? null)}
                     </div>
@@ -763,7 +939,8 @@ export function SueldosDashboard({
           <AlertDialogFooter>
             <AlertDialogCancel
               disabled={
-                liquidacionMasiva.isPending || actualizarConvenioEmpleado.isPending
+                liquidacionMasiva.isPending ||
+                actualizarConvenioEmpleado.isPending
               }
             >
               Cancelar
@@ -779,7 +956,8 @@ export function SueldosDashboard({
                 empleadosPendientesMasiva.length === 0
               }
             >
-              {liquidacionMasiva.isPending || actualizarConvenioEmpleado.isPending
+              {liquidacionMasiva.isPending ||
+              actualizarConvenioEmpleado.isPending
                 ? 'Procesando...'
                 : 'Liquidar'}
             </AlertDialogAction>
@@ -801,7 +979,9 @@ export function SueldosDashboard({
           <div className="max-h-[380px] space-y-2 overflow-y-auto pr-1">
             {erroresMasiva.map((r) => (
               <div key={r.empleadoId} className="rounded-md border p-2 text-sm">
-                <div className="font-medium">{toTitleCase(r.empleadoNombre)}</div>
+                <div className="font-medium">
+                  {toTitleCase(r.empleadoNombre)}
+                </div>
                 <div className="text-muted-foreground">
                   Legajo: {r.legajo || '—'} | Código: {r.errorCode ?? 'OTRO'}
                 </div>
@@ -811,7 +991,11 @@ export function SueldosDashboard({
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel>Cerrar</AlertDialogCancel>
-            <Button type="button" variant="outline" onClick={copiarErroresMasiva}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={copiarErroresMasiva}
+            >
               Copiar errores
             </Button>
           </AlertDialogFooter>
@@ -831,9 +1015,9 @@ export function SueldosDashboard({
             </AlertDialogTitle>
             <AlertDialogDescription>
               Se eliminarán todas las liquidaciones del período {periodo} para
-              este cliente ({liquidacionesGeneradas.length} generadas en total). Los recibos
-              confirmados también se eliminarán. Esta acción no se puede
-              deshacer.
+              este cliente ({liquidacionesGeneradas.length} generadas en total).
+              Los recibos confirmados también se eliminarán. Esta acción no se
+              puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -862,8 +1046,9 @@ export function SueldosDashboard({
           <AlertDialogHeader>
             <AlertDialogTitle>¿Eliminar esta liquidación?</AlertDialogTitle>
             <AlertDialogDescription>
-              Se eliminará la liquidación de {liquidacionToDelete?.empleadoNombre}{' '}
-              del período {periodo}. Esta acción no se puede deshacer.
+              Se eliminará la liquidación de{' '}
+              {liquidacionToDelete?.empleadoNombre} del período {periodo}. Esta
+              acción no se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

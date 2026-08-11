@@ -30,6 +30,8 @@ import {
   lsdPresentacion,
   baseCalculo,
   baseCalculoConcepto,
+  cierreSueldos,
+  asiento,
 } from '@/drizzle/schema';
 import {
   getSessionWithOrg,
@@ -287,7 +289,14 @@ function extractCctCodigo(raw: string | null | undefined): string | null {
 }
 
 import { roundMoney } from '../lib/payroll-formula';
-import { puedeLiquidarPeriodo } from '../lib/payroll-period-rules';
+import {
+  normalizarPeriodoYYYYMM,
+  puedeLiquidarPeriodo,
+} from '../lib/payroll-period-rules';
+import {
+  closePayrollPeriod,
+  reopenPayrollPeriod,
+} from '@/lib/accounting-payroll-close';
 import * as r2 from '@/lib/r2';
 import { parseISO } from 'date-fns';
 
@@ -875,16 +884,6 @@ export const upsertEscala = createServerFn({ method: 'POST' })
       .returning();
     return row;
   });
-
-/** Normaliza período a YYYY-MM (trim, mes con 2 dígitos). */
-function normalizarPeriodoYYYYMM(fechaStr: string): string {
-  const t = fechaStr.trim();
-  const m = /^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?/.exec(t);
-  if (!m) return t;
-  const y = m[1];
-  const mo = String(m[2]).padStart(2, '0');
-  return `${y}-${mo}`;
-}
 
 /**
  * `recibo.periodo` es una columna `date` (primer día del mes), así que alcanza
@@ -4401,6 +4400,100 @@ export const listLiquidacionesByFiltros = createServerFn({ method: 'GET' })
         asc(empleado.nombre)
       )
       .limit(300);
+  });
+
+/* ───────── Cierre de liquidación y asiento automático (US 3.3.1) ───────── */
+
+const cierreLiquidacionSchema = z.object({
+  clientId: z.string().uuid(),
+  periodo: z.string().min(4),
+});
+
+/**
+ * Estado del cierre de sueldos de un período: si está cerrado, con qué asiento
+ * y cuántos conceptos quedaron sin regla.
+ */
+export const getCierreLiquidacion = createServerFn({ method: 'GET' })
+  .validator(cierreLiquidacionSchema)
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    const periodo = normalizarPeriodoYYYYMM(ctx.data.periodo);
+    const [row] = await db
+      .select({
+        id: cierreSueldos.id,
+        periodo: cierreSueldos.periodo,
+        asientoId: cierreSueldos.asientoId,
+        recibos: cierreSueldos.recibos,
+        conceptosSinRegla: cierreSueldos.conceptosSinRegla,
+        cerradoAt: cierreSueldos.cerradoAt,
+        entryNumber: asiento.numero,
+      })
+      .from(cierreSueldos)
+      .leftJoin(asiento, eq(asiento.id, cierreSueldos.asientoId))
+      .where(
+        and(
+          eq(cierreSueldos.clienteId, ctx.data.clientId),
+          eq(cierreSueldos.periodo, `${periodo}-01`),
+          isNull(cierreSueldos.reabiertoAt)
+        )
+      )
+      .limit(1);
+    return { periodo, cierre: row ?? null };
+  });
+
+/**
+ * Previsualiza el asiento sin persistir nada: mismo cálculo que el cierre real.
+ * Sirve para que el contador vea las imputaciones antes de confirmar.
+ */
+export const previewAsientoLiquidacion = createServerFn({ method: 'POST' })
+  .validator(cierreLiquidacionSchema)
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    return await closePayrollPeriod({
+      clientId: ctx.data.clientId,
+      orgId,
+      periodo: ctx.data.periodo,
+      userId: null,
+      dryRun: true,
+    });
+  });
+
+/**
+ * Cierra la liquidación del período y genera su asiento automático.
+ * Los conceptos sin regla van a Pendiente de revisión, que bloquea el cierre
+ * del período contable.
+ */
+export const cerrarLiquidacionPeriodo = createServerFn({ method: 'POST' })
+  .validator(cierreLiquidacionSchema)
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    return await closePayrollPeriod({
+      clientId: ctx.data.clientId,
+      orgId,
+      periodo: ctx.data.periodo,
+      userId,
+    });
+  });
+
+/** Reabre la liquidación: anula el asiento y permite volver a cerrar. */
+export const reabrirLiquidacionPeriodo = createServerFn({ method: 'POST' })
+  .validator(cierreLiquidacionSchema.extend({ motivo: z.string().optional() }))
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    return await reopenPayrollPeriod({
+      clientId: ctx.data.clientId,
+      periodo: ctx.data.periodo,
+      userId,
+      reason: ctx.data.motivo,
+    });
   });
 
 /** Marca la liquidación como recibo confirmado; así aparece en la solapa Recibo. */

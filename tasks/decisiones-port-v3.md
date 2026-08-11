@@ -205,6 +205,45 @@ atrapa con un catch genérico, así que no hay impacto.
 
 ---
 
+## Componentes UI y wiring del cierre
+
+### ⚖️ D30 — El wiring del cierre pierde `profileId`: un solo `clientId`
+Staging separaba `clientId` (representante/agrupador) de `profileId` (empresa
+con CUIT). En el modelo ideal esa dualidad no existe: `cliente` ES la empresa
+fiscal. Las cuatro server functions (`getCierreLiquidacion`,
+`previewAsientoLiquidacion`, `cerrarLiquidacionPeriodo`,
+`reabrirLiquidacionPeriodo`) y el componente toman un solo `clientId`, scopeado
+con `ensureClientBelongsToOrg` como el resto de `sueldos.ts`. Es la misma
+decisión de fondo que va a resolver el conflicto `profile.tsx` cuando toque
+`accounting.tsx`.
+
+### ⚖️ D31 — Tres componentes esperan a `accounting.tsx`
+`InformeAuditor`, `OrdenDocumento` y `SaldosReferencia` importan exports que
+solo existen en el `accounting.tsx` de staging (plantillas del auditor,
+`FsNote`, saldos de referencia). Van con ese port. `AjustePorInflacion`,
+`IndicesInflacion` y `SueldosCierreContable` entraron ahora — pero **los dos
+primeros todavía no se montan en ninguna ruta**: su punto de montaje es
+`accounting/index.tsx` (solapas nuevas), que también espera. Compilan y sus
+actions funcionan; la pantalla llega con el port final.
+
+### 🔧 D32 — El Link «Ver en el diario» va sin search params
+Staging linkeaba `/accounting?clientId=…&tab=asientos`; la ruta de v2 no tiene
+`validateSearch` (las solapas son estado interno). Queda el link pelado a
+`/accounting`; el deep-link a la solapa se restituye al portar
+`accounting/index.tsx`.
+
+### 🔧 D33 — `normalizarPeriodoYYYYMM`: se elimina la copia privada de `sueldos.ts`
+v2 tenía la función duplicada localmente; ahora importa la de
+`payroll-period-rules` (D25). `variantesPeriodoParaBusqueda` sigue local: la
+usan las tablas de import, que sí guardan el período como texto.
+
+Verificación de la tanda: dry-run del cierre contra BD_IDEAL con RLS —
+encuentra los 9 recibos confirmados de E-presis S.A. (2026-05), agrega
+conceptos, carga reglas, y corta con el error esperado: no hay ejercicio
+contable cargado. El cierre completo se prueba cuando el estudio cargue uno.
+
+---
+
 ## Pendientes que este port deja explícitos
 
 - D11 (jobs de escalas invisibles en el panel) — decisión de Gaston.
