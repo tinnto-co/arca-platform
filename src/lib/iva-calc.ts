@@ -26,6 +26,14 @@ export interface ComprobanteAlicuotaRow {
   iva: string;
 }
 
+/** Un renglón del desglose por alícuota de las notas de crédito. */
+export interface NcAlicuota {
+  /** Alícuota en puntos porcentuales: 21, 10.5. */
+  alicuota: number;
+  neto: number;
+  iva: number;
+}
+
 export interface IvaBreakdown {
   // Ventas (emitidos)
   netoA21: number;
@@ -37,6 +45,19 @@ export interface IvaBreakdown {
   ncRecibidasNeto: number;
   /** IVA de las NC recibidas de proveedores; integra el débito fiscal. */
   ncRecibidasIva: number;
+  /**
+   * Las mismas NC recibidas abiertas por alícuota, ordenadas de menor a mayor.
+   * Es el desglose que AFIP publica como "Compras en el Mercado Local que
+   * generan Crédito Fiscal a Restituir"; suma exactamente `ncRecibidasNeto`.
+   */
+  ncRecibidasPorAlicuota: NcAlicuota[];
+  /**
+   * IVA de las ventas del período, sumado tal como viene discriminado en cada
+   * comprobante. Es la columna "Débito Fiscal" del Libro IVA Ventas de AFIP:
+   * NO incluye la restitución de las NC recibidas.
+   */
+  debitoFiscalVentas: number;
+  /** `debitoFiscalVentas` + `ncRecibidasIva`. El de la declaración jurada. */
   debitoFiscal: number;
   // Compras (recibidos)
   netoInbound21: number;
@@ -44,11 +65,34 @@ export interface IvaBreakdown {
   netoInbound27: number;
   netoInbound5: number;
   netoInbound25: number;
+  /**
+   * Compras gravadas a tasa cero. No generan crédito, pero AFIP las cuenta en
+   * el neto gravado del Libro IVA Compras — no son lo mismo que exento.
+   */
+  netoInbound0: number;
   /** Neto de las NC emitidas a clientes; integra el crédito fiscal. */
   ncEmitidasNeto: number;
   /** IVA de las NC emitidas a clientes; integra el crédito fiscal. */
   ncEmitidasIva: number;
+  /** Idem `ncRecibidasPorAlicuota`, para las NC emitidas. */
+  ncEmitidasPorAlicuota: NcAlicuota[];
+  /**
+   * Neto gravado de las compras del período. Es "Operaciones de Compras" del
+   * Libro IVA: no incluye el neto de las NC emitidas, porque lo que el art. 12
+   * permite recuperar es el impuesto, no la base — y esa base no es una compra.
+   */
   netoGravadoCompras: number;
+  /**
+   * IVA de las compras, sumado tal como viene discriminado en cada comprobante.
+   * Es la columna "Crédito Fiscal" del Libro IVA Compras: NO incluye las NC
+   * emitidas. Contraparte de `debitoFiscalVentas`.
+   */
+  creditoFiscalComprasSinNc: number;
+  /**
+   * `creditoFiscalComprasSinNc` + `ncEmitidasIva`. El de la declaración jurada.
+   * El nombre no dice "SinNc" por simetría con el de arriba, sino porque ya lo
+   * consumen el copiloto, el agente y `verify-iva-nc`.
+   */
   creditoFiscalCompras: number;
 }
 
@@ -75,16 +119,38 @@ export function calcularIva(rows: ComprobanteAlicuotaRow[]): IvaBreakdown {
     totalAmountB27: 0,
     ncRecibidasNeto: 0,
     ncRecibidasIva: 0,
+    ncRecibidasPorAlicuota: [],
+    debitoFiscalVentas: 0,
     debitoFiscal: 0,
     netoInbound21: 0,
     netoInbound105: 0,
     netoInbound27: 0,
     netoInbound5: 0,
     netoInbound25: 0,
+    netoInbound0: 0,
     ncEmitidasNeto: 0,
     ncEmitidasIva: 0,
+    ncEmitidasPorAlicuota: [],
     netoGravadoCompras: 0,
+    creditoFiscalComprasSinNc: 0,
     creditoFiscalCompras: 0,
+  };
+
+  // Acumuladores del desglose de NC. Se agrupa por alícuota en vez de por
+  // buckets fijos (21/10,5/...) porque acá no hay fórmula que dependa de la
+  // alícuota: cualquier valor que traiga AFIP se muestra tal cual.
+  const ncRecibidas = new Map<number, NcAlicuota>();
+  const ncEmitidas = new Map<number, NcAlicuota>();
+  const acumularNc = (
+    m: Map<number, NcAlicuota>,
+    a: number,
+    neto: number,
+    iva: number
+  ) => {
+    const fila = m.get(a) ?? { alicuota: a, neto: 0, iva: 0 };
+    fila.neto += neto;
+    fila.iva += iva;
+    m.set(a, fila);
   };
 
   for (const r of rows) {
@@ -98,14 +164,23 @@ export function calcularIva(rows: ComprobanteAlicuotaRow[]): IvaBreakdown {
       if (r.direccion === 'recibido') {
         b.ncRecibidasNeto += neto;
         b.ncRecibidasIva += iva;
+        acumularNc(ncRecibidas, alicuota, neto, iva);
       } else {
         b.ncEmitidasNeto += neto;
         b.ncEmitidasIva += iva;
+        acumularNc(ncEmitidas, alicuota, neto, iva);
       }
       continue;
     }
 
     if (r.direccion === 'emitido') {
+      // El débito sale del IVA discriminado de cada comprobante, no de
+      // recalcular `neto × alícuota`: AFIP redondea comprobante por
+      // comprobante y recalcular al final desvía centavos. Se suma sobre
+      // todas las filas, así una alícuota fuera de los buckets de abajo
+      // (que existen sólo para mostrar el desglose) igual aporta débito.
+      b.debitoFiscalVentas += iva;
+
       if (r.letra && LETRAS_DISCRIMINADAS.includes(r.letra)) {
         if (alicuota === 21) b.netoA21 += neto;
         else if (alicuota === 10.5) b.netoA105 += neto;
@@ -119,36 +194,29 @@ export function calcularIva(rows: ComprobanteAlicuotaRow[]): IvaBreakdown {
       continue;
     }
 
+    // Igual que en ventas: el neto gravado y el crédito se acumulan sobre todas
+    // las filas, no sobre los casilleros de abajo, que existen sólo para armar
+    // el desglose. Así una alícuota que no tenga casillero propio igual entra
+    // en los totales en vez de desaparecer.
+    b.netoGravadoCompras += neto;
+    b.creditoFiscalComprasSinNc += iva;
+
     if (alicuota === 21) b.netoInbound21 += neto;
     else if (alicuota === 10.5) b.netoInbound105 += neto;
     else if (alicuota === 27) b.netoInbound27 += neto;
     else if (alicuota === 5) b.netoInbound5 += neto;
     else if (alicuota === 2.5) b.netoInbound25 += neto;
+    else if (alicuota === 0) b.netoInbound0 += neto;
   }
 
-  b.debitoFiscal =
-    b.netoA21 * 0.21 +
-    b.netoA105 * 0.105 +
-    (b.totalAmountB21 / 1.21) * 0.21 +
-    (b.totalAmountB105 / 1.105) * 0.105 +
-    (b.totalAmountB27 / 1.27) * 0.27 +
-    b.ncRecibidasIva;
+  const porAlicuota = (m: Map<number, NcAlicuota>) =>
+    [...m.values()].sort((x, y) => x.alicuota - y.alicuota);
+  b.ncRecibidasPorAlicuota = porAlicuota(ncRecibidas);
+  b.ncEmitidasPorAlicuota = porAlicuota(ncEmitidas);
 
-  b.netoGravadoCompras =
-    b.netoInbound27 +
-    b.netoInbound21 +
-    b.netoInbound105 +
-    b.netoInbound5 +
-    b.netoInbound25 +
-    b.ncEmitidasNeto;
+  b.debitoFiscal = b.debitoFiscalVentas + b.ncRecibidasIva;
 
-  b.creditoFiscalCompras =
-    b.netoInbound21 * 0.21 +
-    b.netoInbound105 * 0.105 +
-    b.netoInbound27 * 0.27 +
-    b.netoInbound5 * 0.05 +
-    b.netoInbound25 * 0.025 +
-    b.ncEmitidasIva;
+  b.creditoFiscalCompras = b.creditoFiscalComprasSinNc + b.ncEmitidasIva;
 
   return b;
 }

@@ -5,6 +5,7 @@ import {
   cliente,
   ivaDeclaracion,
   comprobante,
+  comprobanteAlicuota,
   comprobanteTipo,
   condicionIva,
 } from '@/drizzle/schema';
@@ -13,6 +14,7 @@ import {
   getMemberRole,
   assertCanWrite,
 } from '@/actions/helpers';
+import { calcularIva, type ComprobanteAlicuotaRow } from '@/lib/iva-calc';
 import { and, eq, asc, desc, isNull, sql } from 'drizzle-orm';
 
 export const FISCAL_CONDITIONS = condicionIva.enumValues;
@@ -28,16 +30,139 @@ const credencialesSql = sql<string | null>`(
   where cc.cliente_id = ${cliente.id}
 )`;
 
+/**
+ * El login de AFIP con el que se abre la ficha del cliente. La ruta de detalle
+ * es `/clients/{credencialId}?empresa={clienteId}`, así que sin este id la fila
+ * de la tabla no puede linkear a su propia ficha.
+ */
+const credencialPreferidaSql = sql<string | null>`(
+  select cc.credencial_id::text
+  from cliente_credencial cc
+  where cc.cliente_id = ${cliente.id}
+  order by cc.preferida desc, cc.created_at asc
+  limit 1
+)`;
+
 /** "MM/YYYY" → primer día del mes, que es como se guarda el período. */
 function periodoADate(periodo: string): string {
   const [mm, yyyy] = periodo.split('/');
   return `${yyyy}-${mm}-01`;
 }
 
+/** Posición de IVA de un cliente calculada desde sus propios comprobantes. */
+interface PosicionCalculada {
+  /** Débito de la DDJJ: Libro IVA Ventas + IVA de las NC recibidas (art. 11). */
+  calcDebitoFiscal: number;
+  /** Crédito de la DDJJ: Libro IVA Compras + IVA de las NC emitidas (art. 12). */
+  calcCreditoFiscal: number;
+  /** `calcDebitoFiscal − calcCreditoFiscal`: positivo es a pagar. */
+  calcSaldoTecnico: number;
+  /** Comprobantes del período. Distingue "no hay nada cargado" de "da cero". */
+  comprobantes: number;
+}
+
+const POSICION_VACIA: PosicionCalculada = {
+  calcDebitoFiscal: 0,
+  calcCreditoFiscal: 0,
+  calcSaldoTecnico: 0,
+  comprobantes: 0,
+};
+
 /**
- * Resumen de posición IVA (F2051 scrapeado) de todos los clientes Responsable
- * Inscripto de la organización, para un período fiscal dado ("MM/YYYY").
- * Left join: los RI sin declaración del período aparecen con datos en null.
+ * Calcula la posición de IVA del período para todos los clientes de la org, en
+ * dos consultas, reusando `calcularIva` —el mismo cálculo que muestra la ficha
+ * del cliente— para que la tabla y el detalle no puedan divergir.
+ *
+ * Las alícuotas se preagregan en SQL por (cliente, dirección, letra, NC,
+ * alícuota) y ya convertidas a pesos: `calcularIva` sólo suma, así que sumar
+ * antes o después da lo mismo y evita traer una fila por comprobante.
+ */
+async function calcularPosicionPorCliente(
+  orgId: string,
+  periodo: string
+): Promise<Map<string, PosicionCalculada>> {
+  const cotizacion = sql`case when upper(${comprobante.moneda}) = 'ARS' then 1
+    else coalesce(nullif(${comprobante.cotizacion}, 0), 1) end`;
+  const delPeriodo = and(
+    eq(comprobante.orgId, orgId),
+    eq(comprobante.periodo, periodo)
+  );
+
+  const [alicuotas, conteos] = await Promise.all([
+    db
+      .select({
+        clienteId: comprobante.clienteId,
+        direccion: comprobante.direccion,
+        letra: comprobanteTipo.letra,
+        esNc: comprobanteTipo.esNc,
+        alicuota: comprobanteAlicuota.alicuota,
+        neto: sql<string>`sum(${comprobanteAlicuota.neto} * ${cotizacion})::text`,
+        iva: sql<string>`sum(${comprobanteAlicuota.iva} * ${cotizacion})::text`,
+      })
+      .from(comprobanteAlicuota)
+      .innerJoin(
+        comprobante,
+        eq(comprobanteAlicuota.comprobanteId, comprobante.id)
+      )
+      .innerJoin(comprobanteTipo, eq(comprobante.tipo, comprobanteTipo.codigo))
+      .where(delPeriodo)
+      .groupBy(
+        comprobante.clienteId,
+        comprobante.direccion,
+        comprobanteTipo.letra,
+        comprobanteTipo.esNc,
+        comprobanteAlicuota.alicuota
+      ),
+    db
+      .select({
+        clienteId: comprobante.clienteId,
+        total: sql<number>`count(*)::int`,
+      })
+      .from(comprobante)
+      .where(delPeriodo)
+      .groupBy(comprobante.clienteId),
+  ]);
+
+  // Las filas ya vienen en pesos: se le pasan a `calcularIva` como ARS a 1.
+  const porCliente = new Map<string, ComprobanteAlicuotaRow[]>();
+  for (const a of alicuotas) {
+    const filas = porCliente.get(a.clienteId) ?? [];
+    filas.push({
+      direccion: a.direccion,
+      letra: a.letra,
+      esNc: a.esNc,
+      moneda: 'ARS',
+      cotizacion: '1',
+      alicuota: a.alicuota,
+      neto: a.neto,
+      iva: a.iva,
+    });
+    porCliente.set(a.clienteId, filas);
+  }
+
+  const resultado = new Map<string, PosicionCalculada>();
+  for (const { clienteId, total } of conteos) {
+    const b = calcularIva(porCliente.get(clienteId) ?? []);
+    resultado.set(clienteId, {
+      calcDebitoFiscal: b.debitoFiscal,
+      calcCreditoFiscal: b.creditoFiscalCompras,
+      calcSaldoTecnico: b.debitoFiscal - b.creditoFiscalCompras,
+      comprobantes: total,
+    });
+  }
+  return resultado;
+}
+
+/**
+ * Resumen de posición IVA de todos los clientes Responsable Inscripto de la
+ * organización, para un período fiscal dado ("MM/YYYY").
+ *
+ * Cada fila trae dos lecturas del mismo período: la calculada desde los
+ * comprobantes cargados (`calc*`, lo que muestra la ficha del cliente) y la que
+ * se scrapeó del F2051 (`debitoFiscal`, `creditoFiscal`, …), que puede no
+ * existir. Las columnas de la tabla muestran la calculada; la declarada queda
+ * para señalar diferencias. Saldo libre disponibilidad y retenciones sólo
+ * existen del lado de AFIP: no se pueden derivar de comprobantes.
  */
 export const getIvaResumenRI = createServerFn({ method: 'GET' })
   .validator(
@@ -49,39 +174,48 @@ export const getIvaResumenRI = createServerFn({ method: 'GET' })
     const { orgId } = await getSessionWithOrg();
     const periodo = periodoADate(ctx.data.periodo);
 
-    return await db
-      .select({
-        clienteId: cliente.id,
-        razonSocial: cliente.razonSocial,
-        cuit: cliente.cuit,
-        credenciales: credencialesSql,
-        condicionIva: cliente.condicionIva,
-        declaracionId: ivaDeclaracion.id,
-        presentadaAt: ivaDeclaracion.presentadaAt,
-        debitoFiscal: ivaDeclaracion.debitoFiscal,
-        creditoFiscal: ivaDeclaracion.creditoFiscal,
-        saldoTecnicoFavor: ivaDeclaracion.saldoTecnicoFavor,
-        saldoLibreDisponibilidadFavor:
-          ivaDeclaracion.saldoLibreDisponibilidadFavor,
-        retencionesPercepcionesPeriodo:
-          ivaDeclaracion.retencionesPercepcionesPeriodo,
-      })
-      .from(cliente)
-      .leftJoin(
-        ivaDeclaracion,
-        and(
-          eq(ivaDeclaracion.clienteId, cliente.id),
-          eq(ivaDeclaracion.periodo, periodo)
+    const [filas, calculado] = await Promise.all([
+      db
+        .select({
+          clienteId: cliente.id,
+          razonSocial: cliente.razonSocial,
+          cuit: cliente.cuit,
+          credenciales: credencialesSql,
+          credencialId: credencialPreferidaSql,
+          condicionIva: cliente.condicionIva,
+          declaracionId: ivaDeclaracion.id,
+          presentadaAt: ivaDeclaracion.presentadaAt,
+          debitoFiscal: ivaDeclaracion.debitoFiscal,
+          creditoFiscal: ivaDeclaracion.creditoFiscal,
+          saldoTecnicoFavor: ivaDeclaracion.saldoTecnicoFavor,
+          saldoLibreDisponibilidadFavor:
+            ivaDeclaracion.saldoLibreDisponibilidadFavor,
+          retencionesPercepcionesPeriodo:
+            ivaDeclaracion.retencionesPercepcionesPeriodo,
+        })
+        .from(cliente)
+        .leftJoin(
+          ivaDeclaracion,
+          and(
+            eq(ivaDeclaracion.clienteId, cliente.id),
+            eq(ivaDeclaracion.periodo, periodo)
+          )
         )
-      )
-      .where(
-        and(
-          eq(cliente.orgId, orgId),
-          eq(cliente.condicionIva, 'responsable_inscripto'),
-          eq(cliente.estado, 'activo')
+        .where(
+          and(
+            eq(cliente.orgId, orgId),
+            eq(cliente.condicionIva, 'responsable_inscripto'),
+            eq(cliente.estado, 'activo')
+          )
         )
-      )
-      .orderBy(asc(cliente.razonSocial));
+        .orderBy(asc(cliente.razonSocial)),
+      calcularPosicionPorCliente(orgId, periodo),
+    ]);
+
+    return filas.map((f) => ({
+      ...f,
+      ...(calculado.get(f.clienteId) ?? POSICION_VACIA),
+    }));
   });
 
 /**
@@ -106,7 +240,9 @@ export const getMonotributistasFacturacion = createServerFn({
       credenciales: credencialesSql,
       condicionIva: cliente.condicionIva,
       comprobanteCount: sql<number>`count(${comprobante.id})::int`,
-      ultimoComprobante: sql<string | null>`max(${comprobante.fechaEmision})::text`,
+      ultimoComprobante: sql<
+        string | null
+      >`max(${comprobante.fechaEmision})::text`,
       facturacion12m: sql<string>`${facturado}::text`,
     })
     .from(cliente)
@@ -126,7 +262,12 @@ export const getMonotributistasFacturacion = createServerFn({
         eq(cliente.estado, 'activo')
       )
     )
-    .groupBy(cliente.id, cliente.razonSocial, cliente.cuit, cliente.condicionIva)
+    .groupBy(
+      cliente.id,
+      cliente.razonSocial,
+      cliente.cuit,
+      cliente.condicionIva
+    )
     .orderBy(desc(facturado));
 });
 
