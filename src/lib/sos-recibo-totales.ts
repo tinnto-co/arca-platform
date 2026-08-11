@@ -68,6 +68,44 @@ export function totalesReciboSosDesdeMontos(
   return { haberes, descuentos, retenciones, noRemunerativo, neto };
 }
 
+/** Tipo contable de un concepto, alineado con `payrollConceptoTipoEnum`. */
+export type TipoConceptoSos =
+  | 'remunerativo'
+  | 'no_remunerativo'
+  | 'descuento'
+  | 'retencion';
+
+/** A qué tipo contable corresponde cada sección SOS. */
+const TIPO_POR_SECCION: Record<SeccionKey, TipoConceptoSos> = {
+  haberes: 'remunerativo',
+  liquidacion_final: 'remunerativo',
+  decretos: 'remunerativo',
+  no_remunerativo: 'no_remunerativo',
+  descuentos: 'descuento',
+  retenciones: 'retencion',
+  // 500–599 suma dentro de `retenciones` en totalesReciboSosDesdeMontos.
+  retenciones_no_rem: 'retencion',
+};
+
+/**
+ * Clasifica un código SOS (1–699) en su tipo contable, usando los mismos rangos
+ * que los totales del recibo. Devuelve null para códigos fuera de rango —
+ * p. ej. los códigos LSD importados (810000), que no son numeración SOS.
+ */
+export function tipoConceptoDesdeCodigoSos(
+  codigo: string | number
+): TipoConceptoSos | null {
+  const n = typeof codigo === 'number' ? codigo : parseInt(codigo, 10);
+  if (isNaN(n)) return null;
+  for (const [key, cfg] of Object.entries(SECCIONES) as [
+    SeccionKey,
+    (typeof SECCIONES)[SeccionKey],
+  ][]) {
+    if (n >= cfg.rangoMin && n <= cfg.rangoMax) return TIPO_POR_SECCION[key];
+  }
+  return null;
+}
+
 export function parseDecimalSos(raw: string | null | undefined): number | null {
   if (raw == null) return null;
   const t = String(raw).trim();
