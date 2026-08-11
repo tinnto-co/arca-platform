@@ -5,6 +5,20 @@
  */
 
 /** Período en curso (YYYY-MM) según el calendario. */
+/**
+ * Normaliza cualquier "YYYY-M", "YYYY-MM" o "YYYY-MM-DD" a "YYYY-MM".
+ * Vino con el cierre contable de sueldos (rama staging); en el modelo ideal el
+ * período es date, pero la UI y las server functions siguen hablando "YYYY-MM".
+ */
+export function normalizarPeriodoYYYYMM(fechaStr: string): string {
+  const t = fechaStr.trim();
+  const m = /^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?/.exec(t);
+  if (!m) return t;
+  const y = m[1];
+  const mo = String(m[2]).padStart(2, '0');
+  return `${y}-${mo}`;
+}
+
 export function getPeriodoMesActual(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -56,7 +70,10 @@ export function puedeVerReciboPeriodo(periodo: string): boolean {
  * - Si ingresó dentro del semestre → días desde el ingreso hasta el último día del semestre.
  * - `fechaIngreso` acepta cadena ISO "YYYY-MM-DD" o null.
  */
-export function calcularDiasSemestre(fechaIngreso: string | null, periodo: string): number {
+export function calcularDiasSemestre(
+  fechaIngreso: string | null,
+  periodo: string
+): number {
   if (!fechaIngreso) return 180;
   const ingreso = new Date(fechaIngreso + 'T00:00:00');
   if (isNaN(ingreso.getTime())) return 180;
@@ -64,10 +81,20 @@ export function calcularDiasSemestre(fechaIngreso: string | null, periodo: strin
   const year = parseInt(yearStr!, 10);
   const month = parseInt(monthStr!, 10);
   const esPrimerSemestre = month <= 6;
-  const semStart = new Date(year, esPrimerSemestre ? 0 : 6, 1);            // 1/1 ó 1/7
-  const semEnd   = new Date(year, esPrimerSemestre ? 5 : 11, esPrimerSemestre ? 30 : 31); // 30/6 ó 31/12
+  const semStart = new Date(year, esPrimerSemestre ? 0 : 6, 1); // 1/1 ó 1/7
+  const semEnd = new Date(
+    year,
+    esPrimerSemestre ? 5 : 11,
+    esPrimerSemestre ? 30 : 31
+  ); // 30/6 ó 31/12
   if (ingreso <= semStart) return 180;
-  if (ingreso > semEnd)    return 0;
+  if (ingreso > semEnd) return 0;
   const msPerDay = 24 * 60 * 60 * 1000;
-  return Math.min(180, Math.max(1, Math.floor((semEnd.getTime() - ingreso.getTime()) / msPerDay) + 1));
+  return Math.min(
+    180,
+    Math.max(
+      1,
+      Math.floor((semEnd.getTime() - ingreso.getTime()) / msPerDay) + 1
+    )
+  );
 }

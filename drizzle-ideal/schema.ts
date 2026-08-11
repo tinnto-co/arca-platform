@@ -48,6 +48,7 @@ export const indiceInflacionFuente = pgEnum("indice_inflacion_fuente", ['facpce_
 export const jobLogLevel = pgEnum("job_log_level", ['debug', 'info', 'warn', 'error'])
 export const jobStatus = pgEnum("job_status", ['pending', 'running', 'failed', 'finished'])
 export const jobType = pgEnum("job_type", ['iva', 'comprobantes', 'comprobantes_full', 'notificaciones', 'deuda', 'vencimientos', 'batch', 'escalas'])
+export const marcoContable = pgEnum("marco_contable", ['rt54', 'rt6'])
 export const movimientoDireccion = pgEnum("movimiento_direccion", ['ingreso', 'egreso'])
 export const notificacionSeveridad = pgEnum("notificacion_severidad", ['sin_clasificar', 'informativa', 'accion_requerida', 'urgente'])
 export const orgModule = pgEnum("org_module", ['sueldos', 'banco', 'contabilidad', 'analytics', 'portal_cliente', 'ai_agent'])
@@ -332,6 +333,7 @@ export const cierreSueldos = pgTable("cierre_sueldos", {
 }, (table) => [
 	index("idx_cierre_sueldos_asiento").using("btree", table.asientoId.asc().nullsLast().op("uuid_ops")),
 	index("idx_cierre_sueldos_cliente").using("btree", table.clienteId.asc().nullsLast().op("uuid_ops")),
+	uniqueIndex("uq_cierre_sueldos_vigente").using("btree", table.clienteId.asc().nullsLast().op("date_ops"), table.periodo.asc().nullsLast().op("date_ops")).where(sql`(reabierto_at IS NULL)`),
 	foreignKey({
 			columns: [table.orgId],
 			foreignColumns: [organization.id],
@@ -357,7 +359,6 @@ export const cierreSueldos = pgTable("cierre_sueldos", {
 			foreignColumns: [user.id],
 			name: "cierre_sueldos_reabierto_por_fkey"
 		}).onDelete("set null"),
-	unique("cierre_sueldos_cliente_id_periodo_key").on(table.clienteId, table.periodo),
 	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(org_id = current_setting('app.org_id'::text, true))`, withCheck: sql`(org_id = current_setting('app.org_id'::text, true))`  }),
 ]);
 
@@ -1584,35 +1585,6 @@ export const clienteConcepto = pgTable("cliente_concepto", {
 	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(org_id = current_setting('app.org_id'::text, true))`, withCheck: sql`(org_id = current_setting('app.org_id'::text, true))`  }),
 ]);
 
-export const cliente = pgTable("cliente", {
-	id: uuid().defaultRandom().primaryKey().notNull(),
-	orgId: text("org_id").notNull(),
-	cuit: text().notNull(),
-	razonSocial: text("razon_social").notNull(),
-	tipoPersona: tipoPersona("tipo_persona").notNull(),
-	condicionIva: condicionIva("condicion_iva"),
-	iibbRegimen: iibbRegimen("iibb_regimen"),
-	estado: clienteEstado().default('activo').notNull(),
-	bajaMotivo: text("baja_motivo"),
-	bajaAt: timestamp("baja_at", { withTimezone: true, mode: 'string' }),
-	email: text(),
-	telefono: text(),
-	domicilio: text(),
-	notas: text(),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	index("idx_cliente_org").using("btree", table.orgId.asc().nullsLast().op("text_ops")),
-	foreignKey({
-			columns: [table.orgId],
-			foreignColumns: [organization.id],
-			name: "cliente_org_id_fkey"
-		}).onDelete("cascade"),
-	unique("cliente_org_id_cuit_key").on(table.orgId, table.cuit),
-	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app", "arca_scrapper"], using: sql`(org_id = current_setting('app.org_id'::text, true))`, withCheck: sql`(org_id = current_setting('app.org_id'::text, true))`  }),
-	pgPolicy("portal", { as: "permissive", for: "all", to: ["arca_portal"] }),
-]);
-
 export const cctFuente = pgTable("cct_fuente", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	cctCodigo: text("cct_codigo").notNull(),
@@ -1757,6 +1729,36 @@ export const convenio = pgTable("convenio", {
 		}).onDelete("cascade"),
 	unique("convenio_cliente_id_nombre_key").on(table.clienteId, table.nombre),
 	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app", "arca_scrapper"], using: sql`(org_id = current_setting('app.org_id'::text, true))`, withCheck: sql`(org_id = current_setting('app.org_id'::text, true))`  }),
+]);
+
+export const cliente = pgTable("cliente", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	orgId: text("org_id").notNull(),
+	cuit: text().notNull(),
+	razonSocial: text("razon_social").notNull(),
+	tipoPersona: tipoPersona("tipo_persona").notNull(),
+	condicionIva: condicionIva("condicion_iva"),
+	iibbRegimen: iibbRegimen("iibb_regimen"),
+	estado: clienteEstado().default('activo').notNull(),
+	bajaMotivo: text("baja_motivo"),
+	bajaAt: timestamp("baja_at", { withTimezone: true, mode: 'string' }),
+	email: text(),
+	telefono: text(),
+	domicilio: text(),
+	notas: text(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	marcoContable: marcoContable("marco_contable").default('rt54').notNull(),
+}, (table) => [
+	index("idx_cliente_org").using("btree", table.orgId.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.orgId],
+			foreignColumns: [organization.id],
+			name: "cliente_org_id_fkey"
+		}).onDelete("cascade"),
+	unique("cliente_org_id_cuit_key").on(table.orgId, table.cuit),
+	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app", "arca_scrapper"], using: sql`(org_id = current_setting('app.org_id'::text, true))`, withCheck: sql`(org_id = current_setting('app.org_id'::text, true))`  }),
+	pgPolicy("portal", { as: "permissive", for: "all", to: ["arca_portal"] }),
 ]);
 
 export const clienteEeccConfig = pgTable("cliente_eecc_config", {

@@ -138,9 +138,13 @@ create table cierre_sueldos (
   reabierto_at timestamptz,
   reabierto_por text references "user"(id) on delete set null,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  unique (cliente_id, periodo)
+  updated_at timestamptz not null default now()
 );
+-- Un solo cierre VIGENTE por período; los reabiertos quedan como historial.
+-- Por eso es un índice parcial y no un unique a secas: cerrar → reabrir →
+-- volver a cerrar deja varias filas para el mismo (cliente, periodo).
+create unique index uq_cierre_sueldos_vigente
+  on cierre_sueldos(cliente_id, periodo) where reabierto_at is null;
 create index idx_cierre_sueldos_cliente on cierre_sueldos(cliente_id);
 create index idx_cierre_sueldos_asiento on cierre_sueldos(asiento_id);
 create trigger trg_set_updated_at before update on cierre_sueldos for each row execute function set_updated_at();
@@ -153,6 +157,15 @@ comment on column cierre_sueldos.conceptos_sin_regla is
 -- ============================================================================
 -- Extensiones al dominio 4
 -- ============================================================================
+
+-- La norma con la que se cita el ajuste en los Estados Contables. El mecanismo
+-- es el mismo en las dos —índice FACPCE, coeficientes, RECPAM—, pero un ente
+-- pequeño lo aplica por la RT 54 y el resto por la RT 6, y el balance tiene que
+-- invocar la que corresponde. El estudio usa RT 54 en casi todos: es el default.
+create type marco_contable as enum ('rt54', 'rt6');
+alter table cliente add column marco_contable marco_contable not null default 'rt54';
+comment on column cliente.marco_contable is
+  'Norma del ajuste por inflación que citan los EECC de esta empresa (RT 54 entes pequeños / RT 6 general).';
 
 alter table cuenta add column cuenta_ajuste_id uuid references cuenta(id) on delete set null;
 create index idx_cuenta_cuenta_ajuste on cuenta(cuenta_ajuste_id);

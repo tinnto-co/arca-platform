@@ -41,6 +41,20 @@ for (const stmt of [
   await sql.unsafe(stmt);
 }
 
+// `cliente.marco_contable` llegó después de la primera aplicación del dominio:
+// se asegura aparte, también idempotente.
+const [{ tieneMarco }] = await sql`
+  select count(*)::int "tieneMarco" from information_schema.columns
+  where table_schema = 'public' and table_name = 'cliente'
+    and column_name = 'marco_contable'`;
+if (!tieneMarco) {
+  console.log('→ cliente.marco_contable...');
+  await sql.unsafe("create type marco_contable as enum ('rt54', 'rt6')");
+  await sql.unsafe(
+    "alter table cliente add column marco_contable marco_contable not null default 'rt54'"
+  );
+}
+
 const [{ existe }] = await sql`
   select count(*)::int existe from information_schema.tables
   where table_schema = 'public' and table_name = 'indice_inflacion'`;

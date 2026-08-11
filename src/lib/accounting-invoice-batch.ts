@@ -15,26 +15,26 @@ import {
   asiento,
   asientoLinea,
   cliente,
-  clienteCuenta,
   comprobante,
   comprobanteTipo,
   contraparte,
-  cuenta,
-  ejercicio,
   evento,
   organizationModule,
-  periodoContable,
-  reglaMapeo,
-  reglaMapeoLinea,
 } from '@/drizzle/schema';
-import { and, asc, eq, inArray, gte, lte, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import {
   armarLineas,
   calcularImportes,
   seleccionarRegla,
   type ReglaLike,
 } from '@/lib/accounting-invoice-posting';
-import { PENDING_REVIEW_CODE } from '@/lib/accounting-labels';
+import {
+  assertPostableAccounts,
+  loadActiveMappingRules,
+  loadPendingReviewAccountId,
+  nextEntryNumber,
+  resolvePeriodForDate,
+} from '@/lib/accounting-posting-db';
 
 export interface InvoiceBatchResult {
   startedAt: string;
@@ -71,133 +71,6 @@ interface ComprobanteRow {
   total: string;
   ivaTotal: string;
   otrosTributos: string;
-}
-
-async function loadPendingReviewAccountId(orgId: string): Promise<string> {
-  const [acc] = await db
-    .select({ id: cuenta.id })
-    .from(cuenta)
-    .where(
-      and(
-        eq(cuenta.orgId, orgId),
-        eq(cuenta.alcance, 'base'),
-        eq(cuenta.codigo, PENDING_REVIEW_CODE)
-      )
-    )
-    .limit(1);
-  if (!acc)
-    throw new Error('Falta la cuenta de sistema "Pendiente de revisión"');
-  return acc.id;
-}
-
-async function loadActiveInvoiceRules(clienteId: string): Promise<ReglaLike[]> {
-  const reglas = await db
-    .select()
-    .from(reglaMapeo)
-    .where(
-      and(
-        eq(reglaMapeo.clienteId, clienteId),
-        eq(reglaMapeo.modulo, 'comprobante'),
-        eq(reglaMapeo.activa, true)
-      )
-    )
-    .orderBy(asc(reglaMapeo.prioridad), asc(reglaMapeo.nombre));
-  if (reglas.length === 0) return [];
-
-  const lineas = await db
-    .select()
-    .from(reglaMapeoLinea)
-    .where(
-      inArray(
-        reglaMapeoLinea.reglaId,
-        reglas.map((r) => r.id)
-      )
-    )
-    .orderBy(asc(reglaMapeoLinea.orden));
-  const porRegla = new Map<string, typeof lineas>();
-  for (const l of lineas) {
-    const arr = porRegla.get(l.reglaId) ?? [];
-    arr.push(l);
-    porRegla.set(l.reglaId, arr);
-  }
-
-  return reglas.map(
-    (r): ReglaLike => ({
-      id: r.id,
-      nombre: r.nombre,
-      tipo: r.tipo,
-      condicion: (r.condicion ?? null) as Record<string, unknown> | null,
-      prioridad: r.prioridad,
-      lineas: (porRegla.get(r.id) ?? []).map((l) => ({
-        cuentaId: l.cuentaId,
-        lado: l.lado,
-        base: l.base,
-        importeFijo: l.importeFijo,
-        descripcion: l.descripcion,
-      })),
-    })
-  );
-}
-
-/** `fecha` es un 'YYYY-MM-DD': las columnas de fecha de la BD son strings. */
-async function resolvePeriodForDate(clienteId: string, fecha: string) {
-  const [ej] = await db
-    .select()
-    .from(ejercicio)
-    .where(
-      and(
-        eq(ejercicio.clienteId, clienteId),
-        lte(ejercicio.fechaDesde, fecha),
-        gte(ejercicio.fechaHasta, fecha)
-      )
-    )
-    .limit(1);
-  if (!ej) throw new Error('no_ejercicio');
-  const [periodo] = await db
-    .select()
-    .from(periodoContable)
-    .where(
-      and(
-        eq(periodoContable.ejercicioId, ej.id),
-        eq(periodoContable.periodo, `${fecha.slice(0, 7)}-01`)
-      )
-    )
-    .limit(1);
-  if (!periodo) throw new Error('no_periodo');
-  return { ejercicio: ej, periodo };
-}
-
-async function assertPostableAccounts(
-  clienteId: string,
-  orgId: string,
-  cuentaIds: string[]
-) {
-  const ids = [...new Set(cuentaIds)];
-  const cuentas = await db
-    .select()
-    .from(cuenta)
-    .where(and(eq(cuenta.orgId, orgId), inArray(cuenta.id, ids)));
-  const propias = await db
-    .select()
-    .from(clienteCuenta)
-    .where(
-      and(
-        eq(clienteCuenta.clienteId, clienteId),
-        inArray(clienteCuenta.cuentaId, ids)
-      )
-    );
-  const propiaPorCuenta = new Map(propias.map((o) => [o.cuentaId, o]));
-  const porId = new Map(cuentas.map((c) => [c.id, c]));
-  for (const id of ids) {
-    const c = porId.get(id);
-    if (!c) throw new Error('Cuenta inexistente o de otro estudio');
-    if (c.alcance === 'propia' && c.clienteId !== clienteId)
-      throw new Error('Cuenta propia de otra empresa');
-    if (c.tipo !== 'imputable')
-      throw new Error(`La cuenta ${c.codigo} es de agrupación`);
-    const activa = propiaPorCuenta.get(id)?.activa ?? c.activa;
-    if (!activa) throw new Error(`La cuenta ${c.codigo} está inactiva`);
-  }
 }
 
 async function hasAutoEntry(clienteId: string, comprobanteId: string) {
@@ -244,16 +117,11 @@ async function insertAutoInvoiceEntry(params: {
     motivo,
   } = params;
   await db.transaction(async (tx) => {
-    const [{ maxNum }] = await tx
-      .select({ maxNum: sql<number>`coalesce(max(${asiento.numero}),0)::int` })
-      .from(asiento)
-      .where(
-        and(
-          eq(asiento.clienteId, clienteId),
-          eq(asiento.ejercicioId, ejercicioId)
-        )
-      );
-    const numero = (maxNum ?? 0) + 1;
+    const numero = await nextEntryNumber(
+      tx,
+      params.clienteId,
+      params.ejercicioId
+    );
     const etiqueta = comp.direccion === 'recibido' ? 'Compra' : 'Venta';
     const descripcion =
       `${etiqueta} ${comp.letra ?? comp.tipo} — ${comp.contraparteNombre ?? 's/d'}`.trim();
@@ -323,7 +191,11 @@ export async function runPendingInvoiceBatch(opts?: {
     created: 0,
     pendingReview: 0,
     skipped: 0,
-    errors: [] as { clienteId: string; comprobanteId: string; reason: string }[],
+    errors: [] as {
+      clienteId: string;
+      comprobanteId: string;
+      reason: string;
+    }[],
   };
 
   // Empresas de organizaciones con el módulo de contabilidad activo.
@@ -367,7 +239,7 @@ export async function runPendingInvoiceBatch(opts?: {
     let reglas: ReglaLike[];
     try {
       cuentaPendienteId = await loadPendingReviewAccountId(orgId);
-      reglas = await loadActiveInvoiceRules(clienteId);
+      reglas = await loadActiveMappingRules(clienteId, 'comprobante');
     } catch (e) {
       result.errors.push({
         clienteId,
@@ -396,7 +268,7 @@ export async function runPendingInvoiceBatch(opts?: {
           result.skipped++; // sin ejercicio/período para esa fecha
           continue;
         }
-        if (resuelto.periodo.estado === 'cerrado') {
+        if (resuelto.period.estado === 'cerrado') {
           result.skipped++;
           continue;
         }
@@ -413,8 +285,8 @@ export async function runPendingInvoiceBatch(opts?: {
           await insertAutoInvoiceEntry({
             orgId,
             clienteId,
-            ejercicioId: resuelto.ejercicio.id,
-            periodoId: resuelto.periodo.id,
+            ejercicioId: resuelto.fy.id,
+            periodoId: resuelto.period.id,
             comp,
             reglaId: regla?.id ?? null,
             lineas: armado.lineas,

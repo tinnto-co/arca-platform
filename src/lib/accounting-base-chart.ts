@@ -17,6 +17,14 @@ import {
   ACCOUNT_GROUP_LABELS,
   PENDING_REVIEW_CODE,
 } from '@/lib/accounting-labels';
+import {
+  defaultInflationNature,
+  type InflationNature,
+} from '@/lib/accounting-inflation';
+import {
+  defaultCashFlowActivity,
+  type CashFlowActivity,
+} from '@/lib/accounting-cashflow';
 
 export interface BaseAccountSeed {
   code: string;
@@ -24,7 +32,29 @@ export interface BaseAccountSeed {
   type: 'grupo' | 'imputable';
   accountGroup?: string;
   expectedBalance?: 'deudor' | 'acreedor' | 'ambos';
-  expenseFunction?: 'administracion' | 'comercializacion' | 'financiero' | 'otro';
+  expenseFunction?:
+    | 'administracion'
+    | 'comercializacion'
+    | 'financiero'
+    | 'otro';
+  /**
+   * Tratamiento frente al ajuste por inflación (RT 6). Si no se especifica, se
+   * deriva del `accountGroup` con `defaultInflationNature()`. Solo se declara
+   * explícitamente donde el default del rubro no aplica a esa cuenta puntual
+   * (ej. moneda extranjera dentro de Caja y Bancos).
+   */
+  inflationNature?: InflationNature;
+  /**
+   * Código de la cuenta que recibe el ajuste, si es distinta de sí misma.
+   * Único caso en el plan base: Capital social → Ajuste de capital.
+   */
+  inflationTargetCode?: string;
+  /**
+   * Actividad para el Estado de Flujo de Efectivo. Se deriva del `accountGroup`
+   * si no se declara. `null` en las cuentas de efectivo: son la variación que el
+   * estado explica, no una causa.
+   */
+  cashFlowActivity?: CashFlowActivity | null;
   isSystemAccount?: boolean;
   /** Default global de activación de la cuenta base. */
   isActive?: boolean;
@@ -37,6 +67,17 @@ const VALID_EXPENSE_FUNCTION = new Set<string>([
   'comercializacion',
   'financiero',
   'otro',
+]);
+const VALID_CASH_FLOW_ACTIVITY = new Set<string>([
+  'operating',
+  'investing',
+  'financing',
+]);
+const VALID_INFLATION_NATURE = new Set<string>([
+  'monetaria',
+  'no_monetaria_costo',
+  'no_monetaria_valor_corriente',
+  'resultado_por_diferencia',
 ]);
 
 const G = (
@@ -62,6 +103,8 @@ const I = (
   type: 'imputable',
   accountGroup,
   expectedBalance,
+  inflationNature: defaultInflationNature(accountGroup),
+  cashFlowActivity: defaultCashFlowActivity(accountGroup),
   ...extra,
 });
 
@@ -81,9 +124,18 @@ export const BASE_CHART: BaseAccountSeed[] = [
   I('1.1.01.002', 'Banco cuenta corriente', 'caja_bancos', 'deudor'),
   I('1.1.01.003', 'Recaudaciones a depositar', 'caja_bancos', 'deudor'),
   I('1.1.01.004', 'Fondo fijo', 'caja_bancos', 'deudor'),
-  I('1.1.01.005', 'Caja en moneda extranjera', 'caja_bancos', 'deudor'),
-  I('1.1.01.006', 'Banco moneda extranjera', 'caja_bancos', 'deudor'),
+  // Moneda extranjera: se mide al TC de cierre, o sea que ya está en moneda de
+  // cierre y NO se reexpresa (Guía FACPCE). Va en cuenta separada justamente
+  // para poder distinguirla del resto de Caja y Bancos, que sí es monetario.
+  I('1.1.01.005', 'Caja en moneda extranjera', 'caja_bancos', 'deudor', {
+    inflationNature: 'no_monetaria_valor_corriente',
+  }),
+  I('1.1.01.006', 'Banco moneda extranjera', 'caja_bancos', 'deudor', {
+    inflationNature: 'no_monetaria_valor_corriente',
+  }),
 
+  // Todo el rubro es monetario y cuenta como equivalente de efectivo: es el
+  // criterio que confirmó el estudio.
   G('1.1.02', 'Inversiones temporarias', 'inversiones_temporarias'),
   I('1.1.02.001', 'Plazo fijo', 'inversiones_temporarias', 'deudor'),
   I(
@@ -138,7 +190,12 @@ export const BASE_CHART: BaseAccountSeed[] = [
 
   G('1.2.02', 'Bienes de uso', 'bienes_uso'),
   I('1.2.02.001', 'Rodados', 'bienes_uso', 'deudor'),
-  I('1.2.02.002', '(-) Amortización acumulada rodados', 'bienes_uso', 'acreedor'),
+  I(
+    '1.2.02.002',
+    '(-) Amortización acumulada rodados',
+    'bienes_uso',
+    'acreedor'
+  ),
   I('1.2.02.003', 'Muebles y útiles', 'bienes_uso', 'deudor'),
   I(
     '1.2.02.004',
@@ -238,7 +295,11 @@ export const BASE_CHART: BaseAccountSeed[] = [
   G('3', 'Patrimonio Neto'),
 
   G('3.1', 'Capital', 'capital'),
-  I('3.1.001', 'Capital social', 'capital', 'acreedor'),
+  // El capital se mantiene a valor nominal: su reexpresión no se le imputa a él
+  // sino que se acumula en Ajuste de capital (RT 6 y requisito del estudio).
+  I('3.1.001', 'Capital social', 'capital', 'acreedor', {
+    inflationTargetCode: '3.1.002',
+  }),
   I('3.1.002', 'Ajuste de capital', 'capital', 'acreedor'),
 
   G('3.2', 'Aportes irrevocables', 'aportes_irrevocables'),
@@ -252,7 +313,12 @@ export const BASE_CHART: BaseAccountSeed[] = [
   I('3.4.002', 'Reservas facultativas', 'reservas', 'acreedor'),
 
   G('3.5', 'Resultados no asignados', 'resultados_no_asignados'),
-  I('3.5.001', 'Resultados no asignados', 'resultados_no_asignados', 'acreedor'),
+  I(
+    '3.5.001',
+    'Resultados no asignados',
+    'resultados_no_asignados',
+    'acreedor'
+  ),
 
   G('3.6', 'Resultado del ejercicio', 'resultado_ejercicio'),
   I('3.6.001', 'Resultado del ejercicio', 'resultado_ejercicio', 'ambos', {
@@ -303,9 +369,15 @@ export const BASE_CHART: BaseAccountSeed[] = [
   I('5.2.004', 'Alquileres', 'gastos_administracion', 'deudor', {
     expenseFunction: 'administracion',
   }),
-  I('5.2.005', 'Servicios (luz, gas, agua)', 'gastos_administracion', 'deudor', {
-    expenseFunction: 'administracion',
-  }),
+  I(
+    '5.2.005',
+    'Servicios (luz, gas, agua)',
+    'gastos_administracion',
+    'deudor',
+    {
+      expenseFunction: 'administracion',
+    }
+  ),
   I('5.2.006', 'Gastos de oficina', 'gastos_administracion', 'deudor', {
     expenseFunction: 'administracion',
   }),
@@ -352,9 +424,15 @@ export const BASE_CHART: BaseAccountSeed[] = [
   I('5.4.001', 'Intereses perdidos', 'gastos_financieros', 'deudor', {
     expenseFunction: 'financiero',
   }),
-  I('5.4.002', 'Gastos y comisiones bancarias', 'gastos_financieros', 'deudor', {
-    expenseFunction: 'financiero',
-  }),
+  I(
+    '5.4.002',
+    'Gastos y comisiones bancarias',
+    'gastos_financieros',
+    'deudor',
+    {
+      expenseFunction: 'financiero',
+    }
+  ),
   I(
     '5.4.003',
     'Diferencias de cambio negativas',
@@ -362,7 +440,10 @@ export const BASE_CHART: BaseAccountSeed[] = [
     'deudor',
     { expenseFunction: 'financiero' }
   ),
+  // Contrapartida global del ajuste por inflación. No se reexpresa: es el
+  // residuo que cuadra el asiento (método indirecto).
   I('5.4.004', 'RECPAM', 'gastos_financieros', 'ambos', {
+    inflationNature: 'resultado_por_diferencia',
     expenseFunction: 'financiero',
   }),
 
@@ -387,7 +468,9 @@ export function parentCodeOf(code: string): string | null {
  * unicidad de códigos, jerarquía (padre existe, padre es agrupación, sin ciclos),
  * rubros/atributos válidos, y existencia de la cuenta de sistema pending_review.
  */
-export function validateBaseChart(chart: BaseAccountSeed[] = BASE_CHART): string[] {
+export function validateBaseChart(
+  chart: BaseAccountSeed[] = BASE_CHART
+): string[] {
   const errors: string[] = [];
   const byCode = new Map<string, BaseAccountSeed>();
 
@@ -402,7 +485,9 @@ export function validateBaseChart(chart: BaseAccountSeed[] = BASE_CHART): string
 
     // 2. Jerarquía: el padre debe existir y ser una agrupación.
     if (parent !== null && !byCode.has(parent)) {
-      errors.push(`Cuenta ${a.code}: el padre "${parent}" no existe en el plan`);
+      errors.push(
+        `Cuenta ${a.code}: el padre "${parent}" no existe en el plan`
+      );
     } else if (parent !== null && byCode.get(parent)?.type === 'imputable') {
       errors.push(
         `Cuenta ${a.code}: su padre "${parent}" es imputable (debe ser agrupación)`
@@ -422,6 +507,31 @@ export function validateBaseChart(chart: BaseAccountSeed[] = BASE_CHART): string
       errors.push(
         `Cuenta ${a.code}: expenseFunction inválido "${a.expenseFunction}"`
       );
+    }
+    if (
+      a.cashFlowActivity &&
+      !VALID_CASH_FLOW_ACTIVITY.has(a.cashFlowActivity)
+    ) {
+      errors.push(
+        `Cuenta ${a.code}: cashFlowActivity inválido "${a.cashFlowActivity}"`
+      );
+    }
+    if (a.inflationNature && !VALID_INFLATION_NATURE.has(a.inflationNature)) {
+      errors.push(
+        `Cuenta ${a.code}: inflationNature inválido "${a.inflationNature}"`
+      );
+    }
+    if (a.inflationTargetCode) {
+      const target = byCode.get(a.inflationTargetCode);
+      if (!target) {
+        errors.push(
+          `Cuenta ${a.code}: inflationTargetCode "${a.inflationTargetCode}" no existe en el plan base`
+        );
+      } else if (target.type !== 'imputable') {
+        errors.push(
+          `Cuenta ${a.code}: inflationTargetCode "${a.inflationTargetCode}" no es imputable`
+        );
+      }
     }
 
     // Las imputables requieren rubro y saldo esperado.
