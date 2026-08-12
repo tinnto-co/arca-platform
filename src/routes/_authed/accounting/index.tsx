@@ -8884,6 +8884,8 @@ const AUDIT_EVENT_LABELS: Record<AuditEventType, string> = {
   account_created: 'Cuenta creada',
   account_deactivated: 'Cuenta desactivada',
   financial_statement_approved: 'EECC aprobados',
+  inflation_adjustment_applied: 'Ajuste por inflación aplicado',
+  inflation_adjustment_voided: 'Ajuste por inflación anulado',
 };
 
 function describeAuditEvent(e: AuditLogEntry): string {

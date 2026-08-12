@@ -987,6 +987,8 @@ async function applyAdjustment(
       actorTipo: 'user',
       actorId: userId,
       detalle: {
+        // `accion` es la clave por la que filtra el log de auditoría.
+        accion: 'inflation_adjustment_applied',
         ejercicioId: fiscalYearId,
         asientoNumero: number,
         recpam: preview.recpam,
@@ -1065,6 +1067,7 @@ async function voidAdjustment(
       actorTipo: 'user',
       actorId: userId,
       detalle: {
+        accion: 'inflation_adjustment_voided',
         ejercicioId: fiscalYearId,
         recpam: Number(adj.recpam),
         asientoId: adj.asientoId,

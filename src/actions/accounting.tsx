@@ -33,6 +33,16 @@ import {
   plantillaInformeAuditor,
 } from '@/drizzle/schema';
 import { user } from '@/drizzle/auth';
+import { nextEntryNumber } from '@/lib/accounting-posting-db';
+import type { LayoutEntry } from '@/lib/accounting-document';
+import {
+  buildClosingEntries,
+  type ClosingLine,
+  type ClosingEntryPreview,
+  type ResultadoAccount,
+} from '@/lib/accounting-closing';
+// Re-export: el route los consume desde acá desde antes del refactor a la lib.
+export type { ClosingLine, ClosingEntryPreview };
 import {
   getSessionWithOrg,
   getMemberRole,
@@ -66,6 +76,7 @@ import {
   EXPENSE_FUNCTION_LABELS,
   type AccountGroup,
   CASH_FLOW_ACTIVITY_FROM_DB,
+  type AccountingFramework,
 } from '@/lib/accounting-labels';
 import {
   CASH_FLOW_ACTIVITY_LABELS,
@@ -1308,6 +1319,13 @@ export const createFiscalYear = createServerFn({ method: 'POST' })
       clientId: z.string().uuid(),
       startDate: z.string(), // YYYY-MM-DD
       endDate: z.string(),
+      /**
+       * Ejercicio cargado solo para la columna comparativa, con los saldos del
+       * balance ya presentado. No se lleva contablemente.
+       */
+      referenceOnly: z.boolean().default(false),
+      /** Los saldos que se van a cargar ya están ajustados por inflación. */
+      statementsAdjusted: z.boolean().default(true),
     })
   )
   .handler(async (ctx) => {
@@ -1346,21 +1364,25 @@ export const createFiscalYear = createServerFn({ method: 'POST' })
       throw new Error('El ejercicio debe durar entre 1 y 12 meses calendario');
     }
 
-    // Un solo ejercicio abierto por empresa.
-    const [openFy] = await db
-      .select({ id: ejercicio.id })
-      .from(ejercicio)
-      .where(
-        and(
-          eq(ejercicio.clienteId, clientId),
-          inArray(ejercicio.estado, ['abierto', 'en_cierre'])
+    // Un solo ejercicio abierto por empresa. Los de referencia no cuentan: no
+    // se llevan contablemente, solo guardan los saldos del balance anterior.
+    if (!ctx.data.referenceOnly) {
+      const [openFy] = await db
+        .select({ id: ejercicio.id })
+        .from(ejercicio)
+        .where(
+          and(
+            eq(ejercicio.clienteId, clientId),
+            inArray(ejercicio.estado, ['abierto', 'en_cierre']),
+            eq(ejercicio.soloReferencia, false)
+          )
         )
-      )
-      .limit(1);
-    if (openFy) {
-      throw new Error(
-        'Ya hay un ejercicio abierto para esta empresa. Cerralo antes de crear uno nuevo'
-      );
+        .limit(1);
+      if (openFy) {
+        throw new Error(
+          'Ya hay un ejercicio abierto para esta empresa. Cerralo antes de crear uno nuevo'
+        );
+      }
     }
 
     const [{ maxNum }] = await db
@@ -1378,6 +1400,8 @@ export const createFiscalYear = createServerFn({ method: 'POST' })
         clienteId: clientId,
         fechaDesde: start,
         fechaHasta: end,
+        soloReferencia: ctx.data.referenceOnly,
+        estadosAjustados: ctx.data.statementsAdjusted,
         estado: 'abierto',
         numero: number,
       })
@@ -1774,6 +1798,8 @@ export const AUDIT_EVENT_TYPES = [
   'account_created',
   'account_deactivated',
   'financial_statement_approved',
+  'inflation_adjustment_applied',
+  'inflation_adjustment_voided',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
@@ -4428,6 +4454,8 @@ export interface MembreteData {
   /** Columna `date`: string `YYYY-MM-DD`. */
   fechaInscripcion: string | null;
   numeroInscripcion: string;
+  /** Norma bajo la que se preparan los EECC: define cómo se cita el ajuste. */
+  accountingFramework: AccountingFramework;
   accountant: AccountantSignatureData | null;
 }
 
@@ -4448,6 +4476,7 @@ export const getMembreteData = createServerFn({ method: 'GET' })
         actividadPrincipal: clienteEeccConfig.actividadPrincipal,
         fechaInscripcion: clienteEeccConfig.fechaInscripcionRpc,
         numeroInscripcion: clienteEeccConfig.numeroIgj,
+        accountingFramework: cliente.marcoContable,
       })
       .from(cliente)
       .leftJoin(clienteEeccConfig, eq(clienteEeccConfig.clienteId, cliente.id))
@@ -4463,6 +4492,7 @@ export const getMembreteData = createServerFn({ method: 'GET' })
       actividadPrincipal: c?.actividadPrincipal ?? '',
       fechaInscripcion: c?.fechaInscripcion ?? null,
       numeroInscripcion: c?.numeroInscripcion ?? '',
+      accountingFramework: c?.accountingFramework ?? 'rt54',
       accountant: sig,
     };
   });
@@ -4582,6 +4612,7 @@ export const updateClientFiscalData = createServerFn({ method: 'POST' })
       actividadPrincipal: z.string().max(300).nullable().optional(),
       fechaInscripcion: z.string().nullable().optional(), // YYYY-MM-DD
       numeroInscripcion: z.string().max(60).nullable().optional(),
+      accountingFramework: z.enum(['rt54', 'rt6']).optional(),
     })
   )
   .handler(async (ctx) => {
@@ -4590,12 +4621,17 @@ export const updateClientFiscalData = createServerFn({ method: 'POST' })
     assertOwner(role);
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
 
-    // El domicilio es identidad fiscal (vive en `cliente`); los datos de
-    // inscripción son configuración de balances (`cliente_eecc_config`).
-    if (ctx.data.address !== undefined) {
+    // El domicilio y la norma contable son identidad fiscal (viven en
+    // `cliente`); los datos de inscripción son configuración de balances
+    // (`cliente_eecc_config`).
+    const clienteSet: Partial<typeof cliente.$inferInsert> = {};
+    if (ctx.data.address !== undefined) clienteSet.domicilio = ctx.data.address;
+    if (ctx.data.accountingFramework !== undefined)
+      clienteSet.marcoContable = ctx.data.accountingFramework;
+    if (Object.keys(clienteSet).length > 0) {
       await db
         .update(cliente)
-        .set({ domicilio: ctx.data.address })
+        .set(clienteSet)
         .where(eq(cliente.id, ctx.data.clientId));
     }
 
@@ -4873,26 +4909,33 @@ export const getAnexoI = createServerFn({ method: 'GET' })
     }
     const suggestionLines = [...debitMap.values(), ...creditMap.values()];
 
-    // Comparativo con el ejercicio anterior (número - 1), si existe.
+    // Comparativo con el ejercicio anterior, si existe. El modelo de EECC lo
+    // expone como una columna «Neto al cierre del ejercicio anterior» con un
+    // importe por rubro, no como un total suelto al pie: por eso se devuelve
+    // desagregado por bien y por categoría.
     let prior: {
       number: number;
       grandTotals: ReturnType<typeof emptyTotals>;
+      /** Neto al cierre del ejercicio anterior, por id de bien. */
+      residualByAsset: Record<string, number>;
+      /** Ídem, por categoría. */
+      residualByCategory: Record<string, number>;
     } | null = null;
-    const [priorFy] = await db
-      .select()
-      .from(ejercicio)
-      .where(
-        and(
-          eq(ejercicio.clienteId, clientId),
-          eq(ejercicio.numero, fy.numero - 1)
-        )
-      )
-      .limit(1);
+    const priorFy = await loadPriorFiscalYear(clientId, fy);
     if (priorFy) {
       const priorRows = await computeAnexoIRows(clientId, priorFy);
+      const priorGrouped = groupAnexoI(priorRows);
+      const residualByAsset: Record<string, number> = {};
+      const residualByCategory: Record<string, number> = {};
+      for (const cat of priorGrouped.categories) {
+        residualByCategory[cat.category] = cat.totals.residualEnd;
+        for (const a of cat.assets) residualByAsset[a.id] = a.residualEnd;
+      }
       prior = {
         number: priorFy.numero,
-        grandTotals: groupAnexoI(priorRows).grandTotals,
+        grandTotals: priorGrouped.grandTotals,
+        residualByAsset,
+        residualByCategory,
       };
     }
 
@@ -4915,10 +4958,27 @@ export const getAnexoI = createServerFn({ method: 'GET' })
 
 /* ════════════════════ Cierre de ejercicio — checklist (US 5.1.1) ════════════════════ */
 
+/**
+ * Resultado del ejercicio en moneda de cierre: positivo = ganancia.
+ *
+ * Los saldos vienen en signo contable (debe − haber), así que los ingresos son
+ * negativos y los gastos positivos: la ganancia es la suma cambiada de signo.
+ */
+async function fiscalYearResult(orgId: string, fyId: string): Promise<number> {
+  const RESULT = new Set<string>(RESULT_ACCOUNT_GROUPS);
+  const balances = await computeEspBalances(orgId, fyId);
+  return r2(
+    -balances
+      .filter((b) => b.group && RESULT.has(b.group))
+      .reduce((s, b) => s + b.saldo, 0)
+  );
+}
+
 export interface YearEndCheck {
-  key: 'periods' | 'pending_review' | 'balance' | 'rules';
+  key: 'periods' | 'pending_review' | 'balance' | 'rules' | 'income_tax';
   label: string;
-  status: 'pass' | 'fail';
+  /** `warn` avisa pero no bloquea el cierre: es criterio del contador. */
+  status: 'pass' | 'fail' | 'warn';
   detail: string;
 }
 export interface YearEndChecklist {
@@ -4946,6 +5006,12 @@ export const getYearEndChecklist = createServerFn({ method: 'GET' })
     const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
 
     const checks: YearEndCheck[] = [];
+    /** Importe con separadores, para que los detalles se puedan leer. */
+    const money = (n: number) =>
+      n.toLocaleString('es-AR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
 
     // 1) Todos los períodos cerrados.
     const periods = await db
@@ -4959,7 +5025,7 @@ export const getYearEndChecklist = createServerFn({ method: 'GET' })
     const open = periods.filter((p) => p.status !== 'cerrado');
     checks.push({
       key: 'periods',
-      label: 'Los 12 períodos del ejercicio están cerrados',
+      label: 'Cierre de los 12 períodos del ejercicio',
       status: open.length === 0 ? 'pass' : 'fail',
       detail:
         open.length === 0
@@ -4983,7 +5049,7 @@ export const getYearEndChecklist = createServerFn({ method: 'GET' })
       );
     checks.push({
       key: 'pending_review',
-      label: 'No hay asientos en pendiente de revisión',
+      label: 'Asientos pendientes de revisión',
       status: (pend ?? 0) === 0 ? 'pass' : 'fail',
       detail:
         (pend ?? 0) === 0
@@ -5005,12 +5071,12 @@ export const getYearEndChecklist = createServerFn({ method: 'GET' })
     const diff = r2(totalDebit - totalCredit);
     checks.push({
       key: 'balance',
-      label: 'El ejercicio balancea (Debe = Haber)',
+      label: 'Balance del ejercicio (Debe = Haber)',
       status: Math.abs(diff) < 0.005 ? 'pass' : 'fail',
       detail:
         Math.abs(diff) < 0.005
-          ? `Debe = Haber = $ ${totalDebit.toFixed(2)}`
-          : `Diferencia de $ ${diff.toFixed(2)} entre Debe y Haber`,
+          ? `Debe = Haber = $ ${money(totalDebit)}`
+          : `Diferencia de $ ${money(diff)} entre Debe y Haber`,
     });
 
     // 4) Reglas de mapeo activas con condiciones consistentes.
@@ -5037,7 +5103,7 @@ export const getYearEndChecklist = createServerFn({ method: 'GET' })
     });
     checks.push({
       key: 'rules',
-      label: 'Reglas de mapeo con condiciones consistentes',
+      label: 'Consistencia de las reglas de mapeo',
       status: badRules.length === 0 ? 'pass' : 'fail',
       detail:
         badRules.length === 0
@@ -5045,11 +5111,60 @@ export const getYearEndChecklist = createServerFn({ method: 'GET' })
           : `Reglas con condición inválida: ${badRules.map((r) => r.name).join(', ')}`,
     });
 
+    // 5) Provisión del impuesto a las ganancias. Solo avisa: si corresponde
+    //    provisionar, cuánto y con qué ajustes es criterio del contador, y el
+    //    sistema no tiene cómo saberlo. Lo que sí puede es que no se pase por
+    //    alto, que es el error caro.
+    const taxAccounts = await db
+      .select({ id: cuenta.id })
+      .from(cuenta)
+      .where(
+        and(
+          eq(cuenta.orgId, orgId),
+          eq(cuenta.rubro, 'impuesto_ganancias'),
+          sql`(${cuenta.alcance} = 'base' OR ${cuenta.clienteId} = ${clientId})`
+        )
+      );
+    const taxIds = taxAccounts.map((a) => a.id);
+    const [tax] = taxIds.length
+      ? await db
+          .select({
+            total: sql<string>`coalesce(sum(${asientoLinea.debe} - ${asientoLinea.haber}),0)`,
+          })
+          .from(asientoLinea)
+          .innerJoin(asiento, eq(asiento.id, asientoLinea.asientoId))
+          .where(
+            and(
+              eq(asiento.ejercicioId, fy.id),
+              eq(asiento.anulado, false),
+              inArray(asientoLinea.cuentaId, taxIds)
+            )
+          )
+      : [{ total: '0' }];
+    const provision = r2(parseFloat(tax?.total ?? '0'));
+
+    // Sin ganancia no hay impuesto que provisionar, así que no se avisa: un
+    // aviso que salta cuando no corresponde enseña a ignorarlo.
+    const resultado = await fiscalYearResult(orgId, fy.id);
+    const hayGanancia = resultado > 0.005;
+    checks.push({
+      key: 'income_tax',
+      label: 'Provisión del impuesto a las ganancias',
+      status: Math.abs(provision) >= 0.005 || !hayGanancia ? 'pass' : 'warn',
+      detail:
+        Math.abs(provision) >= 0.005
+          ? `Provisionado $ ${money(provision)}`
+          : hayGanancia
+            ? `El ejercicio cierra con ganancia de $ ${money(resultado)} y no tiene provisión cargada. Si corresponde, asentala antes de refundir.`
+            : 'El ejercicio no cierra con ganancia: no hay impuesto que provisionar',
+    });
+
     return {
       fiscalYearNumber: fy.numero,
       fiscalYearStatus: fy.estado,
+      // Los avisos no bloquean: solo los chequeos que el sistema puede afirmar.
       canClose:
-        fy.estado === 'abierto' && checks.every((c) => c.status === 'pass'),
+        fy.estado === 'abierto' && checks.every((c) => c.status !== 'fail'),
       checks,
     };
   });
@@ -5099,150 +5214,6 @@ async function computeFyBalances(
       saldo: r2(parseFloat(r.debit) - parseFloat(r.credit)),
     }))
     .filter((r) => Math.abs(r.saldo) > 0.005);
-}
-
-export interface ClosingLine {
-  accountId: string;
-  code: string;
-  name: string;
-  debit: number;
-  credit: number;
-}
-export interface ClosingEntryPreview {
-  lines: ClosingLine[];
-  totalDebit: number;
-  totalCredit: number;
-  balanced: boolean;
-}
-
-interface ResultadoAccount {
-  id: string;
-  code: string;
-  name: string;
-}
-
-/** Construye los asientos de refundición y cierre patrimonial a partir de los saldos. */
-function buildClosingEntries(
-  balances: FyAccountBalance[],
-  resultado: ResultadoAccount
-): {
-  refundicion: ClosingEntryPreview;
-  cierre: ClosingEntryPreview;
-  apertura: ClosingEntryPreview;
-  net: number; // >0 ganancia, <0 pérdida
-} {
-  const RESULT = new Set<string>(RESULT_ACCOUNT_GROUPS);
-  const resultAccts = balances.filter((b) => b.group && RESULT.has(b.group));
-  const patrimonial = balances.filter((b) => !b.group || !RESULT.has(b.group));
-
-  // ── Refundición: lleva cada cuenta de resultado a cero contra Resultado del ejercicio.
-  const refLines: ClosingLine[] = [];
-  let net = 0; // ingresos − gastos
-  for (const a of resultAccts) {
-    if (a.saldo > 0) {
-      // saldo deudor (gasto/costo) → al Haber para cancelar
-      refLines.push({
-        accountId: a.accountId,
-        code: a.code,
-        name: a.name,
-        debit: 0,
-        credit: a.saldo,
-      });
-      net -= a.saldo;
-    } else {
-      // saldo acreedor (ingreso) → al Debe para cancelar
-      refLines.push({
-        accountId: a.accountId,
-        code: a.code,
-        name: a.name,
-        debit: -a.saldo,
-        credit: 0,
-      });
-      net += -a.saldo;
-    }
-  }
-  const netR = r2(net);
-  if (Math.abs(netR) > 0.005) {
-    // Resultado del ejercicio: ganancia → Haber (PN aumenta); pérdida → Debe.
-    refLines.push({
-      accountId: resultado.id,
-      code: resultado.code,
-      name: resultado.name,
-      debit: netR < 0 ? -netR : 0,
-      credit: netR > 0 ? netR : 0,
-    });
-  }
-
-  // ── Cierre patrimonial: saldos patrimoniales + el Resultado del ejercicio ya refundido.
-  const cierreBalances = patrimonial.map((b) => ({ ...b }));
-  const idx = cierreBalances.findIndex((b) => b.accountId === resultado.id);
-  if (idx >= 0) {
-    cierreBalances[idx].saldo = r2(cierreBalances[idx].saldo - netR);
-  } else if (Math.abs(netR) > 0.005) {
-    cierreBalances.push({
-      accountId: resultado.id,
-      code: resultado.code,
-      name: resultado.name,
-      group: RESULT_TARGET_GROUP,
-      saldo: r2(-netR), // ganancia → acreedor
-    });
-  }
-
-  const cierreLines: ClosingLine[] = [];
-  const aperturaLines: ClosingLine[] = [];
-  for (const b of cierreBalances) {
-    if (Math.abs(b.saldo) < 0.005) continue;
-    if (b.saldo > 0) {
-      // deudor (activo) → cierre lo lleva al Haber; apertura lo reabre al Debe
-      cierreLines.push({
-        accountId: b.accountId,
-        code: b.code,
-        name: b.name,
-        debit: 0,
-        credit: b.saldo,
-      });
-      aperturaLines.push({
-        accountId: b.accountId,
-        code: b.code,
-        name: b.name,
-        debit: b.saldo,
-        credit: 0,
-      });
-    } else {
-      cierreLines.push({
-        accountId: b.accountId,
-        code: b.code,
-        name: b.name,
-        debit: -b.saldo,
-        credit: 0,
-      });
-      aperturaLines.push({
-        accountId: b.accountId,
-        code: b.code,
-        name: b.name,
-        debit: 0,
-        credit: -b.saldo,
-      });
-    }
-  }
-
-  const summarize = (lines: ClosingLine[]): ClosingEntryPreview => {
-    const totalDebit = r2(lines.reduce((s, l) => s + l.debit, 0));
-    const totalCredit = r2(lines.reduce((s, l) => s + l.credit, 0));
-    return {
-      lines,
-      totalDebit,
-      totalCredit,
-      balanced: Math.abs(totalDebit - totalCredit) < 0.005,
-    };
-  };
-
-  return {
-    refundicion: summarize(refLines),
-    cierre: summarize(cierreLines),
-    apertura: summarize(aperturaLines),
-    net: netR,
-  };
 }
 
 /** Cuenta de sistema "Resultado del ejercicio". */
@@ -5329,6 +5300,13 @@ export interface ClosingWizardState {
   cierre: ClosingStageView;
   apertura: ClosingStageView & {
     nextFy: { number: number; startDate: string; endDate: string } | null;
+  };
+  /** Ajuste por inflación: tiene que estar aplicado y al día antes de refundir. */
+  inflation: {
+    applied: boolean;
+    stale: boolean;
+    recpam: number | null;
+    journalEntryNumber: number | null;
   };
 }
 
@@ -5443,6 +5421,7 @@ export const getClosingWizard = createServerFn({ method: 'GET' })
           endDate: nd.end,
         },
       },
+      inflation: await loadInflationStatus(fy.id),
     };
   });
 
@@ -5497,6 +5476,22 @@ export const approveClosingStage = createServerFn({ method: 'POST' })
 
     if (stage === 'refundicion' && refDone)
       throw new Error('La refundición ya fue registrada');
+
+    // El ajuste por inflación va antes de la refundición: después, las cuentas de
+    // resultado quedan refundidas y el balance saldría en valores históricos.
+    if (stage === 'refundicion') {
+      const inflation = await loadInflationStatus(fy.id);
+      if (!inflation.applied) {
+        throw new Error(
+          'Falta generar el ajuste por inflación del ejercicio. Hacelo en la solapa «Ajuste por inflación» antes de refundir.'
+        );
+      }
+      if (inflation.stale) {
+        throw new Error(
+          'El ajuste por inflación quedó desactualizado: se cargaron asientos después de generarlo. Regeneralo antes de refundir.'
+        );
+      }
+    }
     if (stage === 'cierre') {
       if (!refDone) throw new Error('Primero registrá la refundición');
       if (cierreDone)
@@ -5559,44 +5554,100 @@ export const approveClosingStage = createServerFn({ method: 'POST' })
       };
 
       if (stage === 'apertura') {
-        // Crea el próximo ejercicio (si no existe) + asiento de apertura.
         const nd = nextFyDates(fy.fechaHasta);
         const sY = periodoYear(nd.start);
         const sM = periodoMonth(nd.start) - 1;
-        const [nfy] = await tx
-          .insert(ejercicio)
-          .values({
-            orgId,
-            clienteId: clientId,
-            fechaDesde: nd.start,
-            fechaHasta: nd.end,
-            estado: 'abierto',
-            numero: fy.numero + 1,
-          })
-          .returning();
-        const periods = Array.from({ length: 12 }, (_, i) => {
-          const d = new Date(Date.UTC(sY, sM + i, 1));
-          return {
-            ejercicioId: nfy.id,
-            clienteId: clientId,
-            periodo: periodoDate(d.getUTCFullYear(), d.getUTCMonth() + 1),
-            estado: 'abierto' as const,
-          };
-        });
-        const inserted = await tx
-          .insert(periodoContable)
-          .values(periods)
-          .returning();
-        const first = inserted.find((p) => p.periodo === periods[0].periodo)!;
+
+        // El ejercicio siguiente puede existir ya, porque se creó a mano o
+        // porque alguien reintentó esta etapa. Reusarlo en vez de insertar sin
+        // mirar: si no, quedan dos ejercicios con las mismas fechas y los
+        // saldos se arrastran dos veces. El asistente esconde el botón cuando
+        // la apertura ya está hecha, pero eso protege la pantalla, no el dato.
+        const [existing] = await tx
+          .select()
+          .from(ejercicio)
+          .where(
+            and(
+              eq(ejercicio.clienteId, clientId),
+              eq(ejercicio.fechaDesde, nd.start)
+            )
+          )
+          .limit(1);
+
+        let nfy = existing;
+        let first: { id: string };
+
+        if (nfy) {
+          const [already] = await tx
+            .select({ numero: asiento.numero })
+            .from(asiento)
+            .where(
+              and(
+                eq(asiento.ejercicioId, nfy.id),
+                eq(asiento.origenTipo, 'apertura'),
+                eq(asiento.anulado, false)
+              )
+            )
+            .limit(1);
+          if (already) {
+            throw new Error(
+              `El Ejercicio N°${nfy.numero} ya tiene su asiento de apertura (N°${already.numero}). Anulalo antes de volver a registrarla.`
+            );
+          }
+          const [p] = await tx
+            .select({ id: periodoContable.id })
+            .from(periodoContable)
+            .where(
+              and(
+                eq(periodoContable.ejercicioId, nfy.id),
+                eq(periodoContable.periodo, periodoDate(sY, sM + 1))
+              )
+            )
+            .limit(1);
+          if (!p) {
+            throw new Error(
+              `El Ejercicio N°${nfy.numero} no tiene generado el período ${sM + 1}/${sY}.`
+            );
+          }
+          first = p;
+        } else {
+          [nfy] = await tx
+            .insert(ejercicio)
+            .values({
+              orgId,
+              clienteId: clientId,
+              fechaDesde: nd.start,
+              fechaHasta: nd.end,
+              estado: 'abierto',
+              numero: fy.numero + 1,
+            })
+            .returning();
+          const periods = Array.from({ length: 12 }, (_, i) => {
+            const d = new Date(Date.UTC(sY, sM + i, 1));
+            return {
+              ejercicioId: nfy.id,
+              clienteId: clientId,
+              periodo: periodoDate(d.getUTCFullYear(), d.getUTCMonth() + 1),
+              estado: 'abierto' as const,
+            };
+          });
+          const inserted = await tx
+            .insert(periodoContable)
+            .values(periods)
+            .returning();
+          first = inserted.find((p) => p.periodo === periods[0].periodo)!;
+        }
+
+        const number = await nextEntryNumber(tx, clientId, nfy.id);
         await insertEntry(
           nfy.id,
           first.id,
           nd.start,
-          1,
+          number,
           'apertura',
           `Asiento de apertura · Ejercicio N°${nfy.numero}`
         );
-        return { entryNumber: 1, nextFyNumber: nfy.numero };
+        return { entryNumber: number, nextFyNumber: nfy.numero };
       }
 
       // Refundición / cierre: número consecutivo del ejercicio.
@@ -5914,7 +5965,24 @@ export interface EspResult {
   balancedCurrent: boolean;
   balancedPrior: boolean;
   hasPrior: boolean;
+  /** Coeficiente con el que se reexpresó la columna anterior. null = quedó histórica. */
+  priorCoefficient: number | null;
+  /**
+   * El ajuste por inflación del ejercicio está generado. Si es false y la vista
+   * es 'ajustado', los importes son históricos: el estado no puede decir que
+   * está en moneda homogénea.
+   */
+  inflationApplied: boolean;
+  /**
+   * El ejercicio anterior tiene su propio ajuste aplicado. Si es false, sus
+   * cifras están en moneda heterogénea y multiplicarlas por un coeficiente no
+   * las homogeneiza: el comparativo es aproximado y hay que decirlo.
+   */
+  priorInflationApplied: boolean;
 }
+
+/** Contrapartida del ajuste por inflación; se expone en su propia línea del ER. */
+const RECPAM_ACCOUNT_CODE = '5.4.004';
 
 const ESP_SECTIONS = ACCOUNT_GROUP_SECTIONS.filter(
   (s) => s.section !== 'Resultados'
@@ -5923,7 +5991,11 @@ const ESP_SECTIONS = ACCOUNT_GROUP_SECTIONS.filter(
 /** Estado de Situación Patrimonial comparativo (actual vs anterior). (US 6.1.1/6.1.2) */
 export const getESP = createServerFn({ method: 'GET' })
   .validator(
-    z.object({ clientId: z.string().uuid(), fiscalYearId: z.string().uuid() })
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid(),
+      view: z.enum(['ajustado', 'historico']).default('ajustado'),
+    })
   )
   .handler(async (ctx): Promise<EspResult> => {
     const { orgId } = await getSessionWithOrg();
@@ -5931,19 +6003,26 @@ export const getESP = createServerFn({ method: 'GET' })
     await ensureClientBelongsToOrg(clientId, orgId);
     const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
 
-    const [priorFy] = await db
-      .select()
-      .from(ejercicio)
-      .where(
-        and(
-          eq(ejercicio.clienteId, clientId),
-          eq(ejercicio.numero, fy.numero - 1)
-        )
-      )
-      .limit(1);
+    const priorFy = await loadPriorFiscalYear(clientId, fy);
 
-    const curBal = await computeEspBalances(orgId, fy.id);
-    const priBal = priorFy ? await computeEspBalances(orgId, priorFy.id) : [];
+    const curBal = await computeEspBalances(orgId, fy.id, ctx.data.view);
+    let priBal = priorFy
+      ? await computeEspBalances(orgId, priorFy.id, ctx.data.view)
+      : [];
+
+    // El comparativo se reexpresa a la moneda de cierre actual (ver
+    // priorColumnCoefficient). En la vista histórica se deja como está.
+    let priorCoefficient: number | null = null;
+    if (priorFy && ctx.data.view === 'ajustado') {
+      priorCoefficient = await priorColumnCoefficient(
+        fy.fechaHasta,
+        priorFy.fechaHasta
+      );
+      if (priorCoefficient !== null) {
+        const k = priorCoefficient;
+        priBal = priBal.map((b) => ({ ...b, saldo: r2(b.saldo * k) }));
+      }
+    }
     const curMap = new Map(curBal.map((b) => [b.accountId, b]));
     const priMap = new Map(priBal.map((b) => [b.accountId, b]));
 
@@ -6058,6 +6137,14 @@ export const getESP = createServerFn({ method: 'GET' })
         ? Math.abs(totals.activo.prior - totals.pasivoMasPn.prior) < 0.005
         : true,
       hasPrior: !!priorFy,
+      priorCoefficient,
+      inflationApplied: (await loadInflationStatus(fy.id)).applied,
+      priorInflationApplied: priorFy
+        ? priorFiguresAreHomogeneous(
+            priorFy,
+            (await loadInflationStatus(priorFy.id)).applied
+          )
+        : true,
     };
   });
 
@@ -6084,6 +6171,20 @@ export interface ErResult {
   matchesEspCurrent: boolean;
   matchesEspPrior: boolean;
   hasPrior: boolean;
+  /** Coeficiente con el que se reexpresó la columna anterior. null = quedó histórica. */
+  priorCoefficient: number | null;
+  /**
+   * El ajuste por inflación del ejercicio está generado. Si es false y la vista
+   * es 'ajustado', los importes son históricos: el estado no puede decir que
+   * está en moneda homogénea.
+   */
+  inflationApplied: boolean;
+  /**
+   * El ejercicio anterior tiene su propio ajuste aplicado. Si es false, sus
+   * cifras están en moneda heterogénea y multiplicarlas por un coeficiente no
+   * las homogeneiza: el comparativo es aproximado y hay que decirlo.
+   */
+  priorInflationApplied: boolean;
 }
 
 /** Líneas de componentes del ER (los subtotales se intercalan al armar). */
@@ -6124,7 +6225,11 @@ const ER_COMPONENTS: {
 /** Estado de Resultados comparativo (actual vs anterior). (US 6.2.1/6.2.2) */
 export const getER = createServerFn({ method: 'GET' })
   .validator(
-    z.object({ clientId: z.string().uuid(), fiscalYearId: z.string().uuid() })
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid(),
+      view: z.enum(['ajustado', 'historico']).default('ajustado'),
+    })
   )
   .handler(async (ctx): Promise<ErResult> => {
     const { orgId } = await getSessionWithOrg();
@@ -6132,19 +6237,26 @@ export const getER = createServerFn({ method: 'GET' })
     await ensureClientBelongsToOrg(clientId, orgId);
     const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
 
-    const [priorFy] = await db
-      .select()
-      .from(ejercicio)
-      .where(
-        and(
-          eq(ejercicio.clienteId, clientId),
-          eq(ejercicio.numero, fy.numero - 1)
-        )
-      )
-      .limit(1);
+    const priorFy = await loadPriorFiscalYear(clientId, fy);
 
-    const curBal = await computeEspBalances(orgId, fy.id);
-    const priBal = priorFy ? await computeEspBalances(orgId, priorFy.id) : [];
+    const curBal = await computeEspBalances(orgId, fy.id, ctx.data.view);
+    let priBal = priorFy
+      ? await computeEspBalances(orgId, priorFy.id, ctx.data.view)
+      : [];
+
+    // El comparativo se reexpresa a la moneda de cierre actual (ver
+    // priorColumnCoefficient). En la vista histórica se deja como está.
+    let priorCoefficient: number | null = null;
+    if (priorFy && ctx.data.view === 'ajustado') {
+      priorCoefficient = await priorColumnCoefficient(
+        fy.fechaHasta,
+        priorFy.fechaHasta
+      );
+      if (priorCoefficient !== null) {
+        const k = priorCoefficient;
+        priBal = priBal.map((b) => ({ ...b, saldo: r2(b.saldo * k) }));
+      }
+    }
     const curMap = new Map(curBal.map((b) => [b.accountId, b]));
     const priMap = new Map(priBal.map((b) => [b.accountId, b]));
 
@@ -6184,6 +6296,33 @@ export const getER = createServerFn({ method: 'GET' })
     const comp = new Map(
       ER_COMPONENTS.map((c) => [c.key, { ...c, ...buildComponent(c.groups) }])
     );
+
+    // El RECPAM vive en el rubro "Gastos financieros" del plan de cuentas, pero
+    // en el estado se expone como línea propia: es el resultado del ajuste por
+    // inflación, no un gasto de financiación. Así lo presenta el estudio.
+    const finComp = comp.get('gastos_financieros')!;
+    const recpamAccounts = finComp.accounts.filter(
+      (a) => a.code === RECPAM_ACCOUNT_CODE
+    );
+    if (recpamAccounts.length > 0) {
+      const rest = finComp.accounts.filter(
+        (a) => a.code !== RECPAM_ACCOUNT_CODE
+      );
+      comp.set('gastos_financieros', {
+        ...finComp,
+        accounts: rest,
+        current: r2(rest.reduce((t, a) => t + a.current, 0)),
+        prior: r2(rest.reduce((t, a) => t + a.prior, 0)),
+      });
+      comp.set('recpam', {
+        key: 'recpam',
+        label: 'RECPAM',
+        groups: [],
+        accounts: recpamAccounts,
+        current: r2(recpamAccounts.reduce((t, a) => t + a.current, 0)),
+        prior: r2(recpamAccounts.reduce((t, a) => t + a.prior, 0)),
+      });
+    }
     const compLine = (key: string): ErLine => {
       const c = comp.get(key)!;
       return {
@@ -6205,6 +6344,7 @@ export const getER = createServerFn({ method: 'GET' })
     const admin = comp.get('gastos_administracion')!;
     const comerc = comp.get('gastos_comercializacion')!;
     const fin = comp.get('gastos_financieros')!;
+    const recpam = comp.get('recpam');
     const otros = comp.get('otros_resultados')!;
     const resOperativo = {
       current: r2(
@@ -6212,10 +6352,16 @@ export const getER = createServerFn({ method: 'GET' })
           admin.current +
           comerc.current +
           fin.current +
+          (recpam?.current ?? 0) +
           otros.current
       ),
       prior: r2(
-        resBruto.prior + admin.prior + comerc.prior + fin.prior + otros.prior
+        resBruto.prior +
+          admin.prior +
+          comerc.prior +
+          fin.prior +
+          (recpam?.prior ?? 0) +
+          otros.prior
       ),
     };
     const impuesto = comp.get('impuesto_ganancias')!;
@@ -6244,6 +6390,7 @@ export const getER = createServerFn({ method: 'GET' })
       compLine('gastos_administracion'),
       compLine('gastos_comercializacion'),
       compLine('gastos_financieros'),
+      ...(comp.has('recpam') ? [compLine('recpam')] : []),
       compLine('otros_resultados'),
       subtotal('resultado_operativo', 'Resultado operativo', resOperativo),
       compLine('impuesto_ganancias'),
@@ -6285,6 +6432,14 @@ export const getER = createServerFn({ method: 'GET' })
         ? Math.abs(resEjercicio.prior - espResultadoPrior) < 0.005
         : true,
       hasPrior: !!priorFy,
+      priorCoefficient,
+      inflationApplied: (await loadInflationStatus(fy.id)).applied,
+      priorInflationApplied: priorFy
+        ? priorFiguresAreHomogeneous(
+            priorFy,
+            (await loadInflationStatus(priorFy.id)).applied
+          )
+        : true,
     };
   });
 
@@ -6391,16 +6546,7 @@ export const getAnexoII = createServerFn({ method: 'GET' })
     await ensureClientBelongsToOrg(clientId, orgId);
     const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
 
-    const [priorFy] = await db
-      .select()
-      .from(ejercicio)
-      .where(
-        and(
-          eq(ejercicio.clienteId, clientId),
-          eq(ejercicio.numero, fy.numero - 1)
-        )
-      )
-      .limit(1);
+    const priorFy = await loadPriorFiscalYear(clientId, fy);
 
     const curBal = await computeExpenseBalances(orgId, fy.id);
     const priBal = priorFy
@@ -6519,16 +6665,7 @@ export const getCMV = createServerFn({ method: 'GET' })
     // Comparativo con el ejercicio anterior (número − 1), si tiene CMV cargado.
     let priorFiscalYearNumber: number | null = null;
     let priorTotal: number | null = null;
-    const [priorFy] = await db
-      .select()
-      .from(ejercicio)
-      .where(
-        and(
-          eq(ejercicio.clienteId, clientId),
-          eq(ejercicio.numero, fy.numero - 1)
-        )
-      )
-      .limit(1);
+    const priorFy = await loadPriorFiscalYear(clientId, fy);
     if (priorFy) {
       priorFiscalYearNumber = priorFy.numero;
       const [pr] = await db
@@ -6607,6 +6744,12 @@ export interface FinancialStatementResult {
   id: string | null;
   status: 'borrador' | 'aprobado';
   notes: FsNote[];
+  /** Orden de las notas y secciones. Vacío = el de por defecto. */
+  layout: LayoutEntry[];
+  /** Rótulos que el contador cambió, por clave de sección. */
+  sectionLabels: Record<string, string>;
+  /** Informe del auditor de este balance. null = todavía no se cargó. */
+  auditReport: { body: string; lugar: string; fecha: string } | null;
   approvedAt: string | null;
   approvedByName: string | null;
   /** Metadata del PDF guardado (no incluye el binario; usar getFinancialStatementPdf). */
@@ -6638,6 +6781,9 @@ export const getFinancialStatement = createServerFn({ method: 'GET' })
         id: eecc.id,
         status: eecc.estado,
         notes: eecc.notas,
+        layout: eecc.layout,
+        sectionLabels: eecc.etiquetasSeccion,
+        auditReport: eecc.informeAuditor,
         approvedAt: eecc.aprobadoAt,
         approvedByName: user.name,
         pdfGeneratedAt: eecc.pdfGeneradoAt,
@@ -6657,6 +6803,9 @@ export const getFinancialStatement = createServerFn({ method: 'GET' })
         id: null,
         status: 'borrador',
         notes: [],
+        layout: [],
+        sectionLabels: {},
+        auditReport: null,
         approvedAt: null,
         approvedByName: null,
         pdfGeneratedAt: null,
@@ -6668,6 +6817,10 @@ export const getFinancialStatement = createServerFn({ method: 'GET' })
       id: row.id,
       status: row.status,
       notes: (row.notes as FsNote[]) ?? [],
+      layout: (row.layout as LayoutEntry[]) ?? [],
+      sectionLabels: (row.sectionLabels as Record<string, string>) ?? {},
+      auditReport:
+        (row.auditReport as FinancialStatementResult['auditReport']) ?? null,
       approvedAt: row.approvedAt ? row.approvedAt.toISOString() : null,
       approvedByName: row.approvedByName ?? null,
       pdfGeneratedAt: row.pdfGeneratedAt
@@ -6685,13 +6838,17 @@ export const saveFinancialStatementNotes = createServerFn({ method: 'POST' })
       clientId: z.string().uuid(),
       fiscalYearId: z.string().uuid(),
       notes: z.array(fsNoteSchema).max(100),
+      /** Orden de las notas y secciones. Omitido = no se toca. */
+      layout: z.array(z.string().min(1).max(80)).max(200).optional(),
+      /** Rótulos de las secciones. Omitido = no se toca. */
+      sectionLabels: z.record(z.string(), z.string().max(120)).optional(),
     })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertOwner(role);
-    const { clientId, fiscalYearId, notes } = ctx.data;
+    const { clientId, fiscalYearId, notes, layout, sectionLabels } = ctx.data;
     await ensureClientBelongsToOrg(clientId, orgId);
     await loadFiscalYearForOrg(fiscalYearId, orgId);
 
@@ -6709,16 +6866,20 @@ export const saveFinancialStatementNotes = createServerFn({ method: 'POST' })
       );
     }
 
+    // Solo se pisa lo que vino: guardar el texto de una nota no puede
+    // llevarse puesto el orden que el contador acomodó en otra pantalla.
+    const patch: Partial<typeof eecc.$inferInsert> = { notas: notes };
+    if (layout !== undefined) patch.layout = layout;
+    if (sectionLabels !== undefined) patch.etiquetasSeccion = sectionLabels;
+
     if (existing) {
-      await db
-        .update(eecc)
-        .set({ notas: notes })
-        .where(eq(eecc.id, existing.id));
+      await db.update(eecc).set(patch).where(eq(eecc.id, existing.id));
     } else {
       await db.insert(eecc).values({
         orgId,
         clienteId: clientId,
         ejercicioId: fiscalYearId,
+        ...patch,
         notas: notes,
       });
     }
