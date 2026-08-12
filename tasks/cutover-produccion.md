@@ -1,5 +1,11 @@
 # Cutover a producción — BD_IDEAL detrás de contable.tinnto.ai
 
+> **ESTADO 12/08 ~08:00 UTC: EJECUTADO hasta el paso 28.** Producción congelada
+> (sólo-lectura) desde las 07:42; dump final x2 en `ARCA/backups/cutover-final/`;
+> `contable` creada en :6001, restaurada y verificada (84 tablas, 71 políticas,
+> RLS por rol OK, delta de arca_staging migrado, topes al día, 532 documentos).
+> Falta el lado Coolify/DNS (pasos 29–33, Gaston) y el merge eventual v3→staging.
+
 Relevamiento del 2026-08-11, medido contra las bases vivas. Corrige varias cosas que
 `handoff-maquina-nueva.md` y `staging-modelo-ideal.md` daban por ciertas y ya no lo son.
 
