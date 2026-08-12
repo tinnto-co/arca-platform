@@ -55,6 +55,9 @@ grant update (afip_contribuyente_id) on cliente_credencial to arca_scrapper;
 -- De las escalas salariales solo agrega/pisa el básico de convenio. Las categorías
 -- y los convenios los arma el estudio: el scrapper los lee para saber a quién aplicar.
 grant select, insert, update on escala_salarial to arca_scrapper;
+-- El tope imponible SIPA lo trae un job mensual (decisión D17, 11/08): upsert
+-- sobre parametro_periodo. Sin este grant el job muere con permission denied.
+grant select, insert, update on parametro_periodo to arca_scrapper;
 grant select on convenio, convenio_categoria to arca_scrapper;
 grant select on cct to arca_scrapper;
 grant update (ultimo_intento_at, ultimo_ok_at, ultimo_error) on cct_fuente to arca_scrapper;
