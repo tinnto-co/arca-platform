@@ -251,3 +251,43 @@ contable cargado. El cierre completo se prueba cuando el estudio cargue uno.
 - `mayor-export.tsx` + `anexo-i-widths.test.ts` esperan a `accounting.tsx`
   (dependen de `EepnResult`/`EfeResult` que exporta la versión de staging).
 - `resetPortalUserPassword` sigue roto (preexistente, fase 4 del cutover).
+
+---
+
+## accounting.tsx y el route (el port final)
+
+### ⚖️ D34 — Bug latente de v2: cierre/apertura sin `origen_id`
+`approveClosingStage` insertaba los asientos de cierre y apertura sin
+`origen_id`; el check `asiento_origen_coherente` los rechaza en runtime
+(verificado contra la base). Nadie lo pisó porque no hay ejercicios cargados.
+Regla adoptada: el origen de un cierre/apertura es el ejercicio que se cierra.
+`saveReferenceBalances` sigue la misma regla.
+
+### ⚖️ D35 — La apertura del saldo cuenta (cambio semántico)
+La base excluía `auto_opening` de `computeEspBalances` y v2 lo tradujo fiel.
+Staging lo corrigió: sin apertura, un ejercicio transcripto como referencia da
+patrimonio cero. Se adoptó la semántica de staging ("staging manda").
+
+### ⚖️ D36 — El route se portó por merge parcial, no a mano
+Estrategia: el delta de v2 sobre el route era 100% renombres mecánicos de
+valores de enum (95 hunks). Se tomó el route de staging entero y se le aplicó
+ese diff como patch: 82 hunks aplicaron solos, 13 se resolvieron a mano
+(zonas que staging había reescrito: RuleEditorDialog, Ejercicios con la
+etiqueta «Referencia», EstadosContables). Los estados locales de UI
+(`mode.kind === 'custom'`, columnas debit/credit del editor de asientos)
+quedan en inglés a propósito: son de la UI, no del modelo.
+
+### 🔧 D37 — `buildClosingEntries` local → lib testeada
+La copia privada de accounting.tsx era byte a byte idéntica a la de
+`accounting-closing.ts` (verificado sin espacios/comentarios). Se reemplazó
+por el import, con re-export de los tipos que el route consume.
+
+### ⚖️ D38 — Eventos del ajuste en el log de auditoría vía `accion`
+`getAuditLog` de v2 filtra por `evento.detalle->>'accion'`. Los eventos que
+escribía inflation.tsx no la traían: quedaban invisibles en el log. Se agregó
+`accion` a los dos eventos y los dos tipos a AUDIT_EVENT_TYPES.
+
+### 🔧 D39 — D31/D32 cerradas
+Los 5 componentes quedaron montados en sus solapas y el deep-link
+«Ver en el diario» recuperó `search={{ clientId, tab: 'asientos' }}`
+(el route de staging trae validateSearch).

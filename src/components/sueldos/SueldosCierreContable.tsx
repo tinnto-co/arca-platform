@@ -153,6 +153,7 @@ export function SueldosCierreContable({ clientId, periodo }: Props) {
             <>
               <Link
                 to="/accounting"
+                search={{ clientId, tab: 'asientos' }}
                 className="inline-flex items-center gap-2 border border-[#DFDCD3] bg-white text-[#12131A] rounded-[10px] px-[15px] py-[9px] text-[13.5px] font-medium hover:bg-[#FBFAF6] transition-colors"
               >
                 <BookOpen style={{ width: 15, height: 15 }} />
