@@ -56,7 +56,7 @@ export const impuesto = pgEnum("impuesto", ['iva', 'ganancias', 'ingresos_brutos
 export const indiceInflacionFuente = pgEnum("indice_inflacion_fuente", ['facpce_rt6', 'indec_ipc', 'manual'])
 export const jobLogLevel = pgEnum("job_log_level", ['debug', 'info', 'warn', 'error'])
 export const jobStatus = pgEnum("job_status", ['pending', 'running', 'failed', 'finished'])
-export const jobType = pgEnum("job_type", ['iva', 'comprobantes', 'comprobantes_full', 'notificaciones', 'deuda', 'vencimientos', 'batch', 'escalas'])
+export const jobType = pgEnum("job_type", ['iva', 'comprobantes', 'comprobantes_full', 'notificaciones', 'deuda', 'vencimientos', 'batch', 'escalas', 'tope_imponible'])
 export const marcoContable = pgEnum("marco_contable", ['rt54', 'rt6'])
 export const movimientoDireccion = pgEnum("movimiento_direccion", ['ingreso', 'egreso'])
 export const notificacionSeveridad = pgEnum("notificacion_severidad", ['sin_clasificar', 'informativa', 'accion_requerida', 'urgente'])
@@ -1899,6 +1899,16 @@ export const comprobanteTipo = pgTable("comprobante_tipo", {
 	discriminaIva: boolean("discrimina_iva").notNull(),
 });
 
+export const parametroPeriodo = pgTable("parametro_periodo", {
+	periodo: date().primaryKey().notNull(),
+	topeMaximoImponible: numeric("tope_maximo_imponible", { precision: 15, scale:  2 }),
+	salarioMinimo: numeric("salario_minimo", { precision: 15, scale:  2 }),
+	fuente: text(),
+	actualizadoPorCron: boolean("actualizado_por_cron").default(false).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const nacionalidad = pgTable("nacionalidad", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	codigo: text().notNull(),
@@ -1977,16 +1987,6 @@ export const localidad = pgTable("localidad", {
 }, (table) => [
 	unique("localidad_codigo_key").on(table.codigo),
 ]);
-
-export const parametroPeriodo = pgTable("parametro_periodo", {
-	periodo: date().primaryKey().notNull(),
-	topeMaximoImponible: numeric("tope_maximo_imponible", { precision: 15, scale:  2 }),
-	salarioMinimo: numeric("salario_minimo", { precision: 15, scale:  2 }),
-	fuente: text(),
-	actualizadoPorCron: boolean("actualizado_por_cron").default(false).notNull(),
-	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-});
 
 export const lsdPresentacion = pgTable("lsd_presentacion", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
@@ -2463,6 +2463,34 @@ export const movimientoBancario = pgTable("movimiento_bancario", {
 	check("movimiento_bancario_importe_positivo", sql`importe > (0)::numeric`),
 ]);
 
+export const evento = pgTable("evento", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	orgId: text("org_id").notNull(),
+	clienteId: uuid("cliente_id"),
+	entidad: text().notNull(),
+	entidadId: uuid("entidad_id"),
+	tipo: eventoTipo().notNull(),
+	actorTipo: actorTipo("actor_tipo").notNull(),
+	actorId: text("actor_id"),
+	detalle: jsonb(),
+	at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_evento_cliente").using("btree", table.clienteId.asc().nullsLast().op("uuid_ops")),
+	index("idx_evento_entidad").using("btree", table.entidad.asc().nullsLast().op("uuid_ops"), table.entidadId.asc().nullsLast().op("text_ops")),
+	index("idx_evento_org").using("btree", table.orgId.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.clienteId],
+			foreignColumns: [cliente.id],
+			name: "evento_cliente_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.orgId],
+			foreignColumns: [organization.id],
+			name: "evento_org_id_fkey"
+		}).onDelete("cascade"),
+	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app", "arca_scrapper"], using: sql`(org_id = current_setting('app.org_id'::text, true))`, withCheck: sql`(org_id = current_setting('app.org_id'::text, true))`  }),
+]);
+
 export const job = pgTable("job", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	orgId: text("org_id").notNull(),
@@ -2503,35 +2531,7 @@ export const job = pgTable("job", {
 			name: "job_org_id_fkey"
 		}).onDelete("cascade"),
 	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app", "arca_scrapper"], using: sql`(org_id = current_setting('app.org_id'::text, true))`, withCheck: sql`(org_id = current_setting('app.org_id'::text, true))`  }),
-	check("job_credencial_requerida", sql`(type = 'escalas'::job_type) OR (credencial_id IS NOT NULL)`),
-]);
-
-export const evento = pgTable("evento", {
-	id: uuid().defaultRandom().primaryKey().notNull(),
-	orgId: text("org_id").notNull(),
-	clienteId: uuid("cliente_id"),
-	entidad: text().notNull(),
-	entidadId: uuid("entidad_id"),
-	tipo: eventoTipo().notNull(),
-	actorTipo: actorTipo("actor_tipo").notNull(),
-	actorId: text("actor_id"),
-	detalle: jsonb(),
-	at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	index("idx_evento_cliente").using("btree", table.clienteId.asc().nullsLast().op("uuid_ops")),
-	index("idx_evento_entidad").using("btree", table.entidad.asc().nullsLast().op("uuid_ops"), table.entidadId.asc().nullsLast().op("text_ops")),
-	index("idx_evento_org").using("btree", table.orgId.asc().nullsLast().op("text_ops")),
-	foreignKey({
-			columns: [table.clienteId],
-			foreignColumns: [cliente.id],
-			name: "evento_cliente_id_fkey"
-		}).onDelete("set null"),
-	foreignKey({
-			columns: [table.orgId],
-			foreignColumns: [organization.id],
-			name: "evento_org_id_fkey"
-		}).onDelete("cascade"),
-	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app", "arca_scrapper"], using: sql`(org_id = current_setting('app.org_id'::text, true))`, withCheck: sql`(org_id = current_setting('app.org_id'::text, true))`  }),
+	check("job_credencial_requerida", sql`(type = ANY (ARRAY['escalas'::job_type, 'tope_imponible'::job_type])) OR (credencial_id IS NOT NULL)`),
 ]);
 
 export const baseCalculoConcepto = pgTable("base_calculo_concepto", {

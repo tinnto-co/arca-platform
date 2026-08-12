@@ -248,11 +248,18 @@ contable cargado. El cierre completo se prueba cuando el estudio cargue uno.
 
 ## Pendientes que este port deja explícitos
 
-- D11 (jobs de escalas invisibles en el panel) — decisión de Gaston.
-- D17 (tope imponible sin actualizador) — decisión de Gaston.
-- `mayor-export.tsx` + `anexo-i-widths.test.ts` esperan a `accounting.tsx`
-  (dependen de `EepnResult`/`EfeResult` que exporta la versión de staging).
+*(actualizado 12/08 — auditoría de cierre)*
+
+- ~~D11~~ resuelto: escalas visibles en la tabla de jobs.
+- ~~D17~~ resuelto: el scrapper ya trae el tope (julio y agosto cargados,
+  jobs `tope_imponible` corriendo). La plataforma sumó el tipo a su enum, al
+  badge y al filtro, y `schema-dominio7.sql` quedó sincronizado con el enum y
+  el check `job_credencial_requerida` que el scrapper agregó en la base viva.
+- ~~mayor-export + anexo-i-widths~~ resueltos con el port de accounting.
 - `resetPortalUserPassword` sigue roto (preexistente, fase 4 del cutover).
+- Limpieza opcional (D14/D19): `accounting.tsx` e `inflation.tsx` conservan
+  copias privadas de helpers que ya existen en `accounting-posting-db` /
+  podrían ir a `helpers.ts`. Sin riesgo funcional; es deduplicación.
 
 ---
 

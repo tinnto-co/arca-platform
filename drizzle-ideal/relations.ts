@@ -59,8 +59,8 @@ export const clienteRelations = relations(cliente, ({one, many}) => ({
 	cuentas: many(cuenta),
 	ejercicios: many(ejercicio),
 	eeccs: many(eecc),
-	jobs: many(job),
 	eventos: many(evento),
+	jobs: many(job),
 }));
 
 export const organizationRelations = relations(organization, ({many}) => ({
@@ -98,8 +98,8 @@ export const organizationRelations = relations(organization, ({many}) => ({
 	eeccs: many(eecc),
 	firmantes: many(firmante),
 	invitations: many(invitation),
-	jobs: many(job),
 	eventos: many(evento),
+	jobs: many(job),
 }));
 
 export const userRelations = relations(user, ({many}) => ({

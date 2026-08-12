@@ -320,6 +320,15 @@ export function JobsTable() {
             Escalas salariales
           </span>
         );
+      case 'tope_imponible':
+        return (
+          <span
+            className={`${baseClass} bg-[var(--arca-accent-info-bg)] text-[var(--arca-accent-info-fg)]`}
+          >
+            <Receipt className="h-3 w-3" />
+            Tope imponible
+          </span>
+        );
       case 'notificaciones':
         return (
           <span
@@ -501,6 +510,7 @@ export function JobsTable() {
                 { value: 'deuda', label: 'Deuda' },
                 { value: 'vencimientos', label: 'Vencimientos' },
                 { value: 'escalas', label: 'Escalas salariales' },
+                { value: 'tope_imponible', label: 'Tope imponible' },
               ]}
               value={typeFilter}
               onValueChange={(value) => setFilter({ type: value })}
@@ -632,7 +642,7 @@ export function JobsTable() {
                       </div>
                     ) : (
                       <span className="text-[var(--arca-ink-3)] text-sm">
-                        {job.type === 'escalas'
+                        {job.type === 'escalas' || job.type === 'tope_imponible'
                           ? 'Sin credencial (páginas públicas)'
                           : 'Credencial desconocida'}
                       </span>
@@ -787,7 +797,8 @@ export function JobsTable() {
                   </p>
                   <p className="text-sm font-semibold">
                     {selectedJob.credencialNombre ??
-                      (selectedJob.type === 'escalas'
+                      (selectedJob.type === 'escalas' ||
+                      selectedJob.type === 'tope_imponible'
                         ? 'Sin credencial (páginas públicas)'
                         : 'Credencial desconocida')}
                   </p>
