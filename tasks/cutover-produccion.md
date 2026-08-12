@@ -345,8 +345,12 @@ Todo esto sin tocar producción ni el `arca_staging` de :6001.
     `DATABASE_URL=<arca_prod_frozen>`. **Nunca con BD_IDEAL como origen.**
 14. `subir-documentos-r2.ts --apply` (después del ETL, siempre) y
     `dedupe-deuda-vencimiento.ts --apply`.
-15. Re-aplicar las correcciones del 30/07: los 9 clientes de §3.4, los 2 `representative`, la
-    `payroll_lsd_presentacion`. Script versionado, no SQL suelto.
+15. Re-aplicar las correcciones del 30/07 con
+    `src/scripts/ideal/aplicar-correcciones-newdb.ts` (escrito y ensayado el 12/08): detecta el
+    delta por CUIT dinámicamente — 9 clientes, **6** credenciales (no 2: la comparación por CUIT
+    es más fina que la de counts) y 1 LSD de E-presis —, es idempotente y solo inserta. Dry-run
+    por defecto, `--apply` para escribir.
+    `DATABASE_URL="$STAGING_DATABASE_URL" IDEAL_DATABASE_URL=<destino> bun src/scripts/ideal/aplicar-correcciones-newdb.ts --apply`
 16. Borrar los 2 usuarios de prueba de §3.5.
 17. **Verificación**, con los números anotados: 132 CUITs de producción presentes entre `cliente` y
     `credencial_afip`; `comprobante` ≈ 80.817; `credencial_afip` = 63; `documento` con

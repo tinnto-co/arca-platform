@@ -366,3 +366,13 @@ Desvíos del ensayo respecto del plan (a propósito):
 - D8 leyó la serie FACPCE desde la copia congelada (se le inyectó
   `inflation_index` con datos desde NEW_DB): producción no tiene esa tabla y
   el plan lo contempla en el paso 12.
+
+### 🔧 D42 — Script de correcciones de NEW_DB: dinámico, no hardcodeado
+`aplicar-correcciones-newdb.ts` detecta el delta por CUIT contra el destino en
+vez de listar los 9 clientes. Razón: el delta puede crecer (el estudio sigue
+operando) y una lista fija se vence. El hallazgo que lo justificó: eran **6**
+credenciales faltantes, no las 2 que decía el plan — los counts (61 vs 63)
+escondían divergencia bidireccional. El vínculo cliente↔credencial se resuelve
+por CUIT contra el destino (caso Yinrai SA: su credencial ya existía por el
+ETL y el script la reusa en vez de duplicarla). Ensayado dos veces contra
+`arca_ideal_ensayo`: aplica 6+9+1 y la segunda corrida no hace nada.
