@@ -332,9 +332,15 @@ Todo esto sin tocar producción ni el `arca_staging` de :6001.
    dos lugares.
 10. Restaurar en una base descartable local (`arca_prod_frozen`, otro puerto).
 11. Aplicar `tasks/fase1-higiene.sql` sentencia por sentencia (`simple: true`, sin transacción) y
-    `fase1b-trigger-updated-at.sql`.
-12. Aplicar las 5 tablas del módulo contable sobre esa copia, para que el origen tenga la misma
-    forma que NEW_DB.
+    `fase1b-trigger-updated-at.sql` — ojo: fase1b lleva un bloque `DO $$`, va entero, no spliteado.
+12. Aplicar las 5 tablas del módulo contable sobre esa copia (con sus dos enums: `pg_dump -t` no
+    los arrastra), `inflation_index` **con datos** desde NEW_DB, y **las dos columnas de `client`
+    que la higiene NO cubre** (hallazgo del ensayo del 11/08 — sin esto el ETL D1 aborta):
+
+    ```sql
+    alter table client add column organization_id text not null default 'org_estudio_blakg';
+    alter table client add column accounting_framework text not null default 'rt54';
+    ```
 13. Re-crear BD_IDEAL desde cero: `apply-schema.ts` + ETL D1→D8 con
     `DATABASE_URL=<arca_prod_frozen>`. **Nunca con BD_IDEAL como origen.**
 14. `subir-documentos-r2.ts --apply` (después del ETL, siempre) y

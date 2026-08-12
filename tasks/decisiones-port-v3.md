@@ -323,3 +323,37 @@ sueltas sin equivalente:
    EmpleadorConfigDialog, al lado de mipyme/seguro colectivo.
 
 Con esto el cluster queda retirado: los archivos de staging no viajan.
+
+---
+
+## Ensayo Fase 2 (11/08, 22:15–22:40)
+
+### ⚖️ D41 — Ensayo ejecutado; el pipeline completo funciona con 2 hallazgos
+Dump de producción real (50 MB) → restore descartable (`arca_prod_frozen`) →
+higiene 154/154 → schema ideal desde cero (84 tablas, dominio 8 incluido) →
+ETL D1→D8 + dedupe → verificación: **todo verde**.
+
+Hallazgos que corrigen el plan:
+1. **`fase1-higiene.sql` no cubre `client.organization_id` ni
+   `accounting_framework`** (vinieron por migraciones drizzle en NEW_DB). Sin
+   ellas el ETL D1 aborta. El plan del cutover ya tiene el `alter table` con
+   los defaults correctos (verificados contra NEW_DB: todo org_estudio_blakg /
+   rt54).
+2. **Producción tiene una escala duplicada** (categoría "Jefe", convenio
+   9999/99, vigencia 06/2026: $500.000 y una corrección de $400.000 cargada 6
+   segundos después). El ETL la maneja como está diseñado — `order by
+   updated_at asc`, gana la más reciente — y en el ensayo sobrevivió la
+   corrección. No es un bug; queda anotado para que el número 7.420→7.419 no
+   asuste el día del cutover.
+
+Desvíos del ensayo respecto del plan (a propósito):
+- Destino `arca_ideal_ensayo`, NO la BD_IDEAL viva (la está usando la sesión
+  del scrapper para el job del tope).
+- El origen se conecta por IP de LAN (192.168.0.17): el guard del ETL rechaza
+  `localhost` como fuente. Mismo server, base distinta, guard intacto.
+- `subir-documentos-r2.ts` quedó en dry-run: 532/532 documentos listos, 24,8
+  MB. El `--apply` escribe en el bucket compartido con producción — decisión
+  de Gaston.
+- D8 leyó la serie FACPCE desde la copia congelada (se le inyectó
+  `inflation_index` con datos desde NEW_DB): producción no tiene esa tabla y
+  el plan lo contempla en el paso 12.
