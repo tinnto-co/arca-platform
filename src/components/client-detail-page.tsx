@@ -34,12 +34,7 @@ import {
   PaginationPrevious,
 } from '@/components/ui/pagination';
 import { Input } from '@/components/ui/input';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
   getCredenciales,
@@ -153,6 +148,7 @@ import { ProvinceSourceCell } from '@/components/province-source-cell';
 import { listOrgModules } from '@/actions/admin';
 import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
 import { PerfilesTab } from '@/components/perfiles-tab';
+import { FiscalDataCard } from '@/components/fiscal-data-card';
 import { toTitleCase } from '@/lib/format-name';
 
 interface RepresentativeDetailPageProps {
@@ -306,7 +302,9 @@ function findBestMatchingProfileId(
     .filter((p) =>
       normalizedClient.includes((p.razonSocial ?? '').trim().toLowerCase())
     )
-    .sort((a, b) => (b.razonSocial ?? '').length - (a.razonSocial ?? '').length);
+    .sort(
+      (a, b) => (b.razonSocial ?? '').length - (a.razonSocial ?? '').length
+    );
   if (containedInClient.length > 0) return containedInClient[0].id;
 
   const clientInProfile = withName.find((p) =>
@@ -454,8 +452,9 @@ export function RepresentativeDetailPage({
   });
 
   // Solicitudes state
-  const [solicitudesStatusFilter, setSolicitudesStatusFilter] =
-    useState<SolicitudEstado | ''>('');
+  const [solicitudesStatusFilter, setSolicitudesStatusFilter] = useState<
+    SolicitudEstado | ''
+  >('');
   const [newRequestDialogOpen, setNewRequestDialogOpen] = useState(false);
   const [newRequestTitle, setNewRequestTitle] = useState('');
   const [newRequestDescription, setNewRequestDescription] = useState('');
@@ -753,7 +752,9 @@ export function RepresentativeDetailPage({
   const { data: lastComprobantesJobIncremental } = useQuery({
     queryKey: ['lastComprobantesJob', representativeId],
     queryFn: () =>
-      getLastJobByType({ data: { credencialId: representativeId, jobType: 'comprobantes' } }),
+      getLastJobByType({
+        data: { credencialId: representativeId, jobType: 'comprobantes' },
+      }),
     enabled: !!representativeId,
   });
 
@@ -778,7 +779,9 @@ export function RepresentativeDetailPage({
   const { data: lastIvaJob } = useQuery({
     queryKey: ['lastIvaJob', representativeId],
     queryFn: () =>
-      getLastJobByType({ data: { credencialId: representativeId, jobType: 'iva' } }),
+      getLastJobByType({
+        data: { credencialId: representativeId, jobType: 'iva' },
+      }),
     enabled: !!representativeId,
   });
 
@@ -794,7 +797,9 @@ export function RepresentativeDetailPage({
   const { data: lastDeudaJob } = useQuery({
     queryKey: ['lastDeudaJob', representativeId],
     queryFn: () =>
-      getLastJobByType({ data: { credencialId: representativeId, jobType: 'deuda' } }),
+      getLastJobByType({
+        data: { credencialId: representativeId, jobType: 'deuda' },
+      }),
     enabled: !!representativeId,
   });
 
@@ -822,7 +827,9 @@ export function RepresentativeDetailPage({
   const { data: lastVencimientosJob } = useQuery({
     queryKey: ['lastVencimientosJob', representativeId],
     queryFn: () =>
-      getLastJobByType({ data: { credencialId: representativeId, jobType: 'vencimientos' } }),
+      getLastJobByType({
+        data: { credencialId: representativeId, jobType: 'vencimientos' },
+      }),
     enabled: !!representativeId,
   });
 
@@ -1130,7 +1137,10 @@ export function RepresentativeDetailPage({
   // Deudas filtradas por impuesto y concepto
   const filteredDebts = useMemo(() => {
     return debts.filter((debt) => {
-      if (debtFilterImpuesto && (debt.impuesto ?? '').trim() !== debtFilterImpuesto)
+      if (
+        debtFilterImpuesto &&
+        (debt.impuesto ?? '').trim() !== debtFilterImpuesto
+      )
         return false;
       if (
         debtFilterConcepto &&
@@ -1753,7 +1763,9 @@ export function RepresentativeDetailPage({
                         className="group h-auto w-fit max-w-full gap-2 border-0 bg-transparent p-0 shadow-none rounded-md hover:opacity-70 focus-visible:ring-0 transition-opacity [&>svg]:!size-[18px] [&>svg]:!opacity-40 [&>svg]:text-[var(--arca-ink-3)] group-hover:[&>svg]:!opacity-70"
                       >
                         <span className="font-display text-[24px] font-semibold tracking-tight text-[var(--arca-ink)] leading-none truncate">
-                          {toTitleCase(selectedProfile?.razonSocial ?? client.nombre)}
+                          {toTitleCase(
+                            selectedProfile?.razonSocial ?? client.nombre
+                          )}
                         </span>
                       </SelectTrigger>
                       <SelectContent>
@@ -1766,7 +1778,9 @@ export function RepresentativeDetailPage({
                     </Select>
                   ) : (
                     <h1 className="font-display text-[24px] font-semibold tracking-tight text-[var(--arca-ink)] leading-none truncate">
-                      {toTitleCase(selectedProfile?.razonSocial ?? client.nombre)}
+                      {toTitleCase(
+                        selectedProfile?.razonSocial ?? client.nombre
+                      )}
                     </h1>
                   )}
                 </div>
@@ -2147,10 +2161,8 @@ export function RepresentativeDetailPage({
                       <span
                         className={cn(
                           'flex-1 font-display font-semibold text-[15px] leading-none tracking-tight tabular-nums text-right',
-                          Number(
-                            resumenClientIva.data
-                              .saldoTecnicoFavor ?? 0
-                          ) > 0
+                          Number(resumenClientIva.data.saldoTecnicoFavor ?? 0) >
+                            0
                             ? 'text-[var(--arca-accent-pos-fg)]'
                             : 'text-[var(--arca-ink-3)]'
                         )}
@@ -2170,16 +2182,14 @@ export function RepresentativeDetailPage({
                           'flex-1 font-display font-semibold text-[20px] leading-none tracking-tight tabular-nums text-right',
                           Number(
                             resumenClientIva.data
-                              .saldoLibreDisponibilidadFavor ??
-                              0
+                              .saldoLibreDisponibilidadFavor ?? 0
                           ) > 0
                             ? 'text-[var(--arca-accent-pos-fg)]'
                             : 'text-[var(--arca-ink-3)]'
                         )}
                       >
                         {formatIvaCurrency(
-                          resumenClientIva.data
-                            .saldoLibreDisponibilidadFavor
+                          resumenClientIva.data.saldoLibreDisponibilidadFavor
                         )}
                       </span>
                     </div>
@@ -2368,6 +2378,14 @@ export function RepresentativeDetailPage({
               La configuración de cierre de ejercicio se eliminó: la tabla
               `representative_balance_config` no existe en el modelo nuevo.
             */}
+
+            {/* Datos fiscales para el módulo de Balances (norma RT 54/RT 6,
+                actividad e inscripción). Por empresa seleccionada. */}
+            {selectedClientId && (
+              <div className="max-w-[560px]">
+                <FiscalDataCard clientId={selectedClientId} />
+              </div>
+            )}
           </TabsContent>
 
           {/* Dialog: detalle de notificación no leída (Resumen) */}
@@ -2546,7 +2564,10 @@ export function RepresentativeDetailPage({
                     setScrapingSection('deudas');
                     try {
                       await scrapSingleJob({
-                        data: { credencialId: representativeId, jobType: 'deuda' },
+                        data: {
+                          credencialId: representativeId,
+                          jobType: 'deuda',
+                        },
                       });
                       await Promise.all([
                         queryClient.invalidateQueries({
@@ -3133,7 +3154,10 @@ export function RepresentativeDetailPage({
                     setScrapingSection('vencimientos');
                     try {
                       await scrapSingleJob({
-                        data: { credencialId: representativeId, jobType: 'vencimientos' },
+                        data: {
+                          credencialId: representativeId,
+                          jobType: 'vencimientos',
+                        },
                       });
                       await Promise.all([
                         queryClient.invalidateQueries({
@@ -3399,7 +3423,10 @@ export function RepresentativeDetailPage({
                     setScrapingSection('notificaciones');
                     try {
                       await scrapSingleJob({
-                        data: { credencialId: representativeId, jobType: 'notificaciones' },
+                        data: {
+                          credencialId: representativeId,
+                          jobType: 'notificaciones',
+                        },
                       });
                       await queryClient.invalidateQueries({
                         queryKey: [
@@ -3521,7 +3548,10 @@ export function RepresentativeDetailPage({
                     setScrapingSection('facturas');
                     try {
                       await scrapSingleJob({
-                        data: { credencialId: representativeId, jobType: 'comprobantes' },
+                        data: {
+                          credencialId: representativeId,
+                          jobType: 'comprobantes',
+                        },
                       });
                       await Promise.all([
                         queryClient.invalidateQueries({
@@ -4516,7 +4546,10 @@ export function RepresentativeDetailPage({
                                     },
                                   });
                                   await scrapSingleJob({
-                                    data: { credencialId: representativeId, jobType: 'iva' },
+                                    data: {
+                                      credencialId: representativeId,
+                                      jobType: 'iva',
+                                    },
                                   });
                                   await Promise.all([
                                     queryClient.invalidateQueries({
@@ -4588,7 +4621,10 @@ export function RepresentativeDetailPage({
                                 setScrapingSection('iva');
                                 try {
                                   await scrapSingleJob({
-                                    data: { credencialId: representativeId, jobType: 'iva' },
+                                    data: {
+                                      credencialId: representativeId,
+                                      jobType: 'iva',
+                                    },
                                   });
                                   await Promise.all([
                                     queryClient.invalidateQueries({
@@ -4817,160 +4853,164 @@ export function RepresentativeDetailPage({
                       </tr>
                     </thead>
                     <tbody>
-                      {clientRequestsData.map((req: SolicitudRow, i: number) => {
-                        const statusColors: Record<
-                          SolicitudEstado,
-                          { bg: string; color: string; label: string }
-                        > = {
-                          abierta: {
-                            bg: 'var(--arca-accent-warn-bg)',
-                            color: 'var(--arca-accent-warn)',
-                            label: 'Abierta',
-                          },
-                          completada: {
-                            bg: 'var(--arca-accent-pos-bg)',
-                            color: 'var(--arca-accent-pos)',
-                            label: 'Completada',
-                          },
-                          cancelada: {
-                            bg: 'var(--arca-surface-2)',
-                            color: 'var(--arca-ink-3)',
-                            label: 'Cancelada',
-                          },
-                        };
-                        const sc =
-                          statusColors[req.estado] ?? statusColors.abierta;
-                        return (
-                          <tr
-                            key={req.id}
-                            className={`border-b border-[var(--arca-border)] last:border-b-0 ${i % 2 === 1 ? 'bg-[var(--arca-surface-2)]' : ''}`}
-                          >
-                            <td className="px-[14px] py-[10px]">
-                              <p className="font-medium text-[var(--arca-ink)] flex items-center gap-1.5">
-                                {req.titulo}
-                                {req.detalle?.documentoId && (
-                                  <Paperclip className="h-3 w-3 text-[var(--arca-accent-primary)] shrink-0" />
+                      {clientRequestsData.map(
+                        (req: SolicitudRow, i: number) => {
+                          const statusColors: Record<
+                            SolicitudEstado,
+                            { bg: string; color: string; label: string }
+                          > = {
+                            abierta: {
+                              bg: 'var(--arca-accent-warn-bg)',
+                              color: 'var(--arca-accent-warn)',
+                              label: 'Abierta',
+                            },
+                            completada: {
+                              bg: 'var(--arca-accent-pos-bg)',
+                              color: 'var(--arca-accent-pos)',
+                              label: 'Completada',
+                            },
+                            cancelada: {
+                              bg: 'var(--arca-surface-2)',
+                              color: 'var(--arca-ink-3)',
+                              label: 'Cancelada',
+                            },
+                          };
+                          const sc =
+                            statusColors[req.estado] ?? statusColors.abierta;
+                          return (
+                            <tr
+                              key={req.id}
+                              className={`border-b border-[var(--arca-border)] last:border-b-0 ${i % 2 === 1 ? 'bg-[var(--arca-surface-2)]' : ''}`}
+                            >
+                              <td className="px-[14px] py-[10px]">
+                                <p className="font-medium text-[var(--arca-ink)] flex items-center gap-1.5">
+                                  {req.titulo}
+                                  {req.detalle?.documentoId && (
+                                    <Paperclip className="h-3 w-3 text-[var(--arca-accent-primary)] shrink-0" />
+                                  )}
+                                </p>
+                                {req.descripcion && (
+                                  <p className="text-[11px] text-[var(--arca-ink-3)] mt-0.5 max-w-[280px] truncate">
+                                    {req.descripcion}
+                                  </p>
                                 )}
-                              </p>
-                              {req.descripcion && (
-                                <p className="text-[11px] text-[var(--arca-ink-3)] mt-0.5 max-w-[280px] truncate">
-                                  {req.descripcion}
-                                </p>
-                              )}
-                              {req.detalle?.documentoNombre && (
-                                <p className="text-[11px] text-[var(--arca-accent-primary)] mt-0.5">
-                                  {req.detalle.documentoNombre}
-                                </p>
-                              )}
-                            </td>
-                            <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)]">
-                              {req.tipo}
-                            </td>
-                            <td className="px-[14px] py-[10px]">
-                              <span
-                                className="inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                                style={{ background: sc.bg, color: sc.color }}
-                              >
-                                {sc.label}
-                              </span>
-                            </td>
-                            <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)] whitespace-nowrap">
-                              {req.venceAt
-                                ? new Date(req.venceAt).toLocaleDateString(
-                                    'es-AR'
-                                  )
-                                : '—'}
-                            </td>
-                            <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)] whitespace-nowrap">
-                              {new Date(req.createdAt).toLocaleDateString(
-                                'es-AR'
-                              )}
-                            </td>
-                            <td className="px-[14px] py-[10px]">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                {/* Descarga del documento si el detalle lo trae */}
-                                {req.detalle?.documentoId && (
-                                  <>
-                                    <button
-                                      onClick={async () => {
-                                        try {
-                                          const doc =
-                                            await getDocumentoSolicitud({
-                                              data: { solicitudId: req.id },
-                                            });
-                                          if (!doc?.url) {
+                                {req.detalle?.documentoNombre && (
+                                  <p className="text-[11px] text-[var(--arca-accent-primary)] mt-0.5">
+                                    {req.detalle.documentoNombre}
+                                  </p>
+                                )}
+                              </td>
+                              <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)]">
+                                {req.tipo}
+                              </td>
+                              <td className="px-[14px] py-[10px]">
+                                <span
+                                  className="inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                                  style={{ background: sc.bg, color: sc.color }}
+                                >
+                                  {sc.label}
+                                </span>
+                              </td>
+                              <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)] whitespace-nowrap">
+                                {req.venceAt
+                                  ? new Date(req.venceAt).toLocaleDateString(
+                                      'es-AR'
+                                    )
+                                  : '—'}
+                              </td>
+                              <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)] whitespace-nowrap">
+                                {new Date(req.createdAt).toLocaleDateString(
+                                  'es-AR'
+                                )}
+                              </td>
+                              <td className="px-[14px] py-[10px]">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  {/* Descarga del documento si el detalle lo trae */}
+                                  {req.detalle?.documentoId && (
+                                    <>
+                                      <button
+                                        onClick={async () => {
+                                          try {
+                                            const doc =
+                                              await getDocumentoSolicitud({
+                                                data: { solicitudId: req.id },
+                                              });
+                                            if (!doc?.url) {
+                                              toast.error(
+                                                'Documento no encontrado'
+                                              );
+                                              return;
+                                            }
+                                            const a =
+                                              document.createElement('a');
+                                            a.href = `${doc.url}?download=1`;
+                                            a.download =
+                                              doc.nombre ?? 'documento';
+                                            a.click();
+                                          } catch {
                                             toast.error(
-                                              'Documento no encontrado'
+                                              'Error al descargar el documento'
                                             );
-                                            return;
                                           }
-                                          const a = document.createElement('a');
-                                          a.href = `${doc.url}?download=1`;
-                                          a.download = doc.nombre ?? 'documento';
-                                          a.click();
-                                        } catch {
-                                          toast.error(
-                                            'Error al descargar el documento'
-                                          );
+                                        }}
+                                        className="inline-flex items-center gap-1 text-[11px] text-[var(--arca-accent-primary)] hover:underline font-medium"
+                                      >
+                                        <FileDown className="h-3 w-3" />
+                                        Doc
+                                      </button>
+                                      <span className="text-[var(--arca-border-strong)]">
+                                        ·
+                                      </span>
+                                    </>
+                                  )}
+                                  {req.estado === 'abierta' && (
+                                    <>
+                                      <button
+                                        onClick={() =>
+                                          updateRequestStatusMutation.mutate({
+                                            solicitudId: req.id,
+                                            estado: 'completada',
+                                          })
                                         }
-                                      }}
-                                      className="inline-flex items-center gap-1 text-[11px] text-[var(--arca-accent-primary)] hover:underline font-medium"
-                                    >
-                                      <FileDown className="h-3 w-3" />
-                                      Doc
-                                    </button>
-                                    <span className="text-[var(--arca-border-strong)]">
-                                      ·
-                                    </span>
-                                  </>
-                                )}
-                                {req.estado === 'abierta' && (
-                                  <>
+                                        className="text-[11px] text-[var(--arca-accent-pos)] hover:underline font-medium"
+                                      >
+                                        Completar
+                                      </button>
+                                      <span className="text-[var(--arca-border-strong)]">
+                                        ·
+                                      </span>
+                                      <button
+                                        onClick={() =>
+                                          updateRequestStatusMutation.mutate({
+                                            solicitudId: req.id,
+                                            estado: 'cancelada',
+                                          })
+                                        }
+                                        className="text-[11px] text-[var(--arca-ink-3)] hover:underline"
+                                      >
+                                        Cancelar
+                                      </button>
+                                    </>
+                                  )}
+                                  {req.estado !== 'abierta' && (
                                     <button
                                       onClick={() =>
                                         updateRequestStatusMutation.mutate({
                                           solicitudId: req.id,
-                                          estado: 'completada',
+                                          estado: 'abierta',
                                         })
                                       }
-                                      className="text-[11px] text-[var(--arca-accent-pos)] hover:underline font-medium"
+                                      className="text-[11px] text-[var(--arca-accent-primary)] hover:underline"
                                     >
-                                      Completar
+                                      Reabrir
                                     </button>
-                                    <span className="text-[var(--arca-border-strong)]">
-                                      ·
-                                    </span>
-                                    <button
-                                      onClick={() =>
-                                        updateRequestStatusMutation.mutate({
-                                          solicitudId: req.id,
-                                          estado: 'cancelada',
-                                        })
-                                      }
-                                      className="text-[11px] text-[var(--arca-ink-3)] hover:underline"
-                                    >
-                                      Cancelar
-                                    </button>
-                                  </>
-                                )}
-                                {req.estado !== 'abierta' && (
-                                  <button
-                                    onClick={() =>
-                                      updateRequestStatusMutation.mutate({
-                                        solicitudId: req.id,
-                                        estado: 'abierta',
-                                      })
-                                    }
-                                    className="text-[11px] text-[var(--arca-accent-primary)] hover:underline"
-                                  >
-                                    Reabrir
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        }
+                      )}
                     </tbody>
                   </table>
                 )}
@@ -5227,14 +5267,13 @@ export function RepresentativeDetailPage({
                         >
                           <TableCell className="text-[11px]">
                             {inv.fechaEmision
-                              ? parseLocalDateOnly(inv.fechaEmision.slice(0, 10)).toLocaleDateString(
-                                  'es-AR',
-                                  {
-                                    day: '2-digit',
-                                    month: '2-digit',
-                                    year: 'numeric',
-                                  }
-                                )
+                              ? parseLocalDateOnly(
+                                  inv.fechaEmision.slice(0, 10)
+                                ).toLocaleDateString('es-AR', {
+                                  day: '2-digit',
+                                  month: '2-digit',
+                                  year: 'numeric',
+                                })
                               : '—'}
                           </TableCell>
                           <TableCell className="text-[11px]">
@@ -5289,14 +5328,13 @@ export function RepresentativeDetailPage({
                         </span>
                         <span className="text-muted-foreground">
                           {inv.fechaEmision
-                            ? parseLocalDateOnly(inv.fechaEmision.slice(0, 10)).toLocaleDateString(
-                                'es-AR',
-                                {
-                                  day: '2-digit',
-                                  month: '2-digit',
-                                  year: 'numeric',
-                                }
-                              )
+                            ? parseLocalDateOnly(
+                                inv.fechaEmision.slice(0, 10)
+                              ).toLocaleDateString('es-AR', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric',
+                              })
                             : '—'}
                         </span>
                       </div>

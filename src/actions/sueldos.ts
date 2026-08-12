@@ -2467,6 +2467,7 @@ export const getEmpleadorConfig = createServerFn({ method: 'GET' })
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     const [row] = await db
       .select({
+        liquidaSueldos: clienteEmpleadorConfig.liquidaSueldos,
         tipoEmpresaId: clienteEmpleadorConfig.tipoEmpresaId,
         seguroColectivo: clienteEmpleadorConfig.seguroColectivo,
         mipyme: clienteEmpleadorConfig.mipyme,
@@ -2488,6 +2489,8 @@ export const getEmpleadorConfig = createServerFn({ method: 'GET' })
 
 const empleadorConfigSchema = z.object({
   clientId: z.string().uuid(),
+  /** Si la empresa liquida sueldos acá. Apagado, no aparece en el módulo. */
+  liquidaSueldos: z.boolean().optional(),
   tipoEmpresaId: z.string().uuid().nullable(),
   seguroColectivo: z.boolean(),
   mipyme: z.boolean(),

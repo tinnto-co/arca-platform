@@ -36,6 +36,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   getCliente,
   updateCliente,
+  updateClienteEstado,
   updateCredencialPassword,
 } from '@/actions/client';
 
@@ -54,6 +55,8 @@ const clientSchema = z.object({
   // Contraseña de AFIP: vacío = no se cambia.
   password: z.string().optional(),
   regimenFiscal: z.enum(['local', 'multilateral', 'sin_definir']),
+  estado: z.enum(['activo', 'pausado', 'baja']),
+  bajaMotivo: z.string().max(500).optional().or(z.literal('')),
 });
 
 type ClientFormValues = z.infer<typeof clientSchema>;
@@ -134,6 +137,8 @@ export function EditRepresentativeDialog({
       domicilio: '',
       password: '',
       regimenFiscal: 'sin_definir',
+      estado: 'activo',
+      bajaMotivo: '',
     },
   });
 
@@ -154,6 +159,8 @@ export function EditRepresentativeDialog({
         // Nunca precargamos la contraseña actual (no exponer el secreto).
         password: '',
         regimenFiscal,
+        estado: clienteData.estado ?? 'activo',
+        bajaMotivo: clienteData.bajaMotivo ?? '',
       });
     }
   }, [clienteData, clienteId, form]);
@@ -188,6 +195,25 @@ export function EditRepresentativeDialog({
       if (credencialId && values.password) {
         await updateCredencialPassword({
           data: { id: credencialId, password: values.password },
+        });
+      }
+
+      // El estado va aparte: es una acción con más peso que editar un teléfono
+      // (la baja saca al cliente de la operatoria) y tiene su propia server fn.
+      const estadoCambio =
+        values.estado !== (clienteData?.estado ?? 'activo') ||
+        (values.estado === 'baja' &&
+          (values.bajaMotivo ?? '') !== (clienteData?.bajaMotivo ?? ''));
+      if (estadoCambio) {
+        await updateClienteEstado({
+          data: {
+            id: clienteId,
+            estado: values.estado,
+            bajaMotivo:
+              values.estado === 'baja'
+                ? values.bajaMotivo || undefined
+                : undefined,
+          },
         });
       }
     },
@@ -416,61 +442,124 @@ export function EditRepresentativeDialog({
 
                 {/* SECTION: Credencial de AFIP */}
                 {credencialId && (
-                <SectionCard
-                  icon={
-                    <GitCompareArrows
-                      className="h-[15px] w-[15px]"
-                      style={{ color: 'var(--arca-chart-3)' }}
-                      strokeWidth={2}
-                    />
-                  }
-                  label="Credencial de AFIP"
-                >
-                  <FormField
-                    control={form.control}
-                    name="password"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className={labelClass}>
-                          Actualizar contraseña en AFIP
-                        </FormLabel>
-                        <FormControl>
-                          <div className="relative">
-                            <Input
-                              type={showPassword ? 'text' : 'password'}
-                              placeholder="Dejar en blanco para no cambiarla"
-                              autoComplete="new-password"
-                              {...field}
-                              value={field.value ?? ''}
-                              className={`${inputClass} pr-[46px]`}
-                            />
-                            <button
-                              type="button"
-                              tabIndex={-1}
-                              onClick={() => setShowPassword((s) => !s)}
-                              aria-label={
-                                showPassword
-                                  ? 'Ocultar contraseña'
-                                  : 'Mostrar contraseña'
-                              }
-                              className="absolute right-1.5 top-1/2 -translate-y-1/2 w-[34px] h-[34px] inline-flex items-center justify-center text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors duration-[120ms] cursor-pointer"
+                  <SectionCard
+                    icon={
+                      <GitCompareArrows
+                        className="h-[15px] w-[15px]"
+                        style={{ color: 'var(--arca-chart-3)' }}
+                        strokeWidth={2}
+                      />
+                    }
+                    label="Credencial de AFIP"
+                  >
+                    <FormField
+                      control={form.control}
+                      name="estado"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className={`${labelClass} mb-0.5`}>
+                            Estado del cliente
+                          </FormLabel>
+                          <FormControl>
+                            <RadioGroup
+                              value={field.value}
+                              onValueChange={field.onChange}
+                              className="grid grid-cols-3 gap-2.5"
                             >
-                              {showPassword ? (
-                                <EyeOff className="h-5 w-5" />
-                              ) : (
-                                <Eye className="h-5 w-5" />
-                              )}
-                            </button>
-                          </div>
-                        </FormControl>
-                        <p className="mt-0.5 text-[12.5px] text-[var(--arca-ink-4)]">
-                          Déjala en blanco para mantener la actual.
-                        </p>
-                        <FormMessage />
-                      </FormItem>
+                              {[
+                                { value: 'activo', label: 'Activo' },
+                                { value: 'pausado', label: 'Pausado' },
+                                { value: 'baja', label: 'Baja' },
+                              ].map(({ value, label }) => {
+                                const selected = field.value === value;
+                                return (
+                                  <label
+                                    key={value}
+                                    className={`flex items-center gap-[9px] px-3 py-3.5 rounded-[12px] text-[14px] cursor-pointer transition-all duration-[120ms] ${
+                                      selected
+                                        ? 'bg-[var(--arca-surface)] border-[1.5px] border-[var(--arca-ink)] text-[var(--arca-ink)] font-semibold'
+                                        : 'bg-[var(--arca-surface-2)] border border-[var(--arca-border)] text-[var(--arca-ink-3)] font-medium'
+                                    }`}
+                                  >
+                                    <RadioGroupItem
+                                      value={value}
+                                      className="sr-only"
+                                    />
+                                    <span>{label}</span>
+                                  </label>
+                                );
+                              })}
+                            </RadioGroup>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    {form.watch('estado') === 'baja' && (
+                      <FormField
+                        control={form.control}
+                        name="bajaMotivo"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className={`${labelClass} mb-0.5`}>
+                              Motivo de la baja
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder="Dejó el estudio, cese de actividad…"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
                     )}
-                  />
-                </SectionCard>
+                    <FormField
+                      control={form.control}
+                      name="password"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className={labelClass}>
+                            Actualizar contraseña en AFIP
+                          </FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <Input
+                                type={showPassword ? 'text' : 'password'}
+                                placeholder="Dejar en blanco para no cambiarla"
+                                autoComplete="new-password"
+                                {...field}
+                                value={field.value ?? ''}
+                                className={`${inputClass} pr-[46px]`}
+                              />
+                              <button
+                                type="button"
+                                tabIndex={-1}
+                                onClick={() => setShowPassword((s) => !s)}
+                                aria-label={
+                                  showPassword
+                                    ? 'Ocultar contraseña'
+                                    : 'Mostrar contraseña'
+                                }
+                                className="absolute right-1.5 top-1/2 -translate-y-1/2 w-[34px] h-[34px] inline-flex items-center justify-center text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors duration-[120ms] cursor-pointer"
+                              >
+                                {showPassword ? (
+                                  <EyeOff className="h-5 w-5" />
+                                ) : (
+                                  <Eye className="h-5 w-5" />
+                                )}
+                              </button>
+                            </div>
+                          </FormControl>
+                          <p className="mt-0.5 text-[12.5px] text-[var(--arca-ink-4)]">
+                            Déjala en blanco para mantener la actual.
+                          </p>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </SectionCard>
                 )}
               </div>
 

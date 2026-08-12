@@ -62,6 +62,7 @@ const clienteBaseSelect = {
   condicionIva: cliente.condicionIva,
   iibbRegimen: cliente.iibbRegimen,
   estado: cliente.estado,
+  bajaMotivo: cliente.bajaMotivo,
   email: cliente.email,
   telefono: cliente.telefono,
   domicilio: cliente.domicilio,
@@ -598,6 +599,41 @@ export const updateCliente = createServerFn({
 
     if (!updated) throw new Error('Error al actualizar el cliente');
 
+    return updated;
+  });
+
+/**
+ * Cambia el estado del cliente (activo / pausado / baja).
+ *
+ * Es el reemplazo del "managedByStudy" del modelo viejo: la baja no borra nada
+ * —el cliente y su historia quedan—, solo lo saca de la operatoria diaria.
+ * El motivo se guarda únicamente para la baja; reactivar lo limpia.
+ */
+export const updateClienteEstado = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      id: z.string().uuid(),
+      estado: z.enum(['activo', 'pausado', 'baja']),
+      bajaMotivo: z.string().max(500).optional(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const esBaja = ctx.data.estado === 'baja';
+    const [updated] = await db
+      .update(cliente)
+      .set({
+        estado: ctx.data.estado,
+        bajaMotivo: esBaja ? (ctx.data.bajaMotivo ?? null) : null,
+        bajaAt: esBaja ? new Date() : null,
+      })
+      .where(and(eq(cliente.id, ctx.data.id), eq(cliente.orgId, orgId)))
+      .returning({ id: cliente.id, estado: cliente.estado });
+
+    if (!updated) throw new Error('Cliente no encontrado');
     return updated;
   });
 

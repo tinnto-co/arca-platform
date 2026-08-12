@@ -291,3 +291,33 @@ escribía inflation.tsx no la traían: quedaban invisibles en el log. Se agregó
 Los 5 componentes quedaron montados en sus solapas y el deep-link
 «Ver en el diario» recuperó `search={{ clientId, tab: 'asientos' }}`
 (el route de staging trae validateSearch).
+
+---
+
+## Resolución del conflicto `profile` (cerrado)
+
+### ⚖️ D40 — El cluster `profile` NO se porta: eran tres gaps, no un módulo
+El análisis lo desinfló. De los 7 archivos del cluster, 5 eran código de la
+base que v2 ya reemplazó con su rebuild sobre el modelo ideal
+(`client-detail-page.tsx` absorbe facturas-tab, view-client-dialog,
+convenio-multilateral-tab e invoice.tsx; la ruta `$clientId/$profileId` es la
+vista credencial→empresas que v2 ya tiene). El delta REAL de staging era
++39/+1 líneas: el selector RT 54/RT 6 en la ficha fiscal. La dualidad
+representante/perfil del modelo viejo ES `credencial_afip`/`cliente` en el
+ideal — no había conflicto de diseño que resolver, solo tres funcionalidades
+sueltas sin equivalente:
+
+1. **Ficha de datos fiscales** (norma RT 54/RT 6, actividad, inscripción):
+   `updateClientFiscalData` existía sin UI. → `fiscal-data-card.tsx` nuevo,
+   montado en la solapa Resumen del detalle del cliente, leyendo de
+   `getMembreteData`.
+2. **Baja/pausa del cliente** (el `managedByStudy` viejo): no había setter de
+   `cliente.estado`. → `updateClienteEstado` (activo|pausado|baja +
+   `baja_motivo`, la baja no borra nada) + radio en el diálogo de edición,
+   con el motivo visible solo en baja.
+3. **Toggle liquida sueldos**: v2 filtraba por
+   `cliente_empleador_config.liquida_sueldos` pero nada lo seteaba (solo el
+   ETL). → entra en `updateEmpleadorConfig` y como switch en el
+   EmpleadorConfigDialog, al lado de mipyme/seguro colectivo.
+
+Con esto el cluster queda retirado: los archivos de staging no viajan.
