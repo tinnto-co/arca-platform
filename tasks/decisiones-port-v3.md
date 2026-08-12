@@ -351,9 +351,11 @@ Desvíos del ensayo respecto del plan (a propósito):
   del scrapper para el job del tope).
 - El origen se conecta por IP de LAN (192.168.0.17): el guard del ETL rechaza
   `localhost` como fuente. Mismo server, base distinta, guard intacto.
-- `subir-documentos-r2.ts` quedó en dry-run: 532/532 documentos listos, 24,8
-  MB. El `--apply` escribe en el bucket compartido con producción — decisión
-  de Gaston.
+- `subir-documentos-r2.ts`: dry-run primero y `--apply` con el OK de Gaston
+  (12/08). 532/532 subidos (24,8 MB, 4 a `_sin-cliente/`), las 532 keys
+  escritas, y 3 objetos al azar verificados bajándolos de R2. Son los mismos
+  objetos con las mismas rutas que el cutover real necesita: ese paso del
+  cutover ya quedó, de hecho, adelantado.
 - D8 leyó la serie FACPCE desde la copia congelada (se le inyectó
   `inflation_index` con datos desde NEW_DB): producción no tiene esa tabla y
   el plan lo contempla en el paso 12.
