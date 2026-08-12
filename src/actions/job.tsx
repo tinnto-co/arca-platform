@@ -170,7 +170,9 @@ export const getJobs = createServerFn({ method: 'GET' })
         progress: job.progress,
       })
       .from(job)
-      .innerJoin(credencialAfip, eq(job.credencialId, credencialAfip.id))
+      // leftJoin: los jobs de `escalas` no usan credencial de AFIP (scrapean
+      // las páginas públicas de los CCT) y con inner quedaban invisibles.
+      .leftJoin(credencialAfip, eq(job.credencialId, credencialAfip.id))
       .where(whereCondition)
       .orderBy(
         sql`CASE ${job.status} WHEN 'running' THEN 0 WHEN 'failed' THEN 1 WHEN 'finished' THEN 2 ELSE 3 END`,
@@ -429,7 +431,7 @@ export const getJobErrorSummary = createServerFn({ method: 'GET' })
         credencialNombre: credencialAfip.nombre,
       })
       .from(job)
-      .innerJoin(credencialAfip, eq(job.credencialId, credencialAfip.id))
+      .leftJoin(credencialAfip, eq(job.credencialId, credencialAfip.id))
       .where(and(...baseConditions, eq(job.status, 'failed')))
       .limit(2000);
 

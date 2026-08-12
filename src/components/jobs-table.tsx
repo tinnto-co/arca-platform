@@ -90,7 +90,11 @@ export function JobsTable() {
   const setFilter = (updates: Record<string, unknown>) => {
     routerNavigate({
       to: '/jobs',
-      search: (prev: Record<string, unknown>) => ({ ...prev, ...updates, page: 'page' in updates ? (updates.page as number) : 1 }),
+      search: (prev: Record<string, unknown>) => ({
+        ...prev,
+        ...updates,
+        page: 'page' in updates ? (updates.page as number) : 1,
+      }),
     });
   };
 
@@ -141,7 +145,15 @@ export function JobsTable() {
   });
 
   const { data, isLoading } = useQuery<JobsResponse>({
-    queryKey: ['jobs', currentPage, statusFilter, typeFilter, clientFilter, date, fromTime],
+    queryKey: [
+      'jobs',
+      currentPage,
+      statusFilter,
+      typeFilter,
+      clientFilter,
+      date,
+      fromTime,
+    ],
     queryFn: async (): Promise<JobsResponse> => {
       const response = await getJobs({
         data: {
@@ -158,24 +170,34 @@ export function JobsTable() {
     },
   });
 
-  const STATUS_ORDER: Record<string, number> = { running: 0, failed: 1, finished: 2, pending: 3 };
+  const STATUS_ORDER: Record<string, number> = {
+    running: 0,
+    failed: 1,
+    finished: 2,
+    pending: 3,
+  };
 
   const jobs = (data?.jobs ?? [])
     .filter((job: JobRow) => {
       if (hiddenIds.has(job.id)) return false;
-      if (hideFinished && (job.status === 'finished' || job.status === 'failed')) return false;
+      if (
+        hideFinished &&
+        (job.status === 'finished' || job.status === 'failed')
+      )
+        return false;
       if (!searchTerm.trim()) return true;
       const term = searchTerm.toLowerCase();
       return (
         job.id.toLowerCase().includes(term) ||
         (job.credencialNombre ?? '').toLowerCase().includes(term) ||
-        job.clientes.some((c) =>
-          c.razonSocial.toLowerCase().includes(term)
-        ) ||
+        job.clientes.some((c) => c.razonSocial.toLowerCase().includes(term)) ||
         job.type.toLowerCase().includes(term)
       );
     })
-    .sort((a: JobRow, b: JobRow) => (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99));
+    .sort(
+      (a: JobRow, b: JobRow) =>
+        (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99)
+    );
 
   const totalPages = data?.totalPages ?? 1;
 
@@ -287,6 +309,15 @@ export function JobsTable() {
           >
             <FileWarning className="h-3 w-3" />
             IVA
+          </span>
+        );
+      case 'escalas':
+        return (
+          <span
+            className={`${baseClass} bg-[var(--arca-accent-info-bg)] text-[var(--arca-accent-info-fg)]`}
+          >
+            <Receipt className="h-3 w-3" />
+            Escalas salariales
           </span>
         );
       case 'notificaciones':
@@ -469,6 +500,7 @@ export function JobsTable() {
                 { value: 'notificaciones', label: 'Notificaciones' },
                 { value: 'deuda', label: 'Deuda' },
                 { value: 'vencimientos', label: 'Vencimientos' },
+                { value: 'escalas', label: 'Escalas salariales' },
               ]}
               value={typeFilter}
               onValueChange={(value) => setFilter({ type: value })}
@@ -590,7 +622,9 @@ export function JobsTable() {
                         {job.clientes.length > 0 && (
                           <span
                             className="max-w-[260px] truncate text-xs text-[var(--arca-ink-3)]"
-                            title={job.clientes.map((c) => c.razonSocial).join(', ')}
+                            title={job.clientes
+                              .map((c) => c.razonSocial)
+                              .join(', ')}
                           >
                             {job.clientes.map((c) => c.razonSocial).join(', ')}
                           </span>
@@ -598,14 +632,14 @@ export function JobsTable() {
                       </div>
                     ) : (
                       <span className="text-[var(--arca-ink-3)] text-sm">
-                        Credencial desconocida
+                        {job.type === 'escalas'
+                          ? 'Sin credencial (páginas públicas)'
+                          : 'Credencial desconocida'}
                       </span>
                     )}
                   </TableCell>
                   <TableCell>{renderTypeBadge(job.type)}</TableCell>
-                  <TableCell>
-                    {renderStatusBadge(job.status)}
-                  </TableCell>
+                  <TableCell>{renderStatusBadge(job.status)}</TableCell>
                   <TableCell>{formatDateTime(job.createdAt)}</TableCell>
                   <TableCell>
                     {getDurationMinutes(job.startedAt, job.finishedAt)}
@@ -661,7 +695,9 @@ export function JobsTable() {
             <PaginationContent>
               <PaginationItem>
                 <PaginationPrevious
-                  onClick={() => setFilter({ page: Math.max(1, currentPage - 1) })}
+                  onClick={() =>
+                    setFilter({ page: Math.max(1, currentPage - 1) })
+                  }
                   className={
                     currentPage === 1
                       ? 'pointer-events-none opacity-50'
@@ -708,8 +744,9 @@ export function JobsTable() {
 
               <PaginationItem>
                 <PaginationNext
-                  onClick={() => setFilter({ page: Math.min(totalPages, currentPage + 1) })}
-
+                  onClick={() =>
+                    setFilter({ page: Math.min(totalPages, currentPage + 1) })
+                  }
                   className={
                     currentPage === totalPages
                       ? 'pointer-events-none opacity-50'
@@ -749,14 +786,19 @@ export function JobsTable() {
                     Credencial
                   </p>
                   <p className="text-sm font-semibold">
-                    {selectedJob.credencialNombre ?? 'Credencial desconocida'}
+                    {selectedJob.credencialNombre ??
+                      (selectedJob.type === 'escalas'
+                        ? 'Sin credencial (páginas públicas)'
+                        : 'Credencial desconocida')}
                   </p>
                   <p className="text-xs text-[var(--arca-ink-3)] font-mono">
                     {selectedJob.credencialId}
                   </p>
                   {selectedJob.clientes.length > 0 && (
                     <p className="text-xs text-[var(--arca-ink-3)]">
-                      {selectedJob.clientes.map((c) => c.razonSocial).join(', ')}
+                      {selectedJob.clientes
+                        .map((c) => c.razonSocial)
+                        .join(', ')}
                     </p>
                   )}
                 </div>

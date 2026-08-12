@@ -51,3 +51,17 @@ schema en `src/db/schemas.ts`.
    contraparte + alícuotas + discovery→evento).
 4. Correr cada processor real contra BD_IDEAL local y comparar contra lo que
    dejó el ETL (misma técnica que el smoke test de la app).
+
+## Pendiente: job de tope imponible (decisión D17, 11/08)
+
+El tope SIPA de ANSES lo trae el scrapper — decidido, va acá y no en la app.
+Job mensual: buscar el tope del mes (la vieja fuente era ignacioonline.com.ar,
+parseada con Gemini — ver `payroll-cron.ts` en la rama staging de arca-platform
+como referencia) y hacer upsert en `parametro_periodo` de BD_IDEAL
+(tope_maximo_imponible, salario_minimo, fuente).
+
+Ojo: `arca_scrapper` hoy NO tiene grant sobre `parametro_periodo`
+(schema-rls-scrapper.sql enumera 18 tablas). Hay que sumarla.
+
+`parametro_periodo` está cortado en 2026-06: hasta que este job exista, los
+aportes de sueldos que superen el tope se calculan con un tope viejo.

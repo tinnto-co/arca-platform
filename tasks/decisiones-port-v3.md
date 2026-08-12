@@ -78,11 +78,12 @@ Regenerar `drizzle/schema.ts` por introspección lo destapó (y también que fal
 AFIP. Corregí los consumidores (`job.tsx`, `alert.tsx`): un job sin credencial no
 agrupa por credencial y no entra al dedupe de reintentos.
 
-### ⚖️ D11 — SIN RESOLVER: los jobs de `escalas` no aparecen en el panel de jobs
-`getJobs` hace `innerJoin` con `credencialAfip` (`job.tsx:173`), así que los jobs
-sin credencial quedan afuera de la lista. Un `leftJoin` lo arregla, pero cambia el
-comportamiento del panel de fuentes de datos (último commit de v2). **Decisión de
-Gaston pendiente.**
+### ⚖️ D11 — RESUELTO: los jobs de `escalas` aparecen en la tabla de jobs
+Decisión de Gaston (11/08): la tabla de jobs es el log del scrapper — ahí van
+todos, incluidos los de escalas; el panel de fuentes de datos del sidebar queda
+por credencial (fuentes externas), sin cambios. `getJobs` y el agrupador de
+errores pasan a `leftJoin`; la fila sin credencial dice "Sin credencial
+(páginas públicas)" y el tipo tiene badge y filtro propios.
 
 ---
 
@@ -114,12 +115,13 @@ Su función principal (scrapear CCT con Gemini y pisar `escala_salarial`) es lo
 que hoy hace el job `escalas` del scrapper vía `cct_fuente`. Portarlo duplicaría
 escrituras desde dos lados. Además en staging está definido pero nadie lo arranca.
 
-### ⚖️ D17 — HUECO ABIERTO: el tope imponible no se actualiza en ningún lado
-`syncTopeImponible` (la otra mitad de `payroll-cron.ts`) alimentaba
-`parametro_periodo`, que está cortado en **2026-06**. Nada en v2 ni en el scrapper
-lo actualiza. Para liquidar julio hace falta el tope de julio. Opciones: cron acá /
-job en el scrapper (más consistente con D16) / carga manual. **Decisión de Gaston
-pendiente.**
+### ⚖️ D17 — DECIDIDO: el tope imponible lo trae el scrapper, sí o sí
+Decisión de Gaston (11/08): va como job del scrapper (repo `arca-scrapper`),
+consistente con D16 — los scrapes viven allá. Pendiente de implementar en ese
+repo: job mensual que busca el tope SIPA de ANSES y hace upsert en
+`parametro_periodo` (el rol `arca_scrapper` va a necesitar grant sobre esa
+tabla, hoy no lo tiene). Mientras tanto `parametro_periodo` está cortado en
+2026-06: liquidar julio en adelante da aportes mal para sueldos sobre el tope.
 
 ### 🔧 D18 — Cron de índices FACPCE enganchado en `server.ts`
 Mismo patrón y guard que el cron de facturas que v2 ya tenía. Se apaga con
